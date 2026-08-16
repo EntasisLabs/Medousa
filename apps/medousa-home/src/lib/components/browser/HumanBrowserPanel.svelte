@@ -23,7 +23,7 @@
     runBrowserHotkeyAction,
   } from "$lib/utils/browserHotkeys";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { isTauri, shouldUseMobileShell } from "$lib/platform";
   import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";

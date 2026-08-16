@@ -4,7 +4,7 @@
   import ScriptWorkbenchTitlebar from "$lib/components/automations/ScriptWorkbenchTitlebar.svelte";
   import GraphemeScriptEditorPanel from "$lib/components/grapheme/GraphemeScriptEditorPanel.svelte";
   import { environment } from "$lib/stores/environment.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { usesUnifiedTitlebar } from "$lib/platform";
   import { SCRIPT_WORKBENCH_OPEN_CONSOLE_EVENT } from "$lib/utils/scriptWorkbenchChromeEvents";
 

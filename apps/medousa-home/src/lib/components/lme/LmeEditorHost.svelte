@@ -4,9 +4,9 @@
   import VaultAttachmentPreviewContent from "$lib/components/vault/VaultAttachmentPreviewContent.svelte";
   import { artifacts } from "$lib/stores/artifacts.svelte";
   import { chat } from "$lib/stores/chat.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { lmeWorkspace, type LmeTab } from "$lib/stores/lmeWorkspace.svelte";
-  import { noteEditorRuntimes } from "$lib/stores/noteEditorRuntimes.svelte";
+  import { noteEditorRuntimes } from "$lib/vault/noteEditorRuntimes.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { openAttachmentPath } from "$lib/utils/vaultAttachmentPicker";
   import { attachmentFileName } from "$lib/utils/vaultAttachments";

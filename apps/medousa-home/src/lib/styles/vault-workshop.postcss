@@ -1,0 +1,378 @@
+/**
+ * Vault note workshop dock, chat, and branch chrome.
+ * Loaded by the destination feature entry; not imported from app.postcss.
+ */
+
+@layer features {
+
+
+  .vault-dock-icon-btn {
+    @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-content-tertiary transition hover:bg-surface-800/70 hover:text-surface-100;
+  }
+
+  .vault-dock-icon-btn-active {
+    @apply text-content-link;
+  }
+
+  /* Cursor-style dock popover — portaled, soft rounded card.
+     Above nav-rail view popover (120) so menus aren’t trapped underneath. */
+  .vault-dock-popover {
+    position: fixed;
+    z-index: 130;
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border: 1px solid rgb(var(--color-surface-600) / 0.28);
+    border-radius: 0.85rem;
+    background: rgb(var(--color-surface-850, var(--color-surface-900)) / 0.97);
+    padding: 0.35rem;
+    box-shadow:
+      0 10px 28px rgb(0 0 0 / 0.34),
+      0 0 0 1px rgb(0 0 0 / 0.08);
+    backdrop-filter: blur(16px);
+  }
+
+  .vault-dock-popover__sep {
+    margin: 0.25rem 0.4rem;
+    border-top: 1px solid rgb(var(--color-surface-500) / 0.22);
+  }
+
+  /* Branch-style dock triggers: icon + current label. */
+  .vault-dock-branch {
+    display: inline-flex;
+    max-width: 9.5rem;
+    min-width: 0;
+    height: 1.75rem;
+    align-items: center;
+    gap: 0.3rem;
+    border: 0;
+    border-radius: 0.3rem;
+    background: transparent;
+    padding: 0 0.35rem;
+    color: rgb(var(--theme-text-tertiary));
+    font-size: 0.7rem;
+    font-weight: 500;
+    line-height: 1;
+    transition:
+      color 120ms ease,
+      background 120ms ease;
+  }
+
+  .vault-dock-branch:hover {
+    background: rgb(var(--color-surface-800) / 0.55);
+    color: rgb(var(--color-surface-150, var(--color-surface-100)));
+  }
+
+  .vault-dock-branch[aria-expanded="true"],
+  .vault-dock-branch--active {
+    color: rgb(var(--color-surface-200));
+  }
+
+  .vault-dock-branch__icon {
+    flex-shrink: 0;
+    opacity: 0.85;
+  }
+
+  .vault-dock-branch__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .vault-dock-branch-menu {
+    position: absolute;
+    z-index: 30;
+    width: min(14.5rem, calc(100vw - 2rem));
+    max-height: min(22rem, calc(100vh - 8rem));
+    overflow-x: hidden;
+    overflow-y: auto;
+    border: 1px solid rgb(var(--color-surface-600) / 0.35);
+    border-radius: 0.55rem;
+    background: rgb(var(--color-surface-900) / 0.98);
+    padding: 0.25rem;
+    box-shadow:
+      0 12px 32px rgb(0 0 0 / 0.32),
+      0 0 0 1px rgb(0 0 0 / 0.1);
+    backdrop-filter: blur(14px);
+  }
+
+  .vault-dock-branch-menu--up {
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 0.35rem;
+  }
+
+  .vault-dock-branch-menu--down {
+    top: 100%;
+    left: 0;
+    margin-top: 0.35rem;
+  }
+
+  .vault-dock-branch-menu--end.vault-dock-branch-menu--up,
+  .vault-dock-branch-menu--end.vault-dock-branch-menu--down {
+    left: auto;
+    right: 0;
+  }
+
+  .vault-dock-branch-menu__sep {
+    margin: 0.2rem 0.35rem;
+    border-top: 1px solid rgb(var(--color-surface-500) / 0.28);
+  }
+
+  .vault-dock-branch-option {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    border: 0;
+    border-radius: 0.35rem;
+    background: transparent;
+    padding: 0.35rem 0.45rem;
+    color: rgb(var(--theme-text-secondary));
+    text-align: left;
+    transition: background 100ms ease;
+  }
+
+  .vault-dock-branch-option:hover {
+    background: rgb(var(--color-surface-800) / 0.7);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .vault-dock-branch-option--selected {
+    color: rgb(var(--color-surface-100));
+  }
+
+  .vault-dock-branch-option--soft {
+    color: rgb(var(--theme-text-quiet));
+  }
+
+  .vault-dock-branch-option--soft:hover,
+  .vault-dock-branch-option--soft.vault-dock-branch-option--selected {
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  .vault-dock-branch-option__main {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .vault-dock-branch-option__icon {
+    flex-shrink: 0;
+    opacity: 0.75;
+  }
+
+  .vault-dock-branch-option__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.78rem;
+    font-weight: 500;
+  }
+
+  .vault-dock-branch-option__meta {
+    flex-shrink: 0;
+    color: rgb(var(--theme-text-quiet));
+    font-size: 0.68rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .vault-dock-branch-option__check {
+    flex-shrink: 0;
+    color: rgb(var(--theme-link));
+  }
+
+  body.vault-workshop-dragging {
+    cursor: grabbing;
+    user-select: none;
+  }
+
+  body.vault-workshop-dragging * {
+    user-select: none !important;
+  }
+
+  .vault-note-workshop {
+    @apply fixed z-[85] flex w-[26rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-surface-500/45 bg-surface-900 shadow-2xl;
+    height: min(560px, calc(100vh - 3rem));
+  }
+
+  .vault-note-workshop-sheet {
+    @apply fixed inset-x-0 bottom-0 z-[85] flex flex-col overflow-hidden border-t border-surface-500/30 backdrop-blur-md;
+    background-color: rgb(var(--color-surface-950) / 0.95);
+    border-top-left-radius: 14px;
+    border-top-right-radius: 14px;
+    box-shadow: 0 -12px 40px rgb(0 0 0 / 0.35);
+    animation: vault-sticky-sheet-in 180ms ease-out;
+  }
+
+  .vault-note-workshop-sheet--resizing {
+    animation: none;
+    user-select: none;
+  }
+
+  .vault-note-workshop-sheet-resize {
+    @apply flex h-3 shrink-0 cursor-ns-resize items-center justify-center touch-none;
+  }
+
+  .vault-note-workshop-sheet-grip {
+    @apply h-1 w-9 rounded-full bg-surface-500/50;
+  }
+
+  .vault-note-workshop-sheet-resize:hover .vault-note-workshop-sheet-grip,
+  .vault-note-workshop-sheet-resize:focus-visible .vault-note-workshop-sheet-grip {
+    @apply bg-surface-400/70;
+  }
+
+  .vault-note-workshop-sheet-header {
+    @apply flex shrink-0 items-center gap-2 px-2.5 pb-1.5 pt-0;
+  }
+
+  .vault-note-workshop-header {
+    @apply flex cursor-grab items-center gap-2 border-b border-surface-500/40 bg-surface-900/95 px-3 py-2 active:cursor-grabbing;
+    user-select: none;
+    touch-action: none;
+  }
+
+  .vault-note-workshop-icon-btn {
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-content-tertiary transition hover:bg-surface-800 hover:text-surface-100;
+  }
+
+  .vault-note-workshop-body {
+    @apply flex min-h-0 flex-1 flex-col;
+  }
+
+  .vault-note-workshop-dock {
+    @apply fixed bottom-4 right-4 z-[85] flex max-w-[16rem] items-center gap-2 rounded-full border border-primary-500/35 bg-surface-900/95 px-4 py-2 text-sm text-primary-100 shadow-xl backdrop-blur-sm transition hover:border-primary-400/50 hover:bg-surface-800;
+  }
+
+  .vault-note-workshop-dock--sticky {
+    @apply bottom-3 left-1/2 right-auto max-w-[14rem] -translate-x-1/2 border-surface-500/40 bg-surface-900/90 px-3 py-1.5 text-xs text-surface-200 shadow-lg;
+  }
+
+  .vault-workshop-chat-panel {
+    @apply min-h-0;
+    background-color: rgb(var(--color-surface-950));
+  }
+
+  .vault-workshop-chat-panel--sticky {
+    background-color: transparent;
+  }
+
+  .vault-workshop-chat-body {
+    @apply min-h-0 flex-1;
+  }
+
+  .vault-workshop-chat-scroll {
+    @apply h-full overflow-y-auto px-3 py-3;
+  }
+
+  .vault-workshop-chat-panel--sticky .vault-workshop-chat-scroll {
+    @apply px-2.5 py-1.5;
+  }
+
+  .vault-workshop-chat-composer {
+    @apply shrink-0 border-t border-surface-500/35 px-3 pb-2 pt-2;
+    background-color: rgb(var(--color-surface-900) / 0.8);
+  }
+
+  .vault-workshop-chat-composer--sticky {
+    @apply border-surface-500/20 px-2 pb-1.5 pt-1.5;
+    background-color: transparent;
+  }
+
+  .vault-workshop-chat-composer .composer-voice-status,
+  .vault-workshop-chat-composer .composer-attachment-chips {
+    @apply mb-1;
+  }
+
+  .vault-chat-context-chip--whisper {
+    @apply border-0 bg-transparent px-1 py-0.5;
+  }
+
+  .vault-note-chat-fab-root {
+    pointer-events: none;
+    position: absolute;
+    right: 1rem;
+    bottom: 2.75rem;
+    z-index: 20;
+  }
+
+  .vault-note-chat-fab {
+    pointer-events: auto;
+    display: flex;
+    height: 2.5rem;
+    width: 2.5rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid rgb(var(--color-primary-500) / 0.25);
+    background: rgb(var(--color-primary-600) / 0.88);
+    color: rgb(var(--color-surface-50));
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+    transition:
+      background 140ms ease,
+      transform 140ms ease;
+  }
+
+  .vault-note-chat-fab:hover {
+    background: rgb(var(--color-primary-500));
+  }
+
+  .vault-note-chat-fab:active {
+    transform: scale(0.96);
+  }
+
+  .vault-note-chat-fab:disabled {
+    opacity: 0.5;
+  }
+
+  .vault-note-chat-session-backdrop {
+    @apply fixed inset-0 z-[84];
+  }
+
+  .vault-note-chat-session-menu {
+    @apply z-[86] flex max-h-[min(420px,60vh)] flex-col overflow-hidden rounded-2xl border border-surface-500/45 bg-surface-900 shadow-2xl;
+  }
+
+  .vault-note-chat-session-menu-fab {
+    @apply pointer-events-auto absolute bottom-[4.25rem] right-0 w-[18rem];
+  }
+
+  .vault-note-chat-session-menu-workshop {
+    @apply absolute right-0 top-[calc(100%+0.35rem)] w-[17rem];
+  }
+
+  .vault-note-chat-session-menu-heading {
+    @apply border-b border-surface-500/35 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-content-tertiary;
+  }
+
+  .vault-note-chat-session-menu-subheading {
+    @apply px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-content-quiet;
+  }
+
+  .vault-note-chat-session-list {
+    @apply min-h-0 flex-1 overflow-y-auto px-1.5 pb-2;
+  }
+
+  .vault-note-chat-session-item {
+    @apply flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-surface-200 transition hover:bg-surface-800/80;
+  }
+
+  .vault-note-chat-session-item-new {
+    @apply mx-1.5 my-2 border border-primary-500/25 bg-primary-500/10 text-primary-100 hover:bg-primary-500/15;
+  }
+
+  .vault-note-chat-session-item-active {
+    @apply bg-surface-800/90 ring-1 ring-primary-500/30;
+  }
+
+  .vault-note-chat-session-empty {
+    @apply px-3 pb-3 text-xs text-content-quiet;
+  }
+}

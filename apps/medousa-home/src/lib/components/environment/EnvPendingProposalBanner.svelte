@@ -1,6 +1,6 @@
 <script lang="ts">
   import { environment } from "$lib/stores/environment.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { SAFETY_SURFACE_SETTINGS } from "$lib/types/environment";
 

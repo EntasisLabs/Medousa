@@ -1,7 +1,7 @@
 <script lang="ts">
   import VaultMarkdownPreview from "$lib/components/vault/VaultMarkdownPreview.svelte";
   import { getVaultNote } from "$lib/daemon";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { resolveWikilinkTarget } from "$lib/utils/resolveWikilink";

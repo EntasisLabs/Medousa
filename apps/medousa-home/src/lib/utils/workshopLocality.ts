@@ -3,10 +3,19 @@
 import { isTauri } from "$lib/platform";
 
 let kindPort: () => string | undefined = () => undefined;
+let idPort: () => string | undefined = () => undefined;
 
 /** Bound by shell lifecycle so this helper does not import the workshops store. */
 export function setActiveWorkshopKindPort(port: () => string | undefined): void {
   kindPort = port;
+}
+
+export function setActiveWorkshopIdPort(port: (() => string | undefined) | null): void {
+  idPort = port ?? (() => undefined);
+}
+
+export function activeWorkshopId(): string {
+  return idPort()?.trim() || "default";
 }
 
 /**

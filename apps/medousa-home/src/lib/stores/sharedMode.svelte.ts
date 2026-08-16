@@ -1,6 +1,6 @@
 import { getSharedMode, setSharedMode, type SharedModeStatus } from "$lib/daemon";
 import { isTauri } from "$lib/window";
-import { userProfiles } from "$lib/stores/userProfiles.svelte";
+import { sharedModePort } from "$lib/runtime/sharedModePorts";
 import {
   friendlySettingsError,
   isMissingCapabilityError,
@@ -63,7 +63,7 @@ export class SharedModeStore {
     try {
       const status = await setSharedMode(mode);
       this.applyStatus(status);
-      await userProfiles.load({ suppressRemoteNotice: true });
+      await sharedModePort().reloadUserProfiles();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (isMissingCapabilityError(message)) {

@@ -1,7 +1,10 @@
 /**
  * Home AVEC convergence widgets — kept out of app.postcss to avoid
  * invalidating the ~14k-line god sheet on every Home tweak.
+ * Loaded by MobileShell / HomePanel; not imported from app.postcss.
  */
+
+@layer features {
 
 .mobile-home-brand {
   @apply mt-5;
@@ -390,4 +393,5 @@
   border: none !important;
   pointer-events: none;
   visibility: hidden;
+}
 }

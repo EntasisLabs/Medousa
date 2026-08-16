@@ -2,7 +2,7 @@
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import BrowserControlHandoff from "$lib/components/browser/BrowserControlHandoff.svelte";
   import { browserWorkshop } from "$lib/stores/browserWorkshop.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { haptic } from "$lib/haptics";
   import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/workshop-surfaces.postcss";
   import { onMount } from "svelte";
   import AppTitlebar from "$lib/components/layout/AppTitlebar.svelte";
   import MasterRailHost from "$lib/components/layout/MasterRailHost.svelte";
@@ -7,7 +8,7 @@
   import ShellTabHost from "$lib/components/shell/ShellTabHost.svelte";
   import IdentityDrawer from "$lib/components/chat/IdentityDrawer.svelte";
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { peerUnreadCount } from "$lib/utils/lanShareApi";
@@ -19,7 +20,7 @@
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { isTauri } from "$lib/platform";
   import { appUpdate } from "$lib/stores/appUpdate.svelte";
-  import { toast } from "$lib/stores/toast.svelte";
+  import { toast } from "$lib/runtime/toast.svelte";
   import { updateTrayBlockedCount } from "$lib/window";
   import ShellLayoutDebug from "$lib/components/debug/ShellLayoutDebug.svelte";
   import EnvPendingProposalBanner from "$lib/components/environment/EnvPendingProposalBanner.svelte";

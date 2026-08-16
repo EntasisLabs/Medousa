@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { hideChatPopout, isTauri } from "$lib/window";
   import { connectWorkshop } from "$lib/workshopConnection";
   import { whenDocumentVisible } from "$lib/utils/whenDocumentVisible";

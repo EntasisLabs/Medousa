@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/context.postcss";
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import type { WorkCardDetail } from "$lib/types/card";

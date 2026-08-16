@@ -1,6 +1,6 @@
 <script lang="ts">
   import LayoutWidgetTile from "$lib/components/environment/LayoutWidgetTile.svelte";
-  import { layoutEdit } from "$lib/stores/layoutEdit.svelte";
+  import { layoutEdit } from "$lib/environment/layoutEdit.svelte";
   import {
     createLayoutEditGestureState,
     isMobileLayoutEdit,

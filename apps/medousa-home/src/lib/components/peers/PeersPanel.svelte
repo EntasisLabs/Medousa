@@ -7,10 +7,10 @@
   import IntroduceViaWorkshopSheet from "$lib/components/peers/IntroduceViaWorkshopSheet.svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import { artifacts } from "$lib/stores/artifacts.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { peersShell } from "$lib/stores/peersShell.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
-  import { toast } from "$lib/stores/toast.svelte";
+  import { toast } from "$lib/runtime/toast.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import {

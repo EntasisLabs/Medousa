@@ -1,7 +1,7 @@
 <script lang="ts">
   import ShareToPeerSheet from "$lib/components/settings/ShareToPeerSheet.svelte";
   import { vault } from "$lib/stores/vault.svelte";
-  import { toast } from "$lib/stores/toast.svelte";
+  import { toast } from "$lib/runtime/toast.svelte";
   import { shareVaultNote } from "$lib/share";
   import { listTrustedWorkshops } from "$lib/utils/lanShareApi";
   import { saveVaultUserTemplate } from "$lib/utils/vaultUserTemplates";

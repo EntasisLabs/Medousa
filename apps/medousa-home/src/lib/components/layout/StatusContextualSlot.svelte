@@ -1,8 +1,9 @@
 <script lang="ts">
+  import "$lib/styles/status-desktop.postcss";
   import { untrack } from "svelte";
   import { CircleAlert, CircleCheck } from "@lucide/svelte";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { codeEditorStatus } from "$lib/stores/codeEditorStatus.svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";

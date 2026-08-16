@@ -30,7 +30,7 @@
     listenPackageProgress,
     type PackageProgressEvent,
   } from "$lib/utils/packagesApi";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { hostComputerPhrase } from "$lib/platformCopy";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { isTauri } from "$lib/window";

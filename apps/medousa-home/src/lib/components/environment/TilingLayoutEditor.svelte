@@ -1,6 +1,6 @@
 <script lang="ts">
   import TilingLayoutView from "$lib/components/environment/TilingLayoutView.svelte";
-  import { layoutEdit } from "$lib/stores/layoutEdit.svelte";
+  import { layoutEdit } from "$lib/environment/layoutEdit.svelte";
   import type { ComponentDef } from "$lib/types/environment";
 
   interface Props {

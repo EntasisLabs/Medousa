@@ -1,6 +1,6 @@
 import { chat } from "$lib/stores/chat.svelte";
 import { connection } from "$lib/stores/connection.svelte";
-import { layout } from "$lib/stores/layout.svelte";
+import { layout } from "$lib/runtime/layout.svelte";
 import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
 import { runtime } from "$lib/stores/runtime.svelte";
 import { settingsNav } from "$lib/stores/settingsNav.svelte";

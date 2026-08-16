@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/markdown-content.postcss";
   import {
     createMarkdownRenderSession,
     renderMarkdown,

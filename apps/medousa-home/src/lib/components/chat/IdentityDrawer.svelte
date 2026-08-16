@@ -6,7 +6,7 @@
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { chat } from "$lib/stores/chat.svelte";
   import { identity } from "$lib/stores/identity.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
 
   interface Props {

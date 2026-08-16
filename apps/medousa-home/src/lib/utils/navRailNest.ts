@@ -1,5 +1,5 @@
 import { chat } from "$lib/stores/chat.svelte";
-import { contextThreads } from "$lib/stores/contextThreads.svelte";
+import { contextThreads } from "$lib/context/contextThreads.svelte";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import {
   lmeWorkspace,

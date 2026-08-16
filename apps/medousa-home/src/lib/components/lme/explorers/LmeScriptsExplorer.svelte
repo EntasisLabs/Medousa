@@ -19,7 +19,7 @@
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { scriptLibrarySelection } from "$lib/stores/scriptLibrarySelection.svelte";
-  import { scriptRenameUi } from "$lib/stores/scriptRenameUi.svelte";
+  import { scriptRenameUi } from "$lib/lme/scriptRenameUi.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import { portLmeDock } from "$lib/utils/lmeDockHost";
   import { ensureRailPopoverOpen } from "$lib/utils/railPopoverChrome";

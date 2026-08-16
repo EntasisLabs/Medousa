@@ -532,7 +532,7 @@ Update [polish-and-package-plan.md](polish-and-package-plan.md) P4 section to po
 | Tool history | `src/turn_slice.rs`, `src/turn_parts.rs`, `src/tool_history_tools.rs`, `src/artifact_store.rs` |
 | Capabilities + MCP | `src/capability_catalog.rs`, `adapters/medousa-mcp-gateway/`, `src/mcp_daemon_handlers.rs` |
 | Stasis admin dashboard | `stasis-rs` `dashboard/handlers.rs` (mounted in `src/bin/medousa_daemon.rs`) |
-| Home UI | `apps/medousa-home/src/lib/components/skills/`, `components/grapheme/`, `stores/graphemeScriptEditor.svelte.ts`, `cron/`, `stores/recurring.svelte.ts` |
+| Home UI | `apps/medousa-home/src/lib/components/skills/`, `components/grapheme/`, `stores/graphemeScriptEditor.svelte.ts`, `cron/`, `stores/automations.svelte.ts` |
 | Tauri bridge | `apps/medousa-home/src-tauri/src/daemon/recurring.rs`, `catalog.rs`, `mcp_gateway.rs` |
 
 ---

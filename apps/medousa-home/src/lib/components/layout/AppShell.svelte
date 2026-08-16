@@ -5,13 +5,13 @@
   import ShellChunkError from "$lib/components/layout/ShellChunkError.svelte";
   import ToastHost from "$lib/components/layout/ToastHost.svelte";
   import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { noteWorkshop } from "$lib/stores/noteWorkshop.svelte";
   import { browserWorkshop } from "$lib/stores/browserWorkshop.svelte";
   import { workAskDock } from "$lib/stores/workAskDock.svelte";
-  import { vaultOverlay } from "$lib/stores/vaultOverlay.svelte";
+  import { vaultOverlay } from "$lib/vault/vaultOverlay.svelte";
   import { vaultContextMenu } from "$lib/stores/vaultContextMenu.svelte";
   import { scriptContextMenu } from "$lib/stores/scriptContextMenu.svelte";
   import { shellContextMenu } from "$lib/stores/shellContextMenu.svelte";

@@ -3,7 +3,7 @@
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { haptic } from "$lib/haptics";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { openAttachmentPath } from "$lib/utils/vaultAttachmentPicker";
   import { attachmentFileName } from "$lib/utils/vaultAttachments";

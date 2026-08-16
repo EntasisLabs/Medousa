@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/markdown-content.postcss";
   /** `prose` atom — narrative text. Uses the parse renderer, not MarkdownContent. */
   import { renderMarkdown } from "$lib/markdown/render";
   import { getLiquidContext } from "$lib/liquid/render/context";

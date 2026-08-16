@@ -3,7 +3,7 @@
 import { browser } from "$lib/stores/browser.svelte";
 import { chat } from "$lib/stores/chat.svelte";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
-import { layout } from "$lib/stores/layout.svelte";
+import { layout } from "$lib/runtime/layout.svelte";
 import { markAgentNavigation } from "$lib/utils/agentBrowserCoord";
 import { isTauri } from "$lib/window";
 

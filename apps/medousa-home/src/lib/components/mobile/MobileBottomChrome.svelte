@@ -1,6 +1,6 @@
 <script lang="ts">
   import MobileChatComposer from "$lib/components/mobile/MobileChatComposer.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { attachMobileBottomChromeLayout } from "$lib/utils/mobileKeyboardViewport";
 
   let chromeEl: HTMLElement | undefined = $state();

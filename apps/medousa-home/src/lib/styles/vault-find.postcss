@@ -1,0 +1,146 @@
+/**
+ * Vault find-in-note bar and match marks.
+ * Loaded by the destination feature entry; not imported from app.postcss.
+ */
+
+@layer features {
+
+
+  .vault-find-bar {
+    @apply pointer-events-auto absolute right-3 top-2.5 z-[90] flex max-w-[min(100%-1.5rem,24rem)] flex-col gap-1 rounded-md border border-surface-500/35 py-0.5 pl-2 pr-0.5 shadow-lg;
+    background-color: rgb(var(--color-surface-900) / 0.94);
+    backdrop-filter: blur(8px);
+  }
+
+  .vault-find-bar--replace {
+    @apply max-w-[min(100%-1.5rem,26rem)];
+  }
+
+  .vault-find-bar-row {
+    @apply flex items-center;
+  }
+
+  .vault-find-bar-row--replace {
+    @apply border-t border-surface-500/25 pt-0.5;
+  }
+
+  .vault-find-input {
+    @apply min-w-[6.5rem] flex-1 border-0 bg-transparent py-1 text-[13px] text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0;
+  }
+
+  .vault-find-divider {
+    @apply mx-0.5 h-3.5 w-px shrink-0 bg-surface-500/35;
+  }
+
+  .vault-find-status {
+    @apply shrink-0 px-1 text-[11px] tabular-nums text-content-quiet;
+    min-width: 3.25rem;
+    text-align: center;
+  }
+
+  .vault-find-nav {
+    @apply flex shrink-0 items-center;
+  }
+
+  .vault-find-btn {
+    @apply inline-flex h-6 w-6 items-center justify-center rounded text-content-tertiary transition hover:bg-surface-800/80 hover:text-surface-100 disabled:opacity-30;
+  }
+
+  .vault-find-btn--active {
+    @apply bg-primary-500/20 text-primary-100;
+  }
+
+  .vault-find-text-btn {
+    @apply shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium text-content-secondary transition hover:bg-surface-800/80 hover:text-surface-50 disabled:opacity-30;
+  }
+
+  /* Find-in-note: translucent highlighter wash (not opaque bars) */
+  ::highlight(medousa-vault-find) {
+    background-color: rgb(250 204 21 / 0.38);
+    color: inherit;
+  }
+
+  ::highlight(medousa-vault-find-active) {
+    background-color: rgb(250 204 21 / 0.62);
+    color: inherit;
+  }
+
+  html:not(.dark) ::highlight(medousa-vault-find) {
+    background-color: rgb(254 240 138 / 0.72);
+    color: rgb(66 32 6);
+  }
+
+  html:not(.dark) ::highlight(medousa-vault-find-active) {
+    background-color: rgb(253 224 71 / 0.92);
+    color: rgb(66 32 6);
+  }
+
+  .vault-find-editor-shell {
+    @apply relative min-h-0;
+  }
+
+  .vault-find-editor-backdrop {
+    @apply pointer-events-none absolute inset-0 z-0 overflow-auto whitespace-pre-wrap break-words text-surface-100;
+  }
+
+  .vault-find-editor-backdrop mark.vault-find-mark {
+    @apply rounded-[2px];
+    color: inherit;
+    background-color: rgb(250 204 21 / 0.38);
+  }
+
+  .vault-find-editor-backdrop mark.vault-find-mark-active {
+    color: inherit;
+    background-color: rgb(250 204 21 / 0.62);
+    box-shadow: inset 0 -1.5px 0 0 rgb(234 179 8 / 0.85);
+  }
+
+  html:not(.dark) .vault-find-editor-backdrop mark.vault-find-mark {
+    color: rgb(66 32 6);
+    background-color: rgb(254 240 138 / 0.72);
+  }
+
+  html:not(.dark) .vault-find-editor-backdrop mark.vault-find-mark-active {
+    color: rgb(66 32 6);
+    background-color: rgb(253 224 71 / 0.92);
+    box-shadow: inset 0 -1.5px 0 0 rgb(202 138 4 / 0.7);
+  }
+
+  .vault-find-editor-input--active {
+    color: transparent !important;
+    caret-color: rgb(var(--color-surface-100));
+    background-color: transparent !important;
+  }
+
+  .vault-find-editor-input--active::selection {
+    background-color: rgb(250 204 21 / 0.45);
+    color: transparent;
+  }
+
+  html:not(.dark) .vault-find-editor-input--active::selection {
+    background-color: rgb(253 224 71 / 0.55);
+  }
+
+  .vault-find-mark {
+    @apply rounded-sm;
+    color: inherit;
+    background-color: rgb(250 204 21 / 0.38);
+  }
+
+  .vault-find-mark-active {
+    color: inherit;
+    background-color: rgb(250 204 21 / 0.62);
+    box-shadow: inset 0 -1.5px 0 0 rgb(234 179 8 / 0.85);
+  }
+
+  html:not(.dark) .vault-find-mark {
+    color: rgb(66 32 6);
+    background-color: rgb(254 240 138 / 0.72);
+  }
+
+  html:not(.dark) .vault-find-mark-active {
+    color: rgb(66 32 6);
+    background-color: rgb(253 224 71 / 0.92);
+    box-shadow: inset 0 -1.5px 0 0 rgb(202 138 4 / 0.7);
+  }
+}

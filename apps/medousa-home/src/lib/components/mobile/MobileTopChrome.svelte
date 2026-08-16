@@ -29,7 +29,7 @@
   } from "@lucide/svelte";
   import type { Component } from "svelte";
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { chat } from "$lib/stores/chat.svelte";

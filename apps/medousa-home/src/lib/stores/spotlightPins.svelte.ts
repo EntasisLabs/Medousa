@@ -1,4 +1,4 @@
-import { workshops } from "$lib/stores/workshops.svelte";
+import { activeWorkshopId } from "$lib/utils/workshopLocality";
 
 export type SpotlightPinKind = "note" | "chat" | "script" | "surface";
 
@@ -18,7 +18,7 @@ const STORAGE_PREFIX = "medousa-home-spotlight-pins:";
 const LAST_SCRIPT_KEY = "medousa-home-spotlight-last-script";
 
 function workshopKey(): string {
-  return workshops.activeWorkshopId?.trim() || "default";
+  return activeWorkshopId();
 }
 
 function storageKey(): string {

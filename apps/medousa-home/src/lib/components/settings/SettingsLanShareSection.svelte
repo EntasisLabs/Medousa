@@ -7,7 +7,7 @@
     type ConnectionPrefsSummary,
   } from "$lib/connection";
   import { environment } from "$lib/stores/environment.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import {
     downloadShareBundle,

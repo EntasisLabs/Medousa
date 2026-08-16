@@ -1,5 +1,5 @@
 import type { MobileTab, MoreDestination } from "$lib/types/mobile";
-import type { LibraryView } from "$lib/stores/layout.svelte";
+import type { LibraryView } from "$lib/runtime/layout.svelte";
 import type {
   AutomationsChromeMode,
   AutomationsSection,

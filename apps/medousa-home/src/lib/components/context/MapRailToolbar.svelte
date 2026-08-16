@@ -1,8 +1,8 @@
 <script lang="ts">
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { chat } from "$lib/stores/chat.svelte";
-  import { contextShell } from "$lib/stores/contextShell.svelte";
-  import { contextThreads } from "$lib/stores/contextThreads.svelte";
+  import { contextShell } from "$lib/context/contextShell.svelte";
+  import { contextThreads } from "$lib/context/contextThreads.svelte";
   import {
     placeDockPopover,
     type DockPopoverPlacement,

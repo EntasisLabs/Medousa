@@ -1,0 +1,495 @@
+/**
+ * Vault Live properties panel and tags.
+ * Loaded by the destination feature entry; not imported from app.postcss.
+ */
+
+@layer features {
+
+
+  /* Live / Preview paper column (overflow menu cycles data-paper-width).
+     Properties share the same column as prose so they track paper width. */
+  .vault-paper-width[data-paper-width="narrow"] .vault-live-prose,
+  .vault-paper-width[data-paper-width="narrow"] .vault-live-properties,
+  .vault-paper-width[data-paper-width="narrow"].markdown-content {
+    max-width: 36rem;
+    margin-inline: auto;
+  }
+  .vault-paper-width[data-paper-width="medium"] .vault-live-prose,
+  .vault-paper-width[data-paper-width="medium"] .vault-live-properties,
+  .vault-paper-width[data-paper-width="medium"].markdown-content {
+    max-width: 48rem;
+    margin-inline: auto;
+  }
+  .vault-paper-width[data-paper-width="wide"] .vault-live-prose,
+  .vault-paper-width[data-paper-width="wide"] .vault-live-properties,
+  .vault-paper-width[data-paper-width="wide"].markdown-content {
+    max-width: 64rem;
+    margin-inline: auto;
+  }
+  .vault-paper-width[data-paper-width="full"] .vault-live-prose,
+  .vault-paper-width[data-paper-width="full"] .vault-live-properties,
+  .vault-paper-width[data-paper-width="full"].markdown-content {
+    max-width: none;
+    margin-inline: 0;
+  }
+
+  /* Live properties — intimate rows, not a metadata spreadsheet */
+  .vault-live-properties {
+    --vlp-key-w: 4.85rem;
+    --vlp-ink: rgb(var(--shell-fg, var(--color-surface-100)));
+    --vlp-mute: rgb(var(--shell-muted, var(--color-surface-400)));
+    --vlp-faint: rgb(var(--shell-muted, var(--color-surface-500)));
+    width: 100%;
+    margin-block: 0 1.35rem;
+    padding: 0;
+  }
+
+  .vault-live-properties__disclosure {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    margin: 0 0 0.2rem;
+    padding: 0.2rem 0.35rem 0.2rem 0.1rem;
+    border: none;
+    border-radius: 0.3rem;
+    background: transparent;
+    cursor: pointer;
+    color: var(--vlp-mute);
+    transition: color 140ms ease, background-color 140ms ease;
+  }
+
+  .vault-live-properties__disclosure:hover {
+    color: var(--vlp-ink);
+    background: rgb(var(--color-surface-800) / 0.4);
+  }
+
+  .vault-live-properties__disclosure-label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    line-height: 1;
+  }
+
+  .vault-live-properties__chevron {
+    display: block;
+    flex-shrink: 0;
+    margin-top: 0.05rem;
+    opacity: 0.75;
+    transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 140ms ease;
+  }
+
+  .vault-live-properties__disclosure:hover .vault-live-properties__chevron {
+    opacity: 1;
+  }
+
+  .vault-live-properties--open .vault-live-properties__chevron {
+    transform: rotate(90deg);
+  }
+
+  .vault-live-properties__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    animation: vault-live-properties-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  @keyframes vault-live-properties-in {
+    from {
+      opacity: 0;
+      transform: translateY(-3px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .vault-live-properties__row {
+    display: grid;
+    grid-template-columns: var(--vlp-key-w) minmax(0, 1fr);
+    align-items: center;
+    column-gap: 0.85rem;
+    min-height: 1.85rem;
+    margin: 0;
+    padding: 0.22rem 0.4rem 0.22rem 0.15rem;
+    border-radius: 0.4rem;
+    transition: background-color 160ms ease;
+  }
+
+  .vault-live-properties__row:hover:not(.vault-live-properties__row--disabled) {
+    background: rgb(var(--color-surface-800) / 0.22);
+  }
+
+  /* Editing = soft highlight on the row, never a field chrome */
+  .vault-live-properties__row--active,
+  .vault-live-properties__row:focus-within {
+    background: rgb(var(--color-surface-800) / 0.3);
+  }
+
+  .vault-live-properties__row--tags {
+    align-items: center;
+    cursor: text;
+  }
+
+  .vault-live-properties__row--empty .vault-live-properties__tags {
+    opacity: 0.92;
+  }
+
+  .vault-live-properties__row--disabled {
+    opacity: 0.5;
+    cursor: default;
+    pointer-events: none;
+  }
+
+  /* Icon + label as one intimate unit; values share a clean left edge */
+  .vault-live-properties__key {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.42rem;
+    width: max-content;
+    max-width: 100%;
+    margin: 0;
+    padding: 0.15rem 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--vlp-mute);
+    transition: color 140ms ease;
+  }
+
+  .vault-live-properties__row:hover .vault-live-properties__key,
+  .vault-live-properties__row--active .vault-live-properties__key,
+  .vault-live-properties__row:focus-within .vault-live-properties__key {
+    color: rgb(var(--shell-muted, var(--color-surface-300)));
+  }
+
+  .vault-live-properties__key:disabled {
+    cursor: default;
+  }
+
+  .vault-live-properties__key--static {
+    cursor: default;
+  }
+
+  .vault-live-properties__key-input {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 0.15rem 0;
+    border: none;
+    border-radius: 0.25rem;
+    background: transparent;
+    color: var(--vlp-mute);
+    font: inherit;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    outline: none;
+  }
+
+  .vault-live-properties__key-input::placeholder {
+    color: var(--vlp-faint);
+    opacity: 0.7;
+  }
+
+  .vault-live-properties__value-row {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.15rem;
+  }
+
+  .vault-live-properties__value-row .vault-live-properties__value {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .vault-live-properties__field-remove {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0.25rem;
+    background: transparent;
+    color: var(--vlp-faint);
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
+  }
+
+  .vault-live-properties__row:hover .vault-live-properties__field-remove,
+  .vault-live-properties__row:focus-within .vault-live-properties__field-remove,
+  .vault-live-properties__field-remove:focus-visible {
+    opacity: 1;
+  }
+
+  .vault-live-properties__field-remove:hover {
+    color: rgb(var(--theme-error));
+    background: rgb(var(--color-error-500) / 0.12);
+  }
+
+  .vault-live-properties__add-field {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    align-self: flex-start;
+    margin: 0.2rem 0 0;
+    padding: 0.28rem 0.45rem;
+    border: none;
+    border-radius: 0.35rem;
+    background: transparent;
+    color: var(--vlp-faint);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    transition: color 140ms ease, background-color 140ms ease;
+  }
+
+  .vault-live-properties__add-field:hover:not(:disabled) {
+    color: var(--vlp-ink);
+    background: rgb(var(--color-surface-800) / 0.35);
+  }
+
+  .vault-live-properties__add-field:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  .vault-live-properties__icon {
+    display: block;
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    color: inherit;
+  }
+
+  .vault-live-properties__label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .vault-live-properties__value {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    padding: 0.15rem 0;
+    margin: 0;
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 400;
+    letter-spacing: -0.015em;
+    line-height: 1.35;
+    color: var(--vlp-ink);
+    outline: none;
+    caret-color: rgb(var(--shell-fg, var(--color-surface-100)));
+  }
+
+  .vault-live-properties__value:focus,
+  .vault-live-properties__value:focus-visible {
+    border: 0;
+    outline: none;
+    box-shadow: none;
+    background: transparent;
+    color: rgb(var(--shell-fg, var(--color-surface-50)));
+  }
+
+  .vault-live-properties__value::placeholder {
+    color: var(--vlp-faint);
+    font-style: italic;
+    font-weight: 400;
+    opacity: 0.75;
+  }
+
+  .vault-live-properties__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.32rem;
+    align-items: center;
+    min-width: 0;
+    min-height: 1.55rem;
+  }
+
+  .vault-live-properties__tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.1rem;
+    max-width: 100%;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    color: rgb(var(--shell-fg, var(--color-surface-100)));
+    background: rgb(var(--color-surface-700) / 0.45);
+    border: 1px solid transparent;
+    border-radius: 0.35rem;
+    padding: 0.16rem 0.2rem 0.16rem 0.48rem;
+    animation: vault-live-tag-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition:
+      background-color 140ms ease,
+      border-color 140ms ease,
+      color 140ms ease;
+  }
+
+  @keyframes vault-live-tag-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .vault-live-properties__tag:hover {
+    background: rgb(var(--color-surface-600) / 0.4);
+    border-color: rgb(var(--shell-border, var(--color-surface-500)) / 0.28);
+  }
+
+  .vault-live-properties__tag-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.2;
+  }
+
+  /* Remove stays quiet until the chip is hovered — less noise, more care */
+  .vault-live-properties__tag-remove {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.1rem;
+    height: 1.1rem;
+    border: none;
+    background: transparent;
+    color: var(--vlp-faint);
+    line-height: 1;
+    padding: 0;
+    margin: 0;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    opacity: 0.35;
+    transition:
+      opacity 120ms ease,
+      color 120ms ease,
+      background-color 120ms ease;
+  }
+
+  .vault-live-properties__tag:hover .vault-live-properties__tag-remove,
+  .vault-live-properties__tag-remove:focus-visible {
+    opacity: 1;
+    color: rgb(var(--shell-fg, var(--color-surface-100)));
+  }
+
+  .vault-live-properties__tag-remove:hover {
+    background: rgb(var(--color-surface-500) / 0.35);
+  }
+
+  /* Tag compose: a chip being typed — not a mini form field */
+  .vault-live-properties__tag-input {
+    appearance: none;
+    -webkit-appearance: none;
+    border: 0;
+    border-radius: 0.35rem;
+    background: rgb(var(--color-surface-700) / 0.35);
+    box-shadow: none;
+    padding: 0.16rem 0.48rem;
+    margin: 0;
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+    color: rgb(var(--shell-fg, var(--color-surface-100)));
+    min-width: 3.5ch;
+    max-width: 14rem;
+    outline: none;
+    caret-color: rgb(var(--shell-fg, var(--color-surface-100)));
+    animation: vault-live-tag-in 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition: background-color 140ms ease, width 80ms ease;
+  }
+
+  .vault-live-properties__tag-input:focus,
+  .vault-live-properties__tag-input:focus-visible {
+    border: 0;
+    outline: none;
+    box-shadow: none;
+    background: rgb(var(--color-surface-600) / 0.4);
+  }
+
+  .vault-live-properties__tag-input::placeholder {
+    color: var(--vlp-faint);
+    font-weight: 400;
+    font-style: italic;
+    opacity: 0.7;
+  }
+
+  .vault-live-properties__add {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.28rem;
+    min-width: 1.4rem;
+    height: 1.4rem;
+    padding: 0 0.28rem;
+    border: 1px dashed transparent;
+    border-radius: 0.35rem;
+    background: transparent;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    color: var(--vlp-faint);
+    cursor: pointer;
+    transition:
+      color 140ms ease,
+      background-color 140ms ease,
+      border-color 140ms ease;
+  }
+
+  .vault-live-properties__add:hover {
+    color: rgb(var(--shell-muted, var(--color-surface-200)));
+    background: rgb(var(--color-surface-700) / 0.35);
+  }
+
+  .vault-live-properties__add--empty {
+    height: auto;
+    min-height: 1.35rem;
+    padding: 0.1rem 0.15rem;
+    border: none;
+    color: var(--vlp-faint);
+    font-style: italic;
+    font-weight: 400;
+  }
+
+  .vault-live-properties__add--empty:hover {
+    color: var(--vlp-mute);
+    background: transparent;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .vault-live-properties__body,
+    .vault-live-properties__tag,
+    .vault-live-properties__tag-input,
+    .vault-live-properties__chevron {
+      animation: none !important;
+      transition: none !important;
+    }  }
+}

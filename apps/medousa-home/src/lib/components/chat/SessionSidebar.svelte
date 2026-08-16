@@ -1,11 +1,12 @@
 <script lang="ts">
+  import "$lib/styles/chat.postcss";
   import { onMount, untrack } from "svelte";
   import { Plus, Search, Users, X } from "@lucide/svelte";
   import SessionRow from "$lib/components/chat/SessionRow.svelte";
   import { haptic } from "$lib/haptics";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { chat } from "$lib/stores/chat.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { sharedMode } from "$lib/stores/sharedMode.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";

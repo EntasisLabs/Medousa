@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "layers": ["base", "components", "utilities", "features"],
-  "notes": "H09 Train 5.1 inventory. Feature sheets must not be @imported from app.postcss; destination components load them. Vault/chat/settings blocks still in app.postcss are pending extract, not claimed moved.",
+  "notes": "H09 Train 5.1 inventory. Feature sheets must not be @imported from app.postcss; destination components load them. This is CSS ownership split, not FRONT-001 evidence.",
   "entries": [
     {
       "id": "cascade-order",
@@ -13,7 +13,7 @@
       "id": "app-base",
       "class": "core",
       "path": "src/app.postcss",
-      "notes": "@layer base document reset, chrome tokens, iOS input floor"
+      "notes": "@layer base document reset, chrome tokens, iOS input floor, prefers-reduced-motion"
     },
     {
       "id": "workshop-shell",
@@ -82,31 +82,166 @@
       "loadedBy": "MobileShell.svelte / HomePanel.svelte"
     },
     {
+      "id": "mobile-shell",
+      "class": "feature",
+      "path": "src/lib/styles/mobile-shell.postcss",
+      "loadedBy": "MobileShell.svelte"
+    },
+    {
       "id": "theme-tokens",
       "class": "primitive",
       "path": "static/themes/*.css",
       "notes": "Selected-theme variable sheets loaded from stored preference; Tailwind compiles none"
     },
     {
-      "id": "vault-in-app",
+      "id": "vault-browse",
       "class": "feature",
-      "path": "src/app.postcss",
-      "status": "pending-extract",
-      "notes": ".vault-* still in the god sheet (~1478–14903)"
+      "path": "src/lib/styles/vault-browse.postcss",
+      "loadedBy": "LibraryPanel.svelte"
     },
     {
-      "id": "chat-composer-in-app",
+      "id": "vault-editor",
       "class": "feature",
-      "path": "src/app.postcss",
-      "status": "pending-extract",
-      "notes": ".chat-* / .composer-* still in the god sheet"
+      "path": "src/lib/styles/vault-editor.postcss",
+      "loadedBy": "VaultEditor.svelte"
     },
     {
-      "id": "settings-in-app",
+      "id": "vault-live",
       "class": "feature",
-      "path": "src/app.postcss",
-      "status": "pending-extract",
-      "notes": ".settings-* still in the god sheet (~8478–9267)"
+      "path": "src/lib/styles/vault-live.postcss",
+      "loadedBy": "VaultLiveEditor.svelte"
+    },
+    {
+      "id": "vault-live-properties",
+      "class": "feature",
+      "path": "src/lib/styles/vault-live-properties.postcss",
+      "loadedBy": "VaultLiveProperties.svelte"
+    },
+    {
+      "id": "vault-find",
+      "class": "feature",
+      "path": "src/lib/styles/vault-find.postcss",
+      "loadedBy": "VaultFindBar.svelte"
+    },
+    {
+      "id": "vault-kanban",
+      "class": "feature",
+      "path": "src/lib/styles/vault-kanban.postcss",
+      "loadedBy": "KanbanBoardEditor.svelte"
+    },
+    {
+      "id": "vault-chart",
+      "class": "feature",
+      "path": "src/lib/styles/vault-chart.postcss",
+      "loadedBy": "VaultChartBuilderSheet.svelte"
+    },
+    {
+      "id": "vault-liquid",
+      "class": "feature",
+      "path": "src/lib/styles/vault-liquid.postcss",
+      "loadedBy": "VaultLiquidBuilderSheet.svelte / LedgerTableEditor.svelte / VaultViewBuilderSheet.svelte / VaultCalloutBuilderSheet.svelte"
+    },
+    {
+      "id": "vault-workshop",
+      "class": "feature",
+      "path": "src/lib/styles/vault-workshop.postcss",
+      "loadedBy": "VaultNoteWorkshop.svelte"
+    },
+    {
+      "id": "chat",
+      "class": "feature",
+      "path": "src/lib/styles/chat.postcss",
+      "loadedBy": "ChatMessageList.svelte / SessionSidebar.svelte"
+    },
+    {
+      "id": "composer",
+      "class": "feature",
+      "path": "src/lib/styles/composer.postcss",
+      "loadedBy": "ChatComposerBar.svelte"
+    },
+    {
+      "id": "settings",
+      "class": "feature",
+      "path": "src/lib/styles/settings.postcss",
+      "loadedBy": "SettingsPanel.svelte"
+    },
+    {
+      "id": "scripts",
+      "class": "feature",
+      "path": "src/lib/styles/scripts.postcss",
+      "loadedBy": "GraphemeScriptEditorPanel.svelte / ScriptsWorkbenchPanel.svelte"
+    },
+    {
+      "id": "context",
+      "class": "feature",
+      "path": "src/lib/styles/context.postcss",
+      "loadedBy": "MapPanel.svelte / ContextPanel.svelte"
+    },
+    {
+      "id": "markdown-content",
+      "class": "feature",
+      "path": "src/lib/styles/markdown-content.postcss",
+      "loadedBy": "MarkdownContent.svelte / VaultMarkdownPreview.svelte / MarkdownViewHost.svelte / Prose.svelte / Whisper.svelte"
+    },
+    {
+      "id": "lme",
+      "class": "feature",
+      "path": "src/lib/styles/lme.postcss",
+      "loadedBy": "LmePanel.svelte"
+    },
+    {
+      "id": "profiles",
+      "class": "feature",
+      "path": "src/lib/styles/profiles.postcss",
+      "loadedBy": "ProfilesPanel.svelte"
+    },
+    {
+      "id": "cron",
+      "class": "feature",
+      "path": "src/lib/styles/cron.postcss",
+      "loadedBy": "CronPanel.svelte"
+    },
+    {
+      "id": "command-spotlight",
+      "class": "feature",
+      "path": "src/lib/styles/command-spotlight.postcss",
+      "loadedBy": "CommandSpotlight.svelte"
+    },
+    {
+      "id": "artifact",
+      "class": "feature",
+      "path": "src/lib/styles/artifact.postcss",
+      "loadedBy": "ArtifactPanel.svelte"
+    },
+    {
+      "id": "work",
+      "class": "feature",
+      "path": "src/lib/styles/work.postcss",
+      "loadedBy": "WorkAsksPanel.svelte"
+    },
+    {
+      "id": "messaging",
+      "class": "feature",
+      "path": "src/lib/styles/messaging.postcss",
+      "loadedBy": "MessagingChannelsSettings.svelte"
+    },
+    {
+      "id": "shell-tabs",
+      "class": "feature",
+      "path": "src/lib/styles/shell-tabs.postcss",
+      "loadedBy": "ShellTabNotch.svelte"
+    },
+    {
+      "id": "status-desktop",
+      "class": "feature",
+      "path": "src/lib/styles/status-desktop.postcss",
+      "loadedBy": "StatusContextualSlot.svelte"
+    },
+    {
+      "id": "workshop-surfaces",
+      "class": "feature",
+      "path": "src/lib/styles/workshop-surfaces.postcss",
+      "loadedBy": "WorkshopShell.svelte / EnvironmentPresetSwitcher.svelte"
     }
   ]
 }

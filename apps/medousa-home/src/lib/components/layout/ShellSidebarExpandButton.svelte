@@ -1,7 +1,7 @@
 <script lang="ts">
   import { PanelLeftOpen } from "@lucide/svelte";
   import { environment } from "$lib/stores/environment.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { usesUnifiedTitlebar } from "$lib/platform";
 
   interface Props {

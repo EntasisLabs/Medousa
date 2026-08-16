@@ -8,7 +8,7 @@ import {
   emptyNoteEditorRuntime,
   type NoteEditorRuntime,
   type NoteEditorUiState,
-} from "$lib/stores/noteEditorRuntime";
+} from "$lib/vault/noteEditorRuntime";
 
 const MAX_RUNTIMES = 48;
 

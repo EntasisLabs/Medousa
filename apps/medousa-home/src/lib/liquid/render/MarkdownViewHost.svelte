@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/markdown-content.postcss";
   /**
    * Nested markdown inside Liquid organisms. Hosts inject `markdownView`
    * (MarkdownContent) so archetypes never import the hydrate owner.

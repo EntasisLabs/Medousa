@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/lme.postcss";
   import { onMount, untrack } from "svelte";
   import LazyFeatureView from "$lib/components/layout/LazyFeatureView.svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
@@ -7,7 +8,7 @@
   import VaultNewNoteDialog from "$lib/components/vault/VaultNewNoteDialog.svelte";
   import { automationsNav } from "$lib/stores/automationsNav.svelte";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import { loadLmeEditorHost } from "$lib/runtime/viewLoaders";

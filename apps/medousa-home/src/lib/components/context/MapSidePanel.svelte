@@ -1,8 +1,8 @@
 <script lang="ts">
   import { listVaultNotes } from "$lib/daemon";
   import { chat } from "$lib/stores/chat.svelte";
-  import { contextShell } from "$lib/stores/contextShell.svelte";
-  import { contextThreads } from "$lib/stores/contextThreads.svelte";
+  import { contextShell } from "$lib/context/contextShell.svelte";
+  import { contextThreads } from "$lib/context/contextThreads.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import type { VaultNoteSummary } from "$lib/types/vault";

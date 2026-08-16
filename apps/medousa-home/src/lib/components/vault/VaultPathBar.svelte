@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ChevronRight } from "@lucide/svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { vaultPathCrumbs, type VaultPathCrumb } from "$lib/utils/formatVault";

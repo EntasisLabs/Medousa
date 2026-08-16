@@ -2,8 +2,8 @@
   import { onDestroy, onMount } from "svelte";
   import ContextMapCanvas from "$lib/components/context/ContextMapCanvas.svelte";
   import MapMomentOverlay from "$lib/components/context/MapMomentOverlay.svelte";
-  import { contextShell } from "$lib/stores/contextShell.svelte";
-  import { contextThreads } from "$lib/stores/contextThreads.svelte";
+  import { contextShell } from "$lib/context/contextShell.svelte";
+  import { contextThreads } from "$lib/context/contextThreads.svelte";
   import type { LocusNodeDetailResponse, LocusNodeSummary } from "$lib/types/locus";
   import {
     applySimulationPositions,

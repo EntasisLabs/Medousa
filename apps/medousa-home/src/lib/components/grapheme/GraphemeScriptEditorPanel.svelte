@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/scripts.postcss";
   import { onMount } from "svelte";
   import CodeEditorOutline from "$lib/components/code/CodeEditorOutline.svelte";
   import CodeEditorProblems from "$lib/components/code/CodeEditorProblems.svelte";

@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { LoaderCircle } from "@lucide/svelte";
   import { connection } from "$lib/stores/connection.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
   import { isTauri } from "$lib/window";

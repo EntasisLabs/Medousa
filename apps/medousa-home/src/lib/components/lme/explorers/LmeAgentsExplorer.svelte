@@ -5,7 +5,7 @@
   import { automationDraft } from "$lib/stores/automationDraft.svelte";
   import { catalog } from "$lib/stores/catalog.svelte";
   import { chat } from "$lib/stores/chat.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import type { ManuscriptCatalogEntry } from "$lib/types/catalog";
   import { portLmeDock } from "$lib/utils/lmeDockHost";

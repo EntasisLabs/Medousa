@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/work.postcss";
   import { ArrowLeft } from "@lucide/svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
   import LiquidCardDetailSheet from "$lib/components/chat/LiquidCardDetailSheet.svelte";
@@ -6,7 +7,7 @@
   import { workspace } from "$lib/stores/workspace.svelte";
   import { automationsNav } from "$lib/stores/automationsNav.svelte";
   import { flowDraft } from "$lib/stores/flowDraft.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import {
     saveChatTurnToVault,
     showChatTurnSaveFeedback,

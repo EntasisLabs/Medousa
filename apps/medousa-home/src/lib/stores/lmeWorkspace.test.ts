@@ -15,14 +15,18 @@ const loadManuscriptDetail = vi.fn(async (_id: string) => {});
 const scriptTabs: Array<{ tabId: string; scriptId: string | null; name: string }> = [];
 let activeTabId: string | null = null;
 
+const labelByPathMap = new Map<string, string>([["notes/a.md", "Alpha"]]);
+const flushBeforeLeave = vi.fn(async () => true);
+
 vi.mock("$lib/stores/vault.svelte", () => ({
   vault: {
     selectedPath: null as string | null,
-    labelByPathMap: new Map<string, string>([["notes/a.md", "Alpha"]]),
+    labelByPathMap,
     previewingAttachmentPath: null as string | null,
     openNote,
     previewAttachment,
     closeAttachmentPreview,
+    flushBeforeLeave,
   },
 }));
 
@@ -134,7 +138,92 @@ vi.mock("$lib/stores/flows.svelte", () => ({
   flows: flowsMock,
 }));
 
-const { LmeWorkspaceStore } = await import("$lib/stores/lmeWorkspace.svelte");
+const { LmeWorkspaceStore } = await import("./lmeWorkspace.svelte");
+const { setLmeWorkspacePorts } = await import("$lib/runtime/lmeWorkspacePorts");
+
+const codeTabsForWorkA = [
+  {
+    tabId: "code:work-a:src/lib.rs",
+    path: "src/lib.rs",
+    title: "lib.rs",
+    line: 3,
+    loading: false,
+  },
+  {
+    tabId: "code:work-a:README.md",
+    path: "README.md",
+    title: "README.md",
+    line: 1,
+    loading: false,
+  },
+];
+
+function bindLmeTestPorts() {
+  setLmeWorkspacePorts({
+    selectedNotePath: () => null,
+    labelForPath: (path) => labelByPathMap.get(path) ?? path.split("/").pop() ?? path,
+    openNote: (path) => openNote(path),
+    flushBeforeLeave,
+    previewAttachment: (path, presentation) => previewAttachment(path, presentation),
+    previewingAttachmentPath: () => null,
+    closeAttachmentPreview,
+    setSidebarMode,
+    selectExternalPath,
+    openScriptById: async (scriptId) => {
+      await openScriptById(scriptId);
+      const tab = { tabId: "script-2", scriptId, name: "Hello" };
+      scriptTabs.push(tab);
+      activeTabId = tab.tabId;
+    },
+    openNewScriptTab: () => {
+      openNewTab();
+      const tab = { tabId: "script-1", scriptId: null, name: "Untitled 1" };
+      scriptTabs.push(tab);
+      activeTabId = tab.tabId;
+    },
+    scriptTabs: () => scriptTabs,
+    activeScriptTab: () => scriptTabs.find((tab) => tab.tabId === activeTabId) ?? null,
+    selectScriptTab: (tabId) => {
+      selectTab(tabId);
+      activeTabId = tabId;
+    },
+    closeScriptTab: (tabId) => {
+      closeTab(tabId);
+      const idx = scriptTabs.findIndex((tab) => tab.tabId === tabId);
+      if (idx >= 0) scriptTabs.splice(idx, 1);
+      if (activeTabId === tabId) {
+        activeTabId = scriptTabs.at(-1)?.tabId ?? null;
+      }
+    },
+    openCodeBuffer: async () => null,
+    codeTabsFor: (workId) => (workId === "work-a" ? codeTabsForWorkA : []),
+    hydrateCode: async () => {},
+    closeCodeBuffer: () => {},
+    isCodeDirty: () => false,
+    selectUndertaking: async () => {},
+    undertakingDetailId: () => null,
+    setUndertakingSelection: () => {},
+    artifactLabel: (artifactId) => (artifactId === "deck-1" ? "Pitch" : undefined),
+    selectArtifact,
+    loadManuscriptDetail: (manuscriptId) => {
+      void loadManuscriptDetail(manuscriptId);
+    },
+    composerOpen: () => flowsMock.composerOpen,
+    setComposerOpen: (open) => {
+      flowsMock.composerOpen = open;
+    },
+    composerDraftName: () => flowsMock.composerDraft.name,
+    openComposer,
+    closeComposer,
+    loadFlowDetail: (workflowId) => {
+      void loadDetail(workflowId);
+    },
+    loadFlowRuns: (workflowId) => {
+      void loadRuns(workflowId);
+    },
+    loadAutomationRuns: () => {},
+  });
+}
 
 describe("lmeWorkspace", () => {
   let store: InstanceType<typeof LmeWorkspaceStore>;
@@ -144,6 +233,7 @@ describe("lmeWorkspace", () => {
     activeTabId = null;
     flowsMock.composerOpen = false;
     flowsMock.composerDraft = { name: "" };
+    bindLmeTestPorts();
     store = new LmeWorkspaceStore();
     store.tabs = [];
     store.activeTabId = null;

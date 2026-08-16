@@ -36,7 +36,7 @@
     isSafeVaultNavigatePath,
   } from "$lib/utils/medousaNavigateClient";
   import { environment } from "$lib/stores/environment.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";

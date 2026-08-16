@@ -11,14 +11,15 @@ export type ChatSessionRuntime = {
   historyNotice: string | null;
   activeTurnId: string | null;
   turns: Map<string, TurnTicketState>;
-  workers: Map<string, WorkerLinkSnapshot>;
+  workers: Map<string, WorkerLink>;
   assistantId: string | null;
   transcriptEpoch: number;
   lastSeqByTurn: Map<string, number>;
   backgroundActivity: number;
 };
 
-type WorkerLinkSnapshot = {
+/** Worker handoff + synthesis bubbles tied to a parent chat turn. */
+export type WorkerLink = {
   workId: string;
   parentTurnId: string | null;
   messageId: string | null;

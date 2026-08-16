@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/vault-workshop.postcss";
   import { onMount } from "svelte";
   import {
     ExternalLink,
@@ -11,7 +12,7 @@
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import VaultNoteChatSessionMenu from "$lib/components/vault/VaultNoteChatSessionMenu.svelte";
   import { chat } from "$lib/stores/chat.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { noteWorkshop } from "$lib/stores/noteWorkshop.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import {

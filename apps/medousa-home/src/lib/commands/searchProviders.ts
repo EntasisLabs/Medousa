@@ -1,5 +1,5 @@
 import { chat } from "$lib/stores/chat.svelte";
-import { browserHistory } from "$lib/stores/browserHistory.svelte";
+import { browserHistory } from "$lib/browser/browserHistory.svelte";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
 import { vault } from "$lib/stores/vault.svelte";

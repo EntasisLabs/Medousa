@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { humanBrowserForWindow } from "$lib/stores/humanBrowserSurface";
-  import { browserHistory } from "$lib/stores/browserHistory.svelte";
+  import { humanBrowserForWindow } from "$lib/browser/humanBrowserSurface";
+  import { browserHistory } from "$lib/browser/browserHistory.svelte";
   import { hostnameFromUrl, tabDisplayLabel } from "$lib/utils/browserFavicon";
   import { setMobileBrowserUrlFocus } from "$lib/utils/mobileKeyboardViewport";
   import {

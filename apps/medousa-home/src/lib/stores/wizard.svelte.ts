@@ -4,7 +4,7 @@ import {
   bootstrapWizard,
   completeWizard,
 } from "$lib/utils/wizardApi";
-import { layout, saveLastSurface } from "$lib/stores/layout.svelte";
+import { layout, saveLastSurface } from "$lib/runtime/layout.svelte";
 import {
   applyWizardScreen1,
   startEngine,

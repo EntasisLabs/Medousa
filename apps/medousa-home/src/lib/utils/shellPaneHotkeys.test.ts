@@ -18,7 +18,7 @@ const shellTabs = {
 };
 
 vi.mock("$lib/stores/shellTabs.svelte", () => ({ shellTabs }));
-vi.mock("$lib/stores/layout.svelte", () => ({
+vi.mock("$lib/runtime/layout.svelte", () => ({
   layout: { toggleShellSidebarExpanded: vi.fn() },
 }));
 

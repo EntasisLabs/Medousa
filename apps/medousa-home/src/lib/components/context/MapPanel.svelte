@@ -1,9 +1,10 @@
 <script lang="ts">
+  import "$lib/styles/context.postcss";
   import ContextMapView from "$lib/components/context/ContextMapView.svelte";
   import { listVaultNotes } from "$lib/daemon";
   import { chat } from "$lib/stores/chat.svelte";
-  import { contextShell } from "$lib/stores/contextShell.svelte";
-  import { contextThreads } from "$lib/stores/contextThreads.svelte";
+  import { contextShell } from "$lib/context/contextShell.svelte";
+  import { contextThreads } from "$lib/context/contextThreads.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import type { VaultNoteSummary } from "$lib/types/vault";
   import { hasKnownChatSession } from "$lib/utils/contextCrossLinks";

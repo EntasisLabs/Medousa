@@ -21,7 +21,7 @@
   import { compileGraphemeSource, saveGraphemeScript } from "$lib/daemon";
   import { titleWithKeys } from "$lib/utils/keyboardShortcutsCatalog";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
-  import { scriptRenameUi } from "$lib/stores/scriptRenameUi.svelte";
+  import { scriptRenameUi } from "$lib/lme/scriptRenameUi.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
 
   interface Props {

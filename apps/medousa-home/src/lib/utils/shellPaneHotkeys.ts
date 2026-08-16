@@ -3,9 +3,9 @@ import {
   resetContentZoom,
   stepContentZoom,
 } from "$lib/config/contentZoom";
-import { layout } from "$lib/stores/layout.svelte";
+import { layout } from "$lib/runtime/layout.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
-import { toast } from "$lib/stores/toast.svelte";
+import { toast } from "$lib/runtime/toast.svelte";
 import { summonViewToolbar } from "$lib/utils/railPopoverSummon";
 
 const PREFIX_TIMEOUT_MS = 1200;

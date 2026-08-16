@@ -1,0 +1,475 @@
+/**
+ * Vault chart builder and liquid chart shell.
+ * Loaded by the destination feature entry; not imported from app.postcss.
+ */
+
+@layer features {
+
+
+  .liquid-chart-shell {
+    position: relative;
+    margin: 0.75rem 0;
+  }
+
+  .liquid-chart-toolbar {
+    display: none;
+    justify-content: flex-end;
+    margin-bottom: 0.35rem;
+  }
+
+  /* Preview: Configure always available. Live: focus = permission. */
+  .vault-markdown-preview .liquid-chart-toolbar {
+    display: flex;
+  }
+
+  .liquid-chart-configure {
+    appearance: none;
+    border: 1px solid rgb(var(--color-surface-500) / 0.35);
+    border-radius: 999px;
+    background: rgb(var(--color-surface-800) / 0.55);
+    padding: 0.15rem 0.55rem;
+    color: rgb(var(--color-surface-200));
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1.4;
+    text-decoration: none;
+    cursor: pointer;
+    transition:
+      color 120ms ease,
+      border-color 120ms ease,
+      background-color 120ms ease;
+  }
+
+  .liquid-chart-configure:hover {
+    border-color: rgb(var(--color-primary-500) / 0.45);
+    background: rgb(var(--color-primary-500) / 0.12);
+    color: rgb(var(--color-primary-200));
+  }
+
+  html:not(.dark) .liquid-chart-configure {
+    background: rgb(var(--color-surface-900) / 0.72);
+    border-color: rgb(var(--color-surface-500) / 0.4);
+    color: rgb(var(--color-surface-200));
+  }
+
+  /* Chart depth sheet — companion to the Live figure, not a settings form */
+  .vault-chart-builder-sheet {
+    width: min(22.5rem, calc(100vw - 2rem));
+    max-width: min(22.5rem, calc(100vw - 2rem));
+    max-height: calc(100vh - 2rem);
+    overflow: auto;
+    padding: 1rem 1.05rem 0.9rem;
+    border-radius: 0.95rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.22);
+    background: rgb(var(--color-surface-950) / 0.92);
+    box-shadow:
+      0 1px 0 rgb(var(--color-surface-50) / 0.04) inset,
+      0 18px 48px rgb(0 0 0 / 0.35);
+  }
+
+  .vault-chart-builder-sheet--data {
+    width: min(40rem, calc(100vw - 2rem));
+    max-width: min(40rem, calc(100vw - 2rem));
+  }
+
+  .vault-chart-data-title {
+    margin: 0;
+    color: rgb(var(--color-surface-50));
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.25;
+  }
+
+  .vault-chart-data-body {
+    min-width: 0;
+  }
+
+  .vault-chart-data-sheet-table {
+    margin-bottom: 0.35rem;
+  }
+
+  .vault-chart-builder-sheet--data .vault-chart-builder-footer {
+    justify-content: flex-end;
+  }
+
+  .vault-chart-builder-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.85rem;
+    border-bottom: 1px solid rgb(var(--color-surface-500) / 0.16);
+  }
+
+  .vault-chart-builder-identity {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 0;
+  }
+
+  .vault-chart-builder-title-input {
+    width: 100%;
+    border: none;
+    background: transparent;
+    padding: 0;
+    color: rgb(var(--color-surface-50));
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.25;
+  }
+
+  .vault-chart-builder-title-input::placeholder {
+    color: rgb(var(--theme-text-quiet));
+    font-weight: 500;
+  }
+
+  .vault-chart-builder-title-input:focus,
+  .vault-chart-builder-title-input:focus-visible {
+    outline: none;
+    border: none;
+    box-shadow: none;
+  }
+
+  .vault-chart-builder-desc-input {
+    width: 100%;
+    border: none;
+    background: transparent;
+    padding: 0;
+    color: rgb(var(--theme-text-tertiary));
+    font-size: 0.8125rem;
+    line-height: 1.35;
+    box-shadow: none;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .vault-chart-builder-desc-input::placeholder {
+    color: rgb(var(--theme-text-faint));
+  }
+
+  .vault-chart-builder-desc-input:focus,
+  .vault-chart-builder-desc-input:focus-visible {
+    outline: none;
+    border: none;
+    box-shadow: none;
+    background: transparent;
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  .vault-chart-builder-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    margin-bottom: 0.95rem;
+  }
+
+  .vault-chart-builder-add-desc {
+    appearance: none;
+    border: none;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    color: rgb(var(--theme-text-faint));
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .vault-chart-builder-add-desc:hover {
+    color: rgb(var(--theme-text-tertiary));
+  }
+
+  /* Fact rows — current value only; expand one property at a time */
+  .vault-chart-facts {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    margin: 0 0 1rem;
+  }
+
+  .vault-chart-fact {
+    border-radius: 0.45rem;
+    transition: background-color 140ms ease;
+  }
+
+  .vault-chart-fact--open {
+    background: rgb(var(--color-surface-900) / 0.45);
+    padding: 0.35rem 0.45rem 0.5rem;
+    margin: 0.1rem -0.45rem;
+  }
+
+  .vault-chart-fact__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+    min-height: 1.75rem;
+  }
+
+  .vault-chart-fact__row--marks {
+    align-items: center;
+  }
+
+  .vault-chart-fact__label {
+    flex: 0 0 3.5rem;
+    margin: 0;
+    color: rgb(var(--theme-text-quiet));
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+  }
+
+  .vault-chart-fact__value {
+    appearance: none;
+    border: none;
+    background: transparent;
+    padding: 0.2rem 0.35rem;
+    margin: 0;
+    border-radius: 0.3rem;
+    color: rgb(var(--color-surface-200));
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: right;
+  }
+
+  .vault-chart-fact__value:hover {
+    background: rgb(var(--color-surface-800) / 0.55);
+    color: rgb(var(--color-surface-50));
+  }
+
+  .vault-chart-fact__value--swash {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.35rem;
+  }
+
+  .vault-chart-fact__muted {
+    color: rgb(var(--theme-text-quiet));
+    font-weight: 500;
+  }
+
+  .vault-chart-fact__swash {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+  }
+
+  .vault-chart-fact__dot {
+    width: 0.7rem;
+    height: 0.7rem;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px rgb(var(--color-surface-50) / 0.12);
+  }
+
+  .vault-chart-fact__editor {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.4rem;
+    margin-top: 0.35rem;
+    animation: vault-chart-fact-open 140ms ease;
+  }
+
+  .vault-chart-fact__editor--color {
+    align-items: stretch;
+  }
+
+  @keyframes vault-chart-fact-open {
+    from {
+      opacity: 0;
+      transform: translateY(-0.15rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .vault-chart-fact__free {
+    width: 100%;
+    max-width: 14rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.28);
+    border-radius: 0.4rem;
+    background: rgb(var(--color-surface-950) / 0.4);
+    padding: 0.35rem 0.5rem;
+    color: rgb(var(--color-surface-100));
+    font-size: 0.75rem;
+  }
+
+  .vault-chart-fact__free:focus {
+    outline: none;
+    border-color: rgb(var(--color-surface-400) / 0.45);
+  }
+
+  .vault-chart-fact__free::placeholder {
+    color: rgb(var(--theme-text-faint));
+  }
+
+  .vault-chart-builder-kinds {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.2rem;
+    max-width: 100%;
+  }
+
+  .vault-chart-builder-kind {
+    appearance: none;
+    border: none;
+    border-radius: 0.3rem;
+    background: transparent;
+    padding: 0.22rem 0.45rem;
+    color: rgb(var(--theme-text-quiet));
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    text-transform: lowercase;
+    cursor: pointer;
+  }
+
+  .vault-chart-builder-kind:hover {
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  .vault-chart-builder-kind--on {
+    color: rgb(var(--color-surface-50));
+    background: rgb(var(--color-surface-800) / 0.7);
+  }
+
+  .vault-chart-builder-seg {
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.15rem;
+  }
+
+  .vault-chart-builder-seg__btn {
+    appearance: none;
+    border: none;
+    border-radius: 0.3rem;
+    background: transparent;
+    padding: 0.22rem 0.45rem;
+    color: rgb(var(--theme-text-quiet));
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    transition:
+      color 120ms ease,
+      background-color 120ms ease;
+  }
+
+  .vault-chart-builder-seg__btn:hover {
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  .vault-chart-builder-seg__btn--on {
+    color: rgb(var(--color-surface-50));
+    background: rgb(var(--color-surface-800) / 0.7);
+  }
+
+  .vault-chart-builder-marks {
+    flex: 1;
+    min-width: 0;
+    max-width: 12rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.28);
+    border-radius: 0.45rem;
+    background: rgb(var(--color-surface-900) / 0.4);
+    padding: 0.35rem 0.5rem;
+    color: rgb(var(--color-surface-100));
+    font-size: 0.75rem;
+  }
+
+  .vault-chart-builder-marks:focus {
+    outline: none;
+    border-color: rgb(var(--color-surface-400) / 0.45);
+  }
+
+  .vault-chart-builder-swatches {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.4rem;
+  }
+
+  .vault-chart-builder-swatch--on {
+    box-shadow:
+      0 0 0 2px rgb(var(--color-surface-950)),
+      0 0 0 3.5px rgb(var(--color-surface-300) / 0.55);
+  }
+
+  .vault-chart-builder-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.35rem;
+    padding-top: 0.15rem;
+  }
+
+  .vault-chart-builder-cancel {
+    border: 0;
+    border-radius: 0.4rem;
+    background: transparent;
+    padding: 0.4rem 0.7rem;
+    color: rgb(var(--theme-text-tertiary));
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .vault-chart-builder-cancel:hover {
+    color: rgb(var(--color-surface-200));
+  }
+
+  .vault-chart-builder-done {
+    appearance: none;
+    border: none;
+    border-radius: 0.45rem;
+    background: rgb(var(--color-surface-100) / 0.12);
+    padding: 0.4rem 0.85rem;
+    color: rgb(var(--color-surface-50));
+    font-size: 0.75rem;
+    font-weight: 550;
+    cursor: pointer;
+    transition: background-color 120ms ease;
+  }
+
+  .vault-chart-builder-done:hover {
+    background: rgb(var(--color-surface-100) / 0.18);
+  }
+
+  /* Embeds: shell pane glass — never light-paper flash inside the note. */
+  .vault-editor .liquid-chart,
+  .vault-editor .liquid-report,
+  html:not(.dark) .vault-editor .liquid-chart,
+  html:not(.dark) .vault-editor .liquid-report {
+    background: var(--vault-embed-bg);
+    border-color: var(--vault-embed-border);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  }
+
+  .vault-editor .liquid-chart-tooltip,
+  html:not(.dark) .vault-editor .liquid-chart-tooltip {
+    background: color-mix(
+      in srgb,
+      rgb(var(--shell-pane-bg, var(--color-surface-900))) 86%,
+      transparent
+    );
+    border-color: var(--vault-embed-border);
+    box-shadow: 0 10px 28px rgb(0 0 0 / 0.4);
+    color: rgb(var(--chart-fg));
+  }
+
+  .vault-chart-fact__value--static {
+    cursor: default;
+    opacity: 0.75;
+  }
+}

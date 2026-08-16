@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/shell-tabs.postcss";
   /**
    * Titlebar tab notch — compact active-pane tabs; opens into a quiet fused
    * pane map or cross-desktop tab search (same width as the notch).

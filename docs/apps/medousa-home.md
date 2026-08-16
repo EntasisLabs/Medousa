@@ -53,9 +53,10 @@ Allowed dependency direction ([ADR-020](../architecture/decisions/adr-020-featur
 Enforcement (home CI): `npm run check` (includes `check:runtime-graph`),
 `npm run test:h09`, `npm run build`, `npm run check:bundle-budget`.
 
-H09 code trains are complete. ARCH-001 and ARCH-002 are Mitigated on unit/CI
-exit tests. FRONT-001 stays Proposed: root CSS is still above 600 KiB.
-Validated/Shipped still need P08 packaged multi-OS evidence.
+H09 code trains emptied the ARCH-001/ARCH-002 unit/CI ledgers: `crossStoreEdges`
+is `[]` and no source owner is above 2,000 lines. ARCH-001 and ARCH-002 are
+Mitigated on unit/CI exit tests. FRONT-001 stays Proposed: root CSS is still
+above 600 KiB. Validated/Shipped still need P08 packaged multi-OS evidence.
 
 ## Transport stack
 

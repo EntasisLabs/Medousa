@@ -28,6 +28,7 @@ vi.mock("$lib/stores/chat.svelte", () => ({
     ],
     messagesFor: vi.fn(() => []),
     historyLoadingFor: vi.fn(() => false),
+    warmBackgroundSession: vi.fn(),
     switchSession: vi.fn(async function (this: { sessionId: string }, id: string) {
       this.sessionId = id;
     }),
@@ -35,7 +36,7 @@ vi.mock("$lib/stores/chat.svelte", () => ({
   },
 }));
 
-vi.mock("$lib/stores/chatStreamPool.svelte", () => ({
+vi.mock("$lib/chat/chatStreamPool.svelte", () => ({
   chatStreamPool: {
     acquire: vi.fn(),
     release: vi.fn(),
@@ -51,6 +52,7 @@ const lmeState = {
   },
   activateTab: vi.fn(async () => {}),
   closeTab: vi.fn(async () => {}),
+  confirmCloseTab: vi.fn(() => true),
   captureSession() {
     return { tabs: this.tabs, activeTabId: this.activeTabId };
   },
@@ -87,7 +89,7 @@ vi.mock("$lib/stores/humanBrowser.svelte", () => ({
   },
 }));
 
-vi.mock("$lib/stores/layout.svelte", () => ({
+vi.mock("$lib/runtime/layout.svelte", () => ({
   layout: layoutState,
 }));
 
@@ -99,6 +101,60 @@ vi.mock("$lib/stores/codeWorkspace.svelte", () => ({
     open: vi.fn(async () => null),
   },
 }));
+
+async function loadShellTabs() {
+  const { setShellTabPorts } = await import("$lib/runtime/shellTabPorts");
+  const { chat } = await import("$lib/stores/chat.svelte");
+  const { vault } = await import("$lib/stores/vault.svelte");
+  const { humanBrowser } = await import("$lib/stores/humanBrowser.svelte");
+  const { lmeWorkspace } = await import("$lib/stores/lmeWorkspace.svelte");
+  const { codeWorkspace } = await import("$lib/stores/codeWorkspace.svelte");
+  setShellTabPorts({
+    chat: {
+      sessionId: () => chat.sessionId,
+      sessions: () => chat.sessions,
+      messagesFor: (sessionId) => chat.messagesFor(sessionId),
+      historyLoadingFor: (sessionId) => chat.historyLoadingFor(sessionId),
+      warmBackgroundSession: (sessionId) => {
+        chat.warmBackgroundSession(sessionId);
+      },
+      switchSession: (sessionId) => chat.switchSession(sessionId),
+      newSession: (options) => {
+        void chat.newSession(options);
+      },
+    },
+    lme: {
+      tabs: () => lmeWorkspace.tabs as never,
+      activeTab: () => lmeWorkspace.activeTab as never,
+      activeTabId: () => lmeWorkspace.activeTabId,
+      captureSession: () => lmeWorkspace.captureSession() as never,
+      restoreSession: (value) => lmeWorkspace.restoreSession(value) as never,
+      activateTab: (tabId) => lmeWorkspace.activateTab(tabId),
+      closeTab: (tabId, options) => lmeWorkspace.closeTab(tabId, options),
+      confirmCloseTab: (tabId) => lmeWorkspace.confirmCloseTab(tabId),
+    },
+    vault: {
+      flushBeforeLeave: () => vault.flushBeforeLeave(),
+      openNote: (path) => vault.openNote(path),
+      isFocusedPath: (path) => vault.isFocusedPath(path),
+    },
+    browser: {
+      tabs: () => humanBrowser.tabs,
+      activeTab: () => humanBrowser.activeTab,
+      activateTab: (tabId) => humanBrowser.activateTab(tabId),
+      closeTab: (tabId) => {
+        void humanBrowser.closeTab(tabId);
+      },
+      openTab: async (url) => {
+        await humanBrowser.openTab(url);
+      },
+    },
+    code: {
+      resetForWorkshopSwitch: () => codeWorkspace.resetForWorkshopSwitch(),
+    },
+  });
+  return import("./shellTabs.svelte");
+}
 
 describe("shellTabs store", () => {
   beforeEach(() => {
@@ -123,7 +179,7 @@ describe("shellTabs store", () => {
   });
 
   it("applies onboarding pane shapes without seeding tabs", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
 
     for (const [choice, panes] of [
       ["focused", 1],
@@ -143,7 +199,7 @@ describe("shellTabs store", () => {
   });
 
   it("opens chat tabs uniquely per group and activates", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     const a = shellTabs.openChat("session-a", { activate: true });
     const b = shellTabs.openChat("session-b", { activate: true });
     const again = shellTabs.openChat("session-a", { activate: true });
@@ -159,7 +215,7 @@ describe("shellTabs store", () => {
   });
 
   it("returns to the focused chat session instead of the first chat tab", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     const { chat } = await import("$lib/stores/chat.svelte");
     shellTabs.openChat("session-a", { activate: true });
     const latest = shellTabs.openChat("session-b", { activate: true });
@@ -174,7 +230,7 @@ describe("shellTabs store", () => {
   });
 
   it("keeps governed terminal ownership on the shell tab", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     const tabId = shellTabs.openTerminal("pty-a", {
       activate: true,
       title: "Terminal · Refactor auth",
@@ -190,7 +246,7 @@ describe("shellTabs store", () => {
   });
 
   it("splits into a second pane", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     shellTabs.openChat("session-a", { activate: true });
     expect(shellTabs.splitActive("right")).toBe(true);
     expect(shellTabs.paneCount).toBe(2);
@@ -198,7 +254,7 @@ describe("shellTabs store", () => {
   });
 
   it("splits by retaining the active tab in both panes", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     lmeState.tabs = [
       { tabId: "lme-1", kind: "note", path: "notes/split.md", title: "Split note" },
     ];
@@ -222,7 +278,7 @@ describe("shellTabs store", () => {
   });
 
   it("can move the active tab into a new split as a separate command", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     lmeState.tabs = [
       { tabId: "lme-2", kind: "note", path: "notes/move.md", title: "Move note" },
     ];
@@ -240,7 +296,7 @@ describe("shellTabs store", () => {
   });
 
   it("splits a host pane with a dragged tab on an edge", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     const hostId = shellTabs.openChat("session-a", { activate: true });
     expect(hostId).toBeTruthy();
     const guestId = shellTabs.openChat("session-b", { activate: true });
@@ -257,7 +313,7 @@ describe("shellTabs store", () => {
   });
 
   it("refuses a fifth pane", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     shellTabs.openChat("session-a", { activate: true });
     expect(shellTabs.splitActive("right")).toBe(true);
     expect(shellTabs.splitActive("down")).toBe(true);
@@ -267,7 +323,7 @@ describe("shellTabs store", () => {
   });
 
   it("moves a tab to another desktop", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     const tabId = shellTabs.openChat("session-a", { activate: true });
     expect(tabId).toBeTruthy();
     const otherId = shellTabs.createDesktop("Staging", { activate: false });
@@ -279,7 +335,7 @@ describe("shellTabs store", () => {
   });
 
   it("moves a pane's tabs to another desktop and drops the pane", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     const stayId = shellTabs.openChat("session-a", { activate: true });
     const moveId = shellTabs.openChat("session-b", { activate: true });
     expect(stayId).toBeTruthy();
@@ -305,7 +361,7 @@ describe("shellTabs store", () => {
   });
 
   it("collects search hits across desktops and reveals them", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     const mainTab = shellTabs.openChat("session-a", { activate: true });
     expect(mainTab).toBeTruthy();
     const otherDesktop = shellTabs.createDesktop("Research");
@@ -328,7 +384,7 @@ describe("shellTabs store", () => {
   });
 
   it("closes a pane by merging tabs into the sibling", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     const tabId = shellTabs.openChat("session-a", { activate: true });
     expect(tabId).toBeTruthy();
     expect(shellTabs.splitActive("right")).toBe(true);
@@ -353,7 +409,7 @@ describe("shellTabs store", () => {
   });
 
   it("opens singleton surface tabs once", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     const first = shellTabs.openSurface("peers", { activate: true });
     const second = shellTabs.openSurface("peers", { activate: true });
     expect(first).toBe(second);
@@ -361,14 +417,14 @@ describe("shellTabs store", () => {
   });
 
   it("keeps editor groups shaped for splits", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     shellTabs.openSurface("map", { activate: true });
     expect(shellTabs.groups.length).toBeGreaterThanOrEqual(1);
     expect(shellTabs.splitRoot.type).toBe("group");
   });
 
   it("persists and restores split layout across bootstrap", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     shellTabs.bootstrap();
     shellTabs.openChat("session-a", { activate: true });
     expect(shellTabs.splitActive("right")).toBe(true);
@@ -385,7 +441,7 @@ describe("shellTabs store", () => {
     expect(shellTabs.activeDesktopName).toBe("Main");
 
     vi.resetModules();
-    const { shellTabs: restored } = await import("./shellTabs.svelte");
+    const { shellTabs: restored } = await loadShellTabs();
     const { chat } = await import("$lib/stores/chat.svelte");
     vi.mocked(chat.switchSession).mockClear();
     restored.bootstrap();
@@ -404,14 +460,14 @@ describe("shellTabs store", () => {
   });
 
   it("keeps the restored chat tab authoritative over a stale session key", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     shellTabs.bootstrap();
     shellTabs.openChat("session-a", { activate: true });
 
     vi.resetModules();
     const { chat } = await import("$lib/stores/chat.svelte");
     chat.sessionId = "session-new";
-    const { shellTabs: restored } = await import("./shellTabs.svelte");
+    const { shellTabs: restored } = await loadShellTabs();
     restored.bootstrap();
 
     expect(restored.activeTab).toMatchObject({
@@ -424,7 +480,7 @@ describe("shellTabs store", () => {
   });
 
   it("isolates durable workspace sessions by workshop", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     shellTabs.bootstrap("personal");
     shellTabs.openSurface("map", { activate: true });
     expect(shellTabs.activeTab).toMatchObject({ kind: "surface", surfaceId: "map" });
@@ -444,7 +500,7 @@ describe("shellTabs store", () => {
   });
 
   it("restores shell and code workspace descriptors from one snapshot", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     shellTabs.bootstrap();
     const lmeTab = {
       tabId: "code-file:work-a:src%2Flib.rs",
@@ -465,7 +521,7 @@ describe("shellTabs store", () => {
     vi.resetModules();
     lmeState.tabs = [];
     lmeState.activeTabId = null;
-    const { shellTabs: restored } = await import("./shellTabs.svelte");
+    const { shellTabs: restored } = await loadShellTabs();
     restored.bootstrap();
 
     expect(lmeState.tabs).toEqual([lmeTab]);
@@ -512,7 +568,7 @@ describe("shellTabs store", () => {
       }),
     );
 
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     // Simulate ShellTabHost effects firing before onMount bootstrap.
     lmeState.tabs = [];
     lmeState.activeTabId = null;
@@ -548,7 +604,7 @@ describe("shellTabs store", () => {
     };
     localStorage.setItem("medousa-home-shell-tabs-v2", JSON.stringify(v2));
 
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     shellTabs.bootstrap();
     expect(shellTabs.desktops).toHaveLength(1);
     expect(shellTabs.activeDesktopName).toBe("Main");
@@ -574,7 +630,7 @@ describe("shellTabs store", () => {
       activeDesktopId: "desktop-main",
     }));
 
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     shellTabs.bootstrap();
     expect(lmeState.tabs).toEqual([expect.objectContaining({
       tabId: "code-file:work-a:src%2Flib.rs",
@@ -590,8 +646,8 @@ describe("shellTabs store", () => {
   });
 
   it("switches desktops and keeps layouts independent", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
-    const { chatStreamPool } = await import("./chatStreamPool.svelte");
+    const { shellTabs } = await loadShellTabs();
+    const { chatStreamPool } = await import("$lib/chat/chatStreamPool.svelte");
     shellTabs.openChat("session-a", { activate: true });
     const researchId = shellTabs.createDesktop("Research");
     await vi.waitFor(() => expect(shellTabs.activeDesktopId).toBe(researchId));
@@ -614,7 +670,7 @@ describe("shellTabs store", () => {
   });
 
   it("does not seed a new desktop with the focused chat from another desktop", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     const { chat } = await import("$lib/stores/chat.svelte");
     shellTabs.openChat("session-a", { activate: true });
     const researchId = shellTabs.createDesktop("Research");
@@ -627,7 +683,7 @@ describe("shellTabs store", () => {
   });
 
   it("does not mirror notes from another desktop when the global LME tab changes", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     lmeState.tabs = [
       { tabId: "note-a", kind: "note", path: "notes/a.md", title: "A" },
       { tabId: "note-b", kind: "note", path: "notes/b.md", title: "B" },
@@ -648,7 +704,7 @@ describe("shellTabs store", () => {
   });
 
   it("allows the same chat session on two desktops without stealing", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     shellTabs.openChat("session-a", { activate: true });
     const researchId = shellTabs.createDesktop("Research");
     await vi.waitFor(() => expect(shellTabs.activeDesktopId).toBe(researchId));
@@ -658,7 +714,7 @@ describe("shellTabs store", () => {
   });
 
   it("does not reassign desktops on routine persist (avoids effect storms)", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     shellTabs.bootstrap();
     shellTabs.openChat("session-a", { activate: true });
     const before = shellTabs.desktops;
@@ -670,7 +726,7 @@ describe("shellTabs store", () => {
   });
 
   it("lists chat sessions for live restore with active pane first", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     shellTabs.openChat("session-a", { activate: true });
     shellTabs.splitActive("right");
     // Split retains session-a in both panes; open a distinct chat in the other pane.
@@ -686,7 +742,7 @@ describe("shellTabs store", () => {
   });
 
   it("closing the last chat tab leaves the pane empty (no library placeholder)", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     const tabId = shellTabs.openChat("session-a", { activate: true });
     expect(tabId).toBeTruthy();
     shellTabs.close(tabId!);
@@ -695,7 +751,7 @@ describe("shellTabs store", () => {
   });
 
   it("enterLmeFamily does not seed empty Workspace or Code surface tabs", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     shellTabs.bootstrap();
     shellTabs.openChat("session-a", { activate: true });
 
@@ -708,7 +764,7 @@ describe("shellTabs store", () => {
   });
 
   it("enterLmeFamily reactivates an open document in that family", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     shellTabs.bootstrap();
     const note = {
       tabId: "note-a",
@@ -733,7 +789,7 @@ describe("shellTabs store", () => {
   });
 
   it("openDestination for notes/code uses enterLmeFamily", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     shellTabs.bootstrap();
     shellTabs.openChat("session-a", { activate: true });
     shellTabs.openDestination("notes");
@@ -743,7 +799,7 @@ describe("shellTabs store", () => {
   });
 
   it("opens multiple distinct chat tabs in the same group", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     const a = shellTabs.openChat("session-a", { activate: true });
     const b = shellTabs.openChat("session-b", { activate: true });
     expect(a).toBeTruthy();
@@ -757,7 +813,7 @@ describe("shellTabs store", () => {
   });
 
   it("moves a tab between panes", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
+    const { shellTabs } = await loadShellTabs();
     const a = shellTabs.openChat("session-a", { activate: true });
     expect(shellTabs.splitActive("right")).toBe(true);
     expect(shellTabs.groups).toHaveLength(2);

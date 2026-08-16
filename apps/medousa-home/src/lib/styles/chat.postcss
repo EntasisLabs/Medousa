@@ -1,0 +1,541 @@
+/**
+ * Chat transcript and session sidebar.
+ * Loaded by the destination feature entry; not imported from app.postcss.
+ */
+
+@layer features {
+
+
+  .session-sidebar-header {
+    @apply flex items-center justify-between gap-2 border-b border-surface-500/40 px-3 py-2.5;
+  }
+
+  .session-sidebar-icon-btn {
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-content-tertiary transition hover:bg-surface-700/70 hover:text-surface-100;
+  }
+
+  .session-sidebar-toolbar {
+    @apply flex items-center gap-1.5 border-b border-surface-500/35 px-2.5 py-2;
+  }
+
+  .session-sidebar-toolbar--sheet {
+    @apply px-3;
+  }
+
+  .session-sidebar-search {
+    @apply flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 transition;
+    background-color: rgb(var(--color-surface-900) / 0.45);
+  }
+
+  .session-sidebar-search:focus-within {
+    background-color: rgb(var(--color-surface-800) / 0.65);
+  }
+
+  .session-sidebar-search-icon {
+    @apply shrink-0 text-content-quiet;
+  }
+
+  .session-sidebar-search-input {
+    @apply min-w-0 flex-1 border-0 bg-transparent p-0 text-[13px] text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0;
+  }
+
+  .session-sidebar-search-input::-webkit-search-cancel-button,
+  .session-sidebar-search-input::-webkit-search-decoration {
+    -webkit-appearance: none;
+  }
+
+  .session-sidebar-new {
+    @apply inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs font-medium text-content-tertiary transition hover:bg-surface-700/60 hover:text-surface-100;
+  }
+
+  .session-sidebar-new-label {
+    @apply hidden sm:inline;
+  }
+
+  .session-sidebar-list {
+    @apply flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pb-2 pt-1.5;
+    /* Keep gutter reserved so revealing the thumb never shoves titles. */
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  .session-sidebar-list:hover,
+  .session-sidebar-list:focus-within,
+  .session-sidebar-list:active {
+    scrollbar-color: rgb(var(--color-surface-500) / 0.32) transparent;
+  }
+
+  .session-sidebar-list::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .session-sidebar-list::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .session-sidebar-list::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: transparent;
+  }
+
+  .session-sidebar-list:hover::-webkit-scrollbar-thumb,
+  .session-sidebar-list:focus-within::-webkit-scrollbar-thumb,
+  .session-sidebar-list:active::-webkit-scrollbar-thumb {
+    background: rgb(var(--color-surface-500) / 0.32);
+  }
+
+  .session-sidebar-list:hover::-webkit-scrollbar-thumb:hover,
+  .session-sidebar-list:focus-within::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--color-surface-400) / 0.45);
+  }
+
+  .session-sidebar-section-title {
+    @apply px-2.5 pb-1.5 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-content-quiet;
+  }
+
+  .session-sidebar-section-list {
+    @apply space-y-1;
+  }
+
+  .session-sidebar-empty {
+    @apply px-3 py-8 text-center text-xs leading-relaxed text-content-tertiary;
+  }
+
+  .session-row {
+    @apply relative flex items-stretch rounded-md transition hover:bg-surface-800/70;
+  }
+
+  .session-row:focus-within {
+    @apply bg-surface-800/70;
+  }
+
+  .session-row-main {
+    @apply flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-2 text-left;
+  }
+
+  .session-row-title {
+    @apply block min-w-0 truncate text-[13px] font-medium leading-snug text-surface-100;
+  }
+
+  .session-row-shared-mark {
+    @apply mr-1 inline-block rounded border border-surface-500/45 px-1.5 py-px align-baseline text-[10px] font-semibold uppercase tracking-wide text-content-tertiary;
+  }
+
+  .session-row-meta {
+    @apply inline-flex shrink-0 items-center justify-end gap-2 self-center px-2 text-[10px] leading-none text-content-quiet transition-opacity duration-150;
+  }
+
+  .session-row-when {
+    @apply tabular-nums text-content-quiet;
+  }
+
+  .session-row-turns {
+    @apply inline-flex items-center gap-0.5 text-content-quiet;
+  }
+
+  /*
+   * Actions sit out of flow so idle rows reclaim that width for the title.
+   * On hover/focus they fade in over the meta (same trailing corner).
+   * Scrim uses surface-800 to match rail hover / selected overlays.
+   */
+  .session-row-actions {
+    @apply absolute inset-y-0 right-0 z-[1] flex items-center gap-0 pr-1 pl-4 opacity-0 pointer-events-none transition-opacity duration-150;
+    background: linear-gradient(
+      to right,
+      transparent,
+      rgb(var(--color-surface-800) / 0.92) 0.85rem,
+      rgb(var(--color-surface-800) / 0.98) 100%
+    );
+  }
+
+  .session-row:hover .session-row-actions,
+  .session-row:focus-within .session-row-actions {
+    @apply pointer-events-auto opacity-100;
+  }
+
+  .session-row:hover .session-row-meta,
+  .session-row:focus-within .session-row-meta {
+    @apply opacity-0;
+  }
+
+  .session-row--touch .session-row-meta {
+    @apply hidden;
+  }
+
+  .session-row--touch .session-row-actions {
+    @apply pointer-events-auto relative inset-auto opacity-100;
+    background: transparent;
+    padding-left: 0;
+  }
+
+  .session-row-action {
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-content-quiet transition hover:bg-surface-800/70 hover:text-surface-100;
+  }
+
+  .session-row-action--danger:hover {
+    @apply text-content-error;
+  }
+
+  .session-row-action--pinned {
+    @apply text-content-warning;
+  }
+
+  .session-row-action--pinned:hover {
+    @apply text-content-warning;
+  }
+
+  .duet-stage-whisper {
+    @apply text-[11px] italic leading-snug text-content-faint/90;
+  }
+
+  .chat-pane {
+    @apply relative flex min-h-0 min-w-0 flex-1 flex-col bg-surface-900;
+  }
+
+  .chat-body {
+    @apply relative min-h-0 flex-1;
+  }
+
+  .chat-scroll {
+    @apply h-full overflow-y-auto px-8 py-5;
+    scrollbar-gutter: stable;
+  }
+
+  .chat-scroll--presence {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .chat-scroll-fade {
+    @apply pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-12;
+    background: linear-gradient(
+      to top,
+      rgb(var(--color-surface-900)),
+      rgb(var(--color-surface-900) / 0)
+    );
+  }
+
+  .chat-turn-break {
+    @apply mt-7;
+  }
+
+  .chat-turn-beat {
+    @apply w-full min-w-0;
+  }
+
+  .chat-voice {
+    @apply max-w-[min(100%,44rem)] leading-[1.65] text-surface-100;
+    font-size: calc(15px * var(--content-zoom, 1));
+  }
+
+  .chat-voice-full {
+    @apply max-w-full w-full;
+  }
+
+  .chat-voice .markdown-content {
+    @apply leading-[1.65];
+    font-size: calc(15px * var(--content-zoom, 1));
+  }
+
+  /* Timeline shell: prose keeps a soft measure; embeds use the full column */
+  .chat-voice-full .markdown-content > p,
+  .chat-voice-full .markdown-content > ul,
+  .chat-voice-full .markdown-content > ol {
+    max-width: min(100%, 44rem);
+  }
+
+  .chat-user-bubble {
+    @apply ml-auto max-w-[min(100%,30rem)] rounded-2xl rounded-br-md border border-surface-600/20 bg-surface-800/50 px-4 py-2.5 text-sm leading-relaxed text-surface-100;
+  }
+
+  .chat-user-bubble-compact {
+    @apply max-w-[min(100%,26rem)] px-3 py-2 text-[13px];
+  }
+
+  .chat-voice-compact {
+    @apply max-w-[min(100%,36rem)] text-sm leading-relaxed;
+  }
+
+  .chat-voice-full.chat-voice-compact {
+    @apply max-w-full;
+  }
+
+  /* Quiet turn actions — bottom of assistant beat, hover/focus reveal */
+  .chat-turn-actions {
+    @apply mt-2 flex items-center justify-end gap-1;
+  }
+
+  .chat-model-receipt {
+    @apply mr-auto inline-flex items-center gap-1 text-[11px] text-content-tertiary;
+  }
+
+  .chat-turn-action {
+    @apply opacity-0 transition-opacity duration-200;
+  }
+
+  .chat-turn-actions--mobile {
+    opacity: 0.4;
+  }
+
+  .group:hover .chat-turn-action,
+  .group:focus-within .chat-turn-action,
+  .chat-turn-actions--mobile .chat-turn-action,
+  .chat-turn-actions--mobile:hover .chat-turn-action,
+  .chat-turn-actions--mobile:focus-within .chat-turn-action {
+    @apply opacity-100;
+  }
+
+  .chat-turn-actions:focus-within {
+    @apply opacity-100;
+  }
+
+  .chat-turn-action {
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-content-tertiary transition-colors;
+  }
+
+  .chat-turn-action:hover {
+    @apply bg-surface-800/70 text-surface-100;
+  }
+
+  .chat-turn-action:focus-visible {
+    @apply opacity-100 outline-none ring-1 ring-surface-500/50;
+  }
+
+  .chat-ask-rail {
+    @apply mb-8 border-b pb-8;
+    border-color: rgb(var(--color-surface-700) / 0.4);
+  }
+
+  .chat-ask-rail-header {
+    @apply mb-4;
+  }
+
+  .chat-ask-thread {
+    @apply rounded-2xl border p-4;
+    border-color: rgb(var(--color-surface-700) / 0.35);
+    background-color: rgb(var(--color-surface-950) / 0.4);
+  }
+
+  .chat-ask-thread-header {
+    @apply mb-4 flex items-start justify-between gap-3 border-b pb-3;
+    border-color: rgb(var(--color-surface-800) / 0.8);
+  }
+
+  .chat-ask-thread-body {
+    @apply pt-1;
+  }
+
+  .chat-composer {
+    @apply relative z-10 mx-auto w-full max-w-[40rem] shrink-0 px-4 pb-2 pt-1.5;
+  }
+
+  .chat-composer-bar {
+    @apply rounded-2xl px-3 py-1.5;
+    border: 1px solid rgb(var(--color-surface-600) / 0.22);
+    background-color: rgb(var(--color-surface-800) / 0.35);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.03);
+  }
+
+  .chat-composer-bar:focus-within {
+    border-color: rgb(var(--color-surface-500) / 0.35);
+    background-color: rgb(var(--color-surface-800) / 0.5);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.04),
+      0 0 0 3px rgb(var(--color-primary-500) / 0.08);
+  }
+
+  .chat-composer-shell {
+    @apply items-center gap-1 px-1.5 py-1;
+  }
+
+  .chat-composer-drop-target {
+    @apply relative;
+  }
+
+  .chat-composer-drop-overlay {
+    @apply pointer-events-none absolute inset-0 z-[230] flex items-center justify-center rounded-2xl border border-dashed text-xs font-medium;
+    border-color: rgb(var(--color-primary-400) / 0.72);
+    color: rgb(var(--color-primary-200));
+    background: rgb(var(--color-surface-950) / 0.82);
+    box-shadow:
+      inset 0 0 0 1px rgb(var(--color-primary-500) / 0.12),
+      0 0 0 3px rgb(var(--color-primary-500) / 0.08);
+    backdrop-filter: blur(8px);
+  }
+
+  .chat-composer-drop-target-active .chat-composer-shell {
+    border-color: rgb(var(--color-primary-400) / 0.45);
+  }
+
+  .chat-composer-bar.chat-composer-shell {
+    @apply px-1.5 py-1;
+  }
+
+  .chat-media-parts {
+    @apply mt-1.5 flex flex-wrap justify-end gap-2;
+  }
+
+  .chat-media-thumbnail {
+    @apply relative block h-[6.75rem] w-36 overflow-hidden rounded-xl border border-surface-500/35 bg-surface-900/55 text-left transition;
+    box-shadow: 0 7px 22px rgb(var(--color-surface-950) / 0.2);
+  }
+
+  .chat-media-thumbnail:hover {
+    border-color: rgb(var(--color-surface-400) / 0.55);
+    transform: translateY(-1px);
+  }
+
+  .chat-media-parts-compact .chat-media-thumbnail {
+    @apply h-[5.25rem] w-28;
+  }
+
+  .chat-media-thumbnail-image {
+    @apply h-full w-full object-cover;
+  }
+
+  .chat-media-thumbnail-shine {
+    @apply pointer-events-none absolute inset-0;
+    box-shadow: inset 0 0 0 1px rgb(var(--color-surface-50) / 0.04);
+  }
+
+  .chat-media-file {
+    @apply inline-flex max-w-full items-center rounded-full border border-surface-500/45 bg-surface-800/80 px-2.5 py-1 text-[11px] text-primary-200;
+  }
+
+  .chat-media-preview-backdrop {
+    @apply fixed inset-0 z-[260] flex items-center justify-center p-6;
+    background: rgb(var(--color-surface-950) / 0.84);
+    backdrop-filter: blur(14px);
+  }
+
+  .chat-media-preview-dialog {
+    @apply relative flex max-h-full max-w-full flex-col overflow-hidden rounded-2xl border border-surface-500/35 shadow-2xl;
+    background: rgb(var(--color-surface-950));
+  }
+
+  .chat-media-preview-image {
+    @apply block max-h-[82vh] max-w-[88vw] object-contain;
+  }
+
+  .chat-media-preview-label {
+    @apply max-w-[88vw] truncate border-t border-surface-600/35 px-3 py-2 text-xs text-content-tertiary;
+  }
+
+  .chat-media-preview-close {
+    @apply absolute right-2 top-2 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full border border-surface-500/45 text-surface-200 shadow-md transition hover:bg-surface-800;
+    background: rgb(var(--color-surface-950) / 0.8);
+    backdrop-filter: blur(10px);
+  }
+
+  .chat-tool-footnote > summary {
+    @apply list-none;
+  }
+
+  .chat-tool-footnote {
+    @apply mt-4 border-0 bg-transparent p-0;
+  }
+
+  .chat-tool-footnote > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  /* Chat voice: section titles read like presentation labels */
+  .chat-voice .markdown-content h2 {
+    @apply mt-7 mb-3 text-[0.8rem] font-semibold uppercase tracking-[0.06em] text-content-tertiary;
+  }
+
+  .chat-voice .markdown-content h3 {
+    @apply mt-5 mb-2 text-[0.95rem] font-medium normal-case tracking-tight text-surface-200;
+  }
+
+  .chat-voice .markdown-content h2 + .liquid-md-embed,
+  .chat-voice .markdown-content h3 + .liquid-md-embed,
+  .chat-voice .markdown-content p + .liquid-md-embed {
+    margin-top: 0.35rem;
+  }
+
+  .chat-voice .markdown-content .markdown-table-scroll {
+    margin-block: 1.1rem;
+  }
+
+  .chat-scroll-fab {
+    @apply fixed z-20 flex h-11 w-11 items-center justify-center rounded-full border border-surface-500/50 bg-surface-800/95 text-surface-100 shadow-lg backdrop-blur-sm transition active:scale-95;
+    right: 1rem;
+    bottom: 1.25rem;
+  }
+  @media (max-width: 640px) {
+    .chat-scroll-fab {
+      bottom: calc(var(--mobile-bottom-chrome-height, 5.5rem) + 0.75rem);
+    }  }
+
+
+  .chat-restore-toast {
+    @apply fixed left-1/2 z-40 flex max-w-md -translate-x-1/2 items-center gap-3 rounded-lg border border-primary-500/20 px-3 py-2 text-[11px] text-content-secondary shadow-lg backdrop-blur-sm;
+    bottom: 4.75rem;
+    background-color: rgb(var(--color-surface-900) / 0.94);
+  }
+
+  .chat-restore-toast-mobile {
+    @apply left-4 right-4 max-w-none translate-x-0;
+    bottom: calc(var(--mobile-bottom-chrome-height, 5.5rem) + 1rem);
+  }
+
+  .chat-restore-toast-dismiss {
+    @apply shrink-0 px-1 text-content-quiet transition hover:text-content-secondary;
+  }
+
+  .mobile-chat-bubble-assistant .chat-voice,
+  .mobile-chat-bubble-assistant .markdown-content,
+  .mobile-chat-voice-full .chat-voice,
+  .mobile-chat-voice-full .markdown-content {
+    @apply min-w-0 max-w-full overflow-x-hidden;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  /* Quiet under-composer runtime row (Cursor-style meta). */
+  .chat-runtime-under {
+    @apply mt-1 flex min-h-0 items-center gap-4 px-1;
+  }
+
+  .chat-runtime-picker {
+    @apply relative inline-flex min-w-0 max-w-full;
+  }
+
+  .chat-runtime-trigger {
+    @apply inline-flex max-w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-[11px] transition-colors duration-150;
+    border: 1px solid transparent;
+    background: transparent;
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  .chat-runtime-trigger:hover:not(:disabled),
+  .chat-runtime-trigger-open {
+    @apply text-content-secondary;
+  }
+
+  .chat-runtime-trigger:disabled {
+    @apply pointer-events-none opacity-45;
+  }
+
+  .chat-runtime-trigger-label {
+    @apply truncate font-medium;
+  }
+
+  .chat-runtime-trigger-chevron {
+    @apply opacity-50 transition-transform duration-150;
+  }
+
+  .chat-runtime-trigger-open .chat-runtime-trigger-chevron {
+    transform: rotate(180deg);
+  }
+
+  .chat-runtime-option {
+    @apply flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition hover:bg-surface-800/70;
+  }
+
+  .chat-runtime-option-active {
+    @apply bg-surface-800/55;
+  }
+}

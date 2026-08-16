@@ -1,0 +1,377 @@
+/**
+ * Shell tab notch / drawer chrome.
+ * Loaded by the destination feature entry; not imported from app.postcss.
+ */
+
+@layer features {
+
+
+  /* Quiet fused extension under the notch (same width — not full-shell). */
+  .shell-tab-notch-drawer {
+    z-index: 145;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid rgb(var(--color-surface-500) / 0.28);
+    border-top: 0;
+    border-radius: 0 0 0.4rem 0.4rem;
+    background: rgb(var(--color-surface-900) / 0.94);
+    backdrop-filter: blur(14px);
+    box-shadow: 0 14px 32px rgb(0 0 0 / 0.28);
+    animation: shell-tab-notch-open 150ms ease-out;
+  }
+
+  @keyframes shell-tab-notch-open {
+    from {
+      opacity: 0.75;
+      transform: translateY(-3px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .shell-tab-notch-drawer-stage {
+    display: flex;
+    min-height: 9.5rem;
+    flex: 1 1 auto;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0.35rem;
+  }
+
+  .shell-tab-notch-drawer--single .shell-tab-notch-drawer-stage {
+    min-height: 7.5rem;
+  }
+
+  .shell-tab-notch-drawer--search {
+    display: flex;
+    min-height: 8rem;
+    max-height: inherit;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .shell-tab-notch-search {
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .shell-tab-notch-search-list {
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0.1rem;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 0.3rem;
+    scrollbar-width: thin;
+  }
+
+  .shell-tab-notch-search-empty {
+    padding: 1.1rem 0.75rem;
+    color: rgb(var(--theme-text-quiet));
+    font-size: 0.75rem;
+    text-align: center;
+  }
+
+  .shell-tab-notch-search-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.4rem;
+    border: 0;
+    border-radius: 0.35rem;
+    background: transparent;
+    padding: 0.35rem 0.4rem;
+    color: rgb(var(--color-surface-200));
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 120ms ease;
+  }
+
+  .shell-tab-notch-search-row:hover,
+  .shell-tab-notch-search-row--hl {
+    background: rgb(var(--color-surface-800) / 0.65);
+  }
+
+  .shell-tab-notch-search-row--active .shell-tab-notch-search-title {
+    color: rgb(var(--color-surface-50));
+  }
+
+  .shell-tab-notch-search-icon {
+    flex-shrink: 0;
+    color: rgb(var(--theme-text-tertiary));
+  }
+
+  .shell-tab-notch-search-row--hl .shell-tab-notch-search-icon,
+  .shell-tab-notch-search-row--active .shell-tab-notch-search-icon {
+    color: rgb(var(--color-surface-200));
+  }
+
+  .shell-tab-notch-search-title {
+    min-width: 0;
+    overflow: hidden;
+    color: rgb(var(--color-surface-100));
+    font-size: 0.75rem;
+    font-weight: 550;
+    letter-spacing: -0.01em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .shell-tab-notch-search-meta {
+    min-width: 0;
+    overflow: hidden;
+    color: rgb(var(--theme-text-quiet));
+    font-size: 0.625rem;
+    font-weight: 450;
+    letter-spacing: 0.01em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .shell-tab-notch-branch {
+    display: flex;
+    min-height: 100%;
+    min-width: 0;
+    flex: 1 1 auto;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  .shell-tab-notch-branch--row {
+    flex-direction: row;
+  }
+
+  .shell-tab-notch-branch--col {
+    flex-direction: column;
+  }
+
+  .shell-tab-notch-branch-child {
+    display: flex;
+    min-height: 0;
+    min-width: 0;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .shell-tab-notch-branch-sash {
+    flex: 0 0 1px;
+    background: rgb(var(--color-surface-500) / 0.28);
+  }
+
+  .shell-tab-notch-branch--col > .shell-tab-notch-branch-sash {
+    flex-basis: 1px;
+    width: auto;
+    min-height: 1px;
+  }
+
+  .shell-tab-notch-pane {
+    display: flex;
+    min-height: 0;
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid rgb(var(--color-surface-500) / 0.22);
+    border-radius: 0.4rem;
+    background: rgb(var(--color-surface-950) / 0.45);
+    cursor: pointer;
+    transition:
+      border-color 140ms ease,
+      background-color 140ms ease,
+      box-shadow 140ms ease;
+  }
+
+  .shell-tab-notch-pane:hover {
+    border-color: rgb(var(--color-surface-500) / 0.38);
+  }
+
+  .shell-tab-notch-pane--active {
+    border-color: rgb(var(--color-primary-400) / 0.45);
+    box-shadow: 0 0 0 1px rgb(var(--color-primary-500) / 0.18);
+  }
+
+  .shell-tab-notch-pane--drop {
+    border-color: rgb(var(--color-primary-300) / 0.65);
+    background: rgb(var(--color-primary-500) / 0.1);
+  }
+
+  .shell-tab-notch-pane--split-left {
+    border-color: rgb(var(--color-primary-300) / 0.55);
+    background: linear-gradient(
+      to right,
+      rgb(var(--color-primary-500) / 0.22) 0%,
+      rgb(var(--color-primary-500) / 0.22) 32%,
+      rgb(var(--color-surface-950) / 0.45) 32%
+    );
+    box-shadow: inset 2px 0 0 0 rgb(var(--color-primary-400) / 0.75);
+  }
+
+  .shell-tab-notch-pane--split-right {
+    border-color: rgb(var(--color-primary-300) / 0.55);
+    background: linear-gradient(
+      to left,
+      rgb(var(--color-primary-500) / 0.22) 0%,
+      rgb(var(--color-primary-500) / 0.22) 32%,
+      rgb(var(--color-surface-950) / 0.45) 32%
+    );
+    box-shadow: inset -2px 0 0 0 rgb(var(--color-primary-400) / 0.75);
+  }
+
+  .shell-tab-notch-pane--split-top {
+    border-color: rgb(var(--color-primary-300) / 0.55);
+    background: linear-gradient(
+      to bottom,
+      rgb(var(--color-primary-500) / 0.22) 0%,
+      rgb(var(--color-primary-500) / 0.22) 32%,
+      rgb(var(--color-surface-950) / 0.45) 32%
+    );
+    box-shadow: inset 0 2px 0 0 rgb(var(--color-primary-400) / 0.75);
+  }
+
+  .shell-tab-notch-pane--split-bottom {
+    border-color: rgb(var(--color-primary-300) / 0.55);
+    background: linear-gradient(
+      to top,
+      rgb(var(--color-primary-500) / 0.22) 0%,
+      rgb(var(--color-primary-500) / 0.22) 32%,
+      rgb(var(--color-surface-950) / 0.45) 32%
+    );
+    box-shadow: inset 0 -2px 0 0 rgb(var(--color-primary-400) / 0.75);
+  }
+
+  .shell-tab-notch-pane--vacant {
+    border-style: dashed;
+    border-color: rgb(var(--color-surface-500) / 0.3);
+  }
+
+  /* Arc/Zen vertical tab rail filling each map pane. */
+  .shell-tab-notch-rail {
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0.1rem;
+    margin: 0;
+    list-style: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 0.3rem;
+    scrollbar-width: thin;
+  }
+
+  .shell-tab-notch-rail-item {
+    min-width: 0;
+  }
+
+  .shell-tab-notch-rail-row {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.15rem;
+    border-radius: 0.35rem;
+    cursor: grab;
+    transition: background-color 120ms ease;
+  }
+
+  .shell-tab-notch-rail-row:hover {
+    background: rgb(var(--color-surface-800) / 0.55);
+  }
+
+  .shell-tab-notch-rail-row:hover .shell-tab-notch-rail-close {
+    opacity: 1;
+  }
+
+  .shell-tab-notch-rail-row--active {
+    background: rgb(var(--color-surface-700) / 0.72);
+  }
+
+  .shell-tab-notch-rail-row--active:hover {
+    background: rgb(var(--color-surface-700) / 0.85);
+  }
+
+  .shell-tab-notch-rail-main {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 0.4rem;
+    border: 0;
+    background: transparent;
+    padding: 0.35rem 0.3rem 0.35rem 0.4rem;
+    color: inherit;
+    text-align: left;
+    cursor: inherit;
+  }
+
+  .shell-tab-notch-rail-icon {
+    flex-shrink: 0;
+    color: rgb(var(--theme-text-tertiary));
+    opacity: 0.85;
+  }
+
+  .shell-tab-notch-rail-row--active .shell-tab-notch-rail-icon {
+    color: rgb(var(--color-surface-200));
+    opacity: 1;
+  }
+
+  .shell-tab-notch-rail-title {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    color: rgb(var(--theme-text-secondary));
+    font-size: 0.72rem;
+    font-weight: 500;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .shell-tab-notch-rail-row--active .shell-tab-notch-rail-title {
+    color: rgb(var(--color-surface-50));
+  }
+
+  .shell-tab-notch-rail-close {
+    display: inline-flex;
+    width: 1.15rem;
+    height: 1.15rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 0.25rem;
+    background: transparent;
+    margin-right: 0.2rem;
+    color: rgb(var(--theme-text-tertiary));
+    opacity: 0;
+    transition:
+      opacity 120ms ease,
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .shell-tab-notch-rail-close:hover {
+    background: rgb(var(--color-surface-600) / 0.55);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .shell-tab-notch-rail-vacant {
+    display: flex;
+    min-height: 5rem;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem;
+    color: rgb(var(--theme-text-quiet));
+    font-size: 0.7rem;
+    font-weight: 450;
+    text-align: center;
+  }
+}

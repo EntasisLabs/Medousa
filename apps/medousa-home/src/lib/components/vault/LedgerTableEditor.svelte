@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/vault-liquid.postcss";
   import { onDestroy, tick } from "svelte";
   import {
     ArrowDown,

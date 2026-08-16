@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/command-spotlight.postcss";
   import { buildWorkshopCommandContext } from "$lib/commands/context";
   import {
     collectWorkshopCommands,

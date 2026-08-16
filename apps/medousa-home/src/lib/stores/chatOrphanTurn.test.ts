@@ -33,8 +33,8 @@ vi.mock("$lib/liquid/surfaces/chat/chatInteractions", () => ({
   chatInteractions: { reset: vi.fn() },
 }));
 
-vi.mock("$lib/stores/chatStreamPool.svelte", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./chatStreamPool.svelte")>();
+vi.mock("$lib/chat/chatStreamPool.svelte", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("$lib/chat/chatStreamPool.svelte")>();
   return {
     ...actual,
     chatStreamPool: new actual.ChatStreamPool(),
@@ -59,7 +59,7 @@ describe("orphaned interactive turn lease", () => {
 
   async function loadStore() {
     const { ChatStore } = await import("./chat.svelte");
-    const { chatStreamPool } = await import("./chatStreamPool.svelte");
+    const { chatStreamPool } = await import("$lib/chat/chatStreamPool.svelte");
     const { getSessionHistory, listSessionTurns, getActiveSessionTurn } =
       await import("$lib/daemon");
     chatStreamPool.clear();

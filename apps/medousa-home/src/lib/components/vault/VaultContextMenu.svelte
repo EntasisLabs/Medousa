@@ -30,7 +30,7 @@
   import { revealInFileManagerLabel } from "$lib/platformCopy";
   import type { VaultExportFormat } from "$lib/utils/vaultExportOptions";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
-  import { toast } from "$lib/stores/toast.svelte";
+  import { toast } from "$lib/runtime/toast.svelte";
   import { shareVaultNote } from "$lib/share";
   import { loadVaultExportPreviewModal } from "$lib/runtime/viewLoaders";
 

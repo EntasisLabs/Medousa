@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/vault-editor.postcss";
   import { tick } from "svelte";
   import {
     BookOpen,
@@ -8,7 +9,7 @@
     Table2,
   } from "@lucide/svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -49,9 +50,9 @@
   import VaultNoteChatFab from "./VaultNoteChatFab.svelte";
   import VaultFindBar from "./VaultFindBar.svelte";
   import { vaultFind } from "$lib/stores/vaultFind.svelte";
-  import { noteEditorRuntimes } from "$lib/stores/noteEditorRuntimes.svelte";
-  import { registerVaultLeaveFlush } from "$lib/stores/vaultLeaveFlush";
-  import { vaultQuickSwitcher } from "$lib/stores/vaultQuickSwitcher.svelte";
+  import { noteEditorRuntimes } from "$lib/vault/noteEditorRuntimes.svelte";
+  import { registerVaultLeaveFlush } from "$lib/vault/vaultLeaveFlush";
+  import { vaultQuickSwitcher } from "$lib/stores/commandSpotlight.svelte";
   import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
   import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
   import { writeVaultStickyPath } from "$lib/utils/vaultSticky";

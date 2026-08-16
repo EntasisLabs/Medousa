@@ -29,7 +29,7 @@
   } from "$lib/utils/vaultCodeMirror";
   import { vaultFind } from "$lib/stores/vaultFind.svelte";
   import { vault } from "$lib/stores/vault.svelte";
-  import { toast } from "$lib/stores/toast.svelte";
+  import { toast } from "$lib/runtime/toast.svelte";
   import type { FindMatch } from "$lib/utils/vaultFindInNote";
   import { grammarLintExtensions } from "$lib/utils/grammarLint";
   import { readGrammarSettings } from "$lib/utils/grammarCheck";

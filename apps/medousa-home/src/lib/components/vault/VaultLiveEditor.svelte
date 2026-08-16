@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/vault-live.postcss";
   import { onDestroy, onMount } from "svelte";
   import { Editor } from "@tiptap/core";
   import { vault } from "$lib/stores/vault.svelte";
@@ -57,7 +58,7 @@
     type SelectionAnchor,
   } from "$lib/vault/live/liveSelectionFormat";
   import { handleLiveScrollToSelection } from "$lib/vault/live/liveScrollSelection";
-  import { toast } from "$lib/stores/toast.svelte";
+  import { toast } from "$lib/runtime/toast.svelte";
   import {
     dataTransferHasImage,
     imageFileFromDataTransfer,

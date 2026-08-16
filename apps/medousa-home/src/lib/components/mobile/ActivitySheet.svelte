@@ -1,7 +1,7 @@
 <script lang="ts">
   import MobileActivityFeed from "$lib/components/mobile/MobileActivityFeed.svelte";
   import { haptic } from "$lib/haptics";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
 

@@ -40,6 +40,7 @@ export {
 export type {
   EvidencePage,
   ReviewFileDiff,
+  ReviewProjection,
   WorldBindingStatus,
   WorldAvecResult,
   WorldFilesResult,

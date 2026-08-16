@@ -1,0 +1,245 @@
+/**
+ * Work / asks / motion chrome.
+ * Loaded by the destination feature entry; not imported from app.postcss.
+ */
+
+@layer features {
+
+
+  .work-motion-control {
+    position: relative;
+    z-index: 45;
+  }
+
+  .work-motion-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 0;
+    border-radius: 0.35rem;
+    background: transparent;
+    padding: 0.15rem 0.35rem;
+    color: rgb(var(--theme-text-quiet));
+    font: inherit;
+    transition: color 160ms ease, background-color 160ms ease;
+  }
+
+  .work-motion-trigger:hover,
+  .work-motion-trigger--open {
+    background: rgb(var(--color-surface-800) / 0.55);
+    color: rgb(var(--color-surface-200));
+  }
+
+  .work-motion-trigger--active {
+    color: rgb(var(--theme-text-tertiary));
+  }
+
+  .work-motion-icon--live {
+    animation: work-motion-breath 2.8s ease-in-out infinite;
+  }
+
+  @keyframes work-motion-breath {
+    0%,
+    100% {
+      opacity: 0.55;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.08);
+    }
+  }
+
+  .work-motion-attention {
+    display: inline-flex;
+    min-width: 1rem;
+    height: 1rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: rgb(var(--color-warning-500) / 0.18);
+    padding: 0 0.28rem;
+    color: rgb(var(--theme-warning) / 0.95);
+    font-size: 0.62rem;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .work-motion-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 44;
+  }
+
+  .work-motion-peek {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 0.45rem);
+    z-index: 46;
+    width: min(22rem, calc(100vw - 2rem));
+    max-height: min(16rem, 40vh);
+    overflow: auto;
+    border: 1px solid rgb(var(--color-surface-500) / 0.28);
+    border-radius: 0.65rem;
+    background: rgb(var(--color-surface-900) / 0.97);
+    padding: 0.45rem;
+    box-shadow: 0 -8px 28px rgb(0 0 0 / 0.28);
+  }
+
+  .work-motion-peek-list {
+    margin: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0;
+  }
+
+  .work-motion-peek-card {
+    display: block;
+    width: 100%;
+    border: 0;
+    border-radius: 0.5rem;
+    background: rgb(var(--color-surface-800) / 0.45);
+    padding: 0.45rem 0.55rem;
+    text-align: left;
+    transition: background-color 140ms ease;
+  }
+
+  .work-motion-peek-card:hover {
+    background: rgb(var(--color-surface-800) / 0.75);
+  }
+
+  .work-motion-peek-card--selected {
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.35);
+  }
+
+  .work-hub {
+    @apply min-h-0 bg-surface-900;
+  }
+
+  .work-hub-stage {
+    @apply flex min-h-0 flex-1 flex-col overflow-hidden;
+  }
+
+  .work-hub-stage-header {
+    @apply flex shrink-0 items-end justify-between gap-3 border-b px-6 py-3;
+    border-color: rgb(var(--color-surface-700) / 0.3);
+  }
+
+  .work-hub-grid-wrap {
+    @apply relative min-h-0 flex-1 overflow-hidden;
+  }
+
+  .work-hub-empty {
+    @apply flex h-full items-center justify-center px-6 py-8;
+  }
+
+  .work-hub-grid {
+    @apply grid h-full auto-rows-min grid-flow-col grid-rows-1 gap-3 overflow-x-auto overflow-y-hidden px-6 py-4;
+    grid-auto-columns: minmax(15rem, 18rem);
+  }
+
+  .work-hub-card {
+    @apply flex min-h-[7.5rem] cursor-pointer flex-col rounded-xl border p-3.5 transition;
+    border-color: rgb(var(--color-surface-600) / 0.25);
+    background-color: rgb(var(--color-surface-800) / 0.35);
+  }
+
+  .work-hub-card:hover {
+    border-color: rgb(var(--color-surface-500) / 0.4);
+    background-color: rgb(var(--color-surface-800) / 0.55);
+  }
+
+  .work-hub-card-selected {
+    @apply ring-1 ring-inset;
+    border-color: rgb(var(--color-primary-500) / 0.35);
+    background-color: rgb(var(--color-surface-800) / 0.7);
+    --tw-ring-color: rgb(var(--color-primary-500) / 0.25);
+  }
+
+  .work-hub-card-compact {
+    @apply min-h-[6.5rem] p-3;
+  }
+
+  .work-hub-card-pulse {
+    @apply animate-pulse;
+  }
+
+  .work-hub-chip {
+    @apply rounded-full px-2 py-0.5 text-[10px] font-medium;
+  }
+
+  .work-hub-chip-muted {
+    @apply bg-surface-700/60 text-content-tertiary;
+  }
+
+  .work-hub-chip-primary {
+    background-color: rgb(var(--color-primary-500) / 0.15);
+    @apply text-primary-200;
+  }
+
+  .work-hub-chip-warning {
+    background-color: rgb(var(--color-warning-500) / 0.15);
+    @apply text-content-warning;
+  }
+
+  .work-hub-chip-danger {
+    background-color: rgb(var(--color-error-500) / 0.1);
+    @apply text-content-error;
+  }
+
+  .work-hub-chip-success {
+    background-color: rgb(var(--color-success-500) / 0.1);
+    @apply text-content-success;
+  }
+
+  .work-hub-provenance {
+    @apply truncate rounded-md px-2 py-0.5 text-[10px] text-content-tertiary transition hover:text-surface-200;
+    background-color: rgb(var(--color-surface-900) / 0.5);
+  }
+
+  .work-hub-provenance:hover {
+    background-color: rgb(var(--color-surface-900) / 0.8);
+  }
+
+  .work-rail-bulk-footer {
+    @apply flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-surface-700/30 px-2.5 py-2;
+  }
+
+  .work-hub-composer {
+    @apply border-t;
+    border-color: rgb(var(--color-surface-700) / 0.2);
+  }
+
+  .work-ask-dock-popover {
+    @apply fixed z-[210] flex flex-col gap-2 overflow-hidden rounded-2xl border border-surface-600/45 bg-surface-900/95 p-3 shadow-2xl backdrop-blur-md;
+  }
+
+  .work-ask-dock-header {
+    @apply flex items-center justify-between gap-2;
+  }
+
+  .work-ask-dock-title {
+    @apply text-sm font-semibold text-surface-50;
+  }
+
+  .work-ask-dock-close {
+    @apply rounded-md px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-content-quiet transition hover:bg-surface-800 hover:text-surface-200;
+  }
+
+  .work-manifest-backdrop {
+    @apply absolute inset-0 z-40 backdrop-blur-[2px];
+    background-color: rgb(var(--color-surface-950) / 0.55);
+  }
+
+  .work-manifest-popover {
+    @apply absolute inset-x-4 top-[8%] bottom-[8%] z-50 mx-auto flex max-w-3xl flex-col overflow-hidden rounded-2xl border bg-surface-900 shadow-2xl;
+    border-color: rgb(var(--color-surface-600) / 0.4);
+    box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.4);
+  }
+
+  .work-manifest-close {
+    @apply absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-md text-content-tertiary transition hover:bg-surface-800 hover:text-surface-100;
+  }
+}

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkCardDetail } from "$lib/types/card";
-import { WorkerTranscriptStore } from "$lib/stores/workerTranscripts.svelte";
+import { WorkerTranscriptStore } from "$lib/work/workerTranscripts.svelte";
 
 vi.mock("$lib/daemon", () => ({
   getWorkspaceCard: vi.fn(),

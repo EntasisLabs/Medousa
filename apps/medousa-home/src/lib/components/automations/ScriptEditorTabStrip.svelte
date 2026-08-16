@@ -2,7 +2,7 @@
   import { Plus, X } from "@lucide/svelte";
   import { persistScriptName } from "$lib/grapheme/scriptWorkbenchActions";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
-  import { scriptRenameUi } from "$lib/stores/scriptRenameUi.svelte";
+  import { scriptRenameUi } from "$lib/lme/scriptRenameUi.svelte";
 
   interface Props {
     compact?: boolean;

@@ -38,7 +38,7 @@ import {
 import { mainComponentsForSurface, resolveLayoutRoot } from "$lib/utils/layoutPresentation";
 import type { LayoutNode, ShellChromeDesktop } from "$lib/types/environment";
 import type { PreferredMode } from "$lib/utils/preferredMode";
-import { layout } from "$lib/stores/layout.svelte";
+import { layout } from "$lib/runtime/layout.svelte";
 
 function migrateBuiltinNavSurfaces(spec: EnvironmentSpec): EnvironmentSpec {
   return ensureLibrarySplitInSpec(

@@ -20,7 +20,7 @@
     "check:runtime-graph": "node scripts/verify-runtime-graph.mjs",
     "check:source-ownership": "node scripts/verify-source-ownership.mjs",
     "check:bundle-budget": "node scripts/verify-bundle-budget.mjs",
-    "test:h09": "vitest run src/lib/runtime/features/lifecycle.test.ts src/lib/runtime/rootResources.test.ts src/lib/runtime/features/loader.test.ts src/lib/runtime/viewLoaders.test.ts src/lib/runtime/sccDirection.test.ts src/lib/theme/cssInventory.test.ts themes/theme-contract.test.ts",
+    "test:h09": "vitest run src/lib/runtime/features/lifecycle.test.ts src/lib/runtime/rootResources.test.ts src/lib/runtime/features/loader.test.ts src/lib/runtime/viewLoaders.test.ts src/lib/runtime/sccDirection.test.ts src/lib/runtime/storeDirection.test.ts src/lib/theme/cssInventory.test.ts themes/theme-contract.test.ts",
     "test:browser-attacker": "node scripts/browser-attacker-server.mjs",
     "bench:p02": "node --expose-gc scripts/p02-stream-render-baseline.mjs",
     "pretest": "tsc -p ../../packages/medousa-liquid-markdown/tsconfig.json",

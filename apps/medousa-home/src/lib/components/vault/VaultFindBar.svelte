@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/vault-find.postcss";
   import { onMount } from "svelte";
   import { CaseSensitive, ChevronDown, ChevronUp, Replace, X } from "@lucide/svelte";
   import { titleWithKeys } from "$lib/utils/keyboardShortcutsCatalog";

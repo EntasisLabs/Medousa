@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Plus, X } from "@lucide/svelte";
-  import { humanBrowserForWindow } from "$lib/stores/humanBrowserSurface";
+  import { humanBrowserForWindow } from "$lib/browser/humanBrowserSurface";
   import { faviconUrlForSite, tabDisplayLabel } from "$lib/utils/browserFavicon";
   import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
 

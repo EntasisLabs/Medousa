@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import SplitPane from "$lib/components/layout/SplitPane.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { artifacts } from "$lib/stores/artifacts.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import ArtifactLibraryList from "./ArtifactLibraryList.svelte";

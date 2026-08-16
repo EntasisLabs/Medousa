@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/mobile-shell.postcss";
   import { onMount } from "svelte";
   import MobileToast from "$lib/components/mobile/MobileToast.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
@@ -19,7 +20,7 @@
   import EnvPendingProposalBanner from "$lib/components/environment/EnvPendingProposalBanner.svelte";
   import ShellAskFab from "$lib/components/environment/ShellAskFab.svelte";
   import { environment } from "$lib/stores/environment.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";

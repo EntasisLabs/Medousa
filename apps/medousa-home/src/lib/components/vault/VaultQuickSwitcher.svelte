@@ -1,6 +1,6 @@
 <script lang="ts">
   import { vault } from "$lib/stores/vault.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { fuzzyMatchVaultNotes } from "$lib/utils/vaultFuzzyMatch";
   import { writeVaultStickyPath } from "$lib/utils/vaultSticky";
