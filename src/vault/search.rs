@@ -11,22 +11,37 @@ static SEARCH_REBUILD_SCHEDULED: AtomicBool = AtomicBool::new(false);
 fn rebuild_search_index_sync() {
     let store = vault_store();
     let _ = store.ensure_index_fresh();
-    // Use peek-only path: avoid nested ensure + clone via all_entries' sort.
+    let rebuild_generation = PROJECTION.snapshot().generation.max(1);
     let entries = store.peek_all_entries();
     let mut bodies = Vec::with_capacity(entries.len());
     for entry in &entries {
         let body = store.read_content(&entry.path).unwrap_or_default();
         bodies.push((entry.clone(), body));
     }
-    let generation = PROJECTION.snapshot().generation.max(1);
     let mut index = vault_search_index()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    index.rebuild_from(
+    let applied = index.apply_rebuild_if_current(
         bodies.iter().map(|(entry, body)| (entry, body.as_str())),
-        generation,
+        rebuild_generation,
     );
+    if applied {
+        persist_search_generation(rebuild_generation);
+        index.clear_stale();
+    } else {
+        index.mark_stale();
+    }
+    drop(index);
     SEARCH_REBUILD_SCHEDULED.store(false, Ordering::Release);
+}
+
+pub(crate) fn persist_search_generation(generation: u64) {
+    let Ok(path) = medousa_store::StorePath::parse(".medousa/vault/search.generation") else {
+        return;
+    };
+    if let Ok(files) = crate::vault::path::user_vault_capability() {
+        let _ = files.atomic_write(&path, generation.to_string().as_bytes());
+    }
 }
 
 fn schedule_search_rebuild() {
@@ -71,8 +86,6 @@ pub fn search_vault(query: &str, limit: usize) -> anyhow::Result<VaultSearchResp
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         if index.docs_is_empty() {
             drop(index);
-            // Cold start: must populate before answering when no runtime job
-            // is available; with a runtime, schedule and report indexing.
             if tokio::runtime::Handle::try_current().is_ok() {
                 schedule_search_rebuild();
                 indexing = true;
@@ -82,8 +95,6 @@ pub fn search_vault(query: &str, limit: usize) -> anyhow::Result<VaultSearchResp
         } else if index.is_stale() {
             indexing = true;
             schedule_search_rebuild();
-            // Serve last warm postings while rebuild runs — never rescan
-            // every body on the request path.
         }
     }
 
@@ -129,5 +140,29 @@ mod tests {
         let terms = tokenize("medousa, vault!");
         assert!(terms.contains(&"medousa".to_string()));
         assert!(terms.contains(&"vault".to_string()));
+    }
+
+    #[test]
+    fn rebuild_persists_search_generation_stamp() {
+        crate::vault::service::with_temp_vault(|| {
+            let path = format!("journal/search-{}.md", uuid::Uuid::new_v4().simple());
+            crate::vault::service::VaultService::write_note(
+                Some(&path),
+                &crate::daemon_api::VaultWriteRequest {
+                    path: Some(path.clone()),
+                    content: "# Searchable unique-token-xyz\n".to_string(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("write");
+            let files = crate::vault::path::user_vault_capability().expect("capability");
+            let stamp = medousa_store::StorePath::parse(".medousa/vault/search.generation")
+                .expect("stamp path");
+            assert!(
+                files.is_file(&stamp).unwrap_or(false),
+                "successful rebuild must persist search.generation"
+            );
+        });
     }
 }

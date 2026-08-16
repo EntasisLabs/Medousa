@@ -141,6 +141,19 @@ impl VaultSearchIndex {
         self.indexed_generation = generation;
         self.stale = false;
     }
+
+    /// Apply a snapshot rebuild only when no newer upsert has landed.
+    pub fn apply_rebuild_if_current<'a>(
+        &mut self,
+        entries: impl IntoIterator<Item = (&'a VaultIndexEntry, &'a str)>,
+        rebuild_generation: u64,
+    ) -> bool {
+        if self.indexed_generation > rebuild_generation {
+            return false;
+        }
+        self.rebuild_from(entries, rebuild_generation);
+        true
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -205,5 +218,40 @@ mod tests {
         assert!(!stale);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].path, "a.md");
+    }
+
+    #[test]
+    fn concurrent_upsert_aborts_stale_rebuild() {
+        let mut index = VaultSearchIndex::new();
+        let older = VaultIndexEntry {
+            path: "a.md".into(),
+            title: "Alpha".into(),
+            byte_size: 10,
+            content_hash: "sha256:a".into(),
+            modified_at_utc: Utc::now(),
+            created_at_utc: Utc::now(),
+            tags: Vec::new(),
+            wikilinks_out: Vec::new(),
+            kind: None,
+            source: VaultNoteSource::User,
+        };
+        let newer = VaultIndexEntry {
+            path: "b.md".into(),
+            title: "Bravo".into(),
+            byte_size: 10,
+            content_hash: "sha256:b".into(),
+            modified_at_utc: Utc::now(),
+            created_at_utc: Utc::now(),
+            tags: Vec::new(),
+            wikilinks_out: Vec::new(),
+            kind: None,
+            source: VaultNoteSource::User,
+        };
+        index.upsert_document(&newer, "unique token concurrent", 2);
+        let applied = index.apply_rebuild_if_current([(&older, "alpha body")], 1);
+        assert!(!applied);
+        let (hits, _) = index.search("unique concurrent", 5);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].path, "b.md");
     }
 }

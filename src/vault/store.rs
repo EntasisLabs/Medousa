@@ -419,6 +419,7 @@ impl VaultStore {
         if let Ok(mut search) = SEARCH_INDEX.lock() {
             search.upsert_document(entry, content, generation);
         }
+        crate::vault::search::persist_search_generation(generation);
         {
             let mut links = self.link_index.write().expect("vault links");
             links.apply_upsert(entry);
