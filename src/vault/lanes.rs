@@ -53,12 +53,16 @@ pub struct VaultLaneGuard {
 
 impl VaultLaneRegistry {
     pub fn new() -> Arc<Self> {
+        Self::with_max_lanes(DEFAULT_MAX_LANES)
+    }
+
+    pub fn with_max_lanes(max_lanes: usize) -> Arc<Self> {
         Arc::new(Self {
             inner: Mutex::new(LaneRegistryInner {
                 lanes: HashMap::new(),
                 root_epochs: HashMap::new(),
                 admitting: true,
-                max_lanes: DEFAULT_MAX_LANES,
+                max_lanes: max_lanes.max(1),
                 next_epoch: 1,
             }),
             cvar: Condvar::new(),
@@ -87,6 +91,14 @@ impl VaultLaneRegistry {
             for key in &keys {
                 let root_epoch = *guard.root_epochs.get(&key.root_id).unwrap_or(&0);
                 if !guard.lanes.contains_key(key) {
+                    // Hard cap: never grow past max_lanes. Evict idle slots
+                    // under pressure (ignore idle TTL), then refuse.
+                    if guard.lanes.len() >= guard.max_lanes {
+                        self.evict_idle_under_pressure_locked(&mut guard);
+                    }
+                    if guard.lanes.len() >= guard.max_lanes {
+                        return Err(VaultMutationError::Overloaded);
+                    }
                     let epoch = guard.next_epoch.max(root_epoch.saturating_add(1));
                     guard.next_epoch = guard.next_epoch.saturating_add(1);
                     guard.lanes.insert(key.clone(), LaneSlot::new(epoch));
@@ -202,6 +214,23 @@ impl VaultLaneRegistry {
         }
     }
 
+    /// When allocating a new lane at capacity, evict any idle slot immediately.
+    fn evict_idle_under_pressure_locked(&self, guard: &mut LaneRegistryInner) {
+        let mut ranked: BTreeMap<(u64, String), VaultLaneKey> = BTreeMap::new();
+        for (key, slot) in &guard.lanes {
+            if slot.held || slot.pending_intent || slot.waiters > 0 {
+                continue;
+            }
+            ranked.insert((slot.epoch, key.normalized_path.clone()), key.clone());
+        }
+        while guard.lanes.len() >= guard.max_lanes {
+            let Some((_, key)) = ranked.pop_first() else {
+                break;
+            };
+            guard.lanes.remove(&key);
+        }
+    }
+
     fn release(&self, keys: &[(VaultLaneKey, u64)]) {
         let mut guard = self
             .inner
@@ -287,5 +316,21 @@ mod tests {
         assert_eq!(registry.lane_count(), 1);
         registry.bump_root_epoch(&root);
         assert_eq!(registry.lane_count(), 0);
+    }
+
+    #[test]
+    fn hard_cap_refuses_new_lane_when_all_held() {
+        let registry = VaultLaneRegistry::with_max_lanes(2);
+        let root = VaultRootId::new("personal");
+        let a = VaultLaneKey::new(root.clone(), VaultNoteSource::User, "a.md");
+        let b = VaultLaneKey::new(root.clone(), VaultNoteSource::User, "b.md");
+        let c = VaultLaneKey::new(root, VaultNoteSource::User, "c.md");
+        let _ga = registry.acquire(vec![a]).unwrap();
+        let _gb = registry.acquire(vec![b]).unwrap();
+        assert!(matches!(
+            registry.acquire(vec![c]),
+            Err(VaultMutationError::Overloaded)
+        ));
+        assert_eq!(registry.lane_count(), 2);
     }
 }

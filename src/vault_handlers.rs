@@ -17,6 +17,7 @@ use crate::daemon_api::{
     VaultTrashRestoreRequest, VaultTrashRestoreResponse, VaultWriteRequest, VaultWriteResponse,
 };
 use crate::vault::VaultService;
+use crate::vault::io::{VaultIoClass, vault_io};
 use crate::vault::roots::{add_vault_root, list_vault_root_views, set_active_vault_root};
 
 pub fn vault_surface() -> DeclaredRouter {
@@ -191,7 +192,9 @@ fn vault_policy(
 
 fn map_vault_error(err: anyhow::Error) -> (StatusCode, String) {
     let message = err.to_string();
-    if message.contains("not found") {
+    if message.contains("overloaded") {
+        (StatusCode::SERVICE_UNAVAILABLE, message)
+    } else if message.contains("not found") {
         (StatusCode::NOT_FOUND, message)
     } else if message.contains("If-Match") || message.contains("content_hash mismatch") {
         (StatusCode::PRECONDITION_FAILED, message)
@@ -206,28 +209,43 @@ pub async fn list_vault_notes(
     Query(query): Query<VaultNotesQuery>,
 ) -> Result<Json<VaultNotesListResponse>, (StatusCode, String)> {
     let limit = query.limit.unwrap_or(100);
-    Ok(Json(VaultService::list_notes(
-        query.prefix.as_deref(),
-        limit,
-        query.tags.as_deref(),
-        query.tag_prefix.as_deref(),
-    )))
+    let prefix = query.prefix;
+    let tags = query.tags;
+    let tag_prefix = query.tag_prefix;
+    vault_io()
+        .run_anyhow(VaultIoClass::Scan, move || {
+            Ok(VaultService::list_notes(
+                prefix.as_deref(),
+                limit,
+                tags.as_deref(),
+                tag_prefix.as_deref(),
+            ))
+        })
+        .await
+        .map(Json)
+        .map_err(map_vault_error)
 }
 
 pub async fn list_vault_tags(
     Query(query): Query<VaultTagsQuery>,
 ) -> Result<Json<VaultTagsListResponse>, (StatusCode, String)> {
     let limit = query.limit.unwrap_or(100);
-    Ok(Json(VaultService::list_tags(
-        query.prefix.as_deref(),
-        limit,
-    )))
+    let prefix = query.prefix;
+    vault_io()
+        .run_anyhow(VaultIoClass::Scan, move || {
+            Ok(VaultService::list_tags(prefix.as_deref(), limit))
+        })
+        .await
+        .map(Json)
+        .map_err(map_vault_error)
 }
 
 pub async fn get_vault_note(
     Path(note_path): Path<String>,
 ) -> Result<Json<VaultNoteContentResponse>, (StatusCode, String)> {
-    VaultService::get_note(&note_path)
+    vault_io()
+        .run_anyhow(VaultIoClass::Scan, move || VaultService::get_note(&note_path))
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }
@@ -235,7 +253,9 @@ pub async fn get_vault_note(
 pub async fn get_vault_file(
     Path(file_path): Path<String>,
 ) -> Result<Json<VaultFileContentResponse>, (StatusCode, String)> {
-    VaultService::read_file(&file_path)
+    vault_io()
+        .run_anyhow(VaultIoClass::Scan, move || VaultService::read_file(&file_path))
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }
@@ -254,7 +274,8 @@ pub async fn put_vault_note(
     })?;
     let if_match = headers
         .get("if-match")
-        .and_then(|value| value.to_str().ok());
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string);
     let request = VaultWriteRequest {
         path: None,
         content,
@@ -262,7 +283,11 @@ pub async fn put_vault_note(
         semantic_tags: None,
         auto_workshop_tags: query.auto_workshop_tags.unwrap_or(true),
     };
-    VaultService::write_note(Some(&note_path), &request, if_match)
+    vault_io()
+        .run_anyhow(VaultIoClass::Mutation, move || {
+            VaultService::write_note(Some(&note_path), &request, if_match.as_deref())
+        })
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }
@@ -270,7 +295,9 @@ pub async fn put_vault_note(
 pub async fn post_vault_note(
     Json(request): Json<VaultWriteRequest>,
 ) -> Result<Json<VaultWriteResponse>, (StatusCode, String)> {
-    VaultService::create_note(&request)
+    vault_io()
+        .run_anyhow(VaultIoClass::Mutation, move || VaultService::create_note(&request))
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }
@@ -278,7 +305,9 @@ pub async fn post_vault_note(
 pub async fn delete_vault_note(
     Path(note_path): Path<String>,
 ) -> Result<Json<VaultDeleteResponse>, (StatusCode, String)> {
-    VaultService::delete_note(&note_path)
+    vault_io()
+        .run_anyhow(VaultIoClass::Mutation, move || VaultService::delete_note(&note_path))
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }
@@ -302,7 +331,13 @@ pub async fn search_vault_notes(
         return Err((StatusCode::BAD_REQUEST, "q or tags is required".to_string()));
     }
     let limit = query.limit.unwrap_or(20);
-    VaultService::search(q, limit, query.tags.as_deref())
+    let q = query.q;
+    let tags = query.tags;
+    vault_io()
+        .run_anyhow(VaultIoClass::SearchRebuild, move || {
+            VaultService::search(q.as_deref(), limit, tags.as_deref())
+        })
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }
@@ -315,8 +350,11 @@ pub async fn get_vault_backlinks(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, "path is required".to_string()))?;
-    VaultService::backlinks(note_path)
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, "path is required".to_string()))?
+        .to_string();
+    vault_io()
+        .run_anyhow(VaultIoClass::Scan, move || VaultService::backlinks(&note_path))
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }
@@ -328,7 +366,11 @@ pub async fn list_vault_roots() -> Json<VaultRootsResponse> {
 pub async fn set_vault_active_root(
     Json(request): Json<VaultSetActiveRootRequest>,
 ) -> Result<Json<VaultRootsResponse>, (StatusCode, String)> {
-    set_active_vault_root(&request.root_id)
+    vault_io()
+        .run_anyhow(VaultIoClass::Mutation, move || {
+            set_active_vault_root(&request.root_id)
+        })
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }
@@ -336,7 +378,11 @@ pub async fn set_vault_active_root(
 pub async fn add_vault_root_handler(
     Json(request): Json<VaultAddRootRequest>,
 ) -> Result<Json<VaultRootsResponse>, (StatusCode, String)> {
-    add_vault_root(&request.label, &request.path, request.id.as_deref())
+    vault_io()
+        .run_anyhow(VaultIoClass::Mutation, move || {
+            add_vault_root(&request.label, &request.path, request.id.as_deref())
+        })
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }
@@ -350,7 +396,9 @@ pub async fn list_vault_trash(
     Query(query): Query<VaultTrashListQuery>,
 ) -> Result<Json<VaultTrashListResponse>, (StatusCode, String)> {
     let limit = query.limit.unwrap_or(100);
-    VaultService::list_trash(limit)
+    vault_io()
+        .run_anyhow(VaultIoClass::Scan, move || VaultService::list_trash(limit))
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }
@@ -358,7 +406,11 @@ pub async fn list_vault_trash(
 pub async fn restore_vault_trash(
     Json(request): Json<VaultTrashRestoreRequest>,
 ) -> Result<Json<VaultTrashRestoreResponse>, (StatusCode, String)> {
-    VaultService::restore_from_trash(&request.path)
+    vault_io()
+        .run_anyhow(VaultIoClass::Mutation, move || {
+            VaultService::restore_from_trash(&request.path)
+        })
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }

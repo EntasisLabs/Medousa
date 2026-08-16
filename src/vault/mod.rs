@@ -5,6 +5,7 @@ pub mod baseline;
 pub mod contracts;
 pub mod fixtures;
 pub mod h07_verify;
+pub mod io;
 pub mod job_footer;
 pub mod lanes;
 pub mod links;
