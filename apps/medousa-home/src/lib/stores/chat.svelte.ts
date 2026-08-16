@@ -2385,15 +2385,21 @@ export class ChatStore {
 
   private applyPumpedStreamEvent(target: StreamEventTarget) {
     this.withSessionFields(target.sessionId, () => {
+      const messageIndexes = this.currentMessageIndexes();
       const reduced = reduceTranscriptEnvelope(this.messages, target.event, {
         messageIdForTurn: (turnId) => this.messageIdForTurn(turnId),
         messageIdForToolStream: (turnId) => this.messageIdForToolStream(turnId),
+        messageIndexForId: (messageId) => messageIndexes.byId.get(messageId) ?? -1,
         showEngineDetails: settings.showEngineDetailsInChat,
       });
       if (reduced.handled) {
         if (!this.isRelevantStreamEvent(reduced.legacy)) return;
         if (!applyStreamSeq(this.lastSeqByTurn, reduced.legacy)) return;
         this.messages = reduced.messages;
+        this.messageIndexes.set(this.sessionId, {
+          ...messageIndexes,
+          messages: this.messages,
+        });
         if (reduced.contextUsage) this.contextUsage = reduced.contextUsage;
         return;
       }

@@ -31,6 +31,7 @@ import {
 export type TranscriptReduceContext = {
   messageIdForTurn: (turnId: string) => string | null;
   messageIdForToolStream: (turnId: string) => string | null;
+  messageIndexForId: (messageId: string) => number;
   showEngineDetails: boolean;
 };
 
@@ -52,7 +53,9 @@ function replaceMessage(
   index: number,
   next: ChatMessage,
 ): ChatMessage[] {
-  return [...messages.slice(0, index), next, ...messages.slice(index + 1)];
+  const updated = [...messages];
+  updated[index] = next;
+  return updated;
 }
 
 function resolveStatusLine(
@@ -68,16 +71,15 @@ function resolveStatusLine(
 
 function applyToolEvent(
   messages: ChatMessage[],
-  messageId: string,
+  index: number,
   event: InteractiveTurnStreamEvent,
 ): ChatMessage[] | null {
-  const idx = messages.findIndex((message) => message.id === messageId);
-  if (idx < 0) return null;
+  if (index < 0) return null;
   const runId = event.tool_run_id?.trim();
   const toolName = event.tool_name?.trim();
   if (!runId || !toolName) return null;
 
-  const current = messages[idx];
+  const current = messages[index];
   const runs = [...(current.toolRuns ?? [])];
   const existingIdx = runs.findIndex((run) => run.runId === runId);
   const round = event.tool_round ?? 1;
@@ -112,7 +114,7 @@ function applyToolEvent(
   runs.sort((a, b) => a.round - b.round || a.toolName.localeCompare(b.toolName));
   const tools = [...(current.tools ?? [])];
   if (!tools.includes(toolName)) tools.push(toolName);
-  return replaceMessage(messages, idx, {
+  return replaceMessage(messages, index, {
     ...current,
     toolRuns: runs,
     tools: tools.length > 0 ? tools : current.tools,
@@ -121,25 +123,24 @@ function applyToolEvent(
 
 function applyMessageBody(
   messages: ChatMessage[],
-  messageId: string,
+  index: number,
   event: InteractiveTurnStreamEvent,
   showEngineDetails: boolean,
 ): ChatMessage[] | null {
-  const idx = messages.findIndex((message) => message.id === messageId);
-  if (idx < 0) return null;
-  const current = messages[idx];
+  if (index < 0) return null;
+  const current = messages[index];
 
   if (event.event_type === "model_receipt") {
     const responseProvider = event.response_provider?.trim();
     const responseModel = event.response_model?.trim();
     if (responseProvider && responseModel) {
-      return replaceMessage(messages, idx, { ...current, responseProvider, responseModel });
+      return replaceMessage(messages, index, { ...current, responseProvider, responseModel });
     }
     return messages;
   }
 
   if (event.event_type === "assistant_message" && event.final_text?.trim()) {
-    return replaceMessage(messages, idx, {
+    return replaceMessage(messages, index, {
       ...current,
       content: event.final_text.trim(),
       phase: null,
@@ -148,7 +149,7 @@ function applyMessageBody(
   }
 
   if (event.event_type === "turn_progress") {
-    return replaceMessage(messages, idx, {
+    return replaceMessage(messages, index, {
       ...current,
       phase: "tool_loop",
       statusLine: resolveStatusLine(event, current.statusLine, showEngineDetails),
@@ -160,7 +161,7 @@ function applyMessageBody(
 
   if (event.event_type === "assistant_pack_hold") {
     const held = event.final_text?.trim() || event.message?.trim() || current.content;
-    return replaceMessage(messages, idx, {
+    return replaceMessage(messages, index, {
       ...current,
       content: held || current.content,
       phase: "pack_hold",
@@ -174,7 +175,7 @@ function applyMessageBody(
 
   if (event.event_type === "scratch_reset") {
     if (current.phase === "pack_hold") return messages;
-    return replaceMessage(messages, idx, {
+    return replaceMessage(messages, index, {
       ...current,
       content: "",
       phase: "tool_loop",
@@ -197,7 +198,7 @@ function applyMessageBody(
     if (!tools.includes(name)) tools.push(name);
   }
 
-  return replaceMessage(messages, idx, {
+  return replaceMessage(messages, index, {
     ...current,
     content,
     phase: event.phase || current.phase,
@@ -245,7 +246,7 @@ export function reduceTranscriptEnvelope(
   if (legacy.event_type === "tool_started" || legacy.event_type === "tool_finished") {
     const messageId = ctx.messageIdForToolStream(legacy.turn_id);
     if (!messageId) return { legacy, handled: false, messages };
-    const next = applyToolEvent(messages, messageId, legacy);
+    const next = applyToolEvent(messages, ctx.messageIndexForId(messageId), legacy);
     return next
       ? { legacy, handled: true, messages: next }
       : { legacy, handled: false, messages };
@@ -254,7 +255,7 @@ export function reduceTranscriptEnvelope(
   if (legacy.event_type === "artifact_presented" && legacy.ui_artifact) {
     const messageId = ctx.messageIdForTurn(legacy.turn_id);
     if (!messageId) return { legacy, handled: false, messages };
-    const idx = messages.findIndex((message) => message.id === messageId);
+    const idx = ctx.messageIndexForId(messageId);
     if (idx < 0) return { legacy, handled: false, messages };
     const current = messages[idx];
     const nextArtifact = mapStreamUiArtifact(
@@ -282,7 +283,7 @@ export function reduceTranscriptEnvelope(
   ) {
     const messageId = ctx.messageIdForTurn(legacy.turn_id);
     if (!messageId) return { legacy, handled: false, messages };
-    const idx = messages.findIndex((message) => message.id === messageId);
+    const idx = ctx.messageIndexForId(messageId);
     if (idx < 0) return { legacy, handled: false, messages };
     const current = messages[idx];
     const nextArtifact = mapStreamUiArtifact(
@@ -316,7 +317,12 @@ export function reduceTranscriptEnvelope(
     legacy.event_type === "assistant_pack_hold" ||
     legacy.event_type === "scratch_reset"
   ) {
-    const next = applyMessageBody(messages, messageId, legacy, ctx.showEngineDetails);
+    const next = applyMessageBody(
+      messages,
+      ctx.messageIndexForId(messageId),
+      legacy,
+      ctx.showEngineDetails,
+    );
     return next
       ? { legacy, handled: true, messages: next }
       : { legacy, handled: false, messages };

@@ -34,6 +34,7 @@ function assistant(content = ""): ChatMessage {
 const ctx = {
   messageIdForTurn: () => "asst-1",
   messageIdForToolStream: () => "asst-1",
+  messageIndexForId: (messageId: string) => (messageId === "asst-1" ? 0 : -1),
   showEngineDetails: false,
 };
 
