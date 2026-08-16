@@ -34,6 +34,8 @@
     /** When true, expand ancestors once when `selectedPath` changes (desktop reveal). */
     revealSelected?: boolean;
     depth?: number;
+    /** When true, parent flattens children — do not recurse mount. */
+    virtualized?: boolean;
     onSelect: (path: string, event?: MouseEvent) => void;
     onMoveNote?: (sourcePath: string, targetFolderPrefix: string) => void | Promise<void>;
   }
@@ -45,6 +47,7 @@
     activeSpaceFilter = null,
     revealSelected = true,
     depth = 0,
+    virtualized = false,
     onSelect,
     onMoveNote,
   }: Props = $props();
@@ -141,7 +144,7 @@
 
   const isDropTarget = $derived(Boolean(onMoveNote && dropPrefix));
 
-  const knownPaths = $derived(new Set(vault.notes.map((note) => note.path)));
+  const knownPaths = $derived(vault.lookupSnapshot.knownPaths);
 
   const recentRows = $derived.by(() => {
     if (!node.isFolder) return [];
@@ -272,7 +275,7 @@
     {/if}
   </div>
 
-  {#if expanded}
+  {#if expanded && !virtualized}
     <div
       class="vault-tree-nest"
       class:vault-tree-nest--path={isPathFolder}
@@ -301,5 +304,13 @@
         />
       {/each}
     </div>
+  {:else if expanded && virtualized && recentRows.length > 0}
+    <VaultTreeRecentRows
+      paths={recentRows}
+      depth={depth}
+      {selectedPath}
+      {labelByPath}
+      {onSelect}
+    />
   {/if}
 </div>

@@ -57,7 +57,7 @@
   const renderOptions = $derived.by((): MarkdownRenderOptions => ({
     titleByPath: labelByPath,
     sourcePath: vault.selectedPath,
-    knownPaths: new Set(vault.notes.map((note) => note.path)),
+    knownPaths: vault.lookupSnapshot.knownPaths,
     interactiveTasks:
       !needsAsyncResolve && Boolean(vault.selectedPath) && !vault.proposalActive,
     resolveLocalImages: Boolean(vault.selectedPath),
@@ -101,6 +101,7 @@
           selectedPath: path,
           selectedContent: fullContent,
           labelByPath,
+          knownPaths: vault.lookupSnapshot.knownPaths,
         });
       }
       if (epoch !== resolveEpoch) return;

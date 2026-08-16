@@ -83,10 +83,13 @@ export async function resolveTransclusions(
     selectedPath: string | null;
     selectedContent: string;
     labelByPath: Map<string, string>;
+    knownPaths?: ReadonlySet<string>;
   },
 ): Promise<string> {
   if (!hasTransclusionBlocks(source)) return source;
 
+  const knownPaths =
+    context.knownPaths ?? new Set(context.notes.map((note) => note.path));
   const blocks = extractTransclusionBlocks(source);
   let resolved = source;
 
@@ -127,7 +130,7 @@ export async function resolveTransclusions(
     const html = renderMarkdown(body, {
       titleByPath: context.labelByPath,
       sourcePath: resolvedPath,
-      knownPaths: new Set(context.notes.map((note) => note.path)),
+      knownPaths,
     });
 
     const headingAttr = block.heading

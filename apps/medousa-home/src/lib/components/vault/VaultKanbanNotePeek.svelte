@@ -70,10 +70,12 @@
           body.length > 1600 ? `${body.slice(0, 1600).trimEnd()}…` : body;
         html = renderMarkdownPreview(excerpt || "_Empty note._", {
           titleByPath: new Map(
-            vault.notes.map((note) => [note.path, note.title] as const),
+            [...vault.lookupSnapshot.metadataByPath.entries()].map(
+              ([path, note]) => [path, note.title] as const,
+            ),
           ),
           sourcePath: resolved,
-          knownPaths: new Set(vault.notes.map((note) => note.path)),
+          knownPaths: vault.lookupSnapshot.knownPaths,
           interactiveTasks: false,
           resolveLocalImages: true,
         });
