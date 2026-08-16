@@ -21,7 +21,9 @@ pub enum ForgeError {
 
     /// Fencing token mismatch: the caller presents a lease that is not the
     /// active lease for this attempt (stale adapter, superseded generation).
-    #[error("stale lease: presented {presented} (gen {presented_generation}), active is {active} (gen {active_generation})")]
+    #[error(
+        "stale lease: presented {presented} (gen {presented_generation}), active is {active} (gen {active_generation})"
+    )]
     StaleLease {
         presented: LeaseId,
         presented_generation: u64,
@@ -71,6 +73,21 @@ pub enum ForgeError {
 
     #[error("store error: {0}")]
     Store(String),
+
+    #[error("execution overloaded: {0}")]
+    Overloaded(String),
+
+    #[error("conflict: {0}")]
+    Conflict(String),
+
+    #[error("slug already reserved: {0}")]
+    SlugConflict(String),
+
+    #[error("catalog stale: {0}")]
+    CatalogStale(String),
+
+    #[error("incomplete workspace observation: {0}")]
+    ObservationIncomplete(String),
 
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),

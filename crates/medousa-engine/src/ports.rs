@@ -62,7 +62,10 @@ pub trait TurnStreamRegistryPort: Send + Sync {
     async fn drop_stream(&self, turn_id: &str);
     async fn has_stream(&self, turn_id: &str) -> bool;
     /// Durable per-turn event log used for SSE `?since=N` replay.
-    async fn event_log(&self, turn_id: &str) -> Option<std::sync::Arc<crate::turn_event_log::TurnEventLog>>;
+    async fn event_log(
+        &self,
+        turn_id: &str,
+    ) -> Option<std::sync::Arc<crate::turn_event_log::TurnEventLog>>;
     /// Mark the live fan-out channel closed while retaining replay state.
     async fn mark_stream_closed(&self, turn_id: &str);
 }
@@ -112,7 +115,11 @@ mod tests {
         .await;
         let event = rx.recv().await.expect("event delivered");
         match event {
-            ToolSinkEvent::BrowserNavigated { url, opened_by_agent, .. } => {
+            ToolSinkEvent::BrowserNavigated {
+                url,
+                opened_by_agent,
+                ..
+            } => {
                 assert_eq!(url, "https://example.test");
                 assert!(opened_by_agent);
             }

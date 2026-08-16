@@ -7582,6 +7582,7 @@ dependencies = [
  "medousa-mcp-gateway",
  "medousa-mcp-server",
  "medousa-sdk",
+ "medousa-store",
  "medousa-tool-macros",
  "medousa-types",
  "notify",
@@ -7728,6 +7729,7 @@ dependencies = [
  "medousa-types",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tokio",
  "tokio-util",
  "tracing",
@@ -7742,11 +7744,13 @@ dependencies = [
  "fs2",
  "globset",
  "medousa-host",
+ "medousa-store",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.18",
+ "tokio",
  "windows 0.61.3",
 ]
 
@@ -7946,6 +7950,20 @@ dependencies = [
  "serde_json",
  "slack-morphism",
  "tokio",
+]
+
+[[package]]
+name = "medousa-store"
+version = "0.9.1"
+dependencies = [
+ "cap-fs-ext",
+ "cap-std",
+ "chrono",
+ "libc",
+ "serde",
+ "tempfile",
+ "uuid 1.23.1",
+ "windows 0.61.3",
 ]
 
 [[package]]

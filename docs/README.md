@@ -113,6 +113,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | [Doctor & health](runbooks/doctor-and-health.md) | `medousa doctor`, probes |
 | [Upgrade & data dir](runbooks/upgrade-and-data-dir.md) | `MEDOUSA_DATA_DIR`, multi-workshop |
 | [Desktop browser isolation](runbooks/browser-isolation.md) | Capability, CSP, resource, and dependency-upgrade failures |
+| [Forge scaling](runbooks/forge-scaling.md) | Queue saturation, slug/catalog repair, Git children, observation |
 
 Full index: [runbooks/README.md](runbooks/README.md)
 

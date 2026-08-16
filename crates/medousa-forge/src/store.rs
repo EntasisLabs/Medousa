@@ -3,24 +3,36 @@
 //!
 //! ```text
 //! {forge_root}/
-//!   schema_version                 # single line, u32
-//!   items/{opaque_work_key}/manifest.json  # snapshot — strictly a replay cache
-//!   items/{opaque_work_key}/events.jsonl   # append-only source of truth
+//!   schema_version                 # single line, u32 (store layout)
+//!   items/{opaque_work_key}/manifest.json      # snapshot — strictly a replay cache
+//!   items/{opaque_work_key}/events.jsonl       # v1 append-only log
+//!   items/{opaque_work_key}/events.v2          # v2 framed log (when migrated)
+//!   items/{opaque_work_key}/store_generation   # 1=v1 authority, 2=v2 authority
+//!   items/{opaque_work_key}/compaction.json    # last successful compaction cursor
+//!   items/{opaque_work_key}/segments/seg-*     # sealed compacted prefixes
 //! ```
 //!
 //! Snapshots are written atomically (tmp + sync + rename + dir sync). Replay
-//! tolerates a truncated trailing line, which is the expected aftermath of a
-//! crash mid-append.
+//! tolerates a truncated trailing record, which is the expected aftermath of a
+//! crash mid-append. Per-item `store_generation` selects v1 vs v2 authority.
 
+use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use fs2::FileExt;
+use medousa_store::{DurabilityLevel, FileTransaction, StoreRoot};
+use sha2::{Digest as _, Sha256};
 
 use crate::error::{ForgeError, Result};
-use crate::events::{EventPayload, TransitionEvent, EVENT_SCHEMA_VERSION};
+use crate::events::{EVENT_SCHEMA_VERSION, EventPayload, TransitionEvent};
+use crate::log_v2::{
+    self, LogAuthority, append_v2_frame_at, events_v2_path, recover_tail_v2, replay_v2,
+    select_log_authority,
+};
 use crate::model::{ActorRef, WorkId, WorkItem};
 
 pub const STORE_SCHEMA_VERSION: u32 = 1;
@@ -73,14 +85,39 @@ impl Drop for FileLock {
 
 /// Snapshot cache envelope: the folded item plus how far the log had been
 /// applied when cached. Never authoritative — replay is.
+///
+/// Optional fields are stamped by generation-fenced compaction (H06.6) so load
+/// can validate snapshot/log pairing and seek the replay suffix.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SnapshotEnvelope {
     pub applied_seq: u64,
     pub item: WorkItem,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_log_offset: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_generation: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_generation: Option<u32>,
+}
+
+/// In-memory tail recovered once per item, then advanced on append.
+#[derive(Debug, Clone)]
+pub struct TailMeta {
+    pub last_seq: u64,
+    pub last_offset: u64,
+    pub last_hash: [u8; 32],
+    pub lease_acquisitions: u64,
+    pub operations_started: u64,
 }
 
 pub struct FsWorkStore {
     root: PathBuf,
+    store_root: Arc<StoreRoot>,
+    transaction: FileTransaction,
+    tails: Mutex<HashMap<String, TailMeta>>,
+    append_gates: Mutex<HashMap<String, Arc<Mutex<()>>>>,
 }
 
 impl FsWorkStore {
@@ -102,11 +139,42 @@ impl FsWorkStore {
         } else {
             fs::write(&version_path, format!("{STORE_SCHEMA_VERSION}\n"))?;
         }
-        Ok(Self { root })
+        // StoreRoot needs a stable no-follow handle; keep `self.root` as the
+        // caller-facing spelling so worktree/orphan paths stay comparable.
+        let canonical = root.canonicalize().unwrap_or_else(|_| root.clone());
+        let store_root = Arc::new(
+            StoreRoot::open_or_create_nofollow(&canonical)
+                .map_err(|err| ForgeError::Store(err.to_string()))?,
+        );
+        let transaction = FileTransaction::new(Arc::clone(&store_root));
+        Ok(Self {
+            root,
+            store_root,
+            transaction,
+            tails: Mutex::new(HashMap::new()),
+            append_gates: Mutex::new(HashMap::new()),
+        })
     }
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    pub fn store_root(&self) -> &StoreRoot {
+        &self.store_root
+    }
+
+    pub fn store_root_arc(&self) -> &Arc<StoreRoot> {
+        &self.store_root
+    }
+
+    pub fn transaction(&self) -> &FileTransaction {
+        &self.transaction
+    }
+
+    /// Replace the store's transaction (used by failpoint tests).
+    pub fn set_transaction(&mut self, transaction: FileTransaction) {
+        self.transaction = transaction;
     }
 
     pub fn item_dir(&self, work_id: &WorkId) -> PathBuf {
@@ -136,40 +204,268 @@ impl FsWorkStore {
     }
 
     pub fn item_exists(&self, work_id: &WorkId) -> bool {
-        self.events_path(work_id).exists()
+        self.events_path(work_id).exists() || events_v2_path(self, work_id).exists()
     }
 
     /// Append an event, assigning the next monotonic seq for this work item.
     /// The write is flushed and synced before returning.
+    ///
+    /// Production Forge/reconcile mutations must use
+    /// [`crate::forge::Forge::commit_event`] / [`crate::owner::append_owned`]
+    /// so the per-item owner remains authoritative. Prefer those paths outside
+    /// store-unit tests and fixtures.
     pub fn append(
         &self,
         work_id: &WorkId,
         actor: &ActorRef,
         payload: EventPayload,
     ) -> Result<TransitionEvent> {
+        let tail = self.cached_tail(work_id)?;
+        self.append_at(work_id, actor, payload, tail.last_seq + 1)
+    }
+
+    pub fn append_at(
+        &self,
+        work_id: &WorkId,
+        actor: &ActorRef,
+        payload: EventPayload,
+        seq: u64,
+    ) -> Result<TransitionEvent> {
+        let gate = {
+            let mut gates = self
+                .append_gates
+                .lock()
+                .map_err(|_| ForgeError::Store("append gate poisoned".into()))?;
+            Arc::clone(
+                gates
+                    .entry(work_id.as_str().to_owned())
+                    .or_insert_with(|| Arc::new(Mutex::new(()))),
+            )
+        };
+        let _append_guard = gate
+            .lock()
+            .map_err(|_| ForgeError::Store("append gate poisoned".into()))?;
+
         let dir = self.item_dir(work_id);
         fs::create_dir_all(&dir)?;
-        let seq = self.last_seq(work_id)? + 1;
+        // Always re-scan the durable log before writing so a stale in-memory
+        // tail cannot reuse sequences past a torn or repaired prefix.
+        let authority = select_log_authority(self, work_id)?;
+        let tail = self.recover_tail(work_id)?;
+        if seq != tail.last_seq.saturating_add(1) {
+            return Err(ForgeError::Conflict(format!(
+                "append sequence fence: expected {}, got {seq}",
+                tail.last_seq.saturating_add(1)
+            )));
+        }
         let event = TransitionEvent::new(work_id.clone(), seq, actor.clone(), payload);
         if event.schema_version != EVENT_SCHEMA_VERSION {
             return Err(ForgeError::Store("event schema drift".into()));
         }
-        let mut line = serde_json::to_vec(&event)?;
-        line.push(b'\n');
-        let path = self.events_path(work_id);
-        let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
-        file.write_all(&line)?;
-        file.sync_all()?;
-        Ok(event)
+
+        match authority {
+            LogAuthority::V2 => {
+                let path = events_v2_path(self, work_id);
+                if path.exists() {
+                    let len = fs::metadata(&path)?.len();
+                    if len > tail.last_offset {
+                        let file = OpenOptions::new().write(true).open(&path)?;
+                        file.set_len(tail.last_offset)?;
+                        file.sync_all()?;
+                    } else if len < tail.last_offset {
+                        return Err(ForgeError::Store(format!(
+                            "events.v2 shorter than recovered tail at {}",
+                            path.display()
+                        )));
+                    }
+                }
+                let written = append_v2_frame_at(
+                    self,
+                    work_id,
+                    &event,
+                    &tail.last_hash,
+                    DurabilityLevel::Synced,
+                )?;
+                let offset = tail.last_offset.saturating_add(written as u64);
+                let payload = serde_json::to_vec(&event)?;
+                let digest = Sha256::digest(&payload);
+                let mut frame_checksum = [0u8; 32];
+                frame_checksum.copy_from_slice(&digest);
+                self.remember_tail_hash(work_id, &event, offset, frame_checksum);
+                Ok(event)
+            }
+            LogAuthority::V1 => {
+                let path = self.events_path(work_id);
+                if path.exists() {
+                    let len = fs::metadata(&path)?.len();
+                    if len > tail.last_offset {
+                        // Incomplete final record only — truncate before appending so
+                        // the next frame cannot glue onto torn bytes.
+                        let file = OpenOptions::new().write(true).open(&path)?;
+                        file.set_len(tail.last_offset)?;
+                        file.sync_all()?;
+                    } else if len < tail.last_offset {
+                        return Err(ForgeError::Store(format!(
+                            "events log shorter than recovered tail at {}",
+                            path.display()
+                        )));
+                    }
+                }
+                let mut line = serde_json::to_vec(&event)?;
+                line.push(b'\n');
+                let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
+                file.write_all(&line)?;
+                file.sync_all()?;
+                let offset = file.metadata().map(|meta| meta.len()).unwrap_or(0);
+                self.remember_tail(work_id, &event, offset);
+                Ok(event)
+            }
+        }
     }
 
-    fn last_seq(&self, work_id: &WorkId) -> Result<u64> {
-        Ok(self.replay(work_id)?.last().map(|e| e.seq).unwrap_or(0))
+    pub fn cached_last_seq(&self, work_id: &WorkId) -> Result<u64> {
+        Ok(self.cached_tail(work_id)?.last_seq)
     }
 
-    /// Replay the full event log. A malformed trailing line (crash mid-append)
-    /// is skipped; a malformed line anywhere else is a hard error.
+    /// Return the tail already published by a successful append without
+    /// touching the filesystem. This is used only for post-commit receipt and
+    /// owner bookkeeping, where a new fallible I/O operation would make a
+    /// durable append look retryable to its caller.
+    pub(crate) fn remembered_tail(&self, work_id: &WorkId) -> Option<TailMeta> {
+        self.tails
+            .lock()
+            .ok()
+            .and_then(|tails| tails.get(work_id.as_str()).cloned())
+    }
+
+    pub fn cached_tail(&self, work_id: &WorkId) -> Result<TailMeta> {
+        if let Some(tail) = self
+            .tails
+            .lock()
+            .map_err(|_| ForgeError::Store("tail cache poisoned".into()))?
+            .get(work_id.as_str())
+            .cloned()
+        {
+            let path = match select_log_authority(self, work_id)? {
+                LogAuthority::V2 => events_v2_path(self, work_id),
+                LogAuthority::V1 => self.events_path(work_id),
+            };
+            let len = if path.exists() {
+                fs::metadata(&path)?.len()
+            } else {
+                0
+            };
+            // Accept the cache only when it still matches the durable file
+            // length. A longer file means a torn final record; shorter means
+            // external truncation — both require a fresh disk recovery.
+            if len == tail.last_offset {
+                return Ok(tail);
+            }
+        }
+        let tail = self.recover_tail(work_id)?;
+        self.tails
+            .lock()
+            .map_err(|_| ForgeError::Store("tail cache poisoned".into()))?
+            .insert(work_id.as_str().to_owned(), tail.clone());
+        Ok(tail)
+    }
+
+    /// Stream the log once, keeping only tail metadata. Does not build a
+    /// `Vec<String>` of the whole file.
+    ///
+    /// Tolerates only a demonstrably incomplete final record (unparseable
+    /// bytes at EOF). Corruption anywhere before EOF fails closed.
+    pub fn recover_tail(&self, work_id: &WorkId) -> Result<TailMeta> {
+        match select_log_authority(self, work_id)? {
+            LogAuthority::V2 => {
+                let _ = log_v2::cleanup_migration_staging(self, work_id);
+                recover_tail_v2(&events_v2_path(self, work_id))
+            }
+            LogAuthority::V1 => {
+                let path = self.events_path(work_id);
+                if !path.exists() {
+                    return Ok(TailMeta {
+                        last_seq: 0,
+                        last_offset: 0,
+                        last_hash: [0; 32],
+                        lease_acquisitions: 0,
+                        operations_started: 0,
+                    });
+                }
+                let data = fs::read(&path)?;
+                scan_jsonl_tail(&path, &data)
+            }
+        }
+    }
+
+    fn remember_tail(&self, work_id: &WorkId, event: &TransitionEvent, offset: u64) {
+        self.remember_tail_hash(
+            work_id,
+            event,
+            offset,
+            hash_line(&serde_json::to_string(event).unwrap_or_default()),
+        );
+    }
+
+    fn remember_tail_hash(
+        &self,
+        work_id: &WorkId,
+        event: &TransitionEvent,
+        offset: u64,
+        last_hash: [u8; 32],
+    ) {
+        if let Ok(mut tails) = self.tails.lock() {
+            let previous = tails.get(work_id.as_str()).cloned();
+            tails.insert(
+                work_id.as_str().to_owned(),
+                TailMeta {
+                    last_seq: event.seq,
+                    last_offset: offset,
+                    last_hash,
+                    lease_acquisitions: previous
+                        .as_ref()
+                        .map(|tail| {
+                            tail.lease_acquisitions
+                                + u64::from(matches!(
+                                    event.payload,
+                                    EventPayload::LeaseAcquired { .. }
+                                ))
+                        })
+                        .unwrap_or(u64::from(matches!(
+                            event.payload,
+                            EventPayload::LeaseAcquired { .. }
+                        ))),
+                    operations_started: previous
+                        .as_ref()
+                        .map(|tail| {
+                            tail.operations_started
+                                + u64::from(matches!(
+                                    event.payload,
+                                    EventPayload::OperationStarted { .. }
+                                ))
+                        })
+                        .unwrap_or(u64::from(matches!(
+                            event.payload,
+                            EventPayload::OperationStarted { .. }
+                        ))),
+                },
+            );
+        }
+    }
+
+    /// Replay the authoritative event log for this item (v1 or v2).
     pub fn replay(&self, work_id: &WorkId) -> Result<Vec<TransitionEvent>> {
+        match select_log_authority(self, work_id)? {
+            LogAuthority::V2 => {
+                let _ = log_v2::cleanup_migration_staging(self, work_id);
+                replay_v2(&events_v2_path(self, work_id))
+            }
+            LogAuthority::V1 => self.replay_v1(work_id),
+        }
+    }
+
+    /// Replay v1 JSONL regardless of generation marker (migration validation).
+    pub fn replay_v1(&self, work_id: &WorkId) -> Result<Vec<TransitionEvent>> {
         let path = self.events_path(work_id);
         if !path.exists() {
             return Ok(Vec::new());
@@ -177,34 +473,34 @@ impl FsWorkStore {
         let file = File::open(&path)?;
         let reader = BufReader::new(file);
         let mut events = Vec::new();
-        let mut lines: Vec<String> = Vec::new();
-        for line in reader.lines() {
+        let mut pending: Option<(usize, String)> = None;
+        for (idx, line) in reader.lines().enumerate() {
             let line = line?;
             if line.trim().is_empty() {
                 continue;
             }
-            lines.push(line);
+            if let Some((prev_idx, prev)) = pending.take() {
+                match serde_json::from_str::<TransitionEvent>(&prev) {
+                    Ok(event) => events.push(event),
+                    Err(err) => {
+                        return Err(ForgeError::Store(format!(
+                            "corrupt event at {} line {}: {err}",
+                            path.display(),
+                            prev_idx + 1
+                        )));
+                    }
+                }
+            }
+            pending = Some((idx, line));
         }
-        let total = lines.len();
-        for (idx, line) in lines.into_iter().enumerate() {
+        if let Some((idx, line)) = pending {
             match serde_json::from_str::<TransitionEvent>(&line) {
                 Ok(event) => events.push(event),
-                Err(err) if idx == total - 1 => {
-                    // Truncated tail after a crash mid-append: the append never
-                    // synced, so the event never happened. Drop it.
-                    let _ = err;
-                    break;
-                }
-                Err(err) => {
-                    return Err(ForgeError::Store(format!(
-                        "corrupt event at {} line {}: {err}",
-                        path.display(),
-                        idx + 1
-                    )));
+                Err(_) => {
+                    let _ = idx;
                 }
             }
         }
-        // Seq must be strictly monotonic — anything else is corruption.
         for window in events.windows(2) {
             if window[1].seq <= window[0].seq {
                 return Err(ForgeError::Store(format!(
@@ -216,6 +512,13 @@ impl FsWorkStore {
             }
         }
         Ok(events)
+    }
+
+    /// Drop a cached tail after authority changes (e.g. v1→v2 migration).
+    pub fn invalidate_tail(&self, work_id: &WorkId) {
+        if let Ok(mut tails) = self.tails.lock() {
+            tails.remove(work_id.as_str());
+        }
     }
 
     /// Write the snapshot cache atomically: tmp file + sync + rename + dir sync.
@@ -234,6 +537,10 @@ impl FsWorkStore {
         let envelope = SnapshotEnvelope {
             applied_seq,
             item: item.clone(),
+            next_log_offset: None,
+            anchor_hash: None,
+            item_generation: None,
+            log_generation: None,
         };
         {
             let mut file = OpenOptions::new()
@@ -250,8 +557,7 @@ impl FsWorkStore {
             let _ = fs::remove_file(&tmp);
             return Err(snapshot_io_error("replace snapshot", &final_path, err));
         }
-        sync_dir(&dir)
-            .map_err(|err| snapshot_io_error("sync snapshot directory", &dir, err))?;
+        sync_dir(&dir).map_err(|err| snapshot_io_error("sync snapshot directory", &dir, err))?;
         Ok(())
     }
 
@@ -299,6 +605,15 @@ impl FsWorkStore {
                 ids.push(event.work_id);
                 continue;
             }
+            let events_v2 = entry.path().join("events.v2");
+            if events_v2.exists()
+                && let Ok(events) = crate::log_v2::replay_v2(&events_v2)
+                && let Some(event) = events.first()
+                && event.work_id.storage_key() == name
+            {
+                ids.push(event.work_id.clone());
+                continue;
+            }
             if is_legacy_forge_id(&name) && !name.starts_with("work1-") {
                 ids.push(WorkId::from(name));
             }
@@ -330,6 +645,90 @@ impl FsWorkStore {
                 .join(".lock"),
         )
     }
+}
+
+fn scan_jsonl_tail(path: &Path, data: &[u8]) -> Result<TailMeta> {
+    let mut last_seq = 0u64;
+    let mut last_hash = [0u8; 32];
+    let mut lease_acquisitions = 0u64;
+    let mut operations_started = 0u64;
+    let mut last_good_offset = 0u64;
+    let mut previous_seq = 0u64;
+    let mut start = 0usize;
+
+    while start < data.len() {
+        let relative_newline = data[start..].iter().position(|&byte| byte == b'\n');
+        let (line_end, record_end, at_eof) = match relative_newline {
+            Some(index) => {
+                let line_end = start + index;
+                (line_end, line_end + 1, line_end + 1 >= data.len())
+            }
+            None => (data.len(), data.len(), true),
+        };
+        let line_bytes = &data[start..line_end];
+        if line_bytes
+            .iter()
+            .all(|&byte| byte == b' ' || byte == b'\t' || byte == b'\r')
+        {
+            // Blank lines are ignored but do not extend the committed prefix.
+            start = record_end;
+            continue;
+        }
+        let line = std::str::from_utf8(line_bytes).map_err(|_| {
+            ForgeError::Store(format!(
+                "corrupt event encoding at {} offset {start}",
+                path.display()
+            ))
+        })?;
+        match serde_json::from_str::<TransitionEvent>(line) {
+            Ok(event) => {
+                if event.seq <= previous_seq && previous_seq != 0 {
+                    return Err(ForgeError::Store(format!(
+                        "non-monotonic seq at {} ({} then {})",
+                        path.display(),
+                        previous_seq,
+                        event.seq
+                    )));
+                }
+                previous_seq = event.seq;
+                last_seq = event.seq;
+                last_hash = hash_line(line);
+                if matches!(event.payload, EventPayload::LeaseAcquired { .. }) {
+                    lease_acquisitions += 1;
+                }
+                if matches!(event.payload, EventPayload::OperationStarted { .. }) {
+                    operations_started += 1;
+                }
+                last_good_offset = record_end as u64;
+                start = record_end;
+            }
+            Err(err) => {
+                if at_eof {
+                    // Demonstrably incomplete final record only.
+                    break;
+                }
+                return Err(ForgeError::Store(format!(
+                    "corrupt event at {} offset {start}: {err}",
+                    path.display()
+                )));
+            }
+        }
+    }
+
+    Ok(TailMeta {
+        last_seq,
+        last_offset: last_good_offset,
+        last_hash,
+        lease_acquisitions,
+        operations_started,
+    })
+}
+
+fn hash_line(line: &str) -> [u8; 32] {
+    let digest = Sha256::digest(line.as_bytes());
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&digest);
+    out
 }
 
 fn is_legacy_forge_id(value: &str) -> bool {
@@ -437,9 +836,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let item = WorkItem::new("t", "b", target(), "user-1");
-        let e1 = store
-            .append(&item.id, &actor(), registered(&item))
-            .unwrap();
+        let e1 = store.append(&item.id, &actor(), registered(&item)).unwrap();
         let e2 = store
             .append(
                 &item.id,
@@ -462,22 +859,237 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let item = WorkItem::new("t", "b", target(), "user-1");
-        store
-            .append(&item.id, &actor(), registered(&item))
-            .unwrap();
+        store.append(&item.id, &actor(), registered(&item)).unwrap();
         // Simulate crash mid-append: garbage at the end of the file.
         let path = store.events_path(&item.id);
         let mut file = OpenOptions::new().append(true).open(&path).unwrap();
-        file.write_all(b"{\"schema_version\":1,\"work_id\":\"wor").unwrap();
+        file.write_all(b"{\"schema_version\":1,\"work_id\":\"wor")
+            .unwrap();
         drop(file);
         let events = store.replay(&item.id).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].payload, registered(&item));
-        // Appending after the truncated tail resumes at seq 2.
-        let next = store
-            .append(&item.id, &actor(), registered(&item))
+        // Appending after the truncated tail resumes at seq 2 and truncates
+        // the torn bytes so the new record is not glued onto garbage.
+        let next = store.append(&item.id, &actor(), registered(&item)).unwrap();
+        assert_eq!(next.seq, 2);
+        let raw = fs::read_to_string(&path).unwrap();
+        assert_eq!(raw.lines().count(), 2);
+        assert!(store.replay(&item.id).unwrap().len() == 2);
+    }
+
+    #[test]
+    fn recover_tail_rejects_corrupt_middle_record() {
+        let tmp = TempDir::new().unwrap();
+        let store = FsWorkStore::open(tmp.path()).unwrap();
+        let item = WorkItem::new("t", "b", target(), "user-1");
+        store.append(&item.id, &actor(), registered(&item)).unwrap();
+        let path = store.events_path(&item.id);
+        let original = fs::read_to_string(&path).unwrap();
+        fs::write(&path, format!("{original}not-json\n{original}")).unwrap();
+        let err = store.recover_tail(&item.id).unwrap_err();
+        assert!(matches!(err, ForgeError::Store(_)));
+        // Sequence must not advance past the corruption.
+        let err = store
+            .append(
+                &item.id,
+                &actor(),
+                EventPayload::StateChanged {
+                    from: crate::model::WorkState::Draft,
+                    to: crate::model::WorkState::Ready,
+                    reason: None,
+                },
+            )
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            ForgeError::Store(_) | ForgeError::Conflict(_)
+        ));
+    }
+
+    #[test]
+    fn recover_tail_accepts_complete_final_record_without_newline() {
+        let tmp = TempDir::new().unwrap();
+        let store = FsWorkStore::open(tmp.path()).unwrap();
+        let item = WorkItem::new("t", "b", target(), "user-1");
+        let event = store.append(&item.id, &actor(), registered(&item)).unwrap();
+        let path = store.events_path(&item.id);
+        let mut raw = fs::read_to_string(&path).unwrap();
+        assert!(raw.ends_with('\n'));
+        raw.pop();
+        fs::write(&path, &raw).unwrap();
+        // Fresh process/open — empty in-memory cache.
+        let reopened = FsWorkStore::open(tmp.path()).unwrap();
+        let tail = reopened.recover_tail(&item.id).unwrap();
+        assert_eq!(tail.last_seq, event.seq);
+        assert_eq!(tail.last_offset, raw.len() as u64);
+        let next = reopened
+            .append(
+                &item.id,
+                &actor(),
+                EventPayload::StateChanged {
+                    from: crate::model::WorkState::Draft,
+                    to: crate::model::WorkState::Ready,
+                    reason: None,
+                },
+            )
             .unwrap();
         assert_eq!(next.seq, 2);
+    }
+
+    #[test]
+    fn stale_cached_tail_is_refreshed_from_disk_before_append() {
+        let tmp = TempDir::new().unwrap();
+        let store = FsWorkStore::open(tmp.path()).unwrap();
+        let item = WorkItem::new("t", "b", target(), "user-1");
+        store.append(&item.id, &actor(), registered(&item)).unwrap();
+        let path = store.events_path(&item.id);
+        // Poison the in-memory cache as if a concurrent writer advanced it.
+        {
+            let mut tails = store.tails.lock().unwrap();
+            tails.insert(
+                item.id.as_str().to_owned(),
+                TailMeta {
+                    last_seq: 99,
+                    last_offset: fs::metadata(&path).unwrap().len(),
+                    last_hash: [9; 32],
+                    lease_acquisitions: 0,
+                    operations_started: 0,
+                },
+            );
+        }
+        // File length still matches the poisoned cache offset, but append_at
+        // re-scans disk and fences the bogus sequence.
+        let err = store
+            .append_at(
+                &item.id,
+                &actor(),
+                EventPayload::StateChanged {
+                    from: crate::model::WorkState::Draft,
+                    to: crate::model::WorkState::Ready,
+                    reason: None,
+                },
+                100,
+            )
+            .unwrap_err();
+        assert!(matches!(err, ForgeError::Conflict(_)));
+        // Torn bytes beyond the cache offset force a disk refresh.
+        {
+            let mut tails = store.tails.lock().unwrap();
+            let len = fs::metadata(&path).unwrap().len();
+            tails.insert(
+                item.id.as_str().to_owned(),
+                TailMeta {
+                    last_seq: 1,
+                    last_offset: len,
+                    last_hash: [1; 32],
+                    lease_acquisitions: 0,
+                    operations_started: 0,
+                },
+            );
+        }
+        let mut file = OpenOptions::new().append(true).open(&path).unwrap();
+        file.write_all(b"{\"partial\":").unwrap();
+        drop(file);
+        let tail = store.cached_tail(&item.id).unwrap();
+        assert_eq!(tail.last_seq, 1);
+        assert!(tail.last_offset < fs::metadata(&path).unwrap().len());
+        let next = store
+            .append(
+                &item.id,
+                &actor(),
+                EventPayload::StateChanged {
+                    from: crate::model::WorkState::Draft,
+                    to: crate::model::WorkState::Ready,
+                    reason: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(next.seq, 2);
+        assert_eq!(
+            fs::metadata(&path).unwrap().len(),
+            store.recover_tail(&item.id).unwrap().last_offset
+        );
+    }
+
+    #[test]
+    fn concurrent_append_fencing_rejects_duplicate_sequences() {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        let tmp = TempDir::new().unwrap();
+        let store = Arc::new(FsWorkStore::open(tmp.path()).unwrap());
+        let item = WorkItem::new("t", "b", target(), "user-1");
+        store.append(&item.id, &actor(), registered(&item)).unwrap();
+        let barrier = Arc::new(Barrier::new(2));
+        let mut handles = Vec::new();
+        for _ in 0..2 {
+            let store = Arc::clone(&store);
+            let work_id = item.id.clone();
+            let barrier = Arc::clone(&barrier);
+            handles.push(thread::spawn(move || {
+                barrier.wait();
+                store.append_at(
+                    &work_id,
+                    &actor(),
+                    EventPayload::StateChanged {
+                        from: crate::model::WorkState::Draft,
+                        to: crate::model::WorkState::Ready,
+                        reason: None,
+                    },
+                    2,
+                )
+            }));
+        }
+        let results: Vec<_> = handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect();
+        let wins = results.iter().filter(|result| result.is_ok()).count();
+        let losses = results.iter().filter(|result| result.is_err()).count();
+        assert_eq!(wins, 1);
+        assert_eq!(losses, 1);
+        assert_eq!(store.replay(&item.id).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn restart_recovery_reads_disk_not_previous_process_cache() {
+        let tmp = TempDir::new().unwrap();
+        let item = WorkItem::new("t", "b", target(), "user-1");
+        {
+            let store = FsWorkStore::open(tmp.path()).unwrap();
+            store.append(&item.id, &actor(), registered(&item)).unwrap();
+            store
+                .append(
+                    &item.id,
+                    &actor(),
+                    EventPayload::StateChanged {
+                        from: crate::model::WorkState::Draft,
+                        to: crate::model::WorkState::Ready,
+                        reason: None,
+                    },
+                )
+                .unwrap();
+            let path = store.events_path(&item.id);
+            let mut file = OpenOptions::new().append(true).open(&path).unwrap();
+            file.write_all(b"{\"schema_version\":1,").unwrap();
+        }
+        let reopened = FsWorkStore::open(tmp.path()).unwrap();
+        let tail = reopened.recover_tail(&item.id).unwrap();
+        assert_eq!(tail.last_seq, 2);
+        let next = reopened
+            .append(
+                &item.id,
+                &actor(),
+                EventPayload::StateChanged {
+                    from: crate::model::WorkState::Ready,
+                    to: crate::model::WorkState::Draft,
+                    reason: Some("repair".into()),
+                },
+            )
+            .unwrap();
+        assert_eq!(next.seq, 3);
+        assert_eq!(reopened.replay(&item.id).unwrap().len(), 3);
     }
 
     #[test]
@@ -485,9 +1097,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let item = WorkItem::new("t", "b", target(), "user-1");
-        store
-            .append(&item.id, &actor(), registered(&item))
-            .unwrap();
+        store.append(&item.id, &actor(), registered(&item)).unwrap();
         // Corrupt the middle by rewriting the file with a bad first line.
         let path = store.events_path(&item.id);
         let original = fs::read_to_string(&path).unwrap();
@@ -501,9 +1111,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let item = WorkItem::new("t", "b", target(), "user-1");
-        store
-            .append(&item.id, &actor(), registered(&item))
-            .unwrap();
+        store.append(&item.id, &actor(), registered(&item)).unwrap();
         store.write_snapshot(&item, 1).unwrap();
         let back = store.read_snapshot(&item.id).unwrap().unwrap();
         assert_eq!(back.applied_seq, 1);
@@ -541,9 +1149,7 @@ mod tests {
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let item = WorkItem::new("t", "b", target(), "user-1");
         let op = OperationId::new();
-        store
-            .append(&item.id, &actor(), registered(&item))
-            .unwrap();
+        store.append(&item.id, &actor(), registered(&item)).unwrap();
         store
             .append(
                 &item.id,
@@ -580,9 +1186,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let item = WorkItem::new("t", "b", target(), "user-1");
-        store
-            .append(&item.id, &actor(), registered(&item))
-            .unwrap();
+        store.append(&item.id, &actor(), registered(&item)).unwrap();
         // Rewrite the log with a backwards seq.
         let path = store.events_path(&item.id);
         let line = fs::read_to_string(&path).unwrap();
@@ -614,9 +1218,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let item = WorkItem::new("t", "b", target(), "user-1");
-        store
-            .append(&item.id, &actor(), registered(&item))
-            .unwrap();
+        store.append(&item.id, &actor(), registered(&item)).unwrap();
         fs::create_dir_all(store.item_dir(&item.id)).unwrap();
         fs::write(store.snapshot_path(&item.id), b"{not json").unwrap();
         assert!(store.read_snapshot(&item.id).unwrap().is_none());
@@ -674,7 +1276,12 @@ mod tests {
         let hostile = WorkId::from("../../outside".to_string());
         let path = store.item_dir(&hostile);
         assert_eq!(path.parent(), Some(store.root().join("items").as_path()));
-        assert!(path.file_name().unwrap().to_string_lossy().starts_with("work1-"));
+        assert!(
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("work1-")
+        );
         assert!(!path.to_string_lossy().contains("outside"));
     }
 }

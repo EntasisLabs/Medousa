@@ -1,18 +1,21 @@
 //! Debounced Forge worktree observation for project event streams.
 
-//! Debounced Forge worktree observation for project event streams.
-
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
+use medousa_forge::execution::{ExecutionClass, ForgeExecutionService};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::sync::mpsc;
 
 use crate::daemon::forge_events::{ForgeEventBus, ForgeProjectEventKind};
 
 fn relative_worktree_path(worktree: &Path, path: &Path) -> Option<String> {
-    let path = path.canonicalize().ok().unwrap_or_else(|| path.to_path_buf());
+    let path = path
+        .canonicalize()
+        .ok()
+        .unwrap_or_else(|| path.to_path_buf());
     let worktree = worktree
         .canonicalize()
         .ok()
@@ -36,8 +39,14 @@ fn event_kind(kind: &EventKind) -> Option<ForgeProjectEventKind> {
     }
 }
 
+fn file_digest(path: &Path) -> Option<String> {
+    let bytes = std::fs::read(path).ok()?;
+    use sha2::{Digest, Sha256};
+    Some(format!("{:x}", Sha256::digest(bytes)))
+}
+
 /// Watch remembered Forge worktrees and publish path-aware project events.
-pub fn spawn_forge_worktree_watcher(bus: ForgeEventBus) {
+pub fn spawn_forge_worktree_watcher(bus: ForgeEventBus, execution: Arc<ForgeExecutionService>) {
     tokio::spawn(async move {
         let (tx, mut rx) = mpsc::unbounded_channel::<(String, PathBuf, ForgeProjectEventKind)>();
         let mut watchers: HashMap<String, RecommendedWatcher> = HashMap::new();
@@ -56,22 +65,42 @@ pub fn spawn_forge_worktree_watcher(bus: ForgeEventBus) {
                             continue;
                         }
                         let tx = tx.clone();
+                        let overflow_bus = bus.clone();
                         let watched_id = work_id.clone();
-                        let watched_root = worktree.clone();
                         match notify::recommended_watcher(move |result: Result<notify::Event, notify::Error>| {
-                            let Ok(event) = result else { return };
-                            let Some(kind) = event_kind(&event.kind) else { return };
-                            for path in event.paths {
-                                let _ = tx.send((watched_id.clone(), path, kind));
+                            match result {
+                                Ok(event) => {
+                                    if event.need_rescan() {
+                                        overflow_bus.mark_watcher_overflow();
+                                        return;
+                                    }
+                                    let Some(kind) = event_kind(&event.kind) else { return };
+                                    for path in event.paths {
+                                        let _ = tx.send((watched_id.clone(), path, kind));
+                                    }
+                                }
+                                Err(err) => {
+                                    // Watcher loss / inotify exhaustion / backend errors are
+                                    // never proof of cleanliness — mark overflow conservatively.
+                                    overflow_bus.mark_watcher_overflow();
+                                    tracing::warn!(
+                                        error = %err,
+                                        work_id = %watched_id,
+                                        "forge worktree watcher error; marking overflow"
+                                    );
+                                }
                             }
                         }) {
                             Ok(mut watcher) => {
                                 if watcher.watch(&worktree, RecursiveMode::Recursive).is_ok() {
                                     watchers.insert(work_id, watcher);
-                                    let _ = watched_root;
+                                } else {
+                                    bus.mark_watcher_overflow();
+                                    tracing::warn!(%work_id, "forge worktree watch failed; marking overflow");
                                 }
                             }
                             Err(err) => {
+                                bus.mark_watcher_overflow();
                                 tracing::warn!(error = %err, %work_id, "forge worktree watcher unavailable");
                             }
                         }
@@ -92,14 +121,24 @@ pub fn spawn_forge_worktree_watcher(bus: ForgeEventBus) {
                         let digest = if kind == ForgeProjectEventKind::Deleted {
                             None
                         } else {
-                            bus.worktree_for(&work_id).and_then(|root| {
-                                let absolute = root.join(&path);
-                                std::fs::read(&absolute).ok().map(|bytes| {
-                                    use sha2::{Digest, Sha256};
-                                    format!("{:x}", Sha256::digest(bytes))
-                                })
-                            })
+                            let absolute = bus.worktree_for(&work_id).map(|root| root.join(&path));
+                            match absolute {
+                                Some(absolute) => execution
+                                    .run(
+                                        ExecutionClass::Observation,
+                                        64 * 1024,
+                                        move || {
+                                            Ok::<_, medousa_forge::error::ForgeError>(
+                                                file_digest(&absolute),
+                                            )
+                                        },
+                                    )
+                                    .await
+                                    .unwrap_or_default(),
+                                None => None,
+                            }
                         };
+                        bus.bump_watcher_generation();
                         bus.publish_project(
                             &work_id,
                             kind,
@@ -116,6 +155,7 @@ pub fn spawn_forge_worktree_watcher(bus: ForgeEventBus) {
 
 /// Test helper: publish a synthetic FS-originated change through the bus.
 pub fn publish_observed_change(bus: &ForgeEventBus, work_id: &str, relative: &str) {
+    bus.bump_watcher_generation();
     bus.publish_project(
         work_id,
         ForgeProjectEventKind::Changed,
@@ -123,6 +163,11 @@ pub fn publish_observed_change(bus: &ForgeEventBus, work_id: &str, relative: &st
         None,
         None,
     );
+}
+
+/// Test helper: simulate watcher overflow from a lost/rescan event.
+pub fn publish_watcher_overflow(bus: &ForgeEventBus) {
+    bus.mark_watcher_overflow();
 }
 
 #[cfg(test)]
@@ -143,5 +188,22 @@ mod tests {
         std::fs::create_dir_all(git.parent().unwrap()).unwrap();
         std::fs::write(&git, "ref").unwrap();
         assert!(relative_worktree_path(root.path(), &git).is_none());
+    }
+
+    #[test]
+    fn watcher_overflow_helper_marks_shared_fence() {
+        let bus = ForgeEventBus::new();
+        let before = bus.watcher_generation();
+        publish_watcher_overflow(&bus);
+        assert!(bus.watcher_overflow());
+        assert!(bus.watcher_generation() > before);
+    }
+
+    #[test]
+    fn observed_change_bumps_watcher_generation() {
+        let bus = ForgeEventBus::new();
+        let before = bus.watcher_generation();
+        publish_observed_change(&bus, "work-1", "src/a.rs");
+        assert!(bus.watcher_generation() > before);
     }
 }

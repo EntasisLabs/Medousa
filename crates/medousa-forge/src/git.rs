@@ -3,12 +3,40 @@
 //! merge-base games for evidence), and explicit checkpoint identity via env
 //! vars (Forge never impersonates the user).
 
-use std::io::Write as _;
+use std::io::{Read as _, Write as _};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use sha2::{Digest as _, Sha256};
+
 use crate::error::{ForgeError, Result};
+use crate::execution::{
+    MAX_CAPTURE_BYTES, capture_child_output_bounded, redact_git_text, run_command_bounded,
+};
 use crate::model::{GitOid, RepoId, RepoIdentity, SubmodulePin};
+
+/// Streaming digest of a worktree binary diff (never materializes the patch).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamedDiffDigest {
+    pub digest: String,
+    pub bytes_hashed: u64,
+    pub truncated: bool,
+}
+
+fn format_git_spawn_error(args: &[&str], err: &impl std::fmt::Display) -> String {
+    format!(
+        "failed to spawn git {}: {err}",
+        redact_git_text(&args.join(" "))
+    )
+}
+
+fn format_git_command_error(args: &[&str], detail: impl AsRef<str>) -> String {
+    format!(
+        "git {} failed: {}",
+        redact_git_text(&args.join(" ")),
+        redact_git_text(detail.as_ref())
+    )
+}
 
 /// Committer identity stamped on every Forge-created commit. Authorship may
 /// be attributed to the executor's identity where known; committer is always
@@ -65,85 +93,100 @@ impl GitEngine {
         Self { git }
     }
 
+    pub fn binary(&self) -> &Path {
+        &self.git
+    }
+
     pub(crate) fn run(&self, cwd: &Path, args: &[&str]) -> Result<String> {
-        let output = self.command()
-            .args(args)
-            .current_dir(cwd)
-            // Defensive hygiene: a Forge subprocess must never inherit a
-            // foreign repo context or block on a credential prompt.
-            .env_remove("GIT_DIR")
-            .env_remove("GIT_WORK_TREE")
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .output()
-            .map_err(|e| ForgeError::Git(format!("failed to spawn git {}: {e}", args.join(" "))))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            let detail = if !stderr.is_empty() { stderr } else { stdout };
-            return Err(ForgeError::Git(format!(
-                "git {} failed: {}",
-                args.join(" "),
-                if detail.is_empty() {
-                    output.status.to_string()
-                } else {
-                    detail
-                }
+        let (stdout, stderr, truncated, status) = self.run_capped(cwd, args)?;
+        if truncated {
+            return Err(ForgeError::Git(format_git_command_error(
+                args,
+                "output exceeded capture budget",
             )));
         }
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        if !status.success() {
+            let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&stdout).trim().to_string();
+            let detail = if !stderr.is_empty() { stderr } else { stdout };
+            return Err(ForgeError::Git(format_git_command_error(
+                args,
+                if detail.is_empty() {
+                    status.to_string()
+                } else {
+                    detail
+                },
+            )));
+        }
+        Ok(String::from_utf8_lossy(&stdout).to_string())
     }
 
     fn run_bytes(&self, cwd: &Path, args: &[&str]) -> Result<Vec<u8>> {
-        let output = self.command()
-            .args(args)
-            .current_dir(cwd)
-            .env_remove("GIT_DIR")
-            .env_remove("GIT_WORK_TREE")
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .output()
-            .map_err(|e| ForgeError::Git(format!("failed to spawn git {}: {e}", args.join(" "))))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(ForgeError::Git(format!(
-                "git {} failed: {}",
-                args.join(" "),
-                if stderr.is_empty() {
-                    output.status.to_string()
-                } else {
-                    stderr
-                }
+        let (stdout, stderr, truncated, status) = self.run_capped(cwd, args)?;
+        if truncated {
+            return Err(ForgeError::Git(format_git_command_error(
+                args,
+                "output exceeded capture budget",
             )));
         }
-        Ok(output.stdout)
+        if !status.success() {
+            let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
+            return Err(ForgeError::Git(format_git_command_error(
+                args,
+                if stderr.is_empty() {
+                    status.to_string()
+                } else {
+                    stderr
+                },
+            )));
+        }
+        Ok(stdout)
     }
 
     /// Like `run_bytes`, but treats exit status 1 as success (git diff found
     /// differences, especially with `--no-index`).
     fn run_diff_bytes(&self, cwd: &Path, args: &[&str]) -> Result<Vec<u8>> {
-        let output = self
-            .command()
+        let (stdout, stderr, truncated, status) = self.run_capped(cwd, args)?;
+        if truncated {
+            return Err(ForgeError::Git(format_git_command_error(
+                args,
+                "output exceeded capture budget",
+            )));
+        }
+        match status.code() {
+            Some(0) | Some(1) => Ok(stdout),
+            _ => {
+                let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
+                Err(ForgeError::Git(format_git_command_error(
+                    args,
+                    if stderr.is_empty() {
+                        status.to_string()
+                    } else {
+                        stderr
+                    },
+                )))
+            }
+        }
+    }
+
+    fn run_capped(
+        &self,
+        cwd: &Path,
+        args: &[&str],
+    ) -> Result<(Vec<u8>, Vec<u8>, bool, std::process::ExitStatus)> {
+        let mut command = self.command();
+        command
             .args(args)
             .current_dir(cwd)
             .env_remove("GIT_DIR")
             .env_remove("GIT_WORK_TREE")
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .output()
-            .map_err(|e| ForgeError::Git(format!("failed to spawn git {}: {e}", args.join(" "))))?;
-        match output.status.code() {
-            Some(0) | Some(1) => Ok(output.stdout),
-            _ => {
-                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                Err(ForgeError::Git(format!(
-                    "git {} failed: {}",
-                    args.join(" "),
-                    if stderr.is_empty() {
-                        output.status.to_string()
-                    } else {
-                        stderr
-                    }
-                )))
+            .env("GIT_TERMINAL_PROMPT", "0");
+        run_command_bounded(command, MAX_CAPTURE_BYTES).map_err(|err| match err {
+            ForgeError::Git(message) if message.contains("failed to spawn") => {
+                ForgeError::Git(format_git_spawn_error(args, &message))
             }
-        }
+            other => other,
+        })
     }
 
     fn run_with_stdin(&self, cwd: &Path, args: &[&str], stdin: &[u8]) -> Result<()> {
@@ -158,23 +201,32 @@ impl GitEngine {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| ForgeError::Git(format!("failed to spawn git {}: {e}", args.join(" "))))?;
+            .map_err(|e| ForgeError::Git(format_git_spawn_error(args, &e)))?;
         child
             .stdin
             .as_mut()
             .ok_or_else(|| ForgeError::Git("git stdin was unavailable".into()))?
             .write_all(stdin)?;
-        let output = child.wait_with_output()?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(ForgeError::Git(format!(
-                "git {} failed: {}",
-                args.join(" "),
+        // Drop stdin so git sees EOF.
+        drop(child.stdin.take());
+        let (stdout, stderr, truncated, status) =
+            capture_child_output_bounded(child, MAX_CAPTURE_BYTES)?;
+        let _ = stdout;
+        if truncated {
+            return Err(ForgeError::Git(format_git_command_error(
+                args,
+                "output exceeded capture budget",
+            )));
+        }
+        if !status.success() {
+            let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
+            return Err(ForgeError::Git(format_git_command_error(
+                args,
                 if stderr.is_empty() {
-                    output.status.to_string()
+                    status.to_string()
                 } else {
                     stderr
-                }
+                },
             )));
         }
         Ok(())
@@ -413,12 +465,7 @@ impl GitEngine {
         Ok(head)
     }
 
-    fn copy_worktree_state(
-        &self,
-        source: &Path,
-        destination: &Path,
-        head: &GitOid,
-    ) -> Result<()> {
+    fn copy_worktree_state(&self, source: &Path, destination: &Path, head: &GitOid) -> Result<()> {
         let patch = self.diff_binary_worktree(source, head)?;
         if !patch.is_empty() {
             self.run_with_stdin(destination, &["apply", "--binary", "-"], &patch)?;
@@ -521,10 +568,7 @@ impl GitEngine {
                 "--untracked-files=all",
             ],
         )?;
-        Ok((
-            parse_porcelain_v2_branch(&out),
-            parse_porcelain_v2_z(&out),
-        ))
+        Ok((parse_porcelain_v2_branch(&out), parse_porcelain_v2_z(&out)))
     }
 
     pub fn is_clean(&self, cwd: &Path) -> Result<bool> {
@@ -549,13 +593,7 @@ impl GitEngine {
 
     /// Unified text diff for one normalized Git path between two exact
     /// revisions. Callers must validate the path before crossing this API.
-    pub fn diff_path(
-        &self,
-        cwd: &Path,
-        from: &GitOid,
-        to: &GitOid,
-        path: &str,
-    ) -> Result<Vec<u8>> {
+    pub fn diff_path(&self, cwd: &Path, from: &GitOid, to: &GitOid, path: &str) -> Result<Vec<u8>> {
         self.run_bytes(
             cwd,
             &[
@@ -574,12 +612,7 @@ impl GitEngine {
     /// Unified text diff for one path between an exact revision and the
     /// *working tree* (includes unstaged edits). Exit status 1 (differences)
     /// is treated as success and returns the patch bytes.
-    pub fn diff_path_worktree(
-        &self,
-        cwd: &Path,
-        from: &GitOid,
-        path: &str,
-    ) -> Result<Vec<u8>> {
+    pub fn diff_path_worktree(&self, cwd: &Path, from: &GitOid, path: &str) -> Result<Vec<u8>> {
         self.run_diff_bytes(
             cwd,
             &[
@@ -614,10 +647,148 @@ impl GitEngine {
     /// `git diff --binary <baseline>` against the *working tree* (uncommitted
     /// state), used for pre-checkpoint inspection.
     pub fn diff_binary_worktree(&self, cwd: &Path, baseline: &GitOid) -> Result<Vec<u8>> {
-        self.run_bytes(
+        self.diff_binary_worktree_bounded(cwd, baseline, MAX_CAPTURE_BYTES)
+    }
+
+    /// Stream-friendly bounded worktree diff used for observation hashing.
+    ///
+    /// Truncation is signaled by returning a buffer shorter than the live
+    /// stream together with callers that prefer [`Self::hash_diff_binary_worktree_streaming`]
+    /// for Exact/Incomplete honesty.
+    pub fn diff_binary_worktree_bounded(
+        &self,
+        cwd: &Path,
+        baseline: &GitOid,
+        max_bytes: usize,
+    ) -> Result<Vec<u8>> {
+        let max_bytes = max_bytes.min(MAX_CAPTURE_BYTES);
+        let (stdout, stderr, truncated, status) = self.run_capped(
             cwd,
             &["diff", "--binary", "--full-index", baseline.as_str()],
-        )
+        )?;
+        match status.code() {
+            Some(0) | Some(1) => {
+                if truncated || stdout.len() > max_bytes {
+                    return Ok(stdout[..stdout.len().min(max_bytes)].to_vec());
+                }
+                Ok(stdout)
+            }
+            _ => {
+                let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
+                Err(ForgeError::Git(format_git_command_error(
+                    &["diff", "--binary", "--full-index"],
+                    if stderr.is_empty() {
+                        status.to_string()
+                    } else {
+                        stderr
+                    },
+                )))
+            }
+        }
+    }
+
+    /// Hash `git diff --binary` stdout incrementally without retaining the patch.
+    pub fn hash_diff_binary_worktree_streaming(
+        &self,
+        cwd: &Path,
+        baseline: &GitOid,
+        max_bytes: u64,
+    ) -> Result<StreamedDiffDigest> {
+        let max_bytes = max_bytes.min(MAX_CAPTURE_BYTES as u64).max(1);
+        let mut child = self
+            .command()
+            .args(["diff", "--binary", "--full-index", baseline.as_str()])
+            .current_dir(cwd)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|err| {
+                ForgeError::Git(format_git_spawn_error(
+                    &["diff", "--binary", "--full-index"],
+                    &err,
+                ))
+            })?;
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| ForgeError::Git("git stdout was unavailable".into()))?;
+        let mut stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| ForgeError::Git("git stderr was unavailable".into()))?;
+        let stderr_thread = std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            let mut chunk = [0u8; 8192];
+            let mut truncated = false;
+            loop {
+                match stderr.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if buf.len() < 64 * 1024 {
+                            let take = (64 * 1024 - buf.len()).min(n);
+                            buf.extend_from_slice(&chunk[..take]);
+                            if take < n {
+                                truncated = true;
+                            }
+                        } else {
+                            truncated = true;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            (buf, truncated)
+        });
+        let mut hasher = Sha256::new();
+        let mut chunk = [0u8; 64 * 1024];
+        let mut bytes_hashed = 0u64;
+        let mut truncated = false;
+        loop {
+            let read = stdout.read(&mut chunk).map_err(ForgeError::Io)?;
+            if read == 0 {
+                break;
+            }
+            if bytes_hashed >= max_bytes {
+                truncated = true;
+                continue;
+            }
+            let remaining = (max_bytes - bytes_hashed) as usize;
+            let take = remaining.min(read);
+            hasher.update(&chunk[..take]);
+            bytes_hashed = bytes_hashed.saturating_add(take as u64);
+            if take < read {
+                truncated = true;
+            }
+        }
+        let status = child
+            .wait()
+            .map_err(|err| ForgeError::Git(format!("git wait failed: {err}")))?;
+        let (stderr_bytes, stderr_trunc) = stderr_thread
+            .join()
+            .map_err(|_| ForgeError::Git("git stderr reader panicked".into()))?;
+        let _ = stderr_trunc;
+        match status.code() {
+            Some(0) | Some(1) => Ok(StreamedDiffDigest {
+                digest: format!("{:x}", hasher.finalize()),
+                bytes_hashed,
+                truncated,
+            }),
+            _ => {
+                let stderr = String::from_utf8_lossy(&stderr_bytes).trim().to_string();
+                Err(ForgeError::Git(format_git_command_error(
+                    &["diff", "--binary", "--full-index"],
+                    if stderr.is_empty() {
+                        status.to_string()
+                    } else {
+                        stderr
+                    },
+                )))
+            }
+        }
     }
 
     /// Commits between baseline and head, oldest first.
@@ -670,7 +841,12 @@ impl GitEngine {
         }
         self.run(
             cwd,
-            &["push", "--set-upstream", remote, &format!("refs/heads/{branch}")],
+            &[
+                "push",
+                "--set-upstream",
+                remote,
+                &format!("refs/heads/{branch}"),
+            ],
         )
     }
 
@@ -691,12 +867,7 @@ impl GitEngine {
     }
 
     /// Bounded commit history newest-first: oid, subject, author, timestamp.
-    pub fn log_commits(
-        &self,
-        cwd: &Path,
-        range: &str,
-        limit: usize,
-    ) -> Result<Vec<CommitSummary>> {
+    pub fn log_commits(&self, cwd: &Path, range: &str, limit: usize) -> Result<Vec<CommitSummary>> {
         let limit = limit.clamp(1, 200);
         let out = self.run(
             cwd,
@@ -728,10 +899,7 @@ impl GitEngine {
 
     /// `git blame --porcelain` for one path, parsed into contiguous hunks.
     pub fn blame(&self, cwd: &Path, path: &str) -> Result<Vec<BlameHunk>> {
-        let out = self.run(
-            cwd,
-            &["blame", "--porcelain", "--", path],
-        )?;
+        let out = self.run(cwd, &["blame", "--porcelain", "--", path])?;
         Ok(parse_blame_porcelain(&out))
     }
 
@@ -779,25 +947,19 @@ impl GitEngine {
     }
 
     pub fn is_ancestor(&self, cwd: &Path, ancestor: &GitOid, descendant: &GitOid) -> Result<bool> {
-        let status = self.command()
-            .args([
-                "merge-base",
-                "--is-ancestor",
-                ancestor.as_str(),
-                descendant.as_str(),
-            ])
-            .current_dir(cwd)
-            .env_remove("GIT_DIR")
-            .env_remove("GIT_WORK_TREE")
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .output()
-            .map_err(|e| ForgeError::Git(format!("failed to spawn git merge-base: {e}")))?;
-        match status.status.code() {
+        let args = [
+            "merge-base",
+            "--is-ancestor",
+            ancestor.as_str(),
+            descendant.as_str(),
+        ];
+        let (_stdout, stderr, _truncated, status) = self.run_capped(cwd, &args)?;
+        match status.code() {
             Some(0) => Ok(true),
             Some(1) => Ok(false),
             _ => {
-                let stderr = String::from_utf8_lossy(&status.stderr).trim().to_string();
-                Err(ForgeError::Git(format!("git merge-base failed: {stderr}")))
+                let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
+                Err(ForgeError::Git(format_git_command_error(&args, stderr)))
             }
         }
     }
@@ -855,18 +1017,25 @@ impl GitEngine {
             args.extend(exclude.iter().map(String::as_str));
             self.run(cwd, &args)?;
         }
-        let staged = self.command()
+        let mut staged = self.command();
+        staged
             .args(["diff", "--cached", "--quiet"])
             .current_dir(cwd)
             .env_remove("GIT_DIR")
             .env_remove("GIT_WORK_TREE")
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .output()
-            .map_err(|e| ForgeError::Git(format!("failed to spawn git diff: {e}")))?;
-        if staged.status.success() {
+            .env("GIT_TERMINAL_PROMPT", "0");
+        let (_out, _err, _trunc, staged_status) = run_command_bounded(staged, MAX_CAPTURE_BYTES)
+            .map_err(|e| {
+                ForgeError::Git(format_git_spawn_error(
+                    &["diff", "--cached", "--quiet"],
+                    &e.to_string(),
+                ))
+            })?;
+        if staged_status.success() {
             return self.head_oid(cwd);
         }
-        let output = self.command()
+        let mut commit = self.command();
+        commit
             .args(["commit", "--no-verify", "-m", message])
             .current_dir(cwd)
             .env_remove("GIT_DIR")
@@ -875,12 +1044,23 @@ impl GitEngine {
             .env("GIT_AUTHOR_NAME", &author.name)
             .env("GIT_AUTHOR_EMAIL", &author.email)
             .env("GIT_COMMITTER_NAME", FORGE_COMMITTER_NAME)
-            .env("GIT_COMMITTER_EMAIL", FORGE_COMMITTER_EMAIL)
-            .output()
-            .map_err(|e| ForgeError::Git(format!("failed to spawn git commit: {e}")))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(ForgeError::Git(format!("git commit failed: {stderr}")));
+            .env("GIT_COMMITTER_EMAIL", FORGE_COMMITTER_EMAIL);
+        let (_stdout, stderr, truncated, status) = run_command_bounded(commit, MAX_CAPTURE_BYTES)
+            .map_err(|e| {
+            ForgeError::Git(format_git_spawn_error(&["commit"], &e.to_string()))
+        })?;
+        if truncated {
+            return Err(ForgeError::Git(format_git_command_error(
+                &["commit"],
+                "output exceeded capture budget",
+            )));
+        }
+        if !status.success() {
+            let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
+            return Err(ForgeError::Git(format_git_command_error(
+                &["commit"],
+                stderr,
+            )));
         }
         self.head_oid(cwd)
     }
@@ -1400,7 +1580,10 @@ mod tests {
         let git = GitEngine::detect().unwrap();
         git.run(tmp.path(), &["init", "-b", "master"]).unwrap();
 
-        assert_eq!(git.current_branch(tmp.path()).unwrap().as_deref(), Some("master"));
+        assert_eq!(
+            git.current_branch(tmp.path()).unwrap().as_deref(),
+            Some("master")
+        );
         assert!(!git.has_commits(tmp.path()).unwrap());
         assert_eq!(git.suggested_base_ref(tmp.path()).unwrap(), None);
         assert!(matches!(
@@ -1488,7 +1671,9 @@ mod tests {
     fn diff_path_worktree_and_untracked() {
         let (tmp, git, head) = init_repo();
         fs::write(tmp.path().join("hello.txt"), "changed\n").unwrap();
-        let patch = git.diff_path_worktree(tmp.path(), &head, "hello.txt").unwrap();
+        let patch = git
+            .diff_path_worktree(tmp.path(), &head, "hello.txt")
+            .unwrap();
         let text = String::from_utf8_lossy(&patch);
         assert!(text.contains("-hello") || text.contains("-hello\n"));
         assert!(text.contains("+changed"));
@@ -1599,22 +1784,26 @@ summary second
         let destination_root = TempDir::new().unwrap();
         let destination = destination_root.path().join("attempt-wt");
         let fork_head = git
-            .worktree_add_from_worktree(
-                source,
-                source,
-                &destination,
-                "worktree/attempt-fork",
-            )
+            .worktree_add_from_worktree(source, source, &destination, "worktree/attempt-fork")
             .unwrap();
         assert_eq!(fork_head, source_head);
-        assert_eq!(fs::read_to_string(destination.join("hello.txt")).unwrap(), "changed\n");
+        assert_eq!(
+            fs::read_to_string(destination.join("hello.txt")).unwrap(),
+            "changed\n"
+        );
         assert!(!destination.join("delete-me.txt").exists());
         assert_eq!(
             fs::read_to_string(destination.join("nested/new.txt")).unwrap(),
             "untracked\n"
         );
-        assert_eq!(fs::read(destination.join("binary.bin")).unwrap(), [0, 1, 2, 255]);
-        assert_eq!(fs::read_to_string(source.join("hello.txt")).unwrap(), "changed\n");
+        assert_eq!(
+            fs::read(destination.join("binary.bin")).unwrap(),
+            [0, 1, 2, 255]
+        );
+        assert_eq!(
+            fs::read_to_string(source.join("hello.txt")).unwrap(),
+            "changed\n"
+        );
     }
 
     #[cfg(unix)]
@@ -1644,6 +1833,18 @@ summary second
             .commit_checkpoint(tmp.path(), "forge: noop", &CheckpointAuthor::default())
             .unwrap();
         assert_eq!(again, base);
+    }
+
+    #[test]
+    fn hash_diff_binary_worktree_streaming_truncates_without_materializing() {
+        let (tmp, git, head) = init_repo();
+        fs::write(tmp.path().join("hello.txt"), "x".repeat(32 * 1024)).unwrap();
+        let digest = git
+            .hash_diff_binary_worktree_streaming(tmp.path(), &head, 128)
+            .unwrap();
+        assert!(digest.truncated);
+        assert!(digest.bytes_hashed <= 128);
+        assert_eq!(digest.digest.len(), 64);
     }
 
     #[test]

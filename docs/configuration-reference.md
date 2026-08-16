@@ -280,6 +280,37 @@ Home Settings → Rhythm writes these fields to `tui_defaults.json` on Mac deskt
 
 ---
 
+## Forge / Coder (H06)
+
+These are compile-time caps in `medousa-forge::execution` and
+`medousa-forge::observation`. There is no env override today; change the
+constants and rebuild if an operator needs different budgets.
+
+| Cap | Starting value |
+|-----|----------------|
+| Queued / admitted Forge commands | 64 (hard reject when full) |
+| Blocking workers | 8 (wait inside the 64-command queue) |
+| Network Git processes | 2 (wait inside the queue) |
+| Observation jobs | 2 (wait inside the queue) |
+| Queued command bytes | 8 MiB (hard reject when exhausted) |
+| Per-command metadata / store / capture | 256 KiB / 1 MiB / 8 MiB (reject when estimate exceeds class budget; no under-reserve) |
+| Git stdout+stderr capture | 8 MiB combined; truncated output is incomplete; excess bytes are drained |
+| Compaction trigger / buffer | 1,000 events or 8 MiB |
+| Owner handles / projection bytes / idle TTL | 10,000 / 64 MiB / 15 minutes |
+| Repository lanes | 1,024, idle TTL 15 minutes (exclusive lane waits; idle lanes evict) |
+| Observation cache | 10,000 path digests, 64 MiB, 10 minute TTL |
+| Resume untracked hash | 100k entries / 1 GiB per file / 4 GiB / 30s |
+| Ordinary observation | 5s / 512 MiB |
+| Coder checkpoint snapshot | 512 KiB after one serialize |
+| Network Git deadline | 120s (`supervise_git`; timeout kills process tree) |
+| P04 / P05 harness size | `MEDOUSA_P04_EVENTS`, `MEDOUSA_P05_FILES` |
+
+Queue-full (global admit slots or byte budget) returns HTTP `503` / `overloaded`.
+Class and repository-lane contention waits under the global cap. Do not add a
+setting that falls back to inline blocking on a Tokio worker.
+
+---
+
 ## Daemon resource limits
 
 | Variable / behavior | Purpose |
@@ -309,4 +340,5 @@ Many variables accept **`STASIS_*`** as an alias for **`MEDOUSA_*`**. New deploy
 
 | Date | Change |
 |------|--------|
+| 2026-08-15 | H06 Forge/Coder caps (admission, observation, P04/P05 harness env) |
 | 2026-06-07 | Initial catalog — grouped from codebase grep + cookbook |

@@ -8,6 +8,7 @@ pub mod ports;
 pub mod receipt;
 pub mod scratch;
 pub mod stream_sink;
+pub mod transcript_cursor;
 pub mod turn_event;
 pub mod turn_event_log;
 pub mod turn_pipeline;
@@ -20,14 +21,14 @@ pub use ports::{
 pub use receipt::ArtifactReceiptMeta;
 pub use scratch::{TurnScratchPhase, TurnScratchpad, WorkerDelegateScratch};
 pub use stream_sink::{AgentStreamSink, SharedAgentStreamSink, ToolInputParam};
+pub use transcript_cursor::{TranscriptCursor, digest_events, reconstruct_from_journal};
 pub use turn_event::{
     Principal, PrincipalKind, SequencedTurnEvent, TurnEnvelope, TurnEvent, TurnSurface,
 };
 pub use turn_event_log::{
-    configure_log_root, default_log_root, fold_history_from_events, project_turn_to_history,
-    prune_committed, recover_uncommitted, JournalAppendReceipt, JournalCommitReceipt,
-    JournalDurability, RecoveredTurn, TurnEventLog, TurnEventLogMetrics, TurnReplayPage,
-    TURN_LOG_DIR,
+    JournalAppendReceipt, JournalCommitReceipt, JournalDurability, RecoveredTurn, TURN_LOG_DIR,
+    TurnEventLog, TurnEventLogMetrics, TurnReplayPage, configure_log_root, default_log_root,
+    fold_history_from_events, project_turn_to_history, prune_committed, recover_uncommitted,
 };
 pub use turn_pipeline::{
     TURN_PIPELINE_BATCH_BYTES, TURN_PIPELINE_BYTE_CAPACITY, TURN_PIPELINE_COALESCE,

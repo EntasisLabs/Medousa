@@ -170,11 +170,7 @@ impl TurnEventLog {
         if journal.metadata()?.len() != scan.valid_bytes {
             journal.set_len(scan.valid_bytes)?;
         }
-        let committed = commit_marker_matches(
-            &root,
-            &turn_id,
-            scan.next_seq.saturating_sub(1),
-        );
+        let committed = commit_marker_matches(&root, &turn_id, scan.next_seq.saturating_sub(1));
         Ok(Self {
             envelope,
             root,
@@ -295,7 +291,9 @@ impl TurnEventLog {
         while inner.events.len() > LIVE_RING_MAX_EVENTS
             || inner.retained_bytes > LIVE_RING_MAX_BYTES
         {
-            let Some(evicted) = inner.events.pop_front() else { break };
+            let Some(evicted) = inner.events.pop_front() else {
+                break;
+            };
             inner.retained_bytes = inner.retained_bytes.saturating_sub(evicted.encoded_bytes);
             inner.evicted_events = inner.evicted_events.saturating_add(1);
             inner.evicted_bytes = inner
@@ -310,12 +308,25 @@ impl TurnEventLog {
     }
 
     pub fn snapshot_since(&self, since: u64) -> Vec<SequencedTurnEvent> {
-        let fence = self.replay_fence();
+        self.snapshot_range(since, self.replay_fence())
+    }
+
+    /// Return the durable journal events with sequence in `(since, through]`.
+    pub fn snapshot_through(&self, through: u64) -> Vec<SequencedTurnEvent> {
+        self.snapshot_range(0, through)
+    }
+
+    fn snapshot_range(&self, since: u64, through: u64) -> Vec<SequencedTurnEvent> {
+        let fence = through.min(self.replay_fence());
         let mut cursor = since;
         let mut events = Vec::new();
         while cursor < fence {
-            let Ok(page) = self.replay_page(cursor, fence) else { break };
-            let Some(last) = page.events.last() else { break };
+            let Ok(page) = self.replay_page(cursor, fence) else {
+                break;
+            };
+            let Some(last) = page.events.last() else {
+                break;
+            };
             cursor = last.seq();
             events.extend(page.events);
             if !page.has_more {
@@ -326,8 +337,47 @@ impl TurnEventLog {
     }
 
     /// Capture the highest sequence accepted by the journal owner.
+    pub fn envelope(&self) -> &TurnEnvelope {
+        &self.envelope
+    }
+
     pub fn replay_fence(&self) -> u64 {
         self.lock().next_seq.saturating_sub(1)
+    }
+
+    pub fn last_synced_seq(&self) -> u64 {
+        self.lock().last_synced_seq
+    }
+
+    /// Ensure the durable journal bytes through `through_seq` have been synced.
+    ///
+    /// Checkpoint publication must wait for this fence so a crash cannot leave a
+    /// logical checkpoint referencing an unsynced H03 prefix.
+    pub fn ensure_synced_through(&self, through_seq: u64) -> std::io::Result<()> {
+        if through_seq == 0 {
+            return Ok(());
+        }
+        let mut inner = self.lock();
+        let available = inner.next_seq.saturating_sub(1);
+        if through_seq > available {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("cannot sync through {through_seq}; journal fence is only {available}"),
+            ));
+        }
+        if inner.last_synced_seq >= through_seq {
+            return Ok(());
+        }
+        let journal = inner
+            .journal
+            .as_mut()
+            .ok_or_else(|| std::io::Error::other("turn journal is closed"))?;
+        journal.flush()?;
+        journal.get_ref().sync_data()?;
+        inner.journal_syncs = inner.journal_syncs.saturating_add(1);
+        inner.last_synced_seq = through_seq;
+        inner.last_sync = Instant::now();
+        Ok(())
     }
 
     /// Read one event/byte-bounded page after `since`, never beyond `fence`.
@@ -351,7 +401,9 @@ impl TurnEventLog {
                 let events = inner
                     .events
                     .iter()
-                    .filter(|retained| retained.event.seq() > since && retained.event.seq() <= fence)
+                    .filter(|retained| {
+                        retained.event.seq() > since && retained.event.seq() <= fence
+                    })
                     .take_while(|retained| {
                         let fits = bytes == 0
                             || bytes.saturating_add(retained.encoded_bytes)
@@ -453,7 +505,9 @@ impl TurnEventLog {
     }
 
     pub fn fold_history(&self) -> Vec<ConversationTurn> {
-        let Ok(turn_id) = TurnEventId::parse(&self.envelope.turn_id) else { return Vec::new() };
+        let Ok(turn_id) = TurnEventId::parse(&self.envelope.turn_id) else {
+            return Vec::new();
+        };
         read_journal(&self.root, &journal_name(&turn_id))
             .map(|events| fold_history_from_events(&events))
             .unwrap_or_default()
@@ -835,8 +889,7 @@ fn scan_journal(root: &Dir, name: &str, turn_id: &str) -> std::io::Result<Journa
     };
     let mut line = Vec::new();
     loop {
-        let Some(terminated) =
-            read_bounded_line(&mut reader, &mut line, JOURNAL_RECORD_MAX_BYTES)?
+        let Some(terminated) = read_bounded_line(&mut reader, &mut line, JOURNAL_RECORD_MAX_BYTES)?
         else {
             return Ok(scan);
         };
@@ -872,10 +925,11 @@ fn scan_journal(root: &Dir, name: &str, turn_id: &str) -> std::io::Result<Journa
             event,
             encoded_bytes: line.len(),
         });
-        while scan.events.len() > LIVE_RING_MAX_EVENTS
-            || scan.retained_bytes > LIVE_RING_MAX_BYTES
+        while scan.events.len() > LIVE_RING_MAX_EVENTS || scan.retained_bytes > LIVE_RING_MAX_BYTES
         {
-            let Some(evicted) = scan.events.pop_front() else { break };
+            let Some(evicted) = scan.events.pop_front() else {
+                break;
+            };
             scan.retained_bytes = scan.retained_bytes.saturating_sub(evicted.encoded_bytes);
             scan.evicted_events = scan.evicted_events.saturating_add(1);
             scan.evicted_bytes = scan
@@ -971,8 +1025,10 @@ mod tests {
     fn append_stamps_monotonic_seq_and_snapshot_since_filters() {
         let root = tmp_root("seq");
         let log = TurnEventLog::open_in(&root, env("turn-seq")).unwrap();
-        log.append(TurnEvent::ContentDelta { delta: "a".into() }).unwrap();
-        log.append(TurnEvent::ContentDelta { delta: "b".into() }).unwrap();
+        log.append(TurnEvent::ContentDelta { delta: "a".into() })
+            .unwrap();
+        log.append(TurnEvent::ContentDelta { delta: "b".into() })
+            .unwrap();
         log.append(final_ev("done", vec![])).unwrap();
         let seqs: Vec<u64> = log.snapshot_since(0).iter().map(|e| e.seq()).collect();
         assert_eq!(seqs, vec![1, 2, 3]);
@@ -990,16 +1046,27 @@ mod tests {
             .append_sequenced(1, TurnEvent::ContentDelta { delta: "a".into() })
             .unwrap();
         assert_eq!(written.durability, JournalDurability::Written);
-        assert!(log
-            .append_sequenced(3, TurnEvent::ContentDelta { delta: "gap".into() })
-            .is_err());
+        assert!(
+            log.append_sequenced(
+                3,
+                TurnEvent::ContentDelta {
+                    delta: "gap".into()
+                }
+            )
+            .is_err()
+        );
 
         let synced = log.append_sequenced(2, final_ev("done", vec![])).unwrap();
         assert_eq!(synced.durability, JournalDurability::Synced);
         assert!(synced.through_offset > written.through_offset);
 
         log.close_journal();
-        assert!(log.append(TurnEvent::Notice { message: "late".into() }).is_err());
+        assert!(
+            log.append(TurnEvent::Notice {
+                message: "late".into()
+            })
+            .is_err()
+        );
         assert_eq!(log.snapshot_since(0).len(), 2);
         fs::remove_dir_all(&root).ok();
     }
@@ -1056,14 +1123,19 @@ mod tests {
         let envelope = env("turn-malformed-middle");
         {
             let log = TurnEventLog::open_in(&root, envelope.clone()).unwrap();
-            log.append(TurnEvent::Notice { message: "first".into() }).unwrap();
+            log.append(TurnEvent::Notice {
+                message: "first".into(),
+            })
+            .unwrap();
         }
         let path = root.join(journal_name(
             &TurnEventId::parse("turn-malformed-middle").unwrap(),
         ));
         let valid_suffix = SequencedTurnEvent {
             envelope: envelope.at_seq(2),
-            event: TurnEvent::Notice { message: "suffix".into() },
+            event: TurnEvent::Notice {
+                message: "suffix".into(),
+            },
             emitted_at_utc: None,
             stream_event_v2: None,
         };
@@ -1084,15 +1156,18 @@ mod tests {
         let log = TurnEventLog::open_in(&root, env("turn-fold")).unwrap();
         log.append(TurnEvent::ContentDelta {
             delta: "streamed".into(),
-        }).unwrap();
+        })
+        .unwrap();
         log.append(TurnEvent::WorkerAck {
             text: "on it".into(),
             tool_names: vec!["spawn".into()],
             work_id: Some("w1".into()),
             parts: vec![],
             committed_at: Utc::now(),
-        }).unwrap();
-        log.append(final_ev("final body", vec!["data_probe".into()])).unwrap();
+        })
+        .unwrap();
+        log.append(final_ev("final body", vec!["data_probe".into()]))
+            .unwrap();
         let history = log.fold_history();
         assert_eq!(history.len(), 2, "worker ack + final fold to history");
         assert_eq!(history[0].content, "on it");
@@ -1106,7 +1181,8 @@ mod tests {
         let root = tmp_root("recover");
         {
             let log = TurnEventLog::open_in(&root, env("turn-A")).unwrap();
-            log.append(TurnEvent::ContentDelta { delta: "hi".into() }).unwrap();
+            log.append(TurnEvent::ContentDelta { delta: "hi".into() })
+                .unwrap();
             log.append(final_ev("answer A", vec![])).unwrap();
         }
         {
@@ -1118,7 +1194,8 @@ mod tests {
             let log = TurnEventLog::open_in(&root, env("turn-C")).unwrap();
             log.append(TurnEvent::ContentDelta {
                 delta: "partial".into(),
-            }).unwrap();
+            })
+            .unwrap();
         }
 
         let mut recovered = recover_uncommitted(&root);
@@ -1224,7 +1301,8 @@ mod tests {
             let log = TurnEventLog::open_in(&root, env("turn-reopen")).unwrap();
             log.append(TurnEvent::ContentDelta {
                 delta: "one".into(),
-            }).unwrap();
+            })
+            .unwrap();
             log.append(final_ev("committed body", vec![])).unwrap();
         }
         {
@@ -1238,7 +1316,9 @@ mod tests {
         {
             let reopened = TurnEventLog::open_in(&root, env("turn-reopen")).unwrap();
             let receipt = reopened
-                .append(TurnEvent::Notice { message: "after restart".into() })
+                .append(TurnEvent::Notice {
+                    message: "after restart".into(),
+                })
                 .unwrap();
             assert_eq!(receipt.seq(), 3);
         }

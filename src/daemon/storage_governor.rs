@@ -559,11 +559,18 @@ pub async fn get_storage_status(
     let forge = state.forge.clone();
     let data_root = crate::paths::medousa_data_dir();
     let settings = load_settings(&data_root);
-    let report =
-        tokio::task::spawn_blocking(move || storage_usage_report(&data_root, &forge, settings))
-            .await
-            .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
-            .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err))?;
+    let report = state
+        .forge_execution
+        .run(
+            medousa_forge::execution::ExecutionClass::Observation,
+            medousa_forge::execution::MAX_CAPTURE_BYTES,
+            move || {
+                storage_usage_report(&data_root, &forge, settings)
+                    .map_err(medousa_forge::error::ForgeError::Store)
+            },
+        )
+        .await
+        .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
     Ok(Json(report))
 }
 
@@ -573,13 +580,20 @@ pub async fn put_storage_settings(
 ) -> Result<impl IntoResponse, ApiError> {
     let forge = state.forge.clone();
     let data_root = crate::paths::medousa_data_dir();
-    let report = tokio::task::spawn_blocking(move || {
-        save_settings(&data_root, &settings)?;
-        storage_usage_report(&data_root, &forge, settings)
-    })
-    .await
-    .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
-    .map_err(|err| api_error(StatusCode::BAD_REQUEST, err))?;
+    let report = state
+        .forge_execution
+        .run(
+            medousa_forge::execution::ExecutionClass::StoreIo,
+            medousa_forge::execution::MAX_STORE_PAYLOAD_BYTES,
+            move || {
+                save_settings(&data_root, &settings)
+                    .map_err(medousa_forge::error::ForgeError::Store)?;
+                storage_usage_report(&data_root, &forge, settings)
+                    .map_err(medousa_forge::error::ForgeError::Store)
+            },
+        )
+        .await
+        .map_err(|err| api_error(StatusCode::BAD_REQUEST, err.to_string()))?;
     *state.last_storage_maintenance_at.write().await = None;
     Ok(Json(report))
 }
@@ -592,12 +606,18 @@ pub async fn post_storage_maintenance(
     let data_root = crate::paths::medousa_data_dir();
     let settings = load_settings(&data_root);
     let dry_run = request.normalized_dry_run();
-    let report = tokio::task::spawn_blocking(move || {
-        maintain_storage(&data_root, &forge, settings, dry_run)
-    })
-    .await
-    .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
-    .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err))?;
+    let report = state
+        .forge_execution
+        .run(
+            medousa_forge::execution::ExecutionClass::Compaction,
+            medousa_forge::execution::MAX_COMPACTION_BUFFER_BYTES,
+            move || {
+                maintain_storage(&data_root, &forge, settings, dry_run)
+                    .map_err(medousa_forge::error::ForgeError::Store)
+            },
+        )
+        .await
+        .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
     Ok(Json(report))
 }
 

@@ -269,12 +269,12 @@ impl Forge {
                     derived_from: None,
                 };
                 item.environment = Some(env.clone());
-                self.store.append(
+                self.commit_event(
                     work_id,
                     actor,
                     EventPayload::EnvironmentProvisioned { env: Box::new(env) },
                 )?;
-                self.store.append(
+                self.commit_event(
                     work_id,
                     actor,
                     EventPayload::OperationCommitted {
@@ -292,7 +292,7 @@ impl Forge {
             }
             _ => {
                 // No worktree on disk: nothing happened for real; back to Draft.
-                self.store.append(
+                self.commit_event(
                     work_id,
                     actor,
                     EventPayload::OperationAborted {
@@ -374,7 +374,7 @@ impl Forge {
                 if let Some(att) = item.attempt_mut(&attempt_id) {
                     att.evidence_id = Some(evidence.evidence_id.clone());
                 }
-                self.store.append(
+                self.commit_event(
                     work_id,
                     actor,
                     EventPayload::EvidenceSealed {
@@ -391,7 +391,7 @@ impl Forge {
                     actor,
                 )?;
                 let resulting_state = item.state_after_attempts();
-                self.store.append(
+                self.commit_event(
                     work_id,
                     actor,
                     EventPayload::OperationCommitted {
@@ -411,7 +411,7 @@ impl Forge {
                 // Crash before the checkpoint: abort the seal, then classify
                 // the still-Running attempt as interrupted (the executor was
                 // sealing when the process died).
-                self.store.append(
+                self.commit_event(
                     work_id,
                     actor,
                     EventPayload::OperationAborted {
@@ -467,7 +467,7 @@ impl Forge {
             let actual = self.git.ref_oid(&target.repo_path, &ref_name)?;
             if actual != new_oid {
                 // Ref update did not land: abort, back to review.
-                self.store.append(
+                self.commit_event(
                     work_id,
                     actor,
                     EventPayload::OperationAborted {
@@ -490,7 +490,7 @@ impl Forge {
             )
         } else if let Some((path, digest)) = exported {
             if !path.exists() {
-                self.store.append(
+                self.commit_event(
                     work_id,
                     actor,
                     EventPayload::OperationAborted {
@@ -523,7 +523,7 @@ impl Forge {
         };
 
         item.disposition = Some(disposition);
-        self.store.append(
+        self.commit_event(
             work_id,
             actor,
             EventPayload::DispositionApplied {
@@ -531,7 +531,7 @@ impl Forge {
                 detail: Some(outcome.clone()),
             },
         )?;
-        self.store.append(
+        self.commit_event(
             work_id,
             actor,
             EventPayload::OperationCommitted {
@@ -566,7 +566,7 @@ impl Forge {
                 self.git.branch_delete(&target.repo_path, &env.branch)?;
             }
         }
-        self.store.append(
+        self.commit_event(
             work_id,
             actor,
             EventPayload::OperationCommitted {

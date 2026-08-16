@@ -88,6 +88,27 @@ pub fn force_process_stop_by_pid(pid: u32) -> bool {
     }
 }
 
+/// Terminate a process and its descendants. On Unix the child should be a
+/// process-group leader (`process_group(0)`); the negative PID signals the
+/// group. On Windows `/T` asks `taskkill` for the tree.
+pub fn force_process_tree_stop_by_pid(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        run_process_control(Command::new("kill").args(["-KILL", &format!("-{pid}")]))
+            || force_process_stop_by_pid(pid)
+    }
+    #[cfg(windows)]
+    {
+        run_process_control(Command::new("taskkill").args(["/F", "/T", "/PID", &pid.to_string()]))
+            || force_process_stop_by_pid(pid)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = pid;
+        false
+    }
+}
+
 pub fn is_process_alive(pid: u32) -> bool {
     #[cfg(unix)]
     {

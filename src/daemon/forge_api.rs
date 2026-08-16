@@ -532,6 +532,14 @@ fn map_err(err: ForgeError) -> ApiError {
         ForgeError::Store(_) | ForgeError::Io(_) | ForgeError::Json(_) => {
             (StatusCode::INTERNAL_SERVER_ERROR, Some("store"))
         }
+        ForgeError::Overloaded(_) => (StatusCode::SERVICE_UNAVAILABLE, Some("overloaded")),
+        ForgeError::SlugConflict(_) | ForgeError::Conflict(_) => {
+            (StatusCode::CONFLICT, Some("slug_conflict"))
+        }
+        ForgeError::CatalogStale(_) => (StatusCode::CONFLICT, Some("catalog_stale")),
+        ForgeError::ObservationIncomplete(_) => {
+            (StatusCode::CONFLICT, Some("observation_incomplete"))
+        }
     };
     (
         status,
@@ -540,6 +548,64 @@ fn map_err(err: ForgeError) -> ApiError {
             kind,
         }),
     )
+}
+
+/// Admit blocking Forge/Git/fs work off the Tokio request worker (ASYNC-001).
+async fn admit_forge<T, F>(
+    state: &AppState,
+    class: medousa_forge::execution::ExecutionClass,
+    estimated_bytes: usize,
+    work: F,
+) -> ApiResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> ApiResult<T> + Send + 'static,
+{
+    state
+        .forge_execution
+        .run(class, estimated_bytes, move || Ok(work()))
+        .await
+        .map_err(map_err)
+        .and_then(|inner| inner)
+}
+
+async fn admit_forge_on_repo<T, F>(
+    state: &AppState,
+    class: medousa_forge::execution::ExecutionClass,
+    estimated_bytes: usize,
+    repo_key: Option<String>,
+    work: F,
+) -> ApiResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> ApiResult<T> + Send + 'static,
+{
+    state
+        .forge_execution
+        .run_on_repo(class, estimated_bytes, repo_key, move || Ok(work()))
+        .await
+        .map_err(map_err)
+        .and_then(|inner| inner)
+}
+
+/// Heavy endpoints: admit work and record an executor-delay canary sample.
+async fn admit_forge_canary<T, F>(
+    state: &AppState,
+    class: medousa_forge::execution::ExecutionClass,
+    estimated_bytes: usize,
+    repo_key: Option<String>,
+    work: F,
+) -> ApiResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> ApiResult<T> + Send + 'static,
+{
+    state
+        .forge_execution
+        .run_with_canary(class, estimated_bytes, repo_key, move || Ok(work()))
+        .await
+        .map_err(map_err)
+        .and_then(|inner| inner)
 }
 
 fn actor_from_state(state: &AppState) -> ActorRef {
@@ -767,35 +833,7 @@ fn forge(state: &AppState) -> Arc<Forge> {
 /// `lease_id` + fencing `generation`.
 fn resolve_lease(forge: &Forge, lease_id: &str, generation: u64) -> ApiResult<ExecutionLease> {
     let want = LeaseId::from(lease_id.to_string());
-    let items = forge.list().map_err(map_err)?;
-    for item in items {
-        for active_id in item.active_attempt_ids() {
-            let Some(attempt) = item.attempt(active_id) else {
-                continue;
-            };
-            let Some(lease) = &attempt.lease else {
-                continue;
-            };
-            if lease.lease_id == want {
-                if lease.generation != generation {
-                    return Err(map_err(ForgeError::StaleLease {
-                        presented: want,
-                        presented_generation: generation,
-                        active: lease.lease_id.clone(),
-                        active_generation: lease.generation,
-                    }));
-                }
-                return Ok(lease.clone());
-            }
-        }
-    }
-    Err((
-        StatusCode::NOT_FOUND,
-        Json(ErrorBody {
-            error: format!("active lease not found: {lease_id}"),
-            kind: Some("not_found"),
-        }),
-    ))
+    forge.find_lease(&want, generation).map_err(map_err)
 }
 
 #[derive(Debug, Deserialize)]
@@ -1138,110 +1176,144 @@ async fn register_item(
     State(state): State<AppState>,
     Json(body): Json<RegisterRequest>,
 ) -> ApiResult<Json<ItemProjection>> {
-    let repository_path = body.repo_path.clone();
-    let actor = actor_from_state(&state);
-    let owner = body
-        .owner
-        .unwrap_or_else(|| state.workshop_identity_user_id());
-    let forge = forge(&state);
-    let item = if let Some(policy) = body.policy {
-        forge.register_with_policy(
-            body.title,
-            body.brief,
-            &body.repo_path,
-            body.base_ref,
-            owner,
-            policy,
-            &actor,
-        )
-    } else {
-        forge.register(
-            body.title,
-            body.brief,
-            &body.repo_path,
-            body.base_ref,
-            owner,
-            &actor,
-        )
-    }
-    .map_err(map_err)?;
-    touch_repository(&repository_path, None)?;
-    Ok(ok_item(&state, item, "registered"))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let repository_path = body.repo_path.clone();
+                let actor = actor_from_state(&state);
+                let owner = body
+                    .owner
+                    .unwrap_or_else(|| state.workshop_identity_user_id());
+                let forge = forge(&state);
+                let item = if let Some(policy) = body.policy {
+                    forge.register_with_policy(
+                        body.title,
+                        body.brief,
+                        &body.repo_path,
+                        body.base_ref,
+                        owner,
+                        policy,
+                        &actor,
+                    )
+                } else {
+                    forge.register(
+                        body.title,
+                        body.brief,
+                        &body.repo_path,
+                        body.base_ref,
+                        owner,
+                        &actor,
+                    )
+                }
+                .map_err(map_err)?;
+                touch_repository(&repository_path, None)?;
+                Ok(ok_item(&state, item, "registered"))
+            }
+        },
+    )
+    .await
 }
 
 async fn inspect_repository(
     State(state): State<AppState>,
     Json(body): Json<InspectRepositoryRequest>,
 ) -> ApiResult<Json<RepositoryInspection>> {
-    let repository = inspect_repository_path(&state, &body.path)?;
-    touch_repository(&repository.path, None)?;
-    Ok(Json(repository))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::RepositoryMetadata,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let repository = inspect_repository_path(&state, &body.path)?;
+                touch_repository(&repository.path, None)?;
+                Ok(Json(repository))
+            }
+        },
+    )
+    .await
 }
 
 async fn list_repositories(
     State(state): State<AppState>,
 ) -> ApiResult<Json<Vec<RepositoryCatalogEntry>>> {
-    let mut store = read_repository_catalog();
-    let items = forge(&state).list().map_err(map_err)?;
-    for item in &items {
-        let WorkTarget::Git(target) = &item.target;
-        let path = target
-            .repo_path
-            .canonicalize()
-            .unwrap_or_else(|_| target.repo_path.clone());
-        if store.entries.iter().all(|entry| entry.path != path) {
-            store.entries.push(RepositoryCatalogRecord {
-                path,
-                pinned: false,
-                archived: false,
-                last_used_at: item.updated_at,
-            });
-        }
-    }
-    store.entries.sort_by(|left, right| {
-        right
-            .pinned
-            .cmp(&left.pinned)
-            .then_with(|| right.last_used_at.cmp(&left.last_used_at))
-    });
-    let entries = store
-        .entries
-        .into_iter()
-        .take(20)
-        .map(|record| {
-            let available = record.path.is_dir();
-            let repository = inspect_repository_path_from_items(&record.path, &items).unwrap_or_else(|_| {
-                RepositoryInspection {
-                    display_name: record
-                        .path
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .unwrap_or("Repository")
-                        .to_string(),
-                    path: record.path.clone(),
-                    current_branch: None,
-                    suggested_base_ref: None,
-                    has_commits: false,
-                    dirty: false,
-                    changed_files: 0,
-                    remotes: Vec::new(),
-                    local_branches: Vec::new(),
-                    remote_branches: Vec::new(),
-                    existing_projects: existing_projects_for_repository(&items, &record.path),
-                    state_explanation: "This repository is not currently available on the connected workshop.".into(),
-                    trust_explanation: "No files or commands can be accessed until this workshop repository is available again.".into(),
+    admit_forge_canary(
+        &state,
+        medousa_forge::execution::ExecutionClass::RepositoryMetadata,
+        64 * 1024,
+        None,
+        {
+            let state = state.clone();
+            move || {
+                let mut store = read_repository_catalog();
+                let items = forge(&state).list().map_err(map_err)?;
+                for item in &items {
+                    let WorkTarget::Git(target) = &item.target;
+                    let path = target
+                        .repo_path
+                        .canonicalize()
+                        .unwrap_or_else(|_| target.repo_path.clone());
+                    if store.entries.iter().all(|entry| entry.path != path) {
+                        store.entries.push(RepositoryCatalogRecord {
+                            path,
+                            pinned: false,
+                            archived: false,
+                            last_used_at: item.updated_at,
+                        });
+                    }
                 }
-            });
-            RepositoryCatalogEntry {
-                repository,
-                pinned: record.pinned,
-                archived: record.archived,
-                last_used_at: record.last_used_at,
-                available,
+                store.entries.sort_by(|left, right| {
+                    right
+                        .pinned
+                        .cmp(&left.pinned)
+                        .then_with(|| right.last_used_at.cmp(&left.last_used_at))
+                });
+                let entries = store
+                    .entries
+                    .into_iter()
+                    .take(20)
+                    .map(|record| {
+                        let available = record.path.is_dir();
+                        let repository = inspect_repository_path_from_items(&record.path, &items).unwrap_or_else(|_| {
+                            RepositoryInspection {
+                                display_name: record
+                                    .path
+                                    .file_name()
+                                    .and_then(|name| name.to_str())
+                                    .unwrap_or("Repository")
+                                    .to_string(),
+                                path: record.path.clone(),
+                                current_branch: None,
+                                suggested_base_ref: None,
+                                has_commits: false,
+                                dirty: false,
+                                changed_files: 0,
+                                remotes: Vec::new(),
+                                local_branches: Vec::new(),
+                                remote_branches: Vec::new(),
+                                existing_projects: existing_projects_for_repository(&items, &record.path),
+                                state_explanation: "This repository is not currently available on the connected workshop.".into(),
+                                trust_explanation: "No files or commands can be accessed until this workshop repository is available again.".into(),
+                            }
+                        });
+                        RepositoryCatalogEntry {
+                            repository,
+                            pinned: record.pinned,
+                            archived: record.archived,
+                            last_used_at: record.last_used_at,
+                            available,
+                        }
+                    })
+                    .collect();
+                Ok(Json(entries))
             }
-        })
-        .collect();
-    Ok(Json(entries))
+        },
+    )
+    .await
 }
 
 async fn update_repository_pin(
@@ -1254,17 +1326,29 @@ async fn update_repository_pin(
             "pinned or archived is required",
         ));
     }
-    let canonical = body
-        .path
-        .canonicalize()
-        .unwrap_or_else(|_| body.path.clone());
-    if let Some(pinned) = body.pinned {
-        let repository = inspect_repository_path(&state, &canonical)?;
-        touch_repository(&repository.path, Some(pinned))?;
-    }
-    if let Some(archived) = body.archived {
-        set_repository_archived(&canonical, archived)?;
-    }
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::RepositoryMetadata,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let canonical = body
+                    .path
+                    .canonicalize()
+                    .unwrap_or_else(|_| body.path.clone());
+                if let Some(pinned) = body.pinned {
+                    let repository = inspect_repository_path(&state, &canonical)?;
+                    touch_repository(&repository.path, Some(pinned))?;
+                }
+                if let Some(archived) = body.archived {
+                    set_repository_archived(&canonical, archived)?;
+                }
+                Ok(())
+            }
+        },
+    )
+    .await?;
     list_repositories(State(state)).await
 }
 
@@ -1342,68 +1426,80 @@ async fn browse_repositories(
     State(state): State<AppState>,
     Query(query): Query<BrowseRepositoriesQuery>,
 ) -> ApiResult<Json<RepositoryBrowseResponse>> {
-    let roots = repository_browse_roots(&state);
-    let requested = query.path.or_else(dirs::home_dir).ok_or_else(|| {
-        request_error(StatusCode::NOT_FOUND, "workshop home folder is unavailable")
-    })?;
-    let path = requested.canonicalize().map_err(|err| {
-        request_error(
-            StatusCode::NOT_FOUND,
-            format!("folder is unavailable: {err}"),
-        )
-    })?;
-    if !path.is_dir() || !browse_path_allowed(&path, &roots) {
-        return Err(request_error(
-            StatusCode::FORBIDDEN,
-            "folder is outside the repository browser's workshop places",
-        ));
-    }
-    let parent = path
-        .parent()
-        .and_then(|parent| parent.canonicalize().ok())
-        .filter(|parent| browse_path_allowed(parent, &roots));
-    let mut entries = Vec::new();
-    let read_dir = std::fs::read_dir(&path).map_err(|err| {
-        request_error(
-            StatusCode::BAD_REQUEST,
-            format!("could not read folder: {err}"),
-        )
-    })?;
-    let mut truncated = false;
-    for entry in read_dir {
-        let Ok(entry) = entry else { continue };
-        let name = entry.file_name();
-        if name.to_string_lossy().starts_with('.') || !entry.path().is_dir() {
-            continue;
-        }
-        let Ok(candidate) = entry.path().canonicalize() else {
-            continue;
-        };
-        if !browse_path_allowed(&candidate, &roots) {
-            continue;
-        }
-        if entries.len() == 500 {
-            truncated = true;
-            break;
-        }
-        entries.push(browse_entry(candidate));
-    }
-    entries.sort_by(|left, right| {
-        right.repository.cmp(&left.repository).then_with(|| {
-            left.name
-                .to_ascii_lowercase()
-                .cmp(&right.name.to_ascii_lowercase())
-        })
-    });
-    let places = roots.into_iter().map(browse_entry).collect();
-    Ok(Json(RepositoryBrowseResponse {
-        repository: path.join(".git").exists(),
-        path,
-        parent,
-        places,
-        entries,
-        truncated,
-    }))
+    admit_forge_canary(
+        &state,
+        medousa_forge::execution::ExecutionClass::RepositoryMetadata,
+        64 * 1024,
+        None,
+        {
+            let state = state.clone();
+            move || {
+                let roots = repository_browse_roots(&state);
+                let requested = query.path.or_else(dirs::home_dir).ok_or_else(|| {
+                    request_error(StatusCode::NOT_FOUND, "workshop home folder is unavailable")
+                })?;
+                let path = requested.canonicalize().map_err(|err| {
+                    request_error(
+                        StatusCode::NOT_FOUND,
+                        format!("folder is unavailable: {err}"),
+                    )
+                })?;
+                if !path.is_dir() || !browse_path_allowed(&path, &roots) {
+                    return Err(request_error(
+                        StatusCode::FORBIDDEN,
+                        "folder is outside the repository browser's workshop places",
+                    ));
+                }
+                let parent = path
+                    .parent()
+                    .and_then(|parent| parent.canonicalize().ok())
+                    .filter(|parent| browse_path_allowed(parent, &roots));
+                let mut entries = Vec::new();
+                let read_dir = std::fs::read_dir(&path).map_err(|err| {
+                    request_error(
+                        StatusCode::BAD_REQUEST,
+                        format!("could not read folder: {err}"),
+                    )
+                })?;
+                let mut truncated = false;
+                for entry in read_dir {
+                    let Ok(entry) = entry else { continue };
+                    let name = entry.file_name();
+                    if name.to_string_lossy().starts_with('.') || !entry.path().is_dir() {
+                        continue;
+                    }
+                    let Ok(candidate) = entry.path().canonicalize() else {
+                        continue;
+                    };
+                    if !browse_path_allowed(&candidate, &roots) {
+                        continue;
+                    }
+                    if entries.len() == 500 {
+                        truncated = true;
+                        break;
+                    }
+                    entries.push(browse_entry(candidate));
+                }
+                entries.sort_by(|left, right| {
+                    right.repository.cmp(&left.repository).then_with(|| {
+                        left.name
+                            .to_ascii_lowercase()
+                            .cmp(&right.name.to_ascii_lowercase())
+                    })
+                });
+                let places = roots.into_iter().map(browse_entry).collect();
+                Ok(Json(RepositoryBrowseResponse {
+                    repository: path.join(".git").exists(),
+                    path,
+                    parent,
+                    places,
+                    entries,
+                    truncated,
+                }))
+            }
+        },
+    )
+    .await
 }
 
 fn provider_adapter(
@@ -1447,79 +1543,107 @@ async fn clone_provider_repository(
     State(state): State<AppState>,
     Json(body): Json<CloneProviderRepositoryRequest>,
 ) -> ApiResult<Json<RepositoryInspection>> {
-    let (provider, command, label) = match body.provider.trim().to_ascii_lowercase().as_str() {
-        "github" => ("github", "gh", "GitHub"),
-        "gitlab" => ("gitlab", "glab", "GitLab"),
-        _ => {
-            return Err(request_error(
-                StatusCode::BAD_REQUEST,
-                "Repository provider must be GitHub or GitLab",
-            ));
-        }
-    };
-    if !command_available(command) {
-        return Err(request_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            format!("Install and sign in to the {label} CLI on the connected workshop."),
-        ));
-    }
-    let repository = normalize_provider_repository(&body.repository).ok_or_else(|| {
-        request_error(
-            StatusCode::BAD_REQUEST,
-            "Repository must look like owner/project or a supported repository URL",
-        )
-    })?;
-    if let Some((remote_provider, _)) = provider_repository(body.repository.trim())
-        && remote_provider != provider
-    {
-        return Err(request_error(
-            StatusCode::BAD_REQUEST,
-            "The repository URL does not match the selected provider",
-        ));
-    }
-    let parent = body.parent.canonicalize().map_err(|err| {
-        request_error(
-            StatusCode::NOT_FOUND,
-            format!("Destination folder is unavailable: {err}"),
-        )
-    })?;
-    if !parent.is_dir() || !browse_path_allowed(&parent, &repository_browse_roots(&state)) {
-        return Err(request_error(
-            StatusCode::FORBIDDEN,
-            "Destination is outside the connected workshop's available places",
-        ));
-    }
-    let name = repository
-        .rsplit('/')
-        .next()
-        .ok_or_else(|| request_error(StatusCode::BAD_REQUEST, "Repository name is unavailable"))?;
-    let destination = parent.join(name);
-    if destination.exists() {
-        return Err(request_error(
-            StatusCode::CONFLICT,
-            format!("A folder named {name} already exists here"),
-        ));
-    }
-    let mut clone = background_command(command);
-    clone.args(["repo", "clone", &repository]);
-    let output = clone
-        .arg(&destination)
-        .current_dir(&parent)
-        .output()
-        .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
-    if !output.status.success() {
-        return Err(provider_command_error("Cloning the repository", &output));
-    }
-    let inspection = inspect_repository_path(&state, &destination)?;
-    touch_repository(&inspection.path, None)?;
-    Ok(Json(inspection))
+    admit_forge_on_repo(
+        &state,
+        medousa_forge::execution::ExecutionClass::NetworkGit,
+        64 * 1024,
+        None,
+        {
+            let state = state.clone();
+            move || {
+                let (provider, command, label) =
+                    match body.provider.trim().to_ascii_lowercase().as_str() {
+                        "github" => ("github", "gh", "GitHub"),
+                        "gitlab" => ("gitlab", "glab", "GitLab"),
+                        _ => {
+                            return Err(request_error(
+                                StatusCode::BAD_REQUEST,
+                                "Repository provider must be GitHub or GitLab",
+                            ));
+                        }
+                    };
+                if !command_available(command) {
+                    return Err(request_error(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        format!(
+                            "Install and sign in to the {label} CLI on the connected workshop."
+                        ),
+                    ));
+                }
+                let repository =
+                    normalize_provider_repository(&body.repository).ok_or_else(|| {
+                        request_error(
+                            StatusCode::BAD_REQUEST,
+                            "Repository must look like owner/project or a supported repository URL",
+                        )
+                    })?;
+                if let Some((remote_provider, _)) = provider_repository(body.repository.trim())
+                    && remote_provider != provider
+                {
+                    return Err(request_error(
+                        StatusCode::BAD_REQUEST,
+                        "The repository URL does not match the selected provider",
+                    ));
+                }
+                let parent = body.parent.canonicalize().map_err(|err| {
+                    request_error(
+                        StatusCode::NOT_FOUND,
+                        format!("Destination folder is unavailable: {err}"),
+                    )
+                })?;
+                if !parent.is_dir()
+                    || !browse_path_allowed(&parent, &repository_browse_roots(&state))
+                {
+                    return Err(request_error(
+                        StatusCode::FORBIDDEN,
+                        "Destination is outside the connected workshop's available places",
+                    ));
+                }
+                let name = repository.rsplit('/').next().ok_or_else(|| {
+                    request_error(StatusCode::BAD_REQUEST, "Repository name is unavailable")
+                })?;
+                let destination = parent.join(name);
+                if destination.exists() {
+                    return Err(request_error(
+                        StatusCode::CONFLICT,
+                        format!("A folder named {name} already exists here"),
+                    ));
+                }
+                let mut clone = background_command(command);
+                clone.args(["repo", "clone", &repository]);
+                let output = clone
+                    .arg(&destination)
+                    .current_dir(&parent)
+                    .output()
+                    .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+                if !output.status.success() {
+                    return Err(provider_command_error("Cloning the repository", &output));
+                }
+                let inspection = inspect_repository_path(&state, &destination)?;
+                touch_repository(&inspection.path, None)?;
+                Ok(Json(inspection))
+            }
+        },
+    )
+    .await
 }
 
 async fn start_item(
     State(state): State<AppState>,
     Json(body): Json<RegisterRequest>,
 ) -> ApiResult<Json<ItemProjection>> {
-    start_item_from_request(&state, body).map(|item| ok_item(&state, item, "started"))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                start_item_from_request(&state, body).map(|item| ok_item(&state, item, "started"))
+            }
+        },
+    )
+    .await
 }
 
 fn start_item_from_request(state: &AppState, body: RegisterRequest) -> ApiResult<WorkItem> {
@@ -1572,7 +1696,17 @@ async fn start_session_code_project(
 ) -> ApiResult<Json<SessionCodeProjectResponse>> {
     crate::session_storage::validate_session_id(&session_id)
         .map_err(|error| request_error(StatusCode::BAD_REQUEST, error.to_string()))?;
-    start_code_project_for_session_inner(&state, &session_id, body).map(Json)
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
+        {
+            let state = state.clone();
+            let session_id = session_id.clone();
+            move || start_code_project_for_session_inner(&state, &session_id, body).map(Json)
+        },
+    )
+    .await
 }
 
 pub(crate) fn start_code_project_for_session(
@@ -1803,18 +1937,74 @@ fn project_slug(title: &str) -> String {
     medousa_forge::slug::project_slug(title)
 }
 
-async fn list_items(State(state): State<AppState>) -> ApiResult<Json<Vec<ItemProjection>>> {
-    let items = forge(&state).list().map_err(map_err)?;
-    Ok(Json(project_items(items)))
+#[derive(Debug, Deserialize)]
+struct ListItemsQuery {
+    limit: Option<usize>,
+    cursor: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ItemPage {
+    items: Vec<ItemProjection>,
+    next_cursor: Option<String>,
+    truncated: bool,
+}
+
+async fn list_items(
+    State(state): State<AppState>,
+    Query(query): Query<ListItemsQuery>,
+) -> ApiResult<axum::response::Response> {
+    use axum::response::IntoResponse;
+    let forge = forge(&state);
+    let paginated = query.limit.is_some() || query.cursor.is_some();
+    let result = admit_forge_canary(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        1024 * 1024,
+        None,
+        move || {
+            if paginated {
+                let page = forge
+                    .list_page(query.limit, query.cursor.as_deref())
+                    .map_err(map_err)?;
+                let mut items = Vec::with_capacity(page.items.len());
+                for entry in page.items {
+                    items.push(forge.load(&entry.work_id).map_err(map_err)?);
+                }
+                Ok(serde_json::to_value(ItemPage {
+                    items: project_items(items),
+                    next_cursor: page.next_cursor,
+                    truncated: page.truncated,
+                })
+                .unwrap_or(serde_json::Value::Null))
+            } else {
+                let items = forge.list().map_err(map_err)?;
+                Ok(serde_json::to_value(project_items(items)).unwrap_or(serde_json::Value::Null))
+            }
+        },
+    )
+    .await?;
+    Ok(Json(result).into_response())
 }
 
 async fn get_item(
     State(state): State<AppState>,
     Path(work_id): Path<String>,
 ) -> ApiResult<Json<ItemProjection>> {
-    let id = parse_work_id(&work_id)?;
-    let item = forge(&state).load(&id).map_err(map_err)?;
-    Ok(Json(project_item(item)))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let item = forge(&state).load(&id).map_err(map_err)?;
+                Ok(Json(project_item(item)))
+            }
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -2731,19 +2921,30 @@ async fn read_source(
     Path(work_id): Path<String>,
     Query(query): Query<SourceQuery>,
 ) -> ApiResult<Json<SourceResponse>> {
-    let id = parse_work_id(&work_id)?;
-    let item = forge(&state).load(&id).map_err(map_err)?;
-    let environment = item.workspace_environment().cloned().ok_or_else(|| {
-        request_error(
-            StatusCode::CONFLICT,
-            "prepare the governed workspace before opening source files",
-        )
-    })?;
-    Ok(Json(read_source_response(
-        &id,
-        &environment.worktree,
-        &query.path,
-    )?))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::Observation,
+        256 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let item = forge(&state).load(&id).map_err(map_err)?;
+                let environment = item.workspace_environment().cloned().ok_or_else(|| {
+                    request_error(
+                        StatusCode::CONFLICT,
+                        "prepare the governed workspace before opening source files",
+                    )
+                })?;
+                Ok(Json(read_source_response(
+                    &id,
+                    &environment.worktree,
+                    &query.path,
+                )?))
+            }
+        },
+    )
+    .await
 }
 
 fn require_work_lease(
@@ -2768,93 +2969,112 @@ async fn create_source(
     Path(work_id): Path<String>,
     Json(body): Json<CreateSourceRequest>,
 ) -> ApiResult<Json<SourceResponse>> {
-    let id = parse_work_id(&work_id)?;
-    let kind = body
-        .kind
-        .as_deref()
-        .unwrap_or("file")
-        .trim()
-        .to_ascii_lowercase();
-    let is_directory = matches!(kind.as_str(), "directory" | "dir" | "folder");
-    if !is_directory && body.content.len() > MAX_SOURCE_BYTES {
-        return Err(request_error(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            format!("source file exceeds the {MAX_SOURCE_BYTES} byte editor limit"),
-        ));
-    }
-    let (item, lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item
-        .environment_for_attempt(&lease.attempt_id)
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
-    if is_directory {
-        let (path, clean) = resolve_new_directory_path(&environment.worktree, &body.path)?;
-        std::fs::create_dir_all(&path).map_err(|err| {
-            request_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("could not create directory: {err}"),
-            )
-        })?;
-        // Seed an ignored placeholder so the folder appears in the file tree
-        // and remains durable under git until real files are added.
-        let keep = path.join(".gitkeep");
-        if !keep.exists() {
-            std::fs::write(&keep, b"").map_err(|err| {
-                request_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("could not initialize directory: {err}"),
-                )
-            })?;
-        }
-        let keep_path = format!("{clean}/.gitkeep");
-        publish_project_change(
-            &state,
-            &item,
-            ForgeProjectEventKind::Created,
-            Some(keep_path.clone()),
-            None,
-            Some(source_digest(b"")),
-        );
-        remember_worktree(&state, &item, &environment.worktree);
-        return Ok(Json(read_source_response(
-            &id,
-            &environment.worktree,
-            &keep_path,
-        )?));
-    }
-    let (path, _) = resolve_new_source_path(&environment.worktree, &body.path)?;
-    use std::io::Write;
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&path)
-        .map_err(|err| {
-            request_error(
-                StatusCode::CONFLICT,
-                format!("could not create source file: {err}"),
-            )
-        })?;
-    if let Err(err) = file.write_all(body.content.as_bytes()) {
-        drop(file);
-        let _ = std::fs::remove_file(&path);
-        return Err(request_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("could not initialize source file: {err}"),
-        ));
-    }
-    publish_project_change(
+    admit_forge_on_repo(
         &state,
-        &item,
-        ForgeProjectEventKind::Created,
-        Some(body.path.clone()),
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
         None,
-        Some(source_digest(body.content.as_bytes())),
-    );
-    remember_worktree(&state, &item, &environment.worktree);
-    Ok(Json(read_source_response(
-        &id,
-        &environment.worktree,
-        &body.path,
-    )?))
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let kind = body
+                    .kind
+                    .as_deref()
+                    .unwrap_or("file")
+                    .trim()
+                    .to_ascii_lowercase();
+                let is_directory = matches!(kind.as_str(), "directory" | "dir" | "folder");
+                if !is_directory && body.content.len() > MAX_SOURCE_BYTES {
+                    return Err(request_error(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        format!("source file exceeds the {MAX_SOURCE_BYTES} byte editor limit"),
+                    ));
+                }
+                let (item, lease) =
+                    require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+                let environment =
+                    item.environment_for_attempt(&lease.attempt_id)
+                        .ok_or_else(|| {
+                            request_error(
+                                StatusCode::CONFLICT,
+                                "governed workspace is not prepared",
+                            )
+                        })?;
+                if is_directory {
+                    let (path, clean) =
+                        resolve_new_directory_path(&environment.worktree, &body.path)?;
+                    std::fs::create_dir_all(&path).map_err(|err| {
+                        request_error(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("could not create directory: {err}"),
+                        )
+                    })?;
+                    // Seed an ignored placeholder so the folder appears in the file tree
+                    // and remains durable under git until real files are added.
+                    let keep = path.join(".gitkeep");
+                    if !keep.exists() {
+                        std::fs::write(&keep, b"").map_err(|err| {
+                            request_error(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                format!("could not initialize directory: {err}"),
+                            )
+                        })?;
+                    }
+                    let keep_path = format!("{clean}/.gitkeep");
+                    publish_project_change(
+                        &state,
+                        &item,
+                        ForgeProjectEventKind::Created,
+                        Some(keep_path.clone()),
+                        None,
+                        Some(source_digest(b"")),
+                    );
+                    remember_worktree(&state, &item, &environment.worktree);
+                    return Ok(Json(read_source_response(
+                        &id,
+                        &environment.worktree,
+                        &keep_path,
+                    )?));
+                }
+                let (path, _) = resolve_new_source_path(&environment.worktree, &body.path)?;
+                use std::io::Write;
+                let mut file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&path)
+                    .map_err(|err| {
+                        request_error(
+                            StatusCode::CONFLICT,
+                            format!("could not create source file: {err}"),
+                        )
+                    })?;
+                if let Err(err) = file.write_all(body.content.as_bytes()) {
+                    drop(file);
+                    let _ = std::fs::remove_file(&path);
+                    return Err(request_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("could not initialize source file: {err}"),
+                    ));
+                }
+                publish_project_change(
+                    &state,
+                    &item,
+                    ForgeProjectEventKind::Created,
+                    Some(body.path.clone()),
+                    None,
+                    Some(source_digest(body.content.as_bytes())),
+                );
+                remember_worktree(&state, &item, &environment.worktree);
+                Ok(Json(read_source_response(
+                    &id,
+                    &environment.worktree,
+                    &body.path,
+                )?))
+            }
+        },
+    )
+    .await
 }
 
 async fn source_tree(
@@ -2862,23 +3082,25 @@ async fn source_tree(
     Path(work_id): Path<String>,
 ) -> ApiResult<Json<SourceTreeResponse>> {
     let id = parse_work_id(&work_id)?;
-    let item = forge(&state).load(&id).map_err(map_err)?;
-    let environment = item.workspace_environment().cloned().ok_or_else(|| {
-        request_error(
-            StatusCode::CONFLICT,
-            "prepare the governed workspace before browsing source files",
-        )
-    })?;
-    let worktree = environment.worktree.clone();
-    let listed = tokio::task::spawn_blocking(move || list_source_tree(&id, &worktree))
-        .await
-        .map_err(|err| {
-            request_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("source tree enumeration failed: {err}"),
-            )
-        })??;
-    Ok(Json(listed))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::Observation,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let item = forge(&state).load(&id).map_err(map_err)?;
+                let environment = item.workspace_environment().cloned().ok_or_else(|| {
+                    request_error(
+                        StatusCode::CONFLICT,
+                        "prepare the governed workspace before browsing source files",
+                    )
+                })?;
+                Ok(Json(list_source_tree(&id, &environment.worktree)?))
+            }
+        },
+    )
+    .await
 }
 
 async fn search_source(
@@ -2888,34 +3110,37 @@ async fn search_source(
 ) -> ApiResult<Json<SourceSearchResponse>> {
     let id = parse_work_id(&work_id)?;
     let options = source_search_options_from_query(&query)?;
-    let item = forge(&state).load(&id).map_err(map_err)?;
-    let environment = item.workspace_environment().cloned().ok_or_else(|| {
-        request_error(
-            StatusCode::CONFLICT,
-            "prepare the governed workspace before searching source files",
-        )
-    })?;
-    let root = std::fs::canonicalize(&environment.worktree).map_err(|err| {
-        request_error(
-            StatusCode::CONFLICT,
-            format!("governed workspace is unavailable: {err}"),
-        )
-    })?;
-    let (hits, truncated, next_cursor) =
-        tokio::task::spawn_blocking(move || run_repository_search(&root, &options))
-            .await
-            .map_err(|err| {
-                request_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("repository search worker failed: {err}"),
-                )
-            })??;
-    Ok(Json(SourceSearchResponse {
-        work_id: id.as_str().to_owned(),
-        hits,
-        truncated,
-        next_cursor,
-    }))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::Observation,
+        256 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let item = forge(&state).load(&id).map_err(map_err)?;
+                let environment = item.workspace_environment().cloned().ok_or_else(|| {
+                    request_error(
+                        StatusCode::CONFLICT,
+                        "prepare the governed workspace before searching source files",
+                    )
+                })?;
+                let root = std::fs::canonicalize(&environment.worktree).map_err(|err| {
+                    request_error(
+                        StatusCode::CONFLICT,
+                        format!("governed workspace is unavailable: {err}"),
+                    )
+                })?;
+                let (hits, truncated, next_cursor) = run_repository_search(&root, &options)?;
+                Ok(Json(SourceSearchResponse {
+                    work_id: id.as_str().to_owned(),
+                    hits,
+                    truncated,
+                    next_cursor,
+                }))
+            }
+        },
+    )
+    .await
 }
 
 async fn replace_source(
@@ -2945,37 +3170,38 @@ async fn replace_source(
     });
 
     if dry_run {
-        let item = forge(&state).load(&id).map_err(map_err)?;
-        let environment = item.workspace_environment().cloned().ok_or_else(|| {
-            request_error(
-                StatusCode::CONFLICT,
-                "prepare the governed workspace before replacing source files",
-            )
-        })?;
-        let root = std::fs::canonicalize(&environment.worktree).map_err(|err| {
-            request_error(
-                StatusCode::CONFLICT,
-                format!("governed workspace is unavailable: {err}"),
-            )
-        })?;
         let replacement = body.replacement.clone();
         let filter = path_filter.clone();
-        let (files, truncated) = tokio::task::spawn_blocking(move || {
-            run_repository_replace_plan(
-                &root,
-                &options,
-                &replacement,
-                file_limit,
-                filter.as_deref(),
-            )
-        })
-        .await
-        .map_err(|err| {
-            request_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("repository replace worker failed: {err}"),
-            )
-        })??;
+        let state_for_run = state.clone();
+        let id_for_run = id.clone();
+        let (files, truncated) = admit_forge(
+            &state,
+            medousa_forge::execution::ExecutionClass::LocalMutation,
+            256 * 1024,
+            move || {
+                let item = forge(&state_for_run).load(&id_for_run).map_err(map_err)?;
+                let environment = item.workspace_environment().cloned().ok_or_else(|| {
+                    request_error(
+                        StatusCode::CONFLICT,
+                        "prepare the governed workspace before replacing source files",
+                    )
+                })?;
+                let root = std::fs::canonicalize(&environment.worktree).map_err(|err| {
+                    request_error(
+                        StatusCode::CONFLICT,
+                        format!("governed workspace is unavailable: {err}"),
+                    )
+                })?;
+                run_repository_replace_plan(
+                    &root,
+                    &options,
+                    &replacement,
+                    file_limit,
+                    filter.as_deref(),
+                )
+            },
+        )
+        .await?;
         return Ok(Json(SourceReplaceResponse {
             work_id: id.as_str().to_owned(),
             files,
@@ -3004,40 +3230,42 @@ async fn replace_source(
             "preconditions are required when applying a replace",
         ));
     }
-    let (item, lease) = require_work_lease(&state, &id, lease_id, generation)?;
-    let environment = item
-        .environment_for_attempt(&lease.attempt_id)
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?
-        .clone();
-    let root = std::fs::canonicalize(&environment.worktree).map_err(|err| {
-        request_error(
-            StatusCode::CONFLICT,
-            format!("governed workspace is unavailable: {err}"),
-        )
-    })?;
+    let lease_id = lease_id.to_owned();
     let replacement = body.replacement.clone();
     let filter = path_filter.clone();
-    let (files, truncated) = tokio::task::spawn_blocking({
-        let root = root.clone();
-        let options = options.clone();
+    let state_for_run = state.clone();
+    let id_for_run = id.clone();
+    let (item, environment, files, truncated) = admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
         move || {
-            run_repository_replace_plan(
+            let (item, lease) =
+                require_work_lease(&state_for_run, &id_for_run, &lease_id, generation)?;
+            let environment = item
+                .environment_for_attempt(&lease.attempt_id)
+                .ok_or_else(|| {
+                    request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+                })?
+                .clone();
+            let root = std::fs::canonicalize(&environment.worktree).map_err(|err| {
+                request_error(
+                    StatusCode::CONFLICT,
+                    format!("governed workspace is unavailable: {err}"),
+                )
+            })?;
+            let (files, truncated) = run_repository_replace_plan(
                 &root,
                 &options,
                 &replacement,
                 file_limit,
                 filter.as_deref(),
-            )
-        }
-    })
-    .await
-    .map_err(|err| {
-        request_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("repository replace worker failed: {err}"),
-        )
-    })??;
-    apply_repository_replace_plan(&root, &files, &preconditions)?;
+            )?;
+            apply_repository_replace_plan(&root, &files, &preconditions)?;
+            Ok((item, environment, files, truncated))
+        },
+    )
+    .await?;
     for file in &files {
         publish_project_change(
             &state,
@@ -3070,25 +3298,36 @@ async fn read_workspace_state(
     State(state): State<AppState>,
     Path(work_id): Path<String>,
 ) -> ApiResult<Json<CodeWorkspaceState>> {
-    let id = parse_work_id(&work_id)?;
-    forge(&state).load(&id).map_err(map_err)?;
-    let path = code_workspace_state_path(forge(&state).as_ref(), &id);
-    if !path.exists() {
-        return Ok(Json(CodeWorkspaceState::default()));
-    }
-    let raw = std::fs::read_to_string(&path).map_err(|err| {
-        request_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("could not read Code workspace state: {err}"),
-        )
-    })?;
-    let value = serde_json::from_str(&raw).map_err(|err| {
-        request_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("could not parse Code workspace state: {err}"),
-        )
-    })?;
-    Ok(Json(value))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                forge(&state).load(&id).map_err(map_err)?;
+                let path = code_workspace_state_path(forge(&state).as_ref(), &id);
+                if !path.exists() {
+                    return Ok(Json(CodeWorkspaceState::default()));
+                }
+                let raw = std::fs::read_to_string(&path).map_err(|err| {
+                    request_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("could not read Code workspace state: {err}"),
+                    )
+                })?;
+                let value = serde_json::from_str(&raw).map_err(|err| {
+                    request_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("could not parse Code workspace state: {err}"),
+                    )
+                })?;
+                Ok(Json(value))
+            }
+        },
+    )
+    .await
 }
 
 async fn save_workspace_state(
@@ -3096,127 +3335,140 @@ async fn save_workspace_state(
     Path(work_id): Path<String>,
     Json(mut body): Json<SaveWorkspaceStateRequest>,
 ) -> ApiResult<Json<CodeWorkspaceState>> {
-    let id = parse_work_id(&work_id)?;
-    let item = forge(&state).load(&id).map_err(map_err)?;
-    if body.state.tabs.len() > 32 {
-        return Err(request_error(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            "Code workspace state may contain at most 32 open files",
-        ));
-    }
-    let draft_bytes = body
-        .state
-        .tabs
-        .iter()
-        .filter_map(|tab| tab.draft.as_ref())
-        .map(String::len)
-        .sum::<usize>();
-    if draft_bytes > 8 * 1024 * 1024 {
-        return Err(request_error(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            "Code workspace drafts exceed the 8 MiB recovery limit",
-        ));
-    }
-    let draft_lease = if body.state.tabs.iter().any(|tab| tab.draft.is_some()) {
-        let lease_id = body.lease_id.as_deref().ok_or_else(|| {
-            request_error(
-                StatusCode::CONFLICT,
-                "an active lease is required to persist source drafts",
-            )
-        })?;
-        let generation = body
-            .generation
-            .ok_or_else(|| request_error(StatusCode::CONFLICT, "lease generation is required"))?;
-        let lease = resolve_lease(forge(&state).as_ref(), lease_id, generation)?;
-        if lease.work_id != id {
-            return Err(request_error(
-                StatusCode::CONFLICT,
-                "the presented lease belongs to a different undertaking",
-            ));
-        }
-        Some(lease)
-    } else {
-        None
-    };
-    let environment = draft_lease
-        .as_ref()
-        .and_then(|lease| item.environment_for_attempt(&lease.attempt_id))
-        .or_else(|| item.workspace_environment())
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
-    for tab in &mut body.state.tabs {
-        let (_, clean) = resolve_source_path(&environment.worktree, &tab.path)?;
-        tab.path = clean;
-        if tab
-            .draft
-            .as_ref()
-            .is_some_and(|draft| draft.len() > MAX_SOURCE_BYTES)
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
         {
-            return Err(request_error(
-                StatusCode::PAYLOAD_TOO_LARGE,
-                format!("draft for {} exceeds the editor limit", tab.path),
-            ));
-        }
-    }
-    if let Some(active_path) = body.state.active_path.as_mut() {
-        let (_, clean) = resolve_source_path(&environment.worktree, active_path)?;
-        *active_path = clean;
-    }
-    if let Some(secondary_path) = body.state.secondary_path.as_mut() {
-        let (_, clean) = resolve_source_path(&environment.worktree, secondary_path)?;
-        *secondary_path = clean;
-    }
-    if let Some(layout) = body.state.layout.as_mut()
-        && let Some(panel) = layout.context_panel.as_deref()
-    {
-        match panel {
-            "problems" | "outline" | "references" | "language" => {}
-            _ => layout.context_panel = None,
-        }
-    }
-    let open_paths = body
-        .state
-        .tabs
-        .iter()
-        .map(|tab| tab.path.as_str())
-        .collect::<std::collections::HashSet<_>>();
-    if body
-        .state
-        .active_path
-        .as_deref()
-        .is_some_and(|path| !open_paths.contains(path))
-        || body
-            .state
-            .secondary_path
-            .as_deref()
-            .is_some_and(|path| !open_paths.contains(path))
-    {
-        return Err(request_error(
-            StatusCode::BAD_REQUEST,
-            "Code workspace groups must reference open files",
-        ));
-    }
-    body.state.updated_at = Some(chrono::Utc::now().to_rfc3339());
-    let path = code_workspace_state_path(forge(&state).as_ref(), &id);
-    let parent = path.parent().expect("Code workspace state has a parent");
-    std::fs::create_dir_all(parent).map_err(|err| {
-        request_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("could not create Code workspace state directory: {err}"),
-        )
-    })?;
-    let bytes = serde_json::to_vec_pretty(&body.state).map_err(|err| {
-        request_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("could not serialize Code workspace state: {err}"),
-        )
-    })?;
-    crate::session::atomic_write(&path, &bytes).map_err(|err| {
-        request_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("could not preserve Code workspace state: {err}"),
-        )
-    })?;
-    Ok(Json(body.state))
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let item = forge(&state).load(&id).map_err(map_err)?;
+                if body.state.tabs.len() > 32 {
+                    return Err(request_error(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        "Code workspace state may contain at most 32 open files",
+                    ));
+                }
+                let draft_bytes = body
+                    .state
+                    .tabs
+                    .iter()
+                    .filter_map(|tab| tab.draft.as_ref())
+                    .map(String::len)
+                    .sum::<usize>();
+                if draft_bytes > 8 * 1024 * 1024 {
+                    return Err(request_error(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        "Code workspace drafts exceed the 8 MiB recovery limit",
+                    ));
+                }
+                let draft_lease = if body.state.tabs.iter().any(|tab| tab.draft.is_some()) {
+                    let lease_id = body.lease_id.as_deref().ok_or_else(|| {
+                        request_error(
+                            StatusCode::CONFLICT,
+                            "an active lease is required to persist source drafts",
+                        )
+                    })?;
+                    let generation = body.generation.ok_or_else(|| {
+                        request_error(StatusCode::CONFLICT, "lease generation is required")
+                    })?;
+                    let lease = resolve_lease(forge(&state).as_ref(), lease_id, generation)?;
+                    if lease.work_id != id {
+                        return Err(request_error(
+                            StatusCode::CONFLICT,
+                            "the presented lease belongs to a different undertaking",
+                        ));
+                    }
+                    Some(lease)
+                } else {
+                    None
+                };
+                let environment = draft_lease
+                    .as_ref()
+                    .and_then(|lease| item.environment_for_attempt(&lease.attempt_id))
+                    .or_else(|| item.workspace_environment())
+                    .ok_or_else(|| {
+                        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+                    })?;
+                for tab in &mut body.state.tabs {
+                    let (_, clean) = resolve_source_path(&environment.worktree, &tab.path)?;
+                    tab.path = clean;
+                    if tab
+                        .draft
+                        .as_ref()
+                        .is_some_and(|draft| draft.len() > MAX_SOURCE_BYTES)
+                    {
+                        return Err(request_error(
+                            StatusCode::PAYLOAD_TOO_LARGE,
+                            format!("draft for {} exceeds the editor limit", tab.path),
+                        ));
+                    }
+                }
+                if let Some(active_path) = body.state.active_path.as_mut() {
+                    let (_, clean) = resolve_source_path(&environment.worktree, active_path)?;
+                    *active_path = clean;
+                }
+                if let Some(secondary_path) = body.state.secondary_path.as_mut() {
+                    let (_, clean) = resolve_source_path(&environment.worktree, secondary_path)?;
+                    *secondary_path = clean;
+                }
+                if let Some(layout) = body.state.layout.as_mut()
+                    && let Some(panel) = layout.context_panel.as_deref()
+                {
+                    match panel {
+                        "problems" | "outline" | "references" | "language" => {}
+                        _ => layout.context_panel = None,
+                    }
+                }
+                let open_paths = body
+                    .state
+                    .tabs
+                    .iter()
+                    .map(|tab| tab.path.as_str())
+                    .collect::<std::collections::HashSet<_>>();
+                if body
+                    .state
+                    .active_path
+                    .as_deref()
+                    .is_some_and(|path| !open_paths.contains(path))
+                    || body
+                        .state
+                        .secondary_path
+                        .as_deref()
+                        .is_some_and(|path| !open_paths.contains(path))
+                {
+                    return Err(request_error(
+                        StatusCode::BAD_REQUEST,
+                        "Code workspace groups must reference open files",
+                    ));
+                }
+                body.state.updated_at = Some(chrono::Utc::now().to_rfc3339());
+                let path = code_workspace_state_path(forge(&state).as_ref(), &id);
+                let parent = path.parent().expect("Code workspace state has a parent");
+                std::fs::create_dir_all(parent).map_err(|err| {
+                    request_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("could not create Code workspace state directory: {err}"),
+                    )
+                })?;
+                let bytes = serde_json::to_vec_pretty(&body.state).map_err(|err| {
+                    request_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("could not serialize Code workspace state: {err}"),
+                    )
+                })?;
+                crate::session::atomic_write(&path, &bytes).map_err(|err| {
+                    request_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("could not preserve Code workspace state: {err}"),
+                    )
+                })?;
+                Ok(Json(body.state))
+            }
+        },
+    )
+    .await
 }
 
 async fn save_source(
@@ -3224,50 +3476,68 @@ async fn save_source(
     Path(work_id): Path<String>,
     Json(body): Json<SaveSourceRequest>,
 ) -> ApiResult<Json<SourceResponse>> {
-    let id = parse_work_id(&work_id)?;
-    if body.content.len() > MAX_SOURCE_BYTES {
-        return Err(request_error(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            format!("source file exceeds the {MAX_SOURCE_BYTES} byte editor limit"),
-        ));
-    }
-    let (item, lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item
-        .environment_for_attempt(&lease.attempt_id)
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
-    let (path, _) = resolve_source_path(&environment.worktree, &body.path)?;
-    let current = std::fs::read(&path).map_err(|err| {
-        request_error(
-            StatusCode::NOT_FOUND,
-            format!("could not read source file: {err}"),
-        )
-    })?;
-    if source_digest(&current) != body.expected_digest {
-        return Err(request_error(
-            StatusCode::CONFLICT,
-            "source changed since it was opened; reload before saving",
-        ));
-    }
-    std::fs::write(&path, body.content.as_bytes()).map_err(|err| {
-        request_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("could not save source file: {err}"),
-        )
-    })?;
-    publish_project_change(
+    admit_forge_on_repo(
         &state,
-        &item,
-        ForgeProjectEventKind::Changed,
-        Some(body.path.clone()),
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
         None,
-        Some(source_digest(body.content.as_bytes())),
-    );
-    remember_worktree(&state, &item, &environment.worktree);
-    Ok(Json(read_source_response(
-        &id,
-        &environment.worktree,
-        &body.path,
-    )?))
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                if body.content.len() > MAX_SOURCE_BYTES {
+                    return Err(request_error(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        format!("source file exceeds the {MAX_SOURCE_BYTES} byte editor limit"),
+                    ));
+                }
+                let (item, lease) =
+                    require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+                let environment =
+                    item.environment_for_attempt(&lease.attempt_id)
+                        .ok_or_else(|| {
+                            request_error(
+                                StatusCode::CONFLICT,
+                                "governed workspace is not prepared",
+                            )
+                        })?;
+                let (path, _) = resolve_source_path(&environment.worktree, &body.path)?;
+                let current = std::fs::read(&path).map_err(|err| {
+                    request_error(
+                        StatusCode::NOT_FOUND,
+                        format!("could not read source file: {err}"),
+                    )
+                })?;
+                if source_digest(&current) != body.expected_digest {
+                    return Err(request_error(
+                        StatusCode::CONFLICT,
+                        "source changed since it was opened; reload before saving",
+                    ));
+                }
+                std::fs::write(&path, body.content.as_bytes()).map_err(|err| {
+                    request_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("could not save source file: {err}"),
+                    )
+                })?;
+                publish_project_change(
+                    &state,
+                    &item,
+                    ForgeProjectEventKind::Changed,
+                    Some(body.path.clone()),
+                    None,
+                    Some(source_digest(body.content.as_bytes())),
+                );
+                remember_worktree(&state, &item, &environment.worktree);
+                Ok(Json(read_source_response(
+                    &id,
+                    &environment.worktree,
+                    &body.path,
+                )?))
+            }
+        },
+    )
+    .await
 }
 
 async fn save_source_batch(
@@ -3275,77 +3545,97 @@ async fn save_source_batch(
     Path(work_id): Path<String>,
     Json(body): Json<SaveSourceBatchRequest>,
 ) -> ApiResult<Json<Vec<SourceResponse>>> {
-    let id = parse_work_id(&work_id)?;
-    if body.files.is_empty() {
-        return Err(request_error(
-            StatusCode::BAD_REQUEST,
-            "no source edits supplied",
-        ));
-    }
-    let (item, lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item
-        .environment_for_attempt(&lease.attempt_id)
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
-    let mut prepared = Vec::with_capacity(body.files.len());
-    let mut seen = std::collections::HashSet::new();
-    for file in &body.files {
-        if file.content.len() > MAX_SOURCE_BYTES {
-            return Err(request_error(
-                StatusCode::PAYLOAD_TOO_LARGE,
-                format!("{} exceeds the source editor limit", file.path),
-            ));
-        }
-        let (path, relative) = resolve_source_path(&environment.worktree, &file.path)?;
-        if !seen.insert(path.clone()) {
-            return Err(request_error(
-                StatusCode::BAD_REQUEST,
-                "duplicate source edit",
-            ));
-        }
-        let original = std::fs::read(&path).map_err(|err| {
-            request_error(
-                StatusCode::NOT_FOUND,
-                format!("could not read {}: {err}", file.path),
-            )
-        })?;
-        if source_digest(&original) != file.expected_digest {
-            return Err(request_error(
-                StatusCode::CONFLICT,
-                format!(
-                    "{} changed; reload before applying the language edit",
-                    file.path
-                ),
-            ));
-        }
-        prepared.push((path, relative, original, file.content.as_bytes().to_vec()));
-    }
-    for (written, (path, _, _, content)) in prepared.iter().enumerate() {
-        if let Err(err) = crate::session::atomic_write(path, content) {
-            for (rollback_path, _, original, _) in prepared.iter().take(written) {
-                let _ = crate::session::atomic_write(rollback_path, original);
+    admit_forge_on_repo(
+        &state,
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
+        None,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                if body.files.is_empty() {
+                    return Err(request_error(
+                        StatusCode::BAD_REQUEST,
+                        "no source edits supplied",
+                    ));
+                }
+                let (item, lease) =
+                    require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+                let environment =
+                    item.environment_for_attempt(&lease.attempt_id)
+                        .ok_or_else(|| {
+                            request_error(
+                                StatusCode::CONFLICT,
+                                "governed workspace is not prepared",
+                            )
+                        })?;
+                let mut prepared = Vec::with_capacity(body.files.len());
+                let mut seen = std::collections::HashSet::new();
+                for file in &body.files {
+                    if file.content.len() > MAX_SOURCE_BYTES {
+                        return Err(request_error(
+                            StatusCode::PAYLOAD_TOO_LARGE,
+                            format!("{} exceeds the source editor limit", file.path),
+                        ));
+                    }
+                    let (path, relative) = resolve_source_path(&environment.worktree, &file.path)?;
+                    if !seen.insert(path.clone()) {
+                        return Err(request_error(
+                            StatusCode::BAD_REQUEST,
+                            "duplicate source edit",
+                        ));
+                    }
+                    let original = std::fs::read(&path).map_err(|err| {
+                        request_error(
+                            StatusCode::NOT_FOUND,
+                            format!("could not read {}: {err}", file.path),
+                        )
+                    })?;
+                    if source_digest(&original) != file.expected_digest {
+                        return Err(request_error(
+                            StatusCode::CONFLICT,
+                            format!(
+                                "{} changed; reload before applying the language edit",
+                                file.path
+                            ),
+                        ));
+                    }
+                    prepared.push((path, relative, original, file.content.as_bytes().to_vec()));
+                }
+                for (written, (path, _, _, content)) in prepared.iter().enumerate() {
+                    if let Err(err) = crate::session::atomic_write(path, content) {
+                        for (rollback_path, _, original, _) in prepared.iter().take(written) {
+                            let _ = crate::session::atomic_write(rollback_path, original);
+                        }
+                        return Err(request_error(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("could not apply language edit: {err}"),
+                        ));
+                    }
+                }
+                publish_item(&state, &item, "source_batch_saved");
+                remember_worktree(&state, &item, &environment.worktree);
+                for (_, relative, _, content) in &prepared {
+                    state.forge_events.publish_project(
+                        item.id.as_str(),
+                        ForgeProjectEventKind::Changed,
+                        Some(relative.clone()),
+                        None,
+                        Some(source_digest(content)),
+                    );
+                }
+                let responses = prepared
+                    .iter()
+                    .map(|(_, relative, _, _)| {
+                        read_source_response(&id, &environment.worktree, relative)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Json(responses))
             }
-            return Err(request_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("could not apply language edit: {err}"),
-            ));
-        }
-    }
-    publish_item(&state, &item, "source_batch_saved");
-    remember_worktree(&state, &item, &environment.worktree);
-    for (_, relative, _, content) in &prepared {
-        state.forge_events.publish_project(
-            item.id.as_str(),
-            ForgeProjectEventKind::Changed,
-            Some(relative.clone()),
-            None,
-            Some(source_digest(content)),
-        );
-    }
-    let responses = prepared
-        .iter()
-        .map(|(_, relative, _, _)| read_source_response(&id, &environment.worktree, relative))
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(Json(responses))
+        },
+    )
+    .await
 }
 
 const MAX_SOURCE_WORKSPACE_EDIT_OPERATIONS: usize = 512;
@@ -3623,24 +3913,42 @@ async fn apply_source_workspace_edit(
     Path(work_id): Path<String>,
     Json(body): Json<SourceWorkspaceEditRequest>,
 ) -> ApiResult<Json<Vec<SourceResponse>>> {
-    let id = parse_work_id(&work_id)?;
-    let (item, lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item
-        .environment_for_attempt(&lease.attempt_id)
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
-    let responses = execute_source_workspace_edit(&id, &environment.worktree, &body)?;
-    publish_item(&state, &item, "source_workspace_edit_applied");
-    remember_worktree(&state, &item, &environment.worktree);
-    for response in &responses {
-        state.forge_events.publish_project(
-            item.id.as_str(),
-            ForgeProjectEventKind::Changed,
-            Some(response.path.clone()),
-            None,
-            Some(response.digest.clone()),
-        );
-    }
-    Ok(Json(responses))
+    admit_forge_on_repo(
+        &state,
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
+        None,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let (item, lease) =
+                    require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+                let environment =
+                    item.environment_for_attempt(&lease.attempt_id)
+                        .ok_or_else(|| {
+                            request_error(
+                                StatusCode::CONFLICT,
+                                "governed workspace is not prepared",
+                            )
+                        })?;
+                let responses = execute_source_workspace_edit(&id, &environment.worktree, &body)?;
+                publish_item(&state, &item, "source_workspace_edit_applied");
+                remember_worktree(&state, &item, &environment.worktree);
+                for response in &responses {
+                    state.forge_events.publish_project(
+                        item.id.as_str(),
+                        ForgeProjectEventKind::Changed,
+                        Some(response.path.clone()),
+                        None,
+                        Some(response.digest.clone()),
+                    );
+                }
+                Ok(Json(responses))
+            }
+        },
+    )
+    .await
 }
 
 async fn rename_source(
@@ -3648,42 +3956,61 @@ async fn rename_source(
     Path(work_id): Path<String>,
     Json(body): Json<RenameSourceRequest>,
 ) -> ApiResult<Json<SourceResponse>> {
-    let id = parse_work_id(&work_id)?;
-    let (item, lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item
-        .environment_for_attempt(&lease.attempt_id)
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
-    let (source, _) = resolve_source_path(&environment.worktree, &body.path)?;
-    let current = std::fs::read(&source).map_err(|err| {
-        request_error(
-            StatusCode::NOT_FOUND,
-            format!("could not read source file: {err}"),
-        )
-    })?;
-    if source_digest(&current) != body.expected_digest {
-        return Err(request_error(
-            StatusCode::CONFLICT,
-            "source changed since it was opened; reload before renaming",
-        ));
-    }
-    let (destination, _) = resolve_new_source_path(&environment.worktree, &body.destination)?;
-    std::fs::rename(&source, &destination).map_err(|err| {
-        request_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("could not rename source file: {err}"),
-        )
-    })?;
-    let response = read_source_response(&id, &environment.worktree, &body.destination)?;
-    publish_project_change(
+    admit_forge_on_repo(
         &state,
-        &item,
-        ForgeProjectEventKind::Renamed,
-        Some(body.destination.clone()),
-        Some(body.path.clone()),
-        Some(response.digest.clone()),
-    );
-    remember_worktree(&state, &item, &environment.worktree);
-    Ok(Json(response))
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
+        None,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let (item, lease) =
+                    require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+                let environment =
+                    item.environment_for_attempt(&lease.attempt_id)
+                        .ok_or_else(|| {
+                            request_error(
+                                StatusCode::CONFLICT,
+                                "governed workspace is not prepared",
+                            )
+                        })?;
+                let (source, _) = resolve_source_path(&environment.worktree, &body.path)?;
+                let current = std::fs::read(&source).map_err(|err| {
+                    request_error(
+                        StatusCode::NOT_FOUND,
+                        format!("could not read source file: {err}"),
+                    )
+                })?;
+                if source_digest(&current) != body.expected_digest {
+                    return Err(request_error(
+                        StatusCode::CONFLICT,
+                        "source changed since it was opened; reload before renaming",
+                    ));
+                }
+                let (destination, _) =
+                    resolve_new_source_path(&environment.worktree, &body.destination)?;
+                std::fs::rename(&source, &destination).map_err(|err| {
+                    request_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("could not rename source file: {err}"),
+                    )
+                })?;
+                let response = read_source_response(&id, &environment.worktree, &body.destination)?;
+                publish_project_change(
+                    &state,
+                    &item,
+                    ForgeProjectEventKind::Renamed,
+                    Some(body.destination.clone()),
+                    Some(body.path.clone()),
+                    Some(response.digest.clone()),
+                );
+                remember_worktree(&state, &item, &environment.worktree);
+                Ok(Json(response))
+            }
+        },
+    )
+    .await
 }
 
 async fn delete_source(
@@ -3691,44 +4018,62 @@ async fn delete_source(
     Path(work_id): Path<String>,
     Json(body): Json<DeleteSourceRequest>,
 ) -> ApiResult<Json<DeleteSourceResponse>> {
-    let id = parse_work_id(&work_id)?;
-    let (item, lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item
-        .environment_for_attempt(&lease.attempt_id)
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
-    let (path, relative) = resolve_source_path(&environment.worktree, &body.path)?;
-    let current = std::fs::read(&path).map_err(|err| {
-        request_error(
-            StatusCode::NOT_FOUND,
-            format!("could not read source file: {err}"),
-        )
-    })?;
-    if source_digest(&current) != body.expected_digest {
-        return Err(request_error(
-            StatusCode::CONFLICT,
-            "source changed since it was opened; reload before deleting",
-        ));
-    }
-    std::fs::remove_file(&path).map_err(|err| {
-        request_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("could not delete source file: {err}"),
-        )
-    })?;
-    publish_project_change(
+    admit_forge_on_repo(
         &state,
-        &item,
-        ForgeProjectEventKind::Deleted,
-        Some(relative.clone()),
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
         None,
-        None,
-    );
-    remember_worktree(&state, &item, &environment.worktree);
-    Ok(Json(DeleteSourceResponse {
-        work_id: id.as_str().to_owned(),
-        path: relative,
-        deleted: true,
-    }))
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let (item, lease) =
+                    require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+                let environment =
+                    item.environment_for_attempt(&lease.attempt_id)
+                        .ok_or_else(|| {
+                            request_error(
+                                StatusCode::CONFLICT,
+                                "governed workspace is not prepared",
+                            )
+                        })?;
+                let (path, relative) = resolve_source_path(&environment.worktree, &body.path)?;
+                let current = std::fs::read(&path).map_err(|err| {
+                    request_error(
+                        StatusCode::NOT_FOUND,
+                        format!("could not read source file: {err}"),
+                    )
+                })?;
+                if source_digest(&current) != body.expected_digest {
+                    return Err(request_error(
+                        StatusCode::CONFLICT,
+                        "source changed since it was opened; reload before deleting",
+                    ));
+                }
+                std::fs::remove_file(&path).map_err(|err| {
+                    request_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("could not delete source file: {err}"),
+                    )
+                })?;
+                publish_project_change(
+                    &state,
+                    &item,
+                    ForgeProjectEventKind::Deleted,
+                    Some(relative.clone()),
+                    None,
+                    None,
+                );
+                remember_worktree(&state, &item, &environment.worktree);
+                Ok(Json(DeleteSourceResponse {
+                    work_id: id.as_str().to_owned(),
+                    path: relative,
+                    deleted: true,
+                }))
+            }
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -3848,8 +4193,20 @@ async fn get_changes(
     State(state): State<AppState>,
     Path(work_id): Path<String>,
 ) -> ApiResult<Json<ForgeChangesResponse>> {
-    let id = parse_work_id(&work_id)?;
-    Ok(Json(build_changes_response(&state, &id)?))
+    admit_forge_canary(
+        &state,
+        medousa_forge::execution::ExecutionClass::Observation,
+        256 * 1024,
+        None,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                Ok(Json(build_changes_response(&state, &id)?))
+            }
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -3981,7 +4338,17 @@ async fn get_changes_file(
     Query(query): Query<ChangesFileQuery>,
 ) -> ApiResult<Json<ChangesFileDiff>> {
     let id = parse_work_id(&work_id)?;
-    Ok(Json(changes_file_diff(&state, &id, &query.path)?))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::Observation,
+        256 * 1024,
+        {
+            let state = state.clone();
+            let path = query.path.clone();
+            move || Ok(Json(changes_file_diff(&state, &id, &path)?))
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -4005,136 +4372,150 @@ async fn restore_changes_file(
     Path(work_id): Path<String>,
     Json(body): Json<RestoreChangesFileRequest>,
 ) -> ApiResult<Json<RestoreChangesFileResponse>> {
-    let id = parse_work_id(&work_id)?;
-    let comparison = changes_file_diff(&state, &id, &body.path)?;
-    if comparison.binary && comparison.baseline.exists {
-        return Err(request_error(
-            StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            "binary recovery is preserved in Git but cannot yet be restored from Home",
-        ));
-    }
-    let expected = body
-        .expected_working_digest
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let current = comparison.working_digest.as_deref();
-    match (expected, current) {
-        (Some(want), Some(have)) if want != have => {
-            return Err(request_error(
-                StatusCode::CONFLICT,
-                "the working copy changed; refresh Changes before restoring",
-            ));
-        }
-        (Some(_), None) => {
-            return Err(request_error(
-                StatusCode::CONFLICT,
-                "the working copy changed; refresh Changes before restoring",
-            ));
-        }
-        (None, Some(_)) if comparison.working.exists => {
-            return Err(request_error(
-                StatusCode::CONFLICT,
-                "expected_working_digest is required to restore this file",
-            ));
-        }
-        _ => {}
-    }
-    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item
-        .workspace_environment()
-        .cloned()
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
-    let restore_path = comparison
-        .old_path
-        .as_deref()
-        .unwrap_or(&comparison.path)
-        .to_owned();
-    if comparison.path != restore_path {
-        let (renamed, _) = resolve_source_path(&environment.worktree, &comparison.path)?;
-        if renamed.is_file() {
-            std::fs::remove_file(&renamed).map_err(|err| {
-                request_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("could not restore file: {err}"),
-                )
-            })?;
-        }
-    }
-    let (action, digest) = if comparison.baseline.exists {
-        let content = comparison.baseline.content.clone().ok_or_else(|| {
-            request_error(
-                StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                "baseline text is unavailable for restore",
-            )
-        })?;
-        let candidate = environment.worktree.join(&restore_path);
-        let (destination, relative) = if candidate.is_file() {
-            resolve_source_path(&environment.worktree, &restore_path)?
-        } else {
-            resolve_new_source_path(&environment.worktree, &restore_path)?
-        };
-        if let Some(parent) = destination.parent() {
-            std::fs::create_dir_all(parent).map_err(|err| {
-                request_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("could not restore file: {err}"),
-                )
-            })?;
-        }
-        std::fs::write(&destination, content.as_bytes()).map_err(|err| {
-            request_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("could not restore file: {err}"),
-            )
-        })?;
-        let digest = source_digest(content.as_bytes());
-        if comparison.conflict || comparison.status == "unmerged" {
-            let _ = forge(&state)
-                .git()
-                .add_path(&environment.worktree, &restore_path);
-        }
-        publish_project_change(
-            &state,
-            &item,
-            ForgeProjectEventKind::Changed,
-            Some(relative.clone()),
-            None,
-            Some(digest.clone()),
-        );
-        ("restored".into(), Some(digest))
-    } else {
-        let (target, relative) = resolve_source_path(&environment.worktree, &comparison.path)?;
-        if target.is_file() {
-            std::fs::remove_file(&target).map_err(|err| {
-                request_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("could not restore file: {err}"),
-                )
-            })?;
-        }
-        if comparison.conflict || comparison.status == "unmerged" {
-            let _ = forge(&state)
-                .git()
-                .add_path(&environment.worktree, &comparison.path);
-        }
-        publish_project_change(
-            &state,
-            &item,
-            ForgeProjectEventKind::Deleted,
-            Some(relative.clone()),
-            None,
-            None,
-        );
-        ("deleted".into(), None)
-    };
-    remember_worktree(&state, &item, &environment.worktree);
-    Ok(Json(RestoreChangesFileResponse {
-        work_id: id.as_str().to_owned(),
-        path: restore_path,
-        action,
-        digest,
-    }))
+    admit_forge_on_repo(
+        &state,
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
+        None,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let comparison = changes_file_diff(&state, &id, &body.path)?;
+                if comparison.binary && comparison.baseline.exists {
+                    return Err(request_error(
+                        StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                        "binary recovery is preserved in Git but cannot yet be restored from Home",
+                    ));
+                }
+                let expected = body
+                    .expected_working_digest
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty());
+                let current = comparison.working_digest.as_deref();
+                match (expected, current) {
+                    (Some(want), Some(have)) if want != have => {
+                        return Err(request_error(
+                            StatusCode::CONFLICT,
+                            "the working copy changed; refresh Changes before restoring",
+                        ));
+                    }
+                    (Some(_), None) => {
+                        return Err(request_error(
+                            StatusCode::CONFLICT,
+                            "the working copy changed; refresh Changes before restoring",
+                        ));
+                    }
+                    (None, Some(_)) if comparison.working.exists => {
+                        return Err(request_error(
+                            StatusCode::CONFLICT,
+                            "expected_working_digest is required to restore this file",
+                        ));
+                    }
+                    _ => {}
+                }
+                let (item, _lease) =
+                    require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+                let environment = item.workspace_environment().cloned().ok_or_else(|| {
+                    request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+                })?;
+                let restore_path = comparison
+                    .old_path
+                    .as_deref()
+                    .unwrap_or(&comparison.path)
+                    .to_owned();
+                if comparison.path != restore_path {
+                    let (renamed, _) =
+                        resolve_source_path(&environment.worktree, &comparison.path)?;
+                    if renamed.is_file() {
+                        std::fs::remove_file(&renamed).map_err(|err| {
+                            request_error(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                format!("could not restore file: {err}"),
+                            )
+                        })?;
+                    }
+                }
+                let (action, digest) = if comparison.baseline.exists {
+                    let content = comparison.baseline.content.clone().ok_or_else(|| {
+                        request_error(
+                            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                            "baseline text is unavailable for restore",
+                        )
+                    })?;
+                    let candidate = environment.worktree.join(&restore_path);
+                    let (destination, relative) = if candidate.is_file() {
+                        resolve_source_path(&environment.worktree, &restore_path)?
+                    } else {
+                        resolve_new_source_path(&environment.worktree, &restore_path)?
+                    };
+                    if let Some(parent) = destination.parent() {
+                        std::fs::create_dir_all(parent).map_err(|err| {
+                            request_error(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                format!("could not restore file: {err}"),
+                            )
+                        })?;
+                    }
+                    std::fs::write(&destination, content.as_bytes()).map_err(|err| {
+                        request_error(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("could not restore file: {err}"),
+                        )
+                    })?;
+                    let digest = source_digest(content.as_bytes());
+                    if comparison.conflict || comparison.status == "unmerged" {
+                        let _ = forge(&state)
+                            .git()
+                            .add_path(&environment.worktree, &restore_path);
+                    }
+                    publish_project_change(
+                        &state,
+                        &item,
+                        ForgeProjectEventKind::Changed,
+                        Some(relative.clone()),
+                        None,
+                        Some(digest.clone()),
+                    );
+                    ("restored".into(), Some(digest))
+                } else {
+                    let (target, relative) =
+                        resolve_source_path(&environment.worktree, &comparison.path)?;
+                    if target.is_file() {
+                        std::fs::remove_file(&target).map_err(|err| {
+                            request_error(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                format!("could not restore file: {err}"),
+                            )
+                        })?;
+                    }
+                    if comparison.conflict || comparison.status == "unmerged" {
+                        let _ = forge(&state)
+                            .git()
+                            .add_path(&environment.worktree, &comparison.path);
+                    }
+                    publish_project_change(
+                        &state,
+                        &item,
+                        ForgeProjectEventKind::Deleted,
+                        Some(relative.clone()),
+                        None,
+                        None,
+                    );
+                    ("deleted".into(), None)
+                };
+                remember_worktree(&state, &item, &environment.worktree);
+                Ok(Json(RestoreChangesFileResponse {
+                    work_id: id.as_str().to_owned(),
+                    path: restore_path,
+                    action,
+                    digest,
+                }))
+            }
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -4204,22 +4585,73 @@ fn has_tracked_worktree_edits(
     }))
 }
 
+async fn run_network_git(
+    state: &AppState,
+    worktree: &FsPath,
+    args: Vec<String>,
+) -> Result<String, ApiError> {
+    let git = forge(state).git().binary().to_path_buf();
+    let cwd = worktree.to_path_buf();
+    let repo = cwd.display().to_string();
+    state
+        .forge_execution
+        .run_async(
+            medousa_forge::execution::ExecutionClass::NetworkGit,
+            64 * 1024,
+            Some(repo),
+            async move {
+                let (stdout, _stderr, truncated) = medousa_forge::execution::supervise_git(
+                    git,
+                    cwd,
+                    args,
+                    std::time::Duration::from_secs(120),
+                    medousa_forge::execution::MAX_CAPTURE_BYTES,
+                )
+                .await?;
+                let mut message = String::from_utf8_lossy(&stdout).into_owned();
+                if truncated {
+                    message.push_str("\n[git output truncated]");
+                }
+                Ok(message)
+            },
+        )
+        .await
+        .map_err(map_err)
+}
+
 async fn changes_fetch(
     State(state): State<AppState>,
     Path(work_id): Path<String>,
     Json(body): Json<ChangesLeaseRequest>,
 ) -> ApiResult<Json<ChangesSyncResult>> {
     let id = parse_work_id(&work_id)?;
-    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item
-        .workspace_environment()
-        .cloned()
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
-    let remote = body.remote.as_deref().unwrap_or("origin");
-    let message = forge(&state)
-        .git()
-        .fetch(&environment.worktree, remote)
-        .map_err(map_err)?;
+    let (item, environment, remote) = admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::RepositoryMetadata,
+        64 * 1024,
+        {
+            let state = state.clone();
+            let id = id.clone();
+            let lease_id = body.lease_id.clone();
+            let generation = body.generation;
+            let remote = body.remote.clone();
+            move || {
+                let (item, _lease) = require_work_lease(&state, &id, &lease_id, generation)?;
+                let environment = item.workspace_environment().cloned().ok_or_else(|| {
+                    request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+                })?;
+                let remote = remote.unwrap_or_else(|| "origin".into());
+                Ok((item, environment, remote))
+            }
+        },
+    )
+    .await?;
+    let message = run_network_git(
+        &state,
+        &environment.worktree,
+        vec!["fetch".into(), "--prune".into(), remote],
+    )
+    .await?;
     remember_worktree(&state, &item, &environment.worktree);
     publish_project_change(
         &state,
@@ -4239,7 +4671,17 @@ async fn changes_fetch(
         } else {
             message.trim().to_owned()
         },
-        changes: build_changes_response(&state, &id)?,
+        changes: admit_forge(
+            &state,
+            medousa_forge::execution::ExecutionClass::Observation,
+            64 * 1024,
+            {
+                let state = state.clone();
+                let id = id.clone();
+                move || build_changes_response(&state, &id)
+            },
+        )
+        .await?,
     }))
 }
 
@@ -4249,28 +4691,41 @@ async fn changes_pull(
     Json(body): Json<ChangesLeaseRequest>,
 ) -> ApiResult<Json<ChangesSyncResult>> {
     let id = parse_work_id(&work_id)?;
-    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item
-        .workspace_environment()
-        .cloned()
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
-    changes_sync_preflight(forge(&state).as_ref(), &environment)?;
-    if has_tracked_worktree_edits(forge(&state).as_ref(), &environment)? {
-        return Err(request_error(
-            StatusCode::CONFLICT,
-            "commit or restore local changes before a fast-forward pull",
-        ));
-    }
-    let remote = body.remote.as_deref().unwrap_or("origin");
-    let message = forge(&state)
-        .git()
-        .pull_ff_only(&environment.worktree, remote)
-        .map_err(|err| {
-            request_error(
-                StatusCode::CONFLICT,
-                format!("fast-forward pull refused: {err}"),
-            )
-        })?;
+    let (item, environment, remote) = admit_forge_canary(
+        &state,
+        medousa_forge::execution::ExecutionClass::RepositoryMetadata,
+        64 * 1024,
+        None,
+        {
+            let state = state.clone();
+            let id = id.clone();
+            let lease_id = body.lease_id.clone();
+            let generation = body.generation;
+            let remote = body.remote.clone();
+            move || {
+                let (item, _lease) = require_work_lease(&state, &id, &lease_id, generation)?;
+                let environment = item.workspace_environment().cloned().ok_or_else(|| {
+                    request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+                })?;
+                changes_sync_preflight(forge(&state).as_ref(), &environment)?;
+                if has_tracked_worktree_edits(forge(&state).as_ref(), &environment)? {
+                    return Err(request_error(
+                        StatusCode::CONFLICT,
+                        "commit or restore local changes before a fast-forward pull",
+                    ));
+                }
+                let remote = remote.unwrap_or_else(|| "origin".into());
+                Ok((item, environment, remote))
+            }
+        },
+    )
+    .await?;
+    let message = run_network_git(
+        &state,
+        &environment.worktree,
+        vec!["pull".into(), "--ff-only".into(), remote],
+    )
+    .await?;
     remember_worktree(&state, &item, &environment.worktree);
     publish_project_change(
         &state,
@@ -4290,7 +4745,17 @@ async fn changes_pull(
         } else {
             message.trim().to_owned()
         },
-        changes: build_changes_response(&state, &id)?,
+        changes: admit_forge(
+            &state,
+            medousa_forge::execution::ExecutionClass::Observation,
+            64 * 1024,
+            {
+                let state = state.clone();
+                let id = id.clone();
+                move || build_changes_response(&state, &id)
+            },
+        )
+        .await?,
     }))
 }
 
@@ -4300,24 +4765,47 @@ async fn changes_push(
     Json(body): Json<ChangesLeaseRequest>,
 ) -> ApiResult<Json<ChangesSyncResult>> {
     let id = parse_work_id(&work_id)?;
-    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item
-        .workspace_environment()
-        .cloned()
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
-    changes_sync_preflight(forge(&state).as_ref(), &environment)?;
-    let WorkTarget::Git(target) = &item.target;
-    if environment.branch == target.base_ref {
-        return Err(request_error(
-            StatusCode::CONFLICT,
-            "refusing to push the protected base branch from Changes",
-        ));
-    }
-    let remote = body.remote.as_deref().unwrap_or("origin");
-    let message = forge(&state)
-        .git()
-        .push_branch(&environment.worktree, remote, &environment.branch)
-        .map_err(|err| request_error(StatusCode::CONFLICT, format!("push refused: {err}")))?;
+    let (item, environment, remote, branch) = admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::RepositoryMetadata,
+        64 * 1024,
+        {
+            let state = state.clone();
+            let id = id.clone();
+            let lease_id = body.lease_id.clone();
+            let generation = body.generation;
+            let remote = body.remote.clone();
+            move || {
+                let (item, _lease) = require_work_lease(&state, &id, &lease_id, generation)?;
+                let environment = item.workspace_environment().cloned().ok_or_else(|| {
+                    request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+                })?;
+                changes_sync_preflight(forge(&state).as_ref(), &environment)?;
+                let WorkTarget::Git(target) = &item.target;
+                if environment.branch == target.base_ref {
+                    return Err(request_error(
+                        StatusCode::CONFLICT,
+                        "refusing to push the protected base branch from Changes",
+                    ));
+                }
+                let remote = remote.unwrap_or_else(|| "origin".into());
+                let branch = environment.branch.clone();
+                Ok((item, environment, remote, branch))
+            }
+        },
+    )
+    .await?;
+    let message = run_network_git(
+        &state,
+        &environment.worktree,
+        vec![
+            "push".into(),
+            "--set-upstream".into(),
+            remote,
+            format!("refs/heads/{branch}"),
+        ],
+    )
+    .await?;
     remember_worktree(&state, &item, &environment.worktree);
     publish_project_change(
         &state,
@@ -4333,11 +4821,21 @@ async fn changes_push(
         pulled: false,
         pushed: true,
         message: if message.trim().is_empty() {
-            format!("Pushed {}", environment.branch)
+            format!("Pushed {branch}")
         } else {
             message.trim().to_owned()
         },
-        changes: build_changes_response(&state, &id)?,
+        changes: admit_forge(
+            &state,
+            medousa_forge::execution::ExecutionClass::Observation,
+            64 * 1024,
+            {
+                let state = state.clone();
+                let id = id.clone();
+                move || build_changes_response(&state, &id)
+            },
+        )
+        .await?,
     }))
 }
 
@@ -4347,40 +4845,79 @@ async fn changes_sync(
     Json(body): Json<ChangesLeaseRequest>,
 ) -> ApiResult<Json<ChangesSyncResult>> {
     let id = parse_work_id(&work_id)?;
-    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item
-        .workspace_environment()
-        .cloned()
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
-    changes_sync_preflight(forge(&state).as_ref(), &environment)?;
-    let remote = body.remote.as_deref().unwrap_or("origin");
+    let (item, environment, remote) = admit_forge_canary(
+        &state,
+        medousa_forge::execution::ExecutionClass::RepositoryMetadata,
+        64 * 1024,
+        None,
+        {
+            let state = state.clone();
+            let id = id.clone();
+            let lease_id = body.lease_id.clone();
+            let generation = body.generation;
+            let remote = body.remote.clone();
+            move || {
+                let (item, _lease) = require_work_lease(&state, &id, &lease_id, generation)?;
+                let environment = item.workspace_environment().cloned().ok_or_else(|| {
+                    request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+                })?;
+                changes_sync_preflight(forge(&state).as_ref(), &environment)?;
+                let remote = remote.unwrap_or_else(|| "origin".into());
+                Ok((item, environment, remote))
+            }
+        },
+    )
+    .await?;
     let mut messages = Vec::new();
     let mut pulled = false;
     let mut pushed = false;
-    let fetch_msg = forge(&state)
-        .git()
-        .fetch(&environment.worktree, remote)
-        .map_err(|err| request_error(StatusCode::CONFLICT, format!("sync fetch failed: {err}")))?;
+    let fetch_msg = run_network_git(
+        &state,
+        &environment.worktree,
+        vec!["fetch".into(), "--prune".into(), remote.clone()],
+    )
+    .await?;
     let fetched = true;
     if !fetch_msg.trim().is_empty() {
         messages.push(fetch_msg.trim().to_owned());
     } else {
         messages.push("Fetched".into());
     }
-    let after_fetch = build_changes_response(&state, &id)?;
+    let after_fetch = admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::Observation,
+        64 * 1024,
+        {
+            let state = state.clone();
+            let id = id.clone();
+            move || build_changes_response(&state, &id)
+        },
+    )
+    .await?;
     if after_fetch.behind.unwrap_or(0) > 0 {
-        if has_tracked_worktree_edits(forge(&state).as_ref(), &environment)? {
+        let blocked = admit_forge(
+            &state,
+            medousa_forge::execution::ExecutionClass::RepositoryMetadata,
+            16 * 1024,
+            {
+                let state = state.clone();
+                let environment = environment.clone();
+                move || has_tracked_worktree_edits(forge(&state).as_ref(), &environment)
+            },
+        )
+        .await?;
+        if blocked {
             return Err(request_error(
                 StatusCode::CONFLICT,
                 "remote is ahead; restore or seal local changes before sync pull",
             ));
         }
-        let msg = forge(&state)
-            .git()
-            .pull_ff_only(&environment.worktree, remote)
-            .map_err(|err| {
-                request_error(StatusCode::CONFLICT, format!("sync pull refused: {err}"))
-            })?;
+        let msg = run_network_git(
+            &state,
+            &environment.worktree,
+            vec!["pull".into(), "--ff-only".into(), remote.clone()],
+        )
+        .await?;
         pulled = true;
         messages.push(if msg.trim().is_empty() {
             "Pulled (fast-forward)".into()
@@ -4388,7 +4925,17 @@ async fn changes_sync(
             msg.trim().to_owned()
         });
     }
-    let after_pull = build_changes_response(&state, &id)?;
+    let after_pull = admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::Observation,
+        64 * 1024,
+        {
+            let state = state.clone();
+            let id = id.clone();
+            move || build_changes_response(&state, &id)
+        },
+    )
+    .await?;
     if after_pull.ahead.unwrap_or(0) > 0 {
         let WorkTarget::Git(target) = &item.target;
         if environment.branch == target.base_ref {
@@ -4397,12 +4944,17 @@ async fn changes_sync(
                 "refusing to push the protected base branch from Changes",
             ));
         }
-        let msg = forge(&state)
-            .git()
-            .push_branch(&environment.worktree, remote, &environment.branch)
-            .map_err(|err| {
-                request_error(StatusCode::CONFLICT, format!("sync push refused: {err}"))
-            })?;
+        let msg = run_network_git(
+            &state,
+            &environment.worktree,
+            vec![
+                "push".into(),
+                "--set-upstream".into(),
+                remote,
+                format!("refs/heads/{}", environment.branch),
+            ],
+        )
+        .await?;
         pushed = true;
         messages.push(if msg.trim().is_empty() {
             format!("Pushed {}", environment.branch)
@@ -4425,7 +4977,17 @@ async fn changes_sync(
         pulled,
         pushed,
         message: messages.join(" · "),
-        changes: build_changes_response(&state, &id)?,
+        changes: admit_forge(
+            &state,
+            medousa_forge::execution::ExecutionClass::Observation,
+            64 * 1024,
+            {
+                let state = state.clone();
+                let id = id.clone();
+                move || build_changes_response(&state, &id)
+            },
+        )
+        .await?,
     }))
 }
 
@@ -4434,36 +4996,49 @@ async fn changes_checkpoint(
     Path(work_id): Path<String>,
     Json(body): Json<ChangesLeaseRequest>,
 ) -> ApiResult<Json<ItemProjection>> {
-    let id = parse_work_id(&work_id)?;
-    let (_item, lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let author = match (body.author_name, body.author_email) {
-        (Some(name), Some(email)) => Some(CheckpointAuthor { name, email }),
-        _ => None,
-    };
-    let options = SealOptions {
-        ack_risks: body.ack_risks,
-        author,
-    };
-    let actor = actor_from_state(&state);
-    let item = forge(&state)
-        .complete_attempt(&lease, &options, &actor)
-        .map_err(map_err)?;
-    if let Some(env) = item.environment_for_attempt(&lease.attempt_id) {
-        let sealed_oid = forge(&state)
-            .git()
-            .head_oid(&env.worktree)
-            .ok()
-            .map(|oid| oid.as_str().to_owned())
-            .unwrap_or_else(|| env.baseline_oid.as_str().to_owned());
-        crate::daemon::detamu_host::spawn_index_forge_item(
-            state.detamu.clone(),
-            item.id.as_str().to_owned(),
-            env.worktree.clone(),
-            sealed_oid,
-            crate::daemon::detamu_host::BindingKind::Sealed,
-        );
-    }
-    Ok(ok_item(&state, item, "sealed"))
+    admit_forge_on_repo(
+        &state,
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
+        None,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let (_item, lease) =
+                    require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+                let author = match (body.author_name, body.author_email) {
+                    (Some(name), Some(email)) => Some(CheckpointAuthor { name, email }),
+                    _ => None,
+                };
+                let options = SealOptions {
+                    ack_risks: body.ack_risks,
+                    author,
+                };
+                let actor = actor_from_state(&state);
+                let item = forge(&state)
+                    .complete_attempt(&lease, &options, &actor)
+                    .map_err(map_err)?;
+                if let Some(env) = item.environment_for_attempt(&lease.attempt_id) {
+                    let sealed_oid = forge(&state)
+                        .git()
+                        .head_oid(&env.worktree)
+                        .ok()
+                        .map(|oid| oid.as_str().to_owned())
+                        .unwrap_or_else(|| env.baseline_oid.as_str().to_owned());
+                    crate::daemon::detamu_host::spawn_index_forge_item(
+                        state.detamu.clone(),
+                        item.id.as_str().to_owned(),
+                        env.worktree.clone(),
+                        sealed_oid,
+                        crate::daemon::detamu_host::BindingKind::Sealed,
+                    );
+                }
+                Ok(ok_item(&state, item, "sealed"))
+            }
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -4492,36 +5067,46 @@ async fn changes_history(
     Path(work_id): Path<String>,
     Query(query): Query<ChangesHistoryQuery>,
 ) -> ApiResult<Json<ChangesHistoryResponse>> {
-    let id = parse_work_id(&work_id)?;
-    let item = forge(&state).load(&id).map_err(map_err)?;
-    let environment = item
-        .workspace_environment()
-        .cloned()
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
-    let limit = query.limit.unwrap_or(50).clamp(1, 200);
-    let range = format!("{}..HEAD", environment.baseline_oid.as_str());
-    let commits = forge(&state)
-        .git()
-        .log_commits(&environment.worktree, &range, limit)
-        .or_else(|_| {
-            forge(&state)
-                .git()
-                .log_commits(&environment.worktree, "HEAD", limit)
-        })
-        .map_err(map_err)?
-        .into_iter()
-        .map(|commit| ChangesHistoryEntry {
-            oid: commit.oid.as_str().to_owned(),
-            author_name: commit.author_name,
-            author_email: commit.author_email,
-            authored_at: commit.authored_at,
-            subject: commit.subject,
-        })
-        .collect();
-    Ok(Json(ChangesHistoryResponse {
-        work_id: id.as_str().to_owned(),
-        commits,
-    }))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::Observation,
+        256 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let item = forge(&state).load(&id).map_err(map_err)?;
+                let environment = item.workspace_environment().cloned().ok_or_else(|| {
+                    request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+                })?;
+                let limit = query.limit.unwrap_or(50).clamp(1, 200);
+                let range = format!("{}..HEAD", environment.baseline_oid.as_str());
+                let commits = forge(&state)
+                    .git()
+                    .log_commits(&environment.worktree, &range, limit)
+                    .or_else(|_| {
+                        forge(&state)
+                            .git()
+                            .log_commits(&environment.worktree, "HEAD", limit)
+                    })
+                    .map_err(map_err)?
+                    .into_iter()
+                    .map(|commit| ChangesHistoryEntry {
+                        oid: commit.oid.as_str().to_owned(),
+                        author_name: commit.author_name,
+                        author_email: commit.author_email,
+                        authored_at: commit.authored_at,
+                        subject: commit.subject,
+                    })
+                    .collect();
+                Ok(Json(ChangesHistoryResponse {
+                    work_id: id.as_str().to_owned(),
+                    commits,
+                }))
+            }
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -4552,33 +5137,43 @@ async fn changes_blame(
     Path(work_id): Path<String>,
     Query(query): Query<ChangesBlameQuery>,
 ) -> ApiResult<Json<ChangesBlameResponse>> {
-    let id = parse_work_id(&work_id)?;
-    let (_, path) = normalize_source_relative(&query.path)?;
-    let item = forge(&state).load(&id).map_err(map_err)?;
-    let environment = item
-        .workspace_environment()
-        .cloned()
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
-    let hunks = forge(&state)
-        .git()
-        .blame(&environment.worktree, &path)
-        .map_err(map_err)?
-        .into_iter()
-        .map(|hunk| ChangesBlameHunk {
-            oid: hunk.oid.as_str().to_owned(),
-            author_name: hunk.author_name,
-            author_email: hunk.author_email,
-            authored_at: hunk.authored_at,
-            summary: hunk.summary,
-            start_line: hunk.start_line,
-            line_count: hunk.line_count,
-        })
-        .collect();
-    Ok(Json(ChangesBlameResponse {
-        work_id: id.as_str().to_owned(),
-        path,
-        hunks,
-    }))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::Observation,
+        256 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let (_, path) = normalize_source_relative(&query.path)?;
+                let item = forge(&state).load(&id).map_err(map_err)?;
+                let environment = item.workspace_environment().cloned().ok_or_else(|| {
+                    request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+                })?;
+                let hunks = forge(&state)
+                    .git()
+                    .blame(&environment.worktree, &path)
+                    .map_err(map_err)?
+                    .into_iter()
+                    .map(|hunk| ChangesBlameHunk {
+                        oid: hunk.oid.as_str().to_owned(),
+                        author_name: hunk.author_name,
+                        author_email: hunk.author_email,
+                        authored_at: hunk.authored_at,
+                        summary: hunk.summary,
+                        start_line: hunk.start_line,
+                        line_count: hunk.line_count,
+                    })
+                    .collect();
+                Ok(Json(ChangesBlameResponse {
+                    work_id: id.as_str().to_owned(),
+                    path,
+                    hunks,
+                }))
+            }
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -4605,119 +5200,131 @@ async fn resolve_changes_conflict(
     Path(work_id): Path<String>,
     Json(body): Json<ResolveChangesConflictRequest>,
 ) -> ApiResult<Json<ResolveChangesConflictResponse>> {
-    let id = parse_work_id(&work_id)?;
-    let (_, path) = normalize_source_relative(&body.path)?;
-    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item
-        .workspace_environment()
-        .cloned()
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
-    let comparison = changes_file_diff(&state, &id, &path)?;
-    if !comparison.conflict && comparison.status != "unmerged" {
-        return Err(request_error(
-            StatusCode::CONFLICT,
-            "file is not in an unmerged conflict state",
-        ));
-    }
-    if let Some(expected) = body
-        .expected_working_digest
-        .as_deref()
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-    {
-        match comparison.working_digest.as_deref() {
-            Some(have) if have != expected => {
-                return Err(request_error(
-                    StatusCode::CONFLICT,
-                    "the working copy changed; refresh Changes before resolving",
-                ));
-            }
-            None => {
-                return Err(request_error(
-                    StatusCode::CONFLICT,
-                    "the working copy changed; refresh Changes before resolving",
-                ));
-            }
-            _ => {}
-        }
-    }
-    let resolution = body.resolution.trim().to_ascii_lowercase();
-    let action = match resolution.as_str() {
-        "ours" | "theirs" => {
-            forge(&state)
-                .git()
-                .checkout_conflict_side(&environment.worktree, &path, &resolution)
-                .map_err(map_err)?;
-            forge(&state)
-                .git()
-                .add_path(&environment.worktree, &path)
-                .map_err(map_err)?;
-            format!("resolved_{resolution}")
-        }
-        "baseline" => {
-            if comparison.binary {
-                return Err(request_error(
-                    StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                    "binary conflict baseline restore is not available from Home",
-                ));
-            }
-            let content = comparison.baseline.content.clone().ok_or_else(|| {
-                request_error(
-                    StatusCode::CONFLICT,
-                    "baseline text is unavailable for this conflict",
-                )
-            })?;
-            let candidate = environment.worktree.join(&path);
-            let (destination, _) = if candidate.is_file() {
-                resolve_source_path(&environment.worktree, &path)?
-            } else {
-                resolve_new_source_path(&environment.worktree, &path)?
-            };
-            if let Some(parent) = destination.parent() {
-                std::fs::create_dir_all(parent).map_err(|err| {
-                    request_error(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        format!("could not resolve conflict: {err}"),
-                    )
-                })?;
-            }
-            std::fs::write(&destination, content.as_bytes()).map_err(|err| {
-                request_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("could not resolve conflict: {err}"),
-                )
-            })?;
-            forge(&state)
-                .git()
-                .add_path(&environment.worktree, &path)
-                .map_err(map_err)?;
-            "resolved_baseline".into()
-        }
-        _ => {
-            return Err(request_error(
-                StatusCode::BAD_REQUEST,
-                "resolution must be ours, theirs, or baseline",
-            ));
-        }
-    };
-    let digest = std::fs::read(environment.worktree.join(&path))
-        .ok()
-        .map(|bytes| source_digest(&bytes));
-    publish_project_change(
+    admit_forge_on_repo(
         &state,
-        &item,
-        ForgeProjectEventKind::Changed,
-        Some(path.clone()),
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
         None,
-        digest,
-    );
-    remember_worktree(&state, &item, &environment.worktree);
-    Ok(Json(ResolveChangesConflictResponse {
-        work_id: id.as_str().to_owned(),
-        path,
-        action,
-        changes: build_changes_response(&state, &id)?,
-    }))
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let (_, path) = normalize_source_relative(&body.path)?;
+                let (item, _lease) =
+                    require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+                let environment = item.workspace_environment().cloned().ok_or_else(|| {
+                    request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+                })?;
+                let comparison = changes_file_diff(&state, &id, &path)?;
+                if !comparison.conflict && comparison.status != "unmerged" {
+                    return Err(request_error(
+                        StatusCode::CONFLICT,
+                        "file is not in an unmerged conflict state",
+                    ));
+                }
+                if let Some(expected) = body
+                    .expected_working_digest
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|v| !v.is_empty())
+                {
+                    match comparison.working_digest.as_deref() {
+                        Some(have) if have != expected => {
+                            return Err(request_error(
+                                StatusCode::CONFLICT,
+                                "the working copy changed; refresh Changes before resolving",
+                            ));
+                        }
+                        None => {
+                            return Err(request_error(
+                                StatusCode::CONFLICT,
+                                "the working copy changed; refresh Changes before resolving",
+                            ));
+                        }
+                        _ => {}
+                    }
+                }
+                let resolution = body.resolution.trim().to_ascii_lowercase();
+                let action = match resolution.as_str() {
+                    "ours" | "theirs" => {
+                        forge(&state)
+                            .git()
+                            .checkout_conflict_side(&environment.worktree, &path, &resolution)
+                            .map_err(map_err)?;
+                        forge(&state)
+                            .git()
+                            .add_path(&environment.worktree, &path)
+                            .map_err(map_err)?;
+                        format!("resolved_{resolution}")
+                    }
+                    "baseline" => {
+                        if comparison.binary {
+                            return Err(request_error(
+                                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                                "binary conflict baseline restore is not available from Home",
+                            ));
+                        }
+                        let content = comparison.baseline.content.clone().ok_or_else(|| {
+                            request_error(
+                                StatusCode::CONFLICT,
+                                "baseline text is unavailable for this conflict",
+                            )
+                        })?;
+                        let candidate = environment.worktree.join(&path);
+                        let (destination, _) = if candidate.is_file() {
+                            resolve_source_path(&environment.worktree, &path)?
+                        } else {
+                            resolve_new_source_path(&environment.worktree, &path)?
+                        };
+                        if let Some(parent) = destination.parent() {
+                            std::fs::create_dir_all(parent).map_err(|err| {
+                                request_error(
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    format!("could not resolve conflict: {err}"),
+                                )
+                            })?;
+                        }
+                        std::fs::write(&destination, content.as_bytes()).map_err(|err| {
+                            request_error(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                format!("could not resolve conflict: {err}"),
+                            )
+                        })?;
+                        forge(&state)
+                            .git()
+                            .add_path(&environment.worktree, &path)
+                            .map_err(map_err)?;
+                        "resolved_baseline".into()
+                    }
+                    _ => {
+                        return Err(request_error(
+                            StatusCode::BAD_REQUEST,
+                            "resolution must be ours, theirs, or baseline",
+                        ));
+                    }
+                };
+                let digest = std::fs::read(environment.worktree.join(&path))
+                    .ok()
+                    .map(|bytes| source_digest(&bytes));
+                publish_project_change(
+                    &state,
+                    &item,
+                    ForgeProjectEventKind::Changed,
+                    Some(path.clone()),
+                    None,
+                    digest,
+                );
+                remember_worktree(&state, &item, &environment.worktree);
+                Ok(Json(ResolveChangesConflictResponse {
+                    work_id: id.as_str().to_owned(),
+                    path,
+                    action,
+                    changes: build_changes_response(&state, &id)?,
+                }))
+            }
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -4789,105 +5396,117 @@ async fn revert_changes_hunk(
     Path(work_id): Path<String>,
     Json(body): Json<RevertChangesHunkRequest>,
 ) -> ApiResult<Json<RestoreChangesFileResponse>> {
-    let id = parse_work_id(&work_id)?;
-    let comparison = changes_file_diff(&state, &id, &body.path)?;
-    if comparison.binary {
-        return Err(request_error(
-            StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            "hunk revert is only available for text files",
-        ));
-    }
-    if comparison.hunks.is_empty() {
-        return Err(request_error(StatusCode::CONFLICT, "no hunks to revert"));
-    }
-    if body.hunk_index >= comparison.hunks.len() {
-        return Err(request_error(
-            StatusCode::BAD_REQUEST,
-            "hunk_index is out of range",
-        ));
-    }
-    let expected = body.expected_working_digest.trim();
-    match comparison.working_digest.as_deref() {
-        Some(have) if have == expected => {}
-        _ => {
-            return Err(request_error(
-                StatusCode::CONFLICT,
-                "the working copy changed; refresh Changes before reverting",
-            ));
-        }
-    }
-    let baseline = comparison.baseline.content.clone().unwrap_or_default();
-    let next = apply_hunks_except(&baseline, &comparison.hunks, body.hunk_index)?;
-    let (item, _lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item
-        .workspace_environment()
-        .cloned()
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
-    let candidate = environment.worktree.join(&comparison.path);
-    let (destination, relative) = if candidate.is_file() || comparison.working.exists {
-        if candidate.is_file() {
-            resolve_source_path(&environment.worktree, &comparison.path)?
-        } else {
-            resolve_new_source_path(&environment.worktree, &comparison.path)?
-        }
-    } else {
-        resolve_new_source_path(&environment.worktree, &comparison.path)?
-    };
-    if next.is_empty() && !comparison.baseline.exists {
-        if destination.is_file() {
-            std::fs::remove_file(&destination).map_err(|err| {
-                request_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("could not revert hunk: {err}"),
-                )
-            })?;
-        }
-        publish_project_change(
-            &state,
-            &item,
-            ForgeProjectEventKind::Deleted,
-            Some(relative.clone()),
-            None,
-            None,
-        );
-        remember_worktree(&state, &item, &environment.worktree);
-        return Ok(Json(RestoreChangesFileResponse {
-            work_id: id.as_str().to_owned(),
-            path: relative,
-            action: "hunk_reverted_deleted".into(),
-            digest: None,
-        }));
-    }
-    if let Some(parent) = destination.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| {
-            request_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("could not revert hunk: {err}"),
-            )
-        })?;
-    }
-    std::fs::write(&destination, next.as_bytes()).map_err(|err| {
-        request_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("could not revert hunk: {err}"),
-        )
-    })?;
-    let digest = source_digest(next.as_bytes());
-    publish_project_change(
+    admit_forge_on_repo(
         &state,
-        &item,
-        ForgeProjectEventKind::Changed,
-        Some(relative.clone()),
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
         None,
-        Some(digest.clone()),
-    );
-    remember_worktree(&state, &item, &environment.worktree);
-    Ok(Json(RestoreChangesFileResponse {
-        work_id: id.as_str().to_owned(),
-        path: relative,
-        action: "hunk_reverted".into(),
-        digest: Some(digest),
-    }))
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let comparison = changes_file_diff(&state, &id, &body.path)?;
+                if comparison.binary {
+                    return Err(request_error(
+                        StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                        "hunk revert is only available for text files",
+                    ));
+                }
+                if comparison.hunks.is_empty() {
+                    return Err(request_error(StatusCode::CONFLICT, "no hunks to revert"));
+                }
+                if body.hunk_index >= comparison.hunks.len() {
+                    return Err(request_error(
+                        StatusCode::BAD_REQUEST,
+                        "hunk_index is out of range",
+                    ));
+                }
+                let expected = body.expected_working_digest.trim();
+                match comparison.working_digest.as_deref() {
+                    Some(have) if have == expected => {}
+                    _ => {
+                        return Err(request_error(
+                            StatusCode::CONFLICT,
+                            "the working copy changed; refresh Changes before reverting",
+                        ));
+                    }
+                }
+                let baseline = comparison.baseline.content.clone().unwrap_or_default();
+                let next = apply_hunks_except(&baseline, &comparison.hunks, body.hunk_index)?;
+                let (item, _lease) =
+                    require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+                let environment = item.workspace_environment().cloned().ok_or_else(|| {
+                    request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+                })?;
+                let candidate = environment.worktree.join(&comparison.path);
+                let (destination, relative) = if candidate.is_file() || comparison.working.exists {
+                    if candidate.is_file() {
+                        resolve_source_path(&environment.worktree, &comparison.path)?
+                    } else {
+                        resolve_new_source_path(&environment.worktree, &comparison.path)?
+                    }
+                } else {
+                    resolve_new_source_path(&environment.worktree, &comparison.path)?
+                };
+                if next.is_empty() && !comparison.baseline.exists {
+                    if destination.is_file() {
+                        std::fs::remove_file(&destination).map_err(|err| {
+                            request_error(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                format!("could not revert hunk: {err}"),
+                            )
+                        })?;
+                    }
+                    publish_project_change(
+                        &state,
+                        &item,
+                        ForgeProjectEventKind::Deleted,
+                        Some(relative.clone()),
+                        None,
+                        None,
+                    );
+                    remember_worktree(&state, &item, &environment.worktree);
+                    return Ok(Json(RestoreChangesFileResponse {
+                        work_id: id.as_str().to_owned(),
+                        path: relative,
+                        action: "hunk_reverted_deleted".into(),
+                        digest: None,
+                    }));
+                }
+                if let Some(parent) = destination.parent() {
+                    std::fs::create_dir_all(parent).map_err(|err| {
+                        request_error(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("could not revert hunk: {err}"),
+                        )
+                    })?;
+                }
+                std::fs::write(&destination, next.as_bytes()).map_err(|err| {
+                    request_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("could not revert hunk: {err}"),
+                    )
+                })?;
+                let digest = source_digest(next.as_bytes());
+                publish_project_change(
+                    &state,
+                    &item,
+                    ForgeProjectEventKind::Changed,
+                    Some(relative.clone()),
+                    None,
+                    Some(digest.clone()),
+                );
+                remember_worktree(&state, &item, &environment.worktree);
+                Ok(Json(RestoreChangesFileResponse {
+                    work_id: id.as_str().to_owned(),
+                    path: relative,
+                    action: "hunk_reverted".into(),
+                    digest: Some(digest),
+                }))
+            }
+        },
+    )
+    .await
 }
 
 async fn get_review(
@@ -4896,26 +5515,41 @@ async fn get_review(
     Query(query): Query<ReviewSelectionQuery>,
 ) -> ApiResult<Json<ReviewProjection>> {
     let id = parse_work_id(&work_id)?;
-    let item = forge(&state).load(&id).map_err(map_err)?;
-    let attempt_id = query
-        .attempt_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| medousa_forge::model::AttemptId::from(value.to_string()));
-    if let Some(attempt_id) = attempt_id.as_ref()
-        && item
-            .attempt(attempt_id)
-            .is_none_or(|attempt| attempt.evidence_id.is_none())
-    {
-        return Err(request_error(
-            StatusCode::NOT_FOUND,
-            "review attempt was not found or has no sealed evidence",
-        ));
-    }
-    let mut review = build_review_for_attempt(forge(&state).as_ref(), &item, attempt_id.as_ref());
+    let mut review = admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::Observation,
+        256 * 1024,
+        {
+            let state = state.clone();
+            let attempt_raw = query.attempt_id.clone();
+            move || {
+                let item = forge(&state).load(&id).map_err(map_err)?;
+                let attempt_id = attempt_raw
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(|value| medousa_forge::model::AttemptId::from(value.to_string()));
+                if let Some(attempt_id) = attempt_id.as_ref()
+                    && item
+                        .attempt(attempt_id)
+                        .is_none_or(|attempt| attempt.evidence_id.is_none())
+                {
+                    return Err(request_error(
+                        StatusCode::NOT_FOUND,
+                        "review attempt was not found or has no sealed evidence",
+                    ));
+                }
+                Ok(build_review_for_attempt(
+                    forge(&state).as_ref(),
+                    &item,
+                    attempt_id.as_ref(),
+                ))
+            }
+        },
+    )
+    .await?;
     if let Some(host) = state.detamu.as_ref() {
-        review.world = Some(host.binding_status_json(item.id.as_str()).await);
+        review.world = Some(host.binding_status_json(review.work_id.as_str()).await);
     }
     Ok(Json(review))
 }
@@ -4965,16 +5599,28 @@ async fn list_review_comments(
     Path(work_id): Path<String>,
     Query(query): Query<ReviewSelectionQuery>,
 ) -> ApiResult<Json<Vec<ReviewCommentProjection>>> {
-    let id = parse_work_id(&work_id)?;
-    let item = forge(&state).load(&id).map_err(map_err)?;
-    let attempt_id = query
-        .attempt_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| medousa_forge::model::AttemptId::from(value.to_string()));
-    let review = build_review_for_attempt(forge(&state).as_ref(), &item, attempt_id.as_ref());
-    Ok(Json(review.comments))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let item = forge(&state).load(&id).map_err(map_err)?;
+                let attempt_id = query
+                    .attempt_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(|value| medousa_forge::model::AttemptId::from(value.to_string()));
+                let review =
+                    build_review_for_attempt(forge(&state).as_ref(), &item, attempt_id.as_ref());
+                Ok(Json(review.comments))
+            }
+        },
+    )
+    .await
 }
 
 async fn add_review_comment(
@@ -4982,38 +5628,49 @@ async fn add_review_comment(
     Path(work_id): Path<String>,
     Json(body): Json<AddReviewCommentRequest>,
 ) -> ApiResult<Json<ItemProjection>> {
-    let id = parse_work_id(&work_id)?;
-    let actor = actor_from_state(&state);
-    let evidence_id = EvidenceId::from(body.evidence_id);
-    let attempt_id = body
-        .attempt_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| medousa_forge::model::AttemptId::from(value.to_string()));
-    let parent_id = body
-        .parent_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| ReviewCommentId::from(value.to_string()));
-    let end_line = body.end_line.unwrap_or(body.start_line);
-    let item = forge(&state)
-        .add_review_comment(
-            &id,
-            evidence_id,
-            attempt_id,
-            body.path,
-            body.side,
-            body.start_line,
-            end_line,
-            body.anchor_text,
-            body.body,
-            parent_id,
-            &actor,
-        )
-        .map_err(map_err)?;
-    Ok(ok_item(&state, item, "review_comment_added"))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let actor = actor_from_state(&state);
+                let evidence_id = EvidenceId::from(body.evidence_id);
+                let attempt_id = body
+                    .attempt_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(|value| medousa_forge::model::AttemptId::from(value.to_string()));
+                let parent_id = body
+                    .parent_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(|value| ReviewCommentId::from(value.to_string()));
+                let end_line = body.end_line.unwrap_or(body.start_line);
+                let item = forge(&state)
+                    .add_review_comment(
+                        &id,
+                        evidence_id,
+                        attempt_id,
+                        body.path,
+                        body.side,
+                        body.start_line,
+                        end_line,
+                        body.anchor_text,
+                        body.body,
+                        parent_id,
+                        &actor,
+                    )
+                    .map_err(map_err)?;
+                Ok(ok_item(&state, item, "review_comment_added"))
+            }
+        },
+    )
+    .await
 }
 
 async fn patch_review_comment(
@@ -5021,47 +5678,69 @@ async fn patch_review_comment(
     Path((work_id, comment_id)): Path<(String, String)>,
     Json(body): Json<PatchReviewCommentRequest>,
 ) -> ApiResult<Json<ItemProjection>> {
-    let id = parse_work_id(&work_id)?;
-    let actor = actor_from_state(&state);
-    let comment_id = ReviewCommentId::from(comment_id);
-    if body.resolve.is_none() && body.body.is_none() {
-        return Err(request_error(
-            StatusCode::BAD_REQUEST,
-            "patch requires resolve and/or body",
-        ));
-    }
-    if body.resolve == Some(false) {
-        return Err(request_error(
-            StatusCode::BAD_REQUEST,
-            "unresolving comments is not supported",
-        ));
-    }
-    let forge = forge(&state);
-    let mut item = forge.load(&id).map_err(map_err)?;
-    if let Some(text) = body.body {
-        item = forge
-            .update_review_comment_body(&id, &comment_id, text, &actor)
-            .map_err(map_err)?;
-    }
-    if body.resolve == Some(true) {
-        item = forge
-            .resolve_review_comment(&id, &comment_id, &actor)
-            .map_err(map_err)?;
-    }
-    Ok(ok_item(&state, item, "review_comment_updated"))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let actor = actor_from_state(&state);
+                let comment_id = ReviewCommentId::from(comment_id);
+                if body.resolve.is_none() && body.body.is_none() {
+                    return Err(request_error(
+                        StatusCode::BAD_REQUEST,
+                        "patch requires resolve and/or body",
+                    ));
+                }
+                if body.resolve == Some(false) {
+                    return Err(request_error(
+                        StatusCode::BAD_REQUEST,
+                        "unresolving comments is not supported",
+                    ));
+                }
+                let forge = forge(&state);
+                let mut item = forge.load(&id).map_err(map_err)?;
+                if let Some(text) = body.body {
+                    item = forge
+                        .update_review_comment_body(&id, &comment_id, text, &actor)
+                        .map_err(map_err)?;
+                }
+                if body.resolve == Some(true) {
+                    item = forge
+                        .resolve_review_comment(&id, &comment_id, &actor)
+                        .map_err(map_err)?;
+                }
+                Ok(ok_item(&state, item, "review_comment_updated"))
+            }
+        },
+    )
+    .await
 }
 
 async fn delete_review_comment(
     State(state): State<AppState>,
     Path((work_id, comment_id)): Path<(String, String)>,
 ) -> ApiResult<Json<ItemProjection>> {
-    let id = parse_work_id(&work_id)?;
-    let actor = actor_from_state(&state);
-    let comment_id = ReviewCommentId::from(comment_id);
-    let item = forge(&state)
-        .delete_review_comment(&id, &comment_id, &actor)
-        .map_err(map_err)?;
-    Ok(ok_item(&state, item, "review_comment_deleted"))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let actor = actor_from_state(&state);
+                let comment_id = ReviewCommentId::from(comment_id);
+                let item = forge(&state)
+                    .delete_review_comment(&id, &comment_id, &actor)
+                    .map_err(map_err)?;
+                Ok(ok_item(&state, item, "review_comment_deleted"))
+            }
+        },
+    )
+    .await
 }
 
 async fn request_review_changes(
@@ -5069,26 +5748,37 @@ async fn request_review_changes(
     Path(work_id): Path<String>,
     Json(body): Json<RequestReviewChangesRequest>,
 ) -> ApiResult<Json<ItemProjection>> {
-    let id = parse_work_id(&work_id)?;
-    let actor = actor_from_state(&state);
-    let evidence_id = EvidenceId::from(body.evidence_id);
-    let evidence_digest = medousa_forge::model::Digest::from_hex(body.evidence_digest);
-    let comment_ids = body.comment_ids.map(|ids| {
-        ids.into_iter()
-            .map(ReviewCommentId::from)
-            .collect::<Vec<_>>()
-    });
-    let item = forge(&state)
-        .request_changes(
-            &id,
-            evidence_id,
-            evidence_digest,
-            body.summary,
-            comment_ids,
-            &actor,
-        )
-        .map_err(map_err)?;
-    Ok(ok_item(&state, item, "changes_requested"))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let actor = actor_from_state(&state);
+                let evidence_id = EvidenceId::from(body.evidence_id);
+                let evidence_digest = medousa_forge::model::Digest::from_hex(body.evidence_digest);
+                let comment_ids = body.comment_ids.map(|ids| {
+                    ids.into_iter()
+                        .map(ReviewCommentId::from)
+                        .collect::<Vec<_>>()
+                });
+                let item = forge(&state)
+                    .request_changes(
+                        &id,
+                        evidence_id,
+                        evidence_digest,
+                        body.summary,
+                        comment_ids,
+                        &actor,
+                    )
+                    .map_err(map_err)?;
+                Ok(ok_item(&state, item, "changes_requested"))
+            }
+        },
+    )
+    .await
 }
 
 /// Reopen sealed review for human edits (no agent). Same custody path as
@@ -5097,62 +5787,73 @@ async fn continue_editing(
     State(state): State<AppState>,
     Path(work_id): Path<String>,
 ) -> ApiResult<Json<BeginAttemptResponse>> {
-    let id = parse_work_id(&work_id)?;
-    let actor = actor_from_state(&state);
-    let forge = forge(&state);
-    let item = forge.load(&id).map_err(map_err)?;
-    if item.state != WorkState::AwaitingReview {
-        return Err(request_error(
-            StatusCode::CONFLICT,
-            format!("Cannot continue editing in state {}", item.state),
-        ));
-    }
-    let source_attempt_id = item
-        .attempts
-        .iter()
-        .filter(|attempt| attempt.evidence_id.is_some())
-        .max_by_key(|attempt| attempt.seq)
-        .map(|attempt| attempt.id.clone())
-        .ok_or_else(|| {
-            request_error(
-                StatusCode::CONFLICT,
-                "No sealed evidence to continue editing from",
-            )
-        })?;
-    forge
-        .reopen_for_changes(&id, "Continue editing after review", &actor)
-        .map_err(map_err)?;
-    let (item, lease) = forge
-        .begin_isolated_attempt_from(
-            &id,
-            &source_attempt_id,
-            ExecutorDescriptor {
-                kind: "human".into(),
-                detail: serde_json::json!({"reason": "continue_editing"}),
-            },
-            None,
-            &actor,
-        )
-        .map_err(map_err)?;
-    let environment = item
-        .environment_for_attempt(&lease.attempt_id)
-        .ok_or_else(|| {
-            request_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "isolated attempt has no governed environment",
-            )
-        })?;
-    let attempt_id = lease.attempt_id.as_str().to_owned();
-    let worktree = environment.worktree.display().to_string();
-    let branch = environment.branch.clone();
-    publish_item(&state, &item, "continue_editing");
-    Ok(Json(BeginAttemptResponse {
-        item: project_item(item),
-        lease,
-        attempt_id,
-        worktree,
-        branch,
-    }))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let actor = actor_from_state(&state);
+                let forge = forge(&state);
+                let item = forge.load(&id).map_err(map_err)?;
+                if item.state != WorkState::AwaitingReview {
+                    return Err(request_error(
+                        StatusCode::CONFLICT,
+                        format!("Cannot continue editing in state {}", item.state),
+                    ));
+                }
+                let source_attempt_id = item
+                    .attempts
+                    .iter()
+                    .filter(|attempt| attempt.evidence_id.is_some())
+                    .max_by_key(|attempt| attempt.seq)
+                    .map(|attempt| attempt.id.clone())
+                    .ok_or_else(|| {
+                        request_error(
+                            StatusCode::CONFLICT,
+                            "No sealed evidence to continue editing from",
+                        )
+                    })?;
+                forge
+                    .reopen_for_changes(&id, "Continue editing after review", &actor)
+                    .map_err(map_err)?;
+                let (item, lease) = forge
+                    .begin_isolated_attempt_from(
+                        &id,
+                        &source_attempt_id,
+                        ExecutorDescriptor {
+                            kind: "human".into(),
+                            detail: serde_json::json!({"reason": "continue_editing"}),
+                        },
+                        None,
+                        &actor,
+                    )
+                    .map_err(map_err)?;
+                let environment =
+                    item.environment_for_attempt(&lease.attempt_id)
+                        .ok_or_else(|| {
+                            request_error(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "isolated attempt has no governed environment",
+                            )
+                        })?;
+                let attempt_id = lease.attempt_id.as_str().to_owned();
+                let worktree = environment.worktree.display().to_string();
+                let branch = environment.branch.clone();
+                publish_item(&state, &item, "continue_editing");
+                Ok(Json(BeginAttemptResponse {
+                    item: project_item(item),
+                    lease,
+                    attempt_id,
+                    worktree,
+                    branch,
+                }))
+            }
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -5436,12 +6137,25 @@ async fn get_review_file(
     Query(query): Query<ReviewFileQuery>,
 ) -> ApiResult<Json<ReviewFileDiff>> {
     let id = parse_work_id(&work_id)?;
-    Ok(Json(review_file_diff(
+    admit_forge(
         &state,
-        &id,
-        &query.path,
-        query.attempt_id.as_deref(),
-    )?))
+        medousa_forge::execution::ExecutionClass::Observation,
+        256 * 1024,
+        {
+            let state = state.clone();
+            let path = query.path.clone();
+            let attempt_id = query.attempt_id.clone();
+            move || {
+                Ok(Json(review_file_diff(
+                    &state,
+                    &id,
+                    &path,
+                    attempt_id.as_deref(),
+                )?))
+            }
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -5466,96 +6180,121 @@ async fn restore_review_file(
     Path(work_id): Path<String>,
     Json(body): Json<RestoreReviewFileRequest>,
 ) -> ApiResult<Json<RestoreReviewFileResponse>> {
-    let id = parse_work_id(&work_id)?;
-    let comparison = review_file_diff(&state, &id, &body.path, body.attempt_id.as_deref())?;
-    if comparison.reviewed_oid != body.expected_reviewed_oid {
-        return Err(request_error(
-            StatusCode::CONFLICT,
-            "the reviewed revision changed; reopen the comparison before restoring",
-        ));
-    }
-    if comparison.binary && comparison.baseline.exists {
-        return Err(request_error(
-            StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            "binary recovery is preserved in Git but cannot yet be restored from Home",
-        ));
-    }
-    let forge = forge(&state);
-    let actor = actor_from_state(&state);
-    let source_attempt_id = medousa_forge::model::AttemptId::from(comparison.attempt_id.clone());
-    forge
-        .reopen_for_changes(&id, "A reviewed file was restored for another pass", &actor)
-        .map_err(map_err)?;
-    let (mut item, lease) = forge
-        .begin_isolated_attempt_from(
-            &id,
-            &source_attempt_id,
-            ExecutorDescriptor {
-                kind: "human".into(),
-                detail: serde_json::json!({"reason": "restore_review_file"}),
-            },
-            None,
-            &actor,
-        )
-        .map_err(map_err)?;
-    let environment = item
-        .environment_for_attempt(&lease.attempt_id)
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
-    let restored_path = comparison
-        .old_path
-        .as_deref()
-        .unwrap_or(&comparison.path)
-        .to_owned();
-    if comparison.path != restored_path {
-        let (renamed, _) = resolve_source_path(&environment.worktree, &comparison.path)?;
-        std::fs::remove_file(renamed).map_err(|err| {
-            request_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("could not restore file: {err}"),
-            )
-        })?;
-    }
-    let action = if let Some(content) = comparison.baseline.content {
-        let candidate = environment.worktree.join(&restored_path);
-        let (destination, _) = if candidate.is_file() {
-            resolve_source_path(&environment.worktree, &restored_path)?
-        } else {
-            resolve_new_source_path(&environment.worktree, &restored_path)?
-        };
-        if let Some(parent) = destination.parent() {
-            std::fs::create_dir_all(parent).map_err(|err| {
-                request_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("could not restore folder: {err}"),
-                )
-            })?;
-        }
-        std::fs::write(destination, content.as_bytes()).map_err(|err| {
-            request_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("could not restore file: {err}"),
-            )
-        })?;
-        "restored"
-    } else {
-        let (destination, _) = resolve_source_path(&environment.worktree, &comparison.path)?;
-        std::fs::remove_file(destination).map_err(|err| {
-            request_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("could not restore file: {err}"),
-            )
-        })?;
-        "removed"
-    };
-    item = forge.load(&id).map_err(map_err)?;
-    publish_item(&state, &item, "review_file_restored");
-    Ok(Json(RestoreReviewFileResponse {
-        item: project_item(item),
-        lease,
-        path: restored_path,
-        action: action.into(),
-        preserved_revision: comparison.reviewed_oid,
-    }))
+    admit_forge_on_repo(
+        &state,
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
+        None,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let comparison =
+                    review_file_diff(&state, &id, &body.path, body.attempt_id.as_deref())?;
+                if comparison.reviewed_oid != body.expected_reviewed_oid {
+                    return Err(request_error(
+                        StatusCode::CONFLICT,
+                        "the reviewed revision changed; reopen the comparison before restoring",
+                    ));
+                }
+                if comparison.binary && comparison.baseline.exists {
+                    return Err(request_error(
+                        StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                        "binary recovery is preserved in Git but cannot yet be restored from Home",
+                    ));
+                }
+                let forge = forge(&state);
+                let actor = actor_from_state(&state);
+                let source_attempt_id =
+                    medousa_forge::model::AttemptId::from(comparison.attempt_id.clone());
+                forge
+                    .reopen_for_changes(
+                        &id,
+                        "A reviewed file was restored for another pass",
+                        &actor,
+                    )
+                    .map_err(map_err)?;
+                let (mut item, lease) = forge
+                    .begin_isolated_attempt_from(
+                        &id,
+                        &source_attempt_id,
+                        ExecutorDescriptor {
+                            kind: "human".into(),
+                            detail: serde_json::json!({"reason": "restore_review_file"}),
+                        },
+                        None,
+                        &actor,
+                    )
+                    .map_err(map_err)?;
+                let environment =
+                    item.environment_for_attempt(&lease.attempt_id)
+                        .ok_or_else(|| {
+                            request_error(
+                                StatusCode::CONFLICT,
+                                "governed workspace is not prepared",
+                            )
+                        })?;
+                let restored_path = comparison
+                    .old_path
+                    .as_deref()
+                    .unwrap_or(&comparison.path)
+                    .to_owned();
+                if comparison.path != restored_path {
+                    let (renamed, _) =
+                        resolve_source_path(&environment.worktree, &comparison.path)?;
+                    std::fs::remove_file(renamed).map_err(|err| {
+                        request_error(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("could not restore file: {err}"),
+                        )
+                    })?;
+                }
+                let action = if let Some(content) = comparison.baseline.content {
+                    let candidate = environment.worktree.join(&restored_path);
+                    let (destination, _) = if candidate.is_file() {
+                        resolve_source_path(&environment.worktree, &restored_path)?
+                    } else {
+                        resolve_new_source_path(&environment.worktree, &restored_path)?
+                    };
+                    if let Some(parent) = destination.parent() {
+                        std::fs::create_dir_all(parent).map_err(|err| {
+                            request_error(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                format!("could not restore folder: {err}"),
+                            )
+                        })?;
+                    }
+                    std::fs::write(destination, content.as_bytes()).map_err(|err| {
+                        request_error(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("could not restore file: {err}"),
+                        )
+                    })?;
+                    "restored"
+                } else {
+                    let (destination, _) =
+                        resolve_source_path(&environment.worktree, &comparison.path)?;
+                    std::fs::remove_file(destination).map_err(|err| {
+                        request_error(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("could not restore file: {err}"),
+                        )
+                    })?;
+                    "removed"
+                };
+                item = forge.load(&id).map_err(map_err)?;
+                publish_item(&state, &item, "review_file_restored");
+                Ok(Json(RestoreReviewFileResponse {
+                    item: project_item(item),
+                    lease,
+                    path: restored_path,
+                    action: action.into(),
+                    preserved_revision: comparison.reviewed_oid,
+                }))
+            }
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -5937,9 +6676,7 @@ fn push_task_event(store: &mut ProjectTaskRunStore, event: ProjectTaskOutputEven
     let encoded_bytes = serde_json::to_vec(&event).map_or(0, |bytes| bytes.len());
     let event = Arc::new(event);
     store.chunk_bytes = store.chunk_bytes.saturating_add(encoded_bytes);
-    store
-        .chunks
-        .push_back((Arc::clone(&event), encoded_bytes));
+    store.chunks.push_back((Arc::clone(&event), encoded_bytes));
     while store.chunks.len() > TASK_CHUNK_REPLAY_CAP || store.chunk_bytes > TASK_CHUNK_REPLAY_BYTES
     {
         let Some((_evicted, bytes)) = store.chunks.pop_front() else {
@@ -6550,19 +7287,30 @@ async fn list_project_tasks(
     State(state): State<AppState>,
     Path(work_id): Path<String>,
 ) -> ApiResult<Json<Vec<ProjectTask>>> {
-    let id = parse_work_id(&work_id)?;
-    let item = forge(&state).load(&id).map_err(map_err)?;
-    let root = item
-        .workspace_environment()
-        .ok_or_else(|| {
-            request_error(
-                StatusCode::CONFLICT,
-                "Set up this project before running it",
-            )
-        })?
-        .worktree
-        .clone();
-    Ok(Json(project_tasks(&root)))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::Observation,
+        256 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let item = forge(&state).load(&id).map_err(map_err)?;
+                let root = item
+                    .workspace_environment()
+                    .ok_or_else(|| {
+                        request_error(
+                            StatusCode::CONFLICT,
+                            "Set up this project before running it",
+                        )
+                    })?
+                    .worktree
+                    .clone();
+                Ok(Json(project_tasks(&root)))
+            }
+        },
+    )
+    .await
 }
 
 fn discover_project_tests(root: &FsPath, tasks: &[ProjectTask]) -> Vec<ProjectTest> {
@@ -6643,35 +7391,45 @@ async fn list_project_tests(
     Path(work_id): Path<String>,
     Query(query): Query<ReviewSelectionQuery>,
 ) -> ApiResult<Json<Vec<ProjectTest>>> {
-    let id = parse_work_id(&work_id)?;
-    let item = forge(&state).load(&id).map_err(map_err)?;
-    let selected_attempt = query
-        .attempt_id
-        .as_deref()
-        .map(|attempt_id| medousa_forge::model::AttemptId::from(attempt_id.to_string()));
-    if selected_attempt
-        .as_ref()
-        .is_some_and(|attempt_id| item.attempt(attempt_id).is_none())
-    {
-        return Err(request_error(
-            StatusCode::NOT_FOUND,
-            "test-discovery attempt does not belong to this undertaking",
-        ));
-    }
-    let root = selected_attempt
-        .as_ref()
-        .and_then(|attempt_id| item.environment_for_attempt(attempt_id))
-        .or_else(|| item.workspace_environment())
-        .ok_or_else(|| {
-            request_error(
-                StatusCode::CONFLICT,
-                "Set up this project before finding tests",
-            )
-        })?
-        .worktree
-        .clone();
-    let tasks = project_tasks(&root);
-    Ok(Json(discover_project_tests(&root, &tasks)))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::Observation,
+        256 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let item = forge(&state).load(&id).map_err(map_err)?;
+                let selected_attempt = query.attempt_id.as_deref().map(|attempt_id| {
+                    medousa_forge::model::AttemptId::from(attempt_id.to_string())
+                });
+                if selected_attempt
+                    .as_ref()
+                    .is_some_and(|attempt_id| item.attempt(attempt_id).is_none())
+                {
+                    return Err(request_error(
+                        StatusCode::NOT_FOUND,
+                        "test-discovery attempt does not belong to this undertaking",
+                    ));
+                }
+                let root = selected_attempt
+                    .as_ref()
+                    .and_then(|attempt_id| item.environment_for_attempt(attempt_id))
+                    .or_else(|| item.workspace_environment())
+                    .ok_or_else(|| {
+                        request_error(
+                            StatusCode::CONFLICT,
+                            "Set up this project before finding tests",
+                        )
+                    })?
+                    .worktree
+                    .clone();
+                let tasks = project_tasks(&root);
+                Ok(Json(discover_project_tests(&root, &tasks)))
+            }
+        },
+    )
+    .await
 }
 
 async fn start_project_task_run(
@@ -6680,28 +7438,45 @@ async fn start_project_task_run(
     Json(body): Json<RunProjectTaskRequest>,
 ) -> ApiResult<Json<ProjectTaskRun>> {
     let id = parse_work_id(&work_id)?;
+    let (item, lease, root, task) = admit_forge_canary(
+        &state,
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
+        None,
+        {
+            let state = state.clone();
+            let lease_id = body.lease_id.clone();
+            let generation = body.generation;
+            let task_id = task_id.clone();
+            let test_id = body.test_id.clone();
+            move || {
+                let (item, lease) = require_work_lease(&state, &id, &lease_id, generation)?;
+                let root = item
+                    .environment_for_attempt(&lease.attempt_id)
+                    .ok_or_else(|| {
+                        request_error(
+                            StatusCode::CONFLICT,
+                            "Set up this project before running it",
+                        )
+                    })?
+                    .worktree
+                    .clone();
+                let mut task = project_tasks(&root)
+                    .into_iter()
+                    .find(|task| task.id == task_id)
+                    .ok_or_else(|| {
+                        request_error(
+                            StatusCode::NOT_FOUND,
+                            "Project command is no longer available",
+                        )
+                    })?;
+                target_project_test(&root, &mut task, test_id.as_deref())?;
+                Ok((item, lease, root, task))
+            }
+        },
+    )
+    .await?;
     let forge = forge(&state);
-    let (item, lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let root = item
-        .environment_for_attempt(&lease.attempt_id)
-        .ok_or_else(|| {
-            request_error(
-                StatusCode::CONFLICT,
-                "Set up this project before running it",
-            )
-        })?
-        .worktree
-        .clone();
-    let mut task = project_tasks(&root)
-        .into_iter()
-        .find(|task| task.id == task_id)
-        .ok_or_else(|| {
-            request_error(
-                StatusCode::NOT_FOUND,
-                "Project command is no longer available",
-            )
-        })?;
-    target_project_test(&root, &mut task, body.test_id.as_deref())?;
     let run_id = format!("run-{}", uuid::Uuid::new_v4());
     let ready_re = compile_ready_pattern(&task);
     let problem_re = compile_problem_pattern(&task);
@@ -7068,60 +7843,79 @@ async fn run_project_task(
     Json(body): Json<RunProjectTaskRequest>,
 ) -> ApiResult<Json<ProjectTaskResult>> {
     let id = parse_work_id(&work_id)?;
+    let (item, lease, root, task) = admit_forge_canary(
+        &state,
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
+        None,
+        {
+            let state = state.clone();
+            let lease_id = body.lease_id.clone();
+            let generation = body.generation;
+            let task_id = task_id.clone();
+            move || {
+                let (item, lease) = require_work_lease(&state, &id, &lease_id, generation)?;
+                let root = item
+                    .environment_for_attempt(&lease.attempt_id)
+                    .ok_or_else(|| {
+                        request_error(
+                            StatusCode::CONFLICT,
+                            "Set up this project before running it",
+                        )
+                    })?
+                    .worktree
+                    .clone();
+                let task = project_tasks(&root)
+                    .into_iter()
+                    .find(|task| task.id == task_id)
+                    .ok_or_else(|| {
+                        request_error(
+                            StatusCode::NOT_FOUND,
+                            "Project command is no longer available",
+                        )
+                    })?;
+                Ok((item, lease, root, task))
+            }
+        },
+    )
+    .await?;
     let forge = forge(&state);
-    let (item, lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let root = item
-        .environment_for_attempt(&lease.attempt_id)
-        .ok_or_else(|| {
-            request_error(
-                StatusCode::CONFLICT,
-                "Set up this project before running it",
-            )
-        })?
-        .worktree
-        .clone();
-    let task = project_tasks(&root)
-        .into_iter()
-        .find(|task| task.id == task_id)
-        .ok_or_else(|| {
-            request_error(
-                StatusCode::NOT_FOUND,
-                "Project command is no longer available",
-            )
-        })?;
     let argv = task.argv.clone();
     let root_for_command = root.clone();
     let started = std::time::Instant::now();
-    let output = tokio::task::spawn_blocking(move || {
-        background_command(&argv[0])
-            .args(&argv[1..])
-            .current_dir(root_for_command)
-            .output()
-    })
-    .await
-    .map_err(|err| {
-        request_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Project command stopped unexpectedly: {err}"),
+    let (stdout_bytes, stderr_bytes, capture_truncated, status) = state
+        .forge_execution
+        .run(
+            medousa_forge::execution::ExecutionClass::LocalMutation,
+            medousa_forge::execution::MAX_CAPTURE_BYTES,
+            move || {
+                let mut command = background_command(&argv[0]);
+                command.args(&argv[1..]).current_dir(root_for_command);
+                medousa_forge::execution::run_command_bounded(
+                    command,
+                    medousa_forge::execution::MAX_CAPTURE_BYTES,
+                )
+            },
         )
-    })?
-    .map_err(|err| {
-        request_error(
-            StatusCode::BAD_REQUEST,
-            format!("Could not run {}: {err}", task.label),
-        )
-    })?;
+        .await
+        .map_err(|err| {
+            request_error(
+                StatusCode::BAD_REQUEST,
+                format!("Could not run {}: {err}", task.label),
+            )
+        })?;
     const OUTPUT_CAP: usize = 64 * 1024;
-    let truncated = output.stdout.len() > OUTPUT_CAP || output.stderr.len() > OUTPUT_CAP;
+    let truncated =
+        capture_truncated || stdout_bytes.len() > OUTPUT_CAP || stderr_bytes.len() > OUTPUT_CAP;
     let stdout =
-        String::from_utf8_lossy(&output.stdout[..output.stdout.len().min(OUTPUT_CAP)]).into_owned();
+        String::from_utf8_lossy(&stdout_bytes[..stdout_bytes.len().min(OUTPUT_CAP)]).into_owned();
     let stderr =
-        String::from_utf8_lossy(&output.stderr[..output.stderr.len().min(OUTPUT_CAP)]).into_owned();
+        String::from_utf8_lossy(&stderr_bytes[..stderr_bytes.len().min(OUTPUT_CAP)]).into_owned();
     let locations = parse_output_locations(&root, &format!("{stdout}\n{stderr}"));
     let result = ProjectTaskResult {
         task: task.clone(),
-        success: output.status.success(),
-        exit_code: output.status.code(),
+        success: status.success(),
+        exit_code: status.code(),
         stdout,
         stderr,
         truncated,
@@ -7357,10 +8151,21 @@ async fn get_provider_handoff(
     State(state): State<AppState>,
     Path(work_id): Path<String>,
 ) -> ApiResult<Json<ProviderHandoff>> {
-    let id = parse_work_id(&work_id)?;
-    let forge = forge(&state);
-    let item = forge.load(&id).map_err(map_err)?;
-    Ok(Json(provider_handoff(forge.as_ref(), &item)))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::RepositoryMetadata,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let forge = forge(&state);
+                let item = forge.load(&id).map_err(map_err)?;
+                Ok(Json(provider_handoff(forge.as_ref(), &item)))
+            }
+        },
+    )
+    .await
 }
 
 async fn save_provider_context(
@@ -7368,34 +8173,45 @@ async fn save_provider_context(
     Path(work_id): Path<String>,
     Json(body): Json<SaveProviderContextRequest>,
 ) -> ApiResult<Json<ProviderHandoff>> {
-    let id = parse_work_id(&work_id)?;
-    let forge = forge(&state);
-    let item = forge.load(&id).map_err(map_err)?;
-    if body.links.len() > 20 {
-        return Err(request_error(
-            StatusCode::BAD_REQUEST,
-            "Too many linked items",
-        ));
-    }
-    let mut context = load_provider_context(forge.as_ref(), &id);
-    let mut links = body
-        .links
-        .into_iter()
-        .map(|link| link.trim().to_string())
-        .collect::<Vec<_>>();
-    if links
-        .iter()
-        .any(|link| !link.starts_with("https://") || link.len() > 2_048)
-    {
-        return Err(request_error(
-            StatusCode::BAD_REQUEST,
-            "Linked work must use a valid HTTPS URL",
-        ));
-    }
-    links.dedup();
-    context.links = links;
-    store_provider_context(forge.as_ref(), &id, &context)?;
-    Ok(Json(provider_handoff(forge.as_ref(), &item)))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let forge = forge(&state);
+                let item = forge.load(&id).map_err(map_err)?;
+                if body.links.len() > 20 {
+                    return Err(request_error(
+                        StatusCode::BAD_REQUEST,
+                        "Too many linked items",
+                    ));
+                }
+                let mut context = load_provider_context(forge.as_ref(), &id);
+                let mut links = body
+                    .links
+                    .into_iter()
+                    .map(|link| link.trim().to_string())
+                    .collect::<Vec<_>>();
+                if links
+                    .iter()
+                    .any(|link| !link.starts_with("https://") || link.len() > 2_048)
+                {
+                    return Err(request_error(
+                        StatusCode::BAD_REQUEST,
+                        "Linked work must use a valid HTTPS URL",
+                    ));
+                }
+                links.dedup();
+                context.links = links;
+                store_provider_context(forge.as_ref(), &id, &context)?;
+                Ok(Json(provider_handoff(forge.as_ref(), &item)))
+            }
+        },
+    )
+    .await
 }
 
 fn provider_command_error(label: &str, output: &std::process::Output) -> ApiError {
@@ -7521,241 +8337,266 @@ async fn share_provider_handoff(
     Path(work_id): Path<String>,
     Json(body): Json<ShareProviderRequest>,
 ) -> ApiResult<Json<ProviderHandoff>> {
-    let id = parse_work_id(&work_id)?;
-    let forge = forge(&state);
-    let item = forge.load(&id).map_err(map_err)?;
-    if !matches!(item.state, WorkState::AwaitingReview | WorkState::Accepted) {
-        return Err(request_error(
-            StatusCode::CONFLICT,
-            "Finish and review the project before sharing it",
-        ));
-    }
-    let handoff = provider_handoff(forge.as_ref(), &item);
-    if !handoff.available {
-        return Err(request_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            handoff.message,
-        ));
-    }
-    let attempt_id = body
-        .attempt_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| medousa_forge::model::AttemptId::from(value.to_string()));
-    let environment = attempt_id
-        .as_ref()
-        .and_then(|attempt_id| item.environment_for_attempt(attempt_id))
-        .or_else(|| item.workspace_environment())
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "Project workspace is unavailable"))?;
-    let push = background_command("git")
-        .args(["push", "--set-upstream", "origin", &environment.branch])
-        .current_dir(&environment.worktree)
-        .output()
-        .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
-    if !push.status.success() {
-        return Err(provider_command_error("Sharing the branch", &push));
-    }
-    let repository = handoff.repository.as_deref().ok_or_else(|| {
-        request_error(
-            StatusCode::BAD_REQUEST,
-            "Repository identity is unavailable",
-        )
-    })?;
-    let base = handoff.base_branch.as_deref().unwrap_or("main");
-    let title = body
-        .title
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or(&item.title)
-        .chars()
-        .take(256)
-        .collect::<String>();
-    let description = provider_review_body(
-        forge.as_ref(),
-        &item,
-        body.body.as_deref(),
-        attempt_id.as_ref(),
-    );
-    let output = if handoff.provider == "github" {
-        background_command("gh")
-            .args([
-                "pr",
-                "create",
-                "--repo",
-                repository,
-                "--head",
-                &environment.branch,
-                "--base",
-                base,
-                "--title",
-                &title,
-                "--body",
-                &description,
-            ])
-            .current_dir(&environment.worktree)
-            .output()
-    } else {
-        background_command("glab")
-            .args([
-                "mr",
-                "create",
-                "--source-branch",
-                &environment.branch,
-                "--target-branch",
-                base,
-                "--title",
-                &title,
-                "--description",
-                &description,
-                "--yes",
-            ])
-            .current_dir(&environment.worktree)
-            .output()
-    }
-    .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
-    let created_url = output
-        .status
-        .success()
-        .then(|| {
-            String::from_utf8_lossy(&output.stdout)
-                .split_whitespace()
-                .find(|value| value.starts_with("http"))
-                .map(|value| value.trim().to_string())
-        })
-        .flatten();
-    let review_url = if output.status.success() {
-        if created_url.is_some() {
-            created_url
-        } else {
-            existing_provider_review_url(
-                &handoff.provider,
-                repository,
-                &environment.branch,
-                &environment.worktree,
-            )?
-        }
-    } else {
-        let update = if handoff.provider == "github" {
-            background_command("gh")
-                .args([
-                    "pr",
-                    "edit",
-                    &environment.branch,
-                    "--repo",
-                    repository,
-                    "--title",
-                    &title,
-                    "--body",
-                    &description,
-                ])
-                .current_dir(&environment.worktree)
-                .output()
-        } else {
-            background_command("glab")
-                .args([
-                    "mr",
-                    "update",
-                    &environment.branch,
-                    "--title",
-                    &title,
-                    "--description",
-                    &description,
-                ])
-                .current_dir(&environment.worktree)
-                .output()
-        }
-        .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
-        if !update.status.success() {
-            return Err(provider_command_error("Updating the review", &update));
-        }
-        existing_provider_review_url(
-            &handoff.provider,
-            repository,
-            &environment.branch,
-            &environment.worktree,
-        )?
-    };
-    let mut context = load_provider_context(forge.as_ref(), &id);
-    context.review_url = review_url;
-    store_provider_context(forge.as_ref(), &id, &context)?;
-    publish_item(&state, &item, "provider_shared");
-    Ok(Json(provider_handoff(forge.as_ref(), &item)))
+    admit_forge_on_repo(
+        &state,
+        medousa_forge::execution::ExecutionClass::NetworkGit,
+        64 * 1024,
+        None,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let forge = forge(&state);
+                let item = forge.load(&id).map_err(map_err)?;
+                if !matches!(item.state, WorkState::AwaitingReview | WorkState::Accepted) {
+                    return Err(request_error(
+                        StatusCode::CONFLICT,
+                        "Finish and review the project before sharing it",
+                    ));
+                }
+                let handoff = provider_handoff(forge.as_ref(), &item);
+                if !handoff.available {
+                    return Err(request_error(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        handoff.message,
+                    ));
+                }
+                let attempt_id = body
+                    .attempt_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(|value| medousa_forge::model::AttemptId::from(value.to_string()));
+                let environment = attempt_id
+                    .as_ref()
+                    .and_then(|attempt_id| item.environment_for_attempt(attempt_id))
+                    .or_else(|| item.workspace_environment())
+                    .ok_or_else(|| {
+                        request_error(StatusCode::CONFLICT, "Project workspace is unavailable")
+                    })?;
+                let push = background_command("git")
+                    .args(["push", "--set-upstream", "origin", &environment.branch])
+                    .current_dir(&environment.worktree)
+                    .output()
+                    .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+                if !push.status.success() {
+                    return Err(provider_command_error("Sharing the branch", &push));
+                }
+                let repository = handoff.repository.as_deref().ok_or_else(|| {
+                    request_error(
+                        StatusCode::BAD_REQUEST,
+                        "Repository identity is unavailable",
+                    )
+                })?;
+                let base = handoff.base_branch.as_deref().unwrap_or("main");
+                let title = body
+                    .title
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or(&item.title)
+                    .chars()
+                    .take(256)
+                    .collect::<String>();
+                let description = provider_review_body(
+                    forge.as_ref(),
+                    &item,
+                    body.body.as_deref(),
+                    attempt_id.as_ref(),
+                );
+                let output = if handoff.provider == "github" {
+                    background_command("gh")
+                        .args([
+                            "pr",
+                            "create",
+                            "--repo",
+                            repository,
+                            "--head",
+                            &environment.branch,
+                            "--base",
+                            base,
+                            "--title",
+                            &title,
+                            "--body",
+                            &description,
+                        ])
+                        .current_dir(&environment.worktree)
+                        .output()
+                } else {
+                    background_command("glab")
+                        .args([
+                            "mr",
+                            "create",
+                            "--source-branch",
+                            &environment.branch,
+                            "--target-branch",
+                            base,
+                            "--title",
+                            &title,
+                            "--description",
+                            &description,
+                            "--yes",
+                        ])
+                        .current_dir(&environment.worktree)
+                        .output()
+                }
+                .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+                let created_url = output
+                    .status
+                    .success()
+                    .then(|| {
+                        String::from_utf8_lossy(&output.stdout)
+                            .split_whitespace()
+                            .find(|value| value.starts_with("http"))
+                            .map(|value| value.trim().to_string())
+                    })
+                    .flatten();
+                let review_url = if output.status.success() {
+                    if created_url.is_some() {
+                        created_url
+                    } else {
+                        existing_provider_review_url(
+                            &handoff.provider,
+                            repository,
+                            &environment.branch,
+                            &environment.worktree,
+                        )?
+                    }
+                } else {
+                    let update = if handoff.provider == "github" {
+                        background_command("gh")
+                            .args([
+                                "pr",
+                                "edit",
+                                &environment.branch,
+                                "--repo",
+                                repository,
+                                "--title",
+                                &title,
+                                "--body",
+                                &description,
+                            ])
+                            .current_dir(&environment.worktree)
+                            .output()
+                    } else {
+                        background_command("glab")
+                            .args([
+                                "mr",
+                                "update",
+                                &environment.branch,
+                                "--title",
+                                &title,
+                                "--description",
+                                &description,
+                            ])
+                            .current_dir(&environment.worktree)
+                            .output()
+                    }
+                    .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+                    if !update.status.success() {
+                        return Err(provider_command_error("Updating the review", &update));
+                    }
+                    existing_provider_review_url(
+                        &handoff.provider,
+                        repository,
+                        &environment.branch,
+                        &environment.worktree,
+                    )?
+                };
+                let mut context = load_provider_context(forge.as_ref(), &id);
+                context.review_url = review_url;
+                store_provider_context(forge.as_ref(), &id, &context)?;
+                publish_item(&state, &item, "provider_shared");
+                Ok(Json(provider_handoff(forge.as_ref(), &item)))
+            }
+        },
+    )
+    .await
 }
 
 async fn list_provider_comments(
     State(state): State<AppState>,
     Path(work_id): Path<String>,
 ) -> ApiResult<Json<Vec<ProviderComment>>> {
-    let id = parse_work_id(&work_id)?;
-    let forge = forge(&state);
-    let item = forge.load(&id).map_err(map_err)?;
-    let handoff = provider_handoff(forge.as_ref(), &item);
-    if handoff.provider != "github" || handoff.review_url.is_none() {
-        return Ok(Json(Vec::new()));
-    }
-    let repository = handoff.repository.ok_or_else(|| {
-        request_error(
-            StatusCode::BAD_REQUEST,
-            "Repository identity is unavailable",
-        )
-    })?;
-    let branch = handoff
-        .branch
-        .ok_or_else(|| request_error(StatusCode::BAD_REQUEST, "Project branch is unavailable"))?;
-    let output = background_command("gh")
-        .args([
-            "pr",
-            "view",
-            &branch,
-            "--repo",
-            &repository,
-            "--json",
-            "comments,reviews",
-        ])
-        .output()
-        .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
-    if !output.status.success() {
-        return Err(provider_command_error("Reading review comments", &output));
-    }
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout)
-        .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
-    let mut comments = Vec::new();
-    for (kind, entries) in [
-        ("comment", value.get("comments")),
-        ("review", value.get("reviews")),
-    ] {
-        for (index, entry) in entries
-            .and_then(|entries| entries.as_array())
-            .into_iter()
-            .flatten()
-            .enumerate()
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
         {
-            let body = entry
-                .get("body")
-                .and_then(|body| body.as_str())
-                .unwrap_or("")
-                .trim();
-            if body.is_empty() {
-                continue;
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let forge = forge(&state);
+                let item = forge.load(&id).map_err(map_err)?;
+                let handoff = provider_handoff(forge.as_ref(), &item);
+                if handoff.provider != "github" || handoff.review_url.is_none() {
+                    return Ok(Json(Vec::new()));
+                }
+                let repository = handoff.repository.ok_or_else(|| {
+                    request_error(
+                        StatusCode::BAD_REQUEST,
+                        "Repository identity is unavailable",
+                    )
+                })?;
+                let branch = handoff.branch.ok_or_else(|| {
+                    request_error(StatusCode::BAD_REQUEST, "Project branch is unavailable")
+                })?;
+                let output = background_command("gh")
+                    .args([
+                        "pr",
+                        "view",
+                        &branch,
+                        "--repo",
+                        &repository,
+                        "--json",
+                        "comments,reviews",
+                    ])
+                    .output()
+                    .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+                if !output.status.success() {
+                    return Err(provider_command_error("Reading review comments", &output));
+                }
+                let value: serde_json::Value = serde_json::from_slice(&output.stdout)
+                    .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+                let mut comments = Vec::new();
+                for (kind, entries) in [
+                    ("comment", value.get("comments")),
+                    ("review", value.get("reviews")),
+                ] {
+                    for (index, entry) in entries
+                        .and_then(|entries| entries.as_array())
+                        .into_iter()
+                        .flatten()
+                        .enumerate()
+                    {
+                        let body = entry
+                            .get("body")
+                            .and_then(|body| body.as_str())
+                            .unwrap_or("")
+                            .trim();
+                        if body.is_empty() {
+                            continue;
+                        }
+                        comments.push(ProviderComment {
+                            id: format!("{kind}-{index}"),
+                            author: entry
+                                .pointer("/author/login")
+                                .and_then(|author| author.as_str())
+                                .unwrap_or("Reviewer")
+                                .into(),
+                            body: body.chars().take(8_000).collect(),
+                            url: entry
+                                .get("url")
+                                .and_then(|url| url.as_str())
+                                .map(str::to_string),
+                        });
+                    }
+                }
+                Ok(Json(comments))
             }
-            comments.push(ProviderComment {
-                id: format!("{kind}-{index}"),
-                author: entry
-                    .pointer("/author/login")
-                    .and_then(|author| author.as_str())
-                    .unwrap_or("Reviewer")
-                    .into(),
-                body: body.chars().take(8_000).collect(),
-                url: entry
-                    .get("url")
-                    .and_then(|url| url.as_str())
-                    .map(str::to_string),
-            });
-        }
-    }
-    Ok(Json(comments))
+        },
+    )
+    .await
 }
 
 async fn import_provider_comment(
@@ -7763,58 +8604,81 @@ async fn import_provider_comment(
     Path(work_id): Path<String>,
     Json(body): Json<ImportProviderCommentRequest>,
 ) -> ApiResult<Json<ItemProjection>> {
-    let id = parse_work_id(&work_id)?;
-    let forge = forge(&state);
-    let source = forge.load(&id).map_err(map_err)?;
-    let WorkTarget::Git(target) = &source.target;
-    let body_text = body.body.trim();
-    if body.id.trim().is_empty() || body_text.is_empty() || body_text.len() > 8_000 {
-        return Err(request_error(
-            StatusCode::BAD_REQUEST,
-            "Review comment is invalid",
-        ));
-    }
-    let brief = format!(
-        "Follow up on review feedback for {}:\n\n{}{}",
-        source.title,
-        body_text,
-        body.url
-            .as_deref()
-            .map(|url| format!("\n\nSource: {url}"))
-            .unwrap_or_default()
-    );
-    let actor = actor_from_state(&state);
-    let item = forge
-        .register(
-            format!("Follow up: {}", source.title),
-            brief,
-            &target.repo_path,
-            target.base_ref.clone(),
-            state.workshop_identity_user_id(),
-            &actor,
-        )
-        .map_err(map_err)?;
-    publish_item(&state, &item, "provider_follow_up_created");
-    Ok(Json(project_item(item)))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let forge = forge(&state);
+                let source = forge.load(&id).map_err(map_err)?;
+                let WorkTarget::Git(target) = &source.target;
+                let body_text = body.body.trim();
+                if body.id.trim().is_empty() || body_text.is_empty() || body_text.len() > 8_000 {
+                    return Err(request_error(
+                        StatusCode::BAD_REQUEST,
+                        "Review comment is invalid",
+                    ));
+                }
+                let brief = format!(
+                    "Follow up on review feedback for {}:\n\n{}{}",
+                    source.title,
+                    body_text,
+                    body.url
+                        .as_deref()
+                        .map(|url| format!("\n\nSource: {url}"))
+                        .unwrap_or_default()
+                );
+                let actor = actor_from_state(&state);
+                let item = forge
+                    .register(
+                        format!("Follow up: {}", source.title),
+                        brief,
+                        &target.repo_path,
+                        target.base_ref.clone(),
+                        state.workshop_identity_user_id(),
+                        &actor,
+                    )
+                    .map_err(map_err)?;
+                publish_item(&state, &item, "provider_follow_up_created");
+                Ok(Json(project_item(item)))
+            }
+        },
+    )
+    .await
 }
 
 async fn provision_item(
     State(state): State<AppState>,
     Path(work_id): Path<String>,
 ) -> ApiResult<Json<ItemProjection>> {
-    let id = parse_work_id(&work_id)?;
-    let actor = actor_from_state(&state);
-    let item = forge(&state).provision(&id, &actor).map_err(map_err)?;
-    if let Some(env) = item.workspace_environment() {
-        crate::daemon::detamu_host::spawn_index_forge_item(
-            state.detamu.clone(),
-            item.id.as_str().to_owned(),
-            env.worktree.clone(),
-            env.baseline_oid.as_str().to_owned(),
-            crate::daemon::detamu_host::BindingKind::Baseline,
-        );
-    }
-    Ok(ok_item(&state, item, "provisioned"))
+    admit_forge_canary(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        None,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let actor = actor_from_state(&state);
+                let item = forge(&state).provision(&id, &actor).map_err(map_err)?;
+                if let Some(env) = item.workspace_environment() {
+                    crate::daemon::detamu_host::spawn_index_forge_item(
+                        state.detamu.clone(),
+                        item.id.as_str().to_owned(),
+                        env.worktree.clone(),
+                        env.baseline_oid.as_str().to_owned(),
+                        crate::daemon::detamu_host::BindingKind::Baseline,
+                    );
+                }
+                Ok(ok_item(&state, item, "provisioned"))
+            }
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -7839,34 +8703,45 @@ async fn begin_attempt(
     Path(work_id): Path<String>,
     Json(body): Json<BeginAttemptRequest>,
 ) -> ApiResult<Json<BeginAttemptResponse>> {
-    let id = parse_work_id(&work_id)?;
-    let actor = actor_from_state(&state);
-    let executor = body.executor.unwrap_or(ExecutorDescriptor {
-        kind: "human".into(),
-        detail: serde_json::json!({}),
-    });
-    let (item, lease) = forge(&state)
-        .begin_isolated_attempt(&id, executor, body.pid, &actor)
-        .map_err(map_err)?;
-    let environment = item
-        .environment_for_attempt(&lease.attempt_id)
-        .ok_or_else(|| {
-            request_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "isolated attempt has no governed environment",
-            )
-        })?;
-    let attempt_id = lease.attempt_id.as_str().to_owned();
-    let worktree = environment.worktree.display().to_string();
-    let branch = environment.branch.clone();
-    publish_item(&state, &item, "attempt_begun");
-    Ok(Json(BeginAttemptResponse {
-        item: project_item(item),
-        lease,
-        attempt_id,
-        worktree,
-        branch,
-    }))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let actor = actor_from_state(&state);
+                let executor = body.executor.unwrap_or(ExecutorDescriptor {
+                    kind: "human".into(),
+                    detail: serde_json::json!({}),
+                });
+                let (item, lease) = forge(&state)
+                    .begin_isolated_attempt(&id, executor, body.pid, &actor)
+                    .map_err(map_err)?;
+                let environment =
+                    item.environment_for_attempt(&lease.attempt_id)
+                        .ok_or_else(|| {
+                            request_error(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "isolated attempt has no governed environment",
+                            )
+                        })?;
+                let attempt_id = lease.attempt_id.as_str().to_owned();
+                let worktree = environment.worktree.display().to_string();
+                let branch = environment.branch.clone();
+                publish_item(&state, &item, "attempt_begun");
+                Ok(Json(BeginAttemptResponse {
+                    item: project_item(item),
+                    lease,
+                    attempt_id,
+                    worktree,
+                    branch,
+                }))
+            }
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -7884,42 +8759,53 @@ async fn prepare_handoff(
     Path(work_id): Path<String>,
     Json(body): Json<PrepareHandoffRequest>,
 ) -> ApiResult<Json<ItemProjection>> {
-    let id = parse_work_id(&work_id)?;
-    let target = body.to_executor.trim().to_ascii_lowercase();
-    if !matches!(target.as_str(), "codex" | "cursor" | "human") {
-        return Err(request_error(
-            StatusCode::BAD_REQUEST,
-            "handoff target must be codex, cursor, or human",
-        ));
-    }
-    let lease = resolve_lease(forge(&state).as_ref(), &body.lease_id, body.generation)?;
-    if lease.work_id != id {
-        return Err(request_error(
-            StatusCode::CONFLICT,
-            "the active editor belongs to a different project",
-        ));
-    }
-    let item = forge(&state).load(&id).map_err(map_err)?;
-    let from = item
-        .attempt(&lease.attempt_id)
-        .map(|attempt| attempt.executor.kind.as_str())
-        .unwrap_or("unknown");
-    forge(&state)
-        .append_command_log(
-            &lease,
-            &serde_json::json!({
-                "kind": "executor_handoff",
-                "from": from,
-                "to": target,
-                "at": chrono::Utc::now(),
-            }),
-        )
-        .map_err(map_err)?;
-    let actor = actor_from_state(&state);
-    let item = forge(&state)
-        .interrupt_attempt(&lease, RecoveryDisposition::RestartAllowed, &actor)
-        .map_err(map_err)?;
-    Ok(ok_item(&state, item, "handoff_prepared"))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let target = body.to_executor.trim().to_ascii_lowercase();
+                if !matches!(target.as_str(), "codex" | "cursor" | "human") {
+                    return Err(request_error(
+                        StatusCode::BAD_REQUEST,
+                        "handoff target must be codex, cursor, or human",
+                    ));
+                }
+                let lease = resolve_lease(forge(&state).as_ref(), &body.lease_id, body.generation)?;
+                if lease.work_id != id {
+                    return Err(request_error(
+                        StatusCode::CONFLICT,
+                        "the active editor belongs to a different project",
+                    ));
+                }
+                let item = forge(&state).load(&id).map_err(map_err)?;
+                let from = item
+                    .attempt(&lease.attempt_id)
+                    .map(|attempt| attempt.executor.kind.as_str())
+                    .unwrap_or("unknown");
+                forge(&state)
+                    .append_command_log(
+                        &lease,
+                        &serde_json::json!({
+                            "kind": "executor_handoff",
+                            "from": from,
+                            "to": target,
+                            "at": chrono::Utc::now(),
+                        }),
+                    )
+                    .map_err(map_err)?;
+                let actor = actor_from_state(&state);
+                let item = forge(&state)
+                    .interrupt_attempt(&lease, RecoveryDisposition::RestartAllowed, &actor)
+                    .map_err(map_err)?;
+                Ok(ok_item(&state, item, "handoff_prepared"))
+            }
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -7943,9 +8829,20 @@ async fn heartbeat_lease(
     Path(lease_id): Path<String>,
     Json(body): Json<LeaseMutationRequest>,
 ) -> ApiResult<StatusCode> {
-    let lease = resolve_lease(forge(&state).as_ref(), &lease_id, body.generation)?;
-    forge(&state).heartbeat(&lease).map_err(map_err)?;
-    Ok(StatusCode::NO_CONTENT)
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let lease = resolve_lease(forge(&state).as_ref(), &lease_id, body.generation)?;
+                forge(&state).heartbeat(&lease).map_err(map_err)?;
+                Ok(StatusCode::NO_CONTENT)
+            }
+        },
+    )
+    .await
 }
 
 async fn complete_lease(
@@ -7953,35 +8850,46 @@ async fn complete_lease(
     Path(lease_id): Path<String>,
     Json(body): Json<CompleteLeaseRequest>,
 ) -> ApiResult<Json<ItemProjection>> {
-    let lease = resolve_lease(forge(&state).as_ref(), &lease_id, body.generation)?;
-    let author = match (body.author_name, body.author_email) {
-        (Some(name), Some(email)) => Some(CheckpointAuthor { name, email }),
-        _ => None,
-    };
-    let options = SealOptions {
-        ack_risks: body.ack_risks,
-        author,
-    };
-    let actor = actor_from_state(&state);
-    let item = forge(&state)
-        .complete_attempt(&lease, &options, &actor)
-        .map_err(map_err)?;
-    if let Some(env) = item.environment_for_attempt(&lease.attempt_id) {
-        let sealed_oid = forge(&state)
-            .git()
-            .head_oid(&env.worktree)
-            .ok()
-            .map(|oid| oid.as_str().to_owned())
-            .unwrap_or_else(|| env.baseline_oid.as_str().to_owned());
-        crate::daemon::detamu_host::spawn_index_forge_item(
-            state.detamu.clone(),
-            item.id.as_str().to_owned(),
-            env.worktree.clone(),
-            sealed_oid,
-            crate::daemon::detamu_host::BindingKind::Sealed,
-        );
-    }
-    Ok(ok_item(&state, item, "sealed"))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let lease = resolve_lease(forge(&state).as_ref(), &lease_id, body.generation)?;
+                let author = match (body.author_name, body.author_email) {
+                    (Some(name), Some(email)) => Some(CheckpointAuthor { name, email }),
+                    _ => None,
+                };
+                let options = SealOptions {
+                    ack_risks: body.ack_risks,
+                    author,
+                };
+                let actor = actor_from_state(&state);
+                let item = forge(&state)
+                    .complete_attempt(&lease, &options, &actor)
+                    .map_err(map_err)?;
+                if let Some(env) = item.environment_for_attempt(&lease.attempt_id) {
+                    let sealed_oid = forge(&state)
+                        .git()
+                        .head_oid(&env.worktree)
+                        .ok()
+                        .map(|oid| oid.as_str().to_owned())
+                        .unwrap_or_else(|| env.baseline_oid.as_str().to_owned());
+                    crate::daemon::detamu_host::spawn_index_forge_item(
+                        state.detamu.clone(),
+                        item.id.as_str().to_owned(),
+                        env.worktree.clone(),
+                        sealed_oid,
+                        crate::daemon::detamu_host::BindingKind::Sealed,
+                    );
+                }
+                Ok(ok_item(&state, item, "sealed"))
+            }
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -7996,13 +8904,24 @@ async fn interrupt_lease(
     Path(lease_id): Path<String>,
     Json(body): Json<InterruptLeaseRequest>,
 ) -> ApiResult<Json<ItemProjection>> {
-    let lease = resolve_lease(forge(&state).as_ref(), &lease_id, body.generation)?;
-    let actor = actor_from_state(&state);
-    let recovery = body.recovery.unwrap_or(RecoveryDisposition::RestartAllowed);
-    let item = forge(&state)
-        .interrupt_attempt(&lease, recovery, &actor)
-        .map_err(map_err)?;
-    Ok(ok_item(&state, item, "interrupted"))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let lease = resolve_lease(forge(&state).as_ref(), &lease_id, body.generation)?;
+                let actor = actor_from_state(&state);
+                let recovery = body.recovery.unwrap_or(RecoveryDisposition::RestartAllowed);
+                let item = forge(&state)
+                    .interrupt_attempt(&lease, recovery, &actor)
+                    .map_err(map_err)?;
+                Ok(ok_item(&state, item, "interrupted"))
+            }
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -8017,13 +8936,24 @@ async fn fail_lease(
     Path(lease_id): Path<String>,
     Json(body): Json<FailLeaseRequest>,
 ) -> ApiResult<Json<ItemProjection>> {
-    let lease = resolve_lease(forge(&state).as_ref(), &lease_id, body.generation)?;
-    let actor = actor_from_state(&state);
-    let message = body.error.unwrap_or_else(|| "attempt failed".into());
-    let item = forge(&state)
-        .fail_attempt(&lease, &message, &actor)
-        .map_err(map_err)?;
-    Ok(ok_item(&state, item, "failed"))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let lease = resolve_lease(forge(&state).as_ref(), &lease_id, body.generation)?;
+                let actor = actor_from_state(&state);
+                let message = body.error.unwrap_or_else(|| "attempt failed".into());
+                let item = forge(&state)
+                    .fail_attempt(&lease, &message, &actor)
+                    .map_err(map_err)?;
+                Ok(ok_item(&state, item, "failed"))
+            }
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -8062,101 +8992,114 @@ async fn record_decision(
     Path(work_id): Path<String>,
     Json(body): Json<ReviewIntentRequest>,
 ) -> ApiResult<Json<ItemProjection>> {
-    let id = parse_work_id(&work_id)?;
-    let actor = actor_from_state(&state);
-    let item = forge(&state).load(&id).map_err(map_err)?;
-    let strategy = parse_strategy(&body.strategy)?;
-    let evidence_id = EvidenceId::from(body.evidence_id.clone());
-    let attempt = item
-        .attempts
-        .iter()
-        .rev()
-        .find(|a| a.evidence_id.as_ref() == Some(&evidence_id))
-        .ok_or_else(|| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorBody {
-                    error: "evidence_id does not match a sealed attempt".into(),
-                    kind: Some("bad_request"),
-                }),
-            )
-        })?;
-    let env = item.environment_for_attempt(&attempt.id).ok_or_else(|| {
-        (
-            StatusCode::CONFLICT,
-            Json(ErrorBody {
-                error: "no governed environment".into(),
-                kind: Some("conflict"),
-            }),
-        )
-    })?;
-    let manifest = evidence_dir(forge(&state).as_ref(), &item, &evidence_id)
-        .and_then(|dir| crate::daemon::forge_projections::load_manifest(&dir))
-        .ok_or_else(|| {
-            request_error(
-                StatusCode::CONFLICT,
-                "sealed evidence manifest is unavailable",
-            )
-        })?;
-    if manifest.attempt_id != attempt.id || manifest.evidence_id != evidence_id {
-        return Err(request_error(
-            StatusCode::CONFLICT,
-            "sealed evidence identity does not match the selected attempt",
-        ));
-    }
-    let digest = manifest
-        .bundle_digest
-        .as_ref()
-        .map(|value| value.as_str().to_owned())
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "sealed evidence has no digest"))?;
-    if !body.evidence_digest.is_empty() && digest != body.evidence_digest {
-        return Err((
-            StatusCode::CONFLICT,
-            Json(ErrorBody {
-                error: "evidence_digest mismatch".into(),
-                kind: Some("conflict"),
-            }),
-        ));
-    }
-    let sealed_head = manifest.sealed_head_oid.as_str().to_owned();
-    let evidence_digest: medousa_forge::model::Digest =
-        serde_json::from_value(serde_json::Value::String(digest)).map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorBody {
-                    error: format!("invalid evidence_digest: {e}"),
-                    kind: Some("bad_request"),
-                }),
-            )
-        })?;
-    let WorkTarget::Git(target) = &item.target;
-    let expected_base_oid = forge(&state)
-        .git()
-        .ref_oid(&target.repo_path, &target.base_ref)
-        .map_err(map_err)?;
-    let decision = ReviewDecision {
-        id: ReviewDecisionId::new(),
-        actor: actor.clone(),
-        attempt_id: attempt.id.clone(),
-        environment_generation: env.generation,
-        evidence_id,
-        evidence_digest,
-        baseline_oid: manifest.baseline_oid.clone(),
-        reviewed_head_oid: medousa_forge::model::GitOid::new(sealed_head),
-        expected_base_oid,
-        acknowledged_violations: body
-            .acknowledged_violations
-            .into_iter()
-            .map(medousa_forge::model::PolicyViolationId::from)
-            .collect(),
-        strategy,
-        rationale: body.rationale,
-        decided_at: chrono::Utc::now(),
-    };
-    let item = forge(&state)
-        .decide(&id, decision, &actor)
-        .map_err(map_err)?;
-    Ok(ok_item(&state, item, "decision_recorded"))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let actor = actor_from_state(&state);
+                let item = forge(&state).load(&id).map_err(map_err)?;
+                let strategy = parse_strategy(&body.strategy)?;
+                let evidence_id = EvidenceId::from(body.evidence_id.clone());
+                let attempt = item
+                    .attempts
+                    .iter()
+                    .rev()
+                    .find(|a| a.evidence_id.as_ref() == Some(&evidence_id))
+                    .ok_or_else(|| {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            Json(ErrorBody {
+                                error: "evidence_id does not match a sealed attempt".into(),
+                                kind: Some("bad_request"),
+                            }),
+                        )
+                    })?;
+                let env = item.environment_for_attempt(&attempt.id).ok_or_else(|| {
+                    (
+                        StatusCode::CONFLICT,
+                        Json(ErrorBody {
+                            error: "no governed environment".into(),
+                            kind: Some("conflict"),
+                        }),
+                    )
+                })?;
+                let manifest = evidence_dir(forge(&state).as_ref(), &item, &evidence_id)
+                    .and_then(|dir| crate::daemon::forge_projections::load_manifest(&dir))
+                    .ok_or_else(|| {
+                        request_error(
+                            StatusCode::CONFLICT,
+                            "sealed evidence manifest is unavailable",
+                        )
+                    })?;
+                if manifest.attempt_id != attempt.id || manifest.evidence_id != evidence_id {
+                    return Err(request_error(
+                        StatusCode::CONFLICT,
+                        "sealed evidence identity does not match the selected attempt",
+                    ));
+                }
+                let digest = manifest
+                    .bundle_digest
+                    .as_ref()
+                    .map(|value| value.as_str().to_owned())
+                    .ok_or_else(|| {
+                        request_error(StatusCode::CONFLICT, "sealed evidence has no digest")
+                    })?;
+                if !body.evidence_digest.is_empty() && digest != body.evidence_digest {
+                    return Err((
+                        StatusCode::CONFLICT,
+                        Json(ErrorBody {
+                            error: "evidence_digest mismatch".into(),
+                            kind: Some("conflict"),
+                        }),
+                    ));
+                }
+                let sealed_head = manifest.sealed_head_oid.as_str().to_owned();
+                let evidence_digest: medousa_forge::model::Digest =
+                    serde_json::from_value(serde_json::Value::String(digest)).map_err(|e| {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            Json(ErrorBody {
+                                error: format!("invalid evidence_digest: {e}"),
+                                kind: Some("bad_request"),
+                            }),
+                        )
+                    })?;
+                let WorkTarget::Git(target) = &item.target;
+                let expected_base_oid = forge(&state)
+                    .git()
+                    .ref_oid(&target.repo_path, &target.base_ref)
+                    .map_err(map_err)?;
+                let decision = ReviewDecision {
+                    id: ReviewDecisionId::new(),
+                    actor: actor.clone(),
+                    attempt_id: attempt.id.clone(),
+                    environment_generation: env.generation,
+                    evidence_id,
+                    evidence_digest,
+                    baseline_oid: manifest.baseline_oid.clone(),
+                    reviewed_head_oid: medousa_forge::model::GitOid::new(sealed_head),
+                    expected_base_oid,
+                    acknowledged_violations: body
+                        .acknowledged_violations
+                        .into_iter()
+                        .map(medousa_forge::model::PolicyViolationId::from)
+                        .collect(),
+                    strategy,
+                    rationale: body.rationale,
+                    decided_at: chrono::Utc::now(),
+                };
+                let item = forge(&state)
+                    .decide(&id, decision, &actor)
+                    .map_err(map_err)?;
+                Ok(ok_item(&state, item, "decision_recorded"))
+            }
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -8171,10 +9114,22 @@ async fn apply_decision(
 ) -> ApiResult<Json<ItemProjection>> {
     let id = parse_work_id(&work_id)?;
     let decision_id = ReviewDecisionId::from(body.decision_id);
-    let actor = actor_from_state(&state);
-    let item = forge(&state)
-        .apply_decision(&id, &decision_id, &actor)
-        .map_err(map_err)?;
+    let item = admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
+        {
+            let state = state.clone();
+            let decision_id = decision_id.clone();
+            move || {
+                let actor = actor_from_state(&state);
+                forge(&state)
+                    .apply_decision(&id, &decision_id, &actor)
+                    .map_err(map_err)
+            }
+        },
+    )
+    .await?;
     let memory_lineage = crate::agent_runtime::coder_tools::finalize_coder_memory_lineage(
         state.platform.agent().tool_registry.clone(),
         forge(&state),
@@ -8201,8 +9156,19 @@ async fn discard_item(
     Path(work_id): Path<String>,
 ) -> ApiResult<Json<ItemProjection>> {
     let id = parse_work_id(&work_id)?;
-    let actor = actor_from_state(&state);
-    let item = forge(&state).discard(&id, &actor).map_err(map_err)?;
+    let item = admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let actor = actor_from_state(&state);
+                forge(&state).discard(&id, &actor).map_err(map_err)
+            }
+        },
+    )
+    .await?;
     let memory_lineage = crate::agent_runtime::coder_tools::finalize_coder_memory_lineage(
         state.platform.agent().tool_registry.clone(),
         forge(&state),
@@ -8246,20 +9212,15 @@ async fn run_script(
     }
     let forge = forge(&state);
     let argv = body.argv;
-    let item = tokio::task::spawn_blocking(move || {
-        ScriptAdapter::new(forge.as_ref()).run_script(&id, &argv)
-    })
-    .await
-    .map_err(|err| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorBody {
-                error: format!("run-script join failed: {err}"),
-                kind: Some("store"),
-            }),
+    let item = state
+        .forge_execution
+        .run(
+            medousa_forge::execution::ExecutionClass::LocalMutation,
+            64 * 1024,
+            move || ScriptAdapter::new(forge.as_ref()).run_script(&id, &argv),
         )
-    })?
-    .map_err(map_err)?;
+        .await
+        .map_err(map_err)?;
     Ok(ok_item(&state, item, "script_ran"))
 }
 
@@ -8278,25 +9239,37 @@ async fn export_item(
     Path(work_id): Path<String>,
     Json(body): Json<ExportRequest>,
 ) -> ApiResult<Json<ExportResponse>> {
-    let id = parse_work_id(&work_id)?;
-    let forge = forge(&state);
-    let destination = body.destination;
-    if destination.exists() {
-        let mut entries = std::fs::read_dir(&destination)
-            .map_err(ForgeError::from)
-            .map_err(map_err)?;
-        if entries.next().is_some() {
-            return Err((
-                StatusCode::CONFLICT,
-                Json(ErrorBody {
-                    error: "export destination already exists and is not empty".into(),
-                    kind: Some("destination_not_empty"),
-                }),
-            ));
-        }
-    }
-    export_bundle(forge.as_ref(), &id, &destination).map_err(map_err)?;
-    Ok(Json(ExportResponse { destination }))
+    admit_forge_canary(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        1024 * 1024,
+        None,
+        {
+            let state = state.clone();
+            move || {
+                let id = parse_work_id(&work_id)?;
+                let forge = forge(&state);
+                let destination = body.destination;
+                if destination.exists() {
+                    let mut entries = std::fs::read_dir(&destination)
+                        .map_err(ForgeError::from)
+                        .map_err(map_err)?;
+                    if entries.next().is_some() {
+                        return Err((
+                            StatusCode::CONFLICT,
+                            Json(ErrorBody {
+                                error: "export destination already exists and is not empty".into(),
+                                kind: Some("destination_not_empty"),
+                            }),
+                        ));
+                    }
+                }
+                export_bundle(forge.as_ref(), &id, &destination).map_err(map_err)?;
+                Ok(Json(ExportResponse { destination }))
+            }
+        },
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -8356,28 +9329,40 @@ async fn evidence_patch(
     Path(evidence_id): Path<String>,
     axum::extract::Query(q): axum::extract::Query<EvidencePageQuery>,
 ) -> ApiResult<Json<EvidencePage>> {
-    let eid = EvidenceId::from(evidence_id);
-    let (_item, dir) = find_evidence_dir(forge(&state).as_ref(), &eid, q.work_id.as_deref())?;
-    let offset = q.offset.unwrap_or(0);
-    let limit = q.limit.unwrap_or(200).clamp(1, 2000);
-    let (lines, total, truncated) = read_lines_page(&dir.join("patch.diff"), offset, limit)
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorBody {
-                    error: e,
-                    kind: Some("store"),
-                }),
-            )
-        })?;
-    Ok(Json(EvidencePage {
-        evidence_id: eid.as_str().to_owned(),
-        offset,
-        limit,
-        total_lines: total,
-        truncated,
-        lines,
-    }))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let eid = EvidenceId::from(evidence_id);
+                let (_item, dir) =
+                    find_evidence_dir(forge(&state).as_ref(), &eid, q.work_id.as_deref())?;
+                let offset = q.offset.unwrap_or(0);
+                let limit = q.limit.unwrap_or(200).clamp(1, 2000);
+                let (lines, total, truncated) =
+                    read_lines_page(&dir.join("patch.diff"), offset, limit).map_err(|e| {
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(ErrorBody {
+                                error: e,
+                                kind: Some("store"),
+                            }),
+                        )
+                    })?;
+                Ok(Json(EvidencePage {
+                    evidence_id: eid.as_str().to_owned(),
+                    offset,
+                    limit,
+                    total_lines: total,
+                    truncated,
+                    lines,
+                }))
+            }
+        },
+    )
+    .await
 }
 
 async fn evidence_commands(
@@ -8385,28 +9370,40 @@ async fn evidence_commands(
     Path(evidence_id): Path<String>,
     axum::extract::Query(q): axum::extract::Query<EvidencePageQuery>,
 ) -> ApiResult<Json<EvidencePage>> {
-    let eid = EvidenceId::from(evidence_id);
-    let (_item, dir) = find_evidence_dir(forge(&state).as_ref(), &eid, q.work_id.as_deref())?;
-    let offset = q.offset.unwrap_or(0);
-    let limit = q.limit.unwrap_or(200).clamp(1, 2000);
-    let (lines, total, truncated) = read_lines_page(&dir.join("commands.jsonl"), offset, limit)
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorBody {
-                    error: e,
-                    kind: Some("store"),
-                }),
-            )
-        })?;
-    Ok(Json(EvidencePage {
-        evidence_id: eid.as_str().to_owned(),
-        offset,
-        limit,
-        total_lines: total,
-        truncated,
-        lines,
-    }))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let eid = EvidenceId::from(evidence_id);
+                let (_item, dir) =
+                    find_evidence_dir(forge(&state).as_ref(), &eid, q.work_id.as_deref())?;
+                let offset = q.offset.unwrap_or(0);
+                let limit = q.limit.unwrap_or(200).clamp(1, 2000);
+                let (lines, total, truncated) =
+                    read_lines_page(&dir.join("commands.jsonl"), offset, limit).map_err(|e| {
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(ErrorBody {
+                                error: e,
+                                kind: Some("store"),
+                            }),
+                        )
+                    })?;
+                Ok(Json(EvidencePage {
+                    evidence_id: eid.as_str().to_owned(),
+                    offset,
+                    limit,
+                    total_lines: total,
+                    truncated,
+                    lines,
+                }))
+            }
+        },
+    )
+    .await
 }
 
 async fn evidence_receipts(
@@ -8414,34 +9411,46 @@ async fn evidence_receipts(
     Path(evidence_id): Path<String>,
     axum::extract::Query(q): axum::extract::Query<EvidencePageQuery>,
 ) -> ApiResult<Json<EvidenceReceiptsResponse>> {
-    let eid = EvidenceId::from(evidence_id);
-    let (_item, dir) = find_evidence_dir(forge(&state).as_ref(), &eid, q.work_id.as_deref())?;
-    let bytes = match std::fs::read(dir.join("receipts.json")) {
-        Ok(bytes) => bytes,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => b"[]".to_vec(),
-        Err(err) => {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorBody {
-                    error: err.to_string(),
-                    kind: Some("store"),
-                }),
-            ));
-        }
-    };
-    let receipts = serde_json::from_slice(&bytes).map_err(|err| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorBody {
-                error: err.to_string(),
-                kind: Some("store"),
-            }),
-        )
-    })?;
-    Ok(Json(EvidenceReceiptsResponse {
-        evidence_id: eid.as_str().to_owned(),
-        receipts,
-    }))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let eid = EvidenceId::from(evidence_id);
+                let (_item, dir) =
+                    find_evidence_dir(forge(&state).as_ref(), &eid, q.work_id.as_deref())?;
+                let bytes = match std::fs::read(dir.join("receipts.json")) {
+                    Ok(bytes) => bytes,
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => b"[]".to_vec(),
+                    Err(err) => {
+                        return Err((
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(ErrorBody {
+                                error: err.to_string(),
+                                kind: Some("store"),
+                            }),
+                        ));
+                    }
+                };
+                let receipts = serde_json::from_slice(&bytes).map_err(|err| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorBody {
+                            error: err.to_string(),
+                            kind: Some("store"),
+                        }),
+                    )
+                })?;
+                Ok(Json(EvidenceReceiptsResponse {
+                    evidence_id: eid.as_str().to_owned(),
+                    receipts,
+                }))
+            }
+        },
+    )
+    .await
 }
 
 async fn forge_stream(
@@ -8496,7 +9505,17 @@ async fn forge_project_event_stream(
     use std::time::Duration;
 
     let id = parse_work_id(&work_id)?;
-    let item = forge(&state).load(&id).map_err(map_err)?;
+    let item = admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        64 * 1024,
+        {
+            let state = state.clone();
+            let id = id.clone();
+            move || forge(&state).load(&id).map_err(map_err)
+        },
+    )
+    .await?;
     if let Some(env) = item
         .attempts
         .last()

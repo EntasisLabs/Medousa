@@ -45,7 +45,10 @@ fn build_set(patterns: &[String]) -> Result<GlobSet> {
 /// Evaluate allowed/denied path rules against the changed-file list.
 /// Empty `allowed_paths` means everything is allowed (violations are still
 /// computed for denied paths and `.git` internals).
-pub fn evaluate_paths(policy: &WorkPolicy, changed: &[ChangedFile]) -> Result<Vec<PolicyViolation>> {
+pub fn evaluate_paths(
+    policy: &WorkPolicy,
+    changed: &[ChangedFile],
+) -> Result<Vec<PolicyViolation>> {
     let allowed = build_set(&policy.allowed_paths)?;
     let denied = build_set(&policy.denied_paths)?;
     let allow_all = policy.allowed_paths.is_empty();
@@ -261,7 +264,13 @@ mod tests {
             denied_paths: vec!["**/*.pem".into(), ".env*".into()],
             ..Default::default()
         };
-        let files = changed(&["src/a.rs", "docs/b.md", "scripts/c.sh", "keys/d.pem", ".env.local"]);
+        let files = changed(&[
+            "src/a.rs",
+            "docs/b.md",
+            "scripts/c.sh",
+            "keys/d.pem",
+            ".env.local",
+        ]);
         let violations = evaluate_paths(&policy, &files).unwrap();
         let paths: Vec<&str> = violations.iter().map(|v| v.path.as_str()).collect();
         assert!(paths.contains(&"scripts/c.sh")); // not allowed
@@ -327,9 +336,13 @@ mod tests {
             ..Default::default()
         };
         let risks = assess_capture(&policy, tmp.path(), &["a".into(), "b".into()]).unwrap();
-        assert!(risks
-            .iter()
-            .any(|r| matches!(r, CaptureRisk::OversizeTotal { bytes: 1400, limit: 1000 })));
+        assert!(risks.iter().any(|r| matches!(
+            r,
+            CaptureRisk::OversizeTotal {
+                bytes: 1400,
+                limit: 1000
+            }
+        )));
     }
 
     #[cfg(unix)]

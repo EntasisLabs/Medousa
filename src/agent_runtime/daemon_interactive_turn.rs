@@ -107,9 +107,9 @@ impl TurnPipelineOutput for InteractivePipelineOutput {
     async fn publish(&self, emission: TurnPipelineEmission) -> Result<(), TurnPipelineError> {
         let mut wire = crate::sse_turn_projection::v2_to_v1(&emission.envelope);
         let v2 = emission.envelope;
-        let journal = emission.journal_override.unwrap_or_else(|| {
-            crate::sse_turn_projection::journal_turn_event_for_v2(&v2)
-        });
+        let journal = emission
+            .journal_override
+            .unwrap_or_else(|| crate::sse_turn_projection::journal_turn_event_for_v2(&v2));
         let event_log = Arc::clone(&self.event_log);
         let seq = v2.seq;
         let terminal = v2.event.is_terminal();
@@ -134,9 +134,9 @@ impl TurnPipelineOutput for InteractivePipelineOutput {
             }
             Ok::<_, std::io::Error>(receipt)
         })
-            .await
-            .map_err(|error| TurnPipelineError::Output(format!("journal writer stopped: {error}")))?
-            .map_err(|error| TurnPipelineError::Output(format!("journal append failed: {error}")))?;
+        .await
+        .map_err(|error| TurnPipelineError::Output(format!("journal writer stopped: {error}")))?
+        .map_err(|error| TurnPipelineError::Output(format!("journal append failed: {error}")))?;
         wire.seq = receipt.seq();
         self.stream_tx.publish_pair(wire, v2);
         Ok(())
@@ -281,9 +281,8 @@ impl InteractiveTurnStreamSink {
         let deferred_append = journal_override.is_none()
             && matches!(
                 &event,
-                TurnStreamEventV2::ContentAppend { .. }
-                    | TurnStreamEventV2::ReasoningAppend { .. }
-        );
+                TurnStreamEventV2::ContentAppend { .. } | TurnStreamEventV2::ReasoningAppend { .. }
+            );
         let result = if deferred_append {
             self.pipeline.admit(event).await
         } else {
@@ -340,9 +339,7 @@ fn stream_tracking(event: &TurnStreamEventV2) -> (&str, &str, bool) {
             WorkerAckKind::Worker => ("worker_ack", "worker_ack", false),
             WorkerAckKind::Workshop => ("workshop_ack", "workshop_ack", false),
         },
-        TurnStreamEventV2::WorkerSynthesis { .. } => {
-            ("worker_synthesis", "worker_synthesis", true)
-        }
+        TurnStreamEventV2::WorkerSynthesis { .. } => ("worker_synthesis", "worker_synthesis", true),
         TurnStreamEventV2::FinalPending { .. } => ("final_pending", "wrapping_up", false),
         TurnStreamEventV2::Error { .. } => ("error", "failed", true),
         TurnStreamEventV2::ScratchReset => ("scratch_reset", "streaming", false),
@@ -359,9 +356,7 @@ fn stream_tracking(event: &TurnStreamEventV2) -> (&str, &str, bool) {
         }
         TurnStreamEventV2::BrowserNavigated { .. } => ("browser_navigated", "tool", false),
         TurnStreamEventV2::ContextUsage { .. } => ("context_usage", "context", false),
-        TurnStreamEventV2::PermissionRequest { .. } => {
-            ("permission_request", "permission", false)
-        }
+        TurnStreamEventV2::PermissionRequest { .. } => ("permission_request", "permission", false),
     }
 }
 
@@ -375,7 +370,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             parts.set_model_receipt(&provider, &model);
         }
         self.publish_tracked(TurnStreamEventV2::ModelReceipt { provider, model })
-        .await;
+            .await;
     }
 
     async fn content_chunk(&self, _turn_id: u64, delta: String) {
@@ -384,7 +379,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         }
         self.append_stream_delta(&delta);
         self.publish_tracked(TurnStreamEventV2::ContentAppend { text: delta })
-        .await;
+            .await;
     }
 
     async fn reasoning_chunk(&self, _turn_id: u64, delta: String) {
@@ -395,7 +390,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             parts.push_reasoning_delta(&delta);
         }
         self.publish_tracked(TurnStreamEventV2::ReasoningAppend { text: delta })
-        .await;
+            .await;
     }
 
     async fn agent_worker_ack(
@@ -626,7 +621,10 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
-        self.publish_tracked(TurnStreamEventV2::Progress { message, tool_names })
+        self.publish_tracked(TurnStreamEventV2::Progress {
+            message,
+            tool_names,
+        })
         .await;
     }
 
@@ -701,8 +699,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             .await;
         }
         self.clear_streamed_markdown();
-        self.publish_tracked(TurnStreamEventV2::ScratchReset)
-        .await;
+        self.publish_tracked(TurnStreamEventV2::ScratchReset).await;
     }
 
     async fn reset_streamed_markdown(&self) {
@@ -904,7 +901,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             && let Some(scene) = super::tool_stream::scene_ops_from_tool_output(&tool_output)
         {
             self.publish_tracked(TurnStreamEventV2::UiScene { scene })
-            .await;
+                .await;
         }
         if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
             && let Some(ui_artifact) =
@@ -1001,9 +998,7 @@ pub async fn run_daemon_interactive_turn(
         if let Err(error) = pipeline
             .emit(TurnStreamEventV2::Status {
                 phase: "accepted".into(),
-                operator_message: Some(
-                    "interactive turn accepted; agent runtime started".into(),
-                ),
+                operator_message: Some("interactive turn accepted; agent runtime started".into()),
                 debug_message: None,
             })
             .await
@@ -1523,6 +1518,16 @@ async fn run_agent_turn_inner(
         super::coder_turn_checkpoint::CoderTurnCheckpointController::initial_resume_state(
             coder_resume_checkpoint.clone(),
         );
+    let event_log = if let Some(state) = project_state.as_ref() {
+        state
+            .interactive_turn_streams
+            .read()
+            .await
+            .get(turn_id)
+            .map(|entry| entry.log.clone())
+    } else {
+        None
+    };
     let active_turn_checkpoint_sink: Option<
         Arc<dyn super::coder_turn_checkpoint::ActiveTurnCheckpointSink>,
     > = if let (Some(authority), Some(registry), Some(entry), Some(forge)) = (
@@ -1550,6 +1555,7 @@ async fn run_agent_turn_inner(
                 entry: entry.clone(),
                 registry: registry.clone(),
                 resume_from: coder_resume_checkpoint.clone(),
+                event_log,
             },
         ) {
             Ok(controller) => Some(controller),

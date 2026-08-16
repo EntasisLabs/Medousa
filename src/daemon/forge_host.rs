@@ -1,8 +1,6 @@
 //! Daemon-side Forge host helpers: open the forge root under the workshop data
 //! dir and provide a process-backed [`LivenessProbe`] for boot reconciliation.
 
-use std::sync::Arc;
-
 use medousa_forge::forge::Forge;
 use medousa_forge::reconcile::LivenessProbe;
 use sysinfo::{Pid, ProcessesToUpdate, System};
@@ -15,12 +13,11 @@ pub fn forge_root() -> std::path::PathBuf {
     medousa_data_dir().join("forge")
 }
 
-/// Open Forge at the workshop forge root. Caller runs `reconcile_on_boot`
+/// Open Forge at the workshop forge root. Caller attaches execution admission,
+/// rebuilds the catalog through that service, then runs `reconcile_on_boot`
 /// before serving HTTP.
-pub fn open_forge() -> anyhow::Result<Arc<Forge>> {
-    let forge = Forge::open(forge_root())
-        .map_err(|err| anyhow::anyhow!("failed to open forge store: {err}"))?;
-    Ok(Arc::new(forge))
+pub fn open_forge() -> anyhow::Result<Forge> {
+    Forge::open(forge_root()).map_err(|err| anyhow::anyhow!("failed to open forge store: {err}"))
 }
 
 /// Process liveness for Forge lease reconciliation. Instance id is the Forge

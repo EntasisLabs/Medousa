@@ -40,6 +40,7 @@ Medousa monorepo. Humans: see [CONTRIBUTING.md](CONTRIBUTING.md).
 - Match existing style; minimal diffs; no drive-by refactors.
 - Never commit secrets, force-push main, or skip hooks unless asked.
 - Windows background spawns: use `CREATE_NO_WINDOW` via `detach_new_session`.
+- Do not call blocking Forge/Git/fs/process waits from async code; admit through `ForgeExecutionService`.
 - Optional binaries: install to `{dataDir}/bin`; resolve after sibling of
   `current_exe` (daemon stays bundled sidecar-first).
 
