@@ -242,13 +242,25 @@ Target properties:
 **Harness:** `cargo run -p medousa-forge --example p04_forge_store`
 CI sizes: 0 / 100 / 10k events. Nightly: `MEDOUSA_P04_EVENTS=1000000`.
 
-**Evidence status:** Scaffolding only. Local 2026-08-15 darwin probe numbers
-(`events=100 append_ms=373 tail_ms=0.004`; `events=10000 append_ms=38236
-tail_ms=0.002`) are not closure evidence for PERF-002 or ASYNC-001. Retained
-throughput/p50/p95/p99, bytes, sync count, decoded events, lock hold time, and
-cold/warm memory envelopes are still required before Validated.
+**Evidence status:** Retained metrics harness shipped (H06.11). Local 2026-08-15
+darwin run recorded throughput, p50/p95/p99, bytes read/written, sync count,
+decoded events, lock hold, cold/warm tail, and RSS. Closure for PERF-002 is
+**not** met: steady append still rescans/decodes historical events
+(`decoded_events_est ≈ n(n−1)/2`). Multi-OS packaging evidence pending.
 
 **Findings:** PERF-002, ASYNC-001 (open)
+
+#### 2026-08-15 darwin retained run (`p04_forge_store`)
+
+| Phase | Events | Throughput (eps) | p50 / p95 / p99 (ms) | Bytes written | Bytes read (est) | Syncs (est) | Decoded events (est) | Lock hold (ms) | Cold / warm tail (ms) | RSS before → after |
+| --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| warm | 100 | 230.8 | 3.979 / 4.983 / 5.046 | 23,050 | 1,222,048 | 99 | 4,950 | 423.002 | 1.397 / 0.019 | 7.7 MiB → 8.1 MiB |
+| cold_reopen | 100 | 238.0 | 3.958 / 4.956 / 4.996 | 23,050 | 1,222,048 | 99 | 4,950 | 410.020 | 1.408 / 0.021 | 8.1 MiB → 8.2 MiB |
+| warm | 10,000 | 13.9 | 71.953 / 133.556 / 138.491 | 2,367,508 | 11,834,535,198 | 9,999 | 49,995,000 | 720,419.288 | 136.241 / 0.026 | 8.2 MiB → 19.8 MiB |
+| cold_reopen | 10,000 | 13.9 | 71.825 / 133.480 / 138.725 | 2,367,505 | 11,834,524,560 | 9,999 | 49,995,000 | 719,355.485 | 136.698 / 0.021 | 19.8 MiB → 19.9 MiB |
+
+Retained-directory size at 10k events ≈ 2.37 MiB. Warm cached tail stays
+sub-millisecond; append cost and decoded-event count grow with history.
 
 Generate valid Forge histories at 0, 100, 10k, and 1m events with small and
 large evidence payloads. Exercise reads and every common mutation, including
@@ -270,12 +282,27 @@ Target properties:
 **Harness:** `cargo run -p medousa-forge --example p05_coder_observation`
 CI size: 1k files. Larger: `MEDOUSA_P05_FILES=100000`.
 
-**Evidence status:** Scaffolding only. Local 2026-08-15 darwin probe
-(`files=1000 completeness=Exact limits=[] ms=42.535`) is not closure evidence
-for PERF-004. Clean/dirty/large-diff/concurrent/budget matrices and retained
-memory/wall-clock envelopes are still required before Validated.
+**Evidence status:** Scenario matrix harness shipped (H06.11). Local 2026-08-15
+darwin run covers clean, small dirty, many untracked, large diff, concurrent
+mutation/watcher, bounded/truncated, and resume budget envelope with wall-clock
+and RSS. PERF-004 remains **open**: this matrix proves observation honesty and
+budgets, not yet that model-only logical boundaries issue zero Git/subprocess
+work. Multi-OS packaging evidence pending.
 
 **Finding:** PERF-004 (open)
+
+#### 2026-08-15 darwin retained run (`p05_coder_observation`, files=1000)
+
+| Scenario | Files | Completeness | Limits | Wall (ms) | RSS before → after | Notes |
+| --- | ---: | --- | --- | ---: | --- | --- |
+| clean | 1000 | Exact | [] | 54.232 | 6.5 → 6.8 MiB | unchanged worktree |
+| small_dirty | 1000 | Exact | [] | 28.549 | 6.8 → 7.0 MiB | 1 changed path |
+| many_untracked | 700 | Exact | [] | 44.669 | 7.0 → 7.7 MiB | 500 untracked hashed/cached |
+| large_diff | 400 | Exact | [] | 62.305 | 7.7 → 7.7 MiB | 400 changed paths |
+| concurrent_mutation | 200 | Unknown | generation_changed | 26.188 | 7.8 → 7.8 MiB | capture flip mid-observe |
+| concurrent_watcher | 120 | Unknown | generation_changed | 160.344 | 7.8 → 7.8 MiB | live fence bump during observe |
+| bounded_truncated | 70 | Incomplete | per_file_bytes | 26.775 | 7.8 → 7.8 MiB | tight budgets; never Exact |
+| budget_envelope | 300 | Exact | [] | 34.221 | 7.8 → 7.8 MiB | resume budgets; rss_delta=0 |
 
 Use generated Git repositories at 1k, 100k, and 1m files with these states:
 

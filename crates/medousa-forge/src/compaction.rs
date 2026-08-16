@@ -17,7 +17,7 @@ use sha2::{Digest as _, Sha256};
 
 use crate::error::{ForgeError, Result};
 use crate::events::TransitionEvent;
-use crate::fold::{apply_payload, fold};
+use crate::fold::fold;
 use crate::log_v2::{self, LogAuthority, current_store_generation, item_relative};
 use crate::model::{WorkId, WorkItem};
 use crate::owner::ForgeItemRegistry;
@@ -523,6 +523,7 @@ pub fn with_transaction_faults(
 mod tests {
     use super::*;
     use crate::events::EventPayload;
+    use crate::fold::apply_payload;
     use crate::model::{
         ActorKind, ActorRef, GitOid, GitWorkTarget, WorkItem, WorkState, WorkTarget,
     };

@@ -277,20 +277,18 @@ impl ForgeExecutionService {
         if matches!(
             class,
             ExecutionClass::LocalMutation | ExecutionClass::NetworkGit
-        ) {
-            if let Some(key) = repo_key {
-                let lane_sem = match self.repo_lane(key) {
-                    Ok(sem) => sem,
-                    Err(err) => {
-                        drop(admission);
-                        return Err(err);
-                    }
-                };
-                admission._lane =
-                    Some(lane_sem.acquire_owned().await.map_err(|_| {
-                        ForgeError::Store("repository lane semaphore closed".into())
-                    })?);
-            }
+        ) && let Some(key) = repo_key
+        {
+            let lane_sem = match self.repo_lane(key) {
+                Ok(sem) => sem,
+                Err(err) => {
+                    drop(admission);
+                    return Err(err);
+                }
+            };
+            admission._lane = Some(lane_sem.acquire_owned().await.map_err(|_| {
+                ForgeError::Store("repository lane semaphore closed".into())
+            })?);
         }
 
         self.metrics.admitted.fetch_add(1, Ordering::Relaxed);

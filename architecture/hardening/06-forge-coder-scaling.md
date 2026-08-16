@@ -1,6 +1,8 @@
 # H06 — Incremental Forge and Coder runtime
 
-> **Status:** Implementing — H06.0 scaffolding preserved; acceptance evidence not yet passed
+> **Status:** Implementing — H06.0–H06.11 code landed; darwin library/CI evidence
+> recorded 2026-08-15; PERF-002/PERF-004/ASYNC-001 not Validated; multi-OS
+> packaging / release evidence pending
 >
 > **Accountable owner:** Forge and Coder runtime maintainers
 >
@@ -487,16 +489,16 @@ benchmark/evidence columns both pass.
 
 | ID | Contract (short) | Production entry point | Focused test (current) | Benchmark / evidence | Status |
 | --- | --- | --- | --- | --- | --- |
-| CR-007 | Crash at partial append/sync/snapshot/catalog/compaction/migration yields one complete event prefix and valid fold | `FsWorkStore::append` / `recover_tail`; snapshot/catalog/migration publishers | `partial_final_json_line_is_skipped_on_replay` (partial final JSON only); `replay_tolerates_truncated_tail`; `replay_rejects_corrupt_mid_log_line` | Crash/failpoint suite at every publication boundary | Scaffolding |
-| CR-008 | Crash at logical delta/segment/observation publication yields last complete protocol-safe boundary; uncertain tools never replay | `coder_turn_checkpoint` journal / observation publish | _(none yet matching CR-008)_ | Checkpoint crash/failpoint suite | Open |
-| CM-009 | Same-item lease/operation/generation fencing rejects stale work | `ForgeItemRegistry` / per-item owner commands | `append_returns_monotonic_seq_and_updates_cached_tail` (seq only; not lease/generation fencing) | Concurrent stale-fence tests | Scaffolding |
-| CM-010 | Unrelated items progress while one owner/compaction is blocked | Per-item owners + compaction admission | `unrelated_items_maintain_independent_cached_tails` (independent tails only; not blocked-owner progress) | Concurrent unrelated-item progress under blocked owner | Scaffolding |
-| CM-011 | Checkpoint generations are monotonic under concurrent writers | Logical checkpoint owner | _(none yet)_ | Concurrent checkpoint generation tests | Open |
-| CM-012 | Observation ordering around repository mutation is generation-correct | `WorkspaceObserver::observe_exact` + watcher generations | `observe_marks_unknown_when_generation_capture_changes_mid_scan`; `overflow_never_publishes_exact` | Concurrent mutation + watcher overflow tests | Scaffolding |
+| CR-007 | Crash at partial append/sync/snapshot/catalog/compaction/migration yields one complete event prefix and valid fold | `FsWorkStore::append` / `recover_tail`; snapshot/catalog/migration publishers | `store::` recovery/corruption; `log_v2::migration_is_restartable_at_every_boundary`; `compaction::` failpoints (darwin lib suite green) | Crash/failpoint suite at every publication boundary; multi-OS packaging pending | Scaffolding |
+| CR-008 | Crash at logical delta/segment/observation publication yields last complete protocol-safe boundary; uncertain tools never replay | `coder_turn_checkpoint` journal / observation publish | `coder_turn_checkpoint` (29 lib tests) + `transcript_cursor` (4 engine tests); not a full crash/failpoint matrix | Checkpoint crash/failpoint suite; multi-OS pending | Scaffolding |
+| CM-009 | Same-item lease/operation/generation fencing rejects stale work | `ForgeItemRegistry` / per-item owner commands | `owner::stale_item_generation_fence_rejects_concurrent_writer`; `same_item_appends_are_serialized_and_monotonic` | Concurrent stale-fence tests under load | Scaffolding |
+| CM-010 | Unrelated items progress while one owner/compaction is blocked | Per-item owners + compaction admission | `owner::unrelated_item_progresses_while_other_owner_is_held` (owner hold; not compaction-blocked latency budget) | Concurrent unrelated-item progress under blocked owner/compaction | Scaffolding |
+| CM-011 | Checkpoint generations are monotonic under concurrent writers | Logical checkpoint owner | checkpoint lib coverage exists; dedicated concurrent generation suite incomplete | Concurrent checkpoint generation tests | Open |
+| CM-012 | Observation ordering around repository mutation is generation-correct | `WorkspaceObserver::observe_exact` + watcher generations | `observation::` concurrent/overflow/truncation unit tests; P05 `concurrent_mutation` / `concurrent_watcher` | Concurrent mutation + watcher overflow harness (darwin) | Scaffolding |
 | ISO-006 | Forge authority/context cannot cross concurrent turns | Daemon Forge handlers + H05 request context | `distinct_work_ids_use_distinct_event_paths` (path isolation only) | Concurrent-turn Forge isolation matrix | Scaffolding |
-| PERF-002 | Steady Forge mutation is O(batch); list/load use catalog/snapshot+tail; compaction bounded | `Forge` / `FsWorkStore` / catalog / compaction | P04 example scaffolding; store unit tests | P04 retained metrics (throughput, p50/p95/p99, bytes, syncs, decoded events, lock hold, cold/warm RSS) | Open |
-| PERF-004 | Logical boundaries skip repo audit; observation bounded and exact/incomplete honest | `persist_boundary` / `WorkspaceObserver` | P05 example scaffolding; observation unit stubs | P05 clean/dirty/large/concurrent/budget matrix | Open |
-| ASYNC-001 | No blocking Forge/Git/fs/process waits on async workers; admission + child supervision hold under saturation | `ForgeExecutionService`, `src/daemon/forge_api.rs`, `supervise_git` | _(no saturation/canary evidence yet)_ | Executor-delay canaries; queue/process/byte saturation; cancel/kill within budget | Open |
+| PERF-002 | Steady Forge mutation is O(batch); list/load use catalog/snapshot+tail; compaction bounded | `Forge` / `FsWorkStore` / catalog / compaction | P04 retained metrics harness; store/owner unit tests | P04 darwin 2026-08-15: 10k-event warm append still O(history) decode (`decoded_events_est≈5e7`, throughput 13.9 eps vs 230 eps at 100). Does **not** meet zero-history-decode closure. Multi-OS pending | Open |
+| PERF-004 | Logical boundaries skip repo audit; observation bounded and exact/incomplete honest | `persist_boundary` / `WorkspaceObserver` | observation unit tests; P05 scenario matrix | P05 darwin 2026-08-15 covers clean/dirty/untracked/large-diff/concurrent/bounded + RSS/wall. Does **not** yet prove model-only boundaries issue zero Git subprocesses. Multi-OS pending | Open |
+| ASYNC-001 | No blocking Forge/Git/fs/process waits on async workers; admission + child supervision hold under saturation | `ForgeExecutionService`, `src/daemon/forge_api.rs`, `supervise_git` | `execution::` saturation/supervision unit tests (16); daemon routing landed | Executor-delay canaries under live heavy Forge/Git with health/stream p99; multi-OS packaging pending | Open |
 
 ### Correctness and crash evidence
 

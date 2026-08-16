@@ -123,17 +123,18 @@ pub fn spawn_forge_worktree_watcher(bus: ForgeEventBus, execution: Arc<ForgeExec
                         } else {
                             let absolute = bus.worktree_for(&work_id).map(|root| root.join(&path));
                             match absolute {
-                                Some(absolute) => match execution
+                                Some(absolute) => execution
                                     .run(
                                         ExecutionClass::Observation,
                                         64 * 1024,
-                                        move || Ok::<_, medousa_forge::error::ForgeError>(file_digest(&absolute)),
+                                        move || {
+                                            Ok::<_, medousa_forge::error::ForgeError>(
+                                                file_digest(&absolute),
+                                            )
+                                        },
                                     )
                                     .await
-                                {
-                                    Ok(digest) => digest,
-                                    Err(_) => None,
-                                },
+                                    .unwrap_or_default(),
                                 None => None,
                             }
                         };

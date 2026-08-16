@@ -159,7 +159,7 @@ impl DaemonSchedulerSideEffects {
                     medousa::daemon::storage_governor::maintain_storage(
                         &data_root, &forge, settings, false,
                     )
-                    .map_err(|err| medousa_forge::error::ForgeError::Store(err))
+                    .map_err(medousa_forge::error::ForgeError::Store)
                 },
             )
             .await;

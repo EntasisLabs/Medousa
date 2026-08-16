@@ -363,10 +363,8 @@ impl Forge {
             }
         };
         self.persist(&item, event.seq)?;
-        if let Err(err) = self.slugs.commit(&item.slug, item.id.clone(), event.seq) {
-            // Item is already durable — never release the slug.
-            return Err(err);
-        }
+        // Item is already durable — never release the slug on commit failure.
+        self.slugs.commit(&item.slug, item.id.clone(), event.seq)?;
         self.catalog.publish(&item, &receipt)?;
         Ok(item)
     }

@@ -62,7 +62,7 @@ pub fn digest_events(events: &[SequencedTurnEvent]) -> String {
     let mut hasher = Sha256::new();
     for event in events {
         let encoded = serde_json::to_vec(event).unwrap_or_default();
-        hasher.update(&(encoded.len() as u64).to_le_bytes());
+        hasher.update((encoded.len() as u64).to_le_bytes());
         hasher.update(&encoded);
     }
     format!("sha256:{:x}", hasher.finalize())
