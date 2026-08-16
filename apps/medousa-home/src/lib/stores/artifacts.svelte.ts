@@ -1,5 +1,5 @@
 import { listUiArtifacts } from "$lib/daemon";
-import { chat } from "$lib/stores/chat.svelte";
+import { artifactSessionTitle } from "$lib/runtime/artifactSessionTitlePort";
 import type { ArtifactSummary } from "$lib/types/artifact";
 
 export class ArtifactsStore {
@@ -25,8 +25,7 @@ export class ArtifactsStore {
   });
 
   sessionTitle(sessionId: string): string {
-    const match = chat.sessions.find((session) => session.session_id === sessionId);
-    return match?.display_name?.trim() || sessionId;
+    return artifactSessionTitle(sessionId);
   }
 
   async refresh(options?: { sessionId?: string; query?: string }) {

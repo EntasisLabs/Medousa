@@ -52,6 +52,12 @@ describe("root resource probe", () => {
     recordRootResource("agent-browser-coord");
     expect(listLiveRootResources()).toContain("agent-browser-coord");
   });
+
+  it("re-exports destination feature ids for leak probes", async () => {
+    const { DESTINATION_FEATURE_IDS } = await import("./rootResources");
+    expect(DESTINATION_FEATURE_IDS).toContain("vault-browse");
+    expect(DESTINATION_FEATURE_IDS).toContain("code-work");
+  });
 });
 
 describe("eager AppShell graph freeze", () => {

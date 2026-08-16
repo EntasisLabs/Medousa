@@ -5,8 +5,7 @@ import {
   type DaemonHealth,
 } from "$lib/daemon";
 import type { UserProfileRecord } from "$lib/types/userProfile";
-import { chat } from "$lib/stores/chat.svelte";
-import { identity } from "$lib/stores/identity.svelte";
+import { profileSwitchPorts } from "$lib/runtime/profileSwitchPorts";
 
 const PROFILE_SLUG_PATTERN = /^[a-z][a-z0-9_-]{0,31}$/;
 
@@ -66,9 +65,10 @@ export class UserProfilesStore {
         );
         const label = remoteProfile?.display_name ?? "Another profile";
         this.remoteChangeNotice = `${label} is now active — switched on another device.`;
+        const ports = profileSwitchPorts();
         await Promise.all([
-          identity.refresh({ relationshipLimit: 8, userId: this.resolvedUserId }),
-          chat.refreshSessions({ force: true }),
+          ports.refreshIdentity(this.resolvedUserId),
+          ports.refreshSessions(),
         ]);
       }
     } catch (err) {
@@ -87,7 +87,7 @@ export class UserProfilesStore {
 
   async setActive(profileId: string) {
     if (profileId === this.activeProfileId) return;
-    const hadConversation = chat.messages.length > 0;
+    const hadConversation = profileSwitchPorts().hasConversation();
     this.localSwitchPending = true;
     this.remoteChangeNotice = null;
     this.saving = true;
@@ -98,9 +98,10 @@ export class UserProfilesStore {
       this.activeProfileId = response.active_profile_id;
       this.resolvedUserId = response.resolved_user_id;
       await this.load({ suppressRemoteNotice: true });
+      const ports = profileSwitchPorts();
       await Promise.all([
-        identity.refresh({ relationshipLimit: 8, userId: this.resolvedUserId }),
-        chat.refreshSessions({ force: true }),
+        ports.refreshIdentity(this.resolvedUserId),
+        ports.refreshSessions(),
       ]);
       if (hadConversation) {
         this.switchNotice =

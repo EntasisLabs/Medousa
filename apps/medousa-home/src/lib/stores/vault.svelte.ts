@@ -94,6 +94,8 @@ import {
   withSelectionAncestors,
   type VaultLookupSnapshot,
 } from "$lib/utils/vaultLookup";
+import { publishVaultLookupSnapshot } from "$lib/vault/vaultLookupLive";
+import { setVaultNoteBufferPort } from "$lib/vault/vaultNoteBufferPort";
 import {
   VAULT_LIST_MAX_PAGES,
   VAULT_LIST_PAGE_LIMIT,
@@ -601,6 +603,13 @@ export class VaultStore {
     if (!raw) return "";
     if (isAbsoluteDiskPath(raw)) return raw;
     return this.normalizeNotePath(raw);
+  }
+
+  /** Injected H07 buffer peek — features read via getVaultNoteBuffer. */
+  noteBufferFor(path: string): NoteBuffer | undefined {
+    const key = this.bufferKey(path);
+    if (!key) return undefined;
+    return this.noteBuffers.get(key);
   }
 
   /** Markdown for any path — focused live fields or a background buffer. */
@@ -1637,6 +1646,7 @@ export class VaultStore {
       this.vaultGeneration,
       this.selectedPath,
     );
+    publishVaultLookupSnapshot(this.lookupSnapshot);
   }
 
   selectionAncestorSet(): Set<string> {
@@ -1786,6 +1796,7 @@ export class VaultStore {
     if (buffered) {
       this.selectedPath = nextPath;
       this.lookupSnapshot = withSelectionAncestors(this.lookupSnapshot, nextPath);
+      publishVaultLookupSnapshot(this.lookupSnapshot);
       this.restoreBufferIntoFocused(buffered);
       this.restoreEditorUi(nextPath);
       localStorage.setItem(LAST_NOTE_KEY, nextPath);
@@ -1804,6 +1815,7 @@ export class VaultStore {
     this.error = null;
     this.selectedPath = nextPath;
     this.lookupSnapshot = withSelectionAncestors(this.lookupSnapshot, nextPath);
+    publishVaultLookupSnapshot(this.lookupSnapshot);
     this.content = "";
     this.baselineContent = "";
     this.contentHash = null;
@@ -3014,3 +3026,5 @@ function isRecentAgentWrite(
 }
 
 export const vault = new VaultStore();
+publishVaultLookupSnapshot(vault.lookupSnapshot);
+setVaultNoteBufferPort((path) => vault.noteBufferFor(path));

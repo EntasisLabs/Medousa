@@ -13,6 +13,7 @@ import {
   type LmeWorkspaceSession,
 } from "$lib/stores/lmeWorkspace.svelte";
 import { vault } from "$lib/stores/vault.svelte";
+import { disposeDestinationFeatures } from "$lib/runtime/features/disposeDestinations";
 import {
   isShellSurfaceTabId,
   MAX_SHELL_DESKTOPS,
@@ -748,6 +749,7 @@ export class ShellTabsStore {
     this.workspaceScopeId = nextScope;
     this.navBackStack = [];
     this.navForwardStack = [];
+    await disposeDestinationFeatures("workshop-switch");
     codeWorkspace.resetForWorkshopSwitch();
     const { undertakings } = await import("$lib/stores/undertakings.svelte");
     undertakings.resetForWorkshopSwitch();

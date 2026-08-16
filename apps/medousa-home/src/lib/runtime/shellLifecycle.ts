@@ -7,9 +7,18 @@ import { workshops } from "$lib/stores/workshops.svelte";
 import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
 import { workAskDock } from "$lib/stores/workAskDock.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
+import { chat } from "$lib/stores/chat.svelte";
+import { vault } from "$lib/stores/vault.svelte";
+import { settings } from "$lib/stores/settings.svelte";
+import { identity } from "$lib/stores/identity.svelte";
 import { setUndertakingGroupIdPort } from "$lib/stores/undertakings.svelte";
 import { setActiveWorkshopKindPort } from "$lib/utils/workshopLocality";
 import { setWorkshopReconnectPort } from "./workshopReconnectPort";
+import { setArtifactSessionTitlePort } from "./artifactSessionTitlePort";
+import { setProfileSwitchPorts } from "./profileSwitchPorts";
+import { setWorkshopSwitchPorts } from "./workshopSwitchPorts";
+import { setWorkspaceChatPort } from "./workspaceChatPort";
+import { setWorkCardHideAfterHoursPort } from "./workCardHideAfterHoursPort";
 import { reconnectWorkshop } from "$lib/workshopConnection";
 import {
   applyNativeMobileShellLayout,
@@ -28,6 +37,8 @@ import {
   openVaultNote,
   openWorkCard,
 } from "./shellUseCases";
+import { disposeFeature } from "./features/loader";
+import { disposeDestinationFeatures } from "./features/disposeDestinations";
 
 /** Named shell owner for AppShell onMount pollers/listeners. */
 export function startShellRootResources(): () => void {
@@ -36,6 +47,48 @@ export function startShellRootResources(): () => void {
   setWorkshopReconnectPort((onHealthChange) =>
     reconnectWorkshop(onHealthChange ?? (() => {})),
   );
+  setArtifactSessionTitlePort((sessionId) => {
+    const match = chat.sessions.find((session) => session.session_id === sessionId);
+    return match?.display_name?.trim() || sessionId;
+  });
+  setProfileSwitchPorts({
+    hasConversation: () => chat.messages.length > 0,
+    refreshSessions: () => chat.refreshSessions({ force: true }),
+    refreshIdentity: (userId) =>
+      identity.refresh({ relationshipLimit: 8, userId }),
+  });
+  setWorkshopSwitchPorts({
+    vaultDirty: () => vault.dirty,
+    flushVaultBeforeLeave: () => vault.flushBeforeLeave(),
+    hasLiveInteractiveTurn: () => chat.hasLiveInteractiveTurn(),
+    chatSessionId: () => chat.sessionId,
+    chatHasSession: (sessionId) =>
+      chat.sessions.some((session) => session.session_id === sessionId),
+    switchChatSession: (sessionId) => chat.switchSession(sessionId),
+    setDaemonUrl: (url) => {
+      settings.daemonUrl = url;
+    },
+    setColorTheme: (themeId, options) => settings.setColorTheme(themeId, options),
+    applyTheme: () => settings.applyTheme(),
+  });
+  setWorkspaceChatPort({
+    noteAskTurnSettled: (cardId) => chat.noteAskTurnSettled(cardId),
+    hasPendingBudgetApproval: (cardId) => chat.hasPendingBudgetApproval(cardId),
+    noteBackgroundSettled: () => chat.noteBackgroundSettled(),
+    noteBudgetResolved: (cardId) => chat.noteBudgetResolved(cardId),
+    syncWorkerLaneFromCards: (cards, details) =>
+      chat.syncWorkerLaneFromCards(cards, details),
+    pendingWorkerSynthesisIds: () => chat.pendingWorkerSynthesisIds(),
+    recoverPendingWorkerSyntheses: (cards, details) =>
+      chat.recoverPendingWorkerSyntheses(cards, details),
+    onWorkerCardDetail: (detail, column, previousColumn) =>
+      chat.onWorkerCardDetail(detail, column, previousColumn),
+    hasPendingWorkerSynthesis: (cardOrWorkId) =>
+      chat.hasPendingWorkerSynthesis(cardOrWorkId),
+    noteWorkerSynthesisFailure: (workId, errorLine) =>
+      chat.noteWorkerSynthesisFailure(workId, errorLine),
+  });
+  setWorkCardHideAfterHoursPort(() => settings.workCardHideAfterHours);
   commandSpotlight.closeSpotlight();
   document.querySelectorAll(".command-spotlight-backdrop").forEach((node) => {
     node.closest(".body-portal-host")?.remove() ?? node.remove();
@@ -61,6 +114,11 @@ export function startShellRootResources(): () => void {
           const wasMobile = layout.isMobile;
           layout.setMobile(mobile);
           if (wasMobile !== mobile) {
+            void disposeFeature(
+              mobile ? "shell-desktop" : "shell-mobile",
+              "platform-switch",
+            );
+            void disposeDestinationFeatures("platform-switch");
             handoffBrowserShell(mobile);
           }
         }),
@@ -157,5 +215,11 @@ export function startShellRootResources(): () => void {
     stopWorkAskFocus();
     setActiveWorkshopKindPort(() => undefined);
     setWorkshopReconnectPort(null);
+    setArtifactSessionTitlePort(null);
+    setProfileSwitchPorts(null);
+    setWorkshopSwitchPorts(null);
+    setWorkspaceChatPort(null);
+    setWorkCardHideAfterHoursPort(null);
+    void disposeDestinationFeatures("teardown");
   };
 }

@@ -41,6 +41,8 @@ export function resetRootResourcesForTests(): void {
   live.clear();
 }
 
+export { DESTINATION_FEATURE_IDS } from "./features/disposeDestinations";
+
 /** Chat stays in the AppShell static graph; overlays load on intent. */
 export const APP_SHELL_EAGER_MODULES = ["$lib/stores/chat.svelte"] as const;
 

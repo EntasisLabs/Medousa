@@ -95,6 +95,10 @@ export function loadedFeature(id: FeatureId): FeatureInstance | undefined {
   return live.get(id);
 }
 
+export function listLiveFeatureIds(): FeatureId[] {
+  return [...live.keys()].sort();
+}
+
 export function resetFeaturesForTests(): void {
   inflight.clear();
   live.clear();

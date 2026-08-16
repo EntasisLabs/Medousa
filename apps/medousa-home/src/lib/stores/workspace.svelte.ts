@@ -7,9 +7,9 @@ import {
   getWorkspaceCard,
   retryWorkspaceCard,
 } from "$lib/daemon";
-import { chat } from "$lib/stores/chat.svelte";
+import { workspaceChatPort } from "$lib/runtime/workspaceChatPort";
+import { workCardHideAfterHours } from "$lib/runtime/workCardHideAfterHoursPort";
 import { workerTranscripts } from "$lib/stores/workerTranscripts.svelte";
-import { settings } from "$lib/stores/settings.svelte";
 import type { BlockedGroup } from "$lib/utils/groupWork";
 import {
   budgetWorkCardId,
@@ -179,7 +179,7 @@ export class WorkspaceStore {
           jobId: card.id,
           title: card.title,
         };
-        chat.noteAskTurnSettled(card.id);
+        workspaceChatPort().noteAskTurnSettled(card.id);
       } else {
         void notifyCardDone(card.title, card.status_label, card.id);
       }
@@ -190,14 +190,14 @@ export class WorkspaceStore {
       card.column === "blocked" &&
       card.status_label !== "needs approval"
     ) {
-      chat.noteAskTurnSettled(card.id);
+      workspaceChatPort().noteAskTurnSettled(card.id);
     }
     if (
       isTauriMobilePlatform() &&
       previous !== "blocked" &&
       card.column === "blocked" &&
       card.status_label === "needs approval" &&
-      !chat.hasPendingBudgetApproval(card.id)
+      !workspaceChatPort().hasPendingBudgetApproval(card.id)
     ) {
       void notifyBudgetApprovalRequired(
         card.title,
@@ -209,8 +209,8 @@ export class WorkspaceStore {
       previous === "blocked" &&
       card.status_label !== "needs approval"
     ) {
-      chat.noteBackgroundSettled();
-      chat.noteBudgetResolved(card.id);
+      workspaceChatPort().noteBackgroundSettled();
+      workspaceChatPort().noteBudgetResolved(card.id);
     }
     this.previousColumns.set(card.id, card.column);
 
@@ -238,11 +238,11 @@ export class WorkspaceStore {
     ) {
       void this.cacheCardDetail(card.id, previous);
     } else if (previous !== card.column) {
-      chat.syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
+      workspaceChatPort().syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
     }
   }
 
-  /** Tier 3 — scan cached turn_worker cards and deliver pending syntheses to chat. */
+  /** Tier 3 — scan cached turn_worker cards and deliver pending syntheses to workspaceChatPort(). */
   async syncTurnWorkerCardsToChat() {
     await this.recoverPendingWorkerResults();
   }
@@ -262,7 +262,7 @@ export class WorkspaceStore {
   }
 
   /**
-   * Fetch terminal worker details and deliver pending syntheses to chat.
+   * Fetch terminal worker details and deliver pending syntheses to workspaceChatPort().
    * Used after snapshot reconcile, workspace reconnect, and foreground resume.
    */
   async recoverPendingWorkerResults(options?: {
@@ -275,7 +275,7 @@ export class WorkspaceStore {
       const targets = terminalWorkerCardsNeedingRecovery(
         this.cards,
         previousColumns,
-        chat.pendingWorkerSynthesisIds(),
+        workspaceChatPort().pendingWorkerSynthesisIds(),
       );
 
       for (let i = 0; i < targets.length; i += WORKER_RECOVERY_FETCH_CONCURRENCY) {
@@ -287,8 +287,8 @@ export class WorkspaceStore {
         );
       }
 
-      chat.syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
-      await chat.recoverPendingWorkerSyntheses(this.cards, this.cardDetailsCache);
+      workspaceChatPort().syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
+      await workspaceChatPort().recoverPendingWorkerSyntheses(this.cards, this.cardDetailsCache);
     } finally {
       this.recoveringWorkerResults = false;
     }
@@ -309,7 +309,7 @@ export class WorkspaceStore {
       this.revision = snapshot.workspace_revision;
       this.cards = snapshot.cards;
       this.columnCounts = snapshot.counts_by_column;
-      chat.syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
+      workspaceChatPort().syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
       await this.recoverPendingWorkerResults({ previousColumns });
       this.syncColumnMemory();
     } catch (err) {
@@ -462,14 +462,14 @@ export class WorkspaceStore {
         const card = this.cards.find((item) => item.id === id);
         if (card) {
           workerTranscripts.ingestDetail(cached, card.column);
-          chat.onWorkerCardDetail(cached, card.column, previousColumn);
-          chat.syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
+          workspaceChatPort().onWorkerCardDetail(cached, card.column, previousColumn);
+          workspaceChatPort().syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
           if (
             cached.kind === "turn_worker" &&
             (card.column === "done" ||
               (card.column === "blocked" && cached.terminal))
           ) {
-            void chat.recoverPendingWorkerSyntheses([card], this.cardDetailsCache);
+            void workspaceChatPort().recoverPendingWorkerSyntheses([card], this.cardDetailsCache);
           }
         }
         return;
@@ -492,14 +492,14 @@ export class WorkspaceStore {
         const card = this.cards.find((item) => item.id === id);
         if (card) {
           workerTranscripts.ingestDetail(detail, card.column);
-          chat.onWorkerCardDetail(detail, card.column, previousColumn);
-          chat.syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
+          workspaceChatPort().onWorkerCardDetail(detail, card.column, previousColumn);
+          workspaceChatPort().syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
           if (
             detail.kind === "turn_worker" &&
             (card.column === "done" ||
               (card.column === "blocked" && detail.terminal))
           ) {
-            void chat.recoverPendingWorkerSyntheses([card], this.cardDetailsCache);
+            void workspaceChatPort().recoverPendingWorkerSyntheses([card], this.cardDetailsCache);
           }
         }
         return;
@@ -509,9 +509,9 @@ export class WorkspaceStore {
           if (
             card &&
             (card.column === "done" || card.column === "blocked") &&
-            chat.hasPendingWorkerSynthesis(id)
+            workspaceChatPort().hasPendingWorkerSynthesis(id)
           ) {
-            chat.noteWorkerSynthesisFailure(
+            workspaceChatPort().noteWorkerSynthesisFailure(
               id,
               "Couldn't load worker result. Tap to retry.",
             );
@@ -531,7 +531,7 @@ export class WorkspaceStore {
   }
 
   visibleCards(): WorkCard[] {
-    return visibleWorkCards(this.cards, settings.workCardHideAfterHours);
+    return visibleWorkCards(this.cards, workCardHideAfterHours());
   }
 
   /** Bottom work rail — in-motion cards only (Codex-style). */

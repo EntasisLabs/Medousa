@@ -22,7 +22,15 @@ export type ClientPlatform = "desktop" | "mobile";
 
 export type FeaturePreload = "never" | "intent" | "post-interaction-idle";
 
-export type DisposeReason = "cancelled" | "start-failed" | "replaced" | "teardown" | "evicted";
+export type DisposeReason =
+  | "cancelled"
+  | "start-failed"
+  | "replaced"
+  | "teardown"
+  | "evicted"
+  | "workshop-switch"
+  | "platform-switch"
+  | "navigate-away";
 
 export interface FeatureDescriptor {
   id: FeatureId;

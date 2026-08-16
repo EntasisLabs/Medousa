@@ -1,11 +1,10 @@
 # H09 — Home runtime and feature boundaries
 
-> **Status:** Implementing — Train 3 closed first-party SCCs (ARCH-001
+> **Status:** Implementing — Train 4 closed mega-owner ports (ARCH-002
 > **Mitigated**). FRONT-001 ceiling is 3,067,547 JS / 1,075,634 CSS (down from
-> 7,129,003 / 1,448,096). FRONT-001 and ARCH-002 stay Proposed: CSS and
-> largest-chunk table targets are unmet, and mega-owner trains have not
-> closed. ADR-020 is Accepted. Validated still needs P08 packaged
-> multi-OS evidence.
+> 7,129,003 / 1,448,096). FRONT-001 stays Proposed: CSS and largest-chunk
+> table targets are unmet. ADR-020 is Accepted. Validated still needs P08
+> packaged multi-OS evidence.
 >
 > **Accountable owner:** Medousa Home maintainers
 >
@@ -95,6 +94,13 @@ integration, services, and several independently loadable UI modes.
 
 Splitting only source text would create mutually importing siblings. Authority
 must move first into reducers, controllers, adapters, and feature-local state.
+
+Train 4 moved chat transcript/turn/draft owners, injected the H07 vault lookup
+and note buffers, routed code/work panels through document and undertaking
+controllers, deleted the remaining high-leverage feature-store imports via
+shell ports, and added start/dispose leak tests for workshop/platform/navigate
+cycles. ARCH-002 is **Mitigated** on that unit/CI exit; Validated still needs
+P08.
 
 ### CSS and themes
 

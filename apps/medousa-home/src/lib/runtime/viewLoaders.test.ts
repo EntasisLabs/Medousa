@@ -70,3 +70,18 @@ describe("browse vs edit and settings splits", () => {
     expect(source).toContain("loadSettingsPackagesSection");
   });
 });
+
+describe("vault and code destinations are feature instances", () => {
+  it("loads browse, edit, attachments, and import/export through the catalog", () => {
+    const source = readFileSync(join(homeRoot, "src/lib/runtime/viewLoaders.ts"), "utf8");
+    expect(source).toContain('catalogLoader(\n  "vault-browse"');
+    expect(source).toContain('catalogLoader(\n  "vault-edit"');
+    expect(source).toContain('catalogLoader(\n  "export-import"');
+    expect(source).toContain('catalogLoader(\n  "code-work"');
+    expect(source).toContain("loadVaultAttachmentPanel");
+    expect(source).toContain("loadVaultGarageImportWizard");
+    expect(source).toContain("loadVaultExportPreviewModal");
+    expect(source).toContain("loadCodeSourceEditor");
+    expect(source).toContain("loadUndertakingsPanel");
+  });
+});

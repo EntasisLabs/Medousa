@@ -10,9 +10,7 @@ import {
   updateWorkshopClientState,
 } from "$lib/workshops";
 import { requestWorkshopReconnect } from "$lib/runtime/workshopReconnectPort";
-import { chat } from "$lib/stores/chat.svelte";
-import { vault } from "$lib/stores/vault.svelte";
-import { settings } from "$lib/stores/settings.svelte";
+import { workshopSwitchPorts } from "$lib/runtime/workshopSwitchPorts";
 import {
   activeWorkshop,
   defaultWorkshopRegistry,
@@ -73,7 +71,7 @@ export class WorkshopsStore {
     try {
       this.registry = await loadWorkshopRegistry();
       const url = (await getDaemonUrl()).trim();
-      if (url) settings.daemonUrl = url;
+      if (url) workshopSwitchPorts().setDaemonUrl(url);
       this.applyThemeForActiveWorkshop();
       const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
       await shellTabs.switchWorkspaceScope(this.activeWorkshopId);
@@ -85,8 +83,9 @@ export class WorkshopsStore {
   }
 
   needsSwitchConfirm(): boolean {
-    if (vault.dirty) return true;
-    return chat.hasLiveInteractiveTurn();
+    const ports = workshopSwitchPorts();
+    if (ports.vaultDirty()) return true;
+    return ports.hasLiveInteractiveTurn();
   }
 
   requestSwitch(workshopId: string) {
@@ -186,12 +185,12 @@ export class WorkshopsStore {
     this.error = null;
     try {
       const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
-      const flushed = await vault.flushBeforeLeave();
+      const flushed = await workshopSwitchPorts().flushVaultBeforeLeave();
       if (!flushed) return;
       shellTabs.checkpoint();
       this.registry = await setActiveWorkshop(workshopId);
       const url = (await getDaemonUrl()).trim();
-      if (url) settings.daemonUrl = url;
+      if (url) workshopSwitchPorts().setDaemonUrl(url);
       await requestWorkshopReconnect((health) => {
         options?.onHealthChange?.(health);
       });
@@ -224,11 +223,12 @@ export class WorkshopsStore {
 
   applyThemeForActiveWorkshop() {
     const themeId = this.activeWorkshop?.clientState?.colorThemeId;
+    const ports = workshopSwitchPorts();
     if (isColorThemeId(themeId)) {
-      settings.setColorTheme(themeId, { persistWorkshop: false });
+      ports.setColorTheme(themeId, { persistWorkshop: false });
       return;
     }
-    settings.applyTheme();
+    ports.applyTheme();
   }
 
   async saveColorTheme(themeId: ColorThemeId) {
@@ -256,10 +256,10 @@ export class WorkshopsStore {
   async restoreLastSession() {
     const lastId = this.activeWorkshop?.clientState?.lastSessionId?.trim();
     if (!lastId) return;
-    if (chat.sessionId === lastId) return;
-    const exists = chat.sessions.some((session) => session.session_id === lastId);
-    if (!exists) return;
-    await chat.switchSession(lastId);
+    const ports = workshopSwitchPorts();
+    if (ports.chatSessionId() === lastId) return;
+    if (!ports.chatHasSession(lastId)) return;
+    await ports.switchChatSession(lastId);
   }
 
   async addLocalEngine(label: string, dataDir: string) {
@@ -293,7 +293,7 @@ export class WorkshopsStore {
       this.registry = await removeWorkshop(workshopId);
       if (wasActive) {
         const url = (await getDaemonUrl()).trim();
-        if (url) settings.daemonUrl = url;
+        if (url) workshopSwitchPorts().setDaemonUrl(url);
         await requestWorkshopReconnect((health) => {
           options?.onHealthChange?.(health);
         });

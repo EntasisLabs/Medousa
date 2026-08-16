@@ -135,7 +135,7 @@
     type ChangesHistoryEntry,
     type ChangesBlameHunk,
     type ForgeSourceFile,
-  } from "$lib/forge";
+  } from "$lib/code/codeDocumentService";
   import { codeWorkspace, type CodeDocumentTab } from "$lib/stores/codeWorkspace.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";

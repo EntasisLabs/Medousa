@@ -62,7 +62,7 @@
     type WorldSnapshotRef,
     type ProviderHandoff,
     type ProviderComment,
-  } from "$lib/forge";
+  } from "$lib/code/undertakingCommandController";
   import {
     closeUndertaking,
     interruptTrackedAgent,
