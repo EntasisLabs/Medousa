@@ -678,6 +678,53 @@ mod tests {
         });
     }
 
+    #[test]
+    fn warm_write_does_not_rewrite_full_index_or_links() {
+        with_temp_vault(|| {
+            for index in 0..24 {
+                let path = format!("journal/warm-{index}.md");
+                VaultService::write_note(
+                    Some(&path),
+                    &VaultWriteRequest {
+                        path: Some(path.clone()),
+                        content: format!("# Warm {index}\n"),
+                        ..Default::default()
+                    },
+                    None,
+                )
+                .expect("warm");
+            }
+            crate::vault::baseline::vault_baseline_counters().reset();
+            let path = "journal/hot-write.md".to_string();
+            VaultService::write_note(
+                Some(&path),
+                &VaultWriteRequest {
+                    path: Some(path.clone()),
+                    content: "# Hot\n\nSee [[warm-0]]\n".to_string(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("hot write");
+            let snap = crate::vault::baseline::vault_baseline_counters().snapshot();
+            assert_eq!(
+                snap.index_rewrites, 0,
+                "hot write must journal a delta, not rewrite index.jsonl"
+            );
+            assert_eq!(
+                snap.link_rebuilds, 0,
+                "hot write must not rebuild the full link index"
+            );
+            let read = VaultService::get_note("journal/hot-write.md").expect("read");
+            assert!(
+                read.note
+                    .wikilinks_out
+                    .iter()
+                    .any(|path| path == "journal/warm-0.md")
+            );
+        });
+    }
+
     #[cfg(unix)]
     #[test]
     fn link_backed_vault_entries_cannot_reach_outside_root() {

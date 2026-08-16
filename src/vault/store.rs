@@ -13,7 +13,9 @@ use once_cell::sync::Lazy;
 use crate::store_root::{StoreEntryKind, StoreRoot};
 use crate::vault::baseline::vault_baseline_counters;
 use crate::vault::contracts::{MutationPrecondition, NoteVersion};
-use crate::vault::links::{VaultLinkIndex, load_link_index_from_disk, persist_link_index};
+use crate::vault::links::{
+    VaultLinkIndex, load_link_index_from_disk, parse_raw_wikilinks, persist_link_index,
+};
 use crate::vault::mutation::{WriteMutation, commit_write};
 use crate::vault::note::{VaultIndexEntry, VaultNoteSource, build_index_entry, content_hash};
 use crate::vault::owner::{
@@ -27,6 +29,7 @@ use crate::vault::relocate::{relocate_delete, relocate_restore};
 use crate::vault::search_index::VaultSearchIndex;
 
 const INDEX_FILE: &str = "index.jsonl";
+const INDEX_JOURNAL_FILE: &str = "index.journal.jsonl";
 const LINKS_FILE: &str = "links.jsonl";
 
 struct ScanDraft {
@@ -91,17 +94,30 @@ impl VaultStore {
         VaultPath::parse(INDEX_FILE).expect("static vault index path must be valid")
     }
 
+    fn index_journal_path() -> VaultPath {
+        VaultPath::parse(INDEX_JOURNAL_FILE).expect("static vault index journal path must be valid")
+    }
+
+    fn apply_index_line(map: &mut HashMap<String, VaultIndexEntry>, line: &[u8]) {
+        if line.iter().all(u8::is_ascii_whitespace) {
+            return;
+        }
+        if let Ok(entry) = serde_json::from_slice::<VaultIndexEntry>(line) {
+            map.insert(entry.path.clone(), entry);
+        }
+    }
+
     fn reload_from_disk(&self) {
         let mut map = HashMap::new();
-        if let Ok(files) = user_vault_capability()
-            && let Ok(bytes) = files.read(&Self::index_path())
-        {
-            for line in bytes.split(|byte| *byte == b'\n') {
-                if line.iter().all(u8::is_ascii_whitespace) {
-                    continue;
+        if let Ok(files) = user_vault_capability() {
+            if let Ok(bytes) = files.read(&Self::index_path()) {
+                for line in bytes.split(|byte| *byte == b'\n') {
+                    Self::apply_index_line(&mut map, line);
                 }
-                if let Ok(entry) = serde_json::from_slice::<VaultIndexEntry>(line) {
-                    map.insert(entry.path.clone(), entry);
+            }
+            if let Ok(bytes) = files.read(&Self::index_journal_path()) {
+                for line in bytes.split(|byte| *byte == b'\n') {
+                    Self::apply_index_line(&mut map, line);
                 }
             }
         }
@@ -128,7 +144,58 @@ impl VaultStore {
                 .bytes_written
                 .fetch_add(bytes.len() as u64, Ordering::Relaxed);
             let _ = files.atomic_write(&Self::index_path(), &bytes);
+            let _ = files.remove_file(&Self::index_journal_path());
         }
+    }
+
+    fn persist_index_delta(&self, entry: &VaultIndexEntry) {
+        let mut bytes = Vec::new();
+        if serde_json::to_writer(&mut bytes, entry).is_err() {
+            return;
+        }
+        bytes.push(b'\n');
+        if let Ok(files) = user_vault_capability() {
+            let counters = vault_baseline_counters();
+            counters
+                .bytes_written
+                .fetch_add(bytes.len() as u64, Ordering::Relaxed);
+            let _ = files.append_durable(&Self::index_journal_path(), &bytes, true);
+        }
+    }
+
+    fn build_written_entry(
+        &self,
+        path: &str,
+        content: &str,
+        created_at: DateTime<Utc>,
+        modified_at: DateTime<Utc>,
+        source: VaultNoteSource,
+    ) -> VaultIndexEntry {
+        let _ = self.ensure_index_fresh();
+        let projection = PROJECTION.snapshot();
+        let mut known = HashSet::from([path.to_string()]);
+        let mut seed_entries = Vec::new();
+        if let Some(entry) = projection.get(path) {
+            seed_entries.push(entry.clone());
+        }
+        for raw in parse_raw_wikilinks(content) {
+            for candidate in projection.wikilink_candidates(&raw, path) {
+                if known.insert(candidate.clone())
+                    && let Some(entry) = projection.get(&candidate)
+                {
+                    seed_entries.push(entry.clone());
+                }
+            }
+        }
+        build_index_entry(
+            path,
+            content,
+            created_at,
+            modified_at,
+            source,
+            &known,
+            &seed_entries,
+        )
     }
 
     pub fn refresh_from_disk(&self) -> Result<()> {
@@ -356,7 +423,7 @@ impl VaultStore {
             let mut links = self.link_index.write().expect("vault links");
             links.apply_upsert(entry);
         }
-        let _ = persist_link_index(&self.link_index.read().expect("vault links"));
+        // Full links.jsonl rewrite is recovery/compaction only.
     }
 
     fn finalize_entries(
@@ -451,6 +518,7 @@ impl VaultStore {
             }
             if entry.kind != StoreEntryKind::File
                 || entry.name == INDEX_FILE
+                || entry.name == INDEX_JOURNAL_FILE
                 || entry.name == LINKS_FILE
                 || !Self::is_indexable_vault_file(Path::new(relative.as_str()))
             {
@@ -497,6 +565,7 @@ impl VaultStore {
             }
             if entry.kind != StoreEntryKind::File
                 || entry.name == INDEX_FILE
+                || entry.name == INDEX_JOURNAL_FILE
                 || entry.name == LINKS_FILE
                 || !Self::is_indexable_vault_file(Path::new(relative.as_str()))
             {
@@ -673,35 +742,18 @@ impl VaultStore {
                 .map(|entry| entry.created_at_utc)
                 .unwrap_or_else(Utc::now);
             let modified_at = Utc::now();
-            let known: HashSet<String> = self
-                .index
-                .read()
-                .expect("vault index")
-                .keys()
-                .cloned()
-                .chain(std::iter::once(normalized.clone()))
-                .collect();
-            let seed_entries: Vec<VaultIndexEntry> = self
-                .index
-                .read()
-                .expect("vault index")
-                .values()
-                .cloned()
-                .collect();
-            let entry = build_index_entry(
+            let entry = self.build_written_entry(
                 &normalized,
                 content,
                 created_at,
                 modified_at,
                 VaultNoteSource::User,
-                &known,
-                &seed_entries,
             );
             self.index
                 .write()
                 .expect("vault index")
                 .insert(normalized.clone(), entry.clone());
-            self.persist_index();
+            self.persist_index_delta(&entry);
             self.publish_note_delta(&entry, content, outcome.vault_generation);
             let _ = existed;
             return Ok((entry, outcome.note_version));

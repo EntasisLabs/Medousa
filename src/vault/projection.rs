@@ -12,6 +12,7 @@ pub struct VaultProjection {
     pub by_path: HashMap<String, VaultIndexEntry>,
     pub paths_by_stem: HashMap<String, BTreeSet<String>>,
     pub paths_by_folded_title: HashMap<String, BTreeSet<String>>,
+    pub paths_by_title_slug: HashMap<String, BTreeSet<String>>,
     pub children_by_parent: HashMap<String, BTreeSet<String>>,
     pub forward_links: HashMap<String, BTreeSet<String>>,
     pub back_links: HashMap<String, BTreeSet<String>>,
@@ -62,6 +63,13 @@ impl VaultProjection {
                 .or_default()
                 .insert(entry.path.clone());
         }
+        let slug = title_slug(&entry.title);
+        if !slug.is_empty() {
+            self.paths_by_title_slug
+                .entry(slug)
+                .or_default()
+                .insert(entry.path.clone());
+        }
         let parent = parent_key(&entry.path);
         self.children_by_parent
             .entry(parent)
@@ -82,6 +90,13 @@ impl VaultProjection {
             set.remove(&entry.path);
             if set.is_empty() {
                 self.paths_by_folded_title.remove(&folded);
+            }
+        }
+        let slug = title_slug(&entry.title);
+        if let Some(set) = self.paths_by_title_slug.get_mut(&slug) {
+            set.remove(&entry.path);
+            if set.is_empty() {
+                self.paths_by_title_slug.remove(&slug);
             }
         }
         let parent = parent_key(&entry.path);
@@ -157,11 +172,60 @@ impl VaultProjection {
         if let Some(set) = self.paths_by_folded_title.get(&stem.to_ascii_lowercase()) {
             candidates.extend(set.iter().cloned());
         }
+        if let Some(set) = self.paths_by_title_slug.get(&title_slug(token)) {
+            candidates.extend(set.iter().cloned());
+        }
         match candidates.len() {
             0 => WikilinkResolution::Missing,
             1 => WikilinkResolution::Resolved(candidates.into_iter().next().unwrap()),
             _ => WikilinkResolution::Ambiguous(candidates.into_iter().collect()),
         }
+    }
+
+    /// Candidate paths for one wikilink token (O(collisions), not O(corpus)).
+    pub fn wikilink_candidates(&self, raw: &str, source_path: &str) -> Vec<String> {
+        let token = raw
+            .split('|')
+            .next()
+            .unwrap_or(raw)
+            .trim()
+            .trim_matches('"')
+            .trim_matches('\'');
+        if token.is_empty() {
+            return Vec::new();
+        }
+        let mut candidates = Vec::new();
+        if token.contains('/') {
+            if let Ok(path) =
+                crate::vault::path::normalize_vault_path(&format!("{}.md", token.trim_end_matches(".md")))
+            {
+                candidates.push(path);
+            }
+        } else {
+            let stem = token.trim_end_matches(".md");
+            let same_dir_candidate = source_path
+                .rsplit_once('/')
+                .map(|(dir, _)| format!("{dir}/{stem}.md"))
+                .unwrap_or_else(|| format!("{stem}.md"));
+            if let Ok(same_dir) = crate::vault::path::normalize_vault_path(&same_dir_candidate) {
+                candidates.push(same_dir);
+            }
+            if let Ok(root) = crate::vault::path::normalize_vault_path(&format!("{stem}.md")) {
+                candidates.push(root);
+            }
+            if let Some(set) = self.paths_by_stem.get(stem) {
+                candidates.extend(set.iter().cloned());
+            }
+            if let Some(set) = self.paths_by_folded_title.get(&stem.to_ascii_lowercase()) {
+                candidates.extend(set.iter().cloned());
+            }
+            if let Some(set) = self.paths_by_title_slug.get(&title_slug(stem)) {
+                candidates.extend(set.iter().cloned());
+            }
+        }
+        candidates.sort();
+        candidates.dedup();
+        candidates
     }
 }
 
@@ -275,6 +339,17 @@ impl Default for ProjectionOwner {
 fn filename_stem(path: &str) -> String {
     let base = path.rsplit('/').next().unwrap_or(path);
     base.trim_end_matches(".md").to_string()
+}
+
+fn title_slug(raw: &str) -> String {
+    raw.to_ascii_lowercase()
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
+        .collect::<String>()
+        .split('-')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
 }
 
 fn parent_key(path: &str) -> String {
