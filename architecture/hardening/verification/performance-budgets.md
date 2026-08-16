@@ -78,7 +78,7 @@ The 2026-08-12 audit established these reproducible build artifacts:
 | Complete generated client JavaScript | 11,761,808 minified bytes across 164 files | Regression ceiling |
 | Largest initial application/page chunk | 852,853 bytes | H09 Train 5; meets ≤ 900 KiB table target |
 | Global generated CSS | 953,407 minified bytes | Regression ceiling |
-| Frontend runtime SCCs | 7; largest contains 74 modules | Architectural budget: zero new SCCs and zero growth |
+| Frontend runtime SCCs | 0 first-party SCCs | H09 Train 3/6; `check:runtime-graph` required CI |
 | Main daemon normal dependency closure | 932 unique name/version pairs | Regression ceiling; features reported separately |
 | Duplicate-version crate names | 93 | Regression ceiling with reviewed exceptions |
 

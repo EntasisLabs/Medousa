@@ -25,6 +25,9 @@ describe("feature catalog", () => {
     expect(source).not.toMatch(/from ["'][^"']+\.svelte["']/);
     expect(FEATURE_CATALOG.some((entry) => entry.id === "shell-desktop")).toBe(true);
     expect(FEATURE_CATALOG.some((entry) => entry.id === "shell-mobile")).toBe(true);
+    expect(
+      FEATURE_CATALOG.every((entry) => entry.preload === "never" || entry.preload === "intent"),
+    ).toBe(true);
   });
 });
 

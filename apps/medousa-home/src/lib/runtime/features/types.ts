@@ -20,7 +20,7 @@ export type FeatureId =
 
 export type ClientPlatform = "desktop" | "mobile";
 
-export type FeaturePreload = "never" | "intent" | "post-interaction-idle";
+export type FeaturePreload = "never" | "intent";
 
 export type DisposeReason =
   | "cancelled"

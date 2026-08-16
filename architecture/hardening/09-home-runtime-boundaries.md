@@ -1,10 +1,11 @@
 # H09 — Home runtime and feature boundaries
 
-> **Status:** Implementing — Train 5 selected-theme CSS. FRONT-001 ceiling is
-> 2,109,096 JS / 640,347 CSS (down from 7,129,003 / 1,448,096). Largest JS
-> chunk 852,853 meets ≤ 900 KiB. FRONT-001 stays Proposed: root CSS 640,347
-> is still above the 600 KiB table target. ARCH-001/ARCH-002 Mitigated.
-> ADR-020 is Accepted. Validated still needs P08 packaged multi-OS evidence.
+> **Status:** Implementing complete for H09 code trains. ARCH-001 and ARCH-002
+> are **Mitigated** on unit/CI exit tests. FRONT-001 stays **Proposed**: root
+> CSS is 640,347 bytes, still above the 600 KiB table target. JS 2,109,096,
+> largest chunk 852,853, and gzip CSS 83,636 meet their table targets; dormant
+> overlays are absent from the static closure. Validated/Shipped still need P08
+> packaged multi-OS evidence.
 >
 > **Accountable owner:** Medousa Home maintainers
 >
@@ -202,7 +203,7 @@ interface FeatureDescriptor {
   destinations: readonly DestinationId[];
   clientPlatforms: readonly ClientPlatform[];
   requiredCapabilities: readonly CapabilityId[];
-  preload: "never" | "intent" | "post-interaction-idle";
+  preload: "never" | "intent";
 }
 
 interface FeatureModule {
@@ -481,12 +482,13 @@ parameters, note/chat content, filesystem paths, or raw errors containing data.
 
 ### H09.6 — Enforce and close
 
-- Make graph, manifest, CSS, lifecycle, accessibility, and P08 budgets required CI.
-- Run cold/warm startup and each first-use path on packaged desktop/mobile/web
-  targets where supported.
-- Remove compatibility loaders, singleton stores, exception ledger, dead CSS,
-  and immediate-post-launch preloads.
-- Update contributor and Home architecture docs with shipped boundaries.
+- Graph, manifest, CSS inventory, and lifecycle leak tests are required CI
+  (`npm run check` includes `check:runtime-graph`; home job also runs
+  `test:h09`, `npm run build`, `check:bundle-budget`). P08 packaged
+  paint/interaction/heap remains a Validated gate, not this train.
+- Catalog preload is `"never"` or `"intent"` only; no post-launch feature
+  prefetch, no `void import(` cheat, SCC ledger is empty.
+- Contributor and Home architecture docs record allowed dependency direction.
 
 H09.1 precedes broad splits. H09.2 and SCC work can interleave carefully, but a
 dynamic import cannot be used to hide a cycle. Chat decomposition aligns with

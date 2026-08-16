@@ -101,7 +101,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 
 | Guide | Topic |
 |-------|--------|
-| [medousa-home](apps/medousa-home.md) | Tauri IPC, transport, store mapping, mobile shell |
+| [medousa-home](apps/medousa-home.md) | Tauri IPC, transport, store mapping, runtime boundaries, mobile shell |
 
 ### Setup guides & runbooks
 

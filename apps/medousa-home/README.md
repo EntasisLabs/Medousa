@@ -5,7 +5,7 @@ Native desktop and mobile shell for **Medousa**.
 | Doc | Purpose |
 |-----|---------|
 | [Product README](../../README.md) | Download, features |
-| [Integrator reference](../../docs/apps/medousa-home.md) | Surfaces, IPC, transport, stores |
+| [Integrator reference](../../docs/apps/medousa-home.md) | Surfaces, IPC, transport, stores, runtime boundaries |
 | [Build from source](../../docs/cookbook/build-from-source.md) | Cargo, Tauri dev |
 | [Mobile dev](MOBILE-DEV.md) | iPhone on Mac |
 | [Roadmap](../../architecture/ROADMAP.md) | Active priorities |
