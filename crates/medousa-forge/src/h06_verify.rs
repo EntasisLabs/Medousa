@@ -47,9 +47,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let work = item("cr007");
-        store
-            .append(&work.id, &actor(), registered(&work))
-            .unwrap();
+        store.append(&work.id, &actor(), registered(&work)).unwrap();
         store
             .append(
                 &work.id,
@@ -63,13 +61,17 @@ mod tests {
             .unwrap();
         let path = store.events_path(&work.id);
         let mut file = OpenOptions::new().append(true).open(&path).unwrap();
-        file.write_all(b"{\"schema_version\":1,\"work_id\":\"wor").unwrap();
+        file.write_all(b"{\"schema_version\":1,\"work_id\":\"wor")
+            .unwrap();
         drop(file);
         let events = store.replay(&work.id).unwrap();
         assert_eq!(events.len(), 2);
         assert!(matches!(
             events[1].payload,
-            EventPayload::StateChanged { to: WorkState::Ready, .. }
+            EventPayload::StateChanged {
+                to: WorkState::Ready,
+                ..
+            }
         ));
         let next = store
             .append(
@@ -90,9 +92,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let store = FsWorkStore::open(tmp.path()).unwrap();
         let work = item("cm009");
-        let first = store
-            .append(&work.id, &actor(), registered(&work))
-            .unwrap();
+        let first = store.append(&work.id, &actor(), registered(&work)).unwrap();
         let second = store
             .append(
                 &work.id,

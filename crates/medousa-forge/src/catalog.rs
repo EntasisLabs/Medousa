@@ -291,7 +291,12 @@ impl ForgeCatalog {
             .unwrap_or(0);
         let requested = limit.unwrap_or(UNPARAMETERIZED_LIST_CAP);
         let cap = requested.min(MAX_PAGE_LIMIT);
-        let slice: Vec<CatalogEntry> = entries.values().skip(start).take(cap + 1).cloned().collect();
+        let slice: Vec<CatalogEntry> = entries
+            .values()
+            .skip(start)
+            .take(cap + 1)
+            .cloned()
+            .collect();
         let truncated = slice.len() > cap;
         let items: Vec<CatalogEntry> = slice.into_iter().take(cap).collect();
         let next_cursor = truncated
@@ -396,9 +401,8 @@ fn load_catalog_snapshot(root: &StoreRoot, path: &StorePath) -> Result<CatalogSn
     let raw = root
         .read_limited(path, 64 * 1024 * 1024)
         .map_err(store_root_error)?;
-    serde_json::from_slice(&raw).map_err(|err| {
-        ForgeError::Store(format!("corrupt catalog snapshot: {err}"))
-    })
+    serde_json::from_slice(&raw)
+        .map_err(|err| ForgeError::Store(format!("corrupt catalog snapshot: {err}")))
 }
 
 fn persistence_error(err: PersistenceError) -> ForgeError {
@@ -424,7 +428,9 @@ mod tests {
     fn root(tmp: &TempDir) -> Arc<StoreRoot> {
         Arc::new(
             StoreRoot::open_or_create_nofollow(
-                &tmp.path().canonicalize().unwrap_or_else(|_| tmp.path().to_path_buf()),
+                &tmp.path()
+                    .canonicalize()
+                    .unwrap_or_else(|_| tmp.path().to_path_buf()),
             )
             .unwrap(),
         )

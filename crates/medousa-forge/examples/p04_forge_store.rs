@@ -260,7 +260,10 @@ fn main() {
         .map(|value| vec![value])
         .unwrap_or_else(|| vec![0, 100, 10_000]);
 
-    println!("p04_harness=medousa-forge/examples/p04_forge_store platform={}", std::env::consts::OS);
+    println!(
+        "p04_harness=medousa-forge/examples/p04_forge_store platform={}",
+        std::env::consts::OS
+    );
     for events in sizes {
         // Warm path: single continuous process/store lifetime for the size.
         let warm = run(events.max(1), "warm");

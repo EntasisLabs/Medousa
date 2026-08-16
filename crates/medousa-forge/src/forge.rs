@@ -2228,7 +2228,6 @@ impl Forge {
         }
         Ok(())
     }
-
 }
 
 pub(crate) fn git_target(item: &WorkItem) -> Result<GitWorkTarget> {

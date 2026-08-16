@@ -53,7 +53,11 @@ fn git_init(root: &Path) {
 
 fn write_tracked(root: &Path, files: usize) {
     for index in 0..files {
-        fs::write(root.join(format!("f{index}.txt")), format!("file {index}\n")).unwrap();
+        fs::write(
+            root.join(format!("f{index}.txt")),
+            format!("file {index}\n"),
+        )
+        .unwrap();
     }
     std::process::Command::new("git")
         .args(["add", "."])
@@ -281,7 +285,10 @@ fn run_scenarios(files: usize) {
             ObservationBudgets::for_resume(false),
         );
         print_report(&report);
-        assert_eq!(report.completeness, format!("{:?}", ObservationCompleteness::Unknown));
+        assert_eq!(
+            report.completeness,
+            format!("{:?}", ObservationCompleteness::Unknown)
+        );
     }
 
     // --- concurrent mutation via watcher fence bump while hashing ---
@@ -346,7 +353,10 @@ fn run_scenarios(files: usize) {
             tight,
         );
         print_report(&report);
-        assert_ne!(report.completeness, format!("{:?}", ObservationCompleteness::Exact));
+        assert_ne!(
+            report.completeness,
+            format!("{:?}", ObservationCompleteness::Exact)
+        );
     }
 
     // --- wall-clock / retained-memory budget envelope (resume budgets) ---

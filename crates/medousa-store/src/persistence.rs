@@ -212,10 +212,12 @@ impl FileTransaction {
         }
         self.faults.check(TransactionFaultPoint::BeforeWrite)?;
         self.faults.check(TransactionFaultPoint::BeforePublish)?;
-        self.faults.check(TransactionFaultPoint::BeforeSnapshotPublish)?;
+        self.faults
+            .check(TransactionFaultPoint::BeforeSnapshotPublish)?;
         self.root.atomic_write(path, bytes)?;
         self.faults.check(TransactionFaultPoint::AfterPublish)?;
-        self.faults.check(TransactionFaultPoint::AfterSnapshotPublish)?;
+        self.faults
+            .check(TransactionFaultPoint::AfterSnapshotPublish)?;
         Ok(bytes.len())
     }
 }

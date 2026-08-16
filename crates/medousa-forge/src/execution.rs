@@ -286,9 +286,12 @@ impl ForgeExecutionService {
                     return Err(err);
                 }
             };
-            admission._lane = Some(lane_sem.acquire_owned().await.map_err(|_| {
-                ForgeError::Store("repository lane semaphore closed".into())
-            })?);
+            admission._lane = Some(
+                lane_sem
+                    .acquire_owned()
+                    .await
+                    .map_err(|_| ForgeError::Store("repository lane semaphore closed".into()))?,
+            );
         }
 
         self.metrics.admitted.fetch_add(1, Ordering::Relaxed);

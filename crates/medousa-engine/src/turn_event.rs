@@ -405,41 +405,51 @@ mod tests {
 
     #[test]
     fn terminality_matches_stream_event_taxonomy() {
-        assert!(TurnEvent::FinalResponse {
-            text: "x".into(),
-            tool_names: vec![],
-            parts: vec![],
-            committed_at: Utc::now(),
-        }
-        .is_terminal());
-        assert!(TurnEvent::Checkpoint {
-            text: "x".into(),
-            tool_names: vec![],
-            parts: vec![],
-            committed_at: Utc::now(),
-        }
-        .is_terminal());
-        assert!(TurnEvent::NeedsInput {
-            text: "x".into(),
-            tool_names: vec![],
-            parts: vec![],
-            committed_at: Utc::now(),
-        }
-        .is_terminal());
+        assert!(
+            TurnEvent::FinalResponse {
+                text: "x".into(),
+                tool_names: vec![],
+                parts: vec![],
+                committed_at: Utc::now(),
+            }
+            .is_terminal()
+        );
+        assert!(
+            TurnEvent::Checkpoint {
+                text: "x".into(),
+                tool_names: vec![],
+                parts: vec![],
+                committed_at: Utc::now(),
+            }
+            .is_terminal()
+        );
+        assert!(
+            TurnEvent::NeedsInput {
+                text: "x".into(),
+                tool_names: vec![],
+                parts: vec![],
+                committed_at: Utc::now(),
+            }
+            .is_terminal()
+        );
         // Handoffs are non-terminal.
-        assert!(!TurnEvent::WorkerAck {
-            text: "on it".into(),
-            tool_names: vec![],
-            work_id: Some("w1".into()),
-            parts: vec![],
-            committed_at: Utc::now(),
-        }
-        .is_terminal());
-        assert!(!TurnEvent::Progress {
-            message: "working".into(),
-            tool_names: vec![]
-        }
-        .is_terminal());
+        assert!(
+            !TurnEvent::WorkerAck {
+                text: "on it".into(),
+                tool_names: vec![],
+                work_id: Some("w1".into()),
+                parts: vec![],
+                committed_at: Utc::now(),
+            }
+            .is_terminal()
+        );
+        assert!(
+            !TurnEvent::Progress {
+                message: "working".into(),
+                tool_names: vec![]
+            }
+            .is_terminal()
+        );
     }
 
     #[test]

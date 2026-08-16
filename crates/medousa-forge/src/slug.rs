@@ -27,10 +27,7 @@ pub fn project_slug(title: &str) -> String {
 }
 
 /// Pick `base`, or `base-2`…`base-999`, avoiding any string in `taken`.
-pub fn allocate_unique_slug<'a>(
-    base: &str,
-    taken: impl IntoIterator<Item = &'a str>,
-) -> String {
+pub fn allocate_unique_slug<'a>(base: &str, taken: impl IntoIterator<Item = &'a str>) -> String {
     let taken: HashSet<&str> = taken.into_iter().collect();
     if !taken.contains(base) {
         return base.to_string();
