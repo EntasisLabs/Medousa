@@ -112,21 +112,31 @@ pub fn item_relative(store: &FsWorkStore, work_id: &WorkId, leaf: &str) -> Resul
     StorePath::parse(&normalized).map_err(|err| ForgeError::Store(err.to_string()))
 }
 
-pub fn current_store_generation(store: &FsWorkStore, work_id: &WorkId) -> u32 {
-    read_generation_marker(store, work_id).unwrap_or(STORE_SCHEMA_VERSION)
+pub fn current_store_generation(store: &FsWorkStore, work_id: &WorkId) -> Result<u32> {
+    Ok(read_generation_marker(store, work_id)?.unwrap_or(STORE_SCHEMA_VERSION))
 }
 
-fn read_generation_marker(store: &FsWorkStore, work_id: &WorkId) -> Option<u32> {
-    fs::read_to_string(generation_marker_path(store, work_id))
-        .ok()
-        .and_then(|raw| raw.trim().parse().ok())
+fn read_generation_marker(store: &FsWorkStore, work_id: &WorkId) -> Result<Option<u32>> {
+    let path = generation_marker_path(store, work_id);
+    let raw = match fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err.into()),
+    };
+    let generation = raw.trim().parse::<u32>().map_err(|err| {
+        ForgeError::Store(format!(
+            "corrupt store_generation marker at {}: {err}",
+            path.display()
+        ))
+    })?;
+    Ok(Some(generation))
 }
 
 /// Authoritative reader/writer selection from the generation marker and on-disk
 /// leftovers. Migration-in-progress and interrupted staging remain on v1 until
 /// the marker publishes `2`.
 pub fn select_log_authority(store: &FsWorkStore, work_id: &WorkId) -> Result<LogAuthority> {
-    match read_generation_marker(store, work_id) {
+    match read_generation_marker(store, work_id)? {
         None | Some(1) => Ok(LogAuthority::V1),
         Some(2) => Ok(LogAuthority::V2),
         Some(other) => Err(ForgeError::Store(format!(
@@ -671,6 +681,35 @@ mod tests {
     }
 
     #[test]
+    fn corrupt_generation_marker_fails_closed() {
+        let tmp = TempDir::new().unwrap();
+        let store = FsWorkStore::open(tmp.path()).unwrap();
+        let work = item();
+        store
+            .append(
+                &work.id,
+                &actor(),
+                EventPayload::ItemRegistered {
+                    item: Box::new(work.clone()),
+                },
+            )
+            .unwrap();
+        fs::write(
+            generation_marker_path(&store, &work.id),
+            b"not-a-generation\n",
+        )
+        .unwrap();
+
+        let error = select_log_authority(&store, &work.id).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("corrupt store_generation marker")
+        );
+        assert!(store.replay(&work.id).is_err());
+    }
+
+    #[test]
     fn migrate_writes_v2_and_switches_authority() {
         let tmp = TempDir::new().unwrap();
         let store = FsWorkStore::open(tmp.path()).unwrap();
@@ -692,7 +731,10 @@ mod tests {
         assert_eq!(seq, 1);
         assert!(events_v2_path(&store, &work.id).exists());
         assert!(store.events_path(&work.id).exists());
-        assert_eq!(current_store_generation(&store, &work.id), LOG_V2_SCHEMA);
+        assert_eq!(
+            current_store_generation(&store, &work.id).unwrap(),
+            LOG_V2_SCHEMA
+        );
         assert_eq!(
             select_log_authority(&store, &work.id).unwrap(),
             LogAuthority::V2

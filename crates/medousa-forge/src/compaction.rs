@@ -169,7 +169,7 @@ pub fn validate_snapshot_log_pair(
     let Some(stamped) = envelope.log_generation else {
         return Ok(());
     };
-    let current = current_store_generation(store, work_id);
+    let current = current_store_generation(store, work_id)?;
     if stamped != current {
         return Err(ForgeError::Store(format!(
             "snapshot/log generation mismatch for {work_id}: snapshot={stamped} log={current}"
@@ -418,7 +418,7 @@ pub fn compact_if_needed_with(
             .map_err(|_| ForgeError::Store("item owner poisoned".into()))?;
         owner.item_generation
     };
-    let fence_log_generation = current_store_generation(store, work_id);
+    let fence_log_generation = current_store_generation(store, work_id)?;
     faults.check(CompactionFaultPoint::AfterFenceCapture)?;
 
     let _marker = write_inprogress_marker(store, work_id)?;
@@ -466,7 +466,7 @@ pub fn compact_if_needed_with(
             )));
         }
     }
-    if current_store_generation(store, work_id) != fence_log_generation {
+    if current_store_generation(store, work_id)? != fence_log_generation {
         cleanup_compaction_temps(store, work_id)?;
         return Err(ForgeError::Conflict(format!(
             "compaction refused: log generation advanced from {fence_log_generation}"

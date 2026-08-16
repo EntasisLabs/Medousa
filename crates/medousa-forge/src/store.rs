@@ -327,6 +327,17 @@ impl FsWorkStore {
         Ok(self.cached_tail(work_id)?.last_seq)
     }
 
+    /// Return the tail already published by a successful append without
+    /// touching the filesystem. This is used only for post-commit receipt and
+    /// owner bookkeeping, where a new fallible I/O operation would make a
+    /// durable append look retryable to its caller.
+    pub(crate) fn remembered_tail(&self, work_id: &WorkId) -> Option<TailMeta> {
+        self.tails
+            .lock()
+            .ok()
+            .and_then(|tails| tails.get(work_id.as_str()).cloned())
+    }
+
     pub fn cached_tail(&self, work_id: &WorkId) -> Result<TailMeta> {
         if let Some(tail) = self
             .tails

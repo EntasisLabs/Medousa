@@ -8,15 +8,13 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use medousa_store::{CommitReceipt, DurabilityLevel, StoreKind};
-use sha2::{Digest as _, Sha256};
-
 use crate::error::{ForgeError, Result};
 use crate::events::{EventPayload, TransitionEvent};
 use crate::execution::{MAX_OWNER_HANDLES, MAX_OWNER_PROJECTION_BYTES, OWNER_IDLE_TTL};
 use crate::fold::apply_payload;
 use crate::model::{ActorRef, WorkId, WorkItem};
 use crate::store::{FsWorkStore, TailMeta};
+use medousa_store::{CommitReceipt, DurabilityLevel, StoreKind};
 
 #[derive(Debug, Clone)]
 pub struct ForgeCommitReceipt {
@@ -259,17 +257,43 @@ pub fn append_owned(
         )));
     }
     let seq = owner.next_seq;
+
+    // Validate every projection mutation before crossing the durable append
+    // boundary. Once append_at returns, the event is authoritative and this
+    // function must not report a retryable failure for projection bookkeeping.
+    let prospective = TransitionEvent::new(work_id.clone(), seq, actor.clone(), payload.clone());
+    match &owner.folded {
+        Some(item) => {
+            let mut projected = item.clone();
+            apply_payload(&mut projected, &prospective)?;
+            let bytes = estimate_projection_bytes(&projected);
+            if bytes > MAX_OWNER_PROJECTION_BYTES {
+                return Err(ForgeError::Overloaded(format!(
+                    "owner projection exceeds {MAX_OWNER_PROJECTION_BYTES} bytes"
+                )));
+            }
+        }
+        None => {
+            if let EventPayload::ItemRegistered { item } = &prospective.payload {
+                let bytes = estimate_projection_bytes(item);
+                if bytes > MAX_OWNER_PROJECTION_BYTES {
+                    return Err(ForgeError::Overloaded(format!(
+                        "owner projection exceeds {MAX_OWNER_PROJECTION_BYTES} bytes"
+                    )));
+                }
+            }
+        }
+    }
+
     let event = store.append_at(work_id, actor, payload, seq)?;
     // append_at always sync_all before returning — report that honestly.
     let durability = DurabilityLevel::Synced;
     let bytes = serde_json::to_vec(&event).map(|v| v.len()).unwrap_or(0);
     owner.next_seq = seq.saturating_add(1);
-    owner.last_offset = store
-        .events_path(work_id)
-        .metadata()
-        .map(|meta| meta.len())
-        .unwrap_or(owner.last_offset);
-    owner.last_hash = hash_event(&event);
+    if let Some(durable_tail) = store.remembered_tail(work_id) {
+        owner.last_offset = durable_tail.last_offset;
+        owner.last_hash = durable_tail.last_hash;
+    }
     owner.item_generation = owner.item_generation.saturating_add(1);
     if matches!(event.payload, EventPayload::LeaseAcquired { .. }) {
         owner.lease_generation = owner.lease_generation.saturating_add(1);
@@ -279,23 +303,29 @@ pub fn append_owned(
     }
     match &mut owner.folded {
         Some(item) => {
-            apply_payload(item, &event)?;
-            let bytes = estimate_projection_bytes(item);
-            if bytes > MAX_OWNER_PROJECTION_BYTES {
+            if apply_payload(item, &event).is_err() {
+                // The durable event already committed. Drop the disposable
+                // projection and let the next load rebuild from authority.
                 owner.folded = None;
                 owner.projection_bytes = 0;
-                return Err(ForgeError::Overloaded(format!(
-                    "owner projection exceeds {MAX_OWNER_PROJECTION_BYTES} bytes"
-                )));
             }
-            owner.projection_bytes = bytes;
         }
         None => {
             if let EventPayload::ItemRegistered { item } = &event.payload {
-                owner.sync_projection((**item).clone())?;
+                // This was budget-checked before append, so failure here is
+                // bookkeeping-only and cannot change the committed result.
+                if owner.sync_projection((**item).clone()).is_err() {
+                    owner.folded = None;
+                    owner.projection_bytes = 0;
+                }
             }
         }
     }
+    owner.projection_bytes = owner
+        .folded
+        .as_ref()
+        .map(estimate_projection_bytes)
+        .unwrap_or(0);
     owner.dirty = true;
     owner.last_used = Instant::now();
     let receipt = ForgeCommitReceipt {
@@ -324,14 +354,6 @@ pub fn mark_projection_clean(owner: &mut ItemOwnerState, snapshot_seq: u64) {
 
 pub fn next_lease_generation(owner: &ItemOwnerState) -> u64 {
     owner.lease_generation.saturating_add(1)
-}
-
-fn hash_event(event: &TransitionEvent) -> [u8; 32] {
-    let encoded = serde_json::to_vec(event).unwrap_or_default();
-    let digest = Sha256::digest(&encoded);
-    let mut out = [0u8; 32];
-    out.copy_from_slice(&digest);
-    out
 }
 
 #[cfg(test)]
@@ -552,6 +574,36 @@ mod tests {
         .unwrap();
         assert_eq!(receipt.durability, DurabilityLevel::Synced);
         assert_eq!(receipt.persistence.durability, DurabilityLevel::Synced);
+    }
+
+    #[test]
+    fn projection_validation_fails_before_durable_append() {
+        let tmp = TempDir::new().unwrap();
+        let store = FsWorkStore::open(tmp.path()).unwrap();
+        let registry = ForgeItemRegistry::new();
+        let work = item("projection-fence");
+        append_owned(
+            &store,
+            &registry,
+            &work.id,
+            &actor(),
+            registered(&work),
+            None,
+        )
+        .unwrap();
+
+        let error = append_owned(
+            &store,
+            &registry,
+            &work.id,
+            &actor(),
+            registered(&work),
+            None,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("duplicate item_registered"));
+        assert_eq!(store.replay(&work.id).unwrap().len(), 1);
     }
 
     #[test]
