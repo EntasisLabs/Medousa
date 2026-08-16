@@ -2171,7 +2171,6 @@ impl Forge {
             EventPayload::StateChanged { from, to, reason },
         )?;
         self.persist(item, event.seq)?;
-        self.compact_if_needed(&item.id)?;
         Ok(())
     }
 
@@ -2230,10 +2229,6 @@ impl Forge {
         Ok(())
     }
 
-    fn compact_if_needed(&self, work_id: &WorkId) -> Result<()> {
-        let _ = compaction::compact_if_needed(&self.store, &self.owners, work_id)?;
-        Ok(())
-    }
 }
 
 pub(crate) fn git_target(item: &WorkItem) -> Result<GitWorkTarget> {

@@ -23,7 +23,7 @@ immediately.
 
 Slug uniqueness is a durable reservation journal (`{MEDOUSA_DATA_DIR}/forge/slug_reservations.jsonl`). The listing catalog is a rebuildable projection.
 
-- **Reserve without an item** (crash during register): `recover_orphans` releases reservations that never received an item generation. A later register of the same slug should succeed after release.
+- **Reserve without an item** (crash during register): `recover_orphans` reports reservations that never received an item generation. Repair must explicitly verify that no durable item owns the slug before releasing it.
 - **Item without catalog row**: list/load still works from the item owner. Rebuild the catalog from item snapshots; do not treat a missing catalog row as “slug available.”
 - **Two live items on one slug** must never happen. If it does, stop writes, inspect the slug journal and both item logs, and keep the committed item generation.
 
@@ -49,7 +49,11 @@ Resume budgets: 100k untracked entries, 1 GiB per file, 4 GiB aggregate, 30s. Or
 
 ## Compaction and log v2
 
-Compaction triggers at 1,000 tail events or 8 MiB. Framed log v2 (`events.v2`) is written beside v1; v1 stays read-only for rollback until a later cleanup car. Do not delete v1 readers or dual-read markers yet.
+Compaction and v1-to-v2 migration are recovery-tested scaffolding, but automatic
+production activation remains disabled while PERF-002 is open. Do not manually
+invoke either path or delete v1 logs/readers. A future activation must prove
+bounded replay, atomic authority switching, and rollback on every supported
+platform first.
 
 ## Related
 
