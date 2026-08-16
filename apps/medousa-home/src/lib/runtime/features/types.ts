@@ -9,7 +9,14 @@ export type FeatureId =
   | "spotlight"
   | "wizard"
   | "export-import"
-  | "rich-renderers";
+  | "rich-renderers"
+  | "terminal"
+  | "calendar"
+  | "map"
+  | "profiles"
+  | "peers"
+  | "messaging"
+  | "runtime";
 
 export type ClientPlatform = "desktop" | "mobile";
 

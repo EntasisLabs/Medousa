@@ -79,6 +79,55 @@ export const FEATURE_CATALOG: readonly FeatureDescriptor[] = [
     requiredCapabilities: [],
     preload: "intent",
   },
+  {
+    id: "terminal",
+    destinations: ["terminal"],
+    clientPlatforms: ["desktop", "mobile"],
+    requiredCapabilities: [],
+    preload: "intent",
+  },
+  {
+    id: "calendar",
+    destinations: ["calendar"],
+    clientPlatforms: ["desktop", "mobile"],
+    requiredCapabilities: [],
+    preload: "intent",
+  },
+  {
+    id: "map",
+    destinations: ["map", "context"],
+    clientPlatforms: ["desktop", "mobile"],
+    requiredCapabilities: [],
+    preload: "intent",
+  },
+  {
+    id: "profiles",
+    destinations: ["profiles"],
+    clientPlatforms: ["desktop", "mobile"],
+    requiredCapabilities: [],
+    preload: "intent",
+  },
+  {
+    id: "peers",
+    destinations: ["peers"],
+    clientPlatforms: ["desktop", "mobile"],
+    requiredCapabilities: [],
+    preload: "intent",
+  },
+  {
+    id: "messaging",
+    destinations: ["messaging"],
+    clientPlatforms: ["desktop", "mobile"],
+    requiredCapabilities: [],
+    preload: "intent",
+  },
+  {
+    id: "runtime",
+    destinations: ["runtime"],
+    clientPlatforms: ["desktop", "mobile"],
+    requiredCapabilities: [],
+    preload: "intent",
+  },
 ];
 
 export function featureDescriptor(id: FeatureId): FeatureDescriptor {
