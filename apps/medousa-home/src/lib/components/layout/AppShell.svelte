@@ -1,7 +1,5 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import WorkshopShell from "$lib/components/layout/WorkshopShell.svelte";
-  import MobileShell from "$lib/components/mobile/MobileShell.svelte";
   import HomeSplash from "$lib/components/layout/HomeSplash.svelte";
   import CommandSpotlight from "$lib/components/layout/CommandSpotlight.svelte";
   import WorkAskDockPopover from "$lib/components/work/WorkAskDockPopover.svelte";
@@ -32,6 +30,12 @@
   import { humanBrowserSetMobileShellActive } from "$lib/humanBrowser";
   import BrowserWorkshop from "$lib/components/browser/BrowserWorkshop.svelte";
   import { bindRootResource, recordRootResource } from "$lib/runtime/rootResources";
+  import { probeClientPlatform } from "$lib/runtime/platformProbe";
+
+  const loadDesktopShell = () => import("$lib/components/layout/WorkshopShell.svelte");
+  const loadMobileShell = () => import("$lib/components/mobile/MobileShell.svelte");
+  const initialPlatform = probeClientPlatform();
+  void (initialPlatform === "mobile" ? loadMobileShell() : loadDesktopShell());
 
   $effect(() => {
     void chat.sessionId;
@@ -206,9 +210,21 @@
 {:else if wizard.visible && isTauriMobilePlatform()}
   <WizardContainer />
 {:else if layout.isMobile}
-  <MobileShell />
+  {#await loadMobileShell()}
+    <HomeSplash />
+  {:then { default: MobileShell }}
+    <MobileShell />
+  {:catch}
+    <HomeSplash />
+  {/await}
 {:else}
-  <WorkshopShell onOpenSpotlight={() => commandSpotlight.openSpotlight()} />
+  {#await loadDesktopShell()}
+    <HomeSplash />
+  {:then { default: WorkshopShell }}
+    <WorkshopShell onOpenSpotlight={() => commandSpotlight.openSpotlight()} />
+  {:catch}
+    <HomeSplash />
+  {/await}
 {/if}
 
 <CommandSpotlight onFocusChat={focusChatComposer} />

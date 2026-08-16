@@ -42,8 +42,6 @@ export function resetRootResourcesForTests(): void {
 
 /** Eager AppShell graph frozen before Train 1 lazy splits. */
 export const APP_SHELL_EAGER_MODULES = [
-  "WorkshopShell",
-  "MobileShell",
   "CommandSpotlight",
   "WizardContainer",
   "VaultNoteWorkshop",

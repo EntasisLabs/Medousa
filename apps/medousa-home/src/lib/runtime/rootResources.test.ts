@@ -53,7 +53,7 @@ describe("root resource probe", () => {
 });
 
 describe("eager AppShell graph freeze", () => {
-  it("still statically imports dormant desktop/mobile/feature modules", () => {
+  it("still statically imports dormant feature overlays", () => {
     const source = readFileSync(
       join(homeRoot, "src/lib/components/layout/AppShell.svelte"),
       "utf8",
@@ -61,6 +61,11 @@ describe("eager AppShell graph freeze", () => {
     for (const name of APP_SHELL_EAGER_MODULES) {
       expect(source, `missing eager import ${name}`).toContain(name);
     }
+    expect(source).not.toMatch(/import WorkshopShell from/);
+    expect(source).not.toMatch(/import MobileShell from/);
+    expect(source).toContain("probeClientPlatform");
+    expect(source).toContain("loadDesktopShell");
+    expect(source).toContain("loadMobileShell");
   });
 });
 
