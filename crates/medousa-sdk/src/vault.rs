@@ -32,6 +32,12 @@ fn vault_notes_query_params(query: &VaultNotesQuery) -> Vec<(&str, String)> {
     if let Some(tag_prefix) = &query.tag_prefix {
         params.push(("tag_prefix", tag_prefix.clone()));
     }
+    if let Some(cursor) = &query.cursor {
+        params.push(("cursor", cursor.clone()));
+    }
+    if let Some(generation) = query.generation {
+        params.push(("generation", generation.to_string()));
+    }
     params
 }
 

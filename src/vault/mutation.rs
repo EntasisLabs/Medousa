@@ -69,7 +69,13 @@ pub fn commit_write(
         }
 
         let vault_generation = owner.bump_generation();
-        let note_version = NoteVersion::from_digest(content_hash(&mutation.content));
+        let digest = content_hash(&mutation.content);
+        let note_version = NoteVersion::encode(
+            owner.root_id.as_str(),
+            &VaultNoteSource::User,
+            vault_generation,
+            &digest,
+        );
         let receipt_record = VaultMutationReceiptRecord {
             operation_id: operation_id.clone(),
             root_id: owner.root_id.as_str().to_string(),
@@ -204,7 +210,13 @@ pub fn recover_pending_write(
         if content_digest(&content) == intent.content_digest {
             // Content published; complete receipt without retrying the write.
             let vault_generation = owner.bump_generation();
-            let note_version = NoteVersion::from_digest(content_hash(&content));
+            let digest = content_hash(&content);
+            let note_version = NoteVersion::encode(
+                owner.root_id.as_str(),
+                &VaultNoteSource::User,
+                vault_generation,
+                &digest,
+            );
             let receipt_record = VaultMutationReceiptRecord {
                 operation_id: intent.operation_id.clone(),
                 root_id: intent.root_id,
@@ -236,6 +248,15 @@ pub fn recover_pending_write(
     Ok(None)
 }
 
+fn versions_match(existing: &NoteVersion, expected: &NoteVersion) -> bool {
+    if existing == expected {
+        return true;
+    }
+    let left = existing.content_digest_owned();
+    let right = expected.content_digest_owned();
+    left == right || left == expected.as_str() || existing.as_str() == right
+}
+
 fn check_precondition(
     mutation: &WriteMutation,
     existing: Option<&ExistingNote>,
@@ -255,7 +276,7 @@ fn check_precondition(
             let expected = mutation.expected_version.as_ref().ok_or_else(|| {
                 VaultMutationError::Invalid("Match precondition requires expected version".into())
             })?;
-            if &existing.version != expected {
+            if !versions_match(&existing.version, expected) {
                 return Err(VaultMutationError::StaleVersion {
                     current: Some(existing.version.clone()),
                 });
@@ -268,7 +289,7 @@ fn check_precondition(
                         "AbsentOrMatch requires expected version when present".into(),
                     )
                 })?;
-                if &existing.version != expected {
+                if !versions_match(&existing.version, expected) {
                     return Err(VaultMutationError::StaleVersion {
                         current: Some(existing.version.clone()),
                     });
@@ -298,7 +319,12 @@ fn read_existing(
     let body =
         String::from_utf8(bytes).map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
     Ok(Some(ExistingNote {
-        version: NoteVersion::from_digest(content_hash(&body)),
+        version: NoteVersion::encode(
+            owner.root_id.as_str(),
+            &VaultNoteSource::User,
+            owner.current_generation(),
+            &content_hash(&body),
+        ),
     }))
 }
 
@@ -438,7 +464,10 @@ mod tests {
         )
         .expect("content publish commits even when receipt fails");
         assert!(outcome.index_repair_required);
-        assert_eq!(outcome.note_version.as_str(), content_hash("published\n"));
+        assert_eq!(
+            outcome.note_version.content_digest_owned(),
+            content_hash("published\n")
+        );
         assert!(
             root.is_file(&StorePath::parse("recover.md").unwrap())
                 .unwrap()
@@ -450,7 +479,10 @@ mod tests {
         ));
         let recovered = recover_all_pending_writes(&owner).unwrap();
         assert_eq!(recovered.len(), 1);
-        assert_eq!(recovered[0].note_version.as_str(), content_hash("published\n"));
+        assert_eq!(
+            recovered[0].note_version.content_digest_owned(),
+            content_hash("published\n")
+        );
         assert!(recovered[0].index_repair_required);
         // Second recovery is a no-op (receipt present / intent gone).
         assert!(recover_all_pending_writes(&owner).unwrap().is_empty());

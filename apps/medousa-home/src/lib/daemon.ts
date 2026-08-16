@@ -1010,6 +1010,8 @@ export async function listVaultNotes(options?: {
   limit?: number;
   tags?: string[];
   tagPrefix?: string;
+  cursor?: string;
+  generation?: number;
 }): Promise<VaultNotesListResponse> {
   const tags =
     options?.tags?.map((tag) => tag.trim()).filter(Boolean).join(",") || undefined;
@@ -1018,6 +1020,8 @@ export async function listVaultNotes(options?: {
     limit: options?.limit,
     tags,
     tagPrefix: options?.tagPrefix,
+    cursor: options?.cursor,
+    generation: options?.generation,
   });
 }
 

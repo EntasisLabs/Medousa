@@ -2628,6 +2628,9 @@ pub struct VaultNotesListResponse {
     /// When true, this page is a bounded adapter and must not be treated as complete.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub truncated: bool,
+    /// Client must drop its cache and restart listing from the head.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reset_required: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

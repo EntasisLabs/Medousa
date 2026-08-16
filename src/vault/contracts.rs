@@ -31,13 +31,60 @@ impl fmt::Display for VaultRootId {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NoteVersion(String);
 
+const NOTE_VERSION_SCHEMA: &str = "v1";
+
 impl NoteVersion {
     pub fn from_digest(digest: impl Into<String>) -> Self {
+        // Legacy helper kept for tests; prefer [`Self::encode`].
         Self(digest.into())
+    }
+
+    /// Opaque blob: schema + root + source + note generation + content digest.
+    pub fn encode(
+        root_id: &str,
+        source: &VaultNoteSource,
+        note_generation: u64,
+        content_digest: &str,
+    ) -> Self {
+        use base64::Engine;
+        let source = match source {
+            VaultNoteSource::User => "user",
+            VaultNoteSource::ProjectOverlay => "overlay",
+        };
+        let raw = format!(
+            "{NOTE_VERSION_SCHEMA}\n{root_id}\n{source}\n{note_generation}\n{content_digest}"
+        );
+        Self(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw.as_bytes()))
     }
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Content digest embedded in an opaque version, or the raw string for legacy digests.
+    pub fn content_digest_owned(&self) -> String {
+        if let Some((_, _, _, _, digest)) = Self::decode_parts(self) {
+            return digest;
+        }
+        self.0.clone()
+    }
+
+    fn decode_parts(version: &NoteVersion) -> Option<(String, String, String, u64, String)> {
+        use base64::Engine;
+        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(version.0.as_bytes())
+            .ok()?;
+        let text = String::from_utf8(bytes).ok()?;
+        let mut parts = text.splitn(5, '\n');
+        let schema = parts.next()?;
+        if schema != NOTE_VERSION_SCHEMA {
+            return None;
+        }
+        let root = parts.next()?.to_string();
+        let source = parts.next()?.to_string();
+        let note_generation = parts.next()?.parse().ok()?;
+        let digest = parts.next()?.to_string();
+        Some((schema.to_string(), root, source, note_generation, digest))
     }
 }
 

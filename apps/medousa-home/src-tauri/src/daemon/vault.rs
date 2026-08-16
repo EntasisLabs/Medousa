@@ -27,12 +27,16 @@ pub async fn vault_list_notes(
     limit: Option<usize>,
     tags: Option<String>,
     tag_prefix: Option<String>,
+    cursor: Option<String>,
+    generation: Option<u64>,
 ) -> Result<VaultNotesListResponse, String> {
     let query = VaultNotesQuery {
         prefix: prefix.filter(|value| !value.trim().is_empty()),
         limit,
         tags: tags.filter(|value| !value.trim().is_empty()),
         tag_prefix: tag_prefix.filter(|value| !value.trim().is_empty()),
+        cursor: cursor.filter(|value| !value.trim().is_empty()),
+        generation,
     };
     client(&state)
         .vault()

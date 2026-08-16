@@ -27,13 +27,14 @@ pub struct VaultIndexOwner {
 
 impl VaultIndexOwner {
     pub fn new(root_id: VaultRootId, files: Arc<StoreRoot>) -> Arc<Self> {
+        let loaded = load_persisted_generation(&files).unwrap_or(1);
         Arc::new(Self {
             root_id,
             transaction: RwLock::new(FileTransaction::new(Arc::clone(&files))),
             files,
             lanes: VaultLaneRegistry::new(),
             admission: VaultAdmission::new(),
-            vault_generation: AtomicU64::new(1),
+            vault_generation: AtomicU64::new(loaded.max(1)),
             active: AtomicBool::new(true),
         })
     }
@@ -57,7 +58,9 @@ impl VaultIndexOwner {
     }
 
     pub fn bump_generation(&self) -> u64 {
-        self.vault_generation.fetch_add(1, Ordering::AcqRel) + 1
+        let next = self.vault_generation.fetch_add(1, Ordering::AcqRel) + 1;
+        persist_generation(&self.files, next);
+        next
     }
 
     pub fn shutdown(&self) {
@@ -127,6 +130,28 @@ pub fn owner_mutations_active() -> bool {
 
 pub fn set_owner_mutations_active(active: bool) {
     OWNER_MUTATIONS_ACTIVE.store(active, Ordering::Release);
+}
+
+fn generation_store_path() -> Result<medousa_store::StorePath, VaultMutationError> {
+    medousa_store::StorePath::parse(".medousa/vault/generation")
+        .map_err(|error| VaultMutationError::Invalid(error.to_string()))
+}
+
+fn load_persisted_generation(files: &StoreRoot) -> Option<u64> {
+    let path = generation_store_path().ok()?;
+    if !files.is_file(&path).unwrap_or(false) {
+        return None;
+    }
+    let bytes = files.read_limited(&path, 64).ok()?;
+    let text = String::from_utf8(bytes).ok()?;
+    text.trim().parse().ok()
+}
+
+fn persist_generation(files: &StoreRoot, generation: u64) {
+    let Ok(path) = generation_store_path() else {
+        return;
+    };
+    let _ = files.atomic_write(&path, generation.to_string().as_bytes());
 }
 
 pub fn ensure_owner_for_active_root() -> Result<Arc<VaultIndexOwner>, VaultMutationError> {

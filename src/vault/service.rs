@@ -25,13 +25,67 @@ impl VaultService {
         tags: Option<&str>,
         tag_prefix: Option<&str>,
     ) -> VaultNotesListResponse {
+        Self::list_notes_paged(prefix, limit, tags, tag_prefix, None, None)
+    }
+
+    pub fn list_notes_paged(
+        prefix: Option<&str>,
+        limit: usize,
+        tags: Option<&str>,
+        tag_prefix: Option<&str>,
+        cursor: Option<&str>,
+        expected_generation: Option<u64>,
+    ) -> VaultNotesListResponse {
         let limit = limit.clamp(1, 500);
         let required = parse_tags_query(tags);
         let prefix_filter = tag_prefix
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(|value| value.to_ascii_lowercase());
-        let entries = vault_store().list_entries(prefix, limit.saturating_mul(4));
+        let generation = crate::vault::store::vault_projection().generation;
+        if let Some(expected) = expected_generation
+            && expected > 0
+            && generation > 0
+            && expected != generation
+        {
+            return VaultNotesListResponse {
+                notes: Vec::new(),
+                vault_generation: Some(generation),
+                next_cursor: None,
+                truncated: false,
+                reset_required: true,
+            };
+        }
+        let after_path = cursor
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        if let Some(ref cursor_raw) = after_path
+            && let Some((cursor_gen, _)) = cursor_raw.split_once(':')
+            && let Ok(cursor_gen) = cursor_gen.parse::<u64>()
+            && generation > 0
+            && cursor_gen != generation
+        {
+            return VaultNotesListResponse {
+                notes: Vec::new(),
+                vault_generation: Some(generation),
+                next_cursor: None,
+                truncated: false,
+                reset_required: true,
+            };
+        }
+        let after_path = after_path.and_then(|raw| {
+            raw.split_once(':')
+                .map(|(_, path)| path.to_string())
+                .or(Some(raw))
+        });
+
+        let _ = vault_store().ensure_index_fresh();
+        let mut entries = vault_store().peek_all_entries();
+        if let Some(prefix) = prefix.map(str::trim).filter(|value| !value.is_empty()) {
+            entries.retain(|entry| entry.path.starts_with(prefix));
+        }
+        entries.sort_by(|left, right| left.path.cmp(&right.path));
         let notes = entries
             .into_iter()
             .filter(|entry| entry_has_all_tags(&entry.tags, &required))
@@ -43,16 +97,80 @@ impl VaultService {
                         .any(|tag| tag.to_ascii_lowercase().starts_with(prefix))
                 })
             })
-            .take(limit)
+            .filter(|entry| after_path.as_ref().is_none_or(|after| entry.path > *after))
+            .take(limit + 1)
             .map(|entry| entry.to_vault_note_summary())
             .collect::<Vec<_>>();
-        let truncated = notes.len() >= limit;
-        let generation = crate::vault::store::vault_projection().generation;
+        let truncated = notes.len() > limit;
+        let notes: Vec<_> = notes.into_iter().take(limit).collect();
+        let next_cursor = if truncated {
+            notes.last().map(|note| format!("{generation}:{}", note.path))
+        } else {
+            None
+        };
         VaultNotesListResponse {
             notes,
             vault_generation: Some(generation),
-            next_cursor: None,
+            next_cursor,
             truncated,
+            reset_required: false,
+        }
+    }
+
+    pub fn changes_since(
+        since_generation: Option<u64>,
+        _cursor: Option<&str>,
+        limit: usize,
+    ) -> crate::daemon_api::VaultChangesResponse {
+        let limit = limit.clamp(1, 500);
+        let projection = crate::vault::store::vault_projection();
+        let generation = projection.generation;
+        let Some(since) = since_generation.filter(|value| *value > 0) else {
+            return crate::daemon_api::VaultChangesResponse {
+                vault_generation: generation,
+                changes: Vec::new(),
+                next_cursor: None,
+                reset_required: true,
+            };
+        };
+        if since > generation {
+            return crate::daemon_api::VaultChangesResponse {
+                vault_generation: generation,
+                changes: Vec::new(),
+                next_cursor: None,
+                reset_required: true,
+            };
+        }
+        // Projection-diff baseline: when generation advanced, surface current
+        // paths as upserts. Clients that cannot apply should reset.
+        if since == generation {
+            return crate::daemon_api::VaultChangesResponse {
+                vault_generation: generation,
+                changes: Vec::new(),
+                next_cursor: None,
+                reset_required: false,
+            };
+        }
+        let mut paths: Vec<_> = projection.by_path.keys().cloned().collect();
+        paths.sort();
+        let changes = paths
+            .into_iter()
+            .take(limit)
+            .filter_map(|path| {
+                let entry = projection.by_path.get(&path)?;
+                Some(crate::daemon_api::VaultChangeEntry {
+                    path,
+                    kind: "upsert".into(),
+                    note_version: Some(entry.content_hash.clone()),
+                })
+            })
+            .collect::<Vec<_>>();
+        let truncated = projection.by_path.len() > limit;
+        crate::daemon_api::VaultChangesResponse {
+            vault_generation: generation,
+            changes,
+            next_cursor: None,
+            reset_required: truncated || since + 1 < generation,
         }
     }
 
@@ -100,7 +218,19 @@ impl VaultService {
                 note: entry.to_vault_note(backlinks),
                 content,
                 vault_generation: Some(generation),
-                note_version: Some(entry.content_hash.clone()),
+                note_version: Some(
+                    crate::vault::contracts::NoteVersion::encode(
+                        crate::vault::owner::ensure_owner_for_active_root()
+                            .map(|owner| owner.root_id.as_str().to_string())
+                            .unwrap_or_else(|_| "local".into())
+                            .as_str(),
+                        &entry.source,
+                        generation.max(1),
+                        &entry.content_hash,
+                    )
+                    .as_str()
+                    .to_string(),
+                ),
             });
         }
         Err(last_err.unwrap_or_else(|| {

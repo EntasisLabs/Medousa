@@ -24,6 +24,7 @@ export interface VaultNotesListResponse {
   vault_generation?: number | null;
   next_cursor?: string | null;
   truncated?: boolean;
+  reset_required?: boolean;
 }
 
 export interface VaultNoteContentResponse {

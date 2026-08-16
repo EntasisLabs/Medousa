@@ -1531,20 +1531,44 @@ export class VaultStore {
   async refreshNotes() {
     this.error = null;
     try {
-      const response = await listVaultNotes({ limit: 500 });
-      this.notes = response.notes.map((note) => ({
-        path: note.path,
-        title: note.title,
-        byte_size: 0,
-        content_hash: "",
-        modified_at_utc: note.modified_at_utc,
-        created_at_utc: note.modified_at_utc,
-        tags: note.tags ?? [],
-        wikilinks_out: [],
-        backlinks: [],
-        kind: note.kind,
-      }));
-      this.vaultGeneration = response.vault_generation ?? this.vaultGeneration + 1;
+      const pageLimit = 200;
+      const notes: typeof this.notes = [];
+      let cursor: string | undefined;
+      let generation: number | undefined;
+      for (let page = 0; page < 50; page += 1) {
+        const response = await listVaultNotes({
+          limit: pageLimit,
+          cursor,
+          generation,
+        });
+        if (response.reset_required) {
+          notes.length = 0;
+          cursor = undefined;
+          generation = response.vault_generation ?? undefined;
+          continue;
+        }
+        for (const note of response.notes) {
+          notes.push({
+            path: note.path,
+            title: note.title,
+            byte_size: 0,
+            content_hash: "",
+            modified_at_utc: note.modified_at_utc,
+            created_at_utc: note.modified_at_utc,
+            tags: note.tags ?? [],
+            wikilinks_out: [],
+            backlinks: [],
+            kind: note.kind,
+          });
+        }
+        generation = response.vault_generation ?? generation;
+        if (!response.truncated || !response.next_cursor) {
+          this.vaultGeneration = generation ?? this.vaultGeneration + 1;
+          break;
+        }
+        cursor = response.next_cursor;
+      }
+      this.notes = notes;
       this.rebuildLookupSnapshot();
       this.rebuildTree();
       if (this.libraryBrowseMode === "tags") {

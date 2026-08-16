@@ -10,11 +10,12 @@ use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
 use crate::daemon_api::{
-    VaultAddRootRequest, VaultBacklinksQuery, VaultBacklinksResponse, VaultDeleteResponse,
-    VaultFileContentResponse, VaultNoteContentResponse, VaultNotesListResponse, VaultNotesQuery,
-    VaultPutQuery, VaultRootsResponse, VaultSearchQuery, VaultSearchResponse,
-    VaultSetActiveRootRequest, VaultTagsListResponse, VaultTagsQuery, VaultTrashListResponse,
-    VaultTrashRestoreRequest, VaultTrashRestoreResponse, VaultWriteRequest, VaultWriteResponse,
+    VaultAddRootRequest, VaultBacklinksQuery, VaultBacklinksResponse, VaultChangesQuery,
+    VaultChangesResponse, VaultDeleteResponse, VaultFileContentResponse, VaultNoteContentResponse,
+    VaultNotesListResponse, VaultNotesQuery, VaultPutQuery, VaultRootsResponse, VaultSearchQuery,
+    VaultSearchResponse, VaultSetActiveRootRequest, VaultTagsListResponse, VaultTagsQuery,
+    VaultTrashListResponse, VaultTrashRestoreRequest, VaultTrashRestoreResponse, VaultWriteRequest,
+    VaultWriteResponse,
 };
 use crate::vault::VaultService;
 use crate::vault::io::{VaultIoClass, vault_io};
@@ -47,6 +48,10 @@ pub fn vault_surface() -> DeclaredRouter {
         .route(
             vault_read_policy("/v1/vault/search"),
             get(search_vault_notes),
+        )
+        .route(
+            vault_read_policy("/v1/vault/changes"),
+            get(list_vault_changes),
         )
         .route(
             vault_read_policy("/v1/vault/backlinks"),
@@ -212,13 +217,17 @@ pub async fn list_vault_notes(
     let prefix = query.prefix;
     let tags = query.tags;
     let tag_prefix = query.tag_prefix;
+    let cursor = query.cursor;
+    let generation = query.generation;
     vault_io()
         .run_anyhow(VaultIoClass::Scan, move || {
-            Ok(VaultService::list_notes(
+            Ok(VaultService::list_notes_paged(
                 prefix.as_deref(),
                 limit,
                 tags.as_deref(),
                 tag_prefix.as_deref(),
+                cursor.as_deref(),
+                generation,
             ))
         })
         .await
@@ -342,6 +351,25 @@ pub async fn search_vault_notes(
         .map_err(map_vault_error)
 }
 
+pub async fn list_vault_changes(
+    Query(query): Query<VaultChangesQuery>,
+) -> Result<Json<VaultChangesResponse>, (StatusCode, String)> {
+    let limit = query.limit.unwrap_or(200);
+    let since = query.since_generation;
+    let cursor = query.cursor;
+    vault_io()
+        .run_anyhow(VaultIoClass::Scan, move || {
+            Ok(VaultService::changes_since(
+                since,
+                cursor.as_deref(),
+                limit,
+            ))
+        })
+        .await
+        .map(Json)
+        .map_err(map_vault_error)
+}
+
 pub async fn get_vault_backlinks(
     Query(query): Query<VaultBacklinksQuery>,
 ) -> Result<Json<VaultBacklinksResponse>, (StatusCode, String)> {
@@ -422,13 +450,13 @@ mod tests {
     #[test]
     fn vault_inventory_separates_content_and_host_authority() {
         let entries = vault_surface().inventory().entries().collect::<Vec<_>>();
-        assert_eq!(entries.len(), 24);
+        assert_eq!(entries.len(), 25);
         assert_eq!(
             entries
                 .iter()
                 .filter(|entry| entry.required_capability == Some("content.read"))
                 .count(),
-            7
+            8
         );
         assert_eq!(
             entries
