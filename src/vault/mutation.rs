@@ -81,24 +81,76 @@ pub fn commit_write(
         let receipt_path = receipt_store_path(&operation_id)?;
         let receipt_bytes = serde_json::to_vec(&receipt_record)
             .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
-        tx.write_receipt(&receipt_path, &receipt_bytes, DurabilityLevel::Synced)?;
-        let _ = tx.root().remove_file(&intent_path);
+        let receipt = vault_receipt(
+            format!("note:{normalized}"),
+            vault_generation,
+            mutation.content.len(),
+            VaultIndexOwner::durability(),
+        );
+        // Content is already durable. Receipt failure must not look like a
+        // failed mutation — callers must not retry the content write.
+        let index_repair_required =
+            match tx.write_receipt(&receipt_path, &receipt_bytes, DurabilityLevel::Synced) {
+                Ok(_) => {
+                    let _ = tx.root().remove_file(&intent_path);
+                    false
+                }
+                Err(_) => true, // intent retained for startup recovery
+            };
 
         Ok(VaultCommitOutcome {
-            receipt: vault_receipt(
-                format!("note:{normalized}"),
-                vault_generation,
-                mutation.content.len(),
-                VaultIndexOwner::durability(),
-            ),
+            receipt,
             note_version,
             vault_generation,
-            index_repair_required: false,
+            index_repair_required,
         })
     })();
 
     owner.lanes.mark_pending_intent(&lane, false);
     result
+}
+
+/// Scan intent directory and recover any interrupted write mutations.
+pub fn recover_all_pending_writes(
+    owner: &Arc<VaultIndexOwner>,
+) -> Result<Vec<VaultCommitOutcome>, VaultMutationError> {
+    let intent_root = StorePath::parse(".medousa/vault/intents")
+        .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
+    if !owner.files.is_dir(&intent_root).unwrap_or(false) {
+        return Ok(Vec::new());
+    }
+    let mut recovered = Vec::new();
+    for entry in owner
+        .files
+        .list_directory_utf8(&intent_root)
+        .map_err(VaultMutationError::from)?
+    {
+        if !entry.name.ends_with(".json") {
+            continue;
+        }
+        let operation_id = entry.name.trim_end_matches(".json");
+        let intent_path = intent_store_path(operation_id)?;
+        let peek = owner
+            .files
+            .read_limited(&intent_path, 64 * 1024)
+            .map_err(VaultMutationError::from)?;
+        let is_relocate = serde_json::from_slice::<serde_json::Value>(&peek)
+            .ok()
+            .and_then(|value| value.get("kind").cloned())
+            .is_some();
+        if is_relocate {
+            if let Some(outcome) =
+                crate::vault::relocate::recover_pending_relocate(owner, operation_id)?
+            {
+                recovered.push(outcome);
+            }
+            continue;
+        }
+        if let Some(outcome) = recover_pending_write(owner, operation_id)? {
+            recovered.push(outcome);
+        }
+    }
+    Ok(recovered)
 }
 
 /// Recover an interrupted intent→publish→receipt sequence.
@@ -375,7 +427,7 @@ mod tests {
             Arc::clone(&root),
             faults as Arc<dyn TransactionFaults>,
         ));
-        let err = commit_write(
+        let outcome = commit_write(
             &owner,
             WriteMutation {
                 path: "recover.md".into(),
@@ -384,31 +436,23 @@ mod tests {
                 expected_version: None,
             },
         )
-        .unwrap_err();
-        assert!(matches!(err, VaultMutationError::Persistence(_)));
+        .expect("content publish commits even when receipt fails");
+        assert!(outcome.index_repair_required);
+        assert_eq!(outcome.note_version.as_str(), content_hash("published\n"));
         assert!(
             root.is_file(&StorePath::parse("recover.md").unwrap())
                 .unwrap()
         );
-        // Reset faults and recover from leftover intent.
+        // Reset faults and complete receipt from leftover intent (startup path).
         owner.set_transaction(FileTransaction::with_faults(
             Arc::clone(&root),
             Arc::new(NoTransactionFaults),
         ));
-        let intent_dir = path.join(".medousa/vault/intents");
-        let operation_id = std::fs::read_dir(&intent_dir)
-            .unwrap()
-            .next()
-            .unwrap()
-            .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .trim_end_matches(".json")
-            .to_string();
-        let recovered = recover_pending_write(&owner, &operation_id)
-            .unwrap()
-            .expect("recovery");
-        assert_eq!(recovered.note_version.as_str(), content_hash("published\n"));
-        assert!(recovered.index_repair_required);
+        let recovered = recover_all_pending_writes(&owner).unwrap();
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].note_version.as_str(), content_hash("published\n"));
+        assert!(recovered[0].index_repair_required);
+        // Second recovery is a no-op (receipt present / intent gone).
+        assert!(recover_all_pending_writes(&owner).unwrap().is_empty());
     }
 }

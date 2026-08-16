@@ -138,6 +138,8 @@ pub fn ensure_owner_for_active_root() -> Result<Arc<VaultIndexOwner>, VaultMutat
     let files = crate::vault::path::user_vault_capability()
         .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
     let owner = VaultIndexOwner::new(VaultRootId::new(root_key), files);
+    // Complete or abandon interrupted intent→publish→receipt sequences.
+    let _ = crate::vault::mutation::recover_all_pending_writes(&owner);
     vault_registry().insert(Arc::clone(&owner));
     Ok(owner)
 }

@@ -94,11 +94,13 @@ fn commit_relocate(
     if matches!(kind, RelocateKind::Move | RelocateKind::Restore)
         && owner.files.is_file(&dest).unwrap_or(false)
     {
+        let _ = tx.root().remove_file(&intent_path);
         return Err(VaultMutationError::Conflict(
             "destination already exists".into(),
         ));
     }
     if !owner.files.is_file(&source).unwrap_or(false) {
+        let _ = tx.root().remove_file(&intent_path);
         return Err(VaultMutationError::Invalid(format!(
             "source not found: {source}"
         )));
@@ -116,20 +118,84 @@ fn commit_relocate(
         .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
     let receipt_bytes = serde_json::to_vec(&intent)
         .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
-    tx.write_receipt(&receipt_path, &receipt_bytes, DurabilityLevel::Synced)?;
-    let _ = tx.root().remove_file(&intent_path);
+    let receipt = vault_receipt(
+        format!("relocate:{operation_id}"),
+        vault_generation,
+        0,
+        DurabilityLevel::Synced,
+    );
+    let index_repair_required =
+        match tx.write_receipt(&receipt_path, &receipt_bytes, DurabilityLevel::Synced) {
+            Ok(_) => {
+                let _ = tx.root().remove_file(&intent_path);
+                false
+            }
+            Err(_) => true,
+        };
 
     Ok(VaultCommitOutcome {
-        receipt: vault_receipt(
-            format!("relocate:{operation_id}"),
-            vault_generation,
-            0,
-            DurabilityLevel::Synced,
-        ),
+        receipt,
         note_version: crate::vault::contracts::NoteVersion::from_digest(operation_id),
         vault_generation,
-        index_repair_required: false,
+        index_repair_required,
     })
+}
+
+/// Complete or abandon in-flight relocate intents after a crash.
+pub fn recover_pending_relocate(
+    owner: &Arc<VaultIndexOwner>,
+    operation_id: &str,
+) -> Result<Option<VaultCommitOutcome>, VaultMutationError> {
+    let intent_path = StorePath::parse(&format!(".medousa/vault/intents/{operation_id}.json"))
+        .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
+    let receipt_path = StorePath::parse(&format!(".medousa/vault/receipts/{operation_id}.json"))
+        .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
+    let tx = owner.transaction();
+    if tx.root().is_file(&receipt_path).unwrap_or(false) {
+        let _ = tx.root().remove_file(&intent_path);
+        return Ok(None);
+    }
+    if !tx.root().is_file(&intent_path).unwrap_or(false) {
+        return Ok(None);
+    }
+    let bytes = tx
+        .root()
+        .read_limited(&intent_path, 64 * 1024)
+        .map_err(VaultMutationError::from)?;
+    let intent: RelocateIntent = serde_json::from_slice(&bytes)
+        .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
+    let Some(dest_raw) = intent.destination.clone() else {
+        let _ = tx.root().remove_file(&intent_path);
+        return Ok(None);
+    };
+    let source = VaultPath::parse(&intent.source)
+        .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
+    let dest = VaultPath::parse(&dest_raw)
+        .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
+    let source_exists = tx.root().is_file(&source).unwrap_or(false);
+    let dest_exists = tx.root().is_file(&dest).unwrap_or(false);
+    if dest_exists && !source_exists {
+        // Move/delete already published; write receipt.
+        let vault_generation = owner.bump_generation();
+        let receipt_bytes = serde_json::to_vec(&intent)
+            .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
+        let _ = tx.write_receipt(&receipt_path, &receipt_bytes, DurabilityLevel::Synced);
+        let _ = tx.root().remove_file(&intent_path);
+        return Ok(Some(VaultCommitOutcome {
+            receipt: vault_receipt(
+                format!("relocate:{operation_id}"),
+                vault_generation,
+                0,
+                DurabilityLevel::Synced,
+            ),
+            note_version: crate::vault::contracts::NoteVersion::from_digest(operation_id),
+            vault_generation,
+            index_repair_required: true,
+        }));
+    }
+    // Incomplete: drop intent; do not invent a new mutation.
+    let _ = tx.root().remove_file(&intent_path);
+    Ok(None)
 }
 
 fn unique_trash_path(
@@ -235,5 +301,72 @@ mod tests {
                 .is_file(&VaultPath::parse("to.md").unwrap())
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn receipt_fault_after_move_is_repair_required_and_startup_recovers() {
+        use medousa_store::{
+            FileTransaction, NoTransactionFaults, PersistenceError, PersistenceErrorKind,
+            TransactionFaultPoint, TransactionFaults,
+        };
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct FailAt {
+            target: TransactionFaultPoint,
+            hits: AtomicUsize,
+        }
+        impl TransactionFaults for FailAt {
+            fn check(&self, point: TransactionFaultPoint) -> Result<(), PersistenceError> {
+                self.hits.fetch_add(1, Ordering::Relaxed);
+                if point == self.target {
+                    return Err(PersistenceError::new(
+                        PersistenceErrorKind::RetryableIo,
+                        format!("injected {point:?}"),
+                    ));
+                }
+                Ok(())
+            }
+        }
+
+        let (_dir, owner) = owner();
+        commit_write(
+            &owner,
+            WriteMutation {
+                path: "from.md".into(),
+                content: "body\n".into(),
+                precondition: MutationPrecondition::CreateOnly,
+                expected_version: None,
+            },
+        )
+        .unwrap();
+        let root = Arc::clone(&owner.files);
+        owner.set_transaction(FileTransaction::with_faults(
+            Arc::clone(&root),
+            Arc::new(FailAt {
+                target: TransactionFaultPoint::BeforeReceipt,
+                hits: AtomicUsize::new(0),
+            }) as Arc<dyn TransactionFaults>,
+        ));
+        let outcome = relocate_move(&owner, "from.md", "to.md").expect("move published");
+        assert!(outcome.index_repair_required);
+        assert!(
+            owner
+                .files
+                .is_file(&VaultPath::parse("to.md").unwrap())
+                .unwrap()
+        );
+        assert!(
+            !owner
+                .files
+                .is_file(&VaultPath::parse("from.md").unwrap())
+                .unwrap()
+        );
+        owner.set_transaction(FileTransaction::with_faults(
+            Arc::clone(&root),
+            Arc::new(NoTransactionFaults),
+        ));
+        let recovered = crate::vault::mutation::recover_all_pending_writes(&owner).unwrap();
+        assert_eq!(recovered.len(), 1);
+        assert!(recovered[0].index_repair_required);
     }
 }
