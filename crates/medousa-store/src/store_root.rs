@@ -538,8 +538,45 @@ impl StoreRoot {
         path: &impl StoreRootPath,
         bytes: &[u8],
     ) -> Result<(), StoreRootError> {
-        let (parent, leaf) = self.open_parent(path, true, "atomic_write")?;
-        reject_symlink(&parent, leaf, "atomic_write")?;
+        self.atomic_publish(path, bytes, false, "atomic_write")
+    }
+
+    /// Create-only atomic publication. Fails if the destination leaf exists.
+    pub fn atomic_create(
+        &self,
+        path: &impl StoreRootPath,
+        bytes: &[u8],
+    ) -> Result<(), StoreRootError> {
+        self.atomic_publish(path, bytes, true, "atomic_create")
+    }
+
+    /// Sync the parent directory of `path` when the platform supports it.
+    ///
+    /// On Windows this is currently a documented no-op at the directory level;
+    /// the published file itself is still data-synced before rename.
+    pub fn sync_parent_of(&self, path: &impl StoreRootPath) -> Result<(), StoreRootError> {
+        let (parent, _leaf) = self.open_parent(path, false, "sync_parent")?;
+        sync_directory(&parent).map_err(|error| StoreRootError::io("sync_parent", error))
+    }
+
+    fn atomic_publish(
+        &self,
+        path: &impl StoreRootPath,
+        bytes: &[u8],
+        create_only: bool,
+        operation: &'static str,
+    ) -> Result<(), StoreRootError> {
+        let (parent, leaf) = self.open_parent(path, true, operation)?;
+        reject_symlink(&parent, leaf, operation)?;
+        if create_only && parent.symlink_metadata(leaf).is_ok() {
+            return Err(StoreRootError::io(
+                operation,
+                std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    "destination already exists",
+                ),
+            ));
+        }
 
         let temporary = format!(".medousa-tmp-{}", uuid::Uuid::new_v4().simple());
         let mut options = OpenOptions::new();
@@ -555,10 +592,16 @@ impl StoreRoot {
             return Err(StoreRootError::io("write_temporary", error));
         }
         drop(file);
-        if let Err(error) = parent.rename(&temporary, &parent, leaf) {
+        if create_only {
+            if let Err(error) = rename_noreplace(&parent, &temporary, &parent, leaf) {
+                let _ = parent.remove_file(&temporary);
+                return Err(StoreRootError::io("publish_atomic_noreplace", error));
+            }
+        } else if let Err(error) = parent.rename(&temporary, &parent, leaf) {
             let _ = parent.remove_file(&temporary);
             return Err(StoreRootError::io("publish_atomic", error));
         }
+        // Drop the pre-check existence branch for create_only — noreplace is the fence.
         sync_directory(&parent).map_err(|error| StoreRootError::io("sync_parent", error))?;
         Ok(())
     }
@@ -680,6 +723,21 @@ impl StoreRoot {
         from_parent
             .rename(from_leaf, &to_parent, to_leaf)
             .map_err(|error| StoreRootError::io("rename", error))
+    }
+
+    /// Same-filesystem rename that fails if the destination leaf already exists.
+    pub fn rename_create_only(
+        &self,
+        from: &impl StoreRootPath,
+        to: &impl StoreRootPath,
+    ) -> Result<(), StoreRootError> {
+        let (from_parent, from_leaf) = self.open_parent(from, false, "rename_source")?;
+        reject_symlink(&from_parent, from_leaf, "rename_source")?;
+        reject_hard_link(&from_parent, from_leaf, "rename_source")?;
+        let (to_parent, to_leaf) = self.open_parent(to, true, "rename_destination")?;
+        reject_symlink(&to_parent, to_leaf, "rename_destination")?;
+        rename_noreplace(&from_parent, from_leaf, &to_parent, to_leaf)
+            .map_err(|error| StoreRootError::io("rename_noreplace", error))
     }
 
     fn open_file(
@@ -886,6 +944,132 @@ fn reject_hard_link(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(StoreRootError::io(operation, error)),
     }
+}
+
+#[cfg(target_os = "linux")]
+fn rename_noreplace(from_dir: &Dir, from: &str, to_dir: &Dir, to: &str) -> std::io::Result<()> {
+    use std::ffi::CString;
+    use std::os::fd::AsRawFd as _;
+
+    let from_c = CString::new(from)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL"))?;
+    let to_c = CString::new(to)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL"))?;
+    // SAFETY: directory fds are live; paths are relative C strings without NUL.
+    let rc = unsafe {
+        libc::renameat2(
+            from_dir.as_raw_fd(),
+            from_c.as_ptr(),
+            to_dir.as_raw_fd(),
+            to_c.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn rename_noreplace(from_dir: &Dir, from: &str, to_dir: &Dir, to: &str) -> std::io::Result<()> {
+    use std::ffi::CString;
+    use std::os::fd::AsRawFd as _;
+
+    const RENAME_EXCL: u32 = 0x0000_0004;
+    let from_c = CString::new(from)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL"))?;
+    let to_c = CString::new(to)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL"))?;
+    // SAFETY: directory fds are live; paths are relative C strings without NUL.
+    let rc = unsafe {
+        libc::renameatx_np(
+            from_dir.as_raw_fd(),
+            from_c.as_ptr(),
+            to_dir.as_raw_fd(),
+            to_c.as_ptr(),
+            RENAME_EXCL,
+        )
+    };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+fn rename_noreplace(from_dir: &Dir, from: &str, to_dir: &Dir, to: &str) -> std::io::Result<()> {
+    // Fallback: linkat is atomic no-replace, then unlink the source.
+    use std::ffi::CString;
+    use std::os::fd::AsRawFd as _;
+
+    let from_c = CString::new(from)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL"))?;
+    let to_c = CString::new(to)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL"))?;
+    let rc = unsafe {
+        libc::linkat(
+            from_dir.as_raw_fd(),
+            from_c.as_ptr(),
+            to_dir.as_raw_fd(),
+            to_c.as_ptr(),
+            0,
+        )
+    };
+    if rc != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let _ = unsafe { libc::unlinkat(from_dir.as_raw_fd(), from_c.as_ptr(), 0) };
+    Ok(())
+}
+
+#[cfg(windows)]
+fn held_directory_path(directory: &Dir) -> std::io::Result<PathBuf> {
+    use std::os::windows::ffi::OsStringExt as _;
+    use std::os::windows::io::AsRawHandle as _;
+    use windows::Win32::Foundation::{HANDLE, MAX_PATH};
+    use windows::Win32::Storage::FileSystem::{FILE_NAME_NORMALIZED, GetFinalPathNameByHandleW};
+
+    let mut buffer = vec![0u16; MAX_PATH as usize];
+    let handle = HANDLE(directory.as_raw_handle() as *mut _);
+    let len = unsafe { GetFinalPathNameByHandleW(handle, &mut buffer, FILE_NAME_NORMALIZED) };
+    if len == 0 || len as usize >= buffer.len() {
+        return Err(std::io::Error::last_os_error());
+    }
+    buffer.truncate(len as usize);
+    let dir_path = PathBuf::from(std::ffi::OsString::from_wide(&buffer));
+    Ok(dir_path
+        .to_str()
+        .map(|s| PathBuf::from(s.strip_prefix(r"\\?\").unwrap_or(s)))
+        .unwrap_or(dir_path))
+}
+
+#[cfg(windows)]
+fn rename_noreplace(from_dir: &Dir, from: &str, to_dir: &Dir, to: &str) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt as _;
+    use windows::Win32::Storage::FileSystem::CreateHardLinkW;
+    use windows::core::PCWSTR;
+
+    // Hard-link creation is the Windows no-replace fence; then drop the source.
+    let from_path = held_directory_path(from_dir)?.join(from);
+    let to_path = held_directory_path(to_dir)?.join(to);
+    let from_w: Vec<u16> = from_path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let to_w: Vec<u16> = to_path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    if unsafe { CreateHardLinkW(PCWSTR(to_w.as_ptr()), PCWSTR(from_w.as_ptr()), None) }.is_err() {
+        return Err(std::io::Error::last_os_error());
+    }
+    let _ = std::fs::remove_file(&from_path);
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -1339,5 +1523,67 @@ mod tests {
 
         assert!(root.remove_dir_all(&path("victim")).is_err());
         assert_eq!(std::fs::read(outside.join("canary")).unwrap(), b"safe");
+    }
+
+    #[test]
+    fn create_only_competing_writers_exactly_one_commits() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        let temp = tempfile::tempdir().unwrap();
+        let root_path = temp.path().canonicalize().unwrap();
+        let root = Arc::new(StoreRoot::open_or_create_nofollow(&root_path).unwrap());
+        let barrier = Arc::new(Barrier::new(2));
+        let wins = Arc::new(AtomicUsize::new(0));
+        let losses = Arc::new(AtomicUsize::new(0));
+        let mut handles = Vec::new();
+        for idx in 0..2 {
+            let root = Arc::clone(&root);
+            let barrier = Arc::clone(&barrier);
+            let wins = Arc::clone(&wins);
+            let losses = Arc::clone(&losses);
+            handles.push(thread::spawn(move || {
+                barrier.wait();
+                let body = format!("writer-{idx}");
+                match root.atomic_create(&path("race.md"), body.as_bytes()) {
+                    Ok(()) => {
+                        wins.fetch_add(1, Ordering::SeqCst);
+                    }
+                    Err(_) => {
+                        losses.fetch_add(1, Ordering::SeqCst);
+                    }
+                }
+            }));
+        }
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        assert_eq!(wins.load(Ordering::SeqCst), 1);
+        assert_eq!(losses.load(Ordering::SeqCst), 1);
+        let bytes = root.read_limited(&path("race.md"), 64).unwrap();
+        assert!(
+            bytes == b"writer-0" || bytes == b"writer-1",
+            "winner bytes must be intact, got {:?}",
+            String::from_utf8_lossy(&bytes)
+        );
+    }
+
+    #[test]
+    fn rename_create_only_refuses_existing_destination() {
+        let temp = tempfile::tempdir().unwrap();
+        let root_path = temp.path().canonicalize().unwrap();
+        let root = StoreRoot::open_or_create_nofollow(&root_path).unwrap();
+        root.atomic_create(&path("from.md"), b"source").unwrap();
+        root.atomic_create(&path("to.md"), b"winner").unwrap();
+        let error = root
+            .rename_create_only(&path("from.md"), &path("to.md"))
+            .unwrap_err();
+        assert!(
+            matches!(error, StoreRootError::Io { ref source, .. } if source.kind() == std::io::ErrorKind::AlreadyExists),
+            "got {error:?}"
+        );
+        assert_eq!(root.read_limited(&path("from.md"), 64).unwrap(), b"source");
+        assert_eq!(root.read_limited(&path("to.md"), 64).unwrap(), b"winner");
     }
 }

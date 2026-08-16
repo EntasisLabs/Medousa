@@ -1,16 +1,70 @@
-//! Ranked vault full-text search (V0 heuristic).
+//! Ranked vault full-text search via the H07.3 search-index port.
 
-use chrono::Utc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::daemon_api::{VaultNoteSummary, VaultSearchHit, VaultSearchResponse};
-use crate::vault::note::{extract_title, strip_frontmatter};
-use crate::vault::store::vault_store;
+use crate::vault::io::{VaultIoClass, vault_io};
+use crate::vault::store::{PROJECTION, vault_search_index, vault_store};
 
-const TITLE_WEIGHT: f32 = 0.40;
-const HEADING_WEIGHT: f32 = 0.30;
-const BODY_WEIGHT: f32 = 0.20;
-const RECENCY_WEIGHT: f32 = 0.10;
-const PHRASE_BOOST: f32 = 0.20;
+static SEARCH_REBUILD_SCHEDULED: AtomicBool = AtomicBool::new(false);
+
+fn rebuild_search_index_sync() {
+    let store = vault_store();
+    let _ = store.ensure_index_fresh();
+    let rebuild_generation = PROJECTION.snapshot().generation.max(1);
+    let entries = store.peek_all_entries();
+    let mut bodies = Vec::with_capacity(entries.len());
+    for entry in &entries {
+        let body = store.read_content(&entry.path).unwrap_or_default();
+        bodies.push((entry.clone(), body));
+    }
+    let mut index = vault_search_index()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let applied = index.apply_rebuild_if_current(
+        bodies.iter().map(|(entry, body)| (entry, body.as_str())),
+        rebuild_generation,
+    );
+    if applied {
+        persist_search_generation(rebuild_generation);
+        index.clear_stale();
+    } else {
+        index.mark_stale();
+    }
+    drop(index);
+    SEARCH_REBUILD_SCHEDULED.store(false, Ordering::Release);
+}
+
+pub(crate) fn persist_search_generation(generation: u64) {
+    let Ok(path) = medousa_store::StorePath::parse(".medousa/vault/search.generation") else {
+        return;
+    };
+    if let Ok(files) = crate::vault::path::user_vault_capability() {
+        let _ = files.atomic_write(&path, generation.to_string().as_bytes());
+    }
+}
+
+fn schedule_search_rebuild() {
+    if SEARCH_REBUILD_SCHEDULED.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        handle.spawn(async {
+            let result = vault_io()
+                .run(VaultIoClass::SearchRebuild, || {
+                    rebuild_search_index_sync();
+                    Ok(())
+                })
+                .await;
+            if result.is_err() {
+                SEARCH_REBUILD_SCHEDULED.store(false, Ordering::Release);
+            }
+        });
+    } else {
+        // Unit tests / sync callers: rebuild inline once.
+        rebuild_search_index_sync();
+    }
+}
 
 pub fn search_vault(query: &str, limit: usize) -> anyhow::Result<VaultSearchResponse> {
     let query = query.trim();
@@ -18,148 +72,97 @@ pub fn search_vault(query: &str, limit: usize) -> anyhow::Result<VaultSearchResp
         return Ok(VaultSearchResponse {
             query: String::new(),
             hits: Vec::new(),
-        });
-    }
-
-    let terms = tokenize(query);
-    if terms.is_empty() {
-        return Ok(VaultSearchResponse {
-            query: query.to_string(),
-            hits: Vec::new(),
+            indexing: None,
         });
     }
 
     let store = vault_store();
-    let entries = store.all_entries();
-    let newest = entries
-        .iter()
-        .map(|entry| entry.modified_at_utc)
-        .max()
-        .unwrap_or_else(Utc::now);
+    let _ = store.ensure_index_fresh();
 
-    let mut hits = Vec::new();
-    for entry in entries {
-        let title = entry.title.to_ascii_lowercase();
-        let filename = entry
-            .path
-            .rsplit('/')
-            .next()
-            .unwrap_or(&entry.path)
-            .to_ascii_lowercase();
-        let mut matched_terms = Vec::new();
-        let mut score = 0.0f32;
-
-        for term in &terms {
-            if title.contains(term) || filename.contains(term) {
-                score += TITLE_WEIGHT / terms.len() as f32;
-                matched_terms.push(term.clone());
+    let mut indexing = false;
+    {
+        let index = vault_search_index()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if index.docs_is_empty() {
+            drop(index);
+            if tokio::runtime::Handle::try_current().is_ok() {
+                schedule_search_rebuild();
+                indexing = true;
+            } else {
+                rebuild_search_index_sync();
             }
+        } else if index.is_stale() {
+            indexing = true;
+            schedule_search_rebuild();
         }
-
-        let body = match store.read_content(&entry.path) {
-            Ok(value) => value,
-            Err(_) => continue,
-        };
-        let (content, _) = strip_frontmatter(&body);
-        let heading = extract_title(&body, &entry.path).to_ascii_lowercase();
-        for term in &terms {
-            if heading.contains(term) && !matched_terms.iter().any(|value| value == term) {
-                score += HEADING_WEIGHT / terms.len() as f32;
-                matched_terms.push(term.clone());
-            }
-        }
-
-        let content_lower = content.to_ascii_lowercase();
-        let mut body_hits = 0usize;
-        for term in &terms {
-            if content_lower.contains(term) {
-                body_hits += 1;
-                if !matched_terms.iter().any(|value| value == term) {
-                    matched_terms.push(term.clone());
-                }
-            }
-        }
-        if body_hits > 0 {
-            score += BODY_WEIGHT * (body_hits as f32 / terms.len() as f32);
-        }
-
-        if content_lower.contains(&query.to_ascii_lowercase()) {
-            score += PHRASE_BOOST;
-        }
-
-        if matched_terms.is_empty() {
-            continue;
-        }
-
-        let age_hours = newest
-            .signed_duration_since(entry.modified_at_utc)
-            .num_hours()
-            .max(0) as f32;
-        let recency = 1.0 / (1.0 + age_hours / 24.0);
-        score += RECENCY_WEIGHT * recency;
-        score = score.clamp(0.0, 1.0);
-
-        let snippet = snippet_for_terms(content, &terms);
-        hits.push(VaultSearchHit {
-            note: VaultNoteSummary {
-                path: entry.path.clone(),
-                title: entry.title.clone(),
-                modified_at_utc: entry.modified_at_utc,
-                kind: entry
-                    .kind
-                    .clone()
-                    .unwrap_or_else(|| crate::vault::note::resolve_kind_from_path(&entry.path)),
-                tags: entry.tags.clone(),
-            },
-            score,
-            matched_terms,
-            snippet,
-        });
     }
 
-    hits.sort_by(|left, right| {
-        right
-            .score
-            .partial_cmp(&left.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    hits.truncate(limit);
+    let index = vault_search_index()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let (hits, stale) = index.search(query, limit);
+    indexing = indexing || stale;
+    let response_hits =
+        hits.into_iter()
+            .filter_map(|hit| {
+                let entry = store.peek_entry_public(&hit.path)?;
+                Some(VaultSearchHit {
+                    note: VaultNoteSummary {
+                        path: entry.path.clone(),
+                        title: entry.title.clone(),
+                        modified_at_utc: entry.modified_at_utc,
+                        kind: entry.kind.clone().unwrap_or_else(|| {
+                            crate::vault::note::resolve_kind_from_path(&entry.path)
+                        }),
+                        tags: entry.tags.clone(),
+                    },
+                    score: hit.score.clamp(0.0, 1.0),
+                    matched_terms: crate::vault::search_index::tokenize(query),
+                    snippet: Some(hit.title),
+                })
+            })
+            .collect();
 
     Ok(VaultSearchResponse {
         query: query.to_string(),
-        hits,
+        hits: response_hits,
+        indexing: indexing.then_some(true),
     })
-}
-
-fn tokenize(query: &str) -> Vec<String> {
-    query
-        .split_whitespace()
-        .map(|term| term.trim_matches(|ch: char| !ch.is_alphanumeric()).to_ascii_lowercase())
-        .filter(|term| !term.is_empty())
-        .collect()
-}
-
-fn snippet_for_terms(content: &str, terms: &[String]) -> Option<String> {
-    for line in content.lines() {
-        let lower = line.to_ascii_lowercase();
-        if terms.iter().any(|term| lower.contains(term)) {
-            let trimmed = line.trim();
-            if trimmed.chars().count() > 180 {
-                return Some(format!("{}…", trimmed.chars().take(180).collect::<String>()));
-            }
-            return Some(trimmed.to_string());
-        }
-    }
-    None
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::vault::search_index::tokenize;
 
     #[test]
     fn tokenize_strips_punctuation() {
         let terms = tokenize("medousa, vault!");
-        assert_eq!(terms, vec!["medousa", "vault"]);
+        assert!(terms.contains(&"medousa".to_string()));
+        assert!(terms.contains(&"vault".to_string()));
+    }
+
+    #[test]
+    fn rebuild_persists_search_generation_stamp() {
+        crate::vault::service::with_temp_vault(|| {
+            let path = format!("journal/search-{}.md", uuid::Uuid::new_v4().simple());
+            crate::vault::service::VaultService::write_note(
+                Some(&path),
+                &crate::daemon_api::VaultWriteRequest {
+                    path: Some(path.clone()),
+                    content: "# Searchable unique-token-xyz\n".to_string(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("write");
+            let files = crate::vault::path::user_vault_capability().expect("capability");
+            let stamp = medousa_store::StorePath::parse(".medousa/vault/search.generation")
+                .expect("stamp path");
+            assert!(
+                files.is_file(&stamp).unwrap_or(false),
+                "successful rebuild must persist search.generation"
+            );
+        });
     }
 }

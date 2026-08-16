@@ -275,6 +275,7 @@ not persist the returned user code or attempt to obtain daemon token material.
 | `delete_note(path)` | `DELETE /v1/vault/notes/{path}` | `VaultDeleteResponse` |
 | `list_tags(query)` | `GET /v1/vault/tags` | `VaultTagsListResponse` |
 | `search(query)` | `GET /v1/vault/search` | `VaultSearchResponse` |
+| `list_changes(query)` | `GET /v1/vault/changes` | `VaultChangesResponse` |
 | `backlinks(query)` | `GET /v1/vault/backlinks` | `VaultBacklinksResponse` |
 
 ---

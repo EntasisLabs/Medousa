@@ -10,13 +10,16 @@ use crate::vault::note::{parse_frontmatter_tags, strip_frontmatter};
 pub fn default_vault_semantic_tags(chat_session_id: Option<&str>) -> Vec<String> {
     let mut tags = vec!["medousa".to_string(), "vault".to_string()];
     if let Some(session_id) = chat_session_id.filter(|value| !value.trim().is_empty()) {
-        tags.extend(crate::locus_semantic_tags::default_workshop_semantic_tags(session_id));
+        tags.extend(crate::locus_semantic_tags::default_workshop_semantic_tags(
+            session_id,
+        ));
     } else {
         let profile_id = crate::user_profiles::resolve_workshop_identity_user_id();
         if let Some(slug) = crate::user_profiles::profile_slug_from_id(&profile_id)
-            && slug != crate::locus_memory::LOCUS_DEFAULT_TENANT {
-                tags.push(format!("profile:{slug}"));
-            }
+            && slug != crate::locus_memory::LOCUS_DEFAULT_TENANT
+        {
+            tags.push(format!("profile:{slug}"));
+        }
     }
     normalize_semantic_tags(tags.iter().map(String::as_str))
 }
@@ -32,9 +35,7 @@ where
 pub fn parse_tags_query(raw: Option<&str>) -> Vec<String> {
     raw.map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| {
-            normalize_semantic_tags(value.split(',').map(str::trim))
-        })
+        .map(|value| normalize_semantic_tags(value.split(',').map(str::trim)))
         .unwrap_or_default()
 }
 
@@ -50,7 +51,11 @@ pub fn entry_has_all_tags(entry_tags: &[String], required: &[String]) -> bool {
     required.iter().all(|tag| entry_set.contains(tag))
 }
 
-pub fn collect_distinct_tags(entries: &[crate::vault::note::VaultIndexEntry], prefix: Option<&str>, limit: usize) -> Vec<String> {
+pub fn collect_distinct_tags(
+    entries: &[crate::vault::note::VaultIndexEntry],
+    prefix: Option<&str>,
+    limit: usize,
+) -> Vec<String> {
     let prefix = prefix
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -61,9 +66,10 @@ pub fn collect_distinct_tags(entries: &[crate::vault::note::VaultIndexEntry], pr
             let normalized = normalize_semantic_tags([tag.as_str()]);
             for tag in normalized {
                 if let Some(prefix) = prefix.as_deref()
-                    && !tag.starts_with(prefix) {
-                        continue;
-                    }
+                    && !tag.starts_with(prefix)
+                {
+                    continue;
+                }
                 tags.insert(tag);
             }
         }
@@ -77,8 +83,7 @@ pub fn collect_distinct_tags(entries: &[crate::vault::note::VaultIndexEntry], pr
 fn format_tags_yaml_line(tags: &[String]) -> String {
     format!(
         "tags: [{}]",
-        tags
-            .iter()
+        tags.iter()
             .map(|tag| format!("\"{}\"", tag.replace('"', "\\\"")))
             .collect::<Vec<_>>()
             .join(", ")
@@ -125,9 +130,7 @@ pub fn apply_semantic_tags_on_write(
     auto_workshop_tags: bool,
 ) -> String {
     let (_, frontmatter) = strip_frontmatter(content);
-    let mut tags = frontmatter
-        .map(parse_frontmatter_tags)
-        .unwrap_or_default();
+    let mut tags = frontmatter.map(parse_frontmatter_tags).unwrap_or_default();
     tags.extend(parse_inline_tags(content));
     if let Some(extra) = extra_tags {
         tags.extend(extra.iter().cloned());

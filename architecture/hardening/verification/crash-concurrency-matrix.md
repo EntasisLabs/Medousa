@@ -107,8 +107,8 @@ state.
 | CM-003 | Append versus mark-read | Cursor never points beyond committed event generation |
 | CM-004 | N worker updates plus persistence debounce | Persisted state equals a real ordered generation, never an older late writer |
 | CM-005 | Update versus retention eviction | Active/recoverable record cannot be evicted; memory/disk agree |
-| CM-006 | Two vault writes with identical `If-Match` | Exactly one succeeds; loser receives conflict without mutation |
-| CM-007 | Vault write versus external editor change | Conflict or documented reconciliation; never silent clobber |
+| CM-006 | Two vault writes with identical `If-Match` | Exactly one succeeds; loser receives conflict without mutation | Covered by `vault::mutation::tests::cm006_exactly_one_match_writer_commits` |
+| CM-007 | Vault write versus external editor change | Conflict or documented reconciliation; never silent clobber | Baseline harness in `vault::h07_verify`; full product policy pending soak |
 | CM-008 | Vault delete/restore/write same path | One serializable outcome; no duplicate file or orphaned index entry |
 | CM-009 | Forge mutations on same item/attempt | Lease and generation fencing admit only valid transition |
 | CM-010 | Forge mutations on unrelated items | No unnecessary global serialization or cross-item state |

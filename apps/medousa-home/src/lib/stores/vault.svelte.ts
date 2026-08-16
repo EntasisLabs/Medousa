@@ -5,6 +5,7 @@ import {
   getVaultBacklinks,
   getVaultNote,
   listVaultNotes,
+  listVaultChanges,
   listVaultRoots,
   listVaultTags,
   saveVaultNote,
@@ -88,6 +89,16 @@ import {
 } from "$lib/utils/vaultFrontmatter";
 import { workshopSessionIdForVaultSave } from "$lib/utils/vaultNoteWorkshop";
 import { parseWikilinkTarget, resolveWikilinkTarget, suggestPathForWikilinkToken } from "$lib/utils/resolveWikilink";
+import {
+  buildVaultLookupSnapshot,
+  withSelectionAncestors,
+  type VaultLookupSnapshot,
+} from "$lib/utils/vaultLookup";
+import {
+  VAULT_LIST_MAX_PAGES,
+  VAULT_LIST_PAGE_LIMIT,
+  listingIncompleteAfterPages,
+} from "$lib/utils/vaultListing";
 import {
   addAttachments,
   guessMimeFromPath,
@@ -208,6 +219,10 @@ export type VaultTagCount = { tag: string; count: number };
 
 export class VaultStore {
   notes = $state<VaultNote[]>([]);
+  /** Shared per-generation lookup maps — rebuilt when notes/generation change. */
+  lookupSnapshot = $state<VaultLookupSnapshot>(buildVaultLookupSnapshot([], 0));
+  vaultGeneration = $state(0);
+  listingIncomplete = $state(false);
   tree = $state<VaultTreeNode[]>([]);
   selectedPath = $state<string | null>(loadLastNote());
   /** Multi-select in the vault rail (tree / browse lists). */
@@ -1523,19 +1538,84 @@ export class VaultStore {
   async refreshNotes() {
     this.error = null;
     try {
-      const response = await listVaultNotes({ limit: 500 });
-      this.notes = response.notes.map((note) => ({
-        path: note.path,
-        title: note.title,
-        byte_size: 0,
-        content_hash: "",
-        modified_at_utc: note.modified_at_utc,
-        created_at_utc: note.modified_at_utc,
-        tags: note.tags ?? [],
-        wikilinks_out: [],
-        backlinks: [],
-        kind: note.kind,
-      }));
+      if (this.vaultGeneration > 0) {
+        const delta = await listVaultChanges({
+          sinceGeneration: this.vaultGeneration,
+          limit: 500,
+        });
+        if (!delta.reset_required && delta.changes.every((change) => change.kind === "delete")) {
+          const removed = new Set(
+            delta.changes.map((change) => change.path),
+          );
+          this.notes = this.notes.filter((note) => !removed.has(note.path));
+          this.vaultGeneration = delta.vault_generation;
+          this.listingIncomplete = false;
+          this.rebuildLookupSnapshot();
+          this.rebuildTree();
+          if (this.libraryBrowseMode === "tags") {
+            void this.refreshVaultTags();
+          }
+          return;
+        }
+      }
+
+      const pageLimit = VAULT_LIST_PAGE_LIMIT;
+      const notes: typeof this.notes = [];
+      let cursor: string | undefined;
+      let generation: number | undefined;
+      let incomplete = false;
+      for (let page = 0; page < VAULT_LIST_MAX_PAGES; page += 1) {
+        const response = await listVaultNotes({
+          limit: pageLimit,
+          cursor,
+          generation,
+        });
+        if (response.reset_required) {
+          notes.length = 0;
+          cursor = undefined;
+          generation = response.vault_generation ?? undefined;
+          continue;
+        }
+        for (const note of response.notes) {
+          notes.push({
+            path: note.path,
+            title: note.title,
+            byte_size: 0,
+            content_hash: "",
+            modified_at_utc: note.modified_at_utc,
+            created_at_utc: note.modified_at_utc,
+            tags: note.tags ?? [],
+            wikilinks_out: [],
+            backlinks: [],
+            kind: note.kind,
+          });
+        }
+        generation = response.vault_generation ?? generation;
+        if (!response.truncated || !response.next_cursor) {
+          this.vaultGeneration = generation ?? this.vaultGeneration + 1;
+          incomplete = false;
+          break;
+        }
+        if (
+          listingIncompleteAfterPages(
+            page + 1,
+            Boolean(response.truncated),
+            response.next_cursor,
+          )
+        ) {
+          incomplete = true;
+          break;
+        }
+        cursor = response.next_cursor;
+      }
+      if (incomplete) {
+        this.listingIncomplete = true;
+        this.error = "Vault listing is incomplete; page until the listing finishes.";
+        return;
+      }
+      this.listingIncomplete = false;
+      this.notes = notes;
+      this.rebuildLookupSnapshot();
       this.rebuildTree();
       if (this.libraryBrowseMode === "tags") {
         void this.refreshVaultTags();
@@ -1543,6 +1623,23 @@ export class VaultStore {
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
     }
+  }
+
+  rebuildLookupSnapshot() {
+    this.lookupSnapshot = buildVaultLookupSnapshot(
+      this.notes,
+      this.vaultGeneration,
+      this.selectedPath,
+    );
+  }
+
+  selectionAncestorSet(): Set<string> {
+    return this.lookupSnapshot.ancestorIdsForSelection;
+  }
+
+  isSelectionAncestor(pathOrFolder: string | null): boolean {
+    if (!pathOrFolder) return false;
+    return this.lookupSnapshot.ancestorIdsForSelection.has(pathOrFolder);
   }
 
   /**
@@ -1682,6 +1779,7 @@ export class VaultStore {
     // Buffer-first reopen: dirty or recently stashed clean — skip cold refetch.
     if (buffered) {
       this.selectedPath = nextPath;
+      this.lookupSnapshot = withSelectionAncestors(this.lookupSnapshot, nextPath);
       this.restoreBufferIntoFocused(buffered);
       this.restoreEditorUi(nextPath);
       localStorage.setItem(LAST_NOTE_KEY, nextPath);
@@ -1699,6 +1797,7 @@ export class VaultStore {
     this.loading = true;
     this.error = null;
     this.selectedPath = nextPath;
+    this.lookupSnapshot = withSelectionAncestors(this.lookupSnapshot, nextPath);
     this.content = "";
     this.baselineContent = "";
     this.contentHash = null;
@@ -1839,7 +1938,7 @@ export class VaultStore {
   }
 
   resolveWikilinkPath(rawTarget: string): string | null {
-    return resolveWikilinkTarget(rawTarget, this.selectedPath, this.notes);
+    return resolveWikilinkTarget(rawTarget, this.selectedPath, this.lookupSnapshot);
   }
 
   openWikilink(rawTarget: string) {
@@ -1852,7 +1951,7 @@ export class VaultStore {
         : resolveWikilinkTarget(
             pathToken || decoded,
             this.selectedPath,
-            this.notes,
+            this.lookupSnapshot,
           );
     if (!path) {
       this.openNewNoteDialogForWikilink(decoded);

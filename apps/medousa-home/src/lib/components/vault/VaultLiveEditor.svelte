@@ -306,6 +306,8 @@
       selectedPath: vault.selectedPath,
       selectedContent: valueRef.current || vault.content,
       labelByPath: vault.labelByPath(),
+      knownPaths: vault.lookupSnapshot.knownPaths,
+      lookup: vault.lookupSnapshot,
     };
   }
 

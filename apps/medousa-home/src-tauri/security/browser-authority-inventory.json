@@ -198,6 +198,7 @@
     "daemon::vault::vault_delete_note",
     "daemon::vault::vault_get_file",
     "daemon::vault::vault_get_note",
+    "daemon::vault::vault_list_changes",
     "daemon::vault::vault_list_notes",
     "daemon::vault::vault_list_roots",
     "daemon::vault::vault_list_tags",

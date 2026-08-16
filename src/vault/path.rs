@@ -201,6 +201,14 @@ pub(crate) fn vault_capability_for_root(root: PathBuf) -> Result<Arc<StoreRoot>>
     Ok(capabilities.entry(root).or_insert(opened).clone())
 }
 
+/// Drop cached root capabilities (tests / harness root switches).
+pub fn clear_vault_root_capabilities() {
+    VAULT_ROOT_CAPABILITIES
+        .write()
+        .expect("vault root capabilities")
+        .clear();
+}
+
 fn project_root() -> Option<PathBuf> {
     if let Ok(raw) = std::env::var("MEDOUSA_PROJECT_ROOT") {
         let trimmed = raw.trim();

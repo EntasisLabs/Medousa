@@ -553,6 +553,7 @@ async fn main() -> Result<()> {
         state.forge_events.clone(),
         state.forge_execution.clone(),
     );
+    medousa::vault::watch::spawn_vault_root_watcher();
 
     medousa::turn_worker_notify::register_ingest_channel_delivery_bridge(
         medousa::turn_worker_notify::IngestChannelDeliveryBridge::new(

@@ -81,6 +81,7 @@ pub const PARITY_ROUTES: &[(&str, &str, &str, &str)] = &[
     ("vault", "delete_note", "DELETE", "/v1/vault/notes/{path}"),
     ("vault", "list_tags", "GET", "/v1/vault/tags"),
     ("vault", "search", "GET", "/v1/vault/search"),
+    ("vault", "list_changes", "GET", "/v1/vault/changes"),
     ("vault", "backlinks", "GET", "/v1/vault/backlinks"),
     ("calendar", "list_events", "GET", "/v1/calendar/events"),
     ("calendar", "create_event", "POST", "/v1/calendar/events"),

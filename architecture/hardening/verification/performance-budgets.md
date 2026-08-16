@@ -332,6 +332,10 @@ Target properties:
 
 **Findings:** PERF-003, CONSIST-001
 
+**Harness:** `cargo run -p medousa --example p06_vault_backend`
+CI defaults stay small (24/64 notes). Retained/nightly scale:
+`MEDOUSA_P06_NOTES=100000 cargo run -p medousa --example p06_vault_backend`.
+
 Datasets contain 100, 10k, and 100k notes with shallow, deep, and wide trees;
 small and large notes; links/tags; external edits; and controlled filesystem
 timestamp behavior.
@@ -348,6 +352,9 @@ Target properties:
 - atomic compare-and-write adds bounded overhead; and
 - external change detection scales with changed paths/events plus bounded
   reconciliation.
+
+**Evidence:** H07.0 baselines record measurements via the harness; target gates
+attach after H07.2/H07.1b. Multi-OS retained tables pending H07.6.
 
 ### P07 — Vault/Home UI
 

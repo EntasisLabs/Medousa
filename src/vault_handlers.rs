@@ -1,22 +1,24 @@
 //! HTTP handlers for vault APIs (`/v1/vault/*`).
 
+use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path, Query};
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{delete, get, post, put};
-use axum::Json;
 
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
 use crate::daemon_api::{
-    VaultBacklinksQuery, VaultBacklinksResponse, VaultAddRootRequest, VaultDeleteResponse,
-    VaultFileContentResponse, VaultNoteContentResponse, VaultNotesListResponse, VaultNotesQuery,
-    VaultPutQuery, VaultRootsResponse, VaultSearchQuery, VaultSearchResponse,
-    VaultSetActiveRootRequest, VaultTagsListResponse, VaultTagsQuery, VaultTrashListResponse,
-    VaultTrashRestoreRequest, VaultTrashRestoreResponse, VaultWriteRequest, VaultWriteResponse,
+    VaultAddRootRequest, VaultBacklinksQuery, VaultBacklinksResponse, VaultChangesQuery,
+    VaultChangesResponse, VaultDeleteResponse, VaultFileContentResponse, VaultNoteContentResponse,
+    VaultNotesListResponse, VaultNotesQuery, VaultPutQuery, VaultRootsResponse, VaultSearchQuery,
+    VaultSearchResponse, VaultSetActiveRootRequest, VaultTagsListResponse, VaultTagsQuery,
+    VaultTrashListResponse, VaultTrashRestoreRequest, VaultTrashRestoreResponse, VaultWriteRequest,
+    VaultWriteResponse,
 };
 use crate::vault::VaultService;
+use crate::vault::io::{VaultIoClass, vault_io};
 use crate::vault::roots::{add_vault_root, list_vault_root_views, set_active_vault_root};
 
 pub fn vault_surface() -> DeclaredRouter {
@@ -46,6 +48,10 @@ pub fn vault_surface() -> DeclaredRouter {
         .route(
             vault_read_policy("/v1/vault/search"),
             get(search_vault_notes),
+        )
+        .route(
+            vault_read_policy("/v1/vault/changes"),
+            get(list_vault_changes),
         )
         .route(
             vault_read_policy("/v1/vault/backlinks"),
@@ -122,12 +128,10 @@ pub fn vault_surface() -> DeclaredRouter {
             vault_admin_policy(axum::http::Method::GET, "/v1/vault/git/diff", 1024),
             get(crate::vault_git_handlers::vault_git_diff),
         )
-        .methods([
-            (
-                vault_admin_policy(axum::http::Method::GET, "/v1/vault/git/worktrees", 1024),
-                get(crate::vault_git_handlers::vault_git_worktrees_list),
-            ),
-        ])
+        .methods([(
+            vault_admin_policy(axum::http::Method::GET, "/v1/vault/git/worktrees", 1024),
+            get(crate::vault_git_handlers::vault_git_worktrees_list),
+        )])
 }
 
 fn vault_read_policy(path: &'static str) -> RoutePolicy {
@@ -193,7 +197,9 @@ fn vault_policy(
 
 fn map_vault_error(err: anyhow::Error) -> (StatusCode, String) {
     let message = err.to_string();
-    if message.contains("not found") {
+    if message.contains("overloaded") {
+        (StatusCode::SERVICE_UNAVAILABLE, message)
+    } else if message.contains("not found") {
         (StatusCode::NOT_FOUND, message)
     } else if message.contains("If-Match") || message.contains("content_hash mismatch") {
         (StatusCode::PRECONDITION_FAILED, message)
@@ -208,25 +214,49 @@ pub async fn list_vault_notes(
     Query(query): Query<VaultNotesQuery>,
 ) -> Result<Json<VaultNotesListResponse>, (StatusCode, String)> {
     let limit = query.limit.unwrap_or(100);
-    Ok(Json(VaultService::list_notes(
-        query.prefix.as_deref(),
-        limit,
-        query.tags.as_deref(),
-        query.tag_prefix.as_deref(),
-    )))
+    let prefix = query.prefix;
+    let tags = query.tags;
+    let tag_prefix = query.tag_prefix;
+    let cursor = query.cursor;
+    let generation = query.generation;
+    vault_io()
+        .run_anyhow(VaultIoClass::Scan, move || {
+            Ok(VaultService::list_notes_paged(
+                prefix.as_deref(),
+                limit,
+                tags.as_deref(),
+                tag_prefix.as_deref(),
+                cursor.as_deref(),
+                generation,
+            ))
+        })
+        .await
+        .map(Json)
+        .map_err(map_vault_error)
 }
 
 pub async fn list_vault_tags(
     Query(query): Query<VaultTagsQuery>,
 ) -> Result<Json<VaultTagsListResponse>, (StatusCode, String)> {
     let limit = query.limit.unwrap_or(100);
-    Ok(Json(VaultService::list_tags(query.prefix.as_deref(), limit)))
+    let prefix = query.prefix;
+    vault_io()
+        .run_anyhow(VaultIoClass::Scan, move || {
+            Ok(VaultService::list_tags(prefix.as_deref(), limit))
+        })
+        .await
+        .map(Json)
+        .map_err(map_vault_error)
 }
 
 pub async fn get_vault_note(
     Path(note_path): Path<String>,
 ) -> Result<Json<VaultNoteContentResponse>, (StatusCode, String)> {
-    VaultService::get_note(&note_path)
+    vault_io()
+        .run_anyhow(VaultIoClass::Scan, move || {
+            VaultService::get_note(&note_path)
+        })
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }
@@ -234,7 +264,11 @@ pub async fn get_vault_note(
 pub async fn get_vault_file(
     Path(file_path): Path<String>,
 ) -> Result<Json<VaultFileContentResponse>, (StatusCode, String)> {
-    VaultService::read_file(&file_path)
+    vault_io()
+        .run_anyhow(VaultIoClass::Scan, move || {
+            VaultService::read_file(&file_path)
+        })
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }
@@ -245,11 +279,16 @@ pub async fn put_vault_note(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<VaultWriteResponse>, (StatusCode, String)> {
-    let content = String::from_utf8(body.to_vec())
-        .map_err(|err| (StatusCode::BAD_REQUEST, format!("invalid utf-8 body: {err}")))?;
+    let content = String::from_utf8(body.into()).map_err(|err| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("invalid utf-8 body: {err}"),
+        )
+    })?;
     let if_match = headers
         .get("if-match")
-        .and_then(|value| value.to_str().ok());
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string);
     let request = VaultWriteRequest {
         path: None,
         content,
@@ -257,7 +296,11 @@ pub async fn put_vault_note(
         semantic_tags: None,
         auto_workshop_tags: query.auto_workshop_tags.unwrap_or(true),
     };
-    VaultService::write_note(Some(&note_path), &request, if_match)
+    vault_io()
+        .run_anyhow(VaultIoClass::Mutation, move || {
+            VaultService::write_note(Some(&note_path), &request, if_match.as_deref())
+        })
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }
@@ -265,7 +308,11 @@ pub async fn put_vault_note(
 pub async fn post_vault_note(
     Json(request): Json<VaultWriteRequest>,
 ) -> Result<Json<VaultWriteResponse>, (StatusCode, String)> {
-    VaultService::create_note(&request)
+    vault_io()
+        .run_anyhow(VaultIoClass::Mutation, move || {
+            VaultService::create_note(&request)
+        })
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }
@@ -273,7 +320,11 @@ pub async fn post_vault_note(
 pub async fn delete_vault_note(
     Path(note_path): Path<String>,
 ) -> Result<Json<VaultDeleteResponse>, (StatusCode, String)> {
-    VaultService::delete_note(&note_path)
+    vault_io()
+        .run_anyhow(VaultIoClass::Mutation, move || {
+            VaultService::delete_note(&note_path)
+        })
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }
@@ -286,11 +337,39 @@ pub async fn search_vault_notes(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    if q.is_none() && query.tags.as_deref().map(str::trim).filter(|v| !v.is_empty()).is_none() {
+    if q.is_none()
+        && query
+            .tags
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .is_none()
+    {
         return Err((StatusCode::BAD_REQUEST, "q or tags is required".to_string()));
     }
     let limit = query.limit.unwrap_or(20);
-    VaultService::search(q, limit, query.tags.as_deref())
+    let q = query.q;
+    let tags = query.tags;
+    vault_io()
+        .run_anyhow(VaultIoClass::SearchRebuild, move || {
+            VaultService::search(q.as_deref(), limit, tags.as_deref())
+        })
+        .await
+        .map(Json)
+        .map_err(map_vault_error)
+}
+
+pub async fn list_vault_changes(
+    Query(query): Query<VaultChangesQuery>,
+) -> Result<Json<VaultChangesResponse>, (StatusCode, String)> {
+    let limit = query.limit.unwrap_or(200);
+    let since = query.since_generation;
+    let cursor = query.cursor;
+    vault_io()
+        .run_anyhow(VaultIoClass::Scan, move || {
+            Ok(VaultService::changes_since(since, cursor.as_deref(), limit))
+        })
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }
@@ -303,8 +382,13 @@ pub async fn get_vault_backlinks(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, "path is required".to_string()))?;
-    VaultService::backlinks(note_path)
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, "path is required".to_string()))?
+        .to_string();
+    vault_io()
+        .run_anyhow(VaultIoClass::Scan, move || {
+            VaultService::backlinks(&note_path)
+        })
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }
@@ -316,7 +400,11 @@ pub async fn list_vault_roots() -> Json<VaultRootsResponse> {
 pub async fn set_vault_active_root(
     Json(request): Json<VaultSetActiveRootRequest>,
 ) -> Result<Json<VaultRootsResponse>, (StatusCode, String)> {
-    set_active_vault_root(&request.root_id)
+    vault_io()
+        .run_anyhow(VaultIoClass::Mutation, move || {
+            set_active_vault_root(&request.root_id)
+        })
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }
@@ -324,13 +412,13 @@ pub async fn set_vault_active_root(
 pub async fn add_vault_root_handler(
     Json(request): Json<VaultAddRootRequest>,
 ) -> Result<Json<VaultRootsResponse>, (StatusCode, String)> {
-    add_vault_root(
-        &request.label,
-        &request.path,
-        request.id.as_deref(),
-    )
-    .map(Json)
-    .map_err(map_vault_error)
+    vault_io()
+        .run_anyhow(VaultIoClass::Mutation, move || {
+            add_vault_root(&request.label, &request.path, request.id.as_deref())
+        })
+        .await
+        .map(Json)
+        .map_err(map_vault_error)
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -342,7 +430,9 @@ pub async fn list_vault_trash(
     Query(query): Query<VaultTrashListQuery>,
 ) -> Result<Json<VaultTrashListResponse>, (StatusCode, String)> {
     let limit = query.limit.unwrap_or(100);
-    VaultService::list_trash(limit)
+    vault_io()
+        .run_anyhow(VaultIoClass::Scan, move || VaultService::list_trash(limit))
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }
@@ -350,7 +440,11 @@ pub async fn list_vault_trash(
 pub async fn restore_vault_trash(
     Json(request): Json<VaultTrashRestoreRequest>,
 ) -> Result<Json<VaultTrashRestoreResponse>, (StatusCode, String)> {
-    VaultService::restore_from_trash(&request.path)
+    vault_io()
+        .run_anyhow(VaultIoClass::Mutation, move || {
+            VaultService::restore_from_trash(&request.path)
+        })
+        .await
         .map(Json)
         .map_err(map_vault_error)
 }
@@ -362,13 +456,13 @@ mod tests {
     #[test]
     fn vault_inventory_separates_content_and_host_authority() {
         let entries = vault_surface().inventory().entries().collect::<Vec<_>>();
-        assert_eq!(entries.len(), 24);
+        assert_eq!(entries.len(), 25);
         assert_eq!(
             entries
                 .iter()
                 .filter(|entry| entry.required_capability == Some("content.read"))
                 .count(),
-            7
+            8
         );
         assert_eq!(
             entries
@@ -384,11 +478,15 @@ mod tests {
                 .count(),
             13
         );
-        assert!(entries.iter().any(|entry| {
-            entry.path == "/v1/vault/git/worktrees" && entry.method == "GET"
-        }));
-        assert!(!entries.iter().any(|entry| {
-            entry.path == "/v1/vault/git/worktrees" && entry.method != "GET"
-        }));
+        assert!(
+            entries
+                .iter()
+                .any(|entry| { entry.path == "/v1/vault/git/worktrees" && entry.method == "GET" })
+        );
+        assert!(
+            !entries
+                .iter()
+                .any(|entry| { entry.path == "/v1/vault/git/worktrees" && entry.method != "GET" })
+        );
     }
 }

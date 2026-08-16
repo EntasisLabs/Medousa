@@ -34,6 +34,8 @@
     /** When true, expand ancestors once when `selectedPath` changes (desktop reveal). */
     revealSelected?: boolean;
     depth?: number;
+    /** When true, parent flattens children — do not recurse mount. */
+    virtualized?: boolean;
     onSelect: (path: string, event?: MouseEvent) => void;
     onMoveNote?: (sourcePath: string, targetFolderPrefix: string) => void | Promise<void>;
   }
@@ -45,14 +47,18 @@
     activeSpaceFilter = null,
     revealSelected = true,
     depth = 0,
+    virtualized = false,
     onSelect,
     onMoveNote,
   }: Props = $props();
 
-  function treeNodeContainsPath(node: VaultTreeNode, path: string | null): boolean {
-    if (!path) return false;
-    if (node.path === path) return true;
-    return node.children.some((child) => treeNodeContainsPath(child, path));
+  function isAncestorOfSelection(node: VaultTreeNode): boolean {
+    if (node.path && vault.isSelectionAncestor(node.path)) return true;
+    if (node.dropPrefix && vault.isSelectionAncestor(node.dropPrefix.replace(/\/$/, ""))) {
+      return true;
+    }
+    if (node.path === selectedPath) return true;
+    return false;
   }
 
   const expandKey = $derived(vault.treeExpandKeyFor(node));
@@ -68,12 +74,18 @@
   $effect(() => {
     if (!revealSelected) return;
     const path = selectedPath;
-    if (!path || !treeNodeContainsPath(node, path)) return;
+    if (!path || !isAncestorOfSelection(node)) return;
     if (path === lastRevealedPath) return;
     lastRevealedPath = path;
     if (vault.isTreeExpanded(expandKey) !== true) {
       vault.setTreeExpanded(expandKey, true);
     }
+  });
+
+  // Keep ancestor set in sync with selection without O(subtree) walks.
+  $effect(() => {
+    void selectedPath;
+    void vault.lookupSnapshot;
   });
 
   const label = $derived(
@@ -132,7 +144,7 @@
 
   const isDropTarget = $derived(Boolean(onMoveNote && dropPrefix));
 
-  const knownPaths = $derived(new Set(vault.notes.map((note) => note.path)));
+  const knownPaths = $derived(vault.lookupSnapshot.knownPaths);
 
   const recentRows = $derived.by(() => {
     if (!node.isFolder) return [];
@@ -263,7 +275,7 @@
     {/if}
   </div>
 
-  {#if expanded}
+  {#if expanded && !virtualized}
     <div
       class="vault-tree-nest"
       class:vault-tree-nest--path={isPathFolder}

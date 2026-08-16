@@ -5,6 +5,7 @@ import { renderMarkdown } from "$lib/markdown/render";
 import type { VaultNote } from "$lib/types/vault";
 import { vaultDisplayTitle } from "$lib/utils/formatVault";
 import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
+import type { VaultLookupSnapshot } from "$lib/utils/vaultLookup";
 import { parseWikilinkTarget, resolveWikilinkTarget } from "$lib/utils/resolveWikilink";
 import { escapeAttr, escapeHtml } from "$lib/markdown/escape";
 
@@ -83,10 +84,16 @@ export async function resolveTransclusions(
     selectedPath: string | null;
     selectedContent: string;
     labelByPath: Map<string, string>;
+    knownPaths?: ReadonlySet<string>;
+    lookup?: VaultLookupSnapshot;
   },
 ): Promise<string> {
   if (!hasTransclusionBlocks(source)) return source;
 
+  const knownPaths =
+    context.lookup?.knownPaths ??
+    context.knownPaths ??
+    new Set(context.notes.map((note) => note.path));
   const blocks = extractTransclusionBlocks(source);
   let resolved = source;
 
@@ -94,7 +101,7 @@ export async function resolveTransclusions(
     const resolvedPath = resolveWikilinkTarget(
       block.target,
       context.sourcePath,
-      context.notes,
+      context.lookup ?? context.notes,
     );
     if (!resolvedPath) {
       resolved = resolved.replace(
@@ -127,7 +134,7 @@ export async function resolveTransclusions(
     const html = renderMarkdown(body, {
       titleByPath: context.labelByPath,
       sourcePath: resolvedPath,
-      knownPaths: new Set(context.notes.map((note) => note.path)),
+      knownPaths,
     });
 
     const headingAttr = block.heading

@@ -1,5 +1,10 @@
 import type { VaultNote } from "$lib/types/vault";
 import { normalizeVaultNotePath } from "$lib/utils/vaultNoteTitle";
+import {
+  buildVaultLookupSnapshot,
+  type VaultLookupSnapshot,
+  resolveWikilinkWithLookup,
+} from "$lib/utils/vaultLookup";
 
 function filenameStem(path: string): string {
   const base = path.split("/").pop() ?? path;
@@ -43,52 +48,24 @@ export function suggestPathForWikilinkToken(
   return normalizeVaultNotePath(stem);
 }
 
-/** Client-side wikilink resolution (mirrors daemon index heuristics). */
+/**
+ * Client-side wikilink resolution.
+ * Prefer passing a VaultLookupSnapshot (O(L) map probes). The VaultNote[]
+ * overload remains as a thin adapter for migration.
+ */
 export function resolveWikilinkTarget(
   raw: string,
   sourcePath: string | null,
-  notes: VaultNote[],
+  notesOrLookup: VaultNote[] | VaultLookupSnapshot,
 ): string | null {
   const { pathToken } = parseWikilinkTarget(raw);
   const token = pathToken || (raw.split("#")[0]?.split("|")[0]?.trim() ?? "");
   if (!token) return null;
 
-  const knownPaths = notes.map((note) => note.path);
-  const known = new Set(knownPaths);
+  const lookup = Array.isArray(notesOrLookup)
+    ? buildVaultLookupSnapshot(notesOrLookup, 0, sourcePath)
+    : notesOrLookup;
 
-  const candidates: string[] = [];
-
-  if (token.includes("/")) {
-    candidates.push(normalizeVaultNotePath(token));
-  } else {
-    const stem = filenameStem(token);
-    const sourceDir = sourcePath?.includes("/")
-      ? sourcePath.slice(0, sourcePath.lastIndexOf("/"))
-      : "";
-    if (sourceDir) {
-      candidates.push(`${sourceDir}/${stem}.md`);
-    }
-    candidates.push(`${stem}.md`);
-
-    for (const path of knownPaths) {
-      if (filenameStem(path) === stem) {
-        candidates.push(path);
-      }
-    }
-
-    const tokenLower = stem.toLowerCase();
-    for (const note of notes) {
-      const titleStem = note.title.trim().toLowerCase();
-      if (titleStem === tokenLower || titleStem.includes(tokenLower)) {
-        candidates.push(note.path);
-      }
-    }
-  }
-
-  for (const candidate of candidates) {
-    const normalized = normalizeVaultNotePath(candidate);
-    if (known.has(normalized)) return normalized;
-  }
-
-  return candidates.map(normalizeVaultNotePath).find((path) => known.has(path)) ?? null;
+  const result = resolveWikilinkWithLookup(token, sourcePath, lookup);
+  return result.kind === "resolved" ? result.path : null;
 }

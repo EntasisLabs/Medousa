@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 
-use crate::store_root::{StorePath, StoreRoot, StoreRootError};
+use crate::store_root::{StoreRoot, StoreRootError, StoreRootPath};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -30,6 +30,7 @@ pub enum StoreKind {
     ForgeSlug,
     ForgeCatalog,
     CoderCheckpoint,
+    Vault,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -100,6 +101,11 @@ impl From<StoreRootError> for PersistenceError {
     fn from(error: StoreRootError) -> Self {
         let kind = match &error {
             StoreRootError::Io { source, .. }
+                if source.kind() == std::io::ErrorKind::AlreadyExists =>
+            {
+                PersistenceErrorKind::Conflict
+            }
+            StoreRootError::Io { source, .. }
                 if matches!(
                     source.kind(),
                     std::io::ErrorKind::Interrupted
@@ -138,6 +144,23 @@ pub enum TransactionFaultPoint {
     AfterCheckpointDelta,
     BeforeObservation,
     AfterObservation,
+    /// Durable mutation intent recorded before content becomes visible.
+    BeforeIntent,
+    AfterIntent,
+    BeforeTempWrite,
+    AfterTempWrite,
+    BeforeFileSync,
+    AfterFileSync,
+    BeforeRenamePublish,
+    AfterRenamePublish,
+    BeforeParentSync,
+    AfterParentSync,
+    BeforeReceipt,
+    AfterReceipt,
+    BeforeCreateOnly,
+    AfterCreateOnly,
+    BeforeMove,
+    AfterMove,
     Cancellation,
 }
 
@@ -180,7 +203,7 @@ impl FileTransaction {
 
     pub fn append_record(
         &self,
-        path: &StorePath,
+        path: &impl StoreRootPath,
         record: &[u8],
         durability: DurabilityLevel,
     ) -> Result<usize, PersistenceError> {
@@ -200,7 +223,7 @@ impl FileTransaction {
 
     pub fn replace_snapshot(
         &self,
-        path: &StorePath,
+        path: &impl StoreRootPath,
         bytes: &[u8],
         durability: DurabilityLevel,
     ) -> Result<usize, PersistenceError> {
@@ -214,17 +237,153 @@ impl FileTransaction {
         self.faults.check(TransactionFaultPoint::BeforePublish)?;
         self.faults
             .check(TransactionFaultPoint::BeforeSnapshotPublish)?;
-        self.root.atomic_write(path, bytes)?;
+        self.publish_bytes(path, bytes, false, durability)?;
         self.faults.check(TransactionFaultPoint::AfterPublish)?;
         self.faults
             .check(TransactionFaultPoint::AfterSnapshotPublish)?;
         Ok(bytes.len())
+    }
+
+    /// Create-only publication: fails if the destination already exists.
+    pub fn create_only(
+        &self,
+        path: &impl StoreRootPath,
+        bytes: &[u8],
+        durability: DurabilityLevel,
+    ) -> Result<usize, PersistenceError> {
+        if durability == DurabilityLevel::Accepted {
+            return Err(PersistenceError::new(
+                PersistenceErrorKind::PermanentIo,
+                "accepted durability cannot publish a file transaction",
+            ));
+        }
+        self.faults.check(TransactionFaultPoint::BeforeWrite)?;
+        self.faults.check(TransactionFaultPoint::BeforeCreateOnly)?;
+        self.faults.check(TransactionFaultPoint::BeforePublish)?;
+        if self.root.is_file(path).unwrap_or(false) {
+            return Err(PersistenceError::new(
+                PersistenceErrorKind::Conflict,
+                "create_only destination already exists",
+            ));
+        }
+        self.publish_bytes(path, bytes, true, durability)?;
+        self.faults.check(TransactionFaultPoint::AfterPublish)?;
+        self.faults.check(TransactionFaultPoint::AfterCreateOnly)?;
+        Ok(bytes.len())
+    }
+
+    /// Same-filesystem rename with parent-directory sync fences.
+    pub fn move_path(
+        &self,
+        from: &impl StoreRootPath,
+        to: &impl StoreRootPath,
+        durability: DurabilityLevel,
+    ) -> Result<(), PersistenceError> {
+        self.move_path_inner(from, to, durability, false)
+    }
+
+    /// Same-filesystem rename that fails if the destination already exists.
+    pub fn move_path_create_only(
+        &self,
+        from: &impl StoreRootPath,
+        to: &impl StoreRootPath,
+        durability: DurabilityLevel,
+    ) -> Result<(), PersistenceError> {
+        self.move_path_inner(from, to, durability, true)
+    }
+
+    fn move_path_inner(
+        &self,
+        from: &impl StoreRootPath,
+        to: &impl StoreRootPath,
+        durability: DurabilityLevel,
+        create_only: bool,
+    ) -> Result<(), PersistenceError> {
+        self.faults.check(TransactionFaultPoint::BeforeMove)?;
+        self.faults
+            .check(TransactionFaultPoint::BeforeRenamePublish)?;
+        if create_only {
+            self.root.rename_create_only(from, to)?;
+        } else {
+            self.root.rename(from, to)?;
+        }
+        if matches!(durability, DurabilityLevel::Synced) {
+            self.faults.check(TransactionFaultPoint::BeforeParentSync)?;
+            self.root.sync_parent_of(to)?;
+            self.root.sync_parent_of(from).ok();
+            self.faults.check(TransactionFaultPoint::AfterParentSync)?;
+        }
+        self.faults
+            .check(TransactionFaultPoint::AfterRenamePublish)?;
+        self.faults.check(TransactionFaultPoint::AfterMove)?;
+        Ok(())
+    }
+
+    /// Restore helper: create-only rename from trash/recovery into destination.
+    pub fn restore_path(
+        &self,
+        from: &impl StoreRootPath,
+        to: &impl StoreRootPath,
+        durability: DurabilityLevel,
+    ) -> Result<(), PersistenceError> {
+        self.move_path_create_only(from, to, durability)
+    }
+
+    /// Durable intent record used before content publication (H07 protocol).
+    pub fn write_intent(
+        &self,
+        path: &impl StoreRootPath,
+        record: &[u8],
+        durability: DurabilityLevel,
+    ) -> Result<usize, PersistenceError> {
+        self.faults.check(TransactionFaultPoint::BeforeIntent)?;
+        let written = self.replace_snapshot(path, record, durability)?;
+        self.faults.check(TransactionFaultPoint::AfterIntent)?;
+        Ok(written)
+    }
+
+    /// Committed receipt record after content publication succeeds.
+    pub fn write_receipt(
+        &self,
+        path: &impl StoreRootPath,
+        record: &[u8],
+        durability: DurabilityLevel,
+    ) -> Result<usize, PersistenceError> {
+        self.faults.check(TransactionFaultPoint::BeforeReceipt)?;
+        let written = self.replace_snapshot(path, record, durability)?;
+        self.faults.check(TransactionFaultPoint::AfterReceipt)?;
+        Ok(written)
+    }
+
+    fn publish_bytes(
+        &self,
+        path: &impl StoreRootPath,
+        bytes: &[u8],
+        create_only: bool,
+        durability: DurabilityLevel,
+    ) -> Result<(), PersistenceError> {
+        self.faults.check(TransactionFaultPoint::BeforeTempWrite)?;
+        self.faults.check(TransactionFaultPoint::BeforeFileSync)?;
+        if create_only {
+            self.root.atomic_create(path, bytes)?;
+        } else {
+            self.root.atomic_write(path, bytes)?;
+        }
+        self.faults.check(TransactionFaultPoint::AfterTempWrite)?;
+        self.faults.check(TransactionFaultPoint::AfterFileSync)?;
+        if matches!(durability, DurabilityLevel::Synced) {
+            self.faults.check(TransactionFaultPoint::BeforeParentSync)?;
+            self.root.sync_parent_of(path)?;
+            self.faults.check(TransactionFaultPoint::AfterParentSync)?;
+        }
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::store_root::StorePath;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct FailAt {
@@ -294,5 +453,81 @@ mod tests {
             .replace_snapshot(&path, b"new", DurabilityLevel::Accepted)
             .unwrap_err();
         assert_eq!(error.kind, PersistenceErrorKind::PermanentIo);
+    }
+
+    #[test]
+    fn create_only_refuses_existing_destination() {
+        let (_directory, transaction) = transaction();
+        let path = StorePath::parse("note.md").unwrap();
+        transaction
+            .create_only(&path, b"one", DurabilityLevel::Synced)
+            .unwrap();
+        let error = transaction
+            .create_only(&path, b"two", DurabilityLevel::Synced)
+            .unwrap_err();
+        assert_eq!(error.kind, PersistenceErrorKind::Conflict);
+        assert_eq!(transaction.root().read_limited(&path, 64).unwrap(), b"one");
+    }
+
+    #[test]
+    fn move_path_publishes_destination_and_clears_source() {
+        let (_directory, transaction) = transaction();
+        let from = StorePath::parse("from.md").unwrap();
+        let to = StorePath::parse("to.md").unwrap();
+        transaction
+            .create_only(&from, b"body", DurabilityLevel::Synced)
+            .unwrap();
+        transaction
+            .move_path(&from, &to, DurabilityLevel::Synced)
+            .unwrap();
+        assert!(!transaction.root().is_file(&from).unwrap());
+        assert_eq!(transaction.root().read_limited(&to, 64).unwrap(), b"body");
+    }
+
+    #[test]
+    fn move_path_create_only_refuses_existing_destination() {
+        let (_directory, transaction) = transaction();
+        let from = StorePath::parse("from.md").unwrap();
+        let to = StorePath::parse("to.md").unwrap();
+        transaction
+            .create_only(&from, b"source", DurabilityLevel::Synced)
+            .unwrap();
+        transaction
+            .create_only(&to, b"winner", DurabilityLevel::Synced)
+            .unwrap();
+        let error = transaction
+            .move_path_create_only(&from, &to, DurabilityLevel::Synced)
+            .unwrap_err();
+        assert_eq!(error.kind, PersistenceErrorKind::Conflict);
+        assert_eq!(
+            transaction.root().read_limited(&from, 64).unwrap(),
+            b"source"
+        );
+        assert_eq!(transaction.root().read_limited(&to, 64).unwrap(), b"winner");
+    }
+
+    #[test]
+    fn intent_fault_preserves_absence_of_destination() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().canonicalize().unwrap();
+        let root = Arc::new(StoreRoot::open_or_create_nofollow(&path).unwrap());
+        let faults = Arc::new(FailAt {
+            target: TransactionFaultPoint::BeforeIntent,
+            hits: AtomicUsize::new(0),
+        });
+        let transaction = FileTransaction::with_faults(Arc::clone(&root), faults);
+        let intent = StorePath::parse(".medousa/vault/intent.json").unwrap();
+        let error = transaction
+            .write_intent(&intent, br#"{"op":1}"#, DurabilityLevel::Synced)
+            .unwrap_err();
+        assert_eq!(error.kind, PersistenceErrorKind::RetryableIo);
+        assert!(!root.is_file(&intent).unwrap());
+    }
+
+    #[test]
+    fn vault_receipt_kind_is_available() {
+        let receipt =
+            CommitReceipt::new(StoreKind::Vault, "note:a.md", 1, DurabilityLevel::Synced, 4);
+        assert_eq!(receipt.store, StoreKind::Vault);
     }
 }

@@ -46,7 +46,7 @@
   }
 
   async function followWikilink(raw: string) {
-    const resolved = resolveWikilinkTarget(raw, notePath, vault.notes);
+    const resolved = resolveWikilinkTarget(raw, notePath, vault.lookupSnapshot);
     if (!resolved) return;
     layout.navigateDesktop("library");
     await vault.openNote(resolved);

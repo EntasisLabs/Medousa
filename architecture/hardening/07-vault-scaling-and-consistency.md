@@ -1,6 +1,11 @@
 # H07 — Incremental vault index and atomic mutation
 
-> **Status:** Draft for vault/storage/frontend review
+> **Status:** Implementing — semantics train exit tests landed.
+> Repair cars R0–R8 plus S0–S8: opaque NoteVersion, durable generation,
+> relocate no-replace, resident reconcile, incremental persist, truthful
+> cursors/deltas, fenced search, and complete Home paging. Findings are
+> Mitigated on those unit exit tests; Validated still needs multi-OS P06/P07
+> evidence.
 >
 > **Accountable owner:** vault engine maintainers
 >

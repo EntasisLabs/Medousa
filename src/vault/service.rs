@@ -25,28 +25,166 @@ impl VaultService {
         tags: Option<&str>,
         tag_prefix: Option<&str>,
     ) -> VaultNotesListResponse {
+        Self::list_notes_paged(prefix, limit, tags, tag_prefix, None, None)
+    }
+
+    pub fn list_notes_paged(
+        prefix: Option<&str>,
+        limit: usize,
+        tags: Option<&str>,
+        tag_prefix: Option<&str>,
+        cursor: Option<&str>,
+        expected_generation: Option<u64>,
+    ) -> VaultNotesListResponse {
         let limit = limit.clamp(1, 500);
         let required = parse_tags_query(tags);
         let prefix_filter = tag_prefix
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(|value| value.to_ascii_lowercase());
-        let entries = vault_store().list_entries(prefix, limit.saturating_mul(4));
-        let notes = entries
-            .into_iter()
-            .filter(|entry| entry_has_all_tags(&entry.tags, &required))
-            .filter(|entry| {
-                prefix_filter.as_ref().is_none_or(|prefix| {
-                    entry
-                        .tags
-                        .iter()
-                        .any(|tag| tag.to_ascii_lowercase().starts_with(prefix))
-                })
+        let _ = vault_store().ensure_index_fresh();
+        let projection = crate::vault::store::vault_projection();
+        let generation = projection.generation;
+        let root = crate::vault::owner::ensure_owner_for_active_root()
+            .map(|owner| owner.root_id.as_str().to_string())
+            .unwrap_or_else(|_| "local".into());
+        let filter = list_filter_hash(prefix, tags, tag_prefix);
+        if let Some(expected) = expected_generation
+            && expected > 0
+            && generation > 0
+            && expected != generation
+        {
+            return list_reset(generation);
+        }
+        let after_path = if let Some(raw) = cursor.map(str::trim).filter(|value| !value.is_empty())
+        {
+            match decode_list_cursor(raw) {
+                Some((cursor_root, cursor_filter, cursor_gen, path))
+                    if cursor_root == root
+                        && cursor_filter == filter
+                        && cursor_gen == generation =>
+                {
+                    Some(path)
+                }
+                _ => return list_reset(generation),
+            }
+        } else {
+            None
+        };
+
+        let path_prefix = prefix
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let start: std::ops::Bound<&str> = if let Some(after) = after_path.as_deref() {
+            std::ops::Bound::Excluded(after)
+        } else if let Some(prefix) = path_prefix.as_deref() {
+            std::ops::Bound::Included(prefix)
+        } else {
+            std::ops::Bound::Unbounded
+        };
+        let mut notes = Vec::new();
+        let mut truncated = false;
+        for path in projection
+            .sorted_paths
+            .range::<str, _>((start, std::ops::Bound::Unbounded))
+        {
+            if let Some(prefix) = path_prefix.as_deref()
+                && !path.starts_with(prefix)
+            {
+                break;
+            }
+            let Some(entry) = projection.by_path.get(path) else {
+                continue;
+            };
+            if !entry_has_all_tags(&entry.tags, &required) {
+                continue;
+            }
+            if prefix_filter.as_ref().is_some_and(|prefix| {
+                !entry
+                    .tags
+                    .iter()
+                    .any(|tag| tag.to_ascii_lowercase().starts_with(prefix))
+            }) {
+                continue;
+            }
+            if notes.len() >= limit {
+                truncated = true;
+                break;
+            }
+            notes.push(entry.to_vault_note_summary());
+        }
+        let next_cursor = if truncated {
+            notes
+                .last()
+                .map(|note| encode_list_cursor(&root, &filter, generation, &note.path))
+        } else {
+            None
+        };
+        VaultNotesListResponse {
+            notes,
+            vault_generation: Some(generation),
+            next_cursor,
+            truncated,
+            reset_required: false,
+        }
+    }
+
+    pub fn changes_since(
+        since_generation: Option<u64>,
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> crate::daemon_api::VaultChangesResponse {
+        let limit = limit.clamp(1, 500);
+        let _ = vault_store().ensure_index_fresh();
+        let Ok(owner) = crate::vault::owner::ensure_owner_for_active_root() else {
+            return changes_reset(0);
+        };
+        let generation = owner.current_generation();
+        let Some(since) = since_generation.filter(|value| *value > 0) else {
+            return changes_reset(generation);
+        };
+        if since > generation {
+            return changes_reset(generation);
+        }
+        let (after_generation, after_path) =
+            match cursor.map(str::trim).filter(|value| !value.is_empty()) {
+                Some(raw) => match decode_change_cursor(raw) {
+                    Some((cursor_root, cursor_generation, path))
+                        if cursor_root == owner.root_id.as_str() =>
+                    {
+                        (Some(cursor_generation), Some(path))
+                    }
+                    _ => return changes_reset(generation),
+                },
+                None => (None, None),
+            };
+        let (records, truncated, reset) =
+            owner.changes_since(since, after_generation, after_path.as_deref(), limit);
+        if reset {
+            return changes_reset(generation);
+        }
+        let changes = records
+            .iter()
+            .map(|record| crate::daemon_api::VaultChangeEntry {
+                path: record.path.clone(),
+                kind: record.kind.clone(),
+                note_version: record.note_version.clone(),
             })
-            .take(limit)
-            .map(|entry| entry.to_vault_note_summary())
-            .collect();
-        VaultNotesListResponse { notes }
+            .collect::<Vec<_>>();
+        let next_cursor = if truncated {
+            records.last().map(|record| {
+                encode_change_cursor(owner.root_id.as_str(), record.generation, &record.path)
+            })
+        } else {
+            None
+        };
+        crate::daemon_api::VaultChangesResponse {
+            vault_generation: generation,
+            changes,
+            next_cursor,
+            reset_required: false,
+        }
     }
 
     pub fn list_tags(prefix: Option<&str>, limit: usize) -> VaultTagsListResponse {
@@ -59,15 +197,58 @@ impl VaultService {
     }
 
     pub fn get_note(path: &str) -> Result<VaultNoteContentResponse> {
-        let entry = vault_store()
-            .get_entry(path)
-            .ok_or_else(|| anyhow::anyhow!("vault note not found: {path}"))?;
-        let content = vault_store().read_content(path)?;
-        let backlinks = vault_store().backlinks_for(path);
-        Ok(VaultNoteContentResponse {
-            note: entry.to_vault_note(backlinks),
-            content,
-        })
+        const MAX_ATTEMPTS: usize = 4;
+        let mut last_err = None;
+        for _ in 0..MAX_ATTEMPTS {
+            let _ = vault_store().ensure_index_fresh();
+            let generation = crate::vault::store::vault_projection().generation;
+            let Some(entry) = vault_store().peek_entry_public(path) else {
+                last_err = Some(anyhow::anyhow!("vault note not found: {path}"));
+                break;
+            };
+            let content = match vault_store().read_content(path) {
+                Ok(body) => body,
+                Err(error) => {
+                    last_err = Some(error);
+                    continue;
+                }
+            };
+            let projection = crate::vault::store::vault_projection();
+            if projection.generation != generation {
+                // Generation moved; retry as a single-generation assembly.
+                continue;
+            }
+            let backlinks = if generation > 0 {
+                projection.backlinks(&entry.path)
+            } else {
+                vault_store().backlinks_for(path)
+            };
+            let generation_after = crate::vault::store::vault_projection().generation;
+            if generation_after != generation {
+                continue;
+            }
+            return Ok(VaultNoteContentResponse {
+                note: entry.to_vault_note(backlinks),
+                content,
+                vault_generation: Some(generation),
+                note_version: Some(
+                    crate::vault::contracts::NoteVersion::encode(
+                        crate::vault::owner::ensure_owner_for_active_root()
+                            .map(|owner| owner.root_id.as_str().to_string())
+                            .unwrap_or_else(|_| "local".into())
+                            .as_str(),
+                        &entry.source,
+                        generation.max(1),
+                        &entry.content_hash,
+                    )
+                    .as_str()
+                    .to_string(),
+                ),
+            });
+        }
+        Err(last_err.unwrap_or_else(|| {
+            anyhow::anyhow!("vault note changed during read; retry the request")
+        }))
     }
 
     /// Read a vault-relative file (images, attachments) for remote Home preview.
@@ -140,12 +321,16 @@ impl VaultService {
             request.semantic_tags.as_deref(),
             auto_workshop_tags,
         );
-        let entry = vault_store().write_content(target_path, &content, if_match)?;
+        let (entry, note_version) =
+            vault_store().write_content_versioned(target_path, &content, if_match)?;
         append_vault_feed_event(&entry.path, &entry.title, !existed, actor, tool_name);
+        let generation = crate::vault::store::vault_projection().generation;
         Ok(VaultWriteResponse {
             note: entry.to_vault_note(vault_store().backlinks_for(&entry.path)),
             created: !existed,
             content: Some(content),
+            vault_generation: Some(generation),
+            note_version: Some(note_version.as_str().to_string()),
         })
     }
 
@@ -188,10 +373,27 @@ impl VaultService {
                 note: read.note,
                 created: false,
                 content: Some(read.content),
+                vault_generation: read.vault_generation,
+                note_version: read.note_version,
             });
         }
         if vault_store().get_entry(to).is_some() {
             anyhow::bail!("a note already exists at path: {to}");
+        }
+        if crate::vault::owner::owner_mutations_active() {
+            let owner = crate::vault::owner::ensure_owner_for_active_root()
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            crate::vault::relocate::relocate_move(&owner, from, to)
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            // Refresh derived index for destination; source removed by relocate.
+            let _ = vault_store().refresh_from_disk();
+            return Self::get_note(to).map(|read| VaultWriteResponse {
+                note: read.note,
+                created: false,
+                content: Some(read.content),
+                vault_generation: read.vault_generation,
+                note_version: read.note_version,
+            });
         }
         let read = Self::get_note(from)?;
         let request = VaultWriteRequest {
@@ -225,6 +427,7 @@ impl VaultService {
                 return Ok(crate::daemon_api::VaultSearchResponse {
                     query: String::new(),
                     hits: Vec::new(),
+                    indexing: None,
                 });
             }
             let listed = Self::list_notes(None, limit, tags, None);
@@ -247,6 +450,7 @@ impl VaultService {
             return Ok(crate::daemon_api::VaultSearchResponse {
                 query: required.join(", "),
                 hits,
+                indexing: None,
             });
         }
         let mut response = search_vault(query.unwrap_or_default().trim(), limit.clamp(1, 100))?;
@@ -292,10 +496,14 @@ pub(crate) fn with_temp_vault<T>(f: impl FnOnce() -> T) -> T {
     ));
     std::fs::create_dir_all(&base).expect("temp vault root");
     let base = base.canonicalize().expect("canonical temp vault root");
+    crate::vault::owner::reset_vault_owners();
+    crate::vault::path::clear_vault_root_capabilities();
     crate::vault::roots::set_test_vault_root_override(Some(base.clone()));
     let _ = vault_store().refresh_from_disk();
     let result = catch_unwind(AssertUnwindSafe(f));
     crate::vault::roots::set_test_vault_root_override(None);
+    crate::vault::owner::reset_vault_owners();
+    crate::vault::path::clear_vault_root_capabilities();
     let _ = vault_store().refresh_from_disk();
     let _ = std::fs::remove_dir_all(&base);
     match result {
@@ -328,6 +536,75 @@ fn mime_guess_from_path(path: &std::path::Path) -> String {
         _ => "application/octet-stream",
     }
     .to_string()
+}
+
+fn list_filter_hash(prefix: Option<&str>, tags: Option<&str>, tag_prefix: Option<&str>) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    prefix.unwrap_or_default().hash(&mut hasher);
+    tags.unwrap_or_default().hash(&mut hasher);
+    tag_prefix.unwrap_or_default().hash(&mut hasher);
+    format!("{:x}", hasher.finish())
+}
+
+fn encode_list_cursor(root: &str, filter: &str, generation: u64, path: &str) -> String {
+    base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(format!("{root}\x1f{filter}\x1f{generation}\x1f{path}"))
+}
+
+fn decode_list_cursor(raw: &str) -> Option<(String, String, u64, String)> {
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(raw.trim())
+        .ok()?;
+    let text = String::from_utf8(bytes).ok()?;
+    let mut parts = text.split('\x1f');
+    let root = parts.next()?.to_string();
+    let filter = parts.next()?.to_string();
+    let generation = parts.next()?.parse().ok()?;
+    let path = parts.next()?.to_string();
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((root, filter, generation, path))
+}
+
+fn encode_change_cursor(root: &str, generation: u64, path: &str) -> String {
+    base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(format!("{root}\x1f{generation}\x1f{path}"))
+}
+
+fn decode_change_cursor(raw: &str) -> Option<(String, u64, String)> {
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(raw.trim())
+        .ok()?;
+    let text = String::from_utf8(bytes).ok()?;
+    let mut parts = text.split('\x1f');
+    let root = parts.next()?.to_string();
+    let generation = parts.next()?.parse().ok()?;
+    let path = parts.next()?.to_string();
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((root, generation, path))
+}
+
+fn list_reset(generation: u64) -> VaultNotesListResponse {
+    VaultNotesListResponse {
+        notes: Vec::new(),
+        vault_generation: Some(generation),
+        next_cursor: None,
+        truncated: false,
+        reset_required: true,
+    }
+}
+
+fn changes_reset(generation: u64) -> crate::daemon_api::VaultChangesResponse {
+    crate::daemon_api::VaultChangesResponse {
+        vault_generation: generation,
+        changes: Vec::new(),
+        next_cursor: None,
+        reset_required: true,
+    }
 }
 
 fn append_vault_feed_event(
@@ -457,6 +734,17 @@ mod tests {
             );
             assert!(written.note.tags.iter().any(|tag| tag == "smoke-test"));
             let read = VaultService::get_note(&path).expect("read");
+            assert_eq!(
+                written.note_version.as_deref(),
+                read.note_version.as_deref(),
+                "write and get must return the same opaque NoteVersion"
+            );
+            assert!(
+                written.note_version.as_ref().is_some_and(|value| {
+                    crate::vault::contracts::NoteVersion::parse(value.clone()).is_encoded()
+                }),
+                "write must return an encoded NoteVersion, not a raw digest"
+            );
             assert!(read.content.contains("tags:"));
             let search =
                 VaultService::search(Some(&format!("token {token}")), 5, None).expect("search");
@@ -465,6 +753,53 @@ mod tests {
             assert!(by_tag.notes.iter().any(|note| note.path == path));
             let deleted = VaultService::delete_note(&path).expect("delete");
             assert!(deleted.deleted);
+        });
+    }
+
+    #[test]
+    fn warm_write_does_not_rewrite_full_index_or_links() {
+        with_temp_vault(|| {
+            for index in 0..24 {
+                let path = format!("journal/warm-{index}.md");
+                VaultService::write_note(
+                    Some(&path),
+                    &VaultWriteRequest {
+                        path: Some(path.clone()),
+                        content: format!("# Warm {index}\n"),
+                        ..Default::default()
+                    },
+                    None,
+                )
+                .expect("warm");
+            }
+            crate::vault::baseline::vault_baseline_counters().reset();
+            let path = "journal/hot-write.md".to_string();
+            VaultService::write_note(
+                Some(&path),
+                &VaultWriteRequest {
+                    path: Some(path.clone()),
+                    content: "# Hot\n\nSee [[warm-0]]\n".to_string(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("hot write");
+            let snap = crate::vault::baseline::vault_baseline_counters().snapshot();
+            assert_eq!(
+                snap.index_rewrites, 0,
+                "hot write must journal a delta, not rewrite index.jsonl"
+            );
+            assert_eq!(
+                snap.link_rebuilds, 0,
+                "hot write must not rebuild the full link index"
+            );
+            let read = VaultService::get_note("journal/hot-write.md").expect("read");
+            assert!(
+                read.note
+                    .wikilinks_out
+                    .iter()
+                    .any(|path| path == "journal/warm-0.md")
+            );
         });
     }
 
@@ -494,6 +829,159 @@ mod tests {
                 b"outside-safe"
             );
             assert!(!outside.path().join("new.md").exists());
+        });
+    }
+
+    #[test]
+    fn incremental_reconcile_resolves_wikilinks_against_resident() {
+        with_temp_vault(|| {
+            let suffix = uuid::Uuid::new_v4().simple();
+            let target = format!("journal/resident-b-{suffix}.md");
+            let source = format!("journal/resident-a-{suffix}.md");
+            VaultService::write_note(
+                Some(&target),
+                &VaultWriteRequest {
+                    path: Some(target.clone()),
+                    content: "# Target\n".to_string(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("target");
+            VaultService::write_note(
+                Some(&source),
+                &VaultWriteRequest {
+                    path: Some(source.clone()),
+                    content: format!("# Source\n\nSee [[resident-b-{suffix}]]\n"),
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("source");
+
+            let files = crate::vault::path::user_vault_capability().expect("capability");
+            let source_path = crate::vault::path::VaultPath::parse(&source).expect("path");
+            files
+                .atomic_write(
+                    &source_path,
+                    format!("# Source\n\nSee [[resident-b-{suffix}]]\n\nextra\n").as_bytes(),
+                )
+                .expect("dirty source on disk");
+            crate::vault::store::PROJECTION.mark_stale_reconciling();
+            vault_store()
+                .ensure_index_fresh()
+                .expect("incremental reconcile");
+
+            let read = VaultService::get_note(&source).expect("read source");
+            assert!(
+                read.note.wikilinks_out.iter().any(|path| path == &target),
+                "forward link to unmodified resident note must survive dirty reconcile"
+            );
+            let backlinks = VaultService::backlinks(&target).expect("backlinks");
+            assert!(
+                backlinks.backlinks.iter().any(|path| path == &source),
+                "backlink from dirty note must be retained without rewriting the target"
+            );
+        });
+    }
+
+    #[test]
+    fn skipped_dirty_read_does_not_certify_reconcile() {
+        with_temp_vault(|| {
+            let path = format!("journal/skip-{}.md", uuid::Uuid::new_v4().simple());
+            VaultService::write_note(
+                Some(&path),
+                &VaultWriteRequest {
+                    path: Some(path.clone()),
+                    content: "# Ok\n".to_string(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("write");
+            let files = crate::vault::path::user_vault_capability().expect("capability");
+            files
+                .atomic_write(
+                    &crate::vault::path::VaultPath::parse(&path).expect("path"),
+                    &[0xff, 0xfe, 0x00],
+                )
+                .expect("invalid utf-8");
+            crate::vault::store::PROJECTION.mark_stale_reconciling();
+            vault_store()
+                .ensure_index_fresh()
+                .expect("reconcile with skipped dirty");
+            assert!(
+                crate::vault::store::PROJECTION.needs_reconcile(),
+                "failed dirty reads must not certify the reconcile epoch"
+            );
+        });
+    }
+
+    #[test]
+    fn list_cursor_is_opaque_and_stale_cursor_resets() {
+        with_temp_vault(|| {
+            for index in 0..3 {
+                let path = format!("journal/page-{index}.md");
+                VaultService::write_note(
+                    Some(&path),
+                    &VaultWriteRequest {
+                        path: Some(path.clone()),
+                        content: format!("# Page {index}\n"),
+                        ..Default::default()
+                    },
+                    None,
+                )
+                .expect("write");
+            }
+            let first = VaultService::list_notes_paged(None, 1, None, None, None, None);
+            assert!(first.truncated);
+            let cursor = first.next_cursor.expect("cursor");
+            assert!(
+                !cursor.contains('\x1f') && super::decode_list_cursor(&cursor).is_some(),
+                "cursor must be opaque, got {cursor}"
+            );
+            let second = VaultService::list_notes_paged(None, 1, None, None, Some(&cursor), None);
+            assert!(!second.reset_required);
+            assert_ne!(
+                first.notes.first().map(|note| note.path.as_str()),
+                second.notes.first().map(|note| note.path.as_str())
+            );
+            let stale =
+                VaultService::list_notes_paged(None, 1, None, None, Some("not-a-cursor"), None);
+            assert!(stale.reset_required);
+            assert!(stale.notes.is_empty());
+        });
+    }
+
+    #[test]
+    fn delete_only_generation_emits_delete_or_reset() {
+        with_temp_vault(|| {
+            let path = format!("journal/gone-{}.md", uuid::Uuid::new_v4().simple());
+            VaultService::write_note(
+                Some(&path),
+                &VaultWriteRequest {
+                    path: Some(path.clone()),
+                    content: "# Gone\n".to_string(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("write");
+            let listed = VaultService::list_notes_paged(None, 10, None, None, None, None);
+            let since = listed.vault_generation.expect("generation");
+            VaultService::delete_note(&path).expect("delete");
+            let changes = VaultService::changes_since(Some(since), None, 50);
+            if changes.reset_required {
+                return;
+            }
+            assert!(
+                changes
+                    .changes
+                    .iter()
+                    .any(|change| change.path == path && change.kind == "delete"),
+                "delete-only generation must emit a delete, got {:?}",
+                changes.changes
+            );
         });
     }
 }

@@ -1,6 +1,9 @@
 # Shell scripts must stay LF so Git Bash / WSL on Windows do not hit `$'\r'` parse errors.
 *.sh text eol=lf
 
+# Cargo lockfiles stay LF so Windows checkouts do not break parsers that read them as text.
+Cargo.lock text eol=lf
+
 # PowerShell scripts use CRLF on Windows checkouts.
 *.ps1 text eol=crlf
 

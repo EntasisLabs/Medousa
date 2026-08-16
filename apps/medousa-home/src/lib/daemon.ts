@@ -64,6 +64,7 @@ import type {
   VaultFileContentResponse,
   VaultNoteContentResponse,
   VaultNotesListResponse,
+  VaultChangesResponse,
   VaultRootsResponse,
   VaultTagsListResponse,
   VaultSearchResponse,
@@ -1010,6 +1011,8 @@ export async function listVaultNotes(options?: {
   limit?: number;
   tags?: string[];
   tagPrefix?: string;
+  cursor?: string;
+  generation?: number;
 }): Promise<VaultNotesListResponse> {
   const tags =
     options?.tags?.map((tag) => tag.trim()).filter(Boolean).join(",") || undefined;
@@ -1018,6 +1021,20 @@ export async function listVaultNotes(options?: {
     limit: options?.limit,
     tags,
     tagPrefix: options?.tagPrefix,
+    cursor: options?.cursor,
+    generation: options?.generation,
+  });
+}
+
+export async function listVaultChanges(options?: {
+  sinceGeneration?: number;
+  cursor?: string;
+  limit?: number;
+}): Promise<VaultChangesResponse> {
+  return invoke<VaultChangesResponse>("vault_list_changes", {
+    sinceGeneration: options?.sinceGeneration,
+    cursor: options?.cursor,
+    limit: options?.limit,
   });
 }
 
