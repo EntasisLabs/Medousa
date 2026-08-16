@@ -105,3 +105,41 @@ export const loadBrowserWorkshop = () =>
   import("$lib/components/browser/BrowserWorkshop.svelte");
 export const loadMobileBrowserWorkshop = () =>
   import("$lib/components/mobile/MobileBrowserWorkshop.svelte");
+
+export const loadLmeEditorHost = catalogLoader(
+  "vault-edit",
+  () => import("$lib/components/lme/LmeEditorHost.svelte"),
+);
+export const loadVaultEditor = () => import("$lib/components/vault/VaultEditor.svelte");
+export const loadUndertakingsPanel = () =>
+  import("$lib/components/work/UndertakingsPanel.svelte");
+export const loadCodeSourceEditor = () =>
+  import("$lib/components/work/CodeSourceEditor.svelte");
+export const loadLmeScriptEditor = () =>
+  import("$lib/components/lme/LmeScriptEditor.svelte");
+export const loadLmeAgentEditor = () =>
+  import("$lib/components/lme/LmeAgentEditor.svelte");
+export const loadLmeFlowEditor = () => import("$lib/components/lme/LmeFlowEditor.svelte");
+export const loadLmeScheduleEditor = () =>
+  import("$lib/components/lme/LmeScheduleEditor.svelte");
+export const loadArtifactLibraryPreview = () =>
+  import("$lib/components/artifacts/ArtifactLibraryPreview.svelte");
+export const loadVaultExportPreviewModal = () =>
+  import("$lib/components/vault/VaultExportPreviewModal.svelte");
+
+export const loadSettingsPreferencesSection = () =>
+  import("$lib/components/settings/SettingsPreferencesSection.svelte");
+export const loadSettingsAgentSection = () =>
+  import("$lib/components/settings/SettingsAgentSection.svelte");
+export const loadSettingsRuntimeSection = () =>
+  import("$lib/components/settings/SettingsRuntimeSection.svelte");
+export const loadSettingsNetworkSection = () =>
+  import("$lib/components/settings/SettingsNetworkSection.svelte");
+export const loadSettingsConnectionsSection = () =>
+  import("$lib/components/settings/SettingsConnectionsSection.svelte");
+export const loadSettingsPackagesSection = () =>
+  import("$lib/components/settings/SettingsPackagesSection.svelte");
+export const loadSettingsMcpSection = () =>
+  import("$lib/components/settings/SettingsMcpSection.svelte");
+export const loadSettingsBasementSection = () =>
+  import("$lib/components/settings/SettingsBasementSection.svelte");

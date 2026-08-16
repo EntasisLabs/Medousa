@@ -24,3 +24,23 @@ describe("ShellPane destination loaders", () => {
     expect(source).not.toMatch(/onMount\(/);
   });
 });
+
+describe("browse vs edit and settings splits", () => {
+  it("does not statically import the vault editor from the browse pane", () => {
+    const pane = readFileSync(
+      join(homeRoot, "src/lib/components/lme/LmePanel.svelte"),
+      "utf8",
+    );
+    expect(pane).not.toMatch(/import LmeEditorHost from/);
+    expect(pane).not.toMatch(/@tiptap/);
+    expect(pane).not.toMatch(/@codemirror/);
+    expect(pane).toContain("loadLmeEditorHost");
+    const host = readFileSync(
+      join(homeRoot, "src/lib/components/lme/LmeEditorHost.svelte"),
+      "utf8",
+    );
+    expect(host).not.toMatch(/import VaultEditor from/);
+    expect(host).not.toMatch(/import UndertakingsPanel from/);
+    expect(host).toContain("loadVaultEditor");
+  });
+});
