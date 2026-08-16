@@ -91,14 +91,6 @@ fn commit_relocate(
 
     let dest = destination
         .ok_or_else(|| VaultMutationError::Invalid("relocate destination required".into()))?;
-    if matches!(kind, RelocateKind::Move | RelocateKind::Restore)
-        && owner.files.is_file(&dest).unwrap_or(false)
-    {
-        let _ = tx.root().remove_file(&intent_path);
-        return Err(VaultMutationError::Conflict(
-            "destination already exists".into(),
-        ));
-    }
     if !owner.files.is_file(&source).unwrap_or(false) {
         let _ = tx.root().remove_file(&intent_path);
         return Err(VaultMutationError::Invalid(format!(
@@ -106,11 +98,17 @@ fn commit_relocate(
         )));
     }
 
-    match kind {
-        RelocateKind::Restore => tx.restore_path(&source, &dest, DurabilityLevel::Synced)?,
+    // Destination publication is create-only (no-replace). An external create
+    // that lands between the existence check and publish loses the race here
+    // with Conflict; winner bytes are preserved.
+    if let Err(error) = match kind {
+        RelocateKind::Restore => tx.restore_path(&source, &dest, DurabilityLevel::Synced),
         RelocateKind::Move | RelocateKind::Delete => {
-            tx.move_path(&source, &dest, DurabilityLevel::Synced)?
+            tx.move_path_create_only(&source, &dest, DurabilityLevel::Synced)
         }
+    } {
+        let _ = tx.root().remove_file(&intent_path);
+        return Err(error.into());
     }
 
     let vault_generation = match owner.bump_generation() {
@@ -389,5 +387,66 @@ mod tests {
         let recovered = crate::vault::mutation::recover_all_pending_writes(&owner).unwrap();
         assert_eq!(recovered.len(), 1);
         assert!(recovered[0].index_repair_required);
+    }
+
+    #[test]
+    fn competing_destination_create_preserves_winner_bytes() {
+        use medousa_store::{
+            FileTransaction, PersistenceError, StorePath, TransactionFaultPoint, TransactionFaults,
+        };
+
+        struct PlantDestination {
+            root: Arc<StoreRoot>,
+            dest: StorePath,
+        }
+        impl TransactionFaults for PlantDestination {
+            fn check(&self, point: TransactionFaultPoint) -> Result<(), PersistenceError> {
+                if point == TransactionFaultPoint::BeforeRenamePublish {
+                    self.root
+                        .atomic_create(&self.dest, b"external\n")
+                        .expect("plant competing destination");
+                }
+                Ok(())
+            }
+        }
+
+        let (_dir, owner) = owner();
+        commit_write(
+            &owner,
+            WriteMutation {
+                path: "from.md".into(),
+                content: "source\n".into(),
+                precondition: MutationPrecondition::CreateOnly,
+                expected_version: None,
+            },
+        )
+        .unwrap();
+        let root = Arc::clone(&owner.files);
+        owner.set_transaction(FileTransaction::with_faults(
+            Arc::clone(&root),
+            Arc::new(PlantDestination {
+                root: Arc::clone(&root),
+                dest: StorePath::parse("to.md").unwrap(),
+            }) as Arc<dyn TransactionFaults>,
+        ));
+        let error = relocate_move(&owner, "from.md", "to.md").unwrap_err();
+        assert!(
+            matches!(error, VaultMutationError::Conflict(_)),
+            "got {error:?}"
+        );
+        assert_eq!(
+            owner
+                .files
+                .read_limited(&VaultPath::parse("to.md").unwrap(), 64)
+                .unwrap(),
+            b"external\n"
+        );
+        assert_eq!(
+            owner
+                .files
+                .read_limited(&VaultPath::parse("from.md").unwrap(), 64)
+                .unwrap(),
+            b"source\n"
+        );
     }
 }

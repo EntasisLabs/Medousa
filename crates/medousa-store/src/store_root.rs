@@ -593,7 +593,7 @@ impl StoreRoot {
         }
         drop(file);
         if create_only {
-            if let Err(error) = rename_noreplace(&parent, &temporary, leaf) {
+            if let Err(error) = rename_noreplace(&parent, &temporary, &parent, leaf) {
                 let _ = parent.remove_file(&temporary);
                 return Err(StoreRootError::io("publish_atomic_noreplace", error));
             }
@@ -723,6 +723,21 @@ impl StoreRoot {
         from_parent
             .rename(from_leaf, &to_parent, to_leaf)
             .map_err(|error| StoreRootError::io("rename", error))
+    }
+
+    /// Same-filesystem rename that fails if the destination leaf already exists.
+    pub fn rename_create_only(
+        &self,
+        from: &impl StoreRootPath,
+        to: &impl StoreRootPath,
+    ) -> Result<(), StoreRootError> {
+        let (from_parent, from_leaf) = self.open_parent(from, false, "rename_source")?;
+        reject_symlink(&from_parent, from_leaf, "rename_source")?;
+        reject_hard_link(&from_parent, from_leaf, "rename_source")?;
+        let (to_parent, to_leaf) = self.open_parent(to, true, "rename_destination")?;
+        reject_symlink(&to_parent, to_leaf, "rename_destination")?;
+        rename_noreplace(&from_parent, from_leaf, &to_parent, to_leaf)
+            .map_err(|error| StoreRootError::io("rename_noreplace", error))
     }
 
     fn open_file(
@@ -932,7 +947,7 @@ fn reject_hard_link(
 }
 
 #[cfg(target_os = "linux")]
-fn rename_noreplace(directory: &Dir, from: &str, to: &str) -> std::io::Result<()> {
+fn rename_noreplace(from_dir: &Dir, from: &str, to_dir: &Dir, to: &str) -> std::io::Result<()> {
     use std::ffi::CString;
     use std::os::fd::AsRawFd as _;
 
@@ -940,12 +955,12 @@ fn rename_noreplace(directory: &Dir, from: &str, to: &str) -> std::io::Result<()
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL"))?;
     let to_c = CString::new(to)
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL"))?;
-    // SAFETY: directory fd is live; paths are relative C strings without NUL.
+    // SAFETY: directory fds are live; paths are relative C strings without NUL.
     let rc = unsafe {
         libc::renameat2(
-            directory.as_raw_fd(),
+            from_dir.as_raw_fd(),
             from_c.as_ptr(),
-            directory.as_raw_fd(),
+            to_dir.as_raw_fd(),
             to_c.as_ptr(),
             libc::RENAME_NOREPLACE,
         )
@@ -958,7 +973,7 @@ fn rename_noreplace(directory: &Dir, from: &str, to: &str) -> std::io::Result<()
 }
 
 #[cfg(target_os = "macos")]
-fn rename_noreplace(directory: &Dir, from: &str, to: &str) -> std::io::Result<()> {
+fn rename_noreplace(from_dir: &Dir, from: &str, to_dir: &Dir, to: &str) -> std::io::Result<()> {
     use std::ffi::CString;
     use std::os::fd::AsRawFd as _;
 
@@ -967,12 +982,12 @@ fn rename_noreplace(directory: &Dir, from: &str, to: &str) -> std::io::Result<()
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL"))?;
     let to_c = CString::new(to)
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL"))?;
-    // SAFETY: directory fd is live; paths are relative C strings without NUL.
+    // SAFETY: directory fds are live; paths are relative C strings without NUL.
     let rc = unsafe {
         libc::renameatx_np(
-            directory.as_raw_fd(),
+            from_dir.as_raw_fd(),
             from_c.as_ptr(),
-            directory.as_raw_fd(),
+            to_dir.as_raw_fd(),
             to_c.as_ptr(),
             RENAME_EXCL,
         )
@@ -985,8 +1000,8 @@ fn rename_noreplace(directory: &Dir, from: &str, to: &str) -> std::io::Result<()
 }
 
 #[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
-fn rename_noreplace(directory: &Dir, from: &str, to: &str) -> std::io::Result<()> {
-    // Fallback: linkat is atomic no-replace, then unlink the temporary.
+fn rename_noreplace(from_dir: &Dir, from: &str, to_dir: &Dir, to: &str) -> std::io::Result<()> {
+    // Fallback: linkat is atomic no-replace, then unlink the source.
     use std::ffi::CString;
     use std::os::fd::AsRawFd as _;
 
@@ -996,9 +1011,9 @@ fn rename_noreplace(directory: &Dir, from: &str, to: &str) -> std::io::Result<()
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL"))?;
     let rc = unsafe {
         libc::linkat(
-            directory.as_raw_fd(),
+            from_dir.as_raw_fd(),
             from_c.as_ptr(),
-            directory.as_raw_fd(),
+            to_dir.as_raw_fd(),
             to_c.as_ptr(),
             0,
         )
@@ -1006,24 +1021,17 @@ fn rename_noreplace(directory: &Dir, from: &str, to: &str) -> std::io::Result<()
     if rc != 0 {
         return Err(std::io::Error::last_os_error());
     }
-    let _ = unsafe { libc::unlinkat(directory.as_raw_fd(), from_c.as_ptr(), 0) };
+    let _ = unsafe { libc::unlinkat(from_dir.as_raw_fd(), from_c.as_ptr(), 0) };
     Ok(())
 }
 
 #[cfg(windows)]
-fn rename_noreplace(directory: &Dir, from: &str, to: &str) -> std::io::Result<()> {
-    use std::os::windows::ffi::OsStrExt as _;
+fn held_directory_path(directory: &Dir) -> std::io::Result<PathBuf> {
+    use std::os::windows::ffi::OsStringExt as _;
     use std::os::windows::io::AsRawHandle as _;
-    use std::path::PathBuf;
     use windows::Win32::Foundation::{HANDLE, MAX_PATH};
-    use windows::Win32::Storage::FileSystem::{
-        CreateHardLinkW, FILE_NAME_NORMALIZED, GetFinalPathNameByHandleW,
-    };
-    use windows::core::PCWSTR;
+    use windows::Win32::Storage::FileSystem::{FILE_NAME_NORMALIZED, GetFinalPathNameByHandleW};
 
-    // Resolve the held directory to a filesystem path, then hard-link the
-    // temporary onto the destination (fails if destination exists) and delete
-    // the temporary. Hard-link creation is the Windows no-replace fence.
     let mut buffer = vec![0u16; MAX_PATH as usize];
     let handle = HANDLE(directory.as_raw_handle() as *mut _);
     let len = unsafe { GetFinalPathNameByHandleW(handle, &mut buffer, FILE_NAME_NORMALIZED) };
@@ -1032,13 +1040,21 @@ fn rename_noreplace(directory: &Dir, from: &str, to: &str) -> std::io::Result<()
     }
     buffer.truncate(len as usize);
     let dir_path = PathBuf::from(std::ffi::OsString::from_wide(&buffer));
-    // Strip \\?\ prefix when present for path joining consistency.
-    let dir_path = dir_path
+    Ok(dir_path
         .to_str()
         .map(|s| PathBuf::from(s.strip_prefix(r"\\?\").unwrap_or(s)))
-        .unwrap_or(dir_path);
-    let from_path = dir_path.join(from);
-    let to_path = dir_path.join(to);
+        .unwrap_or(dir_path))
+}
+
+#[cfg(windows)]
+fn rename_noreplace(from_dir: &Dir, from: &str, to_dir: &Dir, to: &str) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt as _;
+    use windows::Win32::Storage::FileSystem::CreateHardLinkW;
+    use windows::core::PCWSTR;
+
+    // Hard-link creation is the Windows no-replace fence; then drop the source.
+    let from_path = held_directory_path(from_dir)?.join(from);
+    let to_path = held_directory_path(to_dir)?.join(to);
     let from_w: Vec<u16> = from_path
         .as_os_str()
         .encode_wide()
@@ -1551,5 +1567,23 @@ mod tests {
             "winner bytes must be intact, got {:?}",
             String::from_utf8_lossy(&bytes)
         );
+    }
+
+    #[test]
+    fn rename_create_only_refuses_existing_destination() {
+        let temp = tempfile::tempdir().unwrap();
+        let root_path = temp.path().canonicalize().unwrap();
+        let root = StoreRoot::open_or_create_nofollow(&root_path).unwrap();
+        root.atomic_create(&path("from.md"), b"source").unwrap();
+        root.atomic_create(&path("to.md"), b"winner").unwrap();
+        let error = root
+            .rename_create_only(&path("from.md"), &path("to.md"))
+            .unwrap_err();
+        assert!(
+            matches!(error, StoreRootError::Io { ref source, .. } if source.kind() == std::io::ErrorKind::AlreadyExists),
+            "got {error:?}"
+        );
+        assert_eq!(root.read_limited(&path("from.md"), 64).unwrap(), b"source");
+        assert_eq!(root.read_limited(&path("to.md"), 64).unwrap(), b"winner");
     }
 }

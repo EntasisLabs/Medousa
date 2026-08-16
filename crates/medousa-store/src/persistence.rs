@@ -101,6 +101,11 @@ impl From<StoreRootError> for PersistenceError {
     fn from(error: StoreRootError) -> Self {
         let kind = match &error {
             StoreRootError::Io { source, .. }
+                if source.kind() == std::io::ErrorKind::AlreadyExists =>
+            {
+                PersistenceErrorKind::Conflict
+            }
+            StoreRootError::Io { source, .. }
                 if matches!(
                     source.kind(),
                     std::io::ErrorKind::Interrupted
@@ -274,10 +279,34 @@ impl FileTransaction {
         to: &impl StoreRootPath,
         durability: DurabilityLevel,
     ) -> Result<(), PersistenceError> {
+        self.move_path_inner(from, to, durability, false)
+    }
+
+    /// Same-filesystem rename that fails if the destination already exists.
+    pub fn move_path_create_only(
+        &self,
+        from: &impl StoreRootPath,
+        to: &impl StoreRootPath,
+        durability: DurabilityLevel,
+    ) -> Result<(), PersistenceError> {
+        self.move_path_inner(from, to, durability, true)
+    }
+
+    fn move_path_inner(
+        &self,
+        from: &impl StoreRootPath,
+        to: &impl StoreRootPath,
+        durability: DurabilityLevel,
+        create_only: bool,
+    ) -> Result<(), PersistenceError> {
         self.faults.check(TransactionFaultPoint::BeforeMove)?;
         self.faults
             .check(TransactionFaultPoint::BeforeRenamePublish)?;
-        self.root.rename(from, to)?;
+        if create_only {
+            self.root.rename_create_only(from, to)?;
+        } else {
+            self.root.rename(from, to)?;
+        }
         if matches!(durability, DurabilityLevel::Synced) {
             self.faults.check(TransactionFaultPoint::BeforeParentSync)?;
             self.root.sync_parent_of(to)?;
@@ -297,13 +326,7 @@ impl FileTransaction {
         to: &impl StoreRootPath,
         durability: DurabilityLevel,
     ) -> Result<(), PersistenceError> {
-        if self.root.is_file(to).unwrap_or(false) {
-            return Err(PersistenceError::new(
-                PersistenceErrorKind::Conflict,
-                "restore destination already exists",
-            ));
-        }
-        self.move_path(from, to, durability)
+        self.move_path_create_only(from, to, durability)
     }
 
     /// Durable intent record used before content publication (H07 protocol).
@@ -459,6 +482,31 @@ mod tests {
             .unwrap();
         assert!(!transaction.root().is_file(&from).unwrap());
         assert_eq!(transaction.root().read_limited(&to, 64).unwrap(), b"body");
+    }
+
+    #[test]
+    fn move_path_create_only_refuses_existing_destination() {
+        let (_directory, transaction) = transaction();
+        let from = StorePath::parse("from.md").unwrap();
+        let to = StorePath::parse("to.md").unwrap();
+        transaction
+            .create_only(&from, b"source", DurabilityLevel::Synced)
+            .unwrap();
+        transaction
+            .create_only(&to, b"winner", DurabilityLevel::Synced)
+            .unwrap();
+        let error = transaction
+            .move_path_create_only(&from, &to, DurabilityLevel::Synced)
+            .unwrap_err();
+        assert_eq!(error.kind, PersistenceErrorKind::Conflict);
+        assert_eq!(
+            transaction.root().read_limited(&from, 64).unwrap(),
+            b"source"
+        );
+        assert_eq!(
+            transaction.root().read_limited(&to, 64).unwrap(),
+            b"winner"
+        );
     }
 
     #[test]

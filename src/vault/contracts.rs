@@ -2,7 +2,10 @@
 
 use std::fmt;
 
-use medousa_store::{CommitReceipt, DurabilityLevel, PersistenceError, StoreKind, StoreRootError};
+use medousa_store::{
+    CommitReceipt, DurabilityLevel, PersistenceError, PersistenceErrorKind, StoreKind,
+    StoreRootError,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::vault::note::VaultNoteSource;
@@ -160,7 +163,11 @@ impl std::error::Error for VaultMutationError {}
 
 impl From<PersistenceError> for VaultMutationError {
     fn from(error: PersistenceError) -> Self {
-        Self::Persistence(error.to_string())
+        if error.kind == PersistenceErrorKind::Conflict {
+            Self::Conflict(error.to_string())
+        } else {
+            Self::Persistence(error.to_string())
+        }
     }
 }
 
