@@ -7,10 +7,10 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use crate::vault::contracts::{
-    vault_receipt, MutationPrecondition, NoteVersion, VaultCommitOutcome, VaultMutationError,
-    VaultMutationIntent, VaultMutationReceiptRecord,
+    MutationPrecondition, NoteVersion, VaultCommitOutcome, VaultMutationError, VaultMutationIntent,
+    VaultMutationReceiptRecord, vault_receipt,
 };
-use crate::vault::note::{content_hash, VaultNoteSource};
+use crate::vault::note::{VaultNoteSource, content_hash};
 use crate::vault::owner::VaultIndexOwner;
 use crate::vault::path::VaultPath;
 
@@ -46,7 +46,10 @@ pub fn commit_write(
             root_id: owner.root_id.as_str().to_string(),
             path: normalized.clone(),
             precondition: mutation.precondition,
-            expected_version: mutation.expected_version.as_ref().map(|v| v.as_str().to_string()),
+            expected_version: mutation
+                .expected_version
+                .as_ref()
+                .map(|v| v.as_str().to_string()),
             content_digest: digest.clone(),
             vault_generation: intent_generation,
         };
@@ -61,11 +64,7 @@ pub fn commit_write(
                 tx.create_only(&path, mutation.content.as_bytes(), DurabilityLevel::Synced)?;
             }
             _ => {
-                tx.replace_snapshot(
-                    &path,
-                    mutation.content.as_bytes(),
-                    DurabilityLevel::Synced,
-                )?;
+                tx.replace_snapshot(&path, mutation.content.as_bytes(), DurabilityLevel::Synced)?;
             }
         }
 
@@ -244,8 +243,8 @@ fn read_existing(
         .files
         .read_limited(path, 8 * 1024 * 1024)
         .map_err(VaultMutationError::from)?;
-    let body = String::from_utf8(bytes)
-        .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
+    let body =
+        String::from_utf8(bytes).map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
     Ok(Some(ExistingNote {
         version: NoteVersion::from_digest(content_hash(&body)),
     }))
@@ -279,8 +278,8 @@ mod tests {
         FileTransaction, NoTransactionFaults, PersistenceError, PersistenceErrorKind, StoreRoot,
         TransactionFaultPoint, TransactionFaults,
     };
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Barrier;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
     use tempfile::tempdir;
 
@@ -387,9 +386,10 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, VaultMutationError::Persistence(_)));
-        assert!(root
-            .is_file(&StorePath::parse("recover.md").unwrap())
-            .unwrap());
+        assert!(
+            root.is_file(&StorePath::parse("recover.md").unwrap())
+                .unwrap()
+        );
         // Reset faults and recover from leftover intent.
         owner.set_transaction(FileTransaction::with_faults(
             Arc::clone(&root),

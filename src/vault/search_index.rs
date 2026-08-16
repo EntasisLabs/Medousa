@@ -1,7 +1,7 @@
 //! Purpose-built vault search index port (H07.3).
 
-use std::collections::{BinaryHeap, HashMap};
 use std::cmp::Ordering as CmpOrdering;
+use std::collections::{BinaryHeap, HashMap};
 
 use crate::vault::note::VaultIndexEntry;
 
@@ -16,9 +16,10 @@ pub struct VaultSearchIndex {
 
 #[derive(Debug, Clone)]
 struct SearchDocument {
-    version: String,
     length: u32,
     title: String,
+    /// Terms owned by this document for O(terms) removal.
+    terms: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -50,11 +51,15 @@ impl VaultSearchIndex {
     }
 
     pub fn remove_document(&mut self, path: &str) {
-        if let Some(_doc) = self.docs.remove(path) {
-            for postings in self.postings.values_mut() {
-                postings.remove(path);
+        if let Some(doc) = self.docs.remove(path) {
+            for term in &doc.terms {
+                if let Some(postings) = self.postings.get_mut(term) {
+                    postings.remove(path);
+                    if postings.is_empty() {
+                        self.postings.remove(term);
+                    }
+                }
             }
-            self.postings.retain(|_, map| !map.is_empty());
         }
     }
 
@@ -65,6 +70,7 @@ impl VaultSearchIndex {
             *tf.entry(token).or_default() += 1;
         }
         let length = tf.values().sum::<u32>().max(1);
+        let terms: Vec<String> = tf.keys().cloned().collect();
         for (term, count) in &tf {
             self.postings
                 .entry(term.clone())
@@ -74,9 +80,9 @@ impl VaultSearchIndex {
         self.docs.insert(
             entry.path.clone(),
             SearchDocument {
-                version: entry.content_hash.clone(),
                 length,
                 title: entry.title.clone(),
+                terms,
             },
         );
         self.indexed_generation = generation;
@@ -103,10 +109,7 @@ impl VaultSearchIndex {
         }
         let mut heap = BinaryHeap::new();
         for (path, score) in scores {
-            heap.push(Scored {
-                path,
-                score,
-            });
+            heap.push(Scored { path, score });
         }
         let mut hits = Vec::with_capacity(limit.min(heap.len()));
         while hits.len() < limit {
@@ -179,8 +182,8 @@ pub fn tokenize(input: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use crate::vault::note::VaultNoteSource;
+    use chrono::Utc;
 
     #[test]
     fn search_uses_postings_not_full_corpus_scan_api() {

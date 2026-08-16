@@ -68,9 +68,11 @@ pub struct GeneratedVaultFixture {
 }
 
 /// Materialize a deterministic markdown vault under `root`.
-pub fn generate_vault_fixture(root: &Path, spec: &VaultFixtureSpec) -> Result<GeneratedVaultFixture> {
-    fs::create_dir_all(root)
-        .with_context(|| format!("create fixture root {}", root.display()))?;
+pub fn generate_vault_fixture(
+    root: &Path,
+    spec: &VaultFixtureSpec,
+) -> Result<GeneratedVaultFixture> {
+    fs::create_dir_all(root).with_context(|| format!("create fixture root {}", root.display()))?;
     let mut note_paths = Vec::with_capacity(spec.note_count);
     for index in 0..spec.note_count {
         let relative = note_path_for(spec.shape, index, spec.note_count);
@@ -120,18 +122,16 @@ fn note_path_for(shape: VaultFixtureShape, index: usize, total: usize) -> String
     }
 }
 
-fn note_body(
-    spec: &VaultFixtureSpec,
-    index: usize,
-    relative: &str,
-    existing: &[String],
-) -> String {
+fn note_body(spec: &VaultFixtureSpec, index: usize, relative: &str, existing: &[String]) -> String {
     let title = relative
         .rsplit('/')
         .next()
         .unwrap_or(relative)
         .trim_end_matches(".md");
-    let mut body = format!("# {title}\n\nindex={index} shape={}\n\n", spec.shape.as_str());
+    let mut body = format!(
+        "# {title}\n\nindex={index} shape={}\n\n",
+        spec.shape.as_str()
+    );
     if matches!(spec.shape, VaultFixtureShape::LinkHeavy) && index > 0 {
         if let Some(hub) = existing.first() {
             let hub_stem = hub.trim_end_matches(".md");

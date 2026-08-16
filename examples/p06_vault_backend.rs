@@ -10,9 +10,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use medousa::vault::baseline::vault_baseline_counters;
-use medousa::vault::fixtures::{
-    VaultFixtureShape, VaultFixtureSpec, generate_vault_fixture,
-};
+use medousa::vault::fixtures::{VaultFixtureShape, VaultFixtureSpec, generate_vault_fixture};
 use medousa::vault::service::VaultService;
 use medousa::vault::store::vault_store;
 use tempfile::tempdir;
@@ -89,11 +87,11 @@ fn run_shape(shape: VaultFixtureShape, notes: usize) {
         shape.as_str(),
         notes
     );
-    println!("{}", snap.render_line(&format!("{}:{notes}", shape.as_str())));
     println!(
-        "p06_retained_dir_bytes={}",
-        dir_bytes(root.as_path())
+        "{}",
+        snap.render_line(&format!("{}:{notes}", shape.as_str()))
     );
+    println!("p06_retained_dir_bytes={}", dir_bytes(root.as_path()));
 
     medousa::vault::roots::set_test_vault_root_override(None);
     let _ = vault_store().refresh_from_disk();

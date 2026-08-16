@@ -1,7 +1,7 @@
 //! Bounded vault I/O admission (H07.1a).
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::vault::contracts::VaultMutationError;
 
@@ -82,7 +82,9 @@ impl Drop for AdmissionPermit {
     fn drop(&mut self) {
         match self.kind {
             PermitKind::Mutation => {
-                self.admission.global_mutations.fetch_sub(1, Ordering::AcqRel);
+                self.admission
+                    .global_mutations
+                    .fetch_sub(1, Ordering::AcqRel);
             }
             PermitKind::Blocking => {
                 self.admission.blocking_jobs.fetch_sub(1, Ordering::AcqRel);

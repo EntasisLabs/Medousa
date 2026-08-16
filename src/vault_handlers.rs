@@ -1,16 +1,16 @@
 //! HTTP handlers for vault APIs (`/v1/vault/*`).
 
+use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path, Query};
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{delete, get, post, put};
-use axum::Json;
 
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
 use crate::daemon_api::{
-    VaultBacklinksQuery, VaultBacklinksResponse, VaultAddRootRequest, VaultDeleteResponse,
+    VaultAddRootRequest, VaultBacklinksQuery, VaultBacklinksResponse, VaultDeleteResponse,
     VaultFileContentResponse, VaultNoteContentResponse, VaultNotesListResponse, VaultNotesQuery,
     VaultPutQuery, VaultRootsResponse, VaultSearchQuery, VaultSearchResponse,
     VaultSetActiveRootRequest, VaultTagsListResponse, VaultTagsQuery, VaultTrashListResponse,
@@ -122,12 +122,10 @@ pub fn vault_surface() -> DeclaredRouter {
             vault_admin_policy(axum::http::Method::GET, "/v1/vault/git/diff", 1024),
             get(crate::vault_git_handlers::vault_git_diff),
         )
-        .methods([
-            (
-                vault_admin_policy(axum::http::Method::GET, "/v1/vault/git/worktrees", 1024),
-                get(crate::vault_git_handlers::vault_git_worktrees_list),
-            ),
-        ])
+        .methods([(
+            vault_admin_policy(axum::http::Method::GET, "/v1/vault/git/worktrees", 1024),
+            get(crate::vault_git_handlers::vault_git_worktrees_list),
+        )])
 }
 
 fn vault_read_policy(path: &'static str) -> RoutePolicy {
@@ -220,7 +218,10 @@ pub async fn list_vault_tags(
     Query(query): Query<VaultTagsQuery>,
 ) -> Result<Json<VaultTagsListResponse>, (StatusCode, String)> {
     let limit = query.limit.unwrap_or(100);
-    Ok(Json(VaultService::list_tags(query.prefix.as_deref(), limit)))
+    Ok(Json(VaultService::list_tags(
+        query.prefix.as_deref(),
+        limit,
+    )))
 }
 
 pub async fn get_vault_note(
@@ -245,8 +246,12 @@ pub async fn put_vault_note(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<VaultWriteResponse>, (StatusCode, String)> {
-    let content = String::from_utf8(body.into())
-        .map_err(|err| (StatusCode::BAD_REQUEST, format!("invalid utf-8 body: {err}")))?;
+    let content = String::from_utf8(body.into()).map_err(|err| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("invalid utf-8 body: {err}"),
+        )
+    })?;
     let if_match = headers
         .get("if-match")
         .and_then(|value| value.to_str().ok());
@@ -286,7 +291,14 @@ pub async fn search_vault_notes(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    if q.is_none() && query.tags.as_deref().map(str::trim).filter(|v| !v.is_empty()).is_none() {
+    if q.is_none()
+        && query
+            .tags
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .is_none()
+    {
         return Err((StatusCode::BAD_REQUEST, "q or tags is required".to_string()));
     }
     let limit = query.limit.unwrap_or(20);
@@ -324,13 +336,9 @@ pub async fn set_vault_active_root(
 pub async fn add_vault_root_handler(
     Json(request): Json<VaultAddRootRequest>,
 ) -> Result<Json<VaultRootsResponse>, (StatusCode, String)> {
-    add_vault_root(
-        &request.label,
-        &request.path,
-        request.id.as_deref(),
-    )
-    .map(Json)
-    .map_err(map_vault_error)
+    add_vault_root(&request.label, &request.path, request.id.as_deref())
+        .map(Json)
+        .map_err(map_vault_error)
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -384,11 +392,15 @@ mod tests {
                 .count(),
             13
         );
-        assert!(entries.iter().any(|entry| {
-            entry.path == "/v1/vault/git/worktrees" && entry.method == "GET"
-        }));
-        assert!(!entries.iter().any(|entry| {
-            entry.path == "/v1/vault/git/worktrees" && entry.method != "GET"
-        }));
+        assert!(
+            entries
+                .iter()
+                .any(|entry| { entry.path == "/v1/vault/git/worktrees" && entry.method == "GET" })
+        );
+        assert!(
+            !entries
+                .iter()
+                .any(|entry| { entry.path == "/v1/vault/git/worktrees" && entry.method != "GET" })
+        );
     }
 }

@@ -332,7 +332,7 @@ Target properties:
 
 **Findings:** PERF-003, CONSIST-001
 
-**Harness:** `cargo run -p medousa --example p06_vault_backend`  
+**Harness:** `cargo run -p medousa --example p06_vault_backend`
 CI defaults stay small (24/64 notes). Retained/nightly scale:
 `MEDOUSA_P06_NOTES=100000 cargo run -p medousa --example p06_vault_backend`.
 

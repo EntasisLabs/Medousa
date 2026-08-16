@@ -5,9 +5,7 @@ use std::sync::Arc;
 use medousa_store::{DurabilityLevel, StorePath};
 use serde::{Deserialize, Serialize};
 
-use crate::vault::contracts::{
-    vault_receipt, VaultCommitOutcome, VaultMutationError, VaultRootId,
-};
+use crate::vault::contracts::{VaultCommitOutcome, VaultMutationError, VaultRootId, vault_receipt};
 use crate::vault::note::VaultNoteSource;
 use crate::vault::owner::VaultIndexOwner;
 use crate::vault::path::VaultPath;
@@ -35,24 +33,19 @@ pub fn relocate_move(
     source: &str,
     destination: &str,
 ) -> Result<VaultCommitOutcome, VaultMutationError> {
-    let source_path = VaultPath::parse(source)
-        .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
+    let source_path =
+        VaultPath::parse(source).map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
     let dest_path = VaultPath::parse(destination)
         .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
-    commit_relocate(
-        owner,
-        RelocateKind::Move,
-        source_path,
-        Some(dest_path),
-    )
+    commit_relocate(owner, RelocateKind::Move, source_path, Some(dest_path))
 }
 
 pub fn relocate_delete(
     owner: &Arc<VaultIndexOwner>,
     source: &str,
 ) -> Result<VaultCommitOutcome, VaultMutationError> {
-    let source_path = VaultPath::parse(source)
-        .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
+    let source_path =
+        VaultPath::parse(source).map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
     let trash = unique_trash_path(owner, &source_path)?;
     commit_relocate(owner, RelocateKind::Delete, source_path, Some(trash))
 }
@@ -61,8 +54,8 @@ pub fn relocate_restore(
     owner: &Arc<VaultIndexOwner>,
     source: &str,
 ) -> Result<VaultCommitOutcome, VaultMutationError> {
-    let source_path = VaultPath::parse(source)
-        .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
+    let source_path =
+        VaultPath::parse(source).map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
     let trash = source_path.trash_path();
     commit_relocate(owner, RelocateKind::Restore, trash, Some(source_path))
 }
@@ -96,9 +89,8 @@ fn commit_relocate(
     let tx = owner.transaction();
     tx.write_intent(&intent_path, &intent_bytes, DurabilityLevel::Synced)?;
 
-    let dest = destination.ok_or_else(|| {
-        VaultMutationError::Invalid("relocate destination required".into())
-    })?;
+    let dest = destination
+        .ok_or_else(|| VaultMutationError::Invalid("relocate destination required".into()))?;
     if matches!(kind, RelocateKind::Move | RelocateKind::Restore)
         && owner.files.is_file(&dest).unwrap_or(false)
     {
@@ -173,8 +165,8 @@ fn unique_trash_path(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vault::mutation::{commit_write, WriteMutation};
     use crate::vault::contracts::MutationPrecondition;
+    use crate::vault::mutation::{WriteMutation, commit_write};
     use medousa_store::StoreRoot;
     use tempfile::tempdir;
 
@@ -182,10 +174,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().canonicalize().unwrap();
         let root = Arc::new(StoreRoot::open_or_create_nofollow(&path).unwrap());
-        (
-            dir,
-            VaultIndexOwner::new(VaultRootId::new("test"), root),
-        )
+        (dir, VaultIndexOwner::new(VaultRootId::new("test"), root))
     }
 
     #[test]
@@ -213,9 +202,9 @@ mod tests {
         )
         .unwrap();
         relocate_delete(&owner, "keep.md").unwrap();
-        let trash_root = owner.files.list_directory_utf8(
-            &VaultPath::internal(".trash").unwrap(),
-        );
+        let trash_root = owner
+            .files
+            .list_directory_utf8(&VaultPath::internal(".trash").unwrap());
         let entries = trash_root.unwrap();
         assert!(entries.len() >= 2, "both trash versions retained");
     }
@@ -234,13 +223,17 @@ mod tests {
         )
         .unwrap();
         relocate_move(&owner, "from.md", "to.md").unwrap();
-        assert!(!owner
-            .files
-            .is_file(&VaultPath::parse("from.md").unwrap())
-            .unwrap());
-        assert!(owner
-            .files
-            .is_file(&VaultPath::parse("to.md").unwrap())
-            .unwrap());
+        assert!(
+            !owner
+                .files
+                .is_file(&VaultPath::parse("from.md").unwrap())
+                .unwrap()
+        );
+        assert!(
+            owner
+                .files
+                .is_file(&VaultPath::parse("to.md").unwrap())
+                .unwrap()
+        );
     }
 }

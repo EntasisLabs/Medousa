@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::daemon_api::{VaultNote, VaultNoteSummary};
-use crate::vault::links::{merge_tags, parse_inline_tags, parse_raw_wikilinks, resolve_wikilink_target};
+use crate::vault::links::{
+    merge_tags, parse_inline_tags, parse_raw_wikilinks, resolve_wikilink_target,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -188,9 +190,10 @@ pub fn resolve_wikilinks_for_body(
     let mut resolved = Vec::new();
     for raw in parse_raw_wikilinks(body) {
         if let Some(target) = resolve_wikilink_target(&raw, path, known_paths, entries)
-            && !resolved.iter().any(|existing| existing == &target) {
-                resolved.push(target);
-            }
+            && !resolved.iter().any(|existing| existing == &target)
+        {
+            resolved.push(target);
+        }
     }
     resolved
 }
@@ -205,9 +208,7 @@ pub fn build_index_entry(
     entries: &[VaultIndexEntry],
 ) -> VaultIndexEntry {
     let (_content, frontmatter) = strip_frontmatter(body);
-    let frontmatter_tags = frontmatter
-        .map(parse_frontmatter_tags)
-        .unwrap_or_default();
+    let frontmatter_tags = frontmatter.map(parse_frontmatter_tags).unwrap_or_default();
     let tags = crate::vault::semantic_tags::normalize_note_tags(merge_tags(
         frontmatter_tags,
         parse_inline_tags(body),
@@ -273,8 +274,10 @@ mod tests {
             kind: Some("project".to_string()),
             source: VaultNoteSource::User,
         }];
-        assert!(resolve_wikilinks_for_body("journal/note.md", body, &known, &entries)
-            .iter()
-            .any(|link| link.contains("projects")));
+        assert!(
+            resolve_wikilinks_for_body("journal/note.md", body, &known, &entries)
+                .iter()
+                .any(|link| link.contains("projects"))
+        );
     }
 }

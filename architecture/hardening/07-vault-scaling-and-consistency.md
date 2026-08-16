@@ -1,7 +1,9 @@
 # H07 — Incremental vault index and atomic mutation
 
-> **Status:** Implementing — H07.0–H07.5 code landed; packaged multi-OS
-> validation and retained P06/P07 evidence pending (H07.6)
+> **Status:** Implementing — repair train in progress; H07.0 scaffolding only.
+> Advertised H07.1–H07.5 guarantees are not merge-ready until the repair cars
+> close no-replace CAS, recovery, freshness, admission, incremental hot paths,
+> API semantics, and Home virtualization.
 >
 > **Accountable owner:** vault engine maintainers
 >

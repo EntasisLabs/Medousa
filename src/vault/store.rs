@@ -14,7 +14,7 @@ use crate::store_root::{StoreEntryKind, StoreRoot};
 use crate::vault::baseline::vault_baseline_counters;
 use crate::vault::contracts::{MutationPrecondition, NoteVersion};
 use crate::vault::links::{VaultLinkIndex, load_link_index_from_disk, persist_link_index};
-use crate::vault::mutation::{commit_write, WriteMutation};
+use crate::vault::mutation::{WriteMutation, commit_write};
 use crate::vault::note::{VaultIndexEntry, VaultNoteSource, build_index_entry, content_hash};
 use crate::vault::owner::{
     ensure_owner_for_active_root, owner_mutations_active, set_owner_mutations_active,
@@ -22,7 +22,7 @@ use crate::vault::owner::{
 use crate::vault::path::{
     VaultPath, normalize_vault_path, project_vault_overlay_capability, user_vault_capability,
 };
-use crate::vault::projection::{build_projection_from_entries, ProjectionOwner, VaultProjection};
+use crate::vault::projection::{ProjectionOwner, VaultProjection, build_projection_from_entries};
 use crate::vault::relocate::{relocate_delete, relocate_restore};
 use crate::vault::search_index::VaultSearchIndex;
 

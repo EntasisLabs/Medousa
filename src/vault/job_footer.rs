@@ -37,10 +37,7 @@ pub fn maybe_append_job_success_footers(
             continue;
         }
         let updated = format!("{existing}{footer}");
-        if vault_store()
-            .write_content(path, &updated, None)
-            .is_ok()
-        {
+        if vault_store().write_content(path, &updated, None).is_ok() {
             appended += 1;
         }
     }

@@ -279,8 +279,7 @@ impl FileTransaction {
             .check(TransactionFaultPoint::BeforeRenamePublish)?;
         self.root.rename(from, to)?;
         if matches!(durability, DurabilityLevel::Synced) {
-            self.faults
-                .check(TransactionFaultPoint::BeforeParentSync)?;
+            self.faults.check(TransactionFaultPoint::BeforeParentSync)?;
             self.root.sync_parent_of(to)?;
             self.root.sync_parent_of(from).ok();
             self.faults.check(TransactionFaultPoint::AfterParentSync)?;
@@ -340,8 +339,7 @@ impl FileTransaction {
         create_only: bool,
         durability: DurabilityLevel,
     ) -> Result<(), PersistenceError> {
-        self.faults
-            .check(TransactionFaultPoint::BeforeTempWrite)?;
+        self.faults.check(TransactionFaultPoint::BeforeTempWrite)?;
         self.faults.check(TransactionFaultPoint::BeforeFileSync)?;
         if create_only {
             self.root.atomic_create(path, bytes)?;
@@ -351,8 +349,7 @@ impl FileTransaction {
         self.faults.check(TransactionFaultPoint::AfterTempWrite)?;
         self.faults.check(TransactionFaultPoint::AfterFileSync)?;
         if matches!(durability, DurabilityLevel::Synced) {
-            self.faults
-                .check(TransactionFaultPoint::BeforeParentSync)?;
+            self.faults.check(TransactionFaultPoint::BeforeParentSync)?;
             self.root.sync_parent_of(path)?;
             self.faults.check(TransactionFaultPoint::AfterParentSync)?;
         }
@@ -445,10 +442,7 @@ mod tests {
             .create_only(&path, b"two", DurabilityLevel::Synced)
             .unwrap_err();
         assert_eq!(error.kind, PersistenceErrorKind::Conflict);
-        assert_eq!(
-            transaction.root().read_limited(&path, 64).unwrap(),
-            b"one"
-        );
+        assert_eq!(transaction.root().read_limited(&path, 64).unwrap(), b"one");
     }
 
     #[test]
@@ -486,7 +480,8 @@ mod tests {
 
     #[test]
     fn vault_receipt_kind_is_available() {
-        let receipt = CommitReceipt::new(StoreKind::Vault, "note:a.md", 1, DurabilityLevel::Synced, 4);
+        let receipt =
+            CommitReceipt::new(StoreKind::Vault, "note:a.md", 1, DurabilityLevel::Synced, 4);
         assert_eq!(receipt.store, StoreKind::Vault);
     }
 }

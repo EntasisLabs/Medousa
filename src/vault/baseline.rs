@@ -3,8 +3,8 @@
 //! These record today's cost model. Target budgets are attached in later cars;
 //! Car 0 must stay green and only asserts that counters are observable.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Process-wide vault baseline counters for harnesses and tests.
 #[derive(Debug, Default)]
@@ -106,7 +106,9 @@ mod tests {
     #[test]
     fn counters_are_observable_without_target_asserts() {
         let counters = VaultBaselineCounters::default();
-        counters.ensure_index_fresh_calls.fetch_add(3, Ordering::Relaxed);
+        counters
+            .ensure_index_fresh_calls
+            .fetch_add(3, Ordering::Relaxed);
         counters.link_rebuilds.fetch_add(1, Ordering::Relaxed);
         let snap = counters.snapshot();
         assert_eq!(snap.ensure_index_fresh_calls, 3);
