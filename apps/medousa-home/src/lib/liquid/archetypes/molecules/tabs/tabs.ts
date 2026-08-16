@@ -1,8 +1,6 @@
 /** `tabs` molecule — multi-panel switcher (paste-first from ```tabs). */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Tabs from "./Tabs.svelte";
 
 export const tabs = defineArchetype({
   id: "tabs",
@@ -21,4 +19,3 @@ export const tabs = defineArchetype({
   defaultOwner: "agent",
 });
 
-registerComponent(tabs.id, Tabs);

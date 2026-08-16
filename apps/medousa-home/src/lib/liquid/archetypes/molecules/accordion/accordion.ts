@@ -1,8 +1,6 @@
 /** `accordion` molecule — collapsible sections (paste-first from ```accordion). */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Accordion from "./Accordion.svelte";
 
 export const accordion = defineArchetype({
   id: "accordion",
@@ -21,4 +19,3 @@ export const accordion = defineArchetype({
   defaultOwner: "agent",
 });
 
-registerComponent(accordion.id, Accordion);

@@ -9,7 +9,7 @@ import {
   updateWorkshopBranding,
   updateWorkshopClientState,
 } from "$lib/workshops";
-import { reconnectWorkshop } from "$lib/workshopConnection";
+import { requestWorkshopReconnect } from "$lib/runtime/workshopReconnectPort";
 import { chat } from "$lib/stores/chat.svelte";
 import { vault } from "$lib/stores/vault.svelte";
 import { settings } from "$lib/stores/settings.svelte";
@@ -192,7 +192,7 @@ export class WorkshopsStore {
       this.registry = await setActiveWorkshop(workshopId);
       const url = (await getDaemonUrl()).trim();
       if (url) settings.daemonUrl = url;
-      await reconnectWorkshop((health) => {
+      await requestWorkshopReconnect((health) => {
         options?.onHealthChange?.(health);
       });
       workshopDefaults.resetForReconnect();
@@ -294,7 +294,7 @@ export class WorkshopsStore {
       if (wasActive) {
         const url = (await getDaemonUrl()).trim();
         if (url) settings.daemonUrl = url;
-        await reconnectWorkshop((health) => {
+        await requestWorkshopReconnect((health) => {
           options?.onHealthChange?.(health);
         });
         const { shellTabs } = await import("$lib/stores/shellTabs.svelte");

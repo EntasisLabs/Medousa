@@ -3,7 +3,7 @@
    * Host for markdown-hydrated Liquid embeds.
    * Mounted into placeholder divs by hydrateLiquidEmbeds.
    */
-  import "$lib/liquid/archetypes";
+  import "$lib/liquid/archetypes/registerUi";
   import { untrack } from "svelte";
   import { createNode } from "$lib/liquid/core";
   import {

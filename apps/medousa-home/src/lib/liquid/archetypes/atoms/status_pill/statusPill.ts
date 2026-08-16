@@ -1,8 +1,6 @@
-/** `status_pill` atom — descriptor + self-registration. */
+/** `status_pill` atom — descriptor only. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import StatusPill from "./StatusPill.svelte";
 
 export const statusPill = defineArchetype({
   id: "status_pill",
@@ -19,4 +17,3 @@ export const statusPill = defineArchetype({
   defaultOwner: "agent",
 });
 
-registerComponent(statusPill.id, StatusPill);

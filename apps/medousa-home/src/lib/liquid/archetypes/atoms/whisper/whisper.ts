@@ -1,8 +1,6 @@
-/** `whisper` atom — descriptor + self-registration. */
+/** `whisper` atom — descriptor only. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Whisper from "./Whisper.svelte";
 
 export const whisper = defineArchetype({
   id: "whisper",
@@ -16,4 +14,3 @@ export const whisper = defineArchetype({
   defaultOwner: "agent",
 });
 
-registerComponent(whisper.id, Whisper);

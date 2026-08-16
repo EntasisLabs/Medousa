@@ -1,8 +1,6 @@
-/** `document` organism — descriptor + self-registration. */
+/** `document` organism — descriptor only. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Document from "./Document.svelte";
 
 export const document = defineArchetype({
   id: "document",
@@ -16,4 +14,3 @@ export const document = defineArchetype({
   defaultOwner: "agent",
 });
 
-registerComponent(document.id, Document);

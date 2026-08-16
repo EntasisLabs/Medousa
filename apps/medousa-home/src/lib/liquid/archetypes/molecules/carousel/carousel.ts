@@ -1,8 +1,6 @@
-/** `carousel` molecule — descriptor + self-registration. */
+/** `carousel` molecule — descriptor only. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Carousel from "./Carousel.svelte";
 
 export const carousel = defineArchetype({
   id: "carousel",
@@ -16,4 +14,3 @@ export const carousel = defineArchetype({
   defaultOwner: "agent",
 });
 
-registerComponent(carousel.id, Carousel);

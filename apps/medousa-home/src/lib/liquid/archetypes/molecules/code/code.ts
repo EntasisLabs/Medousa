@@ -1,8 +1,6 @@
 /** `code` molecule — enhanced snippet with lang badge + copy (```code fences). */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Code from "./Code.svelte";
 
 export const code = defineArchetype({
   id: "code",
@@ -22,4 +20,3 @@ export const code = defineArchetype({
   defaultOwner: "agent",
 });
 
-registerComponent(code.id, Code);

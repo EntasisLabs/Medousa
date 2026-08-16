@@ -1,8 +1,6 @@
-/** `action_row` molecule — descriptor + self-registration. */
+/** `action_row` molecule — descriptor only. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import ActionRow from "./ActionRow.svelte";
 
 export const actionRow = defineArchetype({
   id: "action_row",
@@ -22,4 +20,3 @@ export const actionRow = defineArchetype({
   defaultOwner: "agent",
 });
 
-registerComponent(actionRow.id, ActionRow);

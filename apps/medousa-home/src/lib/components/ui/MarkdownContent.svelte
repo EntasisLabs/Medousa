@@ -13,6 +13,7 @@
   import { openInBrowser, isHttpUrl } from "$lib/utils/openInBrowser";
   import { onDestroy, untrack } from "svelte";
   import HydratedMarkdownBlock from "$lib/components/ui/HydratedMarkdownBlock.svelte";
+  import { getMarkdownViewComponent } from "$lib/components/ui/markdownView";
 
   interface Props {
     content: string;
@@ -51,6 +52,11 @@
       titleByPath: titleByPath ?? liquidContext?.titleByPath ?? inherited.titleByPath,
       localImagePath:
         liquidContext?.localImagePath ?? inherited.localImagePath ?? null,
+      markdownView:
+        liquidContext?.markdownView ??
+        inherited.markdownView ??
+        getMarkdownViewComponent() ??
+        undefined,
     };
   }
 

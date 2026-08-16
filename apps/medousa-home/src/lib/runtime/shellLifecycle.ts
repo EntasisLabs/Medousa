@@ -8,6 +8,9 @@ import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
 import { workAskDock } from "$lib/stores/workAskDock.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import { setUndertakingGroupIdPort } from "$lib/stores/undertakings.svelte";
+import { setActiveWorkshopKindPort } from "$lib/utils/workshopLocality";
+import { setWorkshopReconnectPort } from "./workshopReconnectPort";
+import { reconnectWorkshop } from "$lib/workshopConnection";
 import {
   applyNativeMobileShellLayout,
   isTauri,
@@ -29,6 +32,10 @@ import {
 /** Named shell owner for AppShell onMount pollers/listeners. */
 export function startShellRootResources(): () => void {
   setUndertakingGroupIdPort(() => shellTabs.activeGroupId);
+  setActiveWorkshopKindPort(() => workshops.activeWorkshop?.kind);
+  setWorkshopReconnectPort((onHealthChange) =>
+    reconnectWorkshop(onHealthChange ?? (() => {})),
+  );
   commandSpotlight.closeSpotlight();
   document.querySelectorAll(".command-spotlight-backdrop").forEach((node) => {
     node.closest(".body-portal-host")?.remove() ?? node.remove();
@@ -148,5 +155,7 @@ export function startShellRootResources(): () => void {
     stopAgentBrowserCoord();
     stopHotkeys();
     stopWorkAskFocus();
+    setActiveWorkshopKindPort(() => undefined);
+    setWorkshopReconnectPort(null);
   };
 }

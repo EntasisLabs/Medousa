@@ -87,7 +87,7 @@ import {
   stripFrontmatter,
   type VaultNoteKind,
 } from "$lib/utils/vaultFrontmatter";
-import { workshopSessionIdForVaultSave } from "$lib/utils/vaultNoteWorkshop";
+import { workshopSessionIdForVaultSave } from "$lib/utils/vaultSaveSession";
 import { parseWikilinkTarget, resolveWikilinkTarget, suggestPathForWikilinkToken } from "$lib/utils/resolveWikilink";
 import {
   buildVaultLookupSnapshot,
@@ -151,7 +151,7 @@ import {
 import { noteEditorRuntimes } from "$lib/stores/noteEditorRuntimes.svelte";
 import { vaultOverlay } from "$lib/stores/vaultOverlay.svelte";
 import { invokeVaultLeaveFlush } from "$lib/stores/vaultLeaveFlush";
-import { significantLiveText } from "$lib/vault/live/liveMarkdownCodec";
+import { significantLiveText } from "$lib/vault/live/liveSignificantText";
 import {
   extractMedousaViewBlocks,
   replaceMedousaViewFenceAt,

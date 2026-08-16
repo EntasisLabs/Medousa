@@ -10,7 +10,7 @@
   import { createSceneEvent } from "$lib/liquid/core";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
   import LiquidGlyph from "$lib/liquid/icons/LiquidGlyph.svelte";
-  import { renderInlineMarkdown } from "$lib/markdown";
+  import { renderInlineMarkdown } from "$lib/markdown/render";
   import {
     cardHasDetail,
     type CardDetailPayload,

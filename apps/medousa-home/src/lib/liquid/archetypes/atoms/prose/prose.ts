@@ -1,8 +1,6 @@
-/** `prose` atom — descriptor + self-registration. */
+/** `prose` atom — descriptor only. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Prose from "./Prose.svelte";
 
 export const prose = defineArchetype({
   id: "prose",
@@ -19,4 +17,3 @@ export const prose = defineArchetype({
   defaultOwner: "agent",
 });
 
-registerComponent(prose.id, Prose);

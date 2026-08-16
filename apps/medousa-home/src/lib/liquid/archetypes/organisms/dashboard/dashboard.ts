@@ -1,8 +1,6 @@
 /** `dashboard` organism — at-a-glance metric tile grid (sacred seven, paste-first). */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Dashboard from "./Dashboard.svelte";
 
 export const dashboard = defineArchetype({
   id: "dashboard",
@@ -21,4 +19,3 @@ export const dashboard = defineArchetype({
   defaultOwner: "agent",
 });
 
-registerComponent(dashboard.id, Dashboard);

@@ -1,8 +1,6 @@
-/** `chip_group` molecule — descriptor + self-registration. */
+/** `chip_group` molecule — descriptor only. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import ChipGroup from "./ChipGroup.svelte";
 
 export const chipGroup = defineArchetype({
   id: "chip_group",
@@ -16,4 +14,3 @@ export const chipGroup = defineArchetype({
   defaultOwner: "agent",
 });
 
-registerComponent(chipGroup.id, ChipGroup);

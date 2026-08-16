@@ -1,9 +1,9 @@
 # H09 — Home runtime and feature boundaries
 
-> **Status:** Implementing — Train 2 destination and overlay splits landed.
-> FRONT-001 ceiling is now 3,067,547 JS / 1,075,634 CSS (down from
-> 7,129,003 / 1,448,096). Findings stay Proposed: CSS and largest-chunk
-> table targets are unmet, and ARCH-001 / ARCH-002 trains have not
+> **Status:** Implementing — Train 3 closed first-party SCCs (ARCH-001
+> **Mitigated**). FRONT-001 ceiling is 3,067,547 JS / 1,075,634 CSS (down from
+> 7,129,003 / 1,448,096). FRONT-001 and ARCH-002 stay Proposed: CSS and
+> largest-chunk table targets are unmet, and mega-owner trains have not
 > closed. ADR-020 is Accepted. Validated still needs P08 packaged
 > multi-OS evidence.
 >
@@ -78,15 +78,11 @@ platform, session, or feature change.
 
 ### Runtime cycles
 
-Markdown's barrel exports Liquid hydration; hydration loads `LiquidMdHost`;
-the host side-effect-loads the archetype registry; prose imports Markdown again.
-Vault/workshop stores and presentation/export helpers join this SCC. Smaller
-cycles tie workspace/shell/work controllers, vault configuration/templates,
-browser compositor/popover, identity/profiles, and defaults/presets.
-
-These are not harmless type cycles. Runtime imports make evaluation order part
-of behavior, block reliable chunking/tree-shaking, and force tests to initialize
-unrelated singleton state.
+Train 3 deleted the first-party SCCs. The Markdown barrel is parse/sanitize
+only; Liquid descriptor `index.ts` has no component/CSS side effects; prose
+renders through the parse pipeline; vault/workshop/export helpers no longer
+close a loop through hydrate. `check:runtime-graph` requires an empty ledger.
+ARCH-001 is **Mitigated** on that unit/CI exit; Validated still needs P08.
 
 ### State and component mega-owners
 

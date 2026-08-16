@@ -1,8 +1,6 @@
-/** `media` atom — descriptor + self-registration. */
+/** `media` atom — descriptor only. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Media from "./Media.svelte";
 
 export const media = defineArchetype({
   id: "media",
@@ -21,4 +19,3 @@ export const media = defineArchetype({
   defaultOwner: "agent",
 });
 
-registerComponent(media.id, Media);

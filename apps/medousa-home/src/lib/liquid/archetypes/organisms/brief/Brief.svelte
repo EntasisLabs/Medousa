@@ -5,8 +5,8 @@
    * Paste-first from ```brief markdown. Section bodies re-enter the markdown
    * pipeline so nested ```cite / emphasis / lists hydrate correctly.
    */
-  import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
-  import { renderInlineMarkdown } from "$lib/markdown";
+  import MarkdownViewHost from "$lib/liquid/render/MarkdownViewHost.svelte";
+  import { renderInlineMarkdown } from "$lib/markdown/render";
   import { getLiquidContext } from "$lib/liquid/render/context";
   import { createSceneEvent } from "$lib/liquid/core";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
@@ -104,11 +104,7 @@
         <section class="liquid-brief-section">
           <h4 class="liquid-brief-heading">{@html renderInlineMarkdown(section.heading)}</h4>
           <div class="liquid-brief-body">
-            <MarkdownContent
-              content={section.body}
-              titleByPath={ctx.titleByPath}
-              openLinksInWeb={ctx.openLinksInWeb ?? false}
-            />
+            <MarkdownViewHost content={section.body} />
           </div>
         </section>
       {/each}

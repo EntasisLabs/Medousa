@@ -2,7 +2,7 @@
   /**
    * `feed` organism — renders last-good feed output once on mount (or manual refresh).
    */
-  import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
+  import MarkdownViewHost from "$lib/liquid/render/MarkdownViewHost.svelte";
   import { getLiquidContext } from "$lib/liquid/render/context";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
   import Media from "$lib/liquid/archetypes/atoms/media/Media.svelte";
@@ -151,11 +151,7 @@
   {:else if result}
     <div class="liquid-feed__body" class:liquid-feed__body--text={renderDatatype === "text"}>
       {#if renderDatatype === "md" || renderDatatype === "csv"}
-        <MarkdownContent
-          content={markdownBody}
-          titleByPath={ctx.titleByPath}
-          openLinksInWeb={ctx.openLinksInWeb ?? false}
-        />
+        <MarkdownViewHost content={markdownBody} />
       {:else if renderDatatype === "text"}
         <pre class="liquid-feed__text">{result.body}</pre>
       {:else if renderDatatype === "json" && codeNode}

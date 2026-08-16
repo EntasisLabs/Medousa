@@ -1,8 +1,6 @@
-/** `button` atom — descriptor + self-registration. */
+/** `button` atom — descriptor only. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Button from "./Button.svelte";
 
 export const button = defineArchetype({
   id: "button",
@@ -21,4 +19,3 @@ export const button = defineArchetype({
   defaultOwner: "agent",
 });
 
-registerComponent(button.id, Button);

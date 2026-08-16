@@ -1,8 +1,6 @@
 /** `steps` molecule — numbered vertical steps (paste-first from ```steps). */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Steps from "./Steps.svelte";
 
 export const steps = defineArchetype({
   id: "steps",
@@ -20,4 +18,3 @@ export const steps = defineArchetype({
   defaultOwner: "agent",
 });
 
-registerComponent(steps.id, Steps);

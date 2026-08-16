@@ -1,8 +1,6 @@
-/** `cite` molecule — descriptor + self-registration. */
+/** `cite` molecule — descriptor only. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Cite from "./Cite.svelte";
 
 export const cite = defineArchetype({
   id: "cite",
@@ -21,4 +19,3 @@ export const cite = defineArchetype({
   defaultOwner: "agent",
 });
 
-registerComponent(cite.id, Cite);

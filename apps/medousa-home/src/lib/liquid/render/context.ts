@@ -6,9 +6,16 @@
  * must not know about: the event sink, markdown link handling, session id.
  */
 
-import { getContext, setContext } from "svelte";
+import { getContext, setContext, type Component } from "svelte";
 import type { EventSink } from "$lib/liquid/ports";
 import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
+
+export type LiquidMarkdownViewProps = {
+  content: string;
+  titleByPath?: Map<string, string>;
+  openLinksInWeb?: boolean;
+  streaming?: boolean;
+};
 
 export interface LiquidRenderContext {
   /** Where node events (select/edit/run/…) are emitted. */
@@ -36,6 +43,8 @@ export interface LiquidRenderContext {
   exportPaper?: boolean;
   /** Vault note path for resolving relative slide/media backgrounds. */
   localImagePath?: string | null;
+  /** Injected markdown body (MarkdownContent). Archetypes must not import it. */
+  markdownView?: Component<LiquidMarkdownViewProps>;
 }
 
 const KEY = Symbol("liquid.render.context");

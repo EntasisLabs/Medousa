@@ -1,8 +1,6 @@
 /** `decision` organism — options → tradeoffs → recommendation (sacred seven). */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Decision from "./Decision.svelte";
 
 export const decision = defineArchetype({
   id: "decision",
@@ -22,4 +20,3 @@ export const decision = defineArchetype({
   defaultOwner: "agent",
 });
 
-registerComponent(decision.id, Decision);

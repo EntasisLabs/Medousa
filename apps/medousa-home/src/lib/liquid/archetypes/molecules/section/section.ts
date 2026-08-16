@@ -1,8 +1,6 @@
-/** `section` molecule — descriptor + self-registration. */
+/** `section` molecule — descriptor only. */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Section from "./Section.svelte";
 
 export const section = defineArchetype({
   id: "section",
@@ -19,4 +17,3 @@ export const section = defineArchetype({
   defaultOwner: "agent",
 });
 
-registerComponent(section.id, Section);

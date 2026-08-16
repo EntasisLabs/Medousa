@@ -7,7 +7,9 @@
    * those ops into a typed `Scene` and render it through the shared PR2
    * `SceneRenderer` — the same renderer the chat surface uses.
    */
-  import "$lib/liquid/archetypes";
+  import "$lib/liquid/archetypes/registerUi";
+  import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
+  import "$lib/components/ui/bindMarkdownView";
   import { SceneRenderer } from "$lib/liquid/render";
   import type { LiquidRenderContext } from "$lib/liquid/render";
   import { applyOps, createScene, type SceneEvent } from "$lib/liquid/core";
@@ -62,6 +64,7 @@
     compact,
     mobile,
     openLinksInWeb: true,
+    markdownView: MarkdownContent,
   });
 </script>
 

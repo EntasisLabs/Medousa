@@ -1,8 +1,6 @@
 /** `compare` organism — side-by-side judgment matrix (sacred seven). */
 
 import { defineArchetype } from "$lib/liquid/core";
-import { registerComponent } from "$lib/liquid/render/componentRegistry";
-import Compare from "./Compare.svelte";
 
 export const compare = defineArchetype({
   id: "compare",
@@ -23,4 +21,3 @@ export const compare = defineArchetype({
   defaultOwner: "agent",
 });
 
-registerComponent(compare.id, Compare);
