@@ -18,4 +18,3 @@ export const media = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

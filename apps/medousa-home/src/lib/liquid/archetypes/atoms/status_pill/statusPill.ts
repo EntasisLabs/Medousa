@@ -16,4 +16,3 @@ export const statusPill = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

@@ -16,4 +16,3 @@ export const section = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

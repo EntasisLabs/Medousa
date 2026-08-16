@@ -18,4 +18,3 @@ export const cite = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

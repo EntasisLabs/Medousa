@@ -16,4 +16,3 @@ export const prose = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

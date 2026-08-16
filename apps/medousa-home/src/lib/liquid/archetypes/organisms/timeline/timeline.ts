@@ -19,4 +19,3 @@ export const timeline = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

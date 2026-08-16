@@ -19,4 +19,3 @@ export const decision = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

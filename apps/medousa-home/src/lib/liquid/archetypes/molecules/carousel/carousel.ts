@@ -13,4 +13,3 @@ export const carousel = defineArchetype({
   virtualization: "window",
   defaultOwner: "agent",
 });
-

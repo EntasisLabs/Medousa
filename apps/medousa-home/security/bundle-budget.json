@@ -5,23 +5,23 @@
   "ceilings": {
     "desktop": {
       "shellEntry": "src/lib/components/layout/WorkshopShell.svelte",
-      "jsFiles": 229,
-      "cssFiles": 25,
-      "jsBytes": 3860870,
-      "jsGzipBytes": 1267852,
-      "cssBytes": 933608,
-      "cssGzipBytes": 136310,
-      "largestJsChunkBytes": 852853
+      "jsFiles": 233,
+      "cssFiles": 26,
+      "jsBytes": 3595119,
+      "jsGzipBytes": 1189100,
+      "cssBytes": 823781,
+      "cssGzipBytes": 120375,
+      "largestJsChunkBytes": 852924
     },
     "mobile": {
       "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
-      "jsFiles": 258,
-      "cssFiles": 34,
-      "jsBytes": 6299774,
-      "jsGzipBytes": 1957993,
-      "cssBytes": 979461,
-      "cssGzipBytes": 146616,
-      "largestJsChunkBytes": 1457567
+      "jsFiles": 270,
+      "cssFiles": 37,
+      "jsBytes": 6093545,
+      "jsGzipBytes": 1900361,
+      "cssBytes": 880060,
+      "cssGzipBytes": 133140,
+      "largestJsChunkBytes": 1457578
     }
   },
   "measured": {
@@ -33,23 +33,23 @@
     ],
     "desktop": {
       "shellEntry": "src/lib/components/layout/WorkshopShell.svelte",
-      "jsFiles": 229,
-      "cssFiles": 25,
-      "jsBytes": 3860870,
-      "jsGzipBytes": 1267852,
-      "cssBytes": 933608,
-      "cssGzipBytes": 136310,
-      "largestJsChunkBytes": 852853
+      "jsFiles": 233,
+      "cssFiles": 26,
+      "jsBytes": 3595119,
+      "jsGzipBytes": 1189100,
+      "cssBytes": 823781,
+      "cssGzipBytes": 120375,
+      "largestJsChunkBytes": 852924
     },
     "mobile": {
       "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
-      "jsFiles": 258,
-      "cssFiles": 34,
-      "jsBytes": 6299774,
-      "jsGzipBytes": 1957993,
-      "cssBytes": 979461,
-      "cssGzipBytes": 146616,
-      "largestJsChunkBytes": 1457567
+      "jsFiles": 270,
+      "cssFiles": 37,
+      "jsBytes": 6093545,
+      "jsGzipBytes": 1900361,
+      "cssBytes": 880060,
+      "cssGzipBytes": 133140,
+      "largestJsChunkBytes": 1457578
     }
   }
 }

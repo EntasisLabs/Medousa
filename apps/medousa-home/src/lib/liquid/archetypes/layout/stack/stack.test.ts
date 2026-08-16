@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import { stack } from "./stack";
 import { createNode, registry, validateNode } from "$lib/liquid/core";
 import { hasComponent } from "$lib/liquid/render/componentRegistry";
+import { registerLiquidUiFactories } from "$lib/liquid/archetypes/registerUi";
+
+registerLiquidUiFactories();
 
 describe("stack archetype", () => {
-  it("self-registers descriptor + component", () => {
+  it("registers its descriptor and has a lazy component factory", () => {
     expect(registry.has("stack")).toBe(true);
     expect(hasComponent("stack")).toBe(true);
     expect(stack.tier).toBe("layout");

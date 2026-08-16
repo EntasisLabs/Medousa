@@ -13,4 +13,3 @@ export const document = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

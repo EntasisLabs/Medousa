@@ -19,4 +19,3 @@ export const actionRow = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

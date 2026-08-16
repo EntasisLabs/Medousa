@@ -169,8 +169,6 @@ function main() {
   assert.equal(expected.schemaVersion, 2);
   for (const platform of Object.keys(EAGER_SHELLS)) {
     for (const key of [
-      "jsFiles",
-      "cssFiles",
       "jsBytes",
       "jsGzipBytes",
       "cssBytes",

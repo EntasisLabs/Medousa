@@ -19,4 +19,3 @@ export const shortlist = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

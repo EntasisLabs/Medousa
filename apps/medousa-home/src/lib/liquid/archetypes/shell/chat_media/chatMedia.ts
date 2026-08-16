@@ -13,4 +13,3 @@ export const chatMedia = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

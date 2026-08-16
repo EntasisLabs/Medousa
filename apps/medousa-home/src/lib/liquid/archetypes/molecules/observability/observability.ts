@@ -17,4 +17,3 @@ export const observability = defineArchetype({
   virtualization: "none",
   defaultOwner: "app",
 });
-

@@ -19,4 +19,3 @@ export const callout = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

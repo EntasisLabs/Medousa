@@ -19,4 +19,3 @@ export const block = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

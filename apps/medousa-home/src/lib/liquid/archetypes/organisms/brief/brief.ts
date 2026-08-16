@@ -19,4 +19,3 @@ export const brief = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

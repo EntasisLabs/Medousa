@@ -55,6 +55,16 @@ body: Pane bindings use a prefix — ⌘; on macOS, Ctrl+; elsewhere — then th
 | Rename symbol | F2 | F2 |
 | Cycle Code file tabs in focused pane | Ctrl+Tab | Ctrl+Tab |
 
+### Review
+
+| Action | macOS | Windows / Linux |
+|--------|-------|-----------------|
+| Next changed file | n / j | n / j |
+| Previous changed file | p / k | p / k |
+| Toggle file viewed | v | v |
+| Add comment on focused file | . | . |
+| Show or hide the comments rail when threads exist | c | c |
+
 ### Vault
 
 | Action | macOS | Windows / Linux |

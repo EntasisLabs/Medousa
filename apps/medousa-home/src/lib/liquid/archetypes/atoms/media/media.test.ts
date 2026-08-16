@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import { media } from "./media";
 import { createNode, registry, validateNode } from "$lib/liquid/core";
 import { hasComponent } from "$lib/liquid/render/componentRegistry";
+import { registerLiquidUiFactories } from "$lib/liquid/archetypes/registerUi";
+
+registerLiquidUiFactories();
 
 describe("media archetype", () => {
-  it("self-registers descriptor + component", () => {
+  it("registers its descriptor and has a lazy component factory", () => {
     expect(registry.has("media")).toBe(true);
     expect(hasComponent("media")).toBe(true);
     expect(media.acceptsBindings).toContain("artifact:id");

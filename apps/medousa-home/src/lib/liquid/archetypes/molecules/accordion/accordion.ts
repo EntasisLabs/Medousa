@@ -18,4 +18,3 @@ export const accordion = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

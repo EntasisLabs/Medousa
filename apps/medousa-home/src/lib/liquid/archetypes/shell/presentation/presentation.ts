@@ -13,4 +13,3 @@ export const presentation = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

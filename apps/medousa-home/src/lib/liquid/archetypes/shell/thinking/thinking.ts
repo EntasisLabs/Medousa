@@ -16,4 +16,3 @@ export const thinking = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

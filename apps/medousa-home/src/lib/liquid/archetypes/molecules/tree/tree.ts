@@ -17,4 +17,3 @@ export const tree = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

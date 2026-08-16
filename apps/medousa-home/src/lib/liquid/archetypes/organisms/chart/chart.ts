@@ -41,4 +41,3 @@ export const chart = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

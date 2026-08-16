@@ -35,4 +35,3 @@ export function serializeLiveMarkdown(
   if (frontmatter == null) return body;
   return serializeFrontmatter(frontmatter, body);
 }
-

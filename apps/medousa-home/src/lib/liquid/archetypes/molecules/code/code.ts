@@ -19,4 +19,3 @@ export const code = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

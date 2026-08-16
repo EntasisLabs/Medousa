@@ -17,4 +17,3 @@ export const stack = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

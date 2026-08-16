@@ -25,4 +25,3 @@ export const card = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

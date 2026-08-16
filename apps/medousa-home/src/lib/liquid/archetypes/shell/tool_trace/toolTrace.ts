@@ -17,4 +17,3 @@ export const toolTrace = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

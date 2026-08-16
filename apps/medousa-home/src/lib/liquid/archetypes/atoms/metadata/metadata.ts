@@ -13,4 +13,3 @@ export const metadata = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

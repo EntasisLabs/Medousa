@@ -95,16 +95,8 @@
       "specifier": "$lib/components/ui/bindMarkdownView"
     },
     {
-      "from": "src/lib/components/chat/LiquidChatMessage.svelte",
-      "specifier": "$lib/liquid/archetypes/registerUi"
-    },
-    {
       "from": "src/lib/components/environment/EnvironmentSceneView.svelte",
       "specifier": "$lib/components/ui/bindMarkdownView"
-    },
-    {
-      "from": "src/lib/components/environment/EnvironmentSceneView.svelte",
-      "specifier": "$lib/liquid/archetypes/registerUi"
     },
     {
       "from": "src/lib/components/lme/LmeFlowEditor.svelte",
@@ -147,24 +139,12 @@
       "specifier": "$lib/liquid/styles/liquidFigureGrid.css"
     },
     {
-      "from": "src/lib/liquid/archetypes/registerUi.ts",
-      "specifier": "$lib/liquid/styles/liquidOverflow.css"
-    },
-    {
-      "from": "src/lib/markdown/LiquidMdHost.svelte",
-      "specifier": "$lib/liquid/archetypes/registerUi"
-    },
-    {
       "from": "src/routes/+layout.svelte",
       "specifier": "../app.postcss"
     },
     {
       "from": "src/routes/dev/liquid/+page.svelte",
       "specifier": "$lib/components/ui/bindMarkdownView"
-    },
-    {
-      "from": "src/routes/dev/liquid/+page.svelte",
-      "specifier": "$lib/liquid/archetypes/registerUi"
     }
   ]
 }

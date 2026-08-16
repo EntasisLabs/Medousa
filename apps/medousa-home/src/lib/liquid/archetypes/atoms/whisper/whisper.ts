@@ -13,4 +13,3 @@ export const whisper = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

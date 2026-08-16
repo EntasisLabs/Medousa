@@ -18,4 +18,3 @@ export const dashboard = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

@@ -18,4 +18,3 @@ export const tabs = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

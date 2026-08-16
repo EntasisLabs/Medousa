@@ -7,7 +7,7 @@
    * those ops into a typed `Scene` and render it through the shared PR2
    * `SceneRenderer` — the same renderer the chat surface uses.
    */
-  import "$lib/liquid/archetypes/registerUi";
+  import { installLiquidUi } from "$lib/liquid/archetypes/registerUi";
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import "$lib/components/ui/bindMarkdownView";
   import { SceneRenderer } from "$lib/liquid/render";
@@ -15,6 +15,8 @@
   import { applyOps, createScene, type SceneEvent } from "$lib/liquid/core";
   import { decodeSceneOps } from "$lib/liquid/surfaces/chat/sceneStream";
   import type { EventSink } from "$lib/liquid/ports";
+
+  void installLiquidUi();
 
   interface Props {
     config: Record<string, unknown>;

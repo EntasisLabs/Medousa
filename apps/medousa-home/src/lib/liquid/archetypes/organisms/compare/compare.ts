@@ -20,4 +20,3 @@ export const compare = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

@@ -18,4 +18,3 @@ export const button = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

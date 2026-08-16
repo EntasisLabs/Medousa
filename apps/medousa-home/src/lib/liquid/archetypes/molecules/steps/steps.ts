@@ -17,4 +17,3 @@ export const steps = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

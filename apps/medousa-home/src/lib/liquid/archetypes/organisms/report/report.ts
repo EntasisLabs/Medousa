@@ -18,4 +18,3 @@ export const report = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

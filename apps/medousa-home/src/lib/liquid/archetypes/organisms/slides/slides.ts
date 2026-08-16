@@ -21,4 +21,3 @@ export const slides = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

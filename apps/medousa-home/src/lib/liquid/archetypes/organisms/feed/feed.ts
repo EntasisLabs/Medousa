@@ -19,4 +19,3 @@ export const feed = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

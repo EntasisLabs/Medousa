@@ -13,4 +13,3 @@ export const chipGroup = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

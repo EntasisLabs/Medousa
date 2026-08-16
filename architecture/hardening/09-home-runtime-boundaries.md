@@ -1,11 +1,13 @@
 # H09 — Home runtime and feature boundaries
 
-> **Status:** Implementing complete for H09 code trains. ARCH-001 and ARCH-002
-> are **Mitigated** on unit/CI exit tests. FRONT-001 stays **Proposed**: root
-> CSS is 640,347 bytes, still above the 600 KiB table target. JS 2,109,096,
-> largest chunk 852,853, and gzip CSS 83,636 meet their table targets; dormant
-> overlays are absent from the static closure. Validated/Shipped still need P08
-> packaged multi-OS evidence.
+> **Status:** Implementing. The repair train now measures the real selected-shell
+> startup graphs and enforces SCCs, inward dependency direction, cross-store edge
+> growth, side-effect imports, source-size growth, and feature lifecycle races.
+> FRONT-001, ARCH-001, and ARCH-002 remain **Proposed**: the real desktop startup
+> graph is 3,595,119 bytes JS / 823,781 bytes CSS and mobile is 6,093,545 bytes JS /
+> 880,060 bytes CSS; 45 grandfathered cross-store edges and seven source owners
+> above 2,000 lines remain explicit burn-down debt. Validated/Shipped also need
+> retained P08 packaged multi-OS evidence.
 >
 > **Accountable owner:** Medousa Home maintainers
 >
@@ -34,6 +36,11 @@ below effects/reactivity/components. Cross-feature behavior goes through typed
 ports and shell orchestration instead of importing singleton stores. Mega-files
 are decomposed by state/authority owner, with generated inventories and CI
 boundaries preventing reassembly under new filenames.
+
+The outcome above is the closure target, not the current claim. CI currently
+prevents regression and makes remaining debt visible; it does not turn the
+grandfathered cross-store edges, large owners, or over-budget startup graphs into
+exceptions or validation evidence.
 
 H09 owns Home loading, runtime dependency direction, frontend state/component/
 CSS ownership, and the UI side of feature composition. H03 owns stream batching
@@ -445,11 +452,15 @@ parameters, note/chat content, filesystem paths, or raw errors containing data.
 - Train 2 measured root static closure: 3,067,547 JS (gzip 970,441) / 1,075,634 CSS
   across 29 JS / 4 CSS files; largest initial JS chunk 1,583,570. Desktop static
   closure contains 0 `MobileShell` / `src/lib/components/mobile/` destinations.
-- Train 5 measured root static closure: 2,109,096 JS (gzip 695,687) / 640,347 CSS
-  (gzip 83,636) across 54 JS / 3 CSS files; largest initial JS chunk 852,853.
-  Tailwind compiles no palettes; boot loads one stored `/themes/<name>.css` sheet.
-  Dormant overlays are absent from the static closure. CSS minified remains above
-  the 600 KiB table target.
+- Train 5's 2,109,096 JS / 640,347 CSS result measured only shared SvelteKit
+  roots and omitted the selected shell. It is superseded and must not be used as
+  FRONT-001 evidence.
+- Repair-train real eager closures (shared roots plus selected shell): desktop
+  3,595,119 JS (gzip 1,189,100) / 823,781 CSS (gzip 120,375), largest chunk
+  852,924; mobile 6,093,545 JS (gzip 1,900,361) / 880,060 CSS (gzip 133,140),
+  largest chunk 1,457,578. Lazy Liquid renderer factories removed roughly 266 KB
+  JS / 110 KB CSS from desktop and 206 KB JS / 99 KB CSS from mobile versus the
+  first correct baseline. Both platforms remain above validation ratchets.
 
 ### H09.3 — Break cycles from contracts upward
 
@@ -483,11 +494,14 @@ parameters, note/chat content, filesystem paths, or raw errors containing data.
 ### H09.6 — Enforce and close
 
 - Graph, manifest, CSS inventory, and lifecycle leak tests are required CI
-  (`npm run check` includes `check:runtime-graph`; home job also runs
+  (`npm run check` includes runtime-graph and source-ownership checks; home job also runs
   `test:h09`, `npm run build`, `check:bundle-budget`). P08 packaged
   paint/interaction/heap remains a Validated gate, not this train.
 - Catalog preload is `"never"` or `"intent"` only; no post-launch feature
   prefetch, no `void import(` cheat, SCC ledger is empty.
+- Runtime ledger currently records 45 cross-store edges and 24 side-effect
+  imports; source ownership records 28 review alarms, seven of which block
+  ARCH-002 validation. New edges/side effects/oversized files and growth fail CI.
 - Contributor and Home architecture docs record allowed dependency direction.
 
 H09.1 precedes broad splits. H09.2 and SCC work can interleave carefully, but a

@@ -18,4 +18,3 @@ export const plan = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-

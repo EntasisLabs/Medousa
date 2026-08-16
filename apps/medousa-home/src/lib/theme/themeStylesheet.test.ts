@@ -7,6 +7,7 @@ import {
 
 afterEach(() => {
   document.getElementById("medousa-selected-theme")?.remove();
+  document.querySelector('link[data-medousa-pending-theme]')?.remove();
 });
 
 describe("selected theme stylesheet", () => {
@@ -17,6 +18,13 @@ describe("selected theme stylesheet", () => {
   it("replaces the live stylesheet when the palette changes", () => {
     applySelectedThemeStylesheet("medousa");
     applySelectedThemeStylesheet("black-lily");
+    const pending = document.querySelector(
+      'link[data-medousa-pending-theme]',
+    ) as HTMLLinkElement;
+    expect(document.getElementById("medousa-selected-theme")?.getAttribute("href")).toBe(
+      "/themes/medousa.css",
+    );
+    pending.dispatchEvent(new Event("load"));
     const link = document.getElementById("medousa-selected-theme") as HTMLLinkElement;
     expect(link.rel).toBe("stylesheet");
     expect(link.getAttribute("href")).toBe("/themes/black-lily.css");

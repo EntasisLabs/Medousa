@@ -17,4 +17,3 @@ export const chip = defineArchetype({
   virtualization: "none",
   defaultOwner: "agent",
 });
-
