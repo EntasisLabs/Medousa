@@ -16,6 +16,7 @@ export {
 export { hydrateLiquidEmbeds, destroyLiquidEmbeds } from "./hydrateLiquidEmbeds";
 export {
   hydrateMarkdownContainer,
+  destroyMarkdownContainer,
   liquidPlaceholderFingerprint,
 } from "./hydrateMarkdownContainer";
 export type { HydrateMarkdownContainerOptions } from "./hydrateMarkdownContainer";

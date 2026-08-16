@@ -32,7 +32,7 @@
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { toast } from "$lib/stores/toast.svelte";
   import { shareVaultNote } from "$lib/share";
-  import VaultExportPreviewModal from "./VaultExportPreviewModal.svelte";
+  import { loadVaultExportPreviewModal } from "$lib/runtime/viewLoaders";
 
   const MENU_ACTION_TIMEOUT_MS = 8000;
 
@@ -718,14 +718,18 @@
   </BodyPortal>
 {/if}
 
-<VaultExportPreviewModal
-  open={exportPreviewOpen}
-  title={exportPreviewTitle}
-  content={exportPreviewContent}
-  labelByPath={exportPreviewLabels}
-  notePath={exportPreviewPath}
-  initialFormat={exportPreviewFormat}
-  onClose={() => {
-    exportPreviewOpen = false;
-  }}
-/>
+{#if exportPreviewOpen}
+  {#await loadVaultExportPreviewModal() then { default: VaultExportPreviewModal }}
+    <VaultExportPreviewModal
+      open={exportPreviewOpen}
+      title={exportPreviewTitle}
+      content={exportPreviewContent}
+      labelByPath={exportPreviewLabels}
+      notePath={exportPreviewPath}
+      initialFormat={exportPreviewFormat}
+      onClose={() => {
+        exportPreviewOpen = false;
+      }}
+    />
+  {/await}
+{/if}

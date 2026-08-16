@@ -5,9 +5,7 @@
     type MarkdownRenderSession,
   } from "$lib/markdown/render";
   import { StreamingMarkdownBlocks } from "$lib/markdown/streamingBlocks";
-  import { hydrateMarkdownContainer } from "$lib/markdown/hydrateMarkdownContainer";
-  import { destroyLiquidEmbeds } from "$lib/markdown/hydrateLiquidEmbeds";
-  import { destroyDrawEmbeds } from "$lib/draw/hydrateDrawEmbeds";
+  import { hydrateMarkdownContainer, destroyMarkdownContainer } from "$lib/markdown/hydrateMarkdownContainer";
   import {
     getLiquidContext,
     type LiquidRenderContext,
@@ -131,8 +129,7 @@
 
   onDestroy(() => {
     if (container) {
-      destroyLiquidEmbeds(container);
-      destroyDrawEmbeds(container);
+      void destroyMarkdownContainer(container);
     }
   });
 </script>

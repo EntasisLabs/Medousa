@@ -58,4 +58,15 @@ describe("browse vs edit and settings splits", () => {
     expect(undertakings).not.toMatch(/import CodeSourceEditor from/);
     expect(undertakings).toContain("loadCodeSourceEditor");
   });
+
+  it("does not import settings packages or agent subsections from the settings root", () => {
+    const source = readFileSync(
+      join(homeRoot, "src/lib/components/layout/SettingsPanel.svelte"),
+      "utf8",
+    );
+    expect(source).not.toMatch(/import SettingsPackagesSection from/);
+    expect(source).not.toMatch(/import SettingsAgentSection from/);
+    expect(source).not.toMatch(/import SettingsPreferencesSection from/);
+    expect(source).toContain("loadSettingsPackagesSection");
+  });
 });
