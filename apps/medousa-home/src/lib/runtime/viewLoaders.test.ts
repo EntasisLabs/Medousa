@@ -43,4 +43,19 @@ describe("browse vs edit and settings splits", () => {
     expect(host).not.toMatch(/import UndertakingsPanel from/);
     expect(host).toContain("loadVaultEditor");
   });
+
+  it("does not evaluate the source editor from the work hub", () => {
+    const work = readFileSync(
+      join(homeRoot, "src/lib/components/work/WorkPanel.svelte"),
+      "utf8",
+    );
+    expect(work).not.toMatch(/CodeSourceEditor/);
+    expect(work).not.toMatch(/@codemirror/);
+    const undertakings = readFileSync(
+      join(homeRoot, "src/lib/components/work/UndertakingsPanel.svelte"),
+      "utf8",
+    );
+    expect(undertakings).not.toMatch(/import CodeSourceEditor from/);
+    expect(undertakings).toContain("loadCodeSourceEditor");
+  });
 });

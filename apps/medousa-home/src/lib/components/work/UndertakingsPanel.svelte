@@ -76,12 +76,12 @@
   import { openUndertakingLocation } from "$lib/utils/undertakingLocation";
   import { undertakingLocationDeepLinkUrl } from "$lib/deepLinks";
   import { shareText } from "$lib/share";
-  import CodeSourceEditor from "$lib/components/work/CodeSourceEditor.svelte";
   import ForgeReviewSurface from "$lib/components/work/ForgeReviewSurface.svelte";
   import ReviewCommentRail from "$lib/components/work/ReviewCommentRail.svelte";
   import ReviewProvenanceStrip from "$lib/components/work/ReviewProvenanceStrip.svelte";
   import EmptyState from "$lib/components/ui/EmptyState.svelte";
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
+  import { loadCodeSourceEditor } from "$lib/runtime/viewLoaders";
   import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
   import { isTauri } from "$lib/window";
   import { toast } from "$lib/stores/toast.svelte";
@@ -1412,6 +1412,11 @@
         {/if}
 
         {#if detail.environment && !reviewCanvas}
+          {#await loadCodeSourceEditor()}
+            <div class="flex min-h-48 flex-1 items-center justify-center p-6 text-sm text-content-quiet">
+              Loading editor…
+            </div>
+          {:then { default: CodeSourceEditor }}
           <CodeSourceEditor
             fill={!showBrowser}
             workId={detail.id}
@@ -1500,6 +1505,7 @@
               >Close project…</button>
             {/snippet}
           </CodeSourceEditor>
+          {/await}
         {:else if !reviewCanvas && actions?.provision.allowed}
           <div class="flex min-h-48 flex-1 items-center justify-center p-6 text-center">
             <div class="max-w-sm">
