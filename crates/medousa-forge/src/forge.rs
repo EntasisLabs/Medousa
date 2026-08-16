@@ -348,7 +348,7 @@ impl Forge {
         let operation_id = OperationId::new();
         self.slugs.reserve(&item.slug, operation_id.as_str())?;
         let _item_lock = self.store.lock_item(&item.id)?;
-        let (event, receipt) = match self.commit_event_receipt(
+        let (event, _receipt) = match self.commit_event_receipt(
             &item.id,
             actor,
             EventPayload::ItemRegistered {
@@ -365,7 +365,6 @@ impl Forge {
         self.persist(&item, event.seq)?;
         // Item is already durable — never release the slug on commit failure.
         self.slugs.commit(&item.slug, item.id.clone(), event.seq)?;
-        self.catalog.publish(&item, &receipt)?;
         Ok(item)
     }
 
@@ -2204,6 +2203,29 @@ impl Forge {
             crate::owner::mark_projection_clean(&mut owner, applied_seq);
             let _ = owner.sync_projection(item.clone());
             owner.dirty = false;
+        }
+        let receipt = crate::owner::ForgeCommitReceipt {
+            work_id: item.id.clone(),
+            item_generation: applied_seq,
+            first_seq: applied_seq,
+            last_seq: applied_seq,
+            log_offset: self
+                .store
+                .remembered_tail(&item.id)
+                .map(|tail| tail.last_offset)
+                .unwrap_or(0),
+            durability: medousa_store::DurabilityLevel::Synced,
+            operation_generation: None,
+            persistence: medousa_store::CommitReceipt::new(
+                medousa_store::StoreKind::Forge,
+                item.id.as_str(),
+                applied_seq,
+                medousa_store::DurabilityLevel::Synced,
+                0,
+            ),
+        };
+        if self.catalog.publish(item, &receipt).is_err() {
+            self.catalog.invalidate();
         }
         Ok(())
     }

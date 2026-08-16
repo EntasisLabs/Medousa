@@ -567,10 +567,30 @@ export function synthesizeRepositoryInspection(path: string): RepositoryInspecti
 }
 
 export async function listUndertakings(): Promise<ItemProjection[]> {
-  const payload = await forgeFetch<ItemProjection[] | { items: ItemProjection[] }>(
-    "/v1/forge/items?limit=256",
-  );
-  return Array.isArray(payload) ? payload : payload.items;
+  const items: ItemProjection[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | null = null;
+  do {
+    const query = new URLSearchParams({ limit: "256" });
+    if (cursor) query.set("cursor", cursor);
+    const payload = await forgeFetch<
+      | ItemProjection[]
+      | {
+          items: ItemProjection[];
+          next_cursor?: string | null;
+          truncated?: boolean;
+        }
+    >(`/v1/forge/items?${query}`);
+    if (Array.isArray(payload)) return payload;
+    items.push(...payload.items);
+    const next = payload.truncated ? (payload.next_cursor ?? null) : null;
+    if (next && seenCursors.has(next)) {
+      throw new Error("Forge item pagination returned a repeated cursor");
+    }
+    if (next) seenCursors.add(next);
+    cursor = next;
+  } while (cursor);
+  return items;
 }
 
 export async function getUndertaking(workId: string): Promise<ItemProjection> {

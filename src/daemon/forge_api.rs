@@ -1967,11 +1967,10 @@ async fn list_items(
                 let page = forge
                     .list_page(query.limit, query.cursor.as_deref())
                     .map_err(map_err)?;
-                let items = page
-                    .items
-                    .into_iter()
-                    .filter_map(|entry| forge.load(&entry.work_id).ok())
-                    .collect::<Vec<_>>();
+                let mut items = Vec::with_capacity(page.items.len());
+                for entry in page.items {
+                    items.push(forge.load(&entry.work_id).map_err(map_err)?);
+                }
                 Ok(serde_json::to_value(ItemPage {
                     items: project_items(items),
                     next_cursor: page.next_cursor,
@@ -3083,28 +3082,25 @@ async fn source_tree(
     Path(work_id): Path<String>,
 ) -> ApiResult<Json<SourceTreeResponse>> {
     let id = parse_work_id(&work_id)?;
-    let item = forge(&state).load(&id).map_err(map_err)?;
-    let environment = item.workspace_environment().cloned().ok_or_else(|| {
-        request_error(
-            StatusCode::CONFLICT,
-            "prepare the governed workspace before browsing source files",
-        )
-    })?;
-    let worktree = environment.worktree.clone();
-    let listed = match state
-        .forge_execution
-        .run(
-            medousa_forge::execution::ExecutionClass::Observation,
-            64 * 1024,
-            move || Ok(list_source_tree(&id, &worktree)),
-        )
-        .await
-    {
-        Ok(Ok(listed)) => listed,
-        Ok(Err(error)) => return Err(error),
-        Err(error) => return Err(map_err(error)),
-    };
-    Ok(Json(listed))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::Observation,
+        64 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let item = forge(&state).load(&id).map_err(map_err)?;
+                let environment = item.workspace_environment().cloned().ok_or_else(|| {
+                    request_error(
+                        StatusCode::CONFLICT,
+                        "prepare the governed workspace before browsing source files",
+                    )
+                })?;
+                Ok(Json(list_source_tree(&id, &environment.worktree)?))
+            }
+        },
+    )
+    .await
 }
 
 async fn search_source(
@@ -3114,38 +3110,37 @@ async fn search_source(
 ) -> ApiResult<Json<SourceSearchResponse>> {
     let id = parse_work_id(&work_id)?;
     let options = source_search_options_from_query(&query)?;
-    let item = forge(&state).load(&id).map_err(map_err)?;
-    let environment = item.workspace_environment().cloned().ok_or_else(|| {
-        request_error(
-            StatusCode::CONFLICT,
-            "prepare the governed workspace before searching source files",
-        )
-    })?;
-    let root = std::fs::canonicalize(&environment.worktree).map_err(|err| {
-        request_error(
-            StatusCode::CONFLICT,
-            format!("governed workspace is unavailable: {err}"),
-        )
-    })?;
-    let (hits, truncated, next_cursor) = match state
-        .forge_execution
-        .run(
-            medousa_forge::execution::ExecutionClass::Observation,
-            256 * 1024,
-            move || Ok(run_repository_search(&root, &options)),
-        )
-        .await
-    {
-        Ok(Ok(value)) => value,
-        Ok(Err(error)) => return Err(error),
-        Err(error) => return Err(map_err(error)),
-    };
-    Ok(Json(SourceSearchResponse {
-        work_id: id.as_str().to_owned(),
-        hits,
-        truncated,
-        next_cursor,
-    }))
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::Observation,
+        256 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let item = forge(&state).load(&id).map_err(map_err)?;
+                let environment = item.workspace_environment().cloned().ok_or_else(|| {
+                    request_error(
+                        StatusCode::CONFLICT,
+                        "prepare the governed workspace before searching source files",
+                    )
+                })?;
+                let root = std::fs::canonicalize(&environment.worktree).map_err(|err| {
+                    request_error(
+                        StatusCode::CONFLICT,
+                        format!("governed workspace is unavailable: {err}"),
+                    )
+                })?;
+                let (hits, truncated, next_cursor) = run_repository_search(&root, &options)?;
+                Ok(Json(SourceSearchResponse {
+                    work_id: id.as_str().to_owned(),
+                    hits,
+                    truncated,
+                    next_cursor,
+                }))
+            }
+        },
+    )
+    .await
 }
 
 async fn replace_source(

@@ -249,14 +249,16 @@ impl ForgeCatalog {
             .entries
             .lock()
             .map_err(|_| ForgeError::Store("catalog poisoned".into()))?;
-        entries.insert(item.id.as_str().to_owned(), entry);
+        let mut published_entries = entries.clone();
+        published_entries.insert(item.id.as_str().to_owned(), entry);
         let bytes = serde_json::to_vec(&CatalogSnapshot {
-            entries: entries.clone(),
+            entries: published_entries.clone(),
         })?;
         let written = self
             .tx
             .replace_snapshot(&self.path, &bytes, DurabilityLevel::Synced)
             .map_err(persistence_error)?;
+        *entries = published_entries;
         Ok(CommitReceipt::new(
             StoreKind::ForgeCatalog,
             item.id.as_str(),
@@ -264,6 +266,14 @@ impl ForgeCatalog {
             DurabilityLevel::Synced,
             written,
         ))
+    }
+
+    /// Drop the disposable in-memory projection after a failed publication.
+    /// The next query rebuilds it from authoritative item snapshots/logs.
+    pub fn invalidate(&self) {
+        if let Ok(mut entries) = self.entries.lock() {
+            entries.clear();
+        }
     }
 
     pub fn page(&self, limit: Option<usize>, cursor: Option<&str>) -> Result<CatalogPage> {
