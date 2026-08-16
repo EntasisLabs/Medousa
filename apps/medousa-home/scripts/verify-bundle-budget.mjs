@@ -1,5 +1,5 @@
 /**
- * H09 FRONT-001: Vite client manifest inventory for the root static closure.
+ * H09 FRONT-001: Vite client manifest inventory for each startup closure.
  *
  * Requires a production build (`npm run build`) so `.svelte-kit/output/client`
  * exists. Regenerating ceilings: npm run check:bundle-budget -- --write
@@ -14,6 +14,11 @@ const homeRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const clientRoot = join(homeRoot, ".svelte-kit", "output", "client");
 const manifestPath = join(clientRoot, ".vite", "manifest.json");
 const budgetPath = join(homeRoot, "security", "bundle-budget.json");
+
+const EAGER_SHELLS = {
+  desktop: "src/lib/components/layout/WorkshopShell.svelte",
+  mobile: "src/lib/components/mobile/MobileShell.svelte",
+};
 
 function loadManifest() {
   try {
@@ -48,22 +53,29 @@ const DORMANT_OVERLAYS = [
   "VaultAttachmentPanel",
 ];
 
-function assertNoMobileDestinations(manifest, jsFiles) {
+function assertPlatformClosure(manifest, jsFiles, platform) {
   const staticFiles = new Set(jsFiles);
   for (const [key, entry] of Object.entries(manifest)) {
     if (!entry?.file || !staticFiles.has(entry.file)) continue;
-    assert.ok(
-      !/MobileShell/.test(key),
-      `desktop static closure includes MobileShell via ${key}`,
-    );
-    assert.ok(
-      !/src\/lib\/components\/mobile\//.test(key),
-      `desktop static closure includes mobile destination ${key}`,
-    );
+    if (platform === "desktop") {
+      assert.ok(
+        !/MobileShell/.test(key),
+        `desktop startup closure includes MobileShell via ${key}`,
+      );
+      assert.ok(
+        !/src\/lib\/components\/mobile\//.test(key),
+        `desktop startup closure includes mobile destination ${key}`,
+      );
+    } else {
+      assert.ok(
+        !/WorkshopShell/.test(key),
+        `mobile startup closure includes WorkshopShell via ${key}`,
+      );
+    }
     for (const name of DORMANT_OVERLAYS) {
       assert.ok(
         !key.includes(name),
-        `static closure includes dormant overlay ${name} via ${key}`,
+        `${platform} startup closure includes dormant overlay ${name} via ${key}`,
       );
     }
   }
@@ -95,61 +107,84 @@ function assetGzipBytes(rel) {
   return gzipSync(readFileSync(join(clientRoot, rel))).length;
 }
 
-export function measureRootClosure(manifest = loadManifest()) {
-  const startKeys = Object.keys(manifest).filter((key) => isRootEntry(key));
-  assert.ok(startKeys.length > 0, "no root Vite entries found in client manifest");
-  const { js, css } = walkStatic(manifest, startKeys);
-  assertNoMobileDestinations(manifest, js);
+function measureFiles(js, css) {
   const jsBytes = js.reduce((sum, file) => sum + assetBytes(file), 0);
   const cssBytes = css.reduce((sum, file) => sum + assetBytes(file), 0);
-  const jsGzip = js.reduce((sum, file) => sum + assetGzipBytes(file), 0);
-  const cssGzip = css.reduce((sum, file) => sum + assetGzipBytes(file), 0);
-  const largestJs = Math.max(0, ...js.map((file) => assetBytes(file)));
+  const jsGzipBytes = js.reduce((sum, file) => sum + assetGzipBytes(file), 0);
+  const cssGzipBytes = css.reduce((sum, file) => sum + assetGzipBytes(file), 0);
   return {
-    rootEntries: startKeys.sort(),
     jsFiles: js.length,
     cssFiles: css.length,
-    rootStaticJsBytes: jsBytes,
-    rootStaticJsGzipBytes: jsGzip,
-    rootStaticCssBytes: cssBytes,
-    rootStaticCssGzipBytes: cssGzip,
-    largestInitialJsChunkBytes: largestJs,
+    jsBytes,
+    jsGzipBytes,
+    cssBytes,
+    cssGzipBytes,
+    largestJsChunkBytes: Math.max(0, ...js.map((file) => assetBytes(file))),
+  };
+}
+
+function measurePlatformClosure(manifest, rootKeys, platform) {
+  const shellEntry = EAGER_SHELLS[platform];
+  assert.ok(manifest[shellEntry], `missing ${platform} shell manifest entry ${shellEntry}`);
+  const startKeys = [...rootKeys, shellEntry];
+  const { js, css } = walkStatic(manifest, startKeys);
+  assertPlatformClosure(manifest, js, platform);
+  return {
+    shellEntry,
+    ...measureFiles(js, css),
+  };
+}
+
+export function measureStartupClosures(manifest = loadManifest()) {
+  const rootEntries = Object.keys(manifest).filter((key) => isRootEntry(key)).sort();
+  assert.ok(rootEntries.length > 0, "no root Vite entries found in client manifest");
+  return {
+    rootEntries,
+    desktop: measurePlatformClosure(manifest, rootEntries, "desktop"),
+    mobile: measurePlatformClosure(manifest, rootEntries, "mobile"),
   };
 }
 
 function main() {
-  const measured = measureRootClosure();
+  const measured = measureStartupClosures();
   if (process.argv.includes("--write")) {
     const snapshot = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       notes:
-        "FRONT-001 regression ceiling after H09 Train 5 selected-theme CSS. Raise only with review; CSS minified still above the 600 KiB table target.",
+        "FRONT-001 regression ceilings for the real desktop/mobile startup closures. These are binding regression ratchets, not evidence that the H09 target has been met.",
       manifest: ".svelte-kit/output/client/.vite/manifest.json",
       ceilings: {
-        rootStaticJsBytes: measured.rootStaticJsBytes,
-        rootStaticJsGzipBytes: measured.rootStaticJsGzipBytes,
-        rootStaticCssBytes: measured.rootStaticCssBytes,
-        rootStaticCssGzipBytes: measured.rootStaticCssGzipBytes,
-        largestInitialJsChunkBytes: measured.largestInitialJsChunkBytes,
+        desktop: measured.desktop,
+        mobile: measured.mobile,
       },
       measured,
     };
     writeFileSync(budgetPath, `${JSON.stringify(snapshot, null, 2)}\n`);
     console.log(
-      `Wrote security/bundle-budget.json: JS ${measured.rootStaticJsBytes} / gzip ${measured.rootStaticJsGzipBytes}, CSS ${measured.rootStaticCssBytes}, largest JS ${measured.largestInitialJsChunkBytes}`,
+      `Wrote security/bundle-budget.json: desktop JS ${measured.desktop.jsBytes}, mobile JS ${measured.mobile.jsBytes}`,
     );
     return;
   }
   const expected = JSON.parse(readFileSync(budgetPath, "utf8"));
-  assert.equal(expected.schemaVersion, 1);
-  for (const key of Object.keys(expected.ceilings)) {
-    assert.ok(
-      measured[key] <= expected.ceilings[key],
-      `${key} ${measured[key]} exceeds ceiling ${expected.ceilings[key]}`,
-    );
+  assert.equal(expected.schemaVersion, 2);
+  for (const platform of Object.keys(EAGER_SHELLS)) {
+    for (const key of [
+      "jsFiles",
+      "cssFiles",
+      "jsBytes",
+      "jsGzipBytes",
+      "cssBytes",
+      "cssGzipBytes",
+      "largestJsChunkBytes",
+    ]) {
+      assert.ok(
+        measured[platform][key] <= expected.ceilings[platform][key],
+        `${platform}.${key} ${measured[platform][key]} exceeds ceiling ${expected.ceilings[platform][key]}`,
+      );
+    }
   }
   console.log(
-    `Bundle budget verified: JS ${measured.rootStaticJsBytes} ≤ ${expected.ceilings.rootStaticJsBytes}, CSS ${measured.rootStaticCssBytes} ≤ ${expected.ceilings.rootStaticCssBytes}`,
+    `Bundle budget verified: desktop JS ${measured.desktop.jsBytes} ≤ ${expected.ceilings.desktop.jsBytes}, mobile JS ${measured.mobile.jsBytes} ≤ ${expected.ceilings.mobile.jsBytes}`,
   );
 }
 
