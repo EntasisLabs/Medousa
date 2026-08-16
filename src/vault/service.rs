@@ -283,6 +283,7 @@ impl VaultService {
                 return Ok(crate::daemon_api::VaultSearchResponse {
                     query: String::new(),
                     hits: Vec::new(),
+                    indexing: None,
                 });
             }
             let listed = Self::list_notes(None, limit, tags, None);
@@ -305,6 +306,7 @@ impl VaultService {
             return Ok(crate::daemon_api::VaultSearchResponse {
                 query: required.join(", "),
                 hits,
+                indexing: None,
             });
         }
         let mut response = search_vault(query.unwrap_or_default().trim(), limit.clamp(1, 100))?;

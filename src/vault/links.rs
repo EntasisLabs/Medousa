@@ -47,6 +47,43 @@ impl VaultLinkIndex {
         Self { forward, backlinks }
     }
 
+    /// Incremental edge update for one note (mutation hot path).
+    pub fn apply_upsert(&mut self, entry: &VaultIndexEntry) {
+        self.apply_remove(&entry.path);
+        if entry.wikilinks_out.is_empty() {
+            return;
+        }
+        self.forward
+            .insert(entry.path.clone(), entry.wikilinks_out.clone());
+        for target in &entry.wikilinks_out {
+            let list = self.backlinks.entry(target.clone()).or_default();
+            if !list.iter().any(|path| path == &entry.path) {
+                list.push(entry.path.clone());
+                list.sort();
+            }
+        }
+    }
+
+    pub fn apply_remove(&mut self, path: &str) {
+        if let Some(targets) = self.forward.remove(path) {
+            for target in targets {
+                if let Some(list) = self.backlinks.get_mut(&target) {
+                    list.retain(|from| from != path);
+                    if list.is_empty() {
+                        self.backlinks.remove(&target);
+                    }
+                }
+            }
+        }
+        if let Some(sources) = self.backlinks.remove(path) {
+            for source in sources {
+                if let Some(list) = self.forward.get_mut(&source) {
+                    list.retain(|to| to != path);
+                }
+            }
+        }
+    }
+
     pub fn backlinks_for(&self, path: &str) -> Vec<String> {
         self.backlinks.get(path).cloned().unwrap_or_default()
     }

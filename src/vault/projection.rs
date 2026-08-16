@@ -116,11 +116,14 @@ impl VaultProjection {
                 }
             }
         }
-        // Drop this path from others' backlink sets when deleted.
-        for back in self.back_links.values_mut() {
-            back.remove(path);
+        // Notes that pointed at `path`: drop the edge without scanning all sets.
+        if let Some(sources) = self.back_links.remove(path) {
+            for source in sources {
+                if let Some(fwd) = self.forward_links.get_mut(&source) {
+                    fwd.remove(path);
+                }
+            }
         }
-        self.back_links.retain(|_, set| !set.is_empty());
     }
 
     pub fn resolve_wikilink(&self, token: &str, source_path: Option<&str>) -> WikilinkResolution {
@@ -210,11 +213,11 @@ impl ProjectionOwner {
             .current
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let mut next = (**guard).clone();
-        next.apply_upsert(entry, generation);
-        let arc = Arc::new(next);
-        *guard = Arc::clone(&arc);
-        arc
+        // In-place when this Arc is unique; otherwise one COW clone (no
+        // unconditional full-structure clone on every upsert).
+        let projection = Arc::make_mut(&mut *guard);
+        projection.apply_upsert(entry, generation);
+        Arc::clone(&*guard)
     }
 
     pub fn remove(&self, path: &str, generation: u64) -> Arc<VaultProjection> {
@@ -222,11 +225,9 @@ impl ProjectionOwner {
             .current
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let mut next = (**guard).clone();
-        next.apply_remove(path, generation);
-        let arc = Arc::new(next);
-        *guard = Arc::clone(&arc);
-        arc
+        let projection = Arc::make_mut(&mut *guard);
+        projection.apply_remove(path, generation);
+        Arc::clone(&*guard)
     }
 
     pub fn mark_stale_reconciling(&self) -> u64 {
@@ -344,6 +345,17 @@ mod tests {
         projection.apply_upsert(entry("a.md", "A", &[]), 3);
         assert!(projection.backlinks("b.md").is_empty());
         assert_eq!(projection.generation, 3);
+    }
+
+    #[test]
+    fn owner_upsert_is_in_place_when_unshared() {
+        let owner = ProjectionOwner::new();
+        let before = owner.snapshot();
+        drop(before); // unique Arc
+        owner.upsert(entry("a.md", "A", &[]), 1);
+        assert_eq!(owner.snapshot().by_path.len(), 1);
+        owner.upsert(entry("b.md", "B", &["a.md"]), 2);
+        assert_eq!(owner.snapshot().backlinks("a.md"), vec!["b.md".to_string()]);
     }
 
     #[test]

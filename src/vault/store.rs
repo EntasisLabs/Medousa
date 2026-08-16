@@ -109,15 +109,18 @@ impl VaultStore {
     }
 
     fn persist_index(&self) {
-        let entries = self.index.read().expect("vault index").clone();
-        let mut lines = entries.values().cloned().collect::<Vec<_>>();
-        lines.sort_by(|left, right| left.path.cmp(&right.path));
+        let index = self.index.read().expect("vault index");
+        let mut paths: Vec<&String> = index.keys().collect();
+        paths.sort();
         let mut bytes = Vec::new();
-        for entry in lines {
-            if serde_json::to_writer(&mut bytes, &entry).is_ok() {
+        for path in paths {
+            if let Some(entry) = index.get(path)
+                && serde_json::to_writer(&mut bytes, entry).is_ok()
+            {
                 bytes.push(b'\n');
             }
         }
+        drop(index);
         if let Ok(files) = user_vault_capability() {
             let counters = vault_baseline_counters();
             counters.index_rewrites.fetch_add(1, Ordering::Relaxed);
@@ -335,19 +338,9 @@ impl VaultStore {
         if let Ok(mut search) = SEARCH_INDEX.lock() {
             search.upsert_document(entry, content, generation);
         }
-        // Incremental link update via projection adjacency; keep on-disk link
-        // index coherent without a full O(N) rebuild when possible.
         {
             let mut links = self.link_index.write().expect("vault links");
-            // Fall back to lightweight rebuild from current index entries.
-            let entries: Vec<_> = self
-                .index
-                .read()
-                .expect("vault index")
-                .values()
-                .cloned()
-                .collect();
-            *links = VaultLinkIndex::rebuild(&entries);
+            links.apply_upsert(entry);
         }
         let _ = persist_link_index(&self.link_index.read().expect("vault links"));
     }
@@ -563,6 +556,16 @@ impl VaultStore {
         self.peek_entry(path)
     }
 
+    /// Snapshot index entries without triggering freshness (caller must ensure).
+    pub fn peek_all_entries(&self) -> Vec<VaultIndexEntry> {
+        self.index
+            .read()
+            .expect("vault index")
+            .values()
+            .cloned()
+            .collect()
+    }
+
     pub fn read_content(&self, path: &str) -> Result<String> {
         let path = VaultPath::parse(path)?;
         let user = user_vault_capability()?;
@@ -753,6 +756,11 @@ impl VaultStore {
             self.index.write().expect("vault index").remove(&normalized);
             self.persist_index();
             PROJECTION.remove(&normalized, outcome.vault_generation);
+            {
+                let mut links = self.link_index.write().expect("vault links");
+                links.apply_remove(&normalized);
+            }
+            let _ = persist_link_index(&self.link_index.read().expect("vault links"));
             if let Ok(mut search) = SEARCH_INDEX.lock() {
                 search.remove_document(&normalized);
             }

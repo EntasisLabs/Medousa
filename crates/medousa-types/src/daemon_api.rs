@@ -2793,6 +2793,9 @@ pub struct VaultSearchHit {
 pub struct VaultSearchResponse {
     pub query: String,
     pub hits: Vec<VaultSearchHit>,
+    /// True when the search index is rebuilding / not yet warm.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indexing: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
