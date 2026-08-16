@@ -20,6 +20,7 @@ pub mod search_index;
 pub mod semantic_tags;
 pub mod service;
 pub mod store;
+pub mod watch;
 
 pub use service::VaultService;
 pub use store::vault_store;

@@ -173,6 +173,7 @@ pub enum WikilinkResolution {
 pub struct ProjectionOwner {
     current: RwLock<Arc<VaultProjection>>,
     reconcile_epoch: AtomicU64,
+    certified_epoch: AtomicU64,
     stale: AtomicU64,
 }
 
@@ -181,6 +182,7 @@ impl ProjectionOwner {
         Self {
             current: RwLock::new(Arc::new(VaultProjection::default())),
             reconcile_epoch: AtomicU64::new(0),
+            certified_epoch: AtomicU64::new(0),
             stale: AtomicU64::new(0),
         }
     }
@@ -232,12 +234,34 @@ impl ProjectionOwner {
         self.reconcile_epoch.fetch_add(1, Ordering::AcqRel) + 1
     }
 
+    pub fn reconcile_epoch(&self) -> u64 {
+        self.reconcile_epoch.load(Ordering::Acquire)
+    }
+
+    /// Certify that a reconcile completed for `epoch` if it is still current.
+    pub fn certify_reconcile(&self, epoch: u64) {
+        if self.reconcile_epoch.load(Ordering::Acquire) == epoch {
+            self.certified_epoch.store(epoch, Ordering::Release);
+            self.stale.store(0, Ordering::Release);
+        }
+    }
+
     pub fn clear_stale(&self) {
+        let epoch = self.reconcile_epoch.load(Ordering::Acquire);
+        self.certified_epoch.store(epoch, Ordering::Release);
         self.stale.store(0, Ordering::Release);
     }
 
     pub fn is_stale(&self) -> bool {
         self.stale.load(Ordering::Acquire) != 0
+    }
+
+    /// Warm skip is allowed only when the projection is non-stale and the
+    /// last certify matches the current reconcile epoch.
+    pub fn needs_reconcile(&self) -> bool {
+        self.is_stale()
+            || self.certified_epoch.load(Ordering::Acquire)
+                != self.reconcile_epoch.load(Ordering::Acquire)
     }
 }
 

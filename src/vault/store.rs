@@ -45,6 +45,7 @@ struct FileMeta {
     files: Arc<StoreRoot>,
     created_at: DateTime<Utc>,
     modified_at: DateTime<Utc>,
+    size: u64,
     source: VaultNoteSource,
 }
 
@@ -128,6 +129,8 @@ impl VaultStore {
     }
 
     pub fn refresh_from_disk(&self) -> Result<()> {
+        // Root switch / manual refresh always forces a full reconcile.
+        PROJECTION.mark_stale_reconciling();
         self.reload_from_disk();
         let mut drafts = Vec::new();
 
@@ -159,17 +162,22 @@ impl VaultStore {
 
     /// Cheap freshness pass for list/get.
     ///
-    /// After H07.2, warm accessors prefer the resident projection and skip the
-    /// full recursive walk when the projection generation is current.
+    /// Warm accessors may skip the walk only when the projection generation is
+    /// fenced and the current reconcile epoch is certified. Watcher / root
+    /// switch / manual refresh bump the epoch so external edits cannot hide.
     pub fn ensure_index_fresh(&self) -> Result<()> {
         let counters = vault_baseline_counters();
         counters
             .ensure_index_fresh_calls
             .fetch_add(1, Ordering::Relaxed);
         let projection = PROJECTION.snapshot();
-        if projection.generation > 0 && !PROJECTION.is_stale() && !projection.by_path.is_empty() {
+        if projection.generation > 0
+            && !PROJECTION.needs_reconcile()
+            && !projection.by_path.is_empty()
+        {
             return Ok(());
         }
+        let epoch = PROJECTION.reconcile_epoch();
         counters
             .recursive_root_walks
             .fetch_add(1, Ordering::Relaxed);
@@ -202,7 +210,8 @@ impl VaultStore {
         for (path, meta) in &by_path {
             match existing.get(path) {
                 Some(entry)
-                    if entry.modified_at_utc.timestamp() == meta.modified_at.timestamp()
+                    if entry.byte_size as u64 == meta.size
+                        && entry.modified_at_utc == meta.modified_at
                         && entry.source == meta.source => {}
                 _ => {
                     dirty = true;
@@ -222,6 +231,7 @@ impl VaultStore {
         }
 
         if !dirty {
+            PROJECTION.certify_reconcile(epoch);
             return Ok(());
         }
 
@@ -278,6 +288,7 @@ impl VaultStore {
         self.rebuild_link_index();
         self.persist_index();
         self.publish_projection();
+        PROJECTION.certify_reconcile(epoch);
         Ok(())
     }
 
@@ -432,6 +443,7 @@ impl VaultStore {
                 files: Arc::clone(files),
                 created_at: Self::optional_timestamp(entry.created),
                 modified_at: Self::optional_timestamp(entry.modified),
+                size: entry.size,
                 source: source.clone(),
             });
         }
@@ -858,8 +870,11 @@ impl VaultStore {
         value
             .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|duration| {
-                DateTime::<Utc>::from_timestamp(duration.as_secs() as i64, 0)
-                    .unwrap_or_else(Utc::now)
+                DateTime::<Utc>::from_timestamp(
+                    duration.as_secs() as i64,
+                    duration.subsec_nanos(),
+                )
+                .unwrap_or_else(Utc::now)
             })
             .unwrap_or_else(Utc::now)
     }

@@ -66,18 +66,46 @@ impl VaultService {
     }
 
     pub fn get_note(path: &str) -> Result<VaultNoteContentResponse> {
-        let entry = vault_store()
-            .get_entry(path)
-            .ok_or_else(|| anyhow::anyhow!("vault note not found: {path}"))?;
-        let content = vault_store().read_content(path)?;
-        let backlinks = vault_store().backlinks_for(path);
-        let generation = crate::vault::store::vault_projection().generation;
-        Ok(VaultNoteContentResponse {
-            note: entry.to_vault_note(backlinks),
-            content,
-            vault_generation: Some(generation),
-            note_version: Some(entry.content_hash.clone()),
-        })
+        const MAX_ATTEMPTS: usize = 4;
+        let mut last_err = None;
+        for _ in 0..MAX_ATTEMPTS {
+            let _ = vault_store().ensure_index_fresh();
+            let generation = crate::vault::store::vault_projection().generation;
+            let Some(entry) = vault_store().peek_entry_public(path) else {
+                last_err = Some(anyhow::anyhow!("vault note not found: {path}"));
+                break;
+            };
+            let content = match vault_store().read_content(path) {
+                Ok(body) => body,
+                Err(error) => {
+                    last_err = Some(error);
+                    continue;
+                }
+            };
+            let projection = crate::vault::store::vault_projection();
+            if projection.generation != generation {
+                // Generation moved; retry as a single-generation assembly.
+                continue;
+            }
+            let backlinks = if generation > 0 {
+                projection.backlinks(&entry.path)
+            } else {
+                vault_store().backlinks_for(path)
+            };
+            let generation_after = crate::vault::store::vault_projection().generation;
+            if generation_after != generation {
+                continue;
+            }
+            return Ok(VaultNoteContentResponse {
+                note: entry.to_vault_note(backlinks),
+                content,
+                vault_generation: Some(generation),
+                note_version: Some(entry.content_hash.clone()),
+            });
+        }
+        Err(last_err.unwrap_or_else(|| {
+            anyhow::anyhow!("vault note changed during read; retry the request")
+        }))
     }
 
     /// Read a vault-relative file (images, attachments) for remote Home preview.
