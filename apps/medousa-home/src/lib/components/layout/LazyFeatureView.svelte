@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Component } from "svelte";
+  import { onDestroy, type Component } from "svelte";
   import ShellChunkError from "$lib/components/layout/ShellChunkError.svelte";
 
   let {
@@ -7,16 +7,39 @@
     overlay = false,
     ...rest
   }: {
-    loader: () => Promise<{ default: unknown }>;
+    loader: (signal?: AbortSignal) => Promise<{
+      default: unknown;
+      release?: () => void;
+    }>;
     overlay?: boolean;
     [key: string]: unknown;
   } = $props();
 
-  let epoch = $state(0);
+  let controller = new AbortController();
+  let loaded: { release?: () => void } | undefined;
+  let pending = $state(load());
+
+  async function load() {
+    const result = await loader(controller.signal);
+    loaded = result;
+    return result;
+  }
+
+  function retry() {
+    controller.abort("retry");
+    loaded?.release?.();
+    loaded = undefined;
+    controller = new AbortController();
+    pending = load();
+  }
+
+  onDestroy(() => {
+    controller.abort("navigate-away");
+    loaded?.release?.();
+  });
 </script>
 
-{#key epoch}
-  {#await loader()}
+{#await pending}
     {#if !overlay}
       <div class="flex h-full items-center justify-center p-8 text-sm text-content-quiet">
         Loading…
@@ -27,9 +50,6 @@
     <View {...rest} />
   {:catch}
     <ShellChunkError
-      onRetry={() => {
-        epoch += 1;
-      }}
+      onRetry={retry}
     />
-  {/await}
-{/key}
+{/await}

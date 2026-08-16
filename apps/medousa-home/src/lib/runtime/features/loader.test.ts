@@ -102,6 +102,31 @@ describe("feature loader", () => {
     expect(loadedFeature("browser")).toBeUndefined();
   });
 
+  it("does not cancel a shared load while another waiter remains", async () => {
+    const cancelled = new AbortController();
+    let releaseStart: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseStart = resolve;
+    });
+    const importModule = async (): Promise<FeatureModule> => ({
+      async start() {
+        await gate;
+        return { dispose() {} };
+      },
+    });
+    const first = loadFeature("browser", importModule, {
+      platform: "desktop",
+      signal: cancelled.signal,
+    });
+    const second = loadFeature("browser", importModule, { platform: "desktop" });
+
+    cancelled.abort("navigation");
+    releaseStart();
+
+    await expect(first).rejects.toMatchObject({ reason: "cancelled" });
+    await expect(second).resolves.toBe(loadedFeature("browser"));
+  });
+
   it("disposeFeature tears down a live instance", async () => {
     const disposed: string[] = [];
     await loadFeature(

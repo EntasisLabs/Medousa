@@ -1,55 +1,177 @@
 import type { FeatureId, FeatureInstance } from "./features/types";
-import { loadFeature, loadedFeature } from "./features/loader";
+import { disposeFeature, loadFeature } from "./features/loader";
 import { probeClientPlatform } from "./platformProbe";
 
 export type FeatureViewModule<T = unknown> = { default: T };
 
-type MultiViewInstance = FeatureInstance & {
-  views: Map<string, FeatureViewModule>;
+export type FeatureViewLease<T = unknown> = FeatureViewModule<T> & {
+  release(): void;
 };
 
-async function loadCatalogView<T>(
+type ViewLoadRecord = {
+  promise: Promise<FeatureViewModule>;
+  abort: AbortController;
+  waiters: number;
+};
+
+type MultiViewInstance = FeatureInstance & {
+  views: Map<string, FeatureViewModule>;
+  setFeatureCleanup(cleanup: () => void): void;
+  loadView<T>(
+    viewKey: string,
+    importer: () => Promise<FeatureViewModule<T>>,
+    signal?: AbortSignal,
+  ): Promise<FeatureViewLease<T>>;
+};
+
+function cancelled(id: FeatureId): Error {
+  return new DOMException(`feature ${id} view load cancelled`, "AbortError");
+}
+
+function createMultiViewInstance(id: FeatureId): MultiViewInstance {
+  const views = new Map<string, FeatureViewModule>();
+  const inflightViews = new Map<string, ViewLoadRecord>();
+  let disposed = false;
+  let leases = 0;
+  let stopFeature = () => {};
+
+  const waitForView = <T>(
+    viewKey: string,
+    record: ViewLoadRecord,
+    signal?: AbortSignal,
+  ): Promise<FeatureViewLease<T>> => {
+    if (signal?.aborted) return Promise.reject(cancelled(id));
+    record.waiters += 1;
+    return new Promise((resolve, reject) => {
+      let finished = false;
+      const finish = () => {
+        if (finished) return false;
+        finished = true;
+        signal?.removeEventListener("abort", onAbort);
+        record.waiters -= 1;
+        return true;
+      };
+      const onAbort = () => {
+        if (!finish()) return;
+        if (record.waiters === 0 && inflightViews.get(viewKey) === record) {
+          record.abort.abort(signal?.reason);
+        }
+        reject(cancelled(id));
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      record.promise.then(
+        (view) => {
+          if (!finish()) return;
+          leases += 1;
+          let released = false;
+          resolve({
+            ...(view as FeatureViewModule<T>),
+            release() {
+              if (released) return;
+              released = true;
+              leases -= 1;
+              queueMicrotask(() => {
+                if (leases === 0 && inflightViews.size === 0 && !disposed) {
+                  void disposeFeature(id, "navigate-away");
+                }
+              });
+            },
+          });
+        },
+        (error) => {
+          if (finish()) reject(error);
+        },
+      );
+    });
+  };
+
+  const instance: MultiViewInstance = {
+    views,
+    setFeatureCleanup(cleanup) {
+      if (disposed) cleanup();
+      else stopFeature = cleanup;
+    },
+    async loadView<T>(
+      viewKey: string,
+      importer: () => Promise<FeatureViewModule<T>>,
+      signal?: AbortSignal,
+    ) {
+      if (disposed || signal?.aborted) throw cancelled(id);
+      const cached = views.get(viewKey);
+      if (cached) {
+        const resolved: ViewLoadRecord = {
+          promise: Promise.resolve(cached),
+          abort: new AbortController(),
+          waiters: 0,
+        };
+        return waitForView<T>(viewKey, resolved, signal);
+      }
+      let record = inflightViews.get(viewKey);
+      if (!record) {
+        const abort = new AbortController();
+        let created: ViewLoadRecord;
+        const promise: Promise<FeatureViewModule> = importer().then((view) => {
+          if (disposed || abort.signal.aborted) throw cancelled(id);
+          views.set(viewKey, view);
+          return view;
+        }).finally(() => {
+          if (inflightViews.get(viewKey) === created) inflightViews.delete(viewKey);
+        });
+        created = { promise, abort, waiters: 0 };
+        record = created;
+        inflightViews.set(viewKey, created);
+      }
+      return waitForView<T>(viewKey, record, signal);
+    },
+    dispose() {
+      disposed = true;
+      for (const record of inflightViews.values()) record.abort.abort("navigate-away");
+      inflightViews.clear();
+      views.clear();
+      stopFeature();
+      stopFeature = () => {};
+    },
+  };
+  return instance;
+}
+
+async function startFeatureResources(
+  id: FeatureId,
+  signal: AbortSignal,
+): Promise<() => void> {
+  if (id !== "browser") return () => {};
+  const { attachAgentBrowserCoord } = await import("$lib/utils/agentBrowserCoord");
+  if (signal.aborted) return () => {};
+  return attachAgentBrowserCoord();
+}
+
+export async function loadCatalogView<T>(
   id: FeatureId,
   viewKey: string,
   importer: () => Promise<FeatureViewModule<T>>,
-): Promise<FeatureViewModule<T>> {
-  const existing = loadedFeature(id) as MultiViewInstance | undefined;
-  if (existing?.views.has(viewKey)) {
-    return existing.views.get(viewKey)! as FeatureViewModule<T>;
-  }
-  if (existing) {
-    const view = await importer();
-    existing.views.set(viewKey, view);
-    return view;
-  }
-  await loadFeature(
+  signal?: AbortSignal,
+): Promise<FeatureViewLease<T>> {
+  const instance = await loadFeature(
     id,
     async () => ({
-      async start() {
-        const view = await importer();
-        const views = new Map<string, FeatureViewModule>([[viewKey, view]]);
-        return {
-          views,
-          dispose() {
-            views.clear();
-          },
-        } satisfies MultiViewInstance;
+      async start(context) {
+        const instance = createMultiViewInstance(id);
+        context.track(instance);
+        instance.setFeatureCleanup(await startFeatureResources(id, context.signal));
+        return instance;
       },
     }),
-    { platform: probeClientPlatform() },
+    { platform: probeClientPlatform(), signal },
   );
-  const loaded = loadedFeature(id) as MultiViewInstance | undefined;
-  const view = loaded?.views.get(viewKey) as FeatureViewModule<T> | undefined;
-  if (!view) throw new Error(`feature ${id} produced no view ${viewKey}`);
-  return view;
+  return (instance as MultiViewInstance).loadView(viewKey, importer, signal);
 }
 
 function catalogLoader<T>(
   id: FeatureId,
   viewKey: string,
   importer: () => Promise<FeatureViewModule<T>>,
-): () => Promise<FeatureViewModule<T>> {
-  return () => loadCatalogView(id, viewKey, importer);
+): (signal?: AbortSignal) => Promise<FeatureViewLease<T>> {
+  return (signal) => loadCatalogView(id, viewKey, importer, signal);
 }
 
 export const loadLmePanel = catalogLoader(

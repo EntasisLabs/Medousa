@@ -28,7 +28,6 @@ describe("root resource probe", () => {
       "mobile-viewport",
       "mobile-native",
       "peer-message-notifications",
-      "agent-browser-coord",
       "command-spotlight-hotkeys",
       "work-ask-focus",
     ]);
@@ -39,6 +38,8 @@ describe("root resource probe", () => {
     for (const id of APP_SHELL_ROOT_RESOURCE_IDS) {
       expect(source, `shell lifecycle must record ${id}`).toContain(`"${id}"`);
     }
+    expect(source).toContain("wizard.bootstrap(wizardBootstrap.signal)");
+    expect(source).not.toContain("attachAgentBrowserCoord");
   });
 
   it("releases recorded resources on dispose", () => {
@@ -49,8 +50,8 @@ describe("root resource probe", () => {
   });
 
   it("detects a leftover listener after a missed dispose", () => {
-    recordRootResource("agent-browser-coord");
-    expect(listLiveRootResources()).toContain("agent-browser-coord");
+    recordRootResource("peer-message-notifications");
+    expect(listLiveRootResources()).toContain("peer-message-notifications");
   });
 
   it("re-exports destination feature ids for leak probes", async () => {
@@ -92,6 +93,12 @@ describe("eager AppShell graph freeze", () => {
     for (const name of APP_SHELL_LAZY_OVERLAYS) {
       expect(budget, `budget denylist missing ${name}`).toContain(`"${name}"`);
     }
+  });
+
+  it("starts browser coordination inside the browser feature", () => {
+    const source = readFileSync(join(homeRoot, "src/lib/runtime/viewLoaders.ts"), "utf8");
+    expect(source).toContain('id !== "browser"');
+    expect(source).toContain('import("$lib/utils/agentBrowserCoord")');
   });
 });
 

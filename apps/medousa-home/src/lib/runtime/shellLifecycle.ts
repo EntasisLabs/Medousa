@@ -8,10 +8,9 @@ import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
 import { workAskDock } from "$lib/stores/workAskDock.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import { chat } from "$lib/stores/chat.svelte";
-import { vault } from "$lib/stores/vault.svelte";
 import { settings } from "$lib/stores/settings.svelte";
-import { identity } from "$lib/stores/identity.svelte";
-import { setUndertakingGroupIdPort } from "$lib/stores/undertakings.svelte";
+import { setUndertakingGroupIdPort } from "./undertakingGroupPort";
+import { isVaultDirty } from "./vaultDirtySnapshot";
 import { setActiveWorkshopKindPort } from "$lib/utils/workshopLocality";
 import { setWorkshopReconnectPort } from "./workshopReconnectPort";
 import { setArtifactSessionTitlePort } from "./artifactSessionTitlePort";
@@ -27,10 +26,9 @@ import {
   watchMobileViewport,
 } from "$lib/platform";
 import { handoffBrowserShell } from "$lib/utils/browserShellHandoff";
-import { attachAgentBrowserCoord } from "$lib/utils/agentBrowserCoord";
 import { WORK_FOCUS_ASK_EVENT } from "$lib/utils/workChromeEvents";
 import { humanBrowserSetMobileShellActive } from "$lib/humanBrowser";
-import { bindRootResource, recordRootResource } from "./rootResources";
+import { bindRootResource } from "./rootResources";
 import {
   openCalendarEvent,
   openPeerThread,
@@ -54,12 +52,17 @@ export function startShellRootResources(): () => void {
   setProfileSwitchPorts({
     hasConversation: () => chat.messages.length > 0,
     refreshSessions: () => chat.refreshSessions({ force: true }),
-    refreshIdentity: (userId) =>
-      identity.refresh({ relationshipLimit: 8, userId }),
+    refreshIdentity: async (userId) => {
+      const { identity } = await import("$lib/stores/identity.svelte");
+      await identity.refresh({ relationshipLimit: 8, userId });
+    },
   });
   setWorkshopSwitchPorts({
-    vaultDirty: () => vault.dirty,
-    flushVaultBeforeLeave: () => vault.flushBeforeLeave(),
+    vaultDirty: isVaultDirty,
+    flushVaultBeforeLeave: async () => {
+      const { vault } = await import("$lib/stores/vault.svelte");
+      return vault.flushBeforeLeave();
+    },
     hasLiveInteractiveTurn: () => chat.hasLiveInteractiveTurn(),
     chatSessionId: () => chat.sessionId,
     chatHasSession: (sessionId) =>
@@ -94,8 +97,11 @@ export function startShellRootResources(): () => void {
     node.closest(".body-portal-host")?.remove() ?? node.remove();
   });
 
-  void wizard.bootstrap();
-  const stopWizard = recordRootResource("wizard-bootstrap");
+  const wizardBootstrap = new AbortController();
+  void wizard.bootstrap(wizardBootstrap.signal);
+  const stopWizard = bindRootResource("wizard-bootstrap", () => {
+    wizardBootstrap.abort("teardown");
+  });
   const stopViewport = bindRootResource("viewport-tracking", layout.attachViewportTracking());
   if (isTauri()) {
     void humanBrowserSetMobileShellActive(layout.isMobile);
@@ -149,11 +155,6 @@ export function startShellRootResources(): () => void {
     "peer-message-notifications",
     startPeerMessageNotificationPolling(),
   );
-  const stopAgentBrowserCoord = bindRootResource(
-    "agent-browser-coord",
-    attachAgentBrowserCoord(),
-  );
-
   const onKeydown = (event: KeyboardEvent) => {
     if (layout.isMobile) return;
 
@@ -210,7 +211,6 @@ export function startShellRootResources(): () => void {
     stopMobileViewport();
     stopNative();
     stopPeerNotifications();
-    stopAgentBrowserCoord();
     stopHotkeys();
     stopWorkAskFocus();
     setActiveWorkshopKindPort(() => undefined);

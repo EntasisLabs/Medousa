@@ -70,6 +70,7 @@ class WizardStore {
   preferredMode = $state<PreferredMode | null>(loadPreferredMode());
   /** Engine warms in the background — never surface status in the wizard. */
   private engineWarmStarted = false;
+  private bootstrapGeneration = 0;
 
   /** Offline brain model download — non-blocking across brain → Ready. */
   brainModelId = $state<string | null>(null);
@@ -78,18 +79,27 @@ class WizardStore {
   brainEngineReady = $state(false);
   private brainPrepGeneration = 0;
 
-  async bootstrap() {
+  async bootstrap(signal?: AbortSignal) {
+    const generation = ++this.bootstrapGeneration;
+    const cancel = () => {
+      if (this.bootstrapGeneration === generation) this.bootstrapGeneration += 1;
+    };
+    signal?.addEventListener("abort", cancel, { once: true });
     this.loading = true;
     this.error = null;
     try {
-      this.applyBootstrap(await bootstrapWizard());
+      const bootstrap = await bootstrapWizard();
+      if (signal?.aborted || this.bootstrapGeneration !== generation) return;
+      this.applyBootstrap(bootstrap);
       this.syncUiPhaseFromState();
       this.warmEngineSilently();
     } catch (err) {
+      if (signal?.aborted || this.bootstrapGeneration !== generation) return;
       this.error = err instanceof Error ? err.message : String(err);
       this.visible = false;
     } finally {
-      this.loading = false;
+      signal?.removeEventListener("abort", cancel);
+      if (this.bootstrapGeneration === generation) this.loading = false;
     }
   }
 

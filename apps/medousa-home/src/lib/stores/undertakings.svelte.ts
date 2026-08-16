@@ -12,12 +12,7 @@ import {
   getReview,
   forgeStreamUrl,
 } from "$lib/forge";
-
-let groupIdPort: () => string = () => "default";
-
-export function setUndertakingGroupIdPort(port: () => string): void {
-  groupIdPort = port;
-}
+import { currentUndertakingGroupId } from "$lib/runtime/undertakingGroupPort";
 
 export type ActiveUndertakingContext = {
   workId: string;
@@ -42,7 +37,7 @@ export type ActiveUndertakingContext = {
 };
 
 function groupKey(): string {
-  return groupIdPort() || "default";
+  return currentUndertakingGroupId();
 }
 
 function createUndertakingsStore() {

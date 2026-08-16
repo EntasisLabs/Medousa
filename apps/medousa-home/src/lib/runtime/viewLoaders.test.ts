@@ -1,9 +1,16 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { disposeFeature, loadedFeature, resetFeaturesForTests } from "./features/loader";
+import { loadCatalogView } from "./viewLoaders";
 
 const homeRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
+
+afterEach(async () => {
+  await disposeFeature("vault-browse", "teardown");
+  resetFeaturesForTests();
+});
 
 describe("ShellPane destination loaders", () => {
   it("statically imports chat chrome and not dormant destination panels", () => {
@@ -83,5 +90,66 @@ describe("vault and code destinations are feature instances", () => {
     expect(source).toContain("loadVaultExportPreviewModal");
     expect(source).toContain("loadCodeSourceEditor");
     expect(source).toContain("loadUndertakingsPanel");
+  });
+});
+
+describe("catalog view loader lifecycle", () => {
+  it("loads different views of one feature concurrently", async () => {
+    const [panel, editor] = await Promise.all([
+      loadCatalogView("vault-browse", "panel", async () => ({ default: "panel" })),
+      loadCatalogView("vault-browse", "editor", async () => ({ default: "editor" })),
+    ]);
+
+    expect(panel.default).toBe("panel");
+    expect(editor.default).toBe("editor");
+    panel.release();
+    editor.release();
+    await vi.waitFor(() => expect(loadedFeature("vault-browse")).toBeUndefined());
+  });
+
+  it("does not publish a view after its feature is disposed", async () => {
+    let releaseImport: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseImport = resolve;
+    });
+    const pending = loadCatalogView("vault-browse", "panel", async () => {
+      await gate;
+      return { default: "late-panel" };
+    });
+
+    await vi.waitFor(() => expect(loadedFeature("vault-browse")).toBeDefined());
+    await disposeFeature("vault-browse", "navigate-away");
+    releaseImport();
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(loadedFeature("vault-browse")).toBeUndefined();
+  });
+
+  it("lets one cancelled waiter leave a shared view import", async () => {
+    const bootstrap = await loadCatalogView(
+      "vault-browse",
+      "bootstrap",
+      async () => ({ default: "bootstrap" }),
+    );
+    let releaseImport: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseImport = resolve;
+    });
+    const importer = async () => {
+      await gate;
+      return { default: "panel" };
+    };
+    const cancelled = new AbortController();
+    const first = loadCatalogView("vault-browse", "panel", importer, cancelled.signal);
+    const second = loadCatalogView("vault-browse", "panel", importer);
+
+    cancelled.abort("navigation");
+    releaseImport();
+
+    await expect(first).rejects.toMatchObject({ name: "AbortError" });
+    const live = await second;
+    expect(live.default).toBe("panel");
+    live.release();
+    bootstrap.release();
   });
 });

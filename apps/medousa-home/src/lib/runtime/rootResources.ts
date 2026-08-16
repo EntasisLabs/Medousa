@@ -1,4 +1,4 @@
-/** H09.0 root lifecycle probe — inventory only; Train 1.4 moves the owners. */
+/** Root-owned resources that exist for the full AppShell lifetime. */
 
 export const APP_SHELL_ROOT_RESOURCE_IDS = [
   "wizard-bootstrap",
@@ -7,7 +7,6 @@ export const APP_SHELL_ROOT_RESOURCE_IDS = [
   "mobile-viewport",
   "mobile-native",
   "peer-message-notifications",
-  "agent-browser-coord",
   "command-spotlight-hotkeys",
   "work-ask-focus",
 ] as const;

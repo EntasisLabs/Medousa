@@ -96,6 +96,7 @@ import {
 } from "$lib/utils/vaultLookup";
 import { publishVaultLookupSnapshot } from "$lib/vault/vaultLookupLive";
 import { setVaultNoteBufferPort } from "$lib/vault/vaultNoteBufferPort";
+import { publishVaultDirty } from "$lib/runtime/vaultDirtySnapshot";
 import {
   VAULT_LIST_MAX_PAGES,
   VAULT_LIST_PAGE_LIMIT,
@@ -250,7 +251,14 @@ export class VaultStore {
   noteTags = $state<string[]>([]);
   title = $state("");
   selectedKind = $state<VaultNoteKind>("note");
-  dirty = $state(false);
+  private dirtyState = $state(false);
+  get dirty(): boolean {
+    return this.dirtyState;
+  }
+  set dirty(next: boolean) {
+    this.dirtyState = next;
+    publishVaultDirty(next);
+  }
   saveStatus = $state<VaultSaveStatus>("idle");
   conflictMessage = $state<string | null>(null);
   /** True while fetching note content (open/reload) — not list refresh. */

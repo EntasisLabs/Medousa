@@ -5,14 +5,58 @@ import type {
   FeatureInstance,
   FeatureModuleLoader,
 } from "./types";
+import { featureDescriptor } from "./catalog";
 
 type LoadRecord = {
   promise: Promise<FeatureInstance>;
   abort: AbortController;
+  waiters: number;
 };
 
 const inflight = new Map<FeatureId, LoadRecord>();
 const live = new Map<FeatureId, FeatureInstance>();
+
+function cancelled(id: FeatureId, cause?: unknown): FeatureLoadError {
+  return new FeatureLoadError(id, "cancelled", cause);
+}
+
+function waitForRecord(
+  id: FeatureId,
+  record: LoadRecord,
+  signal?: AbortSignal,
+): Promise<FeatureInstance> {
+  if (signal?.aborted) {
+    if (record.waiters === 0) record.abort.abort(signal.reason);
+    return Promise.reject(cancelled(id, signal.reason));
+  }
+  record.waiters += 1;
+  return new Promise((resolve, reject) => {
+    let finished = false;
+    const finish = () => {
+      if (finished) return false;
+      finished = true;
+      signal?.removeEventListener("abort", onAbort);
+      record.waiters -= 1;
+      return true;
+    };
+    const onAbort = () => {
+      if (!finish()) return;
+      if (record.waiters === 0 && inflight.get(id) === record) {
+        record.abort.abort(signal?.reason);
+      }
+      reject(cancelled(id, signal?.reason));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    record.promise.then(
+      (instance) => {
+        if (finish()) resolve(instance);
+      },
+      (error) => {
+        if (finish()) reject(error);
+      },
+    );
+  });
+}
 
 export class FeatureLoadError extends Error {
   readonly featureId: FeatureId;
@@ -31,17 +75,25 @@ export async function loadFeature(
   importModule: FeatureModuleLoader,
   context: Omit<FeatureContext, "signal" | "track"> & { signal?: AbortSignal },
 ): Promise<FeatureInstance> {
+  const descriptor = featureDescriptor(id);
+  if (!descriptor.clientPlatforms.includes(context.platform)) {
+    throw new FeatureLoadError(
+      id,
+      "start-failed",
+      new Error(`feature ${id} is unavailable on ${context.platform}`),
+    );
+  }
   const existing = live.get(id);
-  if (existing) return existing;
+  if (existing) {
+    if (context.signal?.aborted) throw cancelled(id, context.signal.reason);
+    return existing;
+  }
 
   const pending = inflight.get(id);
-  if (pending) return pending.promise;
+  if (pending) return waitForRecord(id, pending, context.signal);
 
   const abort = new AbortController();
-  const onOuterAbort = () => abort.abort(context.signal?.reason);
-  context.signal?.addEventListener("abort", onOuterAbort, { once: true });
-  if (context.signal?.aborted) abort.abort(context.signal.reason);
-
+  let record: LoadRecord | undefined;
   const promise = (async () => {
     let instance: FeatureInstance | undefined;
     try {
@@ -70,13 +122,13 @@ export async function loadFeature(
       if (error instanceof FeatureLoadError) throw error;
       throw new FeatureLoadError(id, "start-failed", error);
     } finally {
-      inflight.delete(id);
-      context.signal?.removeEventListener("abort", onOuterAbort);
+      if (record && inflight.get(id) === record) inflight.delete(id);
     }
   })();
 
-  inflight.set(id, { promise, abort });
-  return promise;
+  record = { promise, abort, waiters: 0 };
+  inflight.set(id, record);
+  return waitForRecord(id, record, context.signal);
 }
 
 export async function disposeFeature(
@@ -100,6 +152,7 @@ export function listLiveFeatureIds(): FeatureId[] {
 }
 
 export function resetFeaturesForTests(): void {
+  for (const record of inflight.values()) record.abort.abort("teardown");
   inflight.clear();
   live.clear();
 }
