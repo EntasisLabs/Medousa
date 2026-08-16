@@ -2,17 +2,10 @@
  * Shell-level tab host + binary split tree (TMUX-style panes).
  */
 
-import { chat } from "$lib/stores/chat.svelte";
-import { chatStreamPool } from "$lib/stores/chatStreamPool.svelte";
-import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
-import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
-import { layout } from "$lib/stores/layout.svelte";
-import {
-  lmeWorkspace,
-  type LmeTab,
-  type LmeWorkspaceSession,
-} from "$lib/stores/lmeWorkspace.svelte";
-import { vault } from "$lib/stores/vault.svelte";
+import { chatStreamPool } from "$lib/chat/chatStreamPool.svelte";
+import { layout } from "$lib/runtime/layout.svelte";
+import { shellTabFeaturePorts } from "$lib/runtime/shellTabPorts";
+import type { LmeTab, LmeWorkspaceSession } from "$lib/stores/lmeWorkspace.svelte";
 import { disposeDestinationFeatures } from "$lib/runtime/features/disposeDestinations";
 import {
   isShellSurfaceTabId,
@@ -63,6 +56,10 @@ const PERSIST_KEY_V2 = "medousa-home-shell-tabs-v2";
 const PERSIST_KEY_V3 = "medousa-home-shell-tabs-v3";
 const PERSIST_KEY = "medousa-home-workspace-session-v4";
 const PERSONAL_WORKSPACE_SCOPE = "personal";
+
+function ports() {
+  return shellTabFeaturePorts();
+}
 
 function persistenceKey(scopeId: string): string {
   return `${PERSIST_KEY}:${encodeURIComponent(scopeId)}`;
@@ -129,7 +126,7 @@ function focusSurfaceHint(tab: ShellTab | null): string | null {
   if (tab.kind === "lme") {
     // Prefer the open tab’s family — explorerMode is intentionally not synced on activate.
     // Inline map (avoid importing lmeExplorerModes → circular init with lmeWorkspace).
-    const lme = lmeWorkspace.tabs.find((entry) => entry.tabId === tab.lmeTabId);
+    const lme = ports().lme.tabs().find((entry) => entry.tabId === tab.lmeTabId);
     switch (lme?.kind) {
       case "script":
       case "manuscript":
@@ -515,7 +512,7 @@ export class ShellTabsStore {
     try {
       this.ensureDesktopCatalog();
       const layout = this.captureLayout();
-      const lme = lmeWorkspace.captureSession();
+      const lme = ports().lme.captureSession();
       const lmeTabIds = new Set(lme.tabs.map((tab) => tab.tabId));
       const desktops = this.desktops.map((desktop) =>
         desktop.id === this.activeDesktopId ? { ...desktop, layout } : desktop,
@@ -558,10 +555,10 @@ export class ShellTabsStore {
     for (const sessionId of nextIds) {
       chatStreamPool.acquire(sessionId);
     }
-    const principal = chat.sessionId?.trim() ?? "";
+    const principal = ports().chat.sessionId()?.trim() ?? "";
     for (const sessionId of nextIds) {
       if (sessionId !== principal) {
-        void chat.warmBackgroundSession(sessionId);
+        void ports().chat.warmBackgroundSession(sessionId);
       }
     }
   }
@@ -671,7 +668,7 @@ export class ShellTabsStore {
 
     const persisted = loadPersisted(this.workspaceScopeId);
     if (persisted) {
-      const lme = lmeWorkspace.restoreSession(persisted.lme);
+      const lme = ports().lme.restoreSession(persisted.lme);
       const lmeTabIds = new Set(lme.tabs.map((tab) => tab.tabId));
       this.desktops = persisted.desktops.map((desktop) => ({
         ...desktop,
@@ -699,7 +696,7 @@ export class ShellTabsStore {
 
     const surface = layout.desktopSurface;
     if (surface === "web") {
-      const browserTab = humanBrowser.activeTab;
+      const browserTab = ports().browser.activeTab();
       if (browserTab) {
         this.openWeb(browserTab.id, { activate: true });
         return;
@@ -710,7 +707,7 @@ export class ShellTabsStore {
       return;
     }
     if (surface === "chat") {
-      const sessionId = chat.sessionId?.trim();
+      const sessionId = ports().chat.sessionId()?.trim();
       if (sessionId) {
         this.openChat(sessionId, { activate: true });
       } else {
@@ -723,7 +720,7 @@ export class ShellTabsStore {
       return;
     }
 
-    const sessionId = chat.sessionId?.trim();
+    const sessionId = ports().chat.sessionId()?.trim();
     if (sessionId) {
       this.openChat(sessionId, { activate: true });
       return;
@@ -750,7 +747,7 @@ export class ShellTabsStore {
     this.navBackStack = [];
     this.navForwardStack = [];
     await disposeDestinationFeatures("workshop-switch");
-    codeWorkspace.resetForWorkshopSwitch();
+    ports().code.resetForWorkshopSwitch();
     const { undertakings } = await import("$lib/stores/undertakings.svelte");
     undertakings.resetForWorkshopSwitch();
     const { mobileCodeWorkspaceState } = await import(
@@ -760,7 +757,7 @@ export class ShellTabsStore {
 
     const persisted = loadPersisted(nextScope);
     if (persisted) {
-      const lme = lmeWorkspace.restoreSession(persisted.lme);
+      const lme = ports().lme.restoreSession(persisted.lme);
       const lmeTabIds = new Set(lme.tabs.map((tab) => tab.tabId));
       this.desktops = persisted.desktops.map((desktop) => ({
         ...desktop,
@@ -772,7 +769,7 @@ export class ShellTabsStore {
         this.desktops[0]!;
       this.applyLayout(activeDesktop.layout);
     } else {
-      lmeWorkspace.restoreSession({ tabs: [], activeTabId: null });
+      ports().lme.restoreSession({ tabs: [], activeTabId: null });
       const layout = emptyLayout();
       const id = newDesktopId();
       this.desktops = [{ id, name: DEFAULT_DESKTOP_NAME, layout }];
@@ -818,8 +815,8 @@ export class ShellTabsStore {
       }
     }
 
-    const session = chat.sessions.find((row) => row.session_id === trimmed);
-    const messages = chat.messagesFor(trimmed);
+    const session = ports().chat.sessions().find((row) => row.session_id === trimmed);
+    const messages = ports().chat.messagesFor(trimmed);
     const hasChatOrWorkerMessages = messages.some(
       (message) => isChatLaneMessage(message) || message.lane === "worker",
     );
@@ -848,7 +845,7 @@ export class ShellTabsStore {
     if (!trimmed) return null;
     const activate = options?.activate !== false;
     const groupId = options?.groupId ?? this.activeGroupId;
-    const lmeTab = lmeWorkspace.tabs.find((tab) => tab.tabId === trimmed);
+    const lmeTab = ports().lme.tabs().find((tab) => tab.tabId === trimmed);
     const title =
       options?.title?.trim() || lmeTab?.title?.trim() || "Document";
 
@@ -903,7 +900,7 @@ export class ShellTabsStore {
     if (!trimmed) return null;
     const activate = options?.activate !== false;
     const groupId = options?.groupId ?? this.activeGroupId;
-    const browserTab = humanBrowser.tabs.find((tab) => tab.id === trimmed);
+    const browserTab = ports().browser.tabs().find((tab) => tab.id === trimmed);
     const title =
       options?.title?.trim() ||
       (browserTab ? tabDisplayLabel(browserTab.title, browserTab.url) : "Web");
@@ -1001,7 +998,7 @@ export class ShellTabsStore {
     const groupId = options?.groupId ?? this.activeGroupId;
     if (next === "chat") {
       const focusedSessionChat = this.tabs.find(
-        (tab) => tab.kind === "chat" && tab.sessionId === chat.sessionId,
+        (tab) => tab.kind === "chat" && tab.sessionId === ports().chat.sessionId(),
       );
       const currentDesktopChat = focusedSessionChat ??
         [...this.tabs].reverse().find((tab) => tab.kind === "chat");
@@ -1014,19 +1011,19 @@ export class ShellTabsStore {
       }
       const desktopId = this.activeDesktopId;
       const targetGroupId = groupId;
-      void chat.newSession({ shellContext: { desktopId, groupId: targetGroupId } });
+      void ports().chat.newSession({ shellContext: { desktopId, groupId: targetGroupId } });
       return null;
     }
     if (next === "web") {
-      const browserTab = humanBrowser.activeTab;
+      const browserTab = ports().browser.activeTab();
       if (browserTab) {
         return this.openWeb(browserTab.id, {
           activate: options?.activate !== false,
           groupId,
         });
       }
-      void humanBrowser.openTab("about:blank").then(() => {
-        const created = humanBrowser.activeTab;
+      void ports().browser.openTab("about:blank").then(() => {
+        const created = ports().browser.activeTab();
         if (created) this.openWeb(created.id, { activate: true, groupId });
       });
       return null;
@@ -1096,7 +1093,7 @@ export class ShellTabsStore {
     layout.focusDesktopSurface(family);
 
     const matchesFamily = (lmeTabId: string) => {
-      const lme = lmeWorkspace.tabs.find((tab) => tab.tabId === lmeTabId);
+      const lme = ports().lme.tabs().find((tab) => tab.tabId === lmeTabId);
       if (!lme) return false;
       return family === "code" ? lme.kind === "code" : lme.kind !== "code";
     };
@@ -1113,7 +1110,7 @@ export class ShellTabsStore {
       return this.openLme(lmeTabId, { activate: true, title });
     };
 
-    const activeLme = lmeWorkspace.activeTab;
+    const activeLme = ports().lme.activeTab();
     if (activeLme && matchesFamily(activeLme.tabId)) {
       return activateShellForLme(activeLme.tabId, activeLme.title);
     }
@@ -1188,10 +1185,10 @@ export class ShellTabsStore {
       previous &&
       previous.id !== tabId &&
       previous.kind === "lme" &&
-      lmeWorkspace.activeTab?.kind === "note";
+      ports().lme.activeTab()?.kind === "note";
     if (leavingLmeNote) {
       // Flush vault drafts before shell remounts / swaps the active host.
-      const ok = await vault.flushBeforeLeave();
+      const ok = await ports().vault.flushBeforeLeave();
       if (!ok) return;
     }
 
@@ -1213,26 +1210,26 @@ export class ShellTabsStore {
         chatStreamPool.acquire(tab.sessionId);
         // On cold restore the persisted ids already match, but the in-memory
         // transcript is still empty. Rehydrate must fetch that session anyway.
-        if (options?.rehydrate || chat.sessionId !== tab.sessionId) {
-          await chat.switchSession(tab.sessionId);
+        if (options?.rehydrate || ports().chat.sessionId() !== tab.sessionId) {
+          await ports().chat.switchSession(tab.sessionId);
         }
         return;
       }
       if (tab.kind === "lme") {
-        if (options?.rehydrate || lmeWorkspace.activeTabId !== tab.lmeTabId) {
-          await lmeWorkspace.activateTab(tab.lmeTabId);
+        if (options?.rehydrate || ports().lme.activeTabId() !== tab.lmeTabId) {
+          await ports().lme.activateTab(tab.lmeTabId);
         } else {
           // Same LME tab (e.g. pane focus) — still promote vault focus if it drifted.
-          const lme = lmeWorkspace.tabs.find((entry) => entry.tabId === tab.lmeTabId);
-          if (lme?.kind === "note" && !vault.isFocusedPath(lme.path)) {
-            await vault.openNote(lme.path);
+          const lme = ports().lme.tabs().find((entry) => entry.tabId === tab.lmeTabId);
+          if (lme?.kind === "note" && !ports().vault.isFocusedPath(lme.path)) {
+            await ports().vault.openNote(lme.path);
           }
         }
         return;
       }
       if (tab.kind === "web") {
-        if (humanBrowser.activeTab?.id !== tab.browserTabId) {
-          await humanBrowser.activateTab(tab.browserTabId);
+        if (ports().browser.activeTab()?.id !== tab.browserTabId) {
+          await ports().browser.activateTab(tab.browserTabId);
         }
       }
     } finally {
@@ -1263,7 +1260,7 @@ export class ShellTabsStore {
   close(tabId: string) {
     const tab = this.tabs.find((entry) => entry.id === tabId);
     if (!tab) return;
-    if (tab.kind === "lme" && !lmeWorkspace.confirmCloseTab(tab.lmeTabId)) {
+    if (tab.kind === "lme" && !ports().lme.confirmCloseTab(tab.lmeTabId)) {
       return;
     }
     const host = this.groupForTab(tabId);
@@ -1278,7 +1275,7 @@ export class ShellTabsStore {
           (entry) => entry.kind === "lme" && entry.lmeTabId === tab.lmeTabId,
         );
         if (!stillOpen) {
-          void lmeWorkspace.closeTab(tab.lmeTabId, {
+          void ports().lme.closeTab(tab.lmeTabId, {
             activateNext: false,
             confirmed: true,
           });
@@ -1288,7 +1285,7 @@ export class ShellTabsStore {
           (entry) => entry.kind === "web" && entry.browserTabId === tab.browserTabId,
         );
         if (!stillOpen) {
-          void humanBrowser.closeTab(tab.browserTabId);
+          void ports().browser.closeTab(tab.browserTabId);
         }
       } else if (tab.kind === "chat") {
         const stillOpen = this.tabs.some(
@@ -1591,7 +1588,7 @@ export class ShellTabsStore {
   cycleCodeSourceTabsInActiveGroup(delta = 1) {
     const tabs = this.tabsForGroup(this.activeGroupId).filter((tab) => {
       if (tab.kind !== "lme") return false;
-      const lme = lmeWorkspace.tabs.find((entry) => entry.tabId === tab.lmeTabId);
+      const lme = ports().lme.tabs().find((entry) => entry.tabId === tab.lmeTabId);
       return lme?.kind === "code" && lme.resource.kind === "file";
     });
     if (tabs.length < 2) {
@@ -1630,15 +1627,15 @@ export class ShellTabsStore {
     let changed = false;
     const next = this.tabs.map((tab) => {
       if (tab.kind === "chat") {
-        const session = chat.sessions.find((row) => row.session_id === tab.sessionId);
+        const session = ports().chat.sessions().find((row) => row.session_id === tab.sessionId);
         if (!session) return tab;
-        const messages = chat.messagesFor(tab.sessionId);
+        const messages = ports().chat.messagesFor(tab.sessionId);
         const hasChatOrWorkerMessages = messages.some(
           (message) => isChatLaneMessage(message) || message.lane === "worker",
         );
         // While hydrating an empty buffer, keep the existing tab title so we
         // don't flash a Presence label over a session that still has turns.
-        if (!hasChatOrWorkerMessages && chat.historyLoadingFor(tab.sessionId)) {
+        if (!hasChatOrWorkerMessages && ports().chat.historyLoadingFor(tab.sessionId)) {
           return tab;
         }
         const title = chatPresenceOrSessionLabel(session, {
@@ -1651,7 +1648,7 @@ export class ShellTabsStore {
         return tab;
       }
       if (tab.kind === "lme") {
-        const lme = lmeWorkspace.tabs.find((entry) => entry.tabId === tab.lmeTabId);
+        const lme = ports().lme.tabs().find((entry) => entry.tabId === tab.lmeTabId);
         if (!lme) return tab;
         const title = lme.title?.trim() || tab.title;
         if (title !== tab.title) {
@@ -1661,7 +1658,7 @@ export class ShellTabsStore {
         return tab;
       }
       if (tab.kind === "web") {
-        const browserTab = humanBrowser.tabs.find((entry) => entry.id === tab.browserTabId);
+        const browserTab = ports().browser.tabs().find((entry) => entry.id === tab.browserTabId);
         if (!browserTab) return tab;
         const title = tabDisplayLabel(browserTab.title, browserTab.url);
         if (title !== tab.title) {
@@ -1679,7 +1676,7 @@ export class ShellTabsStore {
 
   syncFromLmeWorkspace() {
     if (!this.bootstrapped) return;
-    const lmeIds = new Set(lmeWorkspace.tabs.map((tab) => tab.tabId));
+    const lmeIds = new Set(ports().lme.tabs().map((tab) => tab.tabId));
     // LME's document catalog is global, but shell presentations belong to a
     // desktop. Do not mirror a document into the active desktop merely because
     // the global LME active tab changed; it may already be presented elsewhere.
@@ -1693,7 +1690,7 @@ export class ShellTabsStore {
     for (const desktop of this.desktops) {
       collectPresented(desktop.layout.tabs);
     }
-    for (const lme of lmeWorkspace.tabs) {
+    for (const lme of ports().lme.tabs()) {
       const existing = this.tabs.find(
         (tab) => tab.kind === "lme" && tab.lmeTabId === lme.tabId,
       );
@@ -1716,7 +1713,7 @@ export class ShellTabsStore {
 
   syncFromHumanBrowser() {
     if (!this.bootstrapped) return;
-    const browserIds = new Set(humanBrowser.tabs.map((tab) => tab.id));
+    const browserIds = new Set(ports().browser.tabs().map((tab) => tab.id));
     const hasWebShell = this.tabs.some((tab) => tab.kind === "web");
     const webEngaged =
       hasWebShell ||
@@ -1724,7 +1721,7 @@ export class ShellTabsStore {
       layout.desktopSurface === "web";
 
     if (webEngaged) {
-      for (const browserTab of humanBrowser.tabs) {
+      for (const browserTab of ports().browser.tabs()) {
         const existing = this.tabs.find(
           (tab) => tab.kind === "web" && tab.browserTabId === browserTab.id,
         );

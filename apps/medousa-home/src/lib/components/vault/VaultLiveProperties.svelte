@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/vault-live-properties.postcss";
   /**
    * Live properties — title, tags, and extra YAML fields as a living instrument.
    * Kind lives on the chrome pill; workshop tags stay in Build/YAML.

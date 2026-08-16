@@ -3,7 +3,7 @@
   import WorkshopJoinSheet from "$lib/components/workshops/WorkshopJoinSheet.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { connection } from "$lib/stores/connection.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { haptic } from "$lib/haptics";
   import type { WorkshopServer } from "$lib/types/workshopRegistry";

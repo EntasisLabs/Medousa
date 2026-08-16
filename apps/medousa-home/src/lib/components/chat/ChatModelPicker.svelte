@@ -8,7 +8,7 @@
     LogIn,
     Search,
   } from "@lucide/svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";

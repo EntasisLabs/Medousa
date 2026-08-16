@@ -1,6 +1,6 @@
 <script lang="ts">
   import { browserBookmarks } from "$lib/stores/browserBookmarks.svelte";
-  import { browserHistory } from "$lib/stores/browserHistory.svelte";
+  import { browserHistory } from "$lib/browser/browserHistory.svelte";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
   import {
     faviconUrlForSite,

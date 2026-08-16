@@ -8,7 +8,7 @@ import { resolveSkeletonThemeName } from "$lib/types/themeResolve";
 import { applySelectedThemeStylesheet } from "$lib/theme/themeStylesheet";
 import { loadTuiDefaults, persistTuiDefaults } from "$lib/config";
 import { getRuntimeDefaults } from "$lib/daemon";
-import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
+import { workshopDefaultsQueryPort } from "$lib/runtime/workshopDefaultsPorts";
 import { isTauri, isTauriMobilePlatform } from "$lib/platform";
 import {
   DEFAULT_MEDOUSA_MARK,
@@ -179,13 +179,14 @@ export class SettingsStore {
   /** Pull authoritative retention policy from the Mac daemon (`tui_defaults.json`). */
   async hydrateWorkRetentionFromDaemon() {
     try {
-      if (isTauriMobilePlatform() && workshopDefaults.loaded) {
-        const draft = workshopDefaults.draft;
-        if (draft.workCardHideAfterHours != null) {
-          this.setWorkCardHideAfterHours(draft.workCardHideAfterHours);
+      if (isTauriMobilePlatform() && workshopDefaultsQueryPort().loaded()) {
+        const hideAfter = workshopDefaultsQueryPort().workCardHideAfterHours();
+        const wipeAfter = workshopDefaultsQueryPort().workCardWipeAfterDays();
+        if (hideAfter != null) {
+          this.setWorkCardHideAfterHours(hideAfter);
         }
-        if (draft.workCardWipeAfterDays != null) {
-          this.setWorkCardWipeAfterDays(draft.workCardWipeAfterDays);
+        if (wipeAfter != null) {
+          this.setWorkCardWipeAfterDays(wipeAfter);
         }
         return;
       }

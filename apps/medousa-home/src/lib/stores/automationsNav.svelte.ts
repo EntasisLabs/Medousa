@@ -29,7 +29,7 @@ export class AutomationsNavStore {
     void import("$lib/stores/lmeWorkspace.svelte").then(({ lmeWorkspace }) => {
       lmeWorkspace.openAutomationsSection(section);
     });
-    void import("$lib/stores/layout.svelte").then(({ layout }) => {
+    void import("$lib/runtime/layout.svelte").then(({ layout }) => {
       layout.navigateDesktop("library", { bump: true });
     });
   }

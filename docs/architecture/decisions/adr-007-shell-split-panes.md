@@ -32,7 +32,7 @@ Accepted
 ## Code anchors
 
 - `apps/medousa-home/src/lib/stores/shellTabs.svelte.ts`
-- `apps/medousa-home/src/lib/stores/chatStreamPool.svelte.ts`
+- `apps/medousa-home/src/lib/chat/chatStreamPool.svelte.ts`
 - `apps/medousa-home/src/lib/utils/shellSplitTree.ts`
 - `apps/medousa-home/src/lib/utils/shellPaneHotkeys.ts`
 - `apps/medousa-home/src/lib/components/shell/ShellTabHost.svelte`

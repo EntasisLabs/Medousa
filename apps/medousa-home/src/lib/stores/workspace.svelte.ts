@@ -9,7 +9,7 @@ import {
 } from "$lib/daemon";
 import { workspaceChatPort } from "$lib/runtime/workspaceChatPort";
 import { workCardHideAfterHours } from "$lib/runtime/workCardHideAfterHoursPort";
-import { workerTranscripts } from "$lib/stores/workerTranscripts.svelte";
+import { workerTranscripts } from "$lib/work/workerTranscripts.svelte";
 import type { BlockedGroup } from "$lib/utils/groupWork";
 import {
   budgetWorkCardId,

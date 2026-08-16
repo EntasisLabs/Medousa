@@ -5,7 +5,7 @@
   } from "$lib/config/chatTrustHints";
   import { automationsNav } from "$lib/stores/automationsNav.svelte";
   import { chat } from "$lib/stores/chat.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { isChatLaneMessage } from "$lib/utils/askThreads";
 

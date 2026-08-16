@@ -15,7 +15,7 @@
   import { haptic } from "$lib/haptics";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import type { GraphemeScriptEntry } from "$lib/types/grapheme";
 

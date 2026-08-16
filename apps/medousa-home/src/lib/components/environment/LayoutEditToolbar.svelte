@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { layoutEdit } from "$lib/stores/layoutEdit.svelte";
+  import { layoutEdit } from "$lib/environment/layoutEdit.svelte";
   import { isMobileLayoutEdit } from "$lib/utils/layoutEditGestures";
   import { Plus, Trash2 } from "@lucide/svelte";
 

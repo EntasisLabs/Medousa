@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/markdown-content.postcss";
   /** `whisper` atom — a muted stage-direction line above the main voice. */
   import { renderMarkdown } from "$lib/markdown/render";
   import { getLiquidContext } from "$lib/liquid/render/context";

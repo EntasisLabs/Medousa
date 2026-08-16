@@ -1,15 +1,11 @@
 import {
-  persistTuiRuntimePrefs,
-} from "$lib/config";
-import {
   fetchHostCharter,
   getEngineTuiDefaults,
   migrateGlobalTuiDefaultsToEngine,
   putEngineTuiDefaults,
 } from "$lib/daemon";
 import { messagingSecretStatus, messagingSaveSecret, messagingClearSecret } from "$lib/messaging";
-import { runtime } from "$lib/stores/runtime.svelte";
-import { voicePresets } from "$lib/stores/voicePresets.svelte";
+import { workshopDefaultsSyncPort } from "$lib/runtime/workshopDefaultsPorts";
 import type { StageRoutingMatrix } from "$lib/types/runtime";
 import {
   allowedModulesToText,
@@ -19,7 +15,6 @@ import {
   type TuiDefaults,
 } from "$lib/types/workshopDefaults";
 import { syncFlatFieldsFromProfiles } from "$lib/types/inferenceProfiles";
-import { normalizeReasoningEffort } from "$lib/types/reasoningEffort";
 import { isTauriMobilePlatform } from "$lib/platform";
 import { workshopCharterOnHostHint } from "$lib/platformCopy";
 import { isTauri } from "$lib/window";
@@ -97,7 +92,7 @@ export class WorkshopDefaultsStore {
         this.apiKeySet = false;
         this.apiKeyDraft = "";
         this.clearApiKey = false;
-        voicePresets.applyFromDraft(this.draft);
+        workshopDefaultsSyncPort().applyVoiceDraft(this.draft);
         this.loaded = true;
         this.markClean();
         return;
@@ -119,7 +114,7 @@ export class WorkshopDefaultsStore {
       this.sttApiKeySet = await messagingSecretStatus("stt_api_key");
       this.sttApiKeyDraft = "";
       this.clearSttApiKey = false;
-      voicePresets.applyFromDraft(this.draft);
+      workshopDefaultsSyncPort().applyVoiceDraft(this.draft);
       this.loaded = true;
       this.markClean();
     } catch (err) {
@@ -203,31 +198,7 @@ export class WorkshopDefaultsStore {
       });
       await putEngineTuiDefaults(payload);
       this.draft = payload;
-
-      runtime.provider = payload.provider ?? runtime.provider;
-      runtime.model = payload.model ?? runtime.model;
-      if (
-        payload.responseDepthMode === "concise" ||
-        payload.responseDepthMode === "standard" ||
-        payload.responseDepthMode === "deep"
-      ) {
-        runtime.depthMode = payload.responseDepthMode;
-      }
-      if (payload.reasoningEffort) {
-        runtime.reasoningEffort = normalizeReasoningEffort(payload.reasoningEffort);
-      }
-      if (payload.stageRouting) {
-        runtime.stageRouting = payload.stageRouting;
-      }
-      voicePresets.applyFromDraft(payload);
-      await persistTuiRuntimePrefs(
-        runtime.provider,
-        runtime.model,
-        runtime.depthMode,
-        runtime.reasoningEffort,
-        payload.stageRouting ?? undefined,
-      );
-      runtime.defaultsLoaded = true;
+      await workshopDefaultsSyncPort().applyRuntimeFromDefaults(payload);
       this.flashModelsNotice("Saved");
       this.markClean();
     } catch (err) {
@@ -291,30 +262,7 @@ export class WorkshopDefaultsStore {
         this.sttApiKeyDraft = "";
       }
 
-      runtime.provider = payload.provider ?? runtime.provider;
-      runtime.model = payload.model ?? runtime.model;
-      if (
-        payload.responseDepthMode === "concise" ||
-        payload.responseDepthMode === "standard" ||
-        payload.responseDepthMode === "deep"
-      ) {
-        runtime.depthMode = payload.responseDepthMode;
-      }
-      if (payload.reasoningEffort) {
-        runtime.reasoningEffort = normalizeReasoningEffort(payload.reasoningEffort);
-      }
-      if (payload.stageRouting) {
-        runtime.stageRouting = payload.stageRouting;
-      }
-      voicePresets.applyFromDraft(payload);
-      await persistTuiRuntimePrefs(
-        runtime.provider,
-        runtime.model,
-        runtime.depthMode,
-        runtime.reasoningEffort,
-        payload.stageRouting ?? undefined,
-      );
-      runtime.defaultsLoaded = true;
+      await workshopDefaultsSyncPort().applyRuntimeFromDefaults(payload);
 
       this.message = "Saved";
       this.markClean();

@@ -1,6 +1,6 @@
 import { automationsNav } from "$lib/stores/automationsNav.svelte";
 import { flows } from "$lib/stores/flows.svelte";
-import { layout } from "$lib/stores/layout.svelte";
+import { layout } from "$lib/runtime/layout.svelte";
 import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
 
 export function promoteScriptToFlow(

@@ -13,9 +13,9 @@
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import { persistScriptName } from "$lib/grapheme/scriptWorkbenchActions";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
-  import { scriptRenameUi } from "$lib/stores/scriptRenameUi.svelte";
+  import { scriptRenameUi } from "$lib/lme/scriptRenameUi.svelte";
 
   let renamingTabId = $state<string | null>(null);
   let renameDraft = $state("");

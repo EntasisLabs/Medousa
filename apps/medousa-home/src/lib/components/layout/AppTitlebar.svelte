@@ -10,7 +10,7 @@
   import ShellTabNotch from "$lib/components/shell/ShellTabNotch.svelte";
   import NewTabMenu from "$lib/components/layout/NewTabMenu.svelte";
   import WindowControls from "$lib/components/layout/WindowControls.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { titlebarMode, usesUnifiedTitlebar } from "$lib/platform";

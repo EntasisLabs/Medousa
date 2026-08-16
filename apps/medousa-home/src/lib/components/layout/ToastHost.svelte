@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { toast } from "$lib/stores/toast.svelte";
+  import { toast } from "$lib/runtime/toast.svelte";
 </script>
 
 {#if toast.message}

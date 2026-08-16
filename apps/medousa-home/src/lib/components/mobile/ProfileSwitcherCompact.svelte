@@ -3,7 +3,7 @@
   import { ChevronDown, X } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { haptic } from "$lib/haptics";
   import { attachComposerMenuDismiss } from "$lib/utils/composerMenuDismiss";

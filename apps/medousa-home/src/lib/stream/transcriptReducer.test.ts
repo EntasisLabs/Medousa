@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { reduceTranscriptEnvelope } from "$lib/stream/transcriptReducer";
+import {
+  applyStreamEventToMessage,
+  reduceTranscriptEnvelope,
+} from "$lib/stream/transcriptReducer";
 import type { ChatMessage } from "$lib/types/chat";
 import type {
   TurnStreamEnvelopeV2,
@@ -96,5 +99,38 @@ describe("reduceTranscriptEnvelope", () => {
     );
     expect(result.handled).toBe(false);
     expect(result.messages[0]?.content).toBe("draft");
+  });
+});
+
+describe("applyStreamEventToMessage", () => {
+  it("appends content without Svelte and returns next messages", () => {
+    const result = applyStreamEventToMessage(
+      [assistant()],
+      0,
+      {
+        event_type: "content_delta",
+        turn_id: "turn-1",
+        seq: 1,
+        content_delta: "Hello",
+      } as never,
+      { showEngineDetails: false },
+    );
+    expect(result.followUp).toBe("none");
+    expect(result.messages[0]?.content).toBe("Hello");
+  });
+
+  it("replaces ACP assistant_message snapshots", () => {
+    const result = applyStreamEventToMessage(
+      [assistant("old")],
+      0,
+      {
+        event_type: "assistant_message",
+        turn_id: "turn-1",
+        seq: 2,
+        final_text: "new answer",
+      } as never,
+      { showEngineDetails: false },
+    );
+    expect(result.messages[0]?.content).toBe("new answer");
   });
 });

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { haptic } from "$lib/haptics";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { setPendingPeerNavigation } from "$lib/peerNavigation";
   import {
     formatPeerRelativeTime,

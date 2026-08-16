@@ -8,7 +8,7 @@
   import { catalog } from "$lib/stores/catalog.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { peersShell } from "$lib/stores/peersShell.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";

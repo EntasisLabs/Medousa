@@ -1,0 +1,384 @@
+/**
+ * Workshop surface extras not in workshop-shell.postcss.
+ * Loaded by the destination feature entry; not imported from app.postcss.
+ */
+
+@layer features {
+
+  .workshop-list-row-active {
+    background-color: rgb(var(--color-primary-500) / 0.14);
+  }
+
+  .workshop-status-whisper {
+    @apply inline-flex min-w-0 items-center gap-2 truncate;
+  }
+
+  .workshop-status--quiet {
+    color: rgb(var(--theme-text-quiet));
+  }
+
+  .workshop-status--peek-open {
+    z-index: 45;
+  }
+
+  .workshop-status-action {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: rgb(var(--theme-text-quiet));
+    font: inherit;
+    transition: color 140ms ease;
+  }
+
+  .workshop-status-action:hover {
+    color: rgb(var(--color-surface-200));
+  }
+
+  .workshop-status-workshop {
+    display: inline-flex;
+    max-width: 9rem;
+    min-width: 0;
+    align-items: center;
+    gap: 0.4rem;
+    border: 0;
+    border-radius: 0.3rem;
+    background: transparent;
+    padding: 0.15rem 0.3rem;
+    margin: 0;
+    color: rgb(var(--theme-text-quiet));
+    font: inherit;
+    line-height: 1.2;
+    transition:
+      color 140ms ease,
+      background-color 140ms ease;
+  }
+
+  .workshop-status-workshop:hover,
+  .workshop-status-workshop--open {
+    background: rgb(var(--color-surface-800) / 0.55);
+    color: rgb(var(--color-surface-200));
+  }
+
+  .workshop-status-workshop:disabled {
+    opacity: 0.55;
+  }
+
+  .workshop-status-spotlight {
+    border: 1px solid rgb(var(--color-surface-700) / 0.45);
+    border-radius: 0.3rem;
+    background: transparent;
+    padding: 0.1rem 0.35rem;
+    color: rgb(var(--theme-text-quiet));
+    font: inherit;
+    transition: border-color 140ms ease, color 140ms ease;
+  }
+
+  .workshop-status-spotlight:hover {
+    border-color: rgb(var(--color-surface-600) / 0.7);
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  /* Inset cards and settings blocks */
+  .workshop-inset {
+    @apply rounded-md border border-surface-500/40 bg-surface-800/80;
+  }
+
+  /* Large display numbers (home, metrics) */
+  .workshop-display {
+    @apply text-4xl font-semibold tabular-nums tracking-tight text-surface-50;
+  }
+
+  /* Quiet text actions — color from workshop-shell (--shell-muted) */
+  .workshop-text-action {
+    @apply text-xs transition;
+  }
+
+  /* Native-style underline tabs — colors from workshop-shell */
+  .workshop-tabs {
+    @apply flex gap-0 border-b border-surface-500/40;
+  }
+
+  .workshop-tab {
+    @apply -mb-px border-b-2 border-transparent px-2.5 py-1.5 text-xs transition;
+  }
+
+  .workshop-tab-active {
+    @apply border-primary-400;
+  }
+
+  /* Instrument readout row */
+  .workshop-telemetry {
+    @apply flex flex-wrap items-baseline gap-x-5 gap-y-1 border-b border-surface-500/40 py-2.5 font-mono text-xs;
+  }
+
+  .workshop-telemetry dt {
+    @apply text-[10px] uppercase tracking-wide text-content-quiet;
+  }
+
+  .workshop-telemetry dd {
+    @apply ml-1.5 tabular-nums text-surface-100;
+  }
+
+  /* Flat kanban rows */
+  .workshop-kanban-card {
+    @apply w-full border-l-2 bg-surface-800/60 px-2.5 py-2 text-left transition hover:bg-surface-700/50;
+  }
+
+  /* Text hierarchy — colors from workshop-shell.postcss (--shell-whisper/label/muted) */
+  .workshop-section-title {
+    @apply text-xs font-semibold uppercase tracking-wide;
+  }
+
+  .workshop-label {
+    @apply text-xs;
+  }
+
+  .workshop-muted {
+    @apply text-sm;
+  }
+
+  .workshop-faint {
+    @apply text-xs;
+  }
+
+  /* Side drawers (sessions, identity) */
+  .workshop-drawer {
+    @apply border-surface-500/50 bg-surface-800 shadow-xl;
+  }
+
+  .workshop-composer {
+    @apply shrink-0 border-t border-surface-500/25 px-4 py-3 backdrop-blur-md;
+    background-color: rgb(var(--color-surface-950) / 0.5);
+  }
+
+  .workshop-recipe-card {
+    @apply rounded-lg border border-surface-500/40 bg-surface-900/50 p-3 transition;
+  }
+
+  .workshop-recipe-card:hover {
+    @apply border-primary-500/35 bg-primary-500/5;
+  }
+
+  .workshop-journey-details {
+    @apply rounded-lg border border-surface-500/30 bg-surface-900/30;
+  }
+
+  .workshop-journey-details-compact {
+    @apply border-0 bg-transparent;
+  }
+
+  .workshop-journey-summary {
+    @apply cursor-pointer select-none px-3 py-2 text-xs text-content-secondary;
+    list-style: none;
+  }
+
+  .workshop-journey-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .workshop-journey-details[open] .workshop-journey-summary {
+    @apply border-b border-surface-500/30 text-surface-200;
+  }
+
+  .workshop-journey-details .workshop-journey {
+    @apply border-0 bg-transparent px-3 pb-3 pt-2;
+  }
+
+  .workshop-journey {
+    @apply rounded-lg border border-surface-500/35 bg-surface-900/40 px-3 py-3;
+  }
+
+  .workshop-journey-compact {
+    @apply border-0 bg-transparent px-0 py-0;
+  }
+
+  .workshop-journey-title {
+    @apply text-xs font-medium text-surface-200;
+  }
+
+  .workshop-journey-steps {
+    @apply mt-2 flex flex-wrap gap-2;
+  }
+
+  .workshop-journey-step {
+    @apply flex min-w-0 items-center gap-2 rounded-md border border-surface-500/35 px-2 py-1.5;
+  }
+
+  .workshop-journey-step-active {
+    @apply border-primary-500/40 bg-primary-500/10;
+  }
+
+  .workshop-journey-step-done {
+    @apply border-surface-500/25;
+  }
+
+  .workshop-journey-badge {
+    @apply flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-surface-800 text-[10px] font-semibold text-content-secondary;
+  }
+
+  .workshop-journey-step-active .workshop-journey-badge {
+    @apply bg-primary-500/25 text-primary-200;
+  }
+
+  .workshop-flow-step {
+    @apply rounded-lg border border-surface-500/35 bg-surface-900/45 p-3;
+  }
+
+  .workshop-advanced summary {
+    @apply list-none;
+  }
+
+  .workshop-advanced summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .workshop-tabs-mobile {
+    @apply -mx-1 overflow-x-auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .workshop-tabs-mobile .workshop-tab {
+    @apply shrink-0 px-3.5;
+  }
+
+  .workshop-rail-sheet-backdrop {
+    @apply items-start justify-start p-0;
+    background-color: rgb(var(--color-surface-950) / 0.28);
+    backdrop-filter: blur(2px);
+  }
+
+  .workshop-rail-sheet {
+    @apply fixed w-[min(17.5rem,calc(100vw-1rem))] overflow-hidden rounded-xl border border-surface-500/40 shadow-2xl;
+    top: 0;
+    left: 0;
+    max-height: min(32rem, calc(100vh - 1rem));
+    background-color: rgb(var(--color-surface-900) / 0.96);
+    backdrop-filter: blur(16px);
+    animation: workshop-switcher-in 140ms ease-out;
+  }
+
+  @keyframes workshop-switcher-in {
+    from {
+      opacity: 0;
+      transform: translateX(-4px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+    }
+  }
+
+  .workshop-rail-workshop-btn-open {
+    @apply ring-2 ring-primary-400/50 ring-offset-2 ring-offset-surface-900;
+  }
+
+  .workshop-switcher-menu {
+    @apply flex min-h-0 flex-col;
+  }
+
+  .workshop-switcher-header {
+    @apply shrink-0 px-3 pb-2.5 pt-3;
+  }
+
+  .workshop-switcher-title {
+    @apply text-[13px] font-semibold tracking-tight text-surface-50;
+  }
+
+  .workshop-switcher-subtitle {
+    @apply mt-0.5 text-[11px] leading-snug text-content-quiet;
+  }
+
+  .workshop-switcher-list {
+    @apply min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 py-1;
+  }
+
+  .workshop-switcher-row {
+    @apply flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition;
+  }
+
+  .workshop-switcher-row:hover {
+    @apply bg-surface-800/55;
+  }
+
+  .workshop-switcher-row-active {
+    background-color: rgb(var(--color-primary-500) / 0.22);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.08),
+      inset 0 -1px 0 rgb(0 0 0 / 0.16);
+  }
+
+  .workshop-switcher-row-active:hover {
+    background-color: rgb(var(--color-primary-500) / 0.28);
+  }
+
+  .workshop-switcher-avatar {
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[11px] font-semibold tracking-tight text-surface-50;
+    background-color: rgb(var(--color-primary-500) / 0.22);
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.28);
+  }
+
+  .workshop-switcher-avatar[style*="--workshop-brand"] {
+    background-color: color-mix(in srgb, var(--workshop-brand) 28%, rgb(var(--color-surface-900)));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--workshop-brand) 45%, transparent);
+  }
+
+  .workshop-switcher-row-body {
+    @apply min-w-0 flex-1;
+  }
+
+  .workshop-switcher-row-name {
+    @apply truncate text-[13px] font-medium text-surface-50;
+  }
+
+  .workshop-switcher-row-meta {
+    @apply truncate text-[11px] text-content-quiet;
+  }
+
+  .workshop-switcher-row-check {
+    @apply shrink-0 text-content-link;
+  }
+
+  .workshop-switcher-divider {
+    @apply mx-3 my-1.5 h-px bg-surface-700/50;
+  }
+
+  .workshop-switcher-action {
+    @apply flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] text-surface-200 transition hover:bg-surface-800/55;
+  }
+
+  .workshop-switcher-action-icon {
+    @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-surface-800/80 text-content-tertiary;
+  }
+
+  .workshop-switcher-manage {
+    @apply mt-0.5 w-full px-3 py-1.5 text-left text-[11px] text-content-quiet transition hover:text-content-secondary;
+  }
+
+  .workshop-switcher-footer {
+    @apply shrink-0 border-t border-surface-700/35 px-2 pb-2 pt-1.5;
+  }
+
+  .workshop-liveliness-chip-scheduled {
+    background-color: rgb(var(--color-primary-500) / 0.12);
+    color: rgb(var(--theme-link));
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.22);
+  }
+
+  .workshop-liveliness-chip-paused {
+    @apply bg-surface-800 text-content-quiet;
+    box-shadow: inset 0 0 0 1px rgb(var(--color-surface-500) / 0.32);
+  }
+
+  .workshop-liveliness-chip-running {
+    background-color: rgb(var(--color-primary-500) / 0.18);
+    color: rgb(var(--color-primary-200));
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.32);
+  }
+
+  .workshop-liveliness-chip-warning {
+    background-color: rgb(var(--color-warning-500) / 0.14);
+    color: rgb(var(--theme-warning));
+    box-shadow: inset 0 0 0 1px rgb(var(--color-warning-500) / 0.28);
+  }
+}

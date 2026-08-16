@@ -35,8 +35,8 @@ vi.mock("$lib/liquid/surfaces/chat/chatInteractions", () => ({
   chatInteractions: { reset: vi.fn() },
 }));
 
-vi.mock("$lib/stores/chatStreamPool.svelte", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./chatStreamPool.svelte")>();
+vi.mock("$lib/chat/chatStreamPool.svelte", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("$lib/chat/chatStreamPool.svelte")>();
   return {
     ...actual,
     chatStreamPool: new actual.ChatStreamPool(),
@@ -65,7 +65,7 @@ describe("multi-live chat session runtimes", () => {
 
   async function loadStore() {
     const { ChatStore } = await import("./chat.svelte");
-    const { chatStreamPool } = await import("./chatStreamPool.svelte");
+    const { chatStreamPool } = await import("$lib/chat/chatStreamPool.svelte");
     const { getSessionHistory } = await import("$lib/daemon");
     chatStreamPool.clear();
     chatStreamPool.setMaxLive(1);
@@ -200,7 +200,7 @@ describe("multi-live chat session runtimes", () => {
 
   it("keeps focusedSessionId and focused transcript stable during background stream apply", async () => {
     const { store } = await loadStore();
-    const { emptySessionRuntime } = await import("./chatSessionRuntime");
+    const { emptySessionRuntime } = await import("$lib/chat/chatSessionRuntime");
     type RuntimeMap = Map<string, ReturnType<typeof emptySessionRuntime>>;
     const runtimes = (store as unknown as { sessionRuntimes: RuntimeMap }).sessionRuntimes;
 

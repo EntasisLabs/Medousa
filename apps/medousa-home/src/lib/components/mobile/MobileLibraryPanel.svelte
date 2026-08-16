@@ -9,7 +9,7 @@
   import VaultNewNoteDialog from "$lib/components/vault/VaultNewNoteDialog.svelte";
   import NotesFilterSheet from "$lib/components/mobile/NotesFilterSheet.svelte";
   import { getSpaceById } from "$lib/config/vaultSpaces";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { artifacts } from "$lib/stores/artifacts.svelte";
   import {

@@ -35,6 +35,21 @@ describe("former small SCC families stay acyclic", () => {
   it("undertakings do not import shellTabs", () => {
     expect(source("src/lib/stores/undertakings.svelte.ts")).not.toMatch(/shellTabs/);
   });
+
+  it("chat and vault do not statically import shellTabs", () => {
+    expect(source("src/lib/stores/chat.svelte.ts")).not.toMatch(
+      /from ["']\$lib\/stores\/shellTabs/,
+    );
+    expect(source("src/lib/stores/vault.svelte.ts")).not.toMatch(
+      /from ["']\$lib\/stores\/shellTabs/,
+    );
+  });
+
+  it("shell lifecycle binds feature ports at start", () => {
+    const src = source("src/lib/runtime/shellLifecycle.ts");
+    expect(src).toContain("bindAllFeaturePorts");
+    expect(src).toContain("unbindAllFeaturePorts");
+  });
 });
 
 describe("former markdown-liquid-vault SCC stays acyclic", () => {
@@ -77,5 +92,11 @@ describe("former markdown-liquid-vault SCC stays acyclic", () => {
 
   it("chat store does not import v2ToLegacy", () => {
     expect(source("src/lib/stores/chat.svelte.ts")).not.toMatch(/v2ToLegacy/);
+  });
+
+  it("transcript reducer does not import Svelte or the chat store", () => {
+    const src = source("src/lib/stream/transcriptReducer.ts");
+    expect(src).not.toMatch(/from ["']svelte/);
+    expect(src).not.toMatch(/chat\.svelte/);
   });
 });

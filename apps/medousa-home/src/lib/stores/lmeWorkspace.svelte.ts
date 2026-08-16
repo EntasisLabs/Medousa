@@ -1,16 +1,13 @@
 /** LME (Life Management Environment) — unified Vault + Automations workspace. */
 
 import type { AutomationsSection } from "$lib/stores/automationsNav.svelte";
-import { artifacts } from "$lib/stores/artifacts.svelte";
-import { catalog } from "$lib/stores/catalog.svelte";
-import { automations } from "$lib/stores/automations.svelte";
-import { flows } from "$lib/stores/flows.svelte";
-import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
-import { vault } from "$lib/stores/vault.svelte";
-import { externalDesk } from "$lib/stores/externalDesk.svelte";
-import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
+import { lmeWorkspacePorts } from "$lib/runtime/lmeWorkspacePorts";
 import type { FlowComposerDraft } from "$lib/types/workflow";
 import { openCodeWorkspaceSession } from "$lib/utils/codeWorkspaceController";
+
+function ports() {
+  return lmeWorkspacePorts();
+}
 
 export type LmeExplorerMode =
   | "notes"
@@ -147,7 +144,7 @@ function loadExplorerMode(): LmeExplorerMode {
 }
 
 function noteTitle(path: string): string {
-  return vault.labelByPathMap.get(path) ?? path.split("/").pop() ?? path;
+  return lmeWorkspacePorts().labelForPath(path);
 }
 
 function fileTitle(path: string): string {
@@ -253,11 +250,11 @@ export class LmeWorkspaceStore {
       localStorage.setItem(EXPLORER_MODE_KEY, mode);
     }
     if (mode === "notes") {
-      externalDesk.setSidebarMode("vault");
+      ports().setSidebarMode("vault");
     } else if (mode === "files") {
-      externalDesk.setSidebarMode("files");
+      ports().setSidebarMode("files");
     } else if (mode === "artifacts") {
-      externalDesk.setSidebarMode("artifacts");
+      ports().setSidebarMode("artifacts");
     }
   }
 
@@ -276,7 +273,7 @@ export class LmeWorkspaceStore {
   }
 
   ensureNoteTabForSelection() {
-    const path = vault.selectedPath;
+    const path = ports().selectedNotePath();
     if (!path) return;
     this.ensureAndActivateNoteTab(path, { activate: false });
   }
@@ -339,10 +336,10 @@ export class LmeWorkspaceStore {
         this.activeTabId = existing.tabId;
         mirrorActiveTabToShell(existing.tabId, existing.title);
       }
-      await vault.openNote(path);
+      await ports().openNote(path);
       return;
     }
-    await vault.openNote(path);
+    await ports().openNote(path);
     const tab: LmeTab = {
       tabId: newTabId("note"),
       kind: "note",
@@ -358,13 +355,13 @@ export class LmeWorkspaceStore {
 
   async openScriptById(scriptId: string) {
     this.setExplorerMode("scripts");
-    await graphemeScriptEditor.openScriptById(scriptId);
+    await ports().openScriptById(scriptId);
     this.syncScriptTabFromEditor({ activate: true });
   }
 
   openNewScript() {
     this.setExplorerMode("scripts");
-    graphemeScriptEditor.openNewTab();
+    ports().openNewScriptTab();
     this.syncScriptTabFromEditor({ activate: true });
   }
 
@@ -391,8 +388,8 @@ export class LmeWorkspaceStore {
       this.activeTabId = tab.tabId;
       mirrorActiveTabToShell(tab.tabId, tab.title);
     }
-    externalDesk.selectExternalPath(path);
-    vault.previewAttachment(path, "pane");
+    ports().selectExternalPath(path);
+    ports().previewAttachment(path, "pane");
   }
 
   /** Open governed coding work as a durable workspace tab. */
@@ -452,8 +449,7 @@ export class LmeWorkspaceStore {
     this.setExplorerMode("code");
     const line =
       options?.line && options.line > 0 ? Math.floor(options.line) : null;
-    const { codeWorkspace } = await import("$lib/stores/codeWorkspace.svelte");
-    const source = await codeWorkspace.open(id, normalizedPath, line, {
+    const source = await ports().openCodeBuffer(id, normalizedPath, line, {
       recordNavigation: options?.recordNavigation,
     });
     if (!source) return null;
@@ -510,8 +506,7 @@ export class LmeWorkspaceStore {
   async ensureCodeFilePresentations(workId: string) {
     const id = workId.trim();
     if (!id) return;
-    const { codeWorkspace } = await import("$lib/stores/codeWorkspace.svelte");
-    const buffers = codeWorkspace.tabsFor(id).filter((tab) => tab.path && !tab.loading);
+    const buffers = ports().codeTabsFor(id).filter((tab) => tab.path && !tab.loading);
     if (buffers.length === 0) return;
     const existing = new Set(
       this.tabs
@@ -608,7 +603,7 @@ export class LmeWorkspaceStore {
     );
     const label =
       title?.trim() ||
-      artifacts.artifacts.find((row) => row.artifact_id === artifactId)?.label ||
+      ports().artifactLabel(artifactId) ||
       "Presentation";
     if (existing) {
       this.activeTabId = existing.tabId;
@@ -629,7 +624,7 @@ export class LmeWorkspaceStore {
       this.activeTabId = tab.tabId;
       mirrorActiveTabToShell(tab.tabId, tab.title);
     }
-    artifacts.selectArtifact(artifactId);
+    ports().selectArtifact(artifactId);
   }
 
   openManuscript(manuscriptId: string, title: string) {
@@ -657,14 +652,14 @@ export class LmeWorkspaceStore {
       this.activeTabId = tab.tabId;
       mirrorActiveTabToShell(tab.tabId, tab.title);
     }
-    void catalog.loadManuscriptDetail(manuscriptId);
+    ports().loadManuscriptDetail(manuscriptId);
   }
 
   /** Focus the single draft flow tab (composer). Does not reset an already-seeded draft. */
   focusFlowComposerTab(title?: string) {
     this.setExplorerMode("flows");
-    flows.composerOpen = true;
-    const label = title?.trim() || flows.composerDraft.name.trim() || "New flow";
+    ports().setComposerOpen(true);
+    const label = title?.trim() || ports().composerDraftName().trim() || "New flow";
     const existing = this.tabs.find(
       (tab) => tab.kind === "flow" && tab.workflowId === null,
     );
@@ -690,7 +685,7 @@ export class LmeWorkspaceStore {
   }
 
   openNewFlow(seed?: Partial<FlowComposerDraft>) {
-    flows.openComposer(seed);
+    ports().openComposer(seed);
     this.focusFlowComposerTab(seed?.name?.trim() || "New flow");
   }
 
@@ -719,8 +714,8 @@ export class LmeWorkspaceStore {
       this.activeTabId = tab.tabId;
       mirrorActiveTabToShell(tab.tabId, tab.title);
     }
-    void flows.loadDetail(workflowId);
-    void flows.loadRuns(workflowId);
+    ports().loadFlowDetail(workflowId);
+    ports().loadFlowRuns(workflowId);
   }
 
   openSchedule(recurringId: string, title: string) {
@@ -748,7 +743,7 @@ export class LmeWorkspaceStore {
       this.activeTabId = tab.tabId;
       mirrorActiveTabToShell(tab.tabId, tab.title);
     }
-    void automations.loadRuns(recurringId);
+    ports().loadAutomationRuns(recurringId);
   }
 
   /** Keep draft tab title in sync with the composer name field. */
@@ -765,7 +760,7 @@ export class LmeWorkspaceStore {
 
   /** Mirror the active grapheme editor tab into the LME strip. Idempotent. */
   syncScriptTabFromEditor(options?: { activate?: boolean }) {
-    const scriptTab = graphemeScriptEditor.activeTab;
+    const scriptTab = ports().activeScriptTab();
     if (!scriptTab) return;
     const nextTitle = scriptTab.name || "Untitled script";
     const activate = options?.activate === true;
@@ -813,7 +808,7 @@ export class LmeWorkspaceStore {
       (tab.kind !== "note" || tab.path !== leaving.path);
     if (leavingNote) {
       // Flush TipTap/CM + save BEFORE swapping activeTabId (remount hammer).
-      const ok = await vault.flushBeforeLeave();
+      const ok = await ports().flushBeforeLeave();
       if (!ok) return;
     }
 
@@ -823,17 +818,17 @@ export class LmeWorkspaceStore {
     // Local Files / Notes survives tab and shell switches.
     if (tab.kind === "note") {
       // Absolute paths route to openLooseFile inside openNote (skipLeaveFlush preserved).
-      await vault.openNote(tab.path, {
+      await ports().openNote(tab.path, {
         skipLeaveFlush: Boolean(leavingNote),
       });
       return;
     }
     if (tab.kind === "script") {
-      if (graphemeScriptEditor.tabs.some((entry) => entry.tabId === tab.scriptTabId)) {
-        graphemeScriptEditor.selectTab(tab.scriptTabId);
+      if (ports().scriptTabs().some((entry) => entry.tabId === tab.scriptTabId)) {
+        ports().selectScriptTab(tab.scriptTabId);
       } else if (tab.scriptId) {
-        await graphemeScriptEditor.openScriptById(tab.scriptId);
-        const restored = graphemeScriptEditor.activeTab;
+        await ports().openScriptById(tab.scriptId);
+        const restored = ports().activeScriptTab();
         if (restored) {
           this.tabs = this.tabs.map((entry) =>
             entry.tabId === tab.tabId && entry.kind === "script"
@@ -845,25 +840,23 @@ export class LmeWorkspaceStore {
       return;
     }
     if (tab.kind === "file") {
-      externalDesk.selectExternalPath(tab.path);
-      vault.previewAttachment(tab.path, "pane");
+      ports().selectExternalPath(tab.path);
+      ports().previewAttachment(tab.path, "pane");
       return;
     }
     if (tab.kind === "code") {
-      const { undertakings } = await import("$lib/stores/undertakings.svelte");
-      if (undertakings.detail?.id !== tab.workId) {
-        await undertakings.select(tab.workId);
+      if (ports().undertakingDetailId() !== tab.workId) {
+        await ports().selectUndertaking(tab.workId);
       }
-      const { codeWorkspace } = await import("$lib/stores/codeWorkspace.svelte");
-      await codeWorkspace.hydrate(tab.workId);
+      await ports().hydrateCode(tab.workId);
       await this.ensureCodeFilePresentations(tab.workId);
       if (tab.resource.kind === "file") {
-        await codeWorkspace.open(
+        await ports().openCodeBuffer(
           tab.workId,
           tab.resource.path,
           tab.resource.line,
         );
-        undertakings.setSelection({
+        ports().setUndertakingSelection({
           path: tab.resource.path,
           line: tab.resource.line,
           entityId: null,
@@ -872,23 +865,23 @@ export class LmeWorkspaceStore {
       return;
     }
     if (tab.kind === "manuscript") {
-      void catalog.loadManuscriptDetail(tab.manuscriptId);
+      ports().loadManuscriptDetail(tab.manuscriptId);
       return;
     }
     if (tab.kind === "flow") {
       if (tab.workflowId) {
-        void flows.loadDetail(tab.workflowId);
-        void flows.loadRuns(tab.workflowId);
+        ports().loadFlowDetail(tab.workflowId);
+        ports().loadFlowRuns(tab.workflowId);
       } else {
-        flows.composerOpen = true;
+        ports().setComposerOpen(true);
       }
       return;
     }
     if (tab.kind === "schedule") {
-      void automations.loadRuns(tab.recurringId);
+      ports().loadAutomationRuns(tab.recurringId);
       return;
     }
-    artifacts.selectArtifact(tab.artifactId);
+    ports().selectArtifact(tab.artifactId);
   }
 
   confirmCloseTab(tabId: string): boolean {
@@ -901,12 +894,12 @@ export class LmeWorkspaceStore {
       return true;
     }
     const closingPath = closing.resource.path;
-    const buffer = codeWorkspace.tabsFor(closing.workId).find(
+    const buffer = ports().codeTabsFor(closing.workId).find(
       (tab) => tab.path === closingPath,
     );
     return !(
       buffer &&
-      codeWorkspace.isDirty(buffer) &&
+      ports().isCodeDirty(closing.workId, buffer) &&
       typeof window !== "undefined" &&
       !window.confirm(`Discard unsaved changes to ${buffer.path}?`)
     );
@@ -920,24 +913,23 @@ export class LmeWorkspaceStore {
     if (!closing) return;
     if (!options?.confirmed && !this.confirmCloseTab(tabId)) return;
     if (closing.kind === "code" && closing.resource.kind === "file") {
-      const { codeWorkspace } = await import("$lib/stores/codeWorkspace.svelte");
       const closingPath = closing.resource.path;
-      const buffer = codeWorkspace.tabsFor(closing.workId).find(
+      const buffer = ports().codeTabsFor(closing.workId).find(
         (tab) => tab.path === closingPath,
       );
-      if (buffer) codeWorkspace.close(buffer.tabId);
+      if (buffer) ports().closeCodeBuffer(buffer.tabId);
     }
     const wasActive = this.activeTabId === tabId;
     this.tabs = this.tabs.filter((tab) => tab.tabId !== tabId);
 
     if (closing.kind === "script") {
-      graphemeScriptEditor.closeTab(closing.scriptTabId);
+      ports().closeScriptTab(closing.scriptTabId);
     }
     if (closing.kind === "flow" && closing.workflowId === null) {
-      flows.closeComposer();
+      ports().closeComposer();
     }
-    if (closing.kind === "file" && vault.previewingAttachmentPath === closing.path) {
-      vault.closeAttachmentPreview();
+    if (closing.kind === "file" && ports().previewingAttachmentPath() === closing.path) {
+      ports().closeAttachmentPreview();
     }
 
     if (!wasActive) return;

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { recurring } from "$lib/stores/recurring.svelte";
+  import { recurring } from "$lib/stores/automations.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { columnLabel } from "$lib/types/workspace";

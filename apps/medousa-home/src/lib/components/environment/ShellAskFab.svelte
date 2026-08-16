@@ -1,6 +1,6 @@
 <script lang="ts">
   import { MessageCircle } from "@lucide/svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { haptic } from "$lib/haptics";
 
   interface Props {

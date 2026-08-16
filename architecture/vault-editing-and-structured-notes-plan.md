@@ -314,7 +314,7 @@ G: context (G1) → preview todos (G2) → slash/switcher/templates (G3) → ima
 
 | Path | Role |
 |------|------|
-| `stores/layout.svelte.ts` | Mobile You/Library navigation state |
+| `runtime/layout.svelte.ts` | Mobile You/Library navigation state |
 | `mobileNavigation.ts` | Tab switch behavior |
 | `components/mobile/MobileLibraryPanel.svelte` | Mobile notes list + reader |
 | `components/vault/VaultEditor.svelte` | Edit/preview chrome |

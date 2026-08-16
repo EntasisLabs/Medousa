@@ -4,7 +4,7 @@
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { haptic } from "$lib/haptics";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import type { UiArtifact } from "$lib/types/chat";
 
   interface Props {

@@ -15,14 +15,14 @@
   import BrowserSavedSheet from "$lib/components/browser/BrowserSavedSheet.svelte";
   import { browser } from "$lib/stores/browser.svelte";
   import { browserBookmarks } from "$lib/stores/browserBookmarks.svelte";
-  import { humanBrowserForWindow } from "$lib/stores/humanBrowserSurface";
+  import { humanBrowserForWindow } from "$lib/browser/humanBrowserSurface";
 
   const humanBrowser = $derived(humanBrowserForWindow());
   import { normalizeBrowserUrl } from "$lib/utils/browserUrl";
   import { copyBrowserUrl, openUrlInDefaultBrowser } from "$lib/utils/browserActions";
   import { formatShortcut } from "$lib/platform";
   import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
-  import { toast } from "$lib/stores/toast.svelte";
+  import { toast } from "$lib/runtime/toast.svelte";
   import {
     openSavedVaultNote,
     savePageToLibrary,

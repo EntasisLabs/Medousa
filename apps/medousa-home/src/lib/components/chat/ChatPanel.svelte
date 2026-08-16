@@ -1,10 +1,13 @@
 <script lang="ts">
-  import { onDestroy, tick, untrack } from "svelte";
-  import { ArrowDown, LoaderCircle } from "@lucide/svelte";
+  import { tick, untrack } from "svelte";
+  import { LoaderCircle } from "@lucide/svelte";
   import ChatAsyncToolsHint from "$lib/components/chat/ChatAsyncToolsHint.svelte";
   import ChatChangeReceipt from "$lib/components/chat/ChatChangeReceipt.svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
-  import MarkdownHeadingOutline from "$lib/components/ui/MarkdownHeadingOutline.svelte";
+  import ChatPresenceDock from "$lib/components/chat/ChatPresenceDock.svelte";
+  import ChatScrollChrome from "$lib/components/chat/ChatScrollChrome.svelte";
+  import { createAgentSessionController } from "$lib/chat/agentSessionController.svelte";
+  import { submitChatTurn } from "$lib/chat/submitTurnController";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import ComposerSkillPills from "$lib/components/chat/ComposerSkillPills.svelte";
   import ComposerSkillSlashMenu from "$lib/components/chat/ComposerSkillSlashMenu.svelte";
@@ -21,14 +24,11 @@
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { activeCodeContext } from "$lib/utils/undertakingWorkspace";
-  import { planAgentWorkspace } from "$lib/utils/agentWorkspacePlan";
-  import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { connection } from "$lib/stores/connection.svelte";
-  import { voicePresets } from "$lib/stores/voicePresets.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { catalog } from "$lib/stores/catalog.svelte";
@@ -36,30 +36,10 @@
   import { activeAgent } from "$lib/stores/activeAgent.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import {
-    cancelAgentSession,
-    createAgentSession,
-    createTurnTicket,
     getSessionAgentMode,
     getSessionCodeBinding,
-    promptAgentSession,
-    setAgentSessionConfigOption,
     steerBoundWorkshop,
-    type AgentSessionConfigOption,
   } from "$lib/daemon";
-  import {
-    agentSessionStreamUrl,
-    clearSessionAgentSessionId,
-    getSessionAgentRuntime,
-    getSessionAgentSessionId,
-    getSessionAgentConfigOptions,
-    getSessionAgentWorkId,
-    setSessionAgentRuntime,
-    setSessionAgentSessionId,
-    setSessionAgentConfigOptions,
-    setSessionAgentWorkId,
-    type ChatAgentRuntime,
-  } from "$lib/utils/sessionAgentRuntime";
-  import type { TurnTicketResponse } from "$lib/types/session";
   import {
     formatSessionLabel,
     presenceRoomTitle,
@@ -102,7 +82,6 @@
   import LiquidCardDetailSheet from "$lib/components/chat/LiquidCardDetailSheet.svelte";
   import ChatAgentModePicker from "$lib/components/chat/ChatAgentModePicker.svelte";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
-  import { switchMobileTab } from "$lib/mobileNavigation";
   import { automationsNav } from "$lib/stores/automationsNav.svelte";
   import { flowDraft } from "$lib/stores/flowDraft.svelte";
   import type { ToolHistorySliceRef } from "$lib/types/toolHistory";
@@ -131,13 +110,18 @@
     onOpenConnection,
   }: Props = $props();
 
+  const agentSession = createAgentSessionController();
+  let presenceComposerCentered = $state(false);
+  let runPresenceDockBlurp: () => Promise<void> | void = $state(() => {});
+  let scrollToLatest: (force?: boolean, behavior?: ScrollBehavior) => void = $state(
+    (_force?: boolean, _behavior?: ScrollBehavior) => {},
+  );
+  let scheduleChatNavigationMeasure: () => void = $state(() => {});
+  let resetScrollSession: () => void = $state(() => {});
   let scrollEl: HTMLDivElement | undefined = $state();
   let atBottom = $state(true);
   let activeChatTurnId = $state<string | null>(null);
   let chatScrolling = $state(false);
-  let pinLatestUserTurn = $state(false);
-  let chatNavigationFrame = 0;
-  let chatScrollEndTimer: ReturnType<typeof setTimeout> | undefined;
   let cardDetailOpen = $state(false);
   let cardDetail = $state<CardDetailPayload | null>(null);
   let workerTranscriptWorkId = $state<string | null>(null);
@@ -223,17 +207,6 @@
       !embedded,
   );
   const presenceAsk = $derived(presenceSubline());
-
-  let presenceDockMode = $state<"center" | "docking" | "docked">("docked");
-  let presenceDockEl = $state<HTMLDivElement | undefined>(undefined);
-  let presenceEmptyEl = $state<HTMLDivElement | undefined>(undefined);
-  let presenceAskEl = $state<HTMLParagraphElement | undefined>(undefined);
-  let presenceContinueEl = $state<HTMLButtonElement | undefined>(undefined);
-  let presenceBlurpToken = 0;
-  let presenceDockLocked = $state(false);
-  /** translateY offset that parks the bottom-anchored dock on the 2/3 seam. */
-  let presenceCenterOffset = $state(0);
-  let presenceCenterPlaced = $state(false);
 
   const chatAttachments = composerAttachments.chat;
   let draftCursor = $state(0);
@@ -328,23 +301,6 @@
       composerTextareaEl?.focus();
       composerTextareaEl?.setSelectionRange(draftCursor, draftCursor);
     });
-  }
-
-  const presenceComposerCentered = $derived(
-    showPresenceEmpty &&
-      showInlineComposer &&
-      (presenceDockMode === "center" || presenceDockMode === "docking"),
-  );
-
-  function clearPresenceDockInlineStyles() {
-    const el = presenceDockEl;
-    if (!el) return;
-    el.getAnimations().forEach((animation) => animation.cancel());
-    el.style.transition = "";
-    el.style.transform = "";
-    el.style.transformOrigin = "";
-    el.style.willChange = "";
-    el.style.backfaceVisibility = "";
   }
 
   function handlePromoteToFlow(ref: ToolHistorySliceRef) {
@@ -490,15 +446,11 @@
   const showChatTurnRail = $derived(
     !embedded && !useMobileChatLayout && chatTurnItems.length > 1,
   );
-  const showCurrentTurnAnchor = $derived(
-    Boolean(latestUserTurn && latestUserPreview && pinLatestUserTurn),
-  );
+  const showCurrentTurnAnchor = $derived(Boolean(latestUserTurn && latestUserPreview));
 
   $effect(() => {
     void panelSessionId;
-    atBottom = true;
-    activeChatTurnId = null;
-    pinLatestUserTurn = false;
+    resetScrollSession();
   });
 
   $effect(() => {
@@ -538,206 +490,6 @@
     return () => clearTimeout(timer);
   });
 
-  /** Presence dock — float to center for a fresh landing, dock back down once busy. */
-  $effect(() => {
-    if (
-      showPresenceEmpty &&
-      showInlineComposer &&
-      !presenceDockLocked &&
-      presenceDockMode === "docked"
-    ) {
-      presenceDockMode = "center";
-    }
-  });
-
-  $effect(() => {
-    if (showPresenceEmpty && showInlineComposer) return;
-    // History arrived / session not empty — hard-dock and scrub center transform.
-    // Cold start used to leave translateY inline after hydrate → composer mid-pane.
-    presenceBlurpToken += 1;
-    presenceDockLocked = false;
-    presenceCenterOffset = 0;
-    presenceCenterPlaced = false;
-    presenceDockMode = "docked";
-    clearPresenceDockInlineStyles();
-  });
-
-  /**
-   * Presence seams (thirds of the chat panel):
-   * - 1/3 line → center of the ask title (continue sits under it)
-   * - 2/3 line → center of the composer dock
-   */
-  async function placePresenceSeams() {
-    presenceCenterPlaced = false;
-    await tick();
-    await tick();
-    const dock = presenceDockEl;
-    const parent = dock?.parentElement ?? presenceEmptyEl?.parentElement;
-    if (!parent || presenceDockMode !== "center") return;
-
-    const parentRect = parent.getBoundingClientRect();
-    const seam2 = parentRect.top + (parentRect.height * 2) / 3;
-
-    // Ask title: center on the 1/3 seam.
-    // Continue: slightly above the midpoint between title (1/3) and input (2/3).
-    const empty = presenceEmptyEl;
-    const ask = presenceAskEl;
-    const cont = presenceContinueEl;
-    if (empty && ask) {
-      empty.style.left = "50%";
-      empty.style.transform = "translateX(-50%)";
-      const askHeight = ask.offsetHeight;
-      const emptyTop = parentRect.height / 3 - askHeight / 2;
-      empty.style.top = `${Math.max(0, emptyTop)}px`;
-
-      if (cont) {
-        const titleCenterY = parentRect.height / 3;
-        const inputCenterY = (parentRect.height * 2) / 3;
-        const midY = (titleCenterY + inputCenterY) / 2;
-        const continueCenterY = midY - parentRect.height * 0.08;
-        const contHeight = cont.offsetHeight || 18;
-        const margin = continueCenterY - emptyTop - askHeight - contHeight / 2;
-        cont.style.marginTop = `${Math.max(10, margin)}px`;
-      }
-    }
-
-    // Composer dock: bottom-anchored, translate so its center hits the 2/3 seam.
-    if (dock) {
-      dock.style.transition = "none";
-      dock.style.transform = "translate3d(0, 0, 0)";
-      void dock.offsetHeight;
-
-      const dockRect = dock.getBoundingClientRect();
-      const dockCenter = dockRect.top + dockRect.height / 2;
-      const offset = seam2 - dockCenter;
-      presenceCenterOffset = offset;
-      dock.style.transform = `translate3d(0, ${offset}px, 0)`;
-    }
-    presenceCenterPlaced = true;
-  }
-
-  $effect(() => {
-    if (presenceDockMode !== "center" || presenceDockLocked) return;
-    void presenceDockEl;
-    void presenceEmptyEl;
-    void presenceAskEl;
-    void presenceContinueEl;
-    void placePresenceSeams();
-  });
-
-  $effect(() => {
-    if (presenceDockMode !== "center" || presenceDockLocked) return;
-    const parent = presenceDockEl?.parentElement ?? presenceEmptyEl?.parentElement;
-    if (!parent || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => {
-      void placePresenceSeams();
-    });
-    ro.observe(parent);
-    if (presenceDockEl) ro.observe(presenceDockEl);
-    return () => ro.disconnect();
-  });
-
-  function prefersReducedMotion(): boolean {
-    return (
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true
-    );
-  }
-
-  /**
-   * Slime-drop: one continuous WAAPI deform (stretch in flight → soft splat → settle).
-   * Ask fades in parallel — no staged shrink/move/expand.
-   */
-  async function runPresenceDockBlurp() {
-    presenceDockLocked = true;
-    const token = ++presenceBlurpToken;
-    const el = presenceDockEl;
-    const y = presenceCenterOffset;
-
-    if (!el || prefersReducedMotion()) {
-      presenceDockMode = "docked";
-      presenceCenterOffset = 0;
-      presenceCenterPlaced = false;
-      clearPresenceDockInlineStyles();
-      return;
-    }
-
-    el.getAnimations().forEach((animation) => animation.cancel());
-    presenceDockMode = "docking";
-    el.style.transition = "none";
-    el.style.transformOrigin = "50% 50%";
-    el.style.willChange = "transform";
-    el.style.backfaceVisibility = "hidden";
-    el.style.transform = `translate3d(0, ${y}px, 0) scale3d(1, 1, 1)`;
-
-    /**
-     * Dense samples of one continuous hourglass curve (not hand-keyed corners).
-     * Same duration — smoother because each step is tiny + C1-ish easing.
-     */
-    const smootherstep = (t: number) =>
-      t * t * t * (t * (t * 6 - 15) + 10);
-    const mix = (a: number, b: number, t: number) => a + (b - a) * t;
-
-    const STEPS = 20;
-    const NECK = 0.5;
-    const FALL_START = 0.16; // pinch first, then fall
-    const NECK_AT = 0.58; // narrowest just past mid-drop
-
-    const keyframes: Keyframe[] = [];
-    for (let i = 0; i <= STEPS; i += 1) {
-      const t = i / STEPS;
-
-      // Y: hold, then smooth fall (no per-segment easing kinks)
-      const fallT =
-        t <= FALL_START ? 0 : smootherstep((t - FALL_START) / (1 - FALL_START));
-      const yPos = y * (1 - fallT);
-
-      // Width: hourglass — shrink to neck, then bloom
-      let scaleX: number;
-      if (t <= NECK_AT) {
-        scaleX = mix(1, NECK, smootherstep(t / NECK_AT));
-      } else {
-        scaleX = mix(NECK, 1, smootherstep((t - NECK_AT) / (1 - NECK_AT)));
-      }
-
-      // Height: slight stretch in the neck, ease back — keeps mass feeling continuous
-      const pinch = 1 - scaleX; // 0 at bulbs, max at neck
-      const scaleY = 1 + pinch * 0.35;
-
-      keyframes.push({
-        transform: `translate3d(0, ${yPos}px, 0) scale3d(${scaleX}, ${scaleY}, 1)`,
-        offset: t,
-      });
-    }
-
-    const drop = el.animate(keyframes, {
-      duration: 1080,
-      easing: "linear",
-      fill: "forwards",
-    });
-
-    try {
-      await drop.finished;
-    } catch {
-      /* aborted */
-    }
-    if (token !== presenceBlurpToken) return;
-
-    // Hold the final identity frame, then clear — avoids a cancel() snap.
-    el.style.transform = "translate3d(0, 0, 0) scale3d(1, 1, 1)";
-    drop.cancel();
-    await tick();
-    if (token !== presenceBlurpToken) return;
-
-    el.style.transition = "";
-    el.style.transform = "";
-    el.style.transformOrigin = "";
-    el.style.willChange = "";
-    el.style.backfaceVisibility = "";
-    presenceCenterOffset = 0;
-    presenceDockMode = "docked";
-  }
-
   function parseDaemonAskPrompt(value: string): string | null {
     const slash = parseChatSlashInput(value);
     if (slash?.kind === "ask") return slash.prompt;
@@ -750,216 +502,25 @@
     mode: "interactive" | "background",
     codeProjectSetupAuthorized = false,
   ) {
-    const runtime = getSessionAgentRuntime(chat.sessionId);
-    if (runtime !== "medousa" && mode === "interactive" && !codeProjectSetupAuthorized) {
-      const prepared = await synchronizeAgentSession(chat.sessionId, runtime, {
-        openChooserWhenMissing: true,
-      });
-      if (!prepared) throw new Error("Choose a project before starting a coding agent.");
-      const { agentSessionId, streamUrl, streamReady, acceptedAt } = prepared;
-
-      const ticket: TurnTicketResponse = {
-        turn_id: agentSessionId,
-        session_id: chat.sessionId,
-        mode: "interactive",
-        phase: "accepted" as TurnTicketResponse["phase"],
-        accepted_at_utc: acceptedAt,
-        stream_url: streamUrl || agentSessionStreamUrl(agentSessionId),
-        stream_ready: streamReady,
-      };
-      chat.beginTurn(
-        userContent,
-        ticket,
-        [],
-        userProfiles.activeProfileId,
-      );
-      chat.clearPendingMedia();
-      scrollToLatest(true);
-      await chat.startTurnStream(
-        ticket.turn_id,
-        ticket.session_id,
-        ticket.stream_url,
-      );
-      try {
-        await promptAgentSession(agentSessionId, prompt, activeCodeContext(chat.sessionId));
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (/unknown agent session|not found|404/i.test(message)) {
-          clearSessionAgentSessionId(chat.sessionId);
-          setSessionAgentConfigOptions(chat.sessionId, []);
-          agentConfigOptions = [];
-        }
-        throw err;
-      }
-      return;
-    }
-
-    const opts = buildInteractiveTurnOptions();
-    const mediaRefs = [...chat.pendingMediaRefs];
-    const voice = voicePresets.turnVoiceFields();
-    const codeContext = activeCodeContext(chat.sessionId);
-    const accepted = await createTurnTicket({
-      sessionId: chat.sessionId,
+    await submitChatTurn({
+      userContent,
       prompt,
       mode,
-      codeContext,
       codeProjectSetupAuthorized,
-      provider: opts.provider,
-      model: opts.model,
-        responseDepthMode: opts.responseDepthMode,
-        reasoningEffort: opts.reasoningEffort,
-      stageRouting: opts.stageRouting,
-      channelSurface: opts.channelSurface,
-      mediaRefs,
-      voicePresetId: voice.voicePresetId,
-      voiceAppendix: voice.voiceAppendix,
-      identityUserId: opts.identityUserId,
-    });
-    chat.beginTurn(
-      userContent,
-      accepted,
-      mediaRefs,
-      opts.identityUserId ?? userProfiles.activeProfileId,
-    );
-    chat.clearPendingMedia();
-    scrollToLatest(true);
-    await chat.startTurnStream(
-      accepted.turn_id,
-      accepted.session_id,
-      accepted.stream_url,
-    );
-  }
-
-  let sessionRuntime = $state<ChatAgentRuntime>(
-    getSessionAgentRuntime(chat.sessionId),
-  );
-  let agentConfigOptions = $state<AgentSessionConfigOption[]>(
-    getSessionAgentConfigOptions(chat.sessionId) as AgentSessionConfigOption[],
-  );
-  let agentLifecyclePending = $state(0);
-  const preparingAgent = $derived(agentLifecyclePending > 0);
-  let agentLifecycleQueue: Promise<void> = Promise.resolve();
-
-  type PreparedAgentSession = {
-    agentSessionId: string;
-    streamUrl: string;
-    streamReady: boolean;
-    acceptedAt: string;
-  };
-
-  function queueAgentLifecycle<T>(operation: () => Promise<T>): Promise<T> {
-    agentLifecyclePending += 1;
-    const queued = agentLifecycleQueue.catch(() => undefined).then(operation);
-    agentLifecycleQueue = queued.then(
-      () => undefined,
-      () => undefined,
-    );
-    return queued.finally(() => {
-      agentLifecyclePending = Math.max(0, agentLifecyclePending - 1);
-    });
-  }
-
-  async function cancelKnownAgent(sessionId: string, agentSessionId: string) {
-    try {
-      await cancelAgentSession(agentSessionId);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (!/unknown agent session|not found|404/i.test(message)) throw err;
-    }
-    clearSessionAgentSessionId(sessionId);
-    setSessionAgentConfigOptions(sessionId, []);
-    if (chat.sessionId === sessionId) agentConfigOptions = [];
-  }
-
-  function synchronizeAgentSession(
-    sessionId: string,
-    runtimeChoice: Exclude<ChatAgentRuntime, "medousa">,
-    options?: { openChooserWhenMissing?: boolean; stopWhenUnbound?: boolean },
-  ): Promise<PreparedAgentSession | null> {
-    return queueAgentLifecycle(async () => {
-      const [binding, mode] = await Promise.all([
-        getSessionCodeBinding(sessionId),
-        getSessionAgentMode(sessionId),
-      ]);
-      if (getSessionAgentRuntime(sessionId) !== runtimeChoice) return null;
-
-      const bindingWorkId = binding.work_id?.trim() || null;
-      const currentAgentId = getSessionAgentSessionId(sessionId);
-      const action =
-        options?.stopWhenUnbound && !bindingWorkId
-          ? currentAgentId
-            ? "stop"
-            : "keep"
-          : planAgentWorkspace({
-              runtime: runtimeChoice,
-              mode: mode.effective_mode,
-              bindingWorkId,
-              agentSessionId: currentAgentId,
-              agentWorkId: getSessionAgentWorkId(sessionId),
-            });
-
-      if ((action === "stop" || action === "restart") && currentAgentId) {
-        await cancelKnownAgent(sessionId, currentAgentId);
-      }
-      if (action === "stop" || action === "wait_for_project") {
-        if (options?.openChooserWhenMissing && chat.sessionId === sessionId) {
-          window.dispatchEvent(new CustomEvent("medousa-open-code-project-chooser"));
-        }
-        return null;
-      }
-
-      const retainedAgentId = getSessionAgentSessionId(sessionId);
-      if (action === "keep" && retainedAgentId) {
-        return {
-          agentSessionId: retainedAgentId,
-          streamUrl: agentSessionStreamUrl(retainedAgentId),
-          streamReady: true,
-          acceptedAt: new Date().toISOString(),
-        };
-      }
-
-      const accepted = await createAgentSession({
-        session_id: sessionId,
-        runtime: runtimeChoice,
-        // The daemon resolves this work id to the governed worktree and
-        // overrides any client cwd. Plain general chat deliberately uses null.
-        work_id: bindingWorkId,
-      });
-      const latestBinding = await getSessionCodeBinding(sessionId);
-      const latestWorkId = latestBinding.work_id?.trim() || null;
-      if (
-        getSessionAgentRuntime(sessionId) !== runtimeChoice ||
-        latestWorkId !== bindingWorkId
-      ) {
-        await cancelAgentSession(accepted.agent_session_id).catch(() => undefined);
-        return null;
-      }
-
-      setSessionAgentSessionId(sessionId, accepted.agent_session_id);
-      setSessionAgentWorkId(sessionId, bindingWorkId);
-      const configOptions = accepted.config_options ?? [];
-      setSessionAgentConfigOptions(sessionId, configOptions);
-      if (chat.sessionId === sessionId) agentConfigOptions = configOptions;
-      return {
-        agentSessionId: accepted.agent_session_id,
-        streamUrl: accepted.stream_url,
-        streamReady: accepted.stream_ready,
-        acceptedAt: accepted.accepted_at_utc ?? new Date().toISOString(),
-      };
+      synchronizeAgentSession: agentSession.synchronizeAgentSession,
+      onAgentSessionLost: () => {
+        agentSession.agentConfigOptions = [];
+      },
+      scrollToLatest: () => scrollToLatest(true),
     });
   }
 
   $effect(() => {
-    const sessionId = chat.sessionId;
-    const runtimeChoice = getSessionAgentRuntime(sessionId);
-    sessionRuntime = runtimeChoice;
-    agentConfigOptions = getSessionAgentConfigOptions(
-      sessionId,
-    ) as AgentSessionConfigOption[];
+    const { sessionId, runtimeChoice } = agentSession.syncFromFocusedSession();
     if (runtimeChoice !== "medousa") {
       // The lifecycle queue updates its busy counter synchronously. Keep that
       // counter outside this bootstrap effect's dependency graph.
-      void untrack(() => synchronizeAgentSession(sessionId, runtimeChoice)).catch(
+      void untrack(() => agentSession.synchronizeAgentSession(sessionId, runtimeChoice)).catch(
         () => {
           // First send retries and surfaces connection/provider errors.
         },
@@ -967,80 +528,17 @@
     }
   });
 
-  function onRuntimeChange(value: ChatAgentRuntime) {
-    const sessionId = chat.sessionId;
-    const previousRuntime = getSessionAgentRuntime(sessionId);
-    const previousId = getSessionAgentSessionId(sessionId);
-    const previousWorkId = getSessionAgentWorkId(sessionId);
-    const previousConfigOptions = getSessionAgentConfigOptions(sessionId);
-    sessionRuntime = value;
-    setSessionAgentRuntime(sessionId, value);
-    agentConfigOptions = [];
-    void (async () => {
-      if (previousId) {
-        try {
-          await queueAgentLifecycle(() => cancelKnownAgent(sessionId, previousId));
-        } catch (err) {
-          // A failed provider cancellation must not strand an unreachable ACP
-          // process. Restore the prior local handle so Stop/retry still works.
-          if (getSessionAgentRuntime(sessionId) === value) {
-            setSessionAgentRuntime(sessionId, previousRuntime);
-            setSessionAgentSessionId(sessionId, previousId);
-            if (previousWorkId !== undefined) {
-              setSessionAgentWorkId(sessionId, previousWorkId);
-            }
-            setSessionAgentConfigOptions(sessionId, previousConfigOptions);
-            if (chat.sessionId === sessionId) {
-              sessionRuntime = previousRuntime;
-              agentConfigOptions = previousConfigOptions as AgentSessionConfigOption[];
-              chat.setError(err instanceof Error ? err.message : String(err));
-            }
-          }
-          return;
-        }
-      }
-      if (value !== "medousa") {
-        await synchronizeAgentSession(sessionId, value, { openChooserWhenMissing: true }).catch(
-          () => {
-            // Sending the first message retries and surfaces provider errors.
-          },
-        );
-      }
-    })();
-  }
-
   $effect(() => {
-    const onBindingChanged = (
-      event: Event & { detail?: { sessionId?: string; workId?: string | null } },
-    ) => {
-      const sessionId = event.detail?.sessionId?.trim();
-      if (!sessionId || sessionId !== chat.sessionId) return;
-      const runtimeChoice = getSessionAgentRuntime(sessionId);
-      if (runtimeChoice === "medousa") return;
-      void synchronizeAgentSession(sessionId, runtimeChoice, {
-        stopWhenUnbound: !event.detail?.workId,
-      }).catch((err) => {
-        chat.setError(err instanceof Error ? err.message : String(err));
-      });
-    };
     window.addEventListener(
       "medousa-code-project-binding-changed",
-      onBindingChanged as EventListener,
+      agentSession.onCodeProjectBindingChanged as EventListener,
     );
     return () =>
       window.removeEventListener(
         "medousa-code-project-binding-changed",
-        onBindingChanged as EventListener,
+        agentSession.onCodeProjectBindingChanged as EventListener,
       );
   });
-
-  async function updateAgentConfig(configId: string, value: unknown) {
-    const agentSessionId = getSessionAgentSessionId(chat.sessionId);
-    if (!agentSessionId) return;
-    const response = await setAgentSessionConfigOption(agentSessionId, configId, value);
-    agentConfigOptions = response.config_options;
-    setSessionAgentConfigOptions(chat.sessionId, agentConfigOptions);
-  }
 
   type FailedSend = {
     display: string;
@@ -1112,9 +610,7 @@
         return;
       }
 
-      if (presenceComposerCentered && presenceDockMode === "center") {
-        void runPresenceDockBlurp();
-      }
+      if (presenceComposerCentered) void runPresenceDockBlurp();
 
       if (askPrompt) {
         await workspace.submitAsk({
@@ -1188,108 +684,6 @@
       void submit(event);
     }
   }
-
-  function measureChatNavigation() {
-    chatNavigationFrame = 0;
-    if (!scrollEl) {
-      activeChatTurnId = null;
-      pinLatestUserTurn = false;
-      return;
-    }
-
-    const rootRect = scrollEl.getBoundingClientRect();
-    const turns = [
-      ...scrollEl.querySelectorAll<HTMLElement>("[data-chat-turn-user-id]"),
-    ];
-    if (turns.length === 0) {
-      activeChatTurnId = null;
-      pinLatestUserTurn = false;
-      return;
-    }
-
-    const threshold = rootRect.top + 64;
-    let activeId = turns[0]?.dataset.chatTurnUserId ?? null;
-    for (const turn of turns) {
-      if (turn.getBoundingClientRect().top <= threshold) {
-        activeId = turn.dataset.chatTurnUserId ?? activeId;
-      } else {
-        break;
-      }
-    }
-    activeChatTurnId = activeId;
-
-    const latestId = latestUserTurn?.id;
-    const latestTurn = latestId
-      ? turns.find((turn) => turn.dataset.chatTurnUserId === latestId)
-      : undefined;
-    if (!latestTurn) {
-      pinLatestUserTurn = false;
-      return;
-    }
-    const latestRect = latestTurn.getBoundingClientRect();
-    const responseIsLong = latestRect.height >= Math.max(280, scrollEl.clientHeight * 0.8);
-    const promptHasLeftTop = latestRect.top < rootRect.top + 8;
-    const responseStillVisible = latestRect.bottom > rootRect.top + 96;
-    pinLatestUserTurn = responseIsLong && promptHasLeftTop && responseStillVisible;
-  }
-
-  function scheduleChatNavigationMeasure() {
-    if (chatNavigationFrame) return;
-    chatNavigationFrame = requestAnimationFrame(measureChatNavigation);
-  }
-
-  function onScroll() {
-    if (!scrollEl) return;
-    const distanceFromBottom =
-      scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
-    atBottom = distanceFromBottom <= scrollPinThresholdPx;
-    chatScrolling = true;
-    if (chatScrollEndTimer) clearTimeout(chatScrollEndTimer);
-    chatScrollEndTimer = setTimeout(() => {
-      chatScrolling = false;
-      chatScrollEndTimer = undefined;
-    }, 160);
-    scheduleChatNavigationMeasure();
-  }
-
-  function scrollToLatest(force = false, behavior: ScrollBehavior = "auto") {
-    if (!scrollEl) return;
-    if (!force && !atBottom) return;
-    requestAnimationFrame(() => {
-      if (!scrollEl) return;
-      if (!force && !atBottom) return;
-      scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior });
-      atBottom = true;
-    });
-  }
-
-  function scrollToBottomFromFab() {
-    if (mobile) haptic("light");
-    scrollToLatest(true, "smooth");
-  }
-
-  function scrollToCurrentTurn() {
-    const id = latestUserTurn?.id;
-    if (id) scrollToChatTurn(id);
-  }
-
-  function scrollToChatTurn(id: string) {
-    if (!scrollEl) return;
-    const target = [...scrollEl.querySelectorAll<HTMLElement>("[data-chat-turn-user-id]")]
-      .find((element) => element.dataset.chatTurnUserId === id);
-    if (!target) return;
-    const rootRect = scrollEl.getBoundingClientRect();
-    const targetRect = target.getBoundingClientRect();
-    scrollEl.scrollTo({
-      top: Math.max(0, scrollEl.scrollTop + targetRect.top - rootRect.top - 12),
-      behavior: "smooth",
-    });
-  }
-
-  onDestroy(() => {
-    if (chatNavigationFrame) cancelAnimationFrame(chatNavigationFrame);
-    if (chatScrollEndTimer) clearTimeout(chatScrollEndTimer);
-  });
 
   async function resumeSession(sessionId: string) {
     await chat.switchSession(sessionId);
@@ -1490,34 +884,34 @@
     </div>
   {/if}
 
-  <div class="chat-panel-main">
-    {#if showCurrentTurnAnchor}
-      <button
-        type="button"
-        class="chat-current-turn-anchor"
-        aria-label="Show your latest message"
-        onclick={scrollToCurrentTurn}
-      >
-        <span class="chat-current-turn-anchor-label">You</span>
-        <span class="chat-current-turn-anchor-preview">{latestUserPreview}</span>
-      </button>
-    {/if}
-  <div
-    class="{embedded && !useMobileChatLayout
-      ? 'vault-workshop-chat-body'
+  <div class="relative flex min-h-0 flex-1 flex-col">
+  <ChatScrollChrome
+    {mobile}
+    pinThresholdPx={scrollPinThresholdPx}
+    showFab={showScrollFab && visible}
+    showTurnRail={showChatTurnRail}
+    {showCurrentTurnAnchor}
+    {latestUserPreview}
+    latestUserTurnId={latestUserTurn?.id ?? null}
+    {chatTurnItems}
+    bind:activeChatTurnId
+    bind:chatScrolling
+    bind:scrollEl
+    bind:scrollToLatest
+    bind:scheduleChatNavigationMeasure
+    bind:resetForSession={resetScrollSession}
+    onAtBottomChange={(value) => (atBottom = value)}
+    bodyClass={embedded && !useMobileChatLayout
+      ? "vault-workshop-chat-body"
       : useMobileChatLayout
-        ? 'mobile-chat-body'
-        : 'chat-body'}"
+        ? "mobile-chat-body"
+        : "chat-body"}
+    scrollClass="{embedded && !useMobileChatLayout
+      ? 'vault-workshop-chat-scroll space-y-3'
+      : useMobileChatLayout
+        ? 'mobile-chat-scroll space-y-3'
+        : 'chat-scroll space-y-4'} {showPresenceEmpty ? 'chat-scroll--presence' : ''}"
   >
-    <div
-      bind:this={scrollEl}
-      onscroll={onScroll}
-      class="{embedded && !useMobileChatLayout
-        ? 'vault-workshop-chat-scroll space-y-3'
-        : useMobileChatLayout
-          ? 'mobile-chat-scroll space-y-3'
-          : 'chat-scroll space-y-4'} {showPresenceEmpty ? 'chat-scroll--presence' : ''}"
-    >
       <ChatAsyncToolsHint {mobile} />
       {#if askThreads.length > 0 && !embedded && mobile}
         <button
@@ -1618,83 +1012,43 @@
           onReviewChanged={() => undertakings.select(chatCodeProject.workId)}
         />
       {/if}
-    </div>
-    {#if !useMobileChatLayout && !presenceComposerCentered}
-      <div class="chat-scroll-fade" aria-hidden="true"></div>
-    {/if}
-    {#if showChatTurnRail}
-      <MarkdownHeadingOutline
-        items={chatTurnItems}
-        activeId={activeChatTurnId}
-        scrolling={chatScrolling}
-        mode="rail"
-        label="Conversation turns"
-        onSelect={scrollToChatTurn}
-      />
-    {/if}
-  </div>
+    </ChatScrollChrome>
 
-  {#if showPresenceEmpty && (presenceDockMode === "center" || presenceDockMode === "docking")}
-    <div
-      bind:this={presenceEmptyEl}
-      class="chat-presence-empty {presenceDockMode === 'docking'
-        ? 'chat-presence-empty--exiting'
-        : ''} {presenceCenterPlaced || presenceDockMode === 'docking'
-        ? 'chat-presence-empty--placed'
-        : ''}"
-    >
-      <p bind:this={presenceAskEl} class="chat-presence-ask">{presenceAsk}</p>
-      {#if continueSession}
+  <ChatPresenceDock
+    bind:composerCentered={presenceComposerCentered}
+    bind:runBlurp={runPresenceDockBlurp}
+    showEmpty={showPresenceEmpty}
+    {showInlineComposer}
+    {presenceAsk}
+    showContinue={Boolean(continueSession)}
+    onContinue={continueWhereLeftOff}
+  >
+    {#if !embedded && !presenceComposerCentered}
+      <BudgetApprovalBar
+        onOpenWork={() => {
+          workspace.workView = "hub";
+          const pending = chat.budgetAlert ?? chat.pendingBudgetApprovals[0];
+          if (pending) void workspace.selectCard(pending.workCardId);
+        }}
+      />
+      <ModeProposalBar
+        sessionId={panelSessionId}
+      />
+      <AgentPermissionBar />
+      {#if activeSubagentCount > 0}
         <button
-          bind:this={presenceContinueEl}
           type="button"
-          class="chat-presence-continue"
-          onclick={() => void continueWhereLeftOff()}
+          class="chat-subagent-pill"
+          onclick={() => {
+            const running = subagentRows.find((row) => row.streaming);
+            if (running) openWorkerTranscript(running.workId);
+          }}
         >
-          Continue where we left off
+          <span class="chat-subagent-pill-dot" aria-hidden="true"></span>
+          {activeSubagentCount} subagent{activeSubagentCount === 1 ? "" : "s"} working
         </button>
       {/if}
-    </div>
-  {/if}
-
-  {#if showInlineComposer}
-  <div
-    bind:this={presenceDockEl}
-    class="chat-presence-dock chat-presence-dock--{presenceDockMode}"
-    class:chat-presence-dock--placed={presenceCenterPlaced ||
-      presenceDockMode === "docking" ||
-      presenceDockMode === "docked"}
-  >
-    {#if !embedded}
-      {#if presenceDockMode === "docked"}
-        <BudgetApprovalBar
-          onOpenWork={() => {
-            workspace.workView = "hub";
-            const pending = chat.budgetAlert ?? chat.pendingBudgetApprovals[0];
-            if (pending) void workspace.selectCard(pending.workCardId);
-          }}
-        />
-        <ModeProposalBar
-          sessionId={panelSessionId}
-        />
-        <AgentPermissionBar />
-        {#if activeSubagentCount > 0}
-          <button
-            type="button"
-            class="chat-subagent-pill"
-            onclick={() => {
-              const running = subagentRows.find((row) => row.streaming);
-              if (running) openWorkerTranscript(running.workId);
-            }}
-          >
-            <span class="chat-subagent-pill-dot" aria-hidden="true"></span>
-            {activeSubagentCount} subagent{activeSubagentCount === 1 ? "" : "s"} working
-          </button>
-        {/if}
-      {/if}
-      {#if presenceDockMode === "docked"}
-        <AgentBrowserPanel />
-      {/if}
+      <AgentBrowserPanel />
     {/if}
     <form
       bind:this={composerFormEl}
@@ -1704,7 +1058,7 @@
           : workshopSticky
             ? 'vault-workshop-chat-composer vault-workshop-chat-composer--sticky'
             : 'vault-workshop-chat-composer'
-        : 'chat-composer'} {presenceComposerCentered ? 'chat-composer--presence-center' : ''}"
+        : 'chat-composer'}"
       onsubmit={submit}
     >
       {#if chat.scriptWorkbenchContext}
@@ -1733,11 +1087,11 @@
         disabled={connection.offline}
         composerBlocked={chat.composerBlocked}
         modelPickerEnabled
-        agentRuntime={sessionRuntime}
-        {agentConfigOptions}
-        agentRuntimePending={preparingAgent}
-        onAgentRuntimeChange={onRuntimeChange}
-        onAgentConfigChange={updateAgentConfig}
+        agentRuntime={agentSession.sessionRuntime}
+        agentConfigOptions={agentSession.agentConfigOptions}
+        agentRuntimePending={agentSession.preparingAgent}
+        onAgentRuntimeChange={agentSession.onRuntimeChange}
+        onAgentConfigChange={agentSession.updateAgentConfig}
         bind:element={composerTextareaEl}
         onkeydown={handleKeydown}
         onCursorChange={(cursor) => (draftCursor = cursor)}
@@ -1746,18 +1100,18 @@
         <div class="chat-runtime-under">
           <ChatAgentModePicker
             sessionId={panelSessionId}
-            disabled={connection.offline || chat.composerBlocked || preparingAgent}
+            disabled={connection.offline || chat.composerBlocked || agentSession.preparingAgent}
           />
           <ComposerTurnControls
             disabled={connection.offline || chat.composerBlocked}
-            showNativeControls={sessionRuntime === "medousa"}
+            showNativeControls={agentSession.sessionRuntime === "medousa"}
           />
-          {#if sessionRuntime !== "medousa"}
+          {#if agentSession.sessionRuntime !== "medousa"}
             <AgentSessionControls
-              options={agentConfigOptions}
+              options={agentSession.agentConfigOptions}
               includeModel={false}
-              disabled={connection.offline || chat.composerBlocked || preparingAgent}
-              onChange={updateAgentConfig}
+              disabled={connection.offline || chat.composerBlocked || agentSession.preparingAgent}
+              onChange={agentSession.updateAgentConfig}
             />
           {/if}
         </div>
@@ -1772,8 +1126,7 @@
         onHighlight={(index) => (slashHighlight = index)}
       />
     </form>
-  </div>
-  {/if}
+  </ChatPresenceDock>
   </div>
 
   {#if visible && connection.offline}
@@ -1791,83 +1144,9 @@
     workId={workerTranscriptWorkId}
     onClose={closeWorkerTranscript}
   />
-
-  {#if showScrollFab && visible}
-    <button
-      type="button"
-      class="chat-scroll-fab"
-      aria-label="Scroll to latest message"
-      onclick={scrollToBottomFromFab}
-    >
-      <ArrowDown size={22} strokeWidth={2} />
-    </button>
-  {/if}
 </section>
 
 <style>
-  .chat-panel-main {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    flex: 1;
-  }
-
-  .chat-current-turn-anchor {
-    position: absolute;
-    top: 0.5rem;
-    right: 2.4rem;
-    z-index: 4;
-    display: flex;
-    min-width: 0;
-    width: min(32rem, calc(100% - 4.8rem));
-    align-items: center;
-    gap: 0.55rem;
-    padding: 0.5rem 0.7rem;
-    border: 1px solid rgb(var(--color-surface-400) / 0.18);
-    border-radius: 0.75rem;
-    background: rgb(var(--color-surface-900) / 0.94);
-    color: rgb(var(--color-surface-200));
-    text-align: left;
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.3);
-    backdrop-filter: blur(12px);
-    cursor: pointer;
-  }
-
-  .chat-current-turn-anchor:hover,
-  .chat-current-turn-anchor:focus-visible {
-    border-color: rgb(var(--color-surface-300) / 0.32);
-    background: rgb(var(--color-surface-800) / 0.95);
-    outline: none;
-  }
-
-  .chat-current-turn-anchor-label {
-    flex-shrink: 0;
-    color: rgb(var(--theme-text-secondary));
-    font-size: 0.68rem;
-    font-weight: 650;
-    white-space: nowrap;
-  }
-
-  .chat-current-turn-anchor-preview {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    font-size: 0.75rem;
-    line-height: 1.35;
-  }
-
-  @media (max-width: 640px) {
-    .chat-current-turn-anchor {
-      right: 0.75rem;
-      width: calc(100% - 1.5rem);
-    }
-  }
-
   .chat-stream-error-action {
     flex-shrink: 0;
     border: 0;
@@ -1881,44 +1160,6 @@
 
   .chat-stream-error-action:hover {
     color: rgb(var(--color-surface-100));
-  }
-
-  /*
-   * Center + docking stay bottom-anchored; visual center is translateY only.
-   * That avoids FLIP layout thrash (the jump-up / jump-down you saw).
-   */
-  .chat-presence-dock--center,
-  .chat-presence-dock--docking {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 6;
-    display: flex;
-    width: 100%;
-    flex-direction: column;
-    align-items: stretch;
-    /* Same geometry as docked — only translateY moves. No width/padding handoff jump. */
-    padding: 0;
-  }
-
-  .chat-presence-dock--center:not(.chat-presence-dock--placed) {
-    visibility: hidden;
-  }
-
-  .chat-presence-dock--docked {
-    position: relative;
-    z-index: 10;
-    display: flex;
-    width: 100%;
-    flex-shrink: 0;
-    flex-direction: column;
-    align-items: stretch;
-    padding: 0;
-  }
-
-  .chat-composer--presence-center {
-    width: 100%;
   }
 
   /* Ambient count only — the beats in-thread carry the detail. */
@@ -1955,63 +1196,5 @@
     50% {
       opacity: 1;
     }
-  }
-
-  .chat-presence-empty {
-    position: absolute;
-    left: 50%;
-    top: 0;
-    /* Below the centered composer dock (6) so the model panel can rise over it. */
-    z-index: 5;
-    display: flex;
-    width: max-content;
-    max-width: calc(100% - 2rem);
-    flex-direction: column;
-    align-items: center;
-    gap: 0;
-    text-align: center;
-    transform: translateX(-50%);
-    pointer-events: auto;
-  }
-
-  .chat-presence-empty:not(.chat-presence-empty--placed):not(.chat-presence-empty--exiting) {
-    visibility: hidden;
-  }
-
-  .chat-presence-ask {
-    margin: 0;
-    flex-shrink: 0;
-    font-size: clamp(1.4rem, 2.6vw, 1.75rem);
-    font-weight: 600;
-    line-height: 1.3;
-    letter-spacing: -0.02em;
-    white-space: nowrap;
-    color: rgb(var(--color-surface-50));
-  }
-
-  .chat-presence-continue {
-    border: 0;
-    background: transparent;
-    font-size: 0.8125rem;
-    color: rgb(var(--theme-text-tertiary));
-    text-decoration: underline;
-    text-decoration-color: rgb(var(--color-surface-500) / 0.5);
-    text-underline-offset: 0.18em;
-    cursor: pointer;
-    transition:
-      color 150ms ease,
-      text-decoration-color 150ms ease;
-  }
-
-  .chat-presence-continue:hover {
-    color: rgb(var(--color-surface-200));
-    text-decoration-color: rgb(var(--color-surface-400) / 0.7);
-  }
-
-  .chat-presence-empty--exiting {
-    opacity: 0;
-    transition:
-      opacity 420ms cubic-bezier(0.22, 1, 0.36, 1);
-    pointer-events: none;
   }
 </style>

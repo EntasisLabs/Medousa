@@ -1,8 +1,8 @@
 /** Save / bookmark flows for the human browser. */
 
 import { browserBookmarks } from "$lib/stores/browserBookmarks.svelte";
-import { layout } from "$lib/stores/layout.svelte";
-import { toast } from "$lib/stores/toast.svelte";
+import { layout } from "$lib/runtime/layout.svelte";
+import { toast } from "$lib/runtime/toast.svelte";
 import { vault } from "$lib/stores/vault.svelte";
 import { browserPageLabel } from "$lib/utils/browserUrl";
 import {

@@ -8,7 +8,7 @@ import type {
   HumanBrowserNavStatePayload,
 } from "$lib/humanBrowser";
 import type { HumanBrowserStore } from "$lib/stores/humanBrowser.svelte";
-import type { HumanBrowserSurface } from "$lib/stores/humanBrowserSurface";
+import type { HumanBrowserSurface } from "$lib/browser/humanBrowserSurface";
 import {
   isBrowserHotkeyAction,
   runBrowserHotkeyAction,

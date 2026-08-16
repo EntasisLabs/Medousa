@@ -1,0 +1,255 @@
+/**
+ * Library/modules explorer chrome.
+ * Loaded by the destination feature entry; not imported from app.postcss.
+ */
+
+@layer features {
+
+
+  /* Side-rail action rows (h-8 matches workshop status bar height). */
+  .lme-side-rail-dock {
+    @apply relative flex h-8 shrink-0 items-center gap-0.5 overflow-visible border-b border-surface-500/25 px-2;
+  }
+
+  /* Keep secondary chrome in a single row (avoids stacked buttons overflowing the bar). */
+  .lme-side-rail-dock .lme-dock-chrome-secondary {
+    @apply flex shrink-0 items-center gap-0.5;
+  }
+
+  /* Compact chrome when the dock is temporarily hosted in a rail popover toolbar. */
+  .lme-side-rail-dock--status {
+    @apply flex h-full w-full min-w-0 items-center gap-0.5 border-t-0 bg-transparent px-0.5;
+  }
+
+  .lme-dock-search-expand {
+    @apply relative flex min-w-0 items-center gap-1.5 pl-0.5;
+    animation: lme-dock-search-in 160ms ease-out;
+  }
+
+  .lme-dock-search-glyph {
+    @apply pointer-events-none absolute left-2 text-content-quiet;
+  }
+
+  .lme-dock-search-input {
+    @apply h-7 w-full rounded-md border border-surface-500/40 bg-surface-800/70 py-0.5 pl-7 pr-2 text-xs text-surface-100 outline-none transition placeholder:text-content-quiet focus:border-primary-500/40 focus:bg-surface-800;
+  }
+
+  @keyframes lme-dock-search-in {
+    from {
+      opacity: 0.55;
+      transform: translateX(0.35rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .lme-scripts-popover {
+    @apply flex flex-col overflow-hidden rounded-xl;
+    border: 1px solid rgb(var(--color-surface-600) / 0.32);
+    background: rgb(var(--color-surface-900) / 0.98);
+    box-shadow:
+      0 14px 36px rgb(0 0 0 / 0.36),
+      0 0 0 1px rgb(0 0 0 / 0.12);
+    backdrop-filter: blur(16px);
+    animation: lme-scripts-popover-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes lme-scripts-popover-in {
+    from {
+      opacity: 0;
+      transform: translateY(0.35rem) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .lme-scripts-popover-head {
+    @apply flex items-start justify-between gap-2 border-b border-surface-700/35 px-3 py-2.5;
+  }
+
+  .lme-scripts-popover-title {
+    @apply text-[11px] font-semibold tracking-[-0.01em] text-surface-100;
+  }
+
+  .lme-scripts-popover-blurb {
+    @apply mt-0.5 text-[10px] leading-snug text-content-quiet;
+  }
+
+  .lme-scripts-popover-head-icon {
+    @apply mt-0.5 shrink-0 text-content-quiet;
+  }
+
+  .lme-scripts-popover-wasm .lme-scripts-popover-title {
+    @apply text-[13px] font-semibold tracking-[-0.02em] text-surface-50;
+  }
+
+  .lme-scripts-popover-search {
+    @apply flex items-center gap-2 border-b border-surface-700/35 px-3 py-2.5;
+  }
+
+  .lme-scripts-popover-search-input {
+    @apply min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0;
+  }
+
+  .lme-scripts-popover-list {
+    @apply max-h-64 overflow-y-auto py-1;
+  }
+
+  .lme-scripts-popover-item {
+    animation: lme-scripts-popover-row-in 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--i, 0) * 28ms);
+  }
+
+  @keyframes lme-scripts-popover-row-in {
+    from {
+      opacity: 0;
+      transform: translateY(0.25rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .lme-scripts-popover-row {
+    @apply flex w-full items-start gap-2 px-3 py-2 text-left transition-colors;
+  }
+
+  .lme-scripts-popover-row:hover {
+    background: rgb(var(--color-surface-800) / 0.55);
+  }
+
+  .lme-scripts-popover-row:hover .lme-scripts-popover-row-action {
+    @apply opacity-100;
+  }
+
+  .lme-scripts-popover-row-title {
+    @apply block truncate text-[12px] font-medium tracking-[-0.01em] text-surface-50;
+  }
+
+  .lme-scripts-popover-row-meta {
+    @apply mt-0.5 block text-[10px] leading-snug text-content-quiet;
+  }
+
+  .lme-scripts-popover-row-action {
+    @apply shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-content-link opacity-0 transition;
+    background: rgb(var(--color-primary-500) / 0.12);
+  }
+
+  .lme-scripts-popover-empty {
+    @apply px-3 py-3 text-[11px] text-content-quiet;
+  }
+
+  .lme-scripts-popover-fields {
+    @apply flex flex-col gap-1.5 px-2.5 py-2.5;
+  }
+
+  .lme-scripts-popover-field,
+  .lme-scripts-popover-field-btn {
+    @apply flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition;
+    border: 1px solid rgb(var(--color-surface-600) / 0.28);
+    background: rgb(var(--color-surface-800) / 0.42);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.03);
+  }
+
+  .lme-scripts-popover-field:hover,
+  .lme-scripts-popover-field-btn:hover {
+    border-color: rgb(var(--color-surface-600) / 0.42);
+    background: rgb(var(--color-surface-800) / 0.62);
+  }
+
+  .lme-scripts-popover-field:focus-within {
+    border-color: rgb(var(--color-primary-500) / 0.45);
+    background: rgb(var(--color-surface-800) / 0.72);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.04),
+      0 0 0 1px rgb(var(--color-primary-500) / 0.12);
+  }
+
+  .lme-scripts-popover-field-btn {
+    @apply cursor-pointer;
+  }
+
+  .lme-scripts-popover-field-label {
+    @apply w-[3.25rem] shrink-0 text-[10px] font-medium tracking-[-0.01em] text-content-tertiary;
+  }
+
+  .lme-scripts-popover-wasm .lme-scripts-popover-field-label {
+    @apply normal-case text-content-secondary;
+  }
+
+  .lme-scripts-popover-field-value,
+  .lme-scripts-popover-field-input {
+    @apply min-w-0 flex-1 border-0 bg-transparent text-[12px] tracking-[-0.01em] text-surface-100 placeholder:text-content-quiet focus:outline-none focus:ring-0;
+  }
+
+  .lme-scripts-popover-field-value.is-placeholder {
+    @apply text-content-quiet;
+  }
+
+  .lme-scripts-popover-wasm .lme-scripts-popover-field-value:not(.is-placeholder) {
+    @apply font-medium text-surface-50;
+  }
+
+  .lme-scripts-popover-module-menu {
+    @apply absolute left-1 right-1 top-full z-10 mt-0.5 max-h-36 overflow-y-auto rounded-lg py-1;
+    border: 1px solid rgb(var(--color-surface-600) / 0.35);
+    background: rgb(var(--color-surface-900) / 0.98);
+    box-shadow: 0 10px 24px rgb(0 0 0 / 0.35);
+  }
+
+  .lme-scripts-popover-module-option {
+    @apply w-full truncate px-2.5 py-1.5 text-left font-mono text-[11px] text-surface-200 transition-colors;
+  }
+
+  .lme-scripts-popover-module-option:hover,
+  .lme-scripts-popover-module-option.is-active {
+    background: rgb(var(--color-surface-800) / 0.65);
+  }
+
+  .lme-scripts-popover-module-option.is-active {
+    @apply text-primary-200;
+  }
+
+  .lme-scripts-popover-status {
+    @apply px-3 pb-1.5 text-[10px] text-content-tertiary;
+  }
+
+  .lme-scripts-popover-status.is-error {
+    @apply text-content-error;
+  }
+
+  .lme-scripts-popover-footer {
+    @apply flex items-center justify-between gap-2 border-t border-surface-700/35 px-2.5 py-2;
+  }
+
+  .lme-scripts-popover-footer-quiet {
+    @apply inline-flex items-center gap-1 rounded px-1.5 py-1 text-[10px] text-content-quiet transition hover:bg-surface-800/55 hover:text-content-secondary disabled:opacity-40;
+  }
+
+  .lme-scripts-popover-load {
+    @apply rounded-md px-3 py-1.5 text-[11px] font-semibold tracking-[-0.01em] text-primary-200 transition disabled:pointer-events-none disabled:opacity-40;
+    border: 1px solid rgb(var(--color-primary-500) / 0.32);
+    background: rgb(var(--color-primary-500) / 0.18);
+  }
+
+  .lme-scripts-popover-load:hover:not(:disabled) {
+    border-color: rgb(var(--color-primary-500) / 0.45);
+    background: rgb(var(--color-primary-500) / 0.28);
+    color: rgb(var(--color-primary-100) / 1);
+  }
+
+  .lme-scripts-popover-load:disabled {
+    border-color: rgb(var(--color-surface-600) / 0.28);
+    background: rgb(var(--color-surface-800) / 0.5);
+    color: rgb(var(--theme-text-quiet) / 1);
+  }
+
+  .lme-scripts-popover-lifecycle {
+    @apply space-y-1.5 border-t border-surface-700/35 px-3 py-2;
+  }
+}

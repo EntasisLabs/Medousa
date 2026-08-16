@@ -20,7 +20,7 @@
     type BrowserCompositorState,
   } from "$lib/utils/browserCompositor";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { isMobileBrowserUrlFocused } from "$lib/utils/mobileKeyboardViewport";
 
   async function waitForLayoutFrame() {

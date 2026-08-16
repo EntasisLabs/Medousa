@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/messaging.postcss";
   import MessagingChannelDetail from "$lib/components/messaging/MessagingChannelDetail.svelte";
   import { messaging } from "$lib/stores/messaging.svelte";
   import type { DaemonHealth } from "$lib/daemon";

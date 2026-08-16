@@ -5,7 +5,7 @@
   import { openGuide } from "$lib/guide/openGuide";
   import { openAppUpdateDownload } from "$lib/utils/appUpdate";
   import { isTauri } from "$lib/window";
-  import { toast } from "$lib/stores/toast.svelte";
+  import { toast } from "$lib/runtime/toast.svelte";
 
   let downloadBusy = $state(false);
   let downloadError = $state<string | null>(null);

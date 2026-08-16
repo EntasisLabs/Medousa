@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/scripts.postcss";
   import {
     FileCode2,
     LayoutTemplate,
@@ -16,10 +17,10 @@
   import { renameScriptById } from "$lib/grapheme/scriptWorkbenchActions";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { automationsNav } from "$lib/stores/automationsNav.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { scriptLibrarySelection } from "$lib/stores/scriptLibrarySelection.svelte";
-  import { scriptRenameUi } from "$lib/stores/scriptRenameUi.svelte";
+  import { scriptRenameUi } from "$lib/lme/scriptRenameUi.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import type { GraphemeScriptEntry } from "$lib/types/grapheme";
   import {

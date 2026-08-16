@@ -1,7 +1,7 @@
 import { chat } from "$lib/stores/chat.svelte";
 import { workspace } from "$lib/stores/workspace.svelte";
-import { workerTranscripts } from "$lib/stores/workerTranscripts.svelte";
-import type { WorkerTranscript } from "$lib/stores/workerTranscripts.svelte";
+import { workerTranscripts } from "$lib/work/workerTranscripts.svelte";
+import type { WorkerTranscript } from "$lib/work/workerTranscripts.svelte";
 import type { ToolRunState } from "$lib/types/chat";
 import type { WorkCardDetail, WorkerToolActivity } from "$lib/types/card";
 

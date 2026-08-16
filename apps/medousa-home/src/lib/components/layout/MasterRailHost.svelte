@@ -5,7 +5,7 @@
     layout,
     SHELL_SIDEBAR_WIDTH_MAX,
     SHELL_SIDEBAR_WIDTH_MIN,
-  } from "$lib/stores/layout.svelte";
+  } from "$lib/runtime/layout.svelte";
   import type { DaemonHealth } from "$lib/daemon";
 
   interface Props {

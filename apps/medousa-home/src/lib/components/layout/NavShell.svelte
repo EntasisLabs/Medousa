@@ -21,7 +21,7 @@
   import CanvasAddViewForm from "$lib/components/settings/CanvasAddViewForm.svelte";
   import CanvasEditViewPopover from "$lib/components/settings/CanvasEditViewPopover.svelte";
   import { environment } from "$lib/stores/environment.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { lmeWorkspace, type LmeExplorerMode } from "$lib/stores/lmeWorkspace.svelte";
   import { messaging } from "$lib/stores/messaging.svelte";
   import { messagingShell } from "$lib/stores/messagingShell.svelte";
@@ -56,7 +56,7 @@
     type RailPopoverCursor,
   } from "$lib/utils/railPopoverSummon";
   import { resolveSummonToolbarSurface } from "$lib/utils/resolveSummonToolbarSurface";
-  import { toast } from "$lib/stores/toast.svelte";
+  import { toast } from "$lib/runtime/toast.svelte";
   import { Check, GripVertical, Minus, Pencil, Plus, Search, Settings } from "@lucide/svelte";
   import { SAFETY_SURFACE_SETTINGS } from "$lib/types/environment";
   import type { DaemonHealth } from "$lib/daemon";

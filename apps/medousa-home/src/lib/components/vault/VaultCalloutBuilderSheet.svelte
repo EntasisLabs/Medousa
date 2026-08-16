@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/vault-liquid.postcss";
   import { serializeCalloutBlock } from "$lib/utils/vaultMarkdownEdit";
   import { tick } from "svelte";
   import { X } from "@lucide/svelte";

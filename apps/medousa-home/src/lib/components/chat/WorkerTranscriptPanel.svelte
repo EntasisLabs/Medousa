@@ -9,7 +9,7 @@
   import { haptic } from "$lib/haptics";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { renderMarkdown } from "$lib/markdown";
-  import { workerTranscripts } from "$lib/stores/workerTranscripts.svelte";
+  import { workerTranscripts } from "$lib/work/workerTranscripts.svelte";
   import { toolRunsFromWorkerActivity } from "$lib/utils/subagentRows";
 
   interface Props {

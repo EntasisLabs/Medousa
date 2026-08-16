@@ -5,7 +5,7 @@ import { listVaultRoots } from "$lib/daemon";
 import { isCoLocatedWorkshop, vaultHostSideHint } from "$lib/utils/workshopLocality";
 import { isTauri } from "$lib/window";
 import { readExternalFile } from "$lib/utils/externalDeskApi";
-import { toast } from "$lib/stores/toast.svelte";
+import { toast } from "$lib/runtime/toast.svelte";
 
 let cachedVaultRoot: { path: string; fetchedAt: number } | null = null;
 const CACHE_MS = 5_000;

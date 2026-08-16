@@ -27,7 +27,7 @@
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { getUndertaking, heartbeatLease } from "$lib/forge";
   import {

@@ -9,8 +9,8 @@
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { environment } from "$lib/stores/environment.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
-  import { layoutEdit, layoutRootForEditing } from "$lib/stores/layoutEdit.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
+  import { layoutEdit, layoutRootForEditing } from "$lib/environment/layoutEdit.svelte";
   import type { ComponentDef } from "$lib/types/environment";
   import { surfaceUsesDashboardFill } from "$lib/utils/environmentPresentation";
   import { environmentIcon } from "$lib/utils/environmentIcons";

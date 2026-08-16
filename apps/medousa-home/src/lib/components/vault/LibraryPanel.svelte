@@ -1,7 +1,8 @@
 <script lang="ts">
+  import "$lib/styles/vault-browse.postcss";
   import { onMount, untrack } from "svelte";
   import SplitPane from "$lib/components/layout/SplitPane.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { externalDesk } from "$lib/stores/externalDesk.svelte";
   import VaultTree from "./VaultTree.svelte";

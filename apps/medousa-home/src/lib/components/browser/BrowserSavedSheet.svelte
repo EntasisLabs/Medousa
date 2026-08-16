@@ -1,9 +1,9 @@
 <script lang="ts">
   import { ExternalLink, FileText, History, Star } from "@lucide/svelte";
   import BrowserPopover from "$lib/components/browser/BrowserPopover.svelte";
-  import { browserHistory } from "$lib/stores/browserHistory.svelte";
+  import { browserHistory } from "$lib/browser/browserHistory.svelte";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import type { BrowserBookmark } from "$lib/stores/browserBookmarks.svelte";
   import {
     loadSavedPages,

@@ -12,7 +12,7 @@
   import { automationDraft } from "$lib/stores/automationDraft.svelte";
   import { catalog } from "$lib/stores/catalog.svelte";
   import { automationDraftForSpecialist } from "$lib/utils/specialistAutomation";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { MORE_DESTINATIONS, type MoreDestination } from "$lib/types/mobile";
   import type { DaemonHealth } from "$lib/daemon";
   import { workspace } from "$lib/stores/workspace.svelte";

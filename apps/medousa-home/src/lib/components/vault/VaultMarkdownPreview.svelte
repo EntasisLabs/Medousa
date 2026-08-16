@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/markdown-content.postcss";
   import { onDestroy, tick, untrack } from "svelte";
   import { renderMarkdownPreview, type MarkdownRenderOptions } from "$lib/markdown/render";
   import { hydrateMarkdownContainer } from "$lib/markdown/hydrateMarkdownContainer";

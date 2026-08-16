@@ -2,7 +2,7 @@
   import { Activity, Globe, MessageCircle, MoreHorizontal, NotebookText } from "@lucide/svelte";
   import { switchMobileTab } from "$lib/mobileNavigation";
   import { environment } from "$lib/stores/environment.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { MOBILE_TABS, type MobileTab } from "$lib/types/mobile";
   import { visibleMobileTabs } from "$lib/utils/mobileEnvironmentChrome";
   import type { Component } from "svelte";

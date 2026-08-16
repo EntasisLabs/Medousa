@@ -2,7 +2,7 @@
   import type { Snippet } from "svelte";
   import CanvasWidgetPickerModal from "$lib/components/environment/CanvasWidgetPickerModal.svelte";
   import LayoutEditToolbar from "$lib/components/environment/LayoutEditToolbar.svelte";
-  import { layoutEdit } from "$lib/stores/layoutEdit.svelte";
+  import { layoutEdit } from "$lib/environment/layoutEdit.svelte";
   import { onMount } from "svelte";
 
   interface Props {

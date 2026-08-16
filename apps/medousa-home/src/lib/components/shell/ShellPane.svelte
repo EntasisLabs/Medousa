@@ -5,7 +5,7 @@
   import ChatPaneIdle from "$lib/components/shell/ChatPaneIdle.svelte";
   import WebPaneIdle from "$lib/components/shell/WebPaneIdle.svelte";
   import ShellTabStrip from "$lib/components/shell/ShellTabStrip.svelte";
-  import { chatStreamPool } from "$lib/stores/chatStreamPool.svelte";
+  import { chatStreamPool } from "$lib/chat/chatStreamPool.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { usesUnifiedTitlebar } from "$lib/platform";

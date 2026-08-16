@@ -7,7 +7,7 @@
     exportUserProfileBundle,
     importUserProfileBundle,
   } from "$lib/daemon";
-  import { toast } from "$lib/stores/toast.svelte";
+  import { toast } from "$lib/runtime/toast.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
   import { downloadTextFile } from "$lib/utils/sessionTranscript";

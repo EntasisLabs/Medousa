@@ -1,26 +1,15 @@
 import {
-  addVaultRoot,
   createVaultNote,
   deleteVaultNote,
   getVaultBacklinks,
   getVaultNote,
-  listVaultNotes,
-  listVaultChanges,
-  listVaultRoots,
-  listVaultTags,
-  saveVaultNote,
-  searchVaultNotes,
-  setActiveVaultRoot,
 } from "$lib/daemon";
 import {
   countNotesBySpace,
   getSpaceById,
-  shouldHideGarageNote,
   loadLastSpace,
   loadShowSystemNotes,
   resolveSpaceForPath,
-  saveLastSpace,
-  saveShowSystemNotes,
 } from "$lib/config/vaultSpaces";
 import {
   readVaultBuildAutoSave,
@@ -28,24 +17,12 @@ import {
   readVaultBuildScrollSync,
   readVaultBuildWordWrap,
   readVaultStampCompletionEnabled,
-  cycleVaultReadingPalette,
-  cycleVaultPaperWidth,
   readVaultHideLiveMarkdownSyntax,
   readVaultPaperWidth,
   readVaultReadingPalette,
-  writeVaultBuildAutoSave,
-  writeVaultBuildLineNumbers,
-  writeVaultBuildScrollSync,
-  writeVaultBuildWordWrap,
-  writeVaultHideLiveMarkdownSyntax,
-  writeVaultPaperWidth,
-  writeVaultReadingPalette,
-  writeVaultStampCompletionEnabled,
   type VaultPaperWidth,
   type VaultReadingPalette,
 } from "$lib/config/vaultPreferences";
-import type { WorkspaceEvent } from "$lib/types/workspace";
-import { vaultRefPath } from "$lib/utils/activityEnrichment";
 import type {
   VaultNote,
   VaultNoteContentResponse,
@@ -54,11 +31,6 @@ import type {
   VaultTreeNode,
 } from "$lib/types/vault";
 import { buildVaultLabelMap } from "$lib/utils/formatVault";
-import { buildVaultTree } from "$lib/utils/vaultTree";
-import {
-  flattenTreeNotePaths,
-  rangePathsBetween,
-} from "$lib/utils/vaultRailSelection";
 import {
   contentForTemplate,
   dailyNotePath,
@@ -79,15 +51,10 @@ import {
 import {
   insertTextAtSection,
   normalizeKind,
-  parseFrontmatterKindValue,
-  parseFrontmatterTitle,
   resolveKind,
   setFrontmatterKind,
-  sortVaultTagsForDisplay,
-  stripFrontmatter,
   type VaultNoteKind,
 } from "$lib/utils/vaultFrontmatter";
-import { workshopSessionIdForVaultSave } from "$lib/utils/vaultSaveSession";
 import { parseWikilinkTarget, resolveWikilinkTarget, suggestPathForWikilinkToken } from "$lib/utils/resolveWikilink";
 import {
   buildVaultLookupSnapshot,
@@ -98,11 +65,6 @@ import { publishVaultLookupSnapshot } from "$lib/vault/vaultLookupLive";
 import { setVaultNoteBufferPort } from "$lib/vault/vaultNoteBufferPort";
 import { publishVaultDirty } from "$lib/runtime/vaultDirtySnapshot";
 import {
-  VAULT_LIST_MAX_PAGES,
-  VAULT_LIST_PAGE_LIMIT,
-  listingIncompleteAfterPages,
-} from "$lib/utils/vaultListing";
-import {
   addAttachments,
   guessMimeFromPath,
   listAttachments,
@@ -110,83 +72,40 @@ import {
   type VaultAttachment,
 } from "$lib/utils/vaultAttachments";
 import { pickAttachmentFiles, pickSpreadsheetFiles } from "$lib/utils/vaultAttachmentPicker";
-import {
-  isWriteFirstKind,
-} from "$lib/utils/vaultAuthoring";
-import {
-  isVaultConflictError,
-  VAULT_AUTOSAVE_MS,
-  VAULT_NOTES_REFRESH_MS,
-  VAULT_SAVE_ECHO_MS,
-  VAULT_SAVED_WHISPER_MS,
-  type VaultSaveStatus,
-} from "$lib/utils/vaultSave";
-import {
-  completeGarageOnboarding,
-  shouldShowGarageWizard,
-} from "$lib/utils/garageOnboarding";
-import { addCustomVaultSpace } from "$lib/utils/vaultCustomSpaces";
+import { isWriteFirstKind } from "$lib/utils/vaultAuthoring";
+import { type VaultSaveStatus } from "$lib/utils/vaultSave";
 import {
   isAbsoluteDiskPath,
   normalizeVaultNotePath,
   setNoteTitleInContent,
 } from "$lib/utils/vaultNoteTitle";
-import { noteHasKanbanBoard } from "$lib/utils/markdownKanban";
-import { noteHasSlidesDeck } from "$lib/utils/markdownSlides";
 import {
-  dataFirstSurfaceReady,
   ensureDataFirstSurface,
   kindFromNoteContent,
 } from "$lib/utils/dataFirstSurface";
-import { isDataFirstKind } from "$lib/utils/vaultNoteKind";
-import { togglePreviewTaskInContent } from "$lib/utils/vaultPreviewTasks";
-import {
-  embedPathForNote,
-  formatImageEmbedMarkdown,
-} from "$lib/utils/vaultLocalImages";
-import { invalidateMedousaViewCache } from "$lib/utils/resolveMedousaViews";
 import { type NoteBuffer } from "$lib/stores/noteBuffer";
+import { noteEditorRuntimes } from "$lib/vault/noteEditorRuntimes.svelte";
+import { vaultOverlay } from "$lib/vault/vaultOverlay.svelte";
 import {
-  NoteSaveQueue,
-  type NoteSaveJob,
-  type NoteSaveResult,
-} from "$lib/stores/noteSaveQueue";
-import { noteEditorRuntimes } from "$lib/stores/noteEditorRuntimes.svelte";
-import { vaultOverlay } from "$lib/stores/vaultOverlay.svelte";
-import { invokeVaultLeaveFlush } from "$lib/stores/vaultLeaveFlush";
-import { significantLiveText } from "$lib/vault/live/liveSignificantText";
+  VaultBrowseController,
+  loadLibraryBrowseMode,
+  type LibraryBrowseMode,
+  type VaultTagCount,
+} from "$lib/vault/vaultBrowseController";
 import {
-  extractMedousaViewBlocks,
-  replaceMedousaViewFenceAt,
-  serializeMedousaViewFence,
-  type MedousaViewQuery,
-} from "$lib/utils/markdownView";
-import {
-  extractChartFences,
-  parseChartFenceParts,
-  replaceChartFenceAt,
-  type ChartFenceKv,
-} from "$lib/utils/vaultChartFence";
-import {
-  extractLiquidFences,
-  parseLiquidFenceDraft,
-  replaceLiquidFenceRawAt,
-  serializeLiquidFenceDraft,
-  type LiquidFenceDraft,
-  type LiquidFenceLang,
-} from "$lib/utils/vaultLiquidFence";
+  VaultEditorController,
+  type VaultNotePlane,
+  type VaultProposalSource,
+} from "$lib/vault/vaultEditorController";
+import { VaultBridgeController } from "$lib/vault/vaultBridgeController";
+import { VaultRootsController } from "$lib/vault/vaultRootsController";
+import { VaultRailController } from "$lib/vault/vaultRailController";
+import type { MedousaViewQuery } from "$lib/utils/markdownView";
+import type { ChartFenceKv } from "$lib/utils/vaultChartFence";
+import type { LiquidFenceDraft, LiquidFenceLang } from "$lib/utils/vaultLiquidFence";
 import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
-import { insertTextAtCursor } from "$lib/utils/vaultMarkdownEdit";
-import { invalidateTransclusionCache } from "$lib/utils/resolveTransclusion";
-import {
-  fileNameFromAbsolutePath,
-  invalidateVaultRootCache,
-  pickMarkdownFile,
-  readAbsoluteTextFile,
-  writeAbsoluteTextFile,
-} from "$lib/utils/vaultFilesystem";
+import type { WorkspaceEvent } from "$lib/types/workspace";
 import { loadVaultRecent, rememberVaultRecent } from "$lib/utils/vaultRecent";
-import { toast } from "$lib/stores/toast.svelte";
 import {
   formatDiffChip,
   lineDiffStats,
@@ -194,32 +113,10 @@ import {
 } from "$lib/utils/vaultDiff";
 
 const LAST_NOTE_KEY = "medousa-home-last-note";
-const LIBRARY_BROWSE_MODE_KEY = "medousa-home-vault-browse-mode";
 const EDITOR_SURFACE_KEY = "medousa-home-vault-editor-surface";
-/** LME writing plane: Live = calm page; Build = full chrome. */
 const NOTE_PLANE_KEY = "medousa-home-vault-note-plane";
 
-export type VaultNotePlane = "live" | "build";
-const RECENT_BROWSE_LIMIT = 40;
-const KIND_BROWSE_ORDER: VaultNoteKind[] = [
-  "daily",
-  "project",
-  "ledger",
-  "workbook",
-  "sheet",
-  "board",
-  "slides",
-  "draw",
-  "resume",
-  "inbox",
-  "bug",
-  "note",
-];
-
-export type VaultProposalSource = "agent" | "operator";
-export type LibraryBrowseMode = "folders" | "tags" | "recent" | "kind";
-
-export type VaultTagCount = { tag: string; count: number };
+export type { LibraryBrowseMode, VaultTagCount, VaultNotePlane, VaultProposalSource };
 
 export class VaultStore {
   notes = $state<VaultNote[]>([]);
@@ -238,14 +135,7 @@ export class VaultStore {
   content = $state("");
   baselineContent = $state("");
   contentHash = $state<string | null>(null);
-  /**
-   * Background pane note snapshots (path-keyed). Focused note stays on public fields.
-   * Bumps `noteBufferRevision` when a non-focused buffer changes.
-   */
-  private noteBuffers = new Map<string, NoteBuffer>();
   noteBufferRevision = $state(0);
-  /** Per-path serialized PUTs — coalesce superseding bodies; never reuse stale If-Match. */
-  private saveQueue = new NoteSaveQueue((path, job) => this.runSaveJob(path, job));
   wikilinksOut = $state<string[]>([]);
   backlinks = $state<string[]>([]);
   noteTags = $state<string[]>([]);
@@ -352,19 +242,16 @@ export class VaultStore {
   /** Vault card detail sheet (same payload as chat Liquid cards). */
   cardDetailOpen = $state(false);
   cardDetail = $state<CardDetailPayload | null>(null);
-
-  private autosaveTimer: ReturnType<typeof setTimeout> | null = null;
-  private savedWhisperTimer: ReturnType<typeof setTimeout> | null = null;
-  private notesRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-  private compositionHold = $state(false);
-  private saveEchoPath: string | null = null;
-  private saveEchoUntil = 0;
+  /** Bumped when openNote restores UI — editors apply scrollTop from runtime. */
+  editorScrollRestoreEpoch = $state(0);
+  editorScrollRestorePath = $state<string | null>(null);
+  editorScrollRestoreTop = $state(0);
   /**
-   * Bumped on every openNote / openLooseFile start. Stale fetch completions and
-   * remount emits must not apply when this no longer matches their generation.
+   * Folder-tree expand map (session). Key = folder path / space id / name.
+   * Survives Workspace rail remounts.
    */
-  private openGeneration = 0;
-
+  treeExpandedByKey = $state<Record<string, boolean>>({});
+  openGeneration = 0;
   attachments = $derived(listAttachments(this.content));
 
   previewingAttachment = $derived.by((): VaultAttachment | null => {
@@ -434,6 +321,172 @@ export class VaultStore {
     return isWriteFirstKind(this.selectedKind);
   }
 
+  #browse: VaultBrowseController;
+  #editor: VaultEditorController;
+  #bridge: VaultBridgeController;
+  #roots: VaultRootsController;
+  #rail: VaultRailController;
+
+  constructor() {
+    this.#browse = new VaultBrowseController(this);
+    this.#editor = new VaultEditorController(this);
+    this.#bridge = new VaultBridgeController(this);
+    this.#roots = new VaultRootsController(this);
+    this.#rail = new VaultRailController(this);
+  }
+
+  rebuildTree() { this.#browse.rebuildTree(); }
+  setLibraryBrowseMode(mode: LibraryBrowseMode) { this.#browse.setLibraryBrowseMode(mode); }
+  scopedLibraryNotes() { return this.#browse.scopedLibraryNotes(); }
+  notesForTag(tag: string) { return this.#browse.notesForTag(tag); }
+  notesByKind() { return this.#browse.notesByKind(); }
+  recentNotesList(limit?: number) { return this.#browse.recentNotesList(limit); }
+  refreshVaultTags() { return this.#browse.refreshVaultTags(); }
+  setShowAgentReviewFilter(value: boolean) { this.#browse.setShowAgentReviewFilter(value); }
+  setShowSystemNotes(value: boolean) { this.#browse.setShowSystemNotes(value); }
+  setActiveSpaceFilter(spaceId: string | null) { this.#browse.setActiveSpaceFilter(spaceId); }
+  focusSpaceForPath(path: string, title: string) { this.#browse.focusSpaceForPath(path, title); }
+  applySpaceFilterAfterMove(path: string, title: string, filterWasAll: boolean) {
+    this.#browse.applySpaceFilterAfterMove(path, title, filterWasAll);
+  }
+  addCustomGroup(label: string) { return this.#browse.addCustomGroup(label); }
+  scheduleNotesRefresh() { this.#browse.scheduleNotesRefresh(); }
+  refreshNotes() { return this.#browse.refreshNotes(); }
+  runSearch(query: string) { return this.#browse.runSearch(query); }
+
+  clearAutosaveTimer() { this.#editor.clearAutosaveTimer(); }
+  clearSavedWhisperTimer() { this.#editor.clearSavedWhisperTimer(); }
+  scheduleAutosave() { this.#editor.scheduleAutosave(); }
+  setCompositionHold(active: boolean) { this.#editor.setCompositionHold(active); }
+  flashSavedWhisper() { this.#editor.flashSavedWhisper(); }
+  resetSaveState() { this.#editor.resetSaveState(); }
+  contentFor(path: string) { return this.#editor.contentFor(path); }
+  contentSyncKeyFor(path: string) { return this.#editor.contentSyncKeyFor(path); }
+  titleFor(path: string) { return this.#editor.titleFor(path); }
+  noteLoadingFor(path: string) { return this.#editor.noteLoadingFor(path); }
+  seedBufferForTest(buffer: NoteBuffer) { this.#editor.seedBuffer(buffer); }
+  warmBuffer(path: string) { return this.#editor.warmBuffer(path); }
+  proposalDiffStats() { return this.#editor.proposalDiffStats(); }
+  noteFromFeedEvent(event: WorkspaceEvent) {
+    this.#editor.noteFromFeedEvent(event);
+  }
+  ingestRemoteUpdate(event: WorkspaceEvent) {
+    return this.#editor.ingestRemoteUpdate(event);
+  }
+  acceptProposal() { return this.#editor.acceptProposal(); }
+  discardProposal() { return this.#editor.discardProposal(); }
+  editProposal() { this.#editor.editProposal(); }
+  setStampCompletionInline(value: boolean) { this.#editor.setStampCompletionInline(value); }
+  setBuildWordWrap(value: boolean) { this.#editor.setBuildWordWrap(value); }
+  setBuildLineNumbers(value: boolean) { this.#editor.setBuildLineNumbers(value); }
+  setBuildAutoSave(value: boolean) { this.#editor.setBuildAutoSave(value); }
+  setBuildScrollSync(value: boolean) { this.#editor.setBuildScrollSync(value); }
+  setReadingPalette(palette: VaultReadingPalette) {
+    this.#editor.setReadingPalette(palette);
+  }
+  cycleReadingPalette() { this.#editor.cycleReadingPalette(); }
+  setHideLiveMarkdownSyntax(enabled: boolean) { this.#editor.setHideLiveMarkdownSyntax(enabled); }
+  toggleHideLiveMarkdownSyntax() { this.#editor.toggleHideLiveMarkdownSyntax(); }
+  setPaperWidth(width: VaultPaperWidth) {
+    this.#editor.setPaperWidth(width);
+  }
+  cyclePaperWidth() { this.#editor.cyclePaperWidth(); }
+  togglePreviewTask(taskIndex: number, checked: boolean) {
+    this.#editor.togglePreviewTask(taskIndex, checked);
+  }
+  queueEditorInsert(text: string) { this.#editor.queueEditorInsert(text); }
+  takeEditorInsert() { return this.#editor.takeEditorInsert(); }
+  flushBeforeLeave(options?: { skipEditorFlush?: boolean }) {
+    return this.#editor.flushBeforeLeave(options);
+  }
+  markDirty(
+    nextContent: string,
+    options?: { reloadEditors?: boolean; allowEmpty?: boolean; path?: string | null },
+  ) {
+    this.#editor.markDirty(nextContent, options);
+  }
+  saveNoteAtPath(path: string, content: string, options?: { force?: boolean }) {
+    return this.#editor.saveNoteAtPath(path, content, options);
+  }
+  save(options?: { force?: boolean; source?: "manual" | "autosave" }) {
+    return this.#editor.save(options);
+  }
+  flushSave() { return this.#editor.flushSave(); }
+  reloadFromServer() { return this.#editor.reloadFromServer(); }
+  keepMineAndSave() { return this.#editor.keepMineAndSave(); }
+  clearProposal() { this.#editor.clearProposal(); }
+  getBuffer(path: string) { return this.#editor.getBuffer(path); }
+  deleteBuffer(path: string) { this.#editor.deleteBuffer(path); }
+  writeAbsoluteBuffer(path: string, content: string, title: string) {
+    this.#editor.writeAbsoluteBuffer(path, content, title);
+  }
+  restoreBufferIntoFocused(buffer: NoteBuffer) {
+    this.#editor.restoreBufferIntoFocused(buffer);
+  }
+  resetEditorBuffers() { this.#editor.resetEditorBuffers(); }
+
+  openViewBridgeInsert(insertAt: number) { this.#bridge.openViewBridgeInsert(insertAt); }
+  openViewBridgeEdit(index: number) { this.#bridge.openViewBridgeEdit(index); }
+  closeViewBridge() { this.#bridge.closeViewBridge(); }
+  commitViewBridge(query: MedousaViewQuery) { this.#bridge.commitViewBridge(query); }
+  openChartBridgeEdit(index: number) { this.#bridge.openChartBridgeEdit(index); }
+  closeChartBridge() { this.#bridge.closeChartBridge(); }
+  commitChartBridge(kv: ChartFenceKv, tableMarkdown?: string) {
+    this.#bridge.commitChartBridge(kv, tableMarkdown);
+  }
+  openLiquidBridgeEdit(lang: LiquidFenceLang, index: number) {
+    this.#bridge.openLiquidBridgeEdit(lang, index);
+  }
+  closeLiquidBridge() { this.#bridge.closeLiquidBridge(); }
+  commitLiquidBridge(next: LiquidFenceDraft) { this.#bridge.commitLiquidBridge(next); }
+  openCardDetail(detail: CardDetailPayload) { this.#bridge.openCardDetail(detail); }
+  closeCardDetail() { this.#bridge.closeCardDetail(); }
+  insertImageEmbed(imagePath: string) { return this.#bridge.insertImageEmbed(imagePath); }
+
+  resetForWorkshopSwitch() { this.#roots.resetForWorkshopSwitch(); }
+  clearLooseFile() { this.#roots.clearLooseFile(); }
+  openLooseMarkdownFile() { return this.#roots.openLooseMarkdownFile(); }
+  openLooseFile(absolutePath: string, options?: { skipLeaveFlush?: boolean }) {
+    return this.#roots.openLooseFile(absolutePath, options);
+  }
+  refreshVaultRoots() { return this.#roots.refreshVaultRoots(); }
+  switchVaultRoot(rootId: string) { return this.#roots.switchVaultRoot(rootId); }
+  registerVaultRoot(label: string, path: string) {
+    return this.#roots.registerVaultRoot(label, path);
+  }
+  openAddVaultRootDialog() { this.#roots.openAddVaultRootDialog(); }
+  closeAddVaultRootDialog() { this.#roots.closeAddVaultRootDialog(); }
+
+  selectionAncestorSet() { return this.#rail.selectionAncestorSet(); }
+  isSelectionAncestor(pathOrFolder: string | null) {
+    return this.#rail.isSelectionAncestor(pathOrFolder);
+  }
+  treeExpandKeyFor(node: {
+    path?: string | null;
+    spaceId?: string | null;
+    dropPrefix?: string | null;
+    name: string;
+  }) {
+    return this.#rail.treeExpandKeyFor(node);
+  }
+  isTreeExpanded(key: string) { return this.#rail.isTreeExpanded(key); }
+  setTreeExpanded(key: string, expanded: boolean) { this.#rail.setTreeExpanded(key, expanded); }
+  isRailPathSelected(path: string) { return this.#rail.isRailPathSelected(path); }
+  clearRailSelection() { this.#rail.clearRailSelection(); }
+  railNoteOrder() { return this.#rail.railNoteOrder(); }
+  applyRailSelection(path: string, event?: MouseEvent | null) {
+    return this.#rail.applyRailSelection(path, event);
+  }
+  prepareRailContextMenu(path: string) { return this.#rail.prepareRailContextMenu(path); }
+  openGarageWizard() { this.#rail.openGarageWizard(); }
+  closeGarageWizard() { this.#rail.closeGarageWizard(); }
+  finishGarageOnboarding() { this.#rail.finishGarageOnboarding(); }
+  shouldPromptGarageWizard() { return this.#rail.shouldPromptGarageWizard(); }
+
+  noteBufferFor(path: string): NoteBuffer | undefined {
+    return this.#editor.getBuffer(path);
+  }
+
   labelByPath(): Map<string, string> {
     return this.labelByPathMap;
   }
@@ -450,7 +503,6 @@ export class VaultStore {
     return loadLastNote();
   }
 
-  /** Default space for new-note dialog. */
   get defaultCreateSpaceId(): string {
     if (this.activeSpaceFilter && this.activeSpaceFilter !== "system_bucket") {
       return this.activeSpaceFilter;
@@ -462,10 +514,6 @@ export class VaultStore {
     return "journal";
   }
 
-  /**
-   * Folder to create into when the user is mid-flow (parent of the open note).
-   * Null when there is no vault note context (loose file / empty selection).
-   */
   get currentCreateFolderPrefix(): string | null {
     if (this.isLooseFile) return null;
     return folderPrefixFromNotePath(this.selectedPath);
@@ -492,101 +540,15 @@ export class VaultStore {
     return null;
   }
 
-  clearAutosaveTimer() {
-    if (this.autosaveTimer) {
-      clearTimeout(this.autosaveTimer);
-      this.autosaveTimer = null;
-    }
-  }
-
-  clearSavedWhisperTimer() {
-    if (this.savedWhisperTimer) {
-      clearTimeout(this.savedWhisperTimer);
-      this.savedWhisperTimer = null;
-    }
-  }
-
-  scheduleAutosave() {
-    this.clearAutosaveTimer();
-    if (
-      !this.buildAutoSave ||
-      !this.selectedPath ||
-      !this.dirty ||
-      this.noteLoading ||
-      this.saveStatus === "conflict" ||
-      this.proposalActive ||
-      this.compositionHold
-    ) {
-      return;
-    }
-    this.autosaveTimer = setTimeout(() => {
-      void this.save({ source: "autosave" });
-    }, VAULT_AUTOSAVE_MS);
-  }
-
-  /** Pause autosave while slash menu or similar editor UI is active. */
-  setCompositionHold(active: boolean) {
-    if (this.compositionHold === active) return;
-    this.compositionHold = active;
-    if (active) {
-      this.clearAutosaveTimer();
-      return;
-    }
-    if (this.dirty) {
-      this.scheduleAutosave();
-    }
-  }
-
-  scheduleNotesRefresh() {
-    if (this.notesRefreshTimer) {
-      clearTimeout(this.notesRefreshTimer);
-    }
-    this.notesRefreshTimer = setTimeout(() => {
-      this.notesRefreshTimer = null;
-      void this.refreshNotes();
-    }, VAULT_NOTES_REFRESH_MS);
-  }
-
-  private markSaveEcho(path: string) {
-    this.saveEchoPath = path;
-    this.saveEchoUntil = Date.now() + VAULT_SAVE_ECHO_MS;
-  }
-
-  private shouldIgnoreSaveEcho(event: WorkspaceEvent, path: string): boolean {
-    // Own autosave/manual save often lands while the next keystroke already marked
-    // dirty (kanban debounce). Still ignore the echo — it is not an external edit.
-    return (
-      event.actor === "operator" &&
-      path === this.saveEchoPath &&
-      Date.now() < this.saveEchoUntil &&
-      path === this.selectedPath
-    );
-  }
-
-  flashSavedWhisper() {
-    this.saveStatus = "saved";
-    this.clearSavedWhisperTimer();
-    this.savedWhisperTimer = setTimeout(() => {
-      if (!this.dirty) this.saveStatus = "idle";
-    }, VAULT_SAVED_WHISPER_MS);
-  }
-
-  resetSaveState() {
-    this.clearAutosaveTimer();
-    this.clearSavedWhisperTimer();
-    this.saveStatus = "idle";
-    this.conflictMessage = null;
-  }
-
-  private bumpContentSync() {
+  bumpContentSync() {
     this.contentRevision += 1;
   }
 
-  private bumpNoteBuffers() {
+  bumpNoteBuffers() {
     this.noteBufferRevision += 1;
   }
 
-  private normalizeNotePath(path: string): string {
+  normalizeNotePath(path: string): string {
     return normalizeVaultNotePath(path.trim()) || path.trim();
   }
 
@@ -603,1051 +565,6 @@ export class VaultStore {
     return this.normalizeNotePath(trimmed) === (this.selectedPath?.trim() ?? "");
   }
 
-  /**
-   * Buffer / runtime key. Absolute OS paths stay raw (vault-normalize strips `/`).
-   */
-  private bufferKey(path: string): string {
-    const raw = path.trim();
-    if (!raw) return "";
-    if (isAbsoluteDiskPath(raw)) return raw;
-    return this.normalizeNotePath(raw);
-  }
-
-  /** Injected H07 buffer peek — features read via getVaultNoteBuffer. */
-  noteBufferFor(path: string): NoteBuffer | undefined {
-    const key = this.bufferKey(path);
-    if (!key) return undefined;
-    return this.noteBuffers.get(key);
-  }
-
-  /** Markdown for any path — focused live fields or a background buffer. */
-  contentFor(path: string): string {
-    void this.noteBufferRevision;
-    void this.content;
-    const raw = path.trim();
-    if (!raw) return "";
-    // Check raw first — absolute loose paths must not be vault-normalized.
-    if (this.isFocusedPath(raw)) return this.content;
-    const key = this.bufferKey(raw);
-    if (!key) return "";
-    return this.noteBuffers.get(key)?.content ?? "";
-  }
-
-  contentSyncKeyFor(path: string): string {
-    void this.noteBufferRevision;
-    void this.contentSyncKey;
-    const raw = path.trim();
-    if (!raw) return "";
-    if (this.isFocusedPath(raw)) return this.contentSyncKey;
-    const key = this.bufferKey(raw);
-    if (!key) return "";
-    const buffer = this.noteBuffers.get(key);
-    return `${key}:${buffer?.contentRevision ?? 0}`;
-  }
-
-  titleFor(path: string): string {
-    void this.noteBufferRevision;
-    void this.title;
-    const raw = path.trim();
-    if (!raw) return "";
-    if (this.isFocusedPath(raw)) return this.title;
-    const key = this.bufferKey(raw);
-    if (!key) return "";
-    return this.noteBuffers.get(key)?.title ?? "";
-  }
-
-  noteLoadingFor(path: string): boolean {
-    void this.noteBufferRevision;
-    void this.noteLoading;
-    const raw = path.trim();
-    if (!raw) return false;
-    if (this.isFocusedPath(raw)) return this.noteLoading;
-    const key = this.bufferKey(raw);
-    if (!key) return false;
-    const buffer = this.noteBuffers.get(key);
-    return !buffer && this.bufferWarmInFlight.has(key);
-  }
-
-  private bufferWarmInFlight = new Set<string>();
-  private looseOpenInFlight = new Map<string, Promise<boolean>>();
-
-  /** Test helper: seed a background buffer without network. */
-  seedBufferForTest(buffer: NoteBuffer) {
-    const key = this.bufferKey(buffer.path);
-    this.noteBuffers.set(key, { ...buffer, path: key });
-    this.bumpNoteBuffers();
-  }
-
-  private stashSelectedBuffer() {
-    const path = this.selectedPath?.trim();
-    if (!path) return;
-    // Failed cold-open placeholders (empty, no hash, not dirty) must not become
-    // a buffer session — that would block refetch on retry.
-    if (!this.dirty && this.contentHash == null && !this.content.trim()) return;
-    const key = this.bufferKey(path);
-    if (!key) return;
-    this.noteBuffers.set(key, {
-      path: key,
-      content: this.content,
-      baselineContent: this.baselineContent,
-      contentHash: this.contentHash,
-      title: this.title,
-      dirty: this.dirty,
-      contentRevision: this.contentRevision,
-    });
-    this.bumpNoteBuffers();
-  }
-
-  private writeAbsoluteBuffer(path: string, content: string, title: string) {
-    const key = this.bufferKey(path);
-    if (!key) return;
-    this.noteBuffers.set(key, {
-      path: key,
-      content,
-      baselineContent: content,
-      contentHash: null,
-      title,
-      dirty: false,
-      contentRevision: (this.noteBuffers.get(key)?.contentRevision ?? 0) + 1,
-    });
-    this.bumpNoteBuffers();
-  }
-
-  private writeBufferFromResponse(path: string, response: VaultNoteContentResponse) {
-    const key = this.normalizeNotePath(path);
-    this.noteBuffers.set(key, {
-      path: key,
-      content: response.content,
-      baselineContent: response.content,
-      contentHash: response.note.content_hash,
-      title: response.note.title,
-      dirty: false,
-      contentRevision: (this.noteBuffers.get(key)?.contentRevision ?? 0) + 1,
-    });
-    this.bumpNoteBuffers();
-  }
-
-  /** Prefetch a note into a background buffer (multi-pane Workspace). */
-  async warmBuffer(path: string) {
-    const raw = path.trim();
-    if (!raw) return;
-    // Absolute loose files: read from disk, never getVaultNote.
-    if (isAbsoluteDiskPath(raw)) {
-      if (this.isFocusedPath(raw)) return;
-      if (this.noteBuffers.has(raw) || this.bufferWarmInFlight.has(raw)) return;
-      this.bufferWarmInFlight.add(raw);
-      this.bumpNoteBuffers();
-      try {
-        const content = await readAbsoluteTextFile(raw);
-        if (this.isFocusedPath(raw)) return;
-        const name = fileNameFromAbsolutePath(raw);
-        const title =
-          name.replace(/\.md$/i, "").replace(/\.markdown$/i, "") || name;
-        this.writeAbsoluteBuffer(raw, content, title);
-      } catch {
-        // Leave pane empty; focused openLooseFile will surface errors.
-      } finally {
-        this.bufferWarmInFlight.delete(raw);
-        this.bumpNoteBuffers();
-      }
-      return;
-    }
-    const trimmed = this.normalizeNotePath(raw);
-    if (!trimmed || this.isFocusedPath(trimmed)) return;
-    if (this.noteBuffers.has(trimmed) || this.bufferWarmInFlight.has(trimmed)) {
-      return;
-    }
-    this.bufferWarmInFlight.add(trimmed);
-    this.bumpNoteBuffers();
-    try {
-      const response = await getVaultNote(trimmed);
-      if (this.isFocusedPath(trimmed)) return;
-      this.writeBufferFromResponse(trimmed, response);
-    } catch {
-      // Leave pane empty; focused openNote will surface errors.
-    } finally {
-      this.bufferWarmInFlight.delete(trimmed);
-      this.bumpNoteBuffers();
-    }
-  }
-
-  private restoreBufferIntoFocused(buffer: NoteBuffer) {
-    this.content = buffer.content;
-    this.baselineContent = buffer.baselineContent;
-    this.contentHash = buffer.contentHash;
-    this.title = buffer.title;
-    this.dirty = buffer.dirty;
-    this.contentRevision = buffer.contentRevision;
-    // Prefer frontmatter kind — path-only resolve snaps sheet → note outside workbooks/.
-    this.selectedKind = kindFromNoteContent(buffer.path, buffer.content);
-    this.ensureFocusedDataFirstBody();
-    this.applyObjectEditModesForKind(this.selectedKind, this.content);
-  }
-
-  /** Object-first surfaces: default into table/deck/board/manifest, not Live TipTap. */
-  private applyObjectEditModesForKind(kind: VaultNoteKind, content: string) {
-    if (kind === "ledger" || kind === "sheet") {
-      this.ledgerEditMode = "table";
-    }
-    if (kind === "workbook") {
-      this.workbookEditMode = "view";
-    }
-    if (noteHasKanbanBoard(content) || kind === "board") {
-      this.boardEditMode = "board";
-    }
-    if (noteHasSlidesDeck(content) || kind === "slides") {
-      this.deckEditMode = "deck";
-    }
-  }
-
-  /** Seed missing table/manifest so object editors can mount (avoids blank Live). */
-  private ensureFocusedDataFirstBody() {
-    const kind = this.selectedKind;
-    if (!isDataFirstKind(kind)) return;
-    if (dataFirstSurfaceReady(kind, this.content)) return;
-    const ensured = ensureDataFirstSurface(kind, this.content, this.title);
-    if (ensured === this.content) return;
-    this.content = ensured;
-    this.dirty = true;
-  }
-
-  /** Keep chrome kind aligned with frontmatter after edits / restores. */
-  private syncSelectedKindFromContent() {
-    const path = this.selectedPath?.trim() ?? "";
-    const { frontmatter } = stripFrontmatter(this.content);
-    const fmKind = parseFrontmatterKindValue(frontmatter).trim();
-    if (!fmKind) return;
-    const next = normalizeKind(fmKind);
-    if (next !== this.selectedKind) {
-      this.selectedKind = next;
-    }
-  }
-
-  rebuildTree() {
-    this.tree = buildVaultTree(this.notes, {
-      showSystemNotes: this.showSystemNotes,
-      spaceFilter: this.activeSpaceFilter,
-      agentReviewOnly: this.showAgentReviewFilter,
-      agentWrittenAt: this.agentWrittenAt,
-    });
-    this.rebuildVaultTagsFromNotes();
-  }
-
-  setLibraryBrowseMode(mode: LibraryBrowseMode) {
-    this.libraryBrowseMode = mode;
-    saveLibraryBrowseMode(mode);
-    if (mode === "tags") {
-      void this.refreshVaultTags();
-    }
-  }
-
-  /** Notes visible under current space / system / agent-review filters. */
-  scopedLibraryNotes(): VaultNote[] {
-    const agentMap = this.agentWrittenAt;
-    const agentOnly = this.showAgentReviewFilter;
-    const showSystem = this.showSystemNotes;
-    const spaceFilter = this.activeSpaceFilter;
-    return this.notes.filter((note) => {
-      if (agentOnly && !isRecentAgentWrite(note.path, agentMap)) return false;
-      if (!showSystem && shouldHideGarageNote(note.path, note.title, showSystem)) {
-        return false;
-      }
-      if (spaceFilter) {
-        return resolveSpaceForPath(note.path, note.title).id === spaceFilter;
-      }
-      return true;
-    });
-  }
-
-  notesForTag(tag: string): VaultNote[] {
-    const needle = tag.trim().toLowerCase();
-    if (!needle) return [];
-    return this.scopedLibraryNotes()
-      .filter((note) =>
-        (note.tags ?? []).some((entry) => entry.trim().toLowerCase() === needle),
-      )
-      .sort((a, b) => a.title.localeCompare(b.title));
-  }
-
-  notesByKind(): { kind: VaultNoteKind; notes: VaultNote[] }[] {
-    const buckets = new Map<VaultNoteKind, VaultNote[]>();
-    for (const kind of KIND_BROWSE_ORDER) {
-      buckets.set(kind, []);
-    }
-    for (const note of this.scopedLibraryNotes()) {
-      const kind = resolveKind(note.path, note.kind);
-      const bucket = buckets.get(kind) ?? buckets.get("note")!;
-      bucket.push(note);
-    }
-    return KIND_BROWSE_ORDER.map((kind) => ({
-      kind,
-      notes: (buckets.get(kind) ?? []).sort((a, b) => a.title.localeCompare(b.title)),
-    })).filter((group) => group.notes.length > 0);
-  }
-
-  recentNotesList(limit = RECENT_BROWSE_LIMIT): VaultNote[] {
-    const scoped = this.scopedLibraryNotes();
-    const byPath = new Map(scoped.map((note) => [note.path, note]));
-    const result: VaultNote[] = [];
-    const seen = new Set<string>();
-    for (const path of this.recentPaths) {
-      const note = byPath.get(path);
-      if (!note) continue;
-      result.push(note);
-      seen.add(path);
-      if (result.length >= limit) return result;
-    }
-    const rest = [...scoped]
-      .filter((note) => !seen.has(note.path))
-      .sort(
-        (a, b) =>
-          Date.parse(b.modified_at_utc || "0") - Date.parse(a.modified_at_utc || "0"),
-      );
-    for (const note of rest) {
-      result.push(note);
-      if (result.length >= limit) break;
-    }
-    return result;
-  }
-
-  private rebuildVaultTagsFromNotes(extraTags: string[] = []) {
-    const counts = new Map<string, number>();
-    for (const note of this.scopedLibraryNotes()) {
-      for (const tag of note.tags ?? []) {
-        const trimmed = tag.trim();
-        if (!trimmed) continue;
-        counts.set(trimmed, (counts.get(trimmed) ?? 0) + 1);
-      }
-    }
-    for (const tag of extraTags) {
-      const trimmed = tag.trim();
-      if (!trimmed || counts.has(trimmed)) continue;
-      counts.set(trimmed, 0);
-    }
-    this.vaultTags = sortVaultTagsForDisplay([...counts.keys()])
-      .map((tag) => ({ tag, count: counts.get(tag) ?? 0 }))
-      .filter((row) => row.count > 0);
-  }
-
-  async refreshVaultTags() {
-    try {
-      const response = await listVaultTags({ limit: 500 });
-      this.rebuildVaultTagsFromNotes(response.tags ?? []);
-    } catch {
-      this.rebuildVaultTagsFromNotes();
-    }
-  }
-
-  setShowAgentReviewFilter(value: boolean) {
-    this.showAgentReviewFilter = value;
-    this.rebuildTree();
-  }
-
-  private clearProposal() {
-    this.proposalActive = false;
-    this.proposalContent = null;
-  }
-
-  proposalDiffStats(): LineDiffStats | null {
-    if (!this.proposalContent) return null;
-    return lineDiffStats(this.content, this.proposalContent);
-  }
-
-  private recordAgentWrite(path: string, timestampUtc?: string) {
-    this.agentWrittenAt = {
-      ...this.agentWrittenAt,
-      [path]: timestampUtc ?? new Date().toISOString(),
-    };
-  }
-
-  noteFromFeedEvent(event: WorkspaceEvent) {
-    const path = vaultRefPath(event);
-    if (!path) return;
-    if (event.actor === "agent") {
-      this.recordAgentWrite(path, event.timestamp_utc);
-    }
-    if (this.shouldIgnoreSaveEcho(event, path)) {
-      this.scheduleNotesRefresh();
-      return;
-    }
-    void this.ingestRemoteUpdate(event);
-    this.scheduleNotesRefresh();
-  }
-
-  async ingestRemoteUpdate(event: WorkspaceEvent) {
-    const path = vaultRefPath(event);
-    if (!path || path !== this.selectedPath) return;
-    if (this.noteLoading) return;
-
-    this.clearAutosaveTimer();
-    try {
-      const response = await getVaultNote(path);
-      const serverContent = response.content;
-      const isAgent = event.actor === "agent";
-
-      if (serverContent === this.content) {
-        this.syncNoteMetadata(response);
-        return;
-      }
-
-      if (isAgent || this.dirty || this.proposalActive) {
-        this.proposalActive = true;
-        this.proposalContent = serverContent;
-        this.proposalSource = isAgent ? "agent" : "operator";
-        this.contentHash = response.note.content_hash;
-        this.title = response.note.title;
-        this.wikilinksOut = response.note.wikilinks_out;
-        this.backlinks = response.note.backlinks;
-        if (this.dirty && this.saveStatus !== "conflict") {
-          this.saveStatus = "unsaved";
-        }
-        return;
-      }
-
-      this.applyNote(response);
-    } catch (err) {
-      this.error = err instanceof Error ? err.message : String(err);
-    }
-  }
-
-  async acceptProposal() {
-    if (!this.selectedPath || !this.proposalActive) return false;
-    this.clearProposal();
-    return this.save({ force: true, source: "manual" });
-  }
-
-  async discardProposal() {
-    if (!this.selectedPath || !this.proposalContent) return;
-    this.clearAutosaveTimer();
-    this.content = this.proposalContent;
-    this.baselineContent = this.proposalContent;
-    this.dirty = false;
-    this.resetSaveState();
-    this.clearProposal();
-    await this.reloadFromServer();
-  }
-
-  editProposal() {
-    this.proposalActive = false;
-  }
-
-  setShowSystemNotes(value: boolean) {
-    this.showSystemNotes = value;
-    saveShowSystemNotes(value);
-    this.rebuildTree();
-  }
-
-  setStampCompletionInline(value: boolean) {
-    this.stampCompletionInline = value;
-    writeVaultStampCompletionEnabled(value);
-  }
-
-  setBuildWordWrap(value: boolean) {
-    this.buildWordWrap = value;
-    writeVaultBuildWordWrap(value);
-  }
-
-  setBuildLineNumbers(value: boolean) {
-    this.buildLineNumbers = value;
-    writeVaultBuildLineNumbers(value);
-  }
-
-  setBuildAutoSave(value: boolean) {
-    this.buildAutoSave = value;
-    writeVaultBuildAutoSave(value);
-    if (value) {
-      if (this.dirty) this.scheduleAutosave();
-    } else {
-      this.clearAutosaveTimer();
-    }
-  }
-
-  setBuildScrollSync(value: boolean) {
-    this.buildScrollSync = value;
-    writeVaultBuildScrollSync(value);
-  }
-
-  setReadingPalette(palette: VaultReadingPalette) {
-    this.readingPalette = palette;
-    writeVaultReadingPalette(palette);
-  }
-
-  cycleReadingPalette() {
-    this.setReadingPalette(cycleVaultReadingPalette(this.readingPalette));
-  }
-
-  setHideLiveMarkdownSyntax(enabled: boolean) {
-    this.hideLiveMarkdownSyntax = enabled;
-    writeVaultHideLiveMarkdownSyntax(enabled);
-  }
-
-  toggleHideLiveMarkdownSyntax() {
-    this.setHideLiveMarkdownSyntax(!this.hideLiveMarkdownSyntax);
-  }
-
-  setPaperWidth(width: VaultPaperWidth) {
-    this.paperWidth = width;
-    writeVaultPaperWidth(width);
-  }
-
-  cyclePaperWidth() {
-    this.setPaperWidth(cycleVaultPaperWidth(this.paperWidth));
-  }
-
-  togglePreviewTask(taskIndex: number, checked: boolean) {
-    if (!this.selectedPath || this.proposalActive) return;
-    const next = togglePreviewTaskInContent(
-      this.content,
-      taskIndex,
-      checked,
-      this.stampCompletionInline,
-    );
-    if (!next || next === this.content) return;
-    this.markDirty(next, { reloadEditors: true });
-  }
-
-  queueEditorInsert(text: string) {
-    this.pendingEditorInsert = text;
-    this.editorInsertRequest += 1;
-  }
-
-  takeEditorInsert(): string | null {
-    const text = this.pendingEditorInsert;
-    this.pendingEditorInsert = null;
-    return text;
-  }
-
-  openViewBridgeInsert(insertAt: number) {
-    this.viewBridgeMode = "insert";
-    this.viewBridgeInsertAt = insertAt;
-    this.viewBridgeEditIndex = null;
-    this.viewBridgeQuery = null;
-    this.viewBridgeOpen = true;
-  }
-
-  openViewBridgeEdit(index: number) {
-    const blocks = extractMedousaViewBlocks(this.content);
-    const block = blocks[index];
-    if (!block) return;
-    this.viewBridgeMode = "edit";
-    this.viewBridgeEditIndex = index;
-    this.viewBridgeQuery = block.query;
-    this.viewBridgeOpen = true;
-  }
-
-  closeViewBridge() {
-    this.viewBridgeOpen = false;
-    this.viewBridgeQuery = null;
-    this.viewBridgeEditIndex = null;
-  }
-
-  commitViewBridge(query: MedousaViewQuery) {
-    if (this.viewBridgeMode === "edit" && this.viewBridgeEditIndex != null) {
-      const next = replaceMedousaViewFenceAt(
-        this.content,
-        this.viewBridgeEditIndex,
-        query,
-      );
-      if (next) {
-        this.markDirty(next, { reloadEditors: true });
-        invalidateMedousaViewCache();
-      }
-    } else {
-      const fence = serializeMedousaViewFence(query);
-      const result = insertTextAtCursor(
-        this.content,
-        this.viewBridgeInsertAt,
-        fence,
-      );
-      this.markDirty(result.content, { reloadEditors: true });
-    }
-    this.closeViewBridge();
-  }
-
-  openChartBridgeEdit(index: number) {
-    const blocks = extractChartFences(this.content);
-    const block = blocks[index];
-    if (!block) return;
-    const parts = parseChartFenceParts(block.body);
-    this.chartBridgeEditIndex = index;
-    this.chartBridgeKv = parts.kv;
-    this.chartBridgeTableMarkdown = parts.tableMarkdown;
-    this.chartBridgeOpen = true;
-  }
-
-  closeChartBridge() {
-    this.chartBridgeOpen = false;
-    this.chartBridgeKv = null;
-    this.chartBridgeTableMarkdown = "";
-    this.chartBridgeEditIndex = null;
-  }
-
-  commitChartBridge(kv: ChartFenceKv, tableMarkdown?: string) {
-    if (this.chartBridgeEditIndex == null) {
-      this.closeChartBridge();
-      return;
-    }
-    const next = replaceChartFenceAt(
-      this.content,
-      this.chartBridgeEditIndex,
-      kv,
-      tableMarkdown,
-    );
-    if (next) this.markDirty(next, { reloadEditors: true });
-    this.closeChartBridge();
-  }
-
-  openLiquidBridgeEdit(lang: LiquidFenceLang, index: number) {
-    const blocks = extractLiquidFences(this.content, lang);
-    const block = blocks[index];
-    if (!block) return;
-    this.liquidBridgeLang = lang;
-    this.liquidBridgeEditIndex = index;
-    this.liquidBridgeDraft = parseLiquidFenceDraft(lang, block.body);
-    this.liquidBridgeOpen = true;
-  }
-
-  closeLiquidBridge() {
-    this.liquidBridgeOpen = false;
-    this.liquidBridgeLang = null;
-    this.liquidBridgeEditIndex = null;
-    this.liquidBridgeDraft = null;
-  }
-
-  commitLiquidBridge(next: LiquidFenceDraft) {
-    if (this.liquidBridgeEditIndex == null || !this.liquidBridgeLang) {
-      this.closeLiquidBridge();
-      return;
-    }
-    const raw = serializeLiquidFenceDraft(next);
-    const replaced = replaceLiquidFenceRawAt(
-      this.content,
-      this.liquidBridgeLang,
-      this.liquidBridgeEditIndex,
-      raw,
-    );
-    if (replaced) this.markDirty(replaced, { reloadEditors: true });
-    this.closeLiquidBridge();
-  }
-
-  openCardDetail(detail: CardDetailPayload) {
-    this.cardDetail = detail;
-    this.cardDetailOpen = true;
-  }
-
-  closeCardDetail() {
-    this.cardDetailOpen = false;
-    this.cardDetail = null;
-  }
-
-  async insertImageEmbed(imagePath: string) {
-    if (!this.selectedPath || !imagePath.trim()) return;
-    this.enterEditMode();
-    const embedPath = await embedPathForNote(imagePath, this.selectedPath);
-    const alt = embedPath.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "image";
-    this.queueEditorInsert(formatImageEmbedMarkdown(embedPath, alt));
-  }
-
-  setActiveSpaceFilter(spaceId: string | null) {
-    this.activeSpaceFilter = spaceId;
-    saveLastSpace(spaceId);
-    this.rebuildTree();
-    if (this.searchQuery.trim()) {
-      void this.runSearch(this.searchQuery);
-    }
-  }
-
-  /** After a move, show the destination space in the sidebar filter. */
-  focusSpaceForPath(path: string, title: string) {
-    const space = resolveSpaceForPath(path, title);
-    if (space.id === "system_bucket" || space.id === "other") {
-      this.setActiveSpaceFilter(null);
-      return;
-    }
-    this.setActiveSpaceFilter(space.id);
-    saveLastSpace(space.id);
-  }
-
-  /** When sidebar filter is All, keep All after drag-move; otherwise focus destination space. */
-  applySpaceFilterAfterMove(path: string, title: string, filterWasAll: boolean) {
-    if (filterWasAll) return;
-    this.focusSpaceForPath(path, title);
-  }
-
-  get activeVaultRoot(): VaultRootView | null {
-    return this.activeVaultRootView;
-  }
-
-  resetForWorkshopSwitch() {
-    this.clearAutosaveTimer();
-    this.noteBuffers.clear();
-    this.bufferWarmInFlight.clear();
-    this.looseOpenInFlight.clear();
-    noteEditorRuntimes.resetForWorkshopSwitch();
-    this.clearProposal();
-    this.clearLooseFile();
-    this.selectedPath = null;
-    this.content = "";
-    this.baselineContent = "";
-    this.contentHash = null;
-    this.noteTags = [];
-    this.wikilinksOut = [];
-    this.backlinks = [];
-    this.title = "";
-    this.dirty = false;
-    this.searchHits = [];
-    this.searchQuery = "";
-    this.notes = [];
-    this.tree = [];
-    this.error = null;
-    this.vaultRoots = [];
-    this.activeVaultRootId = null;
-    this.vaultRootsUnavailable = false;
-    invalidateVaultRootCache();
-    void import("$lib/utils/vaultLocalImages").then(({ clearDaemonImagePreviewCache }) => {
-      clearDaemonImagePreviewCache();
-    });
-    void this.refreshVaultRoots();
-    void this.refreshNotes();
-  }
-
-  clearLooseFile() {
-    this.looseFilePath = null;
-  }
-
-  /** Open a single .md file without registering a vault root (desktop, co-located). */
-  async openLooseMarkdownFile() {
-    const path = await pickMarkdownFile();
-    if (!path) return false;
-    return this.openLooseFile(path);
-  }
-
-  async openLooseFile(
-    absolutePath: string,
-    options?: { skipLeaveFlush?: boolean },
-  ) {
-    const trimmed = absolutePath.trim();
-    if (!trimmed || !isAbsoluteDiskPath(trimmed)) return false;
-    const existingOpen = this.looseOpenInFlight.get(trimmed);
-    if (existingOpen) return existingOpen;
-    const pending = this.performOpenLooseFile(trimmed, options).finally(() => {
-      if (this.looseOpenInFlight.get(trimmed) === pending) {
-        this.looseOpenInFlight.delete(trimmed);
-      }
-    });
-    this.looseOpenInFlight.set(trimmed, pending);
-    return pending;
-  }
-
-  private async performOpenLooseFile(
-    trimmed: string,
-    options?: { skipLeaveFlush?: boolean },
-  ) {
-    if (
-      this.looseFilePath === trimmed &&
-      this.selectedPath === trimmed &&
-      !this.noteLoading
-    ) {
-      const hasSession =
-        this.contentHash != null ||
-        this.dirty ||
-        this.noteBuffers.has(trimmed) ||
-        Boolean(this.content.trim());
-      if (hasSession) {
-        noteEditorRuntimes.touch(trimmed);
-        return true;
-      }
-    }
-
-    const openGen = ++this.openGeneration;
-
-    if (this.selectedPath && this.selectedPath !== trimmed) {
-      const ok = options?.skipLeaveFlush
-        ? await this.flushBeforeLeave({ skipEditorFlush: true })
-        : await this.flushBeforeLeave();
-      if (!ok) return false;
-      if (openGen !== this.openGeneration) return false;
-      this.clearProposal();
-      this.closeAttachmentPreview();
-    }
-    if (openGen !== this.openGeneration) return false;
-
-    const buffered = this.noteBuffers.get(trimmed);
-    if (buffered) {
-      this.clearLooseFile();
-      this.looseFilePath = trimmed;
-      this.selectedPath = trimmed;
-      this.resetSaveState();
-      this.restoreBufferIntoFocused(buffered);
-      this.wikilinksOut = [];
-      this.backlinks = [];
-      this.noteTags = [];
-      this.selectedKind = "note";
-      this.error = null;
-      this.restoreEditorUi(trimmed);
-      await this.syncLmeNoteTab(trimmed);
-      return true;
-    }
-
-    this.noteLoading = true;
-    this.loading = true;
-    this.error = null;
-    // Lease first with empty body so a failed read cannot leave another note's
-    // content under this absolute path.
-    this.clearLooseFile();
-    this.looseFilePath = trimmed;
-    this.selectedPath = trimmed;
-    this.resetSaveState();
-    this.content = "";
-    this.baselineContent = "";
-    this.contentHash = null;
-    this.title = fileNameFromAbsolutePath(trimmed)
-      .replace(/\.md$/i, "")
-      .replace(/\.markdown$/i, "") || trimmed;
-    this.dirty = false;
-    this.selectedKind = "note";
-    this.bumpContentSync();
-    // Bind the LME tab immediately so the keep-alive host focuses this path
-    // while the file read is in flight (shows loading instead of the old note).
-    await this.syncLmeNoteTab(trimmed);
-    if (openGen !== this.openGeneration || this.looseFilePath !== trimmed) {
-      return false;
-    }
-    try {
-      const content = await readAbsoluteTextFile(trimmed);
-      if (openGen !== this.openGeneration || this.looseFilePath !== trimmed) {
-        return false;
-      }
-      const name = fileNameFromAbsolutePath(trimmed);
-      const title = name.replace(/\.md$/i, "").replace(/\.markdown$/i, "") || name;
-      this.content = content;
-      this.baselineContent = content;
-      this.title = title;
-      this.wikilinksOut = [];
-      this.backlinks = [];
-      this.noteTags = [];
-      this.dirty = false;
-      this.writeAbsoluteBuffer(trimmed, content, title);
-      this.restoreEditorUi(trimmed);
-      this.bumpContentSync();
-      return true;
-    } catch (err) {
-      if (openGen === this.openGeneration && this.looseFilePath === trimmed) {
-        this.error = err instanceof Error ? err.message : String(err);
-        this.content = "";
-        this.baselineContent = "";
-        this.contentHash = null;
-        this.dirty = false;
-        this.noteBuffers.delete(trimmed);
-        this.bumpNoteBuffers();
-        this.bumpContentSync();
-      }
-      return false;
-    } finally {
-      if (openGen === this.openGeneration) {
-        this.noteLoading = false;
-        this.loading = false;
-      }
-    }
-  }
-
-  /** Bind the LME keep-alive host to the focused note (create/activate tab). */
-  private async syncLmeNoteTab(path: string) {
-    // Store instances used for isolated previews/tests must not drive the app's
-    // singleton workspace (which would perform a second open through `vault`).
-    if (this !== vault) return;
-    try {
-      const { lmeWorkspace } = await import("$lib/stores/lmeWorkspace.svelte");
-      lmeWorkspace.ensureAndActivateNoteTab(path);
-    } catch {
-      // Unit tests / non-shell contexts may not load the LME workspace.
-    }
-  }
-
-  async refreshVaultRoots() {
-    this.vaultRootsLoading = true;
-    this.vaultRootsError = null;
-    try {
-      const response = await listVaultRoots();
-      this.vaultRootsUnavailable = false;
-      this.vaultRoots = response.roots;
-      this.activeVaultRootId = response.activeRootId;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (/404|not found/i.test(message)) {
-        this.vaultRootsUnavailable = true;
-        this.vaultRootsError = null;
-        this.vaultRoots = [
-          {
-            id: "personal",
-            label: "Personal",
-            path: "",
-            isDefault: true,
-            active: true,
-            isObsidian: false,
-          },
-        ];
-        this.activeVaultRootId = "personal";
-      } else {
-        this.vaultRootsError = message;
-      }
-    } finally {
-      this.vaultRootsLoading = false;
-    }
-  }
-
-  async switchVaultRoot(rootId: string) {
-    if (!rootId.trim() || rootId === this.activeVaultRootId) return;
-    this.clearAutosaveTimer();
-    this.clearProposal();
-    this.clearLooseFile();
-    this.selectedPath = null;
-    this.clearRailSelection();
-    this.content = "";
-    this.baselineContent = "";
-    this.contentHash = null;
-    this.noteTags = [];
-    this.wikilinksOut = [];
-    this.backlinks = [];
-    this.title = "";
-    this.dirty = false;
-    this.searchHits = [];
-    this.searchQuery = "";
-    this.notes = [];
-    this.tree = [];
-    this.error = null;
-    invalidateVaultRootCache();
-    try {
-      const response = await setActiveVaultRoot(rootId);
-      this.vaultRoots = response.roots;
-      this.activeVaultRootId = response.activeRootId;
-      await this.refreshNotes();
-    } catch (err) {
-      this.error = err instanceof Error ? err.message : String(err);
-      throw err;
-    }
-  }
-
-  async registerVaultRoot(label: string, path: string) {
-    const { isCoLocatedWorkshop, vaultAddRootRemoteHint } = await import(
-      "$lib/utils/workshopLocality"
-    );
-    if (!isCoLocatedWorkshop()) {
-      throw new Error(vaultAddRootRemoteHint());
-    }
-    const response = await addVaultRoot(label, path);
-    this.vaultRoots = response.roots;
-    this.activeVaultRootId = response.activeRootId;
-    invalidateVaultRootCache();
-  }
-
-  openAddVaultRootDialog() {
-    // Folder pick posts a Home path — only valid when co-located with the daemon.
-    void import("$lib/utils/workshopLocality").then(
-      ({ isCoLocatedWorkshop, vaultAddRootRemoteHint }) => {
-        if (!isCoLocatedWorkshop()) {
-          toast.show(vaultAddRootRemoteHint());
-          return;
-        }
-        this.addVaultRootOpen = true;
-      },
-    );
-  }
-
-  closeAddVaultRootDialog() {
-    this.addVaultRootOpen = false;
-  }
-
-  async refreshNotes() {
-    this.error = null;
-    try {
-      if (this.vaultGeneration > 0) {
-        const delta = await listVaultChanges({
-          sinceGeneration: this.vaultGeneration,
-          limit: 500,
-        });
-        if (!delta.reset_required && delta.changes.every((change) => change.kind === "delete")) {
-          const removed = new Set(
-            delta.changes.map((change) => change.path),
-          );
-          this.notes = this.notes.filter((note) => !removed.has(note.path));
-          this.vaultGeneration = delta.vault_generation;
-          this.listingIncomplete = false;
-          this.rebuildLookupSnapshot();
-          this.rebuildTree();
-          if (this.libraryBrowseMode === "tags") {
-            void this.refreshVaultTags();
-          }
-          return;
-        }
-      }
-
-      const pageLimit = VAULT_LIST_PAGE_LIMIT;
-      const notes: typeof this.notes = [];
-      let cursor: string | undefined;
-      let generation: number | undefined;
-      let incomplete = false;
-      for (let page = 0; page < VAULT_LIST_MAX_PAGES; page += 1) {
-        const response = await listVaultNotes({
-          limit: pageLimit,
-          cursor,
-          generation,
-        });
-        if (response.reset_required) {
-          notes.length = 0;
-          cursor = undefined;
-          generation = response.vault_generation ?? undefined;
-          continue;
-        }
-        for (const note of response.notes) {
-          notes.push({
-            path: note.path,
-            title: note.title,
-            byte_size: 0,
-            content_hash: "",
-            modified_at_utc: note.modified_at_utc,
-            created_at_utc: note.modified_at_utc,
-            tags: note.tags ?? [],
-            wikilinks_out: [],
-            backlinks: [],
-            kind: note.kind,
-          });
-        }
-        generation = response.vault_generation ?? generation;
-        if (!response.truncated || !response.next_cursor) {
-          this.vaultGeneration = generation ?? this.vaultGeneration + 1;
-          incomplete = false;
-          break;
-        }
-        if (
-          listingIncompleteAfterPages(
-            page + 1,
-            Boolean(response.truncated),
-            response.next_cursor,
-          )
-        ) {
-          incomplete = true;
-          break;
-        }
-        cursor = response.next_cursor;
-      }
-      if (incomplete) {
-        this.listingIncomplete = true;
-        this.error = "Vault listing is incomplete; page until the listing finishes.";
-        return;
-      }
-      this.listingIncomplete = false;
-      this.notes = notes;
-      this.rebuildLookupSnapshot();
-      this.rebuildTree();
-      if (this.libraryBrowseMode === "tags") {
-        void this.refreshVaultTags();
-      }
-    } catch (err) {
-      this.error = err instanceof Error ? err.message : String(err);
-    }
-  }
-
   rebuildLookupSnapshot() {
     this.lookupSnapshot = buildVaultLookupSnapshot(
       this.notes,
@@ -1655,76 +572,6 @@ export class VaultStore {
       this.selectedPath,
     );
     publishVaultLookupSnapshot(this.lookupSnapshot);
-  }
-
-  selectionAncestorSet(): Set<string> {
-    return this.lookupSnapshot.ancestorIdsForSelection;
-  }
-
-  isSelectionAncestor(pathOrFolder: string | null): boolean {
-    if (!pathOrFolder) return false;
-    return this.lookupSnapshot.ancestorIdsForSelection.has(pathOrFolder);
-  }
-
-  /**
-   * Flush TipTap/CM drafts + save the leaving note before remount/activate.
-   * On failure (conflict/error), stays on the current note — caller must not
-   * change activeTabId.
-   */
-  async flushBeforeLeave(options?: { skipEditorFlush?: boolean }): Promise<boolean> {
-    if (!options?.skipEditorFlush) {
-      await invokeVaultLeaveFlush();
-    }
-    if (!this.selectedPath && !this.looseFilePath) return true;
-    if (!this.dirty) {
-      this.stashSelectedBuffer();
-      this.stashFocusedEditorUi();
-      return true;
-    }
-    const ok = await this.save({ source: "autosave" });
-    if (ok) {
-      this.stashSelectedBuffer();
-      this.stashFocusedEditorUi();
-    }
-    return ok;
-  }
-
-  /** Bumped when openNote restores UI — editors apply scrollTop from runtime. */
-  editorScrollRestoreEpoch = $state(0);
-  editorScrollRestorePath = $state<string | null>(null);
-  editorScrollRestoreTop = $state(0);
-
-  /**
-   * Folder-tree expand map (session). Key = folder path / space id / name.
-   * Survives Workspace rail remounts.
-   */
-  treeExpandedByKey = $state<Record<string, boolean>>({});
-
-  treeExpandKeyFor(node: {
-    path?: string | null;
-    spaceId?: string | null;
-    dropPrefix?: string | null;
-    name: string;
-  }): string {
-    return (node.path ?? node.spaceId ?? node.dropPrefix ?? node.name).trim();
-  }
-
-  isTreeExpanded(key: string): boolean | undefined {
-    const normalized = key.trim();
-    if (!normalized) return undefined;
-    if (Object.prototype.hasOwnProperty.call(this.treeExpandedByKey, normalized)) {
-      return this.treeExpandedByKey[normalized];
-    }
-    return undefined;
-  }
-
-  setTreeExpanded(key: string, expanded: boolean) {
-    const normalized = key.trim();
-    if (!normalized) return;
-    this.treeExpandedByKey = {
-      ...this.treeExpandedByKey,
-      [normalized]: expanded,
-    };
   }
 
   stashEditorScroll(path: string | null | undefined, scrollTop: number) {
@@ -1735,7 +582,7 @@ export class VaultStore {
     });
   }
 
-  private stashFocusedEditorUi(scrollTop?: number) {
+  stashFocusedEditorUi(scrollTop?: number) {
     const path = this.selectedPath?.trim();
     if (!path) return;
     noteEditorRuntimes.patchUi(path, {
@@ -1746,7 +593,7 @@ export class VaultStore {
     });
   }
 
-  private restoreEditorUi(path: string) {
+  restoreEditorUi(path: string) {
     const runtime = noteEditorRuntimes.ensure(path, {
       plane: this.notePlane,
       editorMode: this.editorMode,
@@ -1777,7 +624,7 @@ export class VaultStore {
       const hasSession =
         this.contentHash != null ||
         this.dirty ||
-        this.noteBuffers.has(nextPath);
+        Boolean(this.#editor.getBuffer(nextPath));
       if (hasSession) {
         noteEditorRuntimes.touch(nextPath);
         return;
@@ -1799,13 +646,13 @@ export class VaultStore {
     if (openGen !== this.openGeneration) return;
     this.clearLooseFile();
 
-    const buffered = this.noteBuffers.get(nextPath);
+    const buffered = this.#editor.getBuffer(nextPath);
     // Buffer-first reopen: dirty or recently stashed clean — skip cold refetch.
     if (buffered) {
       this.selectedPath = nextPath;
       this.lookupSnapshot = withSelectionAncestors(this.lookupSnapshot, nextPath);
       publishVaultLookupSnapshot(this.lookupSnapshot);
-      this.restoreBufferIntoFocused(buffered);
+      this.#editor.restoreBufferIntoFocused(buffered);
       this.restoreEditorUi(nextPath);
       localStorage.setItem(LAST_NOTE_KEY, nextPath);
       rememberVaultRecent(nextPath);
@@ -1837,7 +684,7 @@ export class VaultStore {
         return;
       }
       this.applyNote(response);
-      this.writeBufferFromResponse(nextPath, response);
+      this.#editor.writeBufferFromResponse(nextPath, response);
       this.restoreEditorUi(nextPath);
       localStorage.setItem(LAST_NOTE_KEY, nextPath);
       rememberVaultRecent(nextPath);
@@ -1847,7 +694,7 @@ export class VaultStore {
       if (openGen === this.openGeneration && this.selectedPath === nextPath) {
         this.error = err instanceof Error ? err.message : String(err);
         // Drop any placeholder buffer so the next openNote refetches.
-        this.noteBuffers.delete(nextPath);
+        this.#editor.deleteBuffer(nextPath);
         this.bumpNoteBuffers();
       }
     } finally {
@@ -1861,7 +708,7 @@ export class VaultStore {
     }
   }
 
-  private syncNoteMetadata(response: VaultNoteContentResponse) {
+  syncNoteMetadata(response: VaultNoteContentResponse) {
     this.contentHash = response.note.content_hash;
     this.title = response.note.title;
     this.selectedKind = resolveKind(response.note.path, response.note.kind);
@@ -1899,8 +746,8 @@ export class VaultStore {
     this.noteTags = response.note.tags ?? [];
     this.dirty = false;
     this.editorMode = "edit";
-    this.ensureFocusedDataFirstBody();
-    this.applyObjectEditModesForKind(this.selectedKind, this.content);
+    this.#editor.ensureFocusedDataFirstBody();
+    this.#editor.applyObjectEditModesForKind(this.selectedKind, this.content);
     this.bumpContentSync();
   }
 
@@ -1940,10 +787,6 @@ export class VaultStore {
     }
   }
 
-  /**
-   * Sticky popout: force Live + write surface without writing prefs
-   * so the main window's plane/surface stay intact.
-   */
   applyStickyLivePlane() {
     this.notePlane = "live";
     this.editorSurface = "write";
@@ -2016,349 +859,16 @@ export class VaultStore {
     }
   }
 
-  /**
-   * Update note markdown (source of truth).
-   * Editor keystrokes must NOT bump contentSyncKey — that remounts Live/Build and
-   * causes stale TipTap flushes to clobber the open note. Pass `reloadEditors: true`
-   * only for out-of-band mutations (attachments, bridges, preview toggles).
-   *
-   * Pass `path` from the emitting editor so remounts / keep-alive hosts cannot
-   * write into a different leased session.
-   */
-  markDirty(
-    nextContent: string,
-    options?: { reloadEditors?: boolean; allowEmpty?: boolean; path?: string | null },
-  ) {
-    if (this.noteLoading) {
-      return;
-    }
-    if (options?.path != null && options.path.trim() !== "") {
-      if (!this.isFocusedPath(options.path)) {
-        return;
-      }
-    }
-    // Live serialize/organism remounts must not mark dirty on open with no edits.
-    if (nextContent === this.content) {
-      return;
-    }
-    if (!options?.allowEmpty && this.shouldRefuseEmptyOverwrite(this.content, nextContent)) {
-      return;
-    }
-    this.content = nextContent;
-    this.dirty = true;
-    const { frontmatter } = stripFrontmatter(nextContent);
-    const fmTitle = parseFrontmatterTitle(frontmatter).trim();
-    if (fmTitle) {
-      this.title = fmTitle;
-    }
-    this.syncSelectedKindFromContent();
-    if (options?.reloadEditors) {
-      this.bumpContentSync();
-    }
-    if (
-      this.previewingAttachmentPath &&
-      !listAttachments(nextContent).some(
-        (row) => row.path === this.previewingAttachmentPath,
-      )
-    ) {
-      // Keep pane previews from Your files (path may not be in note attachments).
-      if (this.previewPresentation === "panel") {
-        this.closeAttachmentPreview();
-      }
-    }
-    if (this.saveStatus === "conflict") {
-      return;
-    }
-    if (this.saveStatus !== "saving") {
-      this.saveStatus = "unsaved";
-    }
-    this.scheduleAutosave();
-  }
-
-  /**
-   * Persist a non-focused (or focused) path through the per-path save queue
-   * with If-Match — never bypass versioning for embed write-through.
-   */
-  async saveNoteAtPath(
-    path: string,
-    content: string,
-    options?: { force?: boolean },
-  ): Promise<boolean> {
-    const key = this.normalizeNotePath(path);
-    if (!key) return false;
-    const hash = this.isFocusedPath(key)
-      ? this.contentHash
-      : (this.noteBuffers.get(key)?.contentHash ?? null);
-    const result = await this.saveQueue.enqueue(key, {
-      content,
-      contentHash: options?.force ? null : hash,
-      force: Boolean(options?.force),
-      source: "manual",
-    });
-    return result.ok;
-  }
-
-  /** Refuse empty/near-empty Live serialize over a substantial note body. */
-  private shouldRefuseEmptyOverwrite(previous: string, next: string): boolean {
-    const prevSig = significantLiveText(previous);
-    const nextSig = significantLiveText(next);
-    if (prevSig.length <= 20) return false;
-    if (nextSig.length === 0) return true;
-    if (prevSig.length > 40 && nextSig.length < 3 && nextSig.length < prevSig.length * 0.05) {
-      return true;
-    }
-    return false;
-  }
-
-  /** Update note kind in frontmatter and chrome immediately. */
   setNoteKind(kind: VaultNoteKind) {
     if (!this.selectedPath || this.isLooseFile) return;
     const next = normalizeKind(kind);
     this.selectedKind = next;
     const ensured = ensureDataFirstSurface(next, this.content, this.title);
-    this.applyObjectEditModesForKind(next, ensured);
+    this.#editor.applyObjectEditModesForKind(next, ensured);
     this.markDirty(ensured, {
       reloadEditors: true,
       allowEmpty: next === "workbook",
     });
-  }
-
-  private applySaveResponse(
-    response: VaultNoteContentResponse["note"],
-    writtenContent?: string | null,
-  ) {
-    this.contentHash = response.content_hash;
-    this.title = response.title;
-    this.wikilinksOut = response.wikilinks_out;
-    this.noteTags = response.tags ?? [];
-    // Prefer server body echo (semantic tags) so baseline matches disk.
-    if (typeof writtenContent === "string") {
-      this.content = writtenContent;
-      this.baselineContent = writtenContent;
-    } else {
-      this.baselineContent = this.content;
-    }
-    this.selectedKind = kindFromNoteContent(response.path, this.content);
-    if (
-      this.selectedKind === "note" &&
-      response.kind &&
-      normalizeKind(response.kind) !== "note"
-    ) {
-      this.selectedKind = normalizeKind(response.kind);
-    }
-    this.dirty = false;
-  }
-
-  private patchBufferAfterSave(
-    path: string,
-    writtenContent: string,
-    note: VaultNoteContentResponse["note"],
-  ) {
-    const key = this.normalizeNotePath(path);
-    const prior = this.noteBuffers.get(key);
-    if (this.isFocusedPath(key)) {
-      this.noteBuffers.set(key, {
-        path: key,
-        content: this.content,
-        baselineContent: writtenContent,
-        contentHash: note.content_hash,
-        title: note.title,
-        dirty: this.dirty,
-        contentRevision: this.contentRevision,
-      });
-    } else {
-      const content = prior?.content ?? writtenContent;
-      this.noteBuffers.set(key, {
-        path: key,
-        content,
-        baselineContent: writtenContent,
-        contentHash: note.content_hash,
-        title: note.title,
-        dirty: content !== writtenContent,
-        contentRevision: prior?.contentRevision ?? 0,
-      });
-    }
-    this.bumpNoteBuffers();
-  }
-
-  private async runSaveJob(path: string, job: NoteSaveJob): Promise<NoteSaveResult> {
-    try {
-      const response = await saveVaultNote(path, job.content, {
-        contentHash: job.force ? undefined : (job.contentHash ?? undefined),
-        sessionId: workshopSessionIdForVaultSave(path),
-      });
-      const written = response.content ?? job.content;
-
-      if (this.isFocusedPath(path)) {
-        this.contentHash = response.note.content_hash;
-        this.title = response.note.title;
-        this.selectedKind = resolveKind(response.note.path, response.note.kind);
-        this.wikilinksOut = response.note.wikilinks_out;
-        this.noteTags = response.note.tags ?? [];
-        if (this.content === job.content || this.content === written) {
-          this.content = written;
-          this.baselineContent = written;
-          this.dirty = false;
-        } else {
-          // Typed during in-flight save — keep newer draft dirty vs written baseline.
-          this.baselineContent = written;
-          this.dirty = true;
-        }
-      }
-
-      this.patchBufferAfterSave(path, written, response.note);
-
-      invalidateMedousaViewCache(path);
-      invalidateTransclusionCache(path);
-      this.markSaveEcho(path);
-      this.scheduleNotesRefresh();
-      if (this.isFocusedPath(path)) {
-        void this.refreshBacklinks(path);
-      }
-
-      return {
-        ok: true,
-        contentHash: response.note.content_hash,
-        writtenContent: written,
-      };
-    } catch (err) {
-      if (isVaultConflictError(err)) {
-        if (this.isFocusedPath(path)) {
-          this.saveStatus = "conflict";
-          this.conflictMessage =
-            "This note changed on disk. Reload the latest version or keep your edits.";
-        }
-        return {
-          ok: false,
-          conflict: true,
-          error: "conflict",
-        };
-      }
-      const message = err instanceof Error ? err.message : String(err);
-      if (this.isFocusedPath(path)) {
-        this.error = message;
-      }
-      return { ok: false, error: message };
-    }
-  }
-
-  async save(options?: { force?: boolean; source?: "manual" | "autosave" }) {
-    if (!this.selectedPath) return false;
-    if (this.noteLoading && options?.source === "autosave") return false;
-    if (!this.dirty && !options?.force) return true;
-    if (this.proposalActive && !options?.force) return false;
-
-    this.clearAutosaveTimer();
-    this.saving = true;
-    this.saveStatus = "saving";
-    this.error = null;
-
-    const pathSnapshot = this.selectedPath;
-    const contentSnapshot = this.content;
-    const loosePath = this.looseFilePath;
-
-    try {
-      if (loosePath) {
-        await writeAbsoluteTextFile(loosePath, contentSnapshot);
-        if (this.selectedPath !== pathSnapshot || this.looseFilePath !== loosePath) {
-          return true;
-        }
-        if (this.content !== contentSnapshot) {
-          this.baselineContent = contentSnapshot;
-          this.dirty = true;
-          this.saveStatus = "unsaved";
-          this.scheduleAutosave();
-          return true;
-        }
-        this.baselineContent = this.content;
-        this.dirty = false;
-        this.clearProposal();
-        this.flashSavedWhisper();
-        return true;
-      }
-
-      const result = await this.saveQueue.enqueue(pathSnapshot, {
-        content: contentSnapshot,
-        contentHash: options?.force ? null : this.contentHash,
-        force: Boolean(options?.force),
-        source: options?.source ?? "manual",
-      });
-
-      if (this.selectedPath !== pathSnapshot) return result.ok;
-
-      if (!result.ok) {
-        if (!result.conflict) {
-          this.saveStatus = "unsaved";
-          this.scheduleAutosave();
-        }
-        return false;
-      }
-
-      if (this.dirty) {
-        this.saveStatus = "unsaved";
-        this.scheduleAutosave();
-        return true;
-      }
-
-      this.clearProposal();
-      this.flashSavedWhisper();
-      return true;
-    } catch (err) {
-      this.saveStatus = "unsaved";
-      this.error = err instanceof Error ? err.message : String(err);
-      this.scheduleAutosave();
-      return false;
-    } finally {
-      this.saving = this.selectedPath
-        ? this.saveQueue.isBusy(this.selectedPath)
-        : false;
-    }
-  }
-
-  async flushSave() {
-    await invokeVaultLeaveFlush();
-    return this.save({ source: "manual" });
-  }
-
-  async reloadFromServer() {
-    if (!this.selectedPath) return;
-    if (this.looseFilePath) {
-      this.noteLoading = true;
-      this.error = null;
-      try {
-        const content = await readAbsoluteTextFile(this.looseFilePath);
-        this.content = content;
-        this.baselineContent = content;
-        this.dirty = false;
-        this.resetSaveState();
-        this.clearProposal();
-        this.bumpContentSync();
-      } catch (err) {
-        this.error = err instanceof Error ? err.message : String(err);
-      } finally {
-        this.noteLoading = false;
-      }
-      return;
-    }
-    this.noteLoading = true;
-    this.error = null;
-    try {
-      const response = await getVaultNote(this.selectedPath);
-      this.applyNote(response);
-    } catch (err) {
-      this.error = err instanceof Error ? err.message : String(err);
-    } finally {
-      this.noteLoading = false;
-    }
-  }
-
-  async keepMineAndSave() {
-    if (!this.selectedPath) return false;
-    const ok = await this.save({ force: true, source: "manual" });
-    if (ok) {
-      this.conflictMessage = null;
-    }
-    return ok;
   }
 
   async createNote(options: {
@@ -2549,71 +1059,6 @@ export class VaultStore {
     }
   }
 
-  isRailPathSelected(path: string): boolean {
-    if (this.selectedPaths.size > 0) return this.selectedPaths.has(path);
-    return this.selectedPath === path;
-  }
-
-  clearRailSelection() {
-    this.selectedPaths = new Set();
-    this.selectionAnchorPath = null;
-  }
-
-  /** Visible note order for the current rail browse mode (shift-range). */
-  railNoteOrder(): string[] {
-    switch (this.libraryBrowseMode) {
-      case "recent":
-        return this.recentNotesList(200).map((note) => note.path);
-      case "kind":
-        return this.notesByKind().flatMap((group) => group.notes.map((note) => note.path));
-      case "tags":
-        return this.scopedLibraryNotes().map((note) => note.path);
-      case "folders":
-      default:
-        return flattenTreeNotePaths(this.tree);
-    }
-  }
-
-  /**
-   * Apply click modifiers for rail multi-select.
-   * Returns true when the note should open in the editor.
-   */
-  applyRailSelection(path: string, event?: MouseEvent | null): boolean {
-    const ordered = this.railNoteOrder();
-    if (event?.shiftKey && this.selectionAnchorPath) {
-      const range = rangePathsBetween(ordered, this.selectionAnchorPath, path);
-      this.selectedPaths = new Set(range);
-      return false;
-    }
-    if (event && (event.metaKey || event.ctrlKey)) {
-      const next = new Set(this.selectedPaths);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      if (next.size === 0 && this.selectedPath) {
-        next.add(this.selectedPath);
-      }
-      this.selectedPaths = next;
-      this.selectionAnchorPath = path;
-      return false;
-    }
-    this.selectedPaths = new Set([path]);
-    this.selectionAnchorPath = path;
-    return true;
-  }
-
-  /**
-   * Right-click / long-press: keep multi-selection if the target is already
-   * selected; otherwise collapse to the clicked note.
-   */
-  prepareRailContextMenu(path: string): string[] {
-    if (this.selectedPaths.has(path) && this.selectedPaths.size > 1) {
-      return [...this.selectedPaths];
-    }
-    this.selectedPaths = new Set([path]);
-    this.selectionAnchorPath = path;
-    return [path];
-  }
-
   openNewGroupDialog() {
     this.newGroupDialogOpen = true;
   }
@@ -2678,15 +1123,6 @@ export class VaultStore {
     } catch {
       return null;
     }
-  }
-
-  addCustomGroup(label: string) {
-    const space = addCustomVaultSpace(label);
-    if (space) {
-      this.rebuildTree();
-      this.setActiveSpaceFilter(space.id);
-    }
-    return space;
   }
 
   async renameNoteTitle(newTitle: string) {
@@ -2779,34 +1215,6 @@ export class VaultStore {
     }
   }
 
-  async runSearch(query: string) {
-    this.searchQuery = query;
-    if (!query.trim()) {
-      this.searchHits = [];
-      return;
-    }
-    try {
-      const response = await searchVaultNotes(query.trim(), 20);
-      let hits = response.hits;
-      if (this.activeSpaceFilter) {
-        hits = hits.filter((hit) => {
-          const title = hit.note.title;
-          return (
-            resolveSpaceForPath(hit.note.path, title).id === this.activeSpaceFilter
-          );
-        });
-      }
-      if (!this.showSystemNotes) {
-        hits = hits.filter(
-          (hit) => !shouldHideGarageNote(hit.note.path, hit.note.title, this.showSystemNotes),
-        );
-      }
-      this.searchHits = hits.slice(0, 12);
-    } catch (err) {
-      this.error = err instanceof Error ? err.message : String(err);
-    }
-  }
-
   toggleEditorMode() {
     this.editorMode = this.editorMode === "edit" ? "preview" : "edit";
   }
@@ -2891,35 +1299,13 @@ export class VaultStore {
     if (!path.trim()) return;
     this.previewingAttachmentPath = path;
     this.previewPresentation = presentation;
-    this.syncAttachmentPanelOverlay();
+    this.#rail.syncAttachmentPanelOverlay();
   }
 
   closeAttachmentPreview() {
     this.previewingAttachmentPath = null;
     this.previewPresentation = "pane";
-    this.syncAttachmentPanelOverlay();
-  }
-
-  private syncAttachmentPanelOverlay() {
-    vaultOverlay.attachmentPanelOpen =
-      this.previewPresentation === "panel" && Boolean(this.previewingAttachmentPath);
-  }
-
-  openGarageWizard() {
-    this.garageWizardOpen = true;
-  }
-
-  closeGarageWizard() {
-    this.garageWizardOpen = false;
-  }
-
-  finishGarageOnboarding() {
-    completeGarageOnboarding();
-    this.garageWizardOpen = false;
-  }
-
-  shouldPromptGarageWizard(): boolean {
-    return shouldShowGarageWizard();
+    this.#rail.syncAttachmentPanelOverlay();
   }
 
   openNewNoteDialog() {
@@ -2944,6 +1330,22 @@ export class VaultStore {
     this.newNotePrefillTitle = "";
     this.newNotePrefillPath = null;
     this.error = null;
+  }
+
+  async syncLmeNoteTab(path: string) {
+    // Store instances used for isolated previews/tests must not drive the app's
+    // singleton workspace (which would perform a second open through `vault`).
+    if (this !== vault) return;
+    try {
+      const { lmeWorkspace } = await import("$lib/stores/lmeWorkspace.svelte");
+      lmeWorkspace.ensureAndActivateNoteTab(path);
+    } catch {
+      // Unit tests / non-shell contexts may not load the LME workspace.
+    }
+  }
+
+  get activeVaultRoot(): VaultRootView | null {
+    return this.activeVaultRootView;
   }
 }
 
@@ -2990,47 +1392,6 @@ function saveNotePlane(plane: VaultNotePlane) {
   } catch {
     /* ignore */
   }
-}
-
-const LIBRARY_BROWSE_MODES = new Set<LibraryBrowseMode>([
-  "folders",
-  "tags",
-  "recent",
-  "kind",
-]);
-
-function loadLibraryBrowseMode(): LibraryBrowseMode {
-  // Default Recent — notes first, structure on request (Folders stays one click away).
-  if (typeof localStorage === "undefined") return "recent";
-  try {
-    const raw = localStorage.getItem(LIBRARY_BROWSE_MODE_KEY);
-    if (raw && LIBRARY_BROWSE_MODES.has(raw as LibraryBrowseMode)) {
-      return raw as LibraryBrowseMode;
-    }
-  } catch {
-    /* ignore */
-  }
-  return "recent";
-}
-
-function saveLibraryBrowseMode(mode: LibraryBrowseMode) {
-  if (typeof localStorage === "undefined") return;
-  try {
-    localStorage.setItem(LIBRARY_BROWSE_MODE_KEY, mode);
-  } catch {
-    /* ignore */
-  }
-}
-
-const AGENT_WRITE_TTL_MS = 24 * 60 * 60 * 1000;
-
-function isRecentAgentWrite(
-  path: string,
-  agentWrittenAt: Record<string, string>,
-): boolean {
-  const writtenAt = agentWrittenAt[path];
-  if (!writtenAt) return false;
-  return Date.now() - Date.parse(writtenAt) < AGENT_WRITE_TTL_MS;
 }
 
 export const vault = new VaultStore();

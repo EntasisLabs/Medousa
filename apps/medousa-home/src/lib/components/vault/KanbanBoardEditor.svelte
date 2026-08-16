@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/vault-kanban.postcss";
   import { onDestroy, tick } from "svelte";
   import { GripVertical, Plus, X } from "@lucide/svelte";
   import {

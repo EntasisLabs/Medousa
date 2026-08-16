@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/vault-chart.postcss";
   import { X } from "@lucide/svelte";
   import {
     CHART_FENCE_TYPE_OPTIONS,

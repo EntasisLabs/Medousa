@@ -1,7 +1,7 @@
 <script lang="ts">
   import LayoutRegionPane from "$lib/components/environment/LayoutRegionPane.svelte";
   import TilingNodeView from "$lib/components/environment/TilingNodeView.svelte";
-  import { layoutEdit } from "$lib/stores/layoutEdit.svelte";
+  import { layoutEdit } from "$lib/environment/layoutEdit.svelte";
   import { componentById } from "$lib/utils/layoutPresentation";
   import type { ComponentDef } from "$lib/types/environment";
   import type { TilingNode } from "$lib/utils/layoutTiling";

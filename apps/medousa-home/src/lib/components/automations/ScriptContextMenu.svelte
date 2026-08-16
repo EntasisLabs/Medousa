@@ -4,7 +4,7 @@
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { scriptContextMenu } from "$lib/stores/scriptContextMenu.svelte";
   import { scriptLibrarySelection } from "$lib/stores/scriptLibrarySelection.svelte";
-  import { scriptRenameUi } from "$lib/stores/scriptRenameUi.svelte";
+  import { scriptRenameUi } from "$lib/lme/scriptRenameUi.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
 
   let menuEl = $state<HTMLDivElement | null>(null);

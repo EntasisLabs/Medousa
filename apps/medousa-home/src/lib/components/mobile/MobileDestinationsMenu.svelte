@@ -20,7 +20,7 @@
   import ProfileSwitcherCompact from "$lib/components/mobile/ProfileSwitcherCompact.svelte";
   import { registerMobileBackHandler, switchMobileTab } from "$lib/mobileNavigation";
   import { environment } from "$lib/stores/environment.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { haptic } from "$lib/haptics";
   import {
     mobileDestinationSections,

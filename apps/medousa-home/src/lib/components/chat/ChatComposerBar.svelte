@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/composer.postcss";
   import { onDestroy, onMount } from "svelte";
   import { Mic, Square } from "@lucide/svelte";
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";

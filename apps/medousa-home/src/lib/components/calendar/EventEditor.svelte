@@ -9,7 +9,7 @@
     meetingNotePath,
   } from "$lib/utils/calendarReminders";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
 
   interface Props {
     event: CalendarEvent | null;

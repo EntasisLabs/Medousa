@@ -3,7 +3,7 @@ import {
   guessMimeFromPath,
   type VaultAttachment,
 } from "$lib/utils/vaultAttachments";
-import { toast } from "$lib/stores/toast.svelte";
+import { toast } from "$lib/runtime/toast.svelte";
 
 function fileNameFromPath(path: string): string {
   return path.split("/").pop()?.split("\\").pop() ?? path;

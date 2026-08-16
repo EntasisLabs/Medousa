@@ -31,9 +31,9 @@ import { reconnectWorkshop } from "$lib/workshopConnection";
 import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
 import { createTurnTicket } from "$lib/daemon";
 import { connection } from "$lib/stores/connection.svelte";
-import { layout } from "$lib/stores/layout.svelte";
+import { layout } from "$lib/runtime/layout.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
-import { toast } from "$lib/stores/toast.svelte";
+import { toast } from "$lib/runtime/toast.svelte";
 import { sessionExportPreview } from "$lib/stores/sessionExportPreview.svelte";
 import {
   downloadTextFile,

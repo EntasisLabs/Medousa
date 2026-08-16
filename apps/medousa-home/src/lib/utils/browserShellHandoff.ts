@@ -1,7 +1,7 @@
 /** Keep human browser session aligned when switching desktop ↔ mobile shells. */
 
 import { humanBrowserSetMobileShellActive } from "$lib/humanBrowser";
-import { layout } from "$lib/stores/layout.svelte";
+import { layout } from "$lib/runtime/layout.svelte";
 import { isTauri } from "$lib/platform";
 
 let handoffTimer: ReturnType<typeof setTimeout> | null = null;

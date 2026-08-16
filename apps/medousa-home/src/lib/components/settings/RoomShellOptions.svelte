@@ -3,7 +3,7 @@
   import EnvironmentPresetSwitcher from "$lib/components/environment/EnvironmentPresetSwitcher.svelte";
   import CanvasAddLayoutPresetForm from "$lib/components/settings/CanvasAddLayoutPresetForm.svelte";
   import { environment } from "$lib/stores/environment.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { resolveEnvironmentTheme } from "$lib/utils/environmentTheme";

@@ -17,7 +17,7 @@
     MousePointer2,
   } from "@lucide/svelte";
   import { accountConnections } from "$lib/stores/accountConnections.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import {
     accountConnectionsSupported,
     authStatusLabel,

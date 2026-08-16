@@ -1,4 +1,4 @@
-import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
+import { workshopDefaultsQueryPort } from "$lib/runtime/workshopDefaultsPorts";
 import { getDaemonUrl } from "$lib/daemon";
 import {
   addLocalWorkshop,
@@ -25,7 +25,7 @@ import {
 } from "$lib/types/workshopRegistry";
 import { isColorThemeId, type ColorThemeId } from "$lib/types/colorThemes";
 import { isTauri } from "$lib/platform";
-import { toast } from "$lib/stores/toast.svelte";
+import { toast } from "$lib/runtime/toast.svelte";
 import { completePairingFromQr, type PairCompleteFromQrResult } from "$lib/utils/pairingClient";
 import { parsePairQrUrl } from "$lib/utils/pairingUrl";
 
@@ -194,8 +194,8 @@ export class WorkshopsStore {
       await requestWorkshopReconnect((health) => {
         options?.onHealthChange?.(health);
       });
-      workshopDefaults.resetForReconnect();
-      await workshopDefaults.load(true);
+      workshopDefaultsQueryPort().resetForReconnect();
+      await workshopDefaultsQueryPort().load(true);
       this.applyThemeForActiveWorkshop();
       await this.restoreLastSession();
       await shellTabs.switchWorkspaceScope(this.activeWorkshopId);

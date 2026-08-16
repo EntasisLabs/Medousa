@@ -4,7 +4,7 @@
  */
 
 import type { ChatMessage } from "$lib/types/chat";
-import type { ChatSessionRuntime } from "$lib/stores/chatSessionRuntime";
+import type { ChatSessionRuntime } from "$lib/chat/chatSessionRuntime";
 import { loadDraftForSession } from "$lib/chat/draftPersistence";
 
 export type ChatSelectorSnapshot = {

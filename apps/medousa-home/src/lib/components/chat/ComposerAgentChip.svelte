@@ -4,7 +4,7 @@
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { activeAgent } from "$lib/stores/activeAgent.svelte";
   import { catalog } from "$lib/stores/catalog.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { attachComposerMenuDismiss } from "$lib/utils/composerMenuDismiss";

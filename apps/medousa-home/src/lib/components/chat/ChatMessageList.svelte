@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/chat.postcss";
   /**
    * Chat message list — runtime-governed Liquid is the sole paint path.
    * User→assistant pairs render as timeline beats (whisper + full-width voice).
@@ -9,7 +10,7 @@
   import LiquidChatMessage from "$lib/components/chat/LiquidChatMessage.svelte";
   import type { SubagentRow } from "$lib/utils/subagentRows";
   import { chat } from "$lib/stores/chat.svelte";
-  import { toast } from "$lib/stores/toast.svelte";
+  import { toast } from "$lib/runtime/toast.svelte";
   import { shareText } from "$lib/share";
   import type { ChatMessage } from "$lib/types/chat";
   import {

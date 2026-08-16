@@ -13,7 +13,7 @@ import {
   type VaultGitLogEntry,
   type VaultGitStatus,
 } from "$lib/daemon";
-import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
+import { workshopDefaultsQueryPort } from "$lib/runtime/workshopDefaultsPorts";
 import {
   friendlySettingsError,
   isMissingCapabilityError,
@@ -62,9 +62,7 @@ class VaultVersionsStore {
 
   get enabled() {
     return (
-      this.status?.enabled ??
-      workshopDefaults.draft.vaultGitEnabled ??
-      false
+      this.status?.enabled ?? workshopDefaultsQueryPort().vaultGitEnabled() ?? false
     );
   }
 
@@ -90,7 +88,7 @@ class VaultVersionsStore {
 
   async refresh(options?: { force?: boolean }) {
     const enabled =
-      workshopDefaults.draft.vaultGitEnabled ?? this.status?.enabled ?? false;
+      workshopDefaultsQueryPort().vaultGitEnabled() ?? this.status?.enabled ?? false;
     if (!enabled && !options?.force) {
       this.markDisabledLocally();
       return;
@@ -131,10 +129,7 @@ class VaultVersionsStore {
         this.unsupported = true;
         this.error = null;
         if (enabled) {
-          workshopDefaults.draft = {
-            ...workshopDefaults.draft,
-            vaultGitEnabled: false,
-          };
+          workshopDefaultsQueryPort().setVaultGitEnabled(false);
         }
         this.markDisabledLocally();
         this.unsupported = true;
@@ -148,11 +143,8 @@ class VaultVersionsStore {
     this.busy = true;
     this.error = null;
     try {
-      workshopDefaults.draft = {
-        ...workshopDefaults.draft,
-        vaultGitEnabled: enabled,
-      };
-      await workshopDefaults.save();
+      workshopDefaultsQueryPort().setVaultGitEnabled(enabled);
+      await workshopDefaultsQueryPort().save();
       if (!enabled) {
         this.markDisabledLocally();
         // Still tell the engine — quiet if the route is missing.
@@ -176,12 +168,9 @@ class VaultVersionsStore {
       const message = err instanceof Error ? err.message : String(err);
       if (isMissingCapabilityError(message)) {
         this.unsupported = true;
-        workshopDefaults.draft = {
-          ...workshopDefaults.draft,
-          vaultGitEnabled: false,
-        };
+        workshopDefaultsQueryPort().setVaultGitEnabled(false);
         try {
-          await workshopDefaults.save();
+          await workshopDefaultsQueryPort().save();
         } catch {
           /* best effort */
         }

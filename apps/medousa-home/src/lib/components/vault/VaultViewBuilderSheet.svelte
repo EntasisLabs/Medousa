@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/vault-liquid.postcss";
   import VaultNotePicker from "$lib/components/vault/VaultNotePicker.svelte";
   import { getVaultNote } from "$lib/daemon";
   import { vault } from "$lib/stores/vault.svelte";

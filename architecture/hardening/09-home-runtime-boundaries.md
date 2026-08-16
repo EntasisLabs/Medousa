@@ -1,13 +1,13 @@
 # H09 — Home runtime and feature boundaries
 
 > **Status:** Implementing. The repair train now measures the real selected-shell
-> startup graphs and enforces SCCs, inward dependency direction, cross-store edge
-> growth, side-effect imports, source-size growth, and feature lifecycle races.
-> FRONT-001, ARCH-001, and ARCH-002 remain **Proposed**: the real desktop startup
-> graph is 3,595,119 bytes JS / 823,781 bytes CSS and mobile is 6,093,545 bytes JS /
-> 880,060 bytes CSS; 45 grandfathered cross-store edges and seven source owners
-> above 2,000 lines remain explicit burn-down debt. Validated/Shipped also need
-> retained P08 packaged multi-OS evidence.
+> startup graphs and enforces SCCs, inward dependency direction, empty cross-store
+> edges, side-effect imports, source-size growth, and feature lifecycle races.
+> ARCH-001 and ARCH-002 are **Mitigated** on unit/CI: `crossStoreEdges` is empty
+> and no source owner is above 2,000 lines. FRONT-001 remains **Proposed**: the
+> real desktop startup graph is 3,595,119 bytes JS / 823,781 bytes CSS and mobile
+> is 6,093,545 bytes JS / 880,060 bytes CSS. Validated/Shipped also need retained
+> P08 packaged multi-OS evidence.
 >
 > **Accountable owner:** Medousa Home maintainers
 >
@@ -37,9 +37,9 @@ ports and shell orchestration instead of importing singleton stores. Mega-files
 are decomposed by state/authority owner, with generated inventories and CI
 boundaries preventing reassembly under new filenames.
 
-The outcome above is the closure target, not the current claim. CI currently
-prevents regression and makes remaining debt visible; it does not turn the
-grandfathered cross-store edges, large owners, or over-budget startup graphs into
+The outcome above is the closure target for FRONT-001 bytes, not the current
+claim. CI currently prevents regression and keeps the empty cross-store and
+source-size ledgers honest; it does not turn over-budget startup graphs into
 exceptions or validation evidence.
 
 H09 owns Home loading, runtime dependency direction, frontend state/component/
@@ -105,17 +105,16 @@ must move first into reducers, controllers, adapters, and feature-local state.
 
 Train 4 moved chat transcript/turn/draft owners, injected the H07 vault lookup
 and note buffers, routed code/work panels through document and undertaking
-controllers, deleted the remaining high-leverage feature-store imports via
-shell ports, and added start/dispose leak tests for workshop/platform/navigate
-cycles. ARCH-002 is **Mitigated** on that unit/CI exit; Validated still needs
-P08.
+controllers, replaced remaining sibling-store hubs with typed ports (empty
+`crossStoreEdges`), and split the seven >2,000-line owners by authority.
+ARCH-002 is **Mitigated** on that unit/CI exit; Validated still needs P08.
 
 ### CSS and themes
 
-`app.postcss` is a global feature dump, and Tailwind/Skeleton expands all shipped
-themes into the build. Feature chunks cannot omit their styling; WebView parses
-and retains selectors for hidden destinations. Global selectors also make
-component ownership and deletion unsafe.
+Feature sheets load from destination entries with `@layer features`;
+`app.postcss` keeps cascade layers, base tokens, and `prefers-reduced-motion`.
+FRONT-001 still fails on measured CSS bytes in the eager startup graph.
+Tailwind/Skeleton must not expand all shipped themes into the build.
 
 ## Invariants
 
@@ -484,9 +483,9 @@ parameters, note/chat content, filesystem paths, or raw errors containing data.
 - Classify all global CSS; delete dead/duplicate rules with visual evidence.
 - Move feature/component rules into lazy assets and declare cascade layers.
 - Replace build-expanded theme catalog with selected token stylesheet loading.
-  Inventory: `apps/medousa-home/security/css-inventory.json`. Browser/peers
-  sheets load from their feature entries; vault/chat/settings remain
-  pending-extract in `app.postcss`. Contrast fixtures in
+  Inventory: `apps/medousa-home/security/css-inventory.json`. Feature sheets
+  load from destination entries (`loadedBy`); none remain `pending-extract` in
+  `app.postcss`. Contrast fixtures in
   `themes/theme-contract.test.ts`; reduced-motion remains in `app.postcss`
   and `SHELL_A11Y_FIXTURES`.
 - Validate CSP, visual regression, contrast, reduced motion, zoom, and platforms.
@@ -499,9 +498,10 @@ parameters, note/chat content, filesystem paths, or raw errors containing data.
   paint/interaction/heap remains a Validated gate, not this train.
 - Catalog preload is `"never"` or `"intent"` only; no post-launch feature
   prefetch, no `void import(` cheat, SCC ledger is empty.
-- Runtime ledger currently records 45 cross-store edges and 24 side-effect
-  imports; source ownership records 28 review alarms, seven of which block
-  ARCH-002 validation. New edges/side effects/oversized files and growth fail CI.
+- Runtime ledger currently records 0 cross-store edges; source ownership
+  records review alarms above 1,000 lines with **0** `blocksValidation`
+  owners (none above 2,000 lines). New edges/side effects/oversized files
+  and growth fail CI.
 - Contributor and Home architecture docs record allowed dependency direction.
 
 H09.1 precedes broad splits. H09.2 and SCC work can interleave carefully, but a

@@ -17,7 +17,7 @@
   import VaultLibraryBrowseModeBar from "$lib/components/vault/VaultLibraryBrowseModeBar.svelte";
   import VaultRootPicker from "$lib/components/vault/VaultRootPicker.svelte";
   import VaultTree from "$lib/components/vault/VaultTree.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";

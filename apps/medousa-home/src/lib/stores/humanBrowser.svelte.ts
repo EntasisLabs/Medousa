@@ -13,7 +13,7 @@ import {
   humanBrowserStop,
   type HumanBrowserNavigatedPayload,
 } from "$lib/humanBrowser";
-import { browserHistory } from "$lib/stores/browserHistory.svelte";
+import { browserHistory } from "$lib/browser/browserHistory.svelte";
 import { browserPageLabel } from "$lib/utils/browserUrl";
 import { resolveBrowserDestination } from "$lib/utils/resolveBrowserDestination";
 

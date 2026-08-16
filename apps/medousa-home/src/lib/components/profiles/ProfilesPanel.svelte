@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/profiles.postcss";
   import ProfilesAddPersonSheet from "$lib/components/profiles/ProfilesAddPersonSheet.svelte";
   import ProfilesFocusCard from "$lib/components/profiles/ProfilesFocusCard.svelte";
   import ProfilesIdentityField from "$lib/components/profiles/ProfilesIdentityField.svelte";

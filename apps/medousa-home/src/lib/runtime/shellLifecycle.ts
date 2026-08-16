@@ -1,7 +1,7 @@
 import { initMobileNative } from "$lib/mobileNative";
 import { startPeerMessageNotificationPolling } from "$lib/peerNotifications";
-import { layout } from "$lib/stores/layout.svelte";
-import { toast } from "$lib/stores/toast.svelte";
+import { layout } from "$lib/runtime/layout.svelte";
+import { toast } from "$lib/runtime/toast.svelte";
 import { wizard } from "$lib/stores/wizard.svelte";
 import { workshops } from "$lib/stores/workshops.svelte";
 import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
@@ -35,11 +35,13 @@ import {
   openVaultNote,
   openWorkCard,
 } from "./shellUseCases";
+import { bindAllFeaturePorts, unbindAllFeaturePorts } from "./bindFeaturePorts";
 import { disposeFeature } from "./features/loader";
 import { disposeDestinationFeatures } from "./features/disposeDestinations";
 
 /** Named shell owner for AppShell onMount pollers/listeners. */
 export function startShellRootResources(): () => void {
+  bindAllFeaturePorts();
   setUndertakingGroupIdPort(() => shellTabs.activeGroupId);
   setActiveWorkshopKindPort(() => workshops.activeWorkshop?.kind);
   setWorkshopReconnectPort((onHealthChange) =>
@@ -220,6 +222,7 @@ export function startShellRootResources(): () => void {
     setWorkshopSwitchPorts(null);
     setWorkspaceChatPort(null);
     setWorkCardHideAfterHoursPort(null);
+    unbindAllFeaturePorts();
     void disposeDestinationFeatures("teardown");
   };
 }

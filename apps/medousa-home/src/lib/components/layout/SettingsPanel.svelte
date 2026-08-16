@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/settings.postcss";
   import { onDestroy } from "svelte";
   import LazyFeatureView from "$lib/components/layout/LazyFeatureView.svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";

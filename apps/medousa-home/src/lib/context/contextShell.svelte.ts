@@ -1,4 +1,4 @@
-import { contextThreads } from "$lib/stores/contextThreads.svelte";
+import { contextThreads } from "$lib/context/contextThreads.svelte";
 
 export type MapAvecMins = {
   stability: number;

@@ -1,8 +1,9 @@
 <script lang="ts">
+  import "$lib/styles/cron.postcss";
   import CronCreateForm from "$lib/components/cron/CronCreateForm.svelte";
   import WorkshopLivelinessChip from "$lib/components/ui/WorkshopLivelinessChip.svelte";
-  import { cronDraft } from "$lib/stores/cron.svelte";
-  import { recurring } from "$lib/stores/recurring.svelte";
+  import { cronDraft } from "$lib/stores/automationDraft.svelte";
+  import { recurring } from "$lib/stores/automations.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import type { RecurringDefinitionEntry } from "$lib/types/recurring";
 

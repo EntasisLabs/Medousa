@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/vault-liquid.postcss";
   import { Plus, Trash2, X } from "@lucide/svelte";
   import {
     compareEntityLabels,

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ChevronDown, ExternalLink } from "@lucide/svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import type { MarkdownFormatAction } from "$lib/utils/vaultMarkdownEdit";
   import {
     MARKDOWN_COLOR_OPTIONS,

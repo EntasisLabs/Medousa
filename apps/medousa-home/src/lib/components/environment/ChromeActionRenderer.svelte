@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Bell, MessageCircle } from "@lucide/svelte";
   import type { ComponentDef } from "$lib/types/environment";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
 
   interface Props {
     component: ComponentDef;

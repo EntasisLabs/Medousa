@@ -1,5 +1,5 @@
 import { SETTINGS_SECTIONS, type SettingsSectionId } from "$lib/types/settings";
-import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
+import { workshopDefaultsQueryPort } from "$lib/runtime/workshopDefaultsPorts";
 
 const LAST_SECTION_KEY = "medousa-home-settings-last-section";
 const SECTION_IDS = new Set(SETTINGS_SECTIONS.map((section) => section.id));
@@ -47,7 +47,7 @@ function writeStoredSection(section: SettingsSectionId) {
 }
 
 function confirmDiscardUnsaved(): boolean {
-  if (!workshopDefaults.dirty) return true;
+  if (!workshopDefaultsQueryPort().dirty()) return true;
   if (typeof window === "undefined") return true;
   return window.confirm("You have unsaved settings changes. Leave without saving?");
 }
