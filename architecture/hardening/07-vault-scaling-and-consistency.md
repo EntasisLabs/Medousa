@@ -1,9 +1,11 @@
 # H07 — Incremental vault index and atomic mutation
 
-> **Status:** Implementing — repair cars R0–R7 landed on `scaling/H07-vault-atomic`.
-> Exit tests for no-replace CAS, receipt recovery, freshness fencing, admission,
-> incremental hot paths, cursor/generation API, and Home virtualization are green.
-> Findings stay Mitigated (not Validated) until multi-OS P06/P07 evidence is retained.
+> **Status:** Implementing — semantics train in progress.
+> Repair cars R0–R8 landed scaffolding (no-replace create, admission, paging
+> hooks, tree windowing). Authoritative NoteVersion, durable generation,
+> relocate no-replace, incremental persist, truthful deltas, fenced search,
+> and complete Home paging remain incomplete. Findings stay Proposed until
+> those semantics exit tests pass; Validated still needs multi-OS evidence.
 >
 > **Accountable owner:** vault engine maintainers
 >
