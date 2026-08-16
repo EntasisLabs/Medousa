@@ -54,6 +54,10 @@ path = "src/bin/medousa_daemon.rs"
 name = "medousa_tui"
 path = "src/bin/medousa_tui.rs"
 
+[[example]]
+name = "p06_vault_backend"
+path = "examples/p06_vault_backend.rs"
+
 [dependencies]
 medousa-types = { path = "crates/medousa-types", features = ["json-schema"] }
 medousa-tool-macros = { path = "crates/medousa-tool-macros" }

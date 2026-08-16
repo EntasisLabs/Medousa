@@ -245,7 +245,7 @@ pub async fn put_vault_note(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<VaultWriteResponse>, (StatusCode, String)> {
-    let content = String::from_utf8(body.to_vec())
+    let content = String::from_utf8(body.into())
         .map_err(|err| (StatusCode::BAD_REQUEST, format!("invalid utf-8 body: {err}")))?;
     let if_match = headers
         .get("if-match")

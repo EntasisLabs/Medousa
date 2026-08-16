@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use crate::daemon_api::{VaultNote, VaultNoteSummary};
 use crate::vault::links::{merge_tags, parse_inline_tags, parse_raw_wikilinks, resolve_wikilink_target};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum VaultNoteSource {
     User,

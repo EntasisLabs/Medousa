@@ -45,8 +45,15 @@ impl VaultService {
             })
             .take(limit)
             .map(|entry| entry.to_vault_note_summary())
-            .collect();
-        VaultNotesListResponse { notes }
+            .collect::<Vec<_>>();
+        let truncated = notes.len() >= limit;
+        let generation = crate::vault::store::vault_projection().generation;
+        VaultNotesListResponse {
+            notes,
+            vault_generation: Some(generation),
+            next_cursor: None,
+            truncated,
+        }
     }
 
     pub fn list_tags(prefix: Option<&str>, limit: usize) -> VaultTagsListResponse {
@@ -64,9 +71,12 @@ impl VaultService {
             .ok_or_else(|| anyhow::anyhow!("vault note not found: {path}"))?;
         let content = vault_store().read_content(path)?;
         let backlinks = vault_store().backlinks_for(path);
+        let generation = crate::vault::store::vault_projection().generation;
         Ok(VaultNoteContentResponse {
             note: entry.to_vault_note(backlinks),
             content,
+            vault_generation: Some(generation),
+            note_version: Some(entry.content_hash.clone()),
         })
     }
 
@@ -142,10 +152,13 @@ impl VaultService {
         );
         let entry = vault_store().write_content(target_path, &content, if_match)?;
         append_vault_feed_event(&entry.path, &entry.title, !existed, actor, tool_name);
+        let generation = crate::vault::store::vault_projection().generation;
         Ok(VaultWriteResponse {
             note: entry.to_vault_note(vault_store().backlinks_for(&entry.path)),
             created: !existed,
             content: Some(content),
+            vault_generation: Some(generation),
+            note_version: Some(entry.content_hash.clone()),
         })
     }
 
@@ -188,10 +201,27 @@ impl VaultService {
                 note: read.note,
                 created: false,
                 content: Some(read.content),
+                vault_generation: read.vault_generation,
+                note_version: read.note_version,
             });
         }
         if vault_store().get_entry(to).is_some() {
             anyhow::bail!("a note already exists at path: {to}");
+        }
+        if crate::vault::owner::owner_mutations_active() {
+            let owner = crate::vault::owner::ensure_owner_for_active_root()
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            crate::vault::relocate::relocate_move(&owner, from, to)
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            // Refresh derived index for destination; source removed by relocate.
+            let _ = vault_store().refresh_from_disk();
+            return Self::get_note(to).map(|read| VaultWriteResponse {
+                note: read.note,
+                created: false,
+                content: Some(read.content),
+                vault_generation: read.vault_generation,
+                note_version: read.note_version,
+            });
         }
         let read = Self::get_note(from)?;
         let request = VaultWriteRequest {
@@ -292,10 +322,14 @@ pub(crate) fn with_temp_vault<T>(f: impl FnOnce() -> T) -> T {
     ));
     std::fs::create_dir_all(&base).expect("temp vault root");
     let base = base.canonicalize().expect("canonical temp vault root");
+    crate::vault::owner::reset_vault_owners();
+    crate::vault::path::clear_vault_root_capabilities();
     crate::vault::roots::set_test_vault_root_override(Some(base.clone()));
     let _ = vault_store().refresh_from_disk();
     let result = catch_unwind(AssertUnwindSafe(f));
     crate::vault::roots::set_test_vault_root_override(None);
+    crate::vault::owner::reset_vault_owners();
+    crate::vault::path::clear_vault_root_capabilities();
     let _ = vault_store().refresh_from_disk();
     let _ = std::fs::remove_dir_all(&base);
     match result {

@@ -11,8 +11,7 @@ use crate::vault::store::vault_store;
 
 pub const DEFAULT_VAULT_ROOT_ID: &str = "personal";
 
-#[cfg(test)]
-mod test_override {
+mod root_override {
     use std::cell::RefCell;
     use std::path::PathBuf;
 
@@ -29,10 +28,10 @@ mod test_override {
     }
 }
 
-/// Test-only redirect for [`active_vault_root`]. Does not touch product config.
-#[cfg(test)]
+/// Redirect active vault root for tests and retained harnesses (P06).
+/// Does not touch product config. Clear with `None` after use.
 pub fn set_test_vault_root_override(path: Option<PathBuf>) {
-    test_override::set(path);
+    root_override::set(path);
 }
 
 pub fn default_vault_roots() -> Vec<VaultRootEntry> {
@@ -76,8 +75,7 @@ pub fn resolve_root_path(entry: &VaultRootEntry) -> PathBuf {
 }
 
 pub fn active_vault_root() -> PathBuf {
-    #[cfg(test)]
-    if let Some(path) = test_override::get() {
+    if let Some(path) = root_override::get() {
         return path;
     }
     let config = normalize_vault_config(&load_product_config().vault);

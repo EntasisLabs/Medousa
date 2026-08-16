@@ -3,18 +3,28 @@
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::{Arc, RwLock};
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex, RwLock};
 
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 
 use crate::store_root::{StoreEntryKind, StoreRoot};
+use crate::vault::baseline::vault_baseline_counters;
+use crate::vault::contracts::{MutationPrecondition, NoteVersion};
 use crate::vault::links::{VaultLinkIndex, load_link_index_from_disk, persist_link_index};
+use crate::vault::mutation::{commit_write, WriteMutation};
 use crate::vault::note::{VaultIndexEntry, VaultNoteSource, build_index_entry, content_hash};
+use crate::vault::owner::{
+    ensure_owner_for_active_root, owner_mutations_active, set_owner_mutations_active,
+};
 use crate::vault::path::{
     VaultPath, normalize_vault_path, project_vault_overlay_capability, user_vault_capability,
 };
+use crate::vault::projection::{build_projection_from_entries, ProjectionOwner, VaultProjection};
+use crate::vault::relocate::{relocate_delete, relocate_restore};
+use crate::vault::search_index::VaultSearchIndex;
 
 const INDEX_FILE: &str = "index.jsonl";
 const LINKS_FILE: &str = "links.jsonl";
@@ -39,9 +49,25 @@ struct FileMeta {
 }
 
 static STORE: Lazy<VaultStore> = Lazy::new(VaultStore::new);
+pub(crate) static PROJECTION: Lazy<ProjectionOwner> = Lazy::new(ProjectionOwner::new);
+static SEARCH_INDEX: Lazy<Mutex<VaultSearchIndex>> =
+    Lazy::new(|| Mutex::new(VaultSearchIndex::new()));
 
 pub fn vault_store() -> &'static VaultStore {
     &STORE
+}
+
+pub fn vault_projection() -> Arc<VaultProjection> {
+    PROJECTION.snapshot()
+}
+
+pub fn vault_search_index() -> &'static Mutex<VaultSearchIndex> {
+    &SEARCH_INDEX
+}
+
+/// Activate owner-backed mutations (H07.1d). Called once from store init.
+fn activate_owner_mutations() {
+    set_owner_mutations_active(true);
 }
 
 pub struct VaultStore {
@@ -51,6 +77,7 @@ pub struct VaultStore {
 
 impl VaultStore {
     fn new() -> Self {
+        activate_owner_mutations();
         let store = Self {
             index: RwLock::new(HashMap::new()),
             link_index: RwLock::new(load_link_index_from_disk()),
@@ -91,6 +118,11 @@ impl VaultStore {
             }
         }
         if let Ok(files) = user_vault_capability() {
+            let counters = vault_baseline_counters();
+            counters.index_rewrites.fetch_add(1, Ordering::Relaxed);
+            counters
+                .bytes_written
+                .fetch_add(bytes.len() as u64, Ordering::Relaxed);
             let _ = files.atomic_write(&Self::index_path(), &bytes);
         }
     }
@@ -121,16 +153,37 @@ impl VaultStore {
         *self.index.write().expect("vault index") = discovered;
         self.rebuild_link_index();
         self.persist_index();
+        self.publish_projection();
         Ok(())
     }
 
-    /// Cheap freshness pass for list/get: metadata walk, re-read only changed files.
+    /// Cheap freshness pass for list/get.
+    ///
+    /// After H07.2, warm accessors prefer the resident projection and skip the
+    /// full recursive walk when the projection generation is current.
     pub fn ensure_index_fresh(&self) -> Result<()> {
+        let counters = vault_baseline_counters();
+        counters
+            .ensure_index_fresh_calls
+            .fetch_add(1, Ordering::Relaxed);
+        let projection = PROJECTION.snapshot();
+        if projection.generation > 0 && !PROJECTION.is_stale() && !projection.by_path.is_empty() {
+            return Ok(());
+        }
+        counters
+            .recursive_root_walks
+            .fetch_add(1, Ordering::Relaxed);
         let mut metas = Vec::new();
         self.collect_metas(user_vault_capability()?, VaultNoteSource::User, &mut metas)?;
         if let Some(overlay) = project_vault_overlay_capability()? {
+            counters
+                .recursive_root_walks
+                .fetch_add(1, Ordering::Relaxed);
             self.collect_metas(overlay, VaultNoteSource::ProjectOverlay, &mut metas)?;
         }
+        counters
+            .files_statted
+            .fetch_add(metas.len() as u64, Ordering::Relaxed);
 
         let mut by_path: HashMap<String, FileMeta> = HashMap::new();
         for meta in metas {
@@ -175,10 +228,16 @@ impl VaultStore {
         let mut drafts = Vec::with_capacity(to_read.len());
         for meta in to_read {
             let body = match meta.files.read(&meta.relative) {
-                Ok(bytes) => match String::from_utf8(bytes) {
-                    Ok(body) => body,
-                    Err(_) => continue,
-                },
+                Ok(bytes) => {
+                    counters.files_read.fetch_add(1, Ordering::Relaxed);
+                    counters
+                        .bytes_read
+                        .fetch_add(bytes.len() as u64, Ordering::Relaxed);
+                    match String::from_utf8(bytes) {
+                        Ok(body) => body,
+                        Err(_) => continue,
+                    }
+                }
                 Err(_) => continue,
             };
             drafts.push(ScanDraft {
@@ -218,10 +277,14 @@ impl VaultStore {
 
         self.rebuild_link_index();
         self.persist_index();
+        self.publish_projection();
         Ok(())
     }
 
     fn rebuild_link_index(&self) {
+        vault_baseline_counters()
+            .link_rebuilds
+            .fetch_add(1, Ordering::Relaxed);
         let entries: Vec<_> = self
             .index
             .read()
@@ -232,6 +295,50 @@ impl VaultStore {
         let links = VaultLinkIndex::rebuild(&entries);
         let _ = persist_link_index(&links);
         *self.link_index.write().expect("vault links") = links;
+    }
+
+    fn publish_projection(&self) {
+        let entries: Vec<_> = self
+            .index
+            .read()
+            .expect("vault index")
+            .values()
+            .cloned()
+            .collect();
+        let generation = ensure_owner_for_active_root()
+            .map(|owner| owner.current_generation())
+            .unwrap_or(1);
+        let projection = build_projection_from_entries(entries.clone(), generation);
+        PROJECTION.replace(projection);
+        PROJECTION.clear_stale();
+        if let Ok(mut search) = SEARCH_INDEX.lock() {
+            // Mark stale until bodies are indexed; warm search rebuilds lazily.
+            search.mark_stale();
+            search.indexed_generation = generation;
+            let _ = entries;
+        }
+    }
+
+    fn publish_note_delta(&self, entry: &VaultIndexEntry, content: &str, generation: u64) {
+        PROJECTION.upsert(entry.clone(), generation);
+        if let Ok(mut search) = SEARCH_INDEX.lock() {
+            search.upsert_document(entry, content, generation);
+        }
+        // Incremental link update via projection adjacency; keep on-disk link
+        // index coherent without a full O(N) rebuild when possible.
+        {
+            let mut links = self.link_index.write().expect("vault links");
+            // Fall back to lightweight rebuild from current index entries.
+            let entries: Vec<_> = self
+                .index
+                .read()
+                .expect("vault index")
+                .values()
+                .cloned()
+                .collect();
+            *links = VaultLinkIndex::rebuild(&entries);
+        }
+        let _ = persist_link_index(&self.link_index.read().expect("vault links"));
     }
 
     fn finalize_entries(drafts: Vec<ScanDraft>) -> HashMap<String, VaultIndexEntry> {
@@ -440,6 +547,10 @@ impl VaultStore {
             .cloned()
     }
 
+    pub fn peek_entry_public(&self, path: &str) -> Option<VaultIndexEntry> {
+        self.peek_entry(path)
+    }
+
     pub fn read_content(&self, path: &str) -> Result<String> {
         let path = VaultPath::parse(path)?;
         let user = user_vault_capability()?;
@@ -462,6 +573,90 @@ impl VaultStore {
     ) -> Result<VaultIndexEntry> {
         let path = VaultPath::parse(path)?;
         let normalized = path.to_string();
+
+        if owner_mutations_active() {
+            let owner = ensure_owner_for_active_root()
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            let existed = owner.files.is_file(&path).unwrap_or(false);
+            let precondition = if if_match
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .is_some()
+            {
+                MutationPrecondition::Match
+            } else if existed {
+                MutationPrecondition::Unconditional
+            } else {
+                MutationPrecondition::CreateOnly
+            };
+            let expected_version = if_match
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(NoteVersion::from_digest);
+            let outcome = commit_write(
+                &owner,
+                WriteMutation {
+                    path: normalized.clone(),
+                    content: content.to_string(),
+                    precondition,
+                    expected_version,
+                },
+            )
+            .map_err(|error| match error {
+                crate::vault::contracts::VaultMutationError::StaleVersion { .. } => {
+                    anyhow::anyhow!("content_hash mismatch (If-Match failed)")
+                }
+                crate::vault::contracts::VaultMutationError::Conflict(message) => {
+                    anyhow::anyhow!(message)
+                }
+                other => anyhow::anyhow!(other.to_string()),
+            })?;
+            vault_baseline_counters()
+                .mutations
+                .fetch_add(1, Ordering::Relaxed);
+            vault_baseline_counters()
+                .bytes_written
+                .fetch_add(content.len() as u64, Ordering::Relaxed);
+
+            let created_at = self
+                .peek_entry(&normalized)
+                .map(|entry| entry.created_at_utc)
+                .unwrap_or_else(Utc::now);
+            let modified_at = Utc::now();
+            let known: HashSet<String> = self
+                .index
+                .read()
+                .expect("vault index")
+                .keys()
+                .cloned()
+                .chain(std::iter::once(normalized.clone()))
+                .collect();
+            let seed_entries: Vec<VaultIndexEntry> = self
+                .index
+                .read()
+                .expect("vault index")
+                .values()
+                .cloned()
+                .collect();
+            let entry = build_index_entry(
+                &normalized,
+                content,
+                created_at,
+                modified_at,
+                VaultNoteSource::User,
+                &known,
+                &seed_entries,
+            );
+            self.index
+                .write()
+                .expect("vault index")
+                .insert(normalized.clone(), entry.clone());
+            self.persist_index();
+            self.publish_note_delta(&entry, content, outcome.vault_generation);
+            let _ = existed;
+            return Ok(entry);
+        }
+
         let files = user_vault_capability()?;
         if let Some(expected) = if_match.map(str::trim).filter(|value| !value.is_empty()) {
             if files.is_file(&path)? {
@@ -484,6 +679,12 @@ impl VaultStore {
             Utc::now()
         };
         files.atomic_write(&path, content.as_bytes())?;
+        vault_baseline_counters()
+            .mutations
+            .fetch_add(1, Ordering::Relaxed);
+        vault_baseline_counters()
+            .bytes_written
+            .fetch_add(content.len() as u64, Ordering::Relaxed);
         let modified_at = files
             .metadata(&path)
             .ok()
@@ -525,12 +726,27 @@ impl VaultStore {
             .insert(normalized.clone(), entry.clone());
         self.rebuild_link_index();
         self.persist_index();
+        self.publish_projection();
         Ok(entry)
     }
 
     pub fn delete_note(&self, path: &str) -> Result<()> {
         let path = VaultPath::parse(path)?;
         let normalized = path.to_string();
+        if owner_mutations_active() {
+            let owner = ensure_owner_for_active_root()
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            let outcome = relocate_delete(&owner, &normalized)
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            self.index.write().expect("vault index").remove(&normalized);
+            self.persist_index();
+            PROJECTION.remove(&normalized, outcome.vault_generation);
+            if let Ok(mut search) = SEARCH_INDEX.lock() {
+                search.remove_document(&normalized);
+            }
+            return Ok(());
+        }
+
         let files = user_vault_capability()?;
         if !files.is_file(&path)? {
             bail!("vault note not found: {normalized}");
@@ -544,6 +760,7 @@ impl VaultStore {
         self.index.write().expect("vault index").remove(&normalized);
         self.rebuild_link_index();
         self.persist_index();
+        self.publish_projection();
         Ok(())
     }
 
@@ -593,6 +810,16 @@ impl VaultStore {
     pub fn restore_from_trash(&self, path: &str) -> Result<String> {
         let path = VaultPath::parse(path)?;
         let normalized = path.to_string();
+        if owner_mutations_active() {
+            let owner = ensure_owner_for_active_root()
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            relocate_restore(&owner, &normalized)
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            let _ = self.ensure_index_fresh();
+            PROJECTION.mark_stale_reconciling();
+            let _ = self.refresh_from_disk();
+            return Ok(normalized);
+        }
         let trash = path.trash_path();
         let files = user_vault_capability()?;
         if !files.is_file(&trash)? {
@@ -617,6 +844,10 @@ impl VaultStore {
             Ok(value) => value,
             Err(_) => return Vec::new(),
         };
+        let projection = PROJECTION.snapshot();
+        if projection.generation > 0 {
+            return projection.backlinks(&normalized);
+        }
         self.link_index
             .read()
             .expect("vault links")

@@ -2619,6 +2619,15 @@ pub struct VaultNoteSummary {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultNotesListResponse {
     pub notes: Vec<VaultNoteSummary>,
+    /// Opaque vault generation for this page (H07.4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vault_generation: Option<u64>,
+    /// Opaque cursor for the next page; absent when complete or v1 adapter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    /// When true, this page is a bounded adapter and must not be treated as complete.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -2630,6 +2639,12 @@ pub struct VaultNotesQuery {
     pub tags: Option<String>,
     /// Tag prefix filter (e.g. `profile:`).
     pub tag_prefix: Option<String>,
+    /// Opaque pagination cursor bound to root/filter/generation.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// Minimum acceptable vault generation; stale cursors return reset_required.
+    #[serde(default)]
+    pub generation: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2637,6 +2652,10 @@ pub struct VaultNotesQuery {
 pub struct VaultNoteContentResponse {
     pub note: VaultNote,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vault_generation: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2688,6 +2707,38 @@ pub struct VaultWriteResponse {
     /// to stay aligned with disk instead of assuming the request body was stored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vault_generation: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note_version: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct VaultChangesQuery {
+    pub since_generation: Option<u64>,
+    pub cursor: Option<String>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct VaultChangeEntry {
+    pub path: String,
+    pub kind: String,
+    pub note_version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct VaultChangesResponse {
+    pub vault_generation: u64,
+    pub changes: Vec<VaultChangeEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    /// Client must refetch a full snapshot when true.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reset_required: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
