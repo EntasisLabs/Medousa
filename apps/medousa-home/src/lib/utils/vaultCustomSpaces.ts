@@ -1,7 +1,7 @@
 /** User-defined vault groups (localStorage) — extra top-level spaces beyond built-ins. */
 
 import type { VaultSpaceConfig } from "$lib/config/vaultSpaces";
-import { slugifyTitle } from "$lib/utils/vaultTemplates";
+import { slugifyTitle } from "$lib/utils/vaultSlug";
 
 const CUSTOM_SPACES_KEY = "medousa-home-vault-custom-spaces";
 const MAX_CUSTOM_SPACES = 12;

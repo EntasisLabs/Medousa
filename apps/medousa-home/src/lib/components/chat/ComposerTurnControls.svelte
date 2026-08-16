@@ -96,6 +96,12 @@
       return;
     }
     await voicePresets.setActiveVoiceId(voiceId);
+    if (workshopDefaults.loaded) {
+      workshopDefaults.draft = {
+        ...workshopDefaults.draft,
+        activeVoiceId: voiceId,
+      };
+    }
     openMenu = null;
   }
 

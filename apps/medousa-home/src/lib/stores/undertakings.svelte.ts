@@ -12,7 +12,12 @@ import {
   getReview,
   forgeStreamUrl,
 } from "$lib/forge";
-import { shellTabs } from "$lib/stores/shellTabs.svelte";
+
+let groupIdPort: () => string = () => "default";
+
+export function setUndertakingGroupIdPort(port: () => string): void {
+  groupIdPort = port;
+}
 
 export type ActiveUndertakingContext = {
   workId: string;
@@ -37,7 +42,7 @@ export type ActiveUndertakingContext = {
 };
 
 function groupKey(): string {
-  return shellTabs.activeGroupId || "default";
+  return groupIdPort() || "default";
 }
 
 function createUndertakingsStore() {

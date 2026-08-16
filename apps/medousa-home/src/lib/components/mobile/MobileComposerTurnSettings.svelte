@@ -192,6 +192,12 @@
   async function selectVoice(voiceId: string) {
     if (voiceId === voicePresets.activeVoiceId || voicePresets.saving) return;
     await voicePresets.setActiveVoiceId(voiceId);
+    if (workshopDefaults.loaded) {
+      workshopDefaults.draft = {
+        ...workshopDefaults.draft,
+        activeVoiceId: voiceId,
+      };
+    }
   }
 
   async function selectDepth(mode: DepthMode) {

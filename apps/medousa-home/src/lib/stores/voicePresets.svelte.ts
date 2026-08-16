@@ -2,7 +2,6 @@ import {
   loadTuiDefaultsSummary,
   persistTuiVoicePrefs,
 } from "$lib/config";
-import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
 import {
   allVoicePresets,
   DEFAULT_VOICE_ID,
@@ -32,22 +31,17 @@ export class VoicePresetsStore {
   async load(force = false) {
     if (!isTauri() || (this.loaded && !force)) return;
     try {
+      const summary = await loadTuiDefaultsSummary();
+      this.applyFromDraft({
+        activeVoiceId: summary.activeVoiceId,
+        customVoicePresets: summary.customVoicePresets,
+      });
       if (isTauriMobilePlatform()) {
-        if (!workshopDefaults.loaded) {
-          await workshopDefaults.load();
-        }
-        this.applyFromDraft(workshopDefaults.draft);
         const stored =
           typeof localStorage !== "undefined"
             ? localStorage.getItem(MOBILE_ACTIVE_VOICE_KEY)?.trim()
             : null;
         if (stored) this.activeVoiceId = stored;
-      } else if (workshopDefaults.loaded) {
-        this.applyFromDraft(workshopDefaults.draft);
-      } else {
-        const summary = await loadTuiDefaultsSummary();
-        this.activeVoiceId = summary.activeVoiceId?.trim() || DEFAULT_VOICE_ID;
-        this.customPresets = normalizeCustomVoicePresets(summary.customVoicePresets);
       }
     } catch {
       // Keep built-in default when offline.
@@ -63,20 +57,10 @@ export class VoicePresetsStore {
     this.customPresets = normalizeCustomVoicePresets(draft.customVoicePresets);
   }
 
-  syncFromWorkshopDraft() {
-    if (!workshopDefaults.loaded) return;
-    this.applyFromDraft(workshopDefaults.draft);
-    this.loaded = true;
-  }
-
   async setActiveVoiceId(nextId: string) {
     const preset = resolveVoicePreset(nextId, this.customPresets);
     if (preset.id === this.activeVoiceId) return;
     this.activeVoiceId = preset.id;
-    workshopDefaults.draft = {
-      ...workshopDefaults.draft,
-      activeVoiceId: preset.id,
-    };
     if (isTauriMobilePlatform() && typeof localStorage !== "undefined") {
       localStorage.setItem(MOBILE_ACTIVE_VOICE_KEY, preset.id);
     }

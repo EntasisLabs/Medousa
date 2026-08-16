@@ -67,7 +67,7 @@ export class UserProfilesStore {
         const label = remoteProfile?.display_name ?? "Another profile";
         this.remoteChangeNotice = `${label} is now active — switched on another device.`;
         await Promise.all([
-          identity.refresh({ relationshipLimit: 8 }),
+          identity.refresh({ relationshipLimit: 8, userId: this.resolvedUserId }),
           chat.refreshSessions({ force: true }),
         ]);
       }
@@ -99,7 +99,7 @@ export class UserProfilesStore {
       this.resolvedUserId = response.resolved_user_id;
       await this.load({ suppressRemoteNotice: true });
       await Promise.all([
-        identity.refresh({ relationshipLimit: 8 }),
+        identity.refresh({ relationshipLimit: 8, userId: this.resolvedUserId }),
         chat.refreshSessions({ force: true }),
       ]);
       if (hadConversation) {

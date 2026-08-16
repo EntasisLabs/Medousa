@@ -6,6 +6,8 @@ import { wizard } from "$lib/stores/wizard.svelte";
 import { workshops } from "$lib/stores/workshops.svelte";
 import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
 import { workAskDock } from "$lib/stores/workAskDock.svelte";
+import { shellTabs } from "$lib/stores/shellTabs.svelte";
+import { setUndertakingGroupIdPort } from "$lib/stores/undertakings.svelte";
 import {
   applyNativeMobileShellLayout,
   isTauri,
@@ -26,6 +28,7 @@ import {
 
 /** Named shell owner for AppShell onMount pollers/listeners. */
 export function startShellRootResources(): () => void {
+  setUndertakingGroupIdPort(() => shellTabs.activeGroupId);
   commandSpotlight.closeSpotlight();
   document.querySelectorAll(".command-spotlight-backdrop").forEach((node) => {
     node.closest(".body-portal-host")?.remove() ?? node.remove();

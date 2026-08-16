@@ -22,13 +22,19 @@
     if (userProfiles.profiles.length === 0) {
       void userProfiles.load();
     }
-    void identity.refresh({ relationshipLimit: 32 });
+    void identity.refresh({
+      relationshipLimit: 32,
+      userId: userProfiles.resolvedUserId,
+    });
   });
 
   async function switchProfile(profileId: string) {
     await userProfiles.setActive(profileId);
     profilesSelection.select(null);
-    await identity.refresh({ relationshipLimit: 32 });
+    await identity.refresh({
+      relationshipLimit: 32,
+      userId: userProfiles.resolvedUserId,
+    });
     onPickProfile?.(profileId);
   }
 
