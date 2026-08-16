@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
+  import "$lib/styles/peers.postcss";
   import PeerComposer from "$lib/components/peers/PeerComposer.svelte";
   import PeerListRow from "$lib/components/peers/PeerListRow.svelte";
   import PeerThread from "$lib/components/peers/PeerThread.svelte";

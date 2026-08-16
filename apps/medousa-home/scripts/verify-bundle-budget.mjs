@@ -34,6 +34,20 @@ function isRootEntry(key) {
   );
 }
 
+const DORMANT_OVERLAYS = [
+  "CommandSpotlight",
+  "WizardContainer",
+  "VaultNoteWorkshop",
+  "BrowserWorkshop",
+  "MobileBrowserWorkshop",
+  "WorkAskDockPopover",
+  "VaultGarageImportWizard",
+  "VaultContextMenu",
+  "ScriptContextMenu",
+  "ShellContextMenu",
+  "VaultAttachmentPanel",
+];
+
 function assertNoMobileDestinations(manifest, jsFiles) {
   const staticFiles = new Set(jsFiles);
   for (const [key, entry] of Object.entries(manifest)) {
@@ -46,6 +60,12 @@ function assertNoMobileDestinations(manifest, jsFiles) {
       !/src\/lib\/components\/mobile\//.test(key),
       `desktop static closure includes mobile destination ${key}`,
     );
+    for (const name of DORMANT_OVERLAYS) {
+      assert.ok(
+        !key.includes(name),
+        `static closure includes dormant overlay ${name} via ${key}`,
+      );
+    }
   }
 }
 
@@ -103,7 +123,7 @@ function main() {
     const snapshot = {
       schemaVersion: 1,
       notes:
-        "FRONT-001 regression ceiling from production Vite client manifest. Raise only with review; splits should lower it.",
+        "FRONT-001 regression ceiling after H09 Train 5 selected-theme CSS. Raise only with review; CSS minified still above the 600 KiB table target.",
       manifest: ".svelte-kit/output/client/.vite/manifest.json",
       ceilings: {
         rootStaticJsBytes: measured.rootStaticJsBytes,

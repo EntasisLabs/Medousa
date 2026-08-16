@@ -90,7 +90,7 @@ and performance budgets must prevent the same classes of defect from returning.
 | H06 | [06-forge-coder-scaling.md](06-forge-coder-scaling.md) | Incremental Forge state, checkpoint observation, blocking work | PERF-002, PERF-004, ASYNC-001 | ADR-016, H05 | Implementing; H06.0–H06.11 landed; darwin evidence recorded; findings not Validated; multi-OS packaging pending |
 | H07 | [07-vault-scaling-and-consistency.md](07-vault-scaling-and-consistency.md) | Incremental index, atomic mutation, backend/frontend lookups | PERF-003, PERF-006, CONSIST-001 | ADR-014, ADR-016 | Implementing; semantics train exit tests landed |
 | H08 | [08-desktop-browser-isolation.md](08-desktop-browser-isolation.md) | Remote webview capabilities and request-correlated bridge | DESKTOP-001 | ADR-018, H05 | Implemented; packaged-platform release validation pending |
-| H09 | [09-home-runtime-boundaries.md](09-home-runtime-boundaries.md) | Feature loading, runtime cycles, store/component/CSS ownership | FRONT-001, ARCH-001, ARCH-002 | ADR-020, H03 | Implementing; Train 3 zero SCCs; ARCH-001/ARCH-002 Mitigated; FRONT-001 ceiling 3.07 MB JS; FRONT-001 Proposed |
+| H09 | [09-home-runtime-boundaries.md](09-home-runtime-boundaries.md) | Feature loading, runtime cycles, store/component/CSS ownership | FRONT-001, ARCH-001, ARCH-002 | ADR-020, H03 | Implementing; Train 5 selected-theme CSS; ARCH-001/ARCH-002 Mitigated; FRONT-001 ceiling 2.11 MB JS / 640 KB CSS; FRONT-001 Proposed (CSS > 600 KiB) |
 | H10 | [10-api-contract-generation.md](10-api-contract-generation.md) | Authoritative API definition and generated clients/tests | CONTRACT-001 | ADR-019, H01 | Draft |
 | H11 | `11-package-and-dependency-boundaries.md` | Optional workload features and dependency budgets | DEP-001 | ADR-020 | Proposed |
 | H12 | `12-quality-gates.md` | CI matrix, deterministic tests, benchmarks and budgets | CI-001, TEST-001, PERF-007 | All workstreams | Proposed |
@@ -151,7 +151,7 @@ one without retaining the history.
 | STORE-002 | High | H04 | C | Mitigated; retained benchmark evidence pending | Incremental feed/workspace journals and pre-serialization mutation coalescing; P03 artifact pending |
 | PERF-004 | Critical | H06 | C | Implementing; not validated | P05 darwin scenario matrix recorded; model-only zero-Git boundary proof and multi-OS packaging pending |
 | PERF-005 | Critical | H03 | C | Mitigated; retained browser profile pending | Browser streaming render/long-task profile |
-| FRONT-001 | High | H09 | D | Proposed | Manifest and cold-start budgets |
+| FRONT-001 | High | H09 | D | Proposed | Train 5 JS/largest-chunk/gzip CSS meet table targets; minified CSS 640,347 still above 600 KiB; Validated pending P08 |
 | ARCH-001 | High | H09 | D | Mitigated; Validated pending P08 packaged multi-OS | Analyzer reports 0 first-party SCCs; shortest-path tests cover former families |
 | PERF-006 | High | H07 | C | Mitigated; P07 multi-OS Validated evidence pending | Large-vault tree/link; Home pages to completion and virtualizes recents at fixed height |
 | ARCH-002 | High | H09 | D | Mitigated; Validated pending P08 packaged multi-OS | Boundary tests and deleted legacy ownership paths |

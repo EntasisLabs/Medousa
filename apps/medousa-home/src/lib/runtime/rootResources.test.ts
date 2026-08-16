@@ -83,6 +83,16 @@ describe("eager AppShell graph freeze", () => {
     expect(source).toContain("ShellChunkError");
     expect(source).not.toMatch(/void import\(/);
   });
+
+  it("keeps the bundle-budget overlay denylist in lockstep", () => {
+    const budget = readFileSync(
+      join(homeRoot, "scripts/verify-bundle-budget.mjs"),
+      "utf8",
+    );
+    for (const name of APP_SHELL_LAZY_OVERLAYS) {
+      expect(budget, `budget denylist missing ${name}`).toContain(`"${name}"`);
+    }
+  });
 });
 
 describe("shell and chat a11y fixtures", () => {

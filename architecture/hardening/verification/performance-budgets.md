@@ -71,12 +71,12 @@ The 2026-08-12 audit established these reproducible build artifacts:
 
 | Metric | Current observation | Baseline use |
 | --- | ---: | --- |
-| Root route initial static JavaScript | 3,067,547 minified bytes across 29 files | H09 Train 2 FRONT-001 ceiling; CSS/largest-chunk table targets still unmet |
-| Root route initial JS per-file gzip sum | 970,441 bytes | Diagnostic; transfer behavior differs by packaging/server |
-| Root route initial static CSS | 1,075,634 minified bytes across 4 files | Binding regression ceiling until H09.5 lowers it |
-| Root route initial CSS per-file gzip sum | 134,301 bytes | Diagnostic |
+| Root route initial static JavaScript | 2,109,096 minified bytes across 54 files | H09 Train 5 FRONT-001 ceiling; meets ≤ 3.0 MiB table target |
+| Root route initial JS per-file gzip sum | 695,687 bytes | Diagnostic; transfer behavior differs by packaging/server |
+| Root route initial static CSS | 640,347 minified bytes across 3 files | Binding regression ceiling; still above the 600 KiB table target |
+| Root route initial CSS per-file gzip sum | 83,636 bytes | Diagnostic; meets ≤ 100 KiB gzip table target |
 | Complete generated client JavaScript | 11,761,808 minified bytes across 164 files | Regression ceiling |
-| Largest initial application/page chunk | 1,583,570 bytes | H09 Train 2 ceiling; H09 table target is 900 KiB |
+| Largest initial application/page chunk | 852,853 bytes | H09 Train 5; meets ≤ 900 KiB table target |
 | Global generated CSS | 953,407 minified bytes | Regression ceiling |
 | Frontend runtime SCCs | 7; largest contains 74 modules | Architectural budget: zero new SCCs and zero growth |
 | Main daemon normal dependency closure | 932 unique name/version pairs | Regression ceiling; features reported separately |

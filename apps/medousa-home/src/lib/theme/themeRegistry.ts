@@ -292,6 +292,8 @@ export function buildThemeBootScript(): string {
     var skeletonTheme = names[themeId][dark ? "dark" : "light"];
     document.documentElement.classList.toggle("dark", dark);
     document.documentElement.dataset.theme = skeletonTheme;
+    var href = "/themes/" + skeletonTheme + ".css";
+    document.write('<link id="medousa-selected-theme" rel="stylesheet" href="' + href + '">');
     if (
       window.__TAURI_INTERNALS__ &&
       /iPhone|iPad|iPod/i.test(navigator.userAgent)

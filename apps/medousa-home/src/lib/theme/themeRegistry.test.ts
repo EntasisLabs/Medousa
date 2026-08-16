@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   COLOR_THEME_OPTIONS,
   SKELETON_THEME_NAMES,
+  buildThemeBootScript,
 } from "$lib/theme/themeRegistry";
 import {
   MEDOUSA_AURORA_FILL,
@@ -39,5 +40,15 @@ describe("logo-derived themes", () => {
     expect(medousaMarkSpriteFill("ink-black", true)).toBe("#000000");
     expect(medousaMarkSpriteFill("deep-blue", false)).toBe("#1D4ED8");
     expect(medousaMarkSpriteFill("aurora", true)).toBe(MEDOUSA_AURORA_FILL);
+  });
+});
+
+describe("theme boot script", () => {
+  it("loads the stored theme token sheet as a blocking stylesheet", () => {
+    const boot = buildThemeBootScript();
+    expect(boot).toContain("/themes/");
+    expect(boot).toContain("medousa-selected-theme");
+    expect(boot).toContain("document.write");
+    expect(boot).toContain("medousa-home-color-theme");
   });
 });

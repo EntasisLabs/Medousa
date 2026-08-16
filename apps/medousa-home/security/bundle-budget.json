@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "notes": "FRONT-001 regression ceiling after H09 Train 2 destination/overlay splits. Raise only with review; later trains should lower CSS and largest-chunk bytes.",
+  "notes": "FRONT-001 regression ceiling after H09 Train 5 selected-theme CSS. Raise only with review; CSS minified still above the 600 KiB table target.",
   "manifest": ".svelte-kit/output/client/.vite/manifest.json",
   "ceilings": {
-    "rootStaticJsBytes": 3067547,
-    "rootStaticJsGzipBytes": 970441,
-    "rootStaticCssBytes": 1075634,
-    "rootStaticCssGzipBytes": 134301,
-    "largestInitialJsChunkBytes": 1583570
+    "rootStaticJsBytes": 2109096,
+    "rootStaticJsGzipBytes": 695687,
+    "rootStaticCssBytes": 640347,
+    "rootStaticCssGzipBytes": 83636,
+    "largestInitialJsChunkBytes": 852853
   },
   "measured": {
     "rootEntries": [
@@ -16,12 +16,12 @@
       ".svelte-kit/generated/client-optimized/nodes/2.js",
       "node_modules/@sveltejs/kit/src/runtime/client/entry.js"
     ],
-    "jsFiles": 29,
-    "cssFiles": 4,
-    "rootStaticJsBytes": 3067547,
-    "rootStaticJsGzipBytes": 970441,
-    "rootStaticCssBytes": 1075634,
-    "rootStaticCssGzipBytes": 134301,
-    "largestInitialJsChunkBytes": 1583570
+    "jsFiles": 54,
+    "cssFiles": 3,
+    "rootStaticJsBytes": 2109096,
+    "rootStaticJsGzipBytes": 695687,
+    "rootStaticCssBytes": 640347,
+    "rootStaticCssGzipBytes": 83636,
+    "largestInitialJsChunkBytes": 852853
   }
 }

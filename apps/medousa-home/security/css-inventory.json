@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "layers": ["base", "components", "utilities", "features"],
+  "notes": "H09 Train 5.1 inventory. Feature sheets must not be @imported from app.postcss; destination components load them. Vault/chat/settings blocks still in app.postcss are pending extract, not claimed moved.",
+  "entries": [
+    {
+      "id": "cascade-order",
+      "class": "core",
+      "path": "src/app.postcss",
+      "notes": "Central @layer base, components, utilities, features declaration"
+    },
+    {
+      "id": "app-base",
+      "class": "core",
+      "path": "src/app.postcss",
+      "notes": "@layer base document reset, chrome tokens, iOS input floor"
+    },
+    {
+      "id": "workshop-shell",
+      "class": "core",
+      "path": "src/lib/styles/workshop-shell.postcss",
+      "loadedBy": "app.postcss"
+    },
+    {
+      "id": "theme-semantic",
+      "class": "primitive",
+      "path": "src/lib/styles/theme-semantic.postcss",
+      "loadedBy": "app.postcss"
+    },
+    {
+      "id": "chat-mobile-tokens",
+      "class": "primitive",
+      "path": "src/lib/styles/chat-mobile-tokens.postcss",
+      "loadedBy": "app.postcss"
+    },
+    {
+      "id": "syntax-tokens",
+      "class": "primitive",
+      "path": "src/lib/styles/syntax-tokens.postcss",
+      "loadedBy": "app.postcss"
+    },
+    {
+      "id": "markdown-tokens",
+      "class": "primitive",
+      "path": "src/lib/styles/markdown-tokens.postcss",
+      "loadedBy": "app.postcss"
+    },
+    {
+      "id": "callout-tokens",
+      "class": "primitive",
+      "path": "src/lib/styles/callout-tokens.postcss",
+      "loadedBy": "app.postcss"
+    },
+    {
+      "id": "block-tokens",
+      "class": "primitive",
+      "path": "src/lib/styles/block-tokens.postcss",
+      "loadedBy": "app.postcss"
+    },
+    {
+      "id": "chart-tokens",
+      "class": "primitive",
+      "path": "src/lib/styles/chart-tokens.postcss",
+      "loadedBy": "app.postcss"
+    },
+    {
+      "id": "browser",
+      "class": "feature",
+      "path": "src/lib/styles/browser.postcss",
+      "loadedBy": "HumanBrowserPanel.svelte"
+    },
+    {
+      "id": "peers",
+      "class": "feature",
+      "path": "src/lib/styles/peers.postcss",
+      "loadedBy": "PeersPanel.svelte"
+    },
+    {
+      "id": "mobile-home",
+      "class": "feature",
+      "path": "src/lib/styles/mobile-home-convergence.postcss",
+      "loadedBy": "MobileShell.svelte / HomePanel.svelte"
+    },
+    {
+      "id": "theme-tokens",
+      "class": "primitive",
+      "path": "static/themes/*.css",
+      "notes": "Selected-theme variable sheets loaded from stored preference; Tailwind compiles none"
+    },
+    {
+      "id": "vault-in-app",
+      "class": "feature",
+      "path": "src/app.postcss",
+      "status": "pending-extract",
+      "notes": ".vault-* still in the god sheet (~1478–14903)"
+    },
+    {
+      "id": "chat-composer-in-app",
+      "class": "feature",
+      "path": "src/app.postcss",
+      "status": "pending-extract",
+      "notes": ".chat-* / .composer-* still in the god sheet"
+    },
+    {
+      "id": "settings-in-app",
+      "class": "feature",
+      "path": "src/app.postcss",
+      "status": "pending-extract",
+      "notes": ".settings-* still in the god sheet (~8478–9267)"
+    }
+  ]
+}

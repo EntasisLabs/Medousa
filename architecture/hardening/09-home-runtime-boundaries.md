@@ -1,10 +1,10 @@
 # H09 — Home runtime and feature boundaries
 
-> **Status:** Implementing — Train 4 closed mega-owner ports (ARCH-002
-> **Mitigated**). FRONT-001 ceiling is 3,067,547 JS / 1,075,634 CSS (down from
-> 7,129,003 / 1,448,096). FRONT-001 stays Proposed: CSS and largest-chunk
-> table targets are unmet. ADR-020 is Accepted. Validated still needs P08
-> packaged multi-OS evidence.
+> **Status:** Implementing — Train 5 selected-theme CSS. FRONT-001 ceiling is
+> 2,109,096 JS / 640,347 CSS (down from 7,129,003 / 1,448,096). Largest JS
+> chunk 852,853 meets ≤ 900 KiB. FRONT-001 stays Proposed: root CSS 640,347
+> is still above the 600 KiB table target. ARCH-001/ARCH-002 Mitigated.
+> ADR-020 is Accepted. Validated still needs P08 packaged multi-OS evidence.
 >
 > **Accountable owner:** Medousa Home maintainers
 >
@@ -444,6 +444,11 @@ parameters, note/chat content, filesystem paths, or raw errors containing data.
 - Train 2 measured root static closure: 3,067,547 JS (gzip 970,441) / 1,075,634 CSS
   across 29 JS / 4 CSS files; largest initial JS chunk 1,583,570. Desktop static
   closure contains 0 `MobileShell` / `src/lib/components/mobile/` destinations.
+- Train 5 measured root static closure: 2,109,096 JS (gzip 695,687) / 640,347 CSS
+  (gzip 83,636) across 54 JS / 3 CSS files; largest initial JS chunk 852,853.
+  Tailwind compiles no palettes; boot loads one stored `/themes/<name>.css` sheet.
+  Dormant overlays are absent from the static closure. CSS minified remains above
+  the 600 KiB table target.
 
 ### H09.3 — Break cycles from contracts upward
 
@@ -467,6 +472,11 @@ parameters, note/chat content, filesystem paths, or raw errors containing data.
 - Classify all global CSS; delete dead/duplicate rules with visual evidence.
 - Move feature/component rules into lazy assets and declare cascade layers.
 - Replace build-expanded theme catalog with selected token stylesheet loading.
+  Inventory: `apps/medousa-home/security/css-inventory.json`. Browser/peers
+  sheets load from their feature entries; vault/chat/settings remain
+  pending-extract in `app.postcss`. Contrast fixtures in
+  `themes/theme-contract.test.ts`; reduced-motion remains in `app.postcss`
+  and `SHELL_A11Y_FIXTURES`.
 - Validate CSP, visual regression, contrast, reduced motion, zoom, and platforms.
 
 ### H09.6 — Enforce and close
