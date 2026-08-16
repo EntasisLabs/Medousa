@@ -132,7 +132,7 @@ assert.ok(
 
 const lockedVersion = (name) => {
   const match = cargoLock.match(
-    new RegExp(`\\[\\[package\\]\\]\\nname = "${name}"\\nversion = "([^"]+)"`),
+    new RegExp(`\\[\\[package\\]\\]\\r?\\nname = "${name}"\\r?\\nversion = "([^"]+)"`),
   );
   assert.ok(match, `${name} is missing from the desktop Cargo.lock`);
   return match[1];
