@@ -1,6 +1,10 @@
 # H09 — Home runtime and feature boundaries
 
-> **Status:** Draft for Home architecture review
+> **Status:** Implementing — analyzer and lifecycle kernel in progress.
+> Findings FRONT-001 / ARCH-001 / ARCH-002 stay Proposed until owning
+> train exit tests pass. ADR-020 stays Proposed until FeatureDescriptor /
+> loader contracts exist in code. Validated still needs P08 packaged
+> multi-OS evidence.
 >
 > **Accountable owner:** Medousa Home maintainers
 >
