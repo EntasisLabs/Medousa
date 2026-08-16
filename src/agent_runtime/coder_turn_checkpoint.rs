@@ -55,6 +55,7 @@ const MAX_VISIBLE_TOOLS: usize = 160;
 const MAX_FIELD_CHARS: usize = 16_000;
 const MAX_JSON_VALUE_BYTES: usize = 24_000;
 const MAX_JOURNAL_RECORD_BYTES: usize = 768 * 1024;
+const MAX_CHECKPOINT_JOURNAL_BYTES: u64 = MAX_CHECKPOINT_BYTES * 8;
 
 static CODER_TURN_CHECKPOINT_STORE: Lazy<Arc<CoderTurnCheckpointStore>> = Lazy::new(|| {
     Arc::new(CoderTurnCheckpointStore::open(
@@ -471,7 +472,8 @@ impl CoderTurnCheckpointStore {
             ));
         }
 
-        if let Some(existing) = self.fold_journal_unlocked(&session_id, &bounded.daemon_turn_id)? {
+        let existing = self.fold_journal_unlocked(&session_id, &bounded.daemon_turn_id)?;
+        if let Some(existing) = existing.as_ref() {
             if bounded.checkpoint_generation < existing.checkpoint_generation {
                 return Err(format!(
                     "stale checkpoint generation {} rejected; durable generation is {}",
@@ -522,6 +524,38 @@ impl CoderTurnCheckpointStore {
             .resolve_write_path(&session_id, &head_rel)
             .map_err(|err| format!("cannot resolve Coder checkpoint head path: {err}"))?;
         let tx = self.transaction()?;
+        let current_journal_bytes = match tx.root().metadata(&journal_path) {
+            Ok(metadata) => metadata.size,
+            Err(error) if error.is_not_found() => 0,
+            Err(error) => return Err(format!("cannot inspect Coder checkpoint journal: {error}")),
+        };
+        if current_journal_bytes
+            .saturating_add(record_bytes.len() as u64)
+            .saturating_add(1)
+            > MAX_CHECKPOINT_JOURNAL_BYTES
+        {
+            let compacted = existing.as_ref().ok_or_else(|| {
+                "checkpoint journal exceeded its bound without a recoverable prefix".to_string()
+            })?;
+            let compacted_body = LogicalCheckpointBody::Boundary {
+                checkpoint: compacted.clone(),
+            };
+            let compacted_record = LogicalCheckpointRecord {
+                schema_version: LOGICAL_CHECKPOINT_JOURNAL_SCHEMA_VERSION,
+                generation: compacted.checkpoint_generation,
+                turn_id: compacted.daemon_turn_id.clone(),
+                session_id: compacted.session_id.clone(),
+                work_id: compacted.forge.work_id.clone(),
+                published_at_utc: Utc::now(),
+                body_digest: logical_body_digest(&compacted_body),
+                body: compacted_body,
+            };
+            let mut compacted_bytes = serde_json::to_vec(&compacted_record)
+                .map_err(|err| format!("cannot serialize compacted checkpoint journal: {err}"))?;
+            compacted_bytes.push(b'\n');
+            tx.replace_snapshot(&journal_path, &compacted_bytes, DurabilityLevel::Synced)
+                .map_err(|err| format!("cannot compact Coder checkpoint journal: {err}"))?;
+        }
         tx.check(TransactionFaultPoint::BeforeCheckpointDelta)
             .map_err(|err| format!("checkpoint journal fault before delta: {err}"))?;
         tx.append_record(&journal_path, &record_bytes, DurabilityLevel::Synced)
@@ -2359,6 +2393,32 @@ mod tests {
             .unwrap();
         assert_eq!(recovered.checkpoint_generation, 2);
         assert_eq!(recovered.current_goal, "second boundary");
+    }
+
+    #[test]
+    fn long_turn_compacts_checkpoint_journal_before_the_read_bound() {
+        let root = tempdir().unwrap();
+        let store = CoderTurnCheckpointStore::open(root.path());
+        let mut value = checkpoint("session-long", "turn-long", "work-long");
+        value.transcript.tool_lane_messages = vec![ChatMessage::assistant("x".repeat(180_000))];
+
+        for generation in 1..=40 {
+            value.checkpoint_generation = generation;
+            value.current_goal = format!("boundary-{generation}");
+            store.save(&value).unwrap();
+        }
+
+        let session = session_id("session-long");
+        let journal = checkpoint_journal_path("turn-long");
+        let path = store.files.resolve_read_path(&session, &journal).unwrap();
+        let metadata = store.transaction().unwrap().root().metadata(&path).unwrap();
+        assert!(metadata.size <= MAX_CHECKPOINT_JOURNAL_BYTES);
+        let recovered = store
+            .recover_from_journal("session-long", "turn-long")
+            .unwrap()
+            .unwrap();
+        assert_eq!(recovered.checkpoint_generation, 40);
+        assert_eq!(recovered.current_goal, "boundary-40");
     }
 
     #[test]
