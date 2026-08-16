@@ -31,6 +31,7 @@
   import { attachAgentBrowserCoord } from "$lib/utils/agentBrowserCoord";
   import { humanBrowserSetMobileShellActive } from "$lib/humanBrowser";
   import BrowserWorkshop from "$lib/components/browser/BrowserWorkshop.svelte";
+  import { bindRootResource, recordRootResource } from "$lib/runtime/rootResources";
 
   $effect(() => {
     void chat.sessionId;
@@ -90,23 +91,32 @@
     });
 
     void wizard.bootstrap();
-    const stopViewport = layout.attachViewportTracking();
+    const stopWizard = recordRootResource("wizard-bootstrap");
+    const stopViewport = bindRootResource("viewport-tracking", layout.attachViewportTracking());
     if (isTauri()) {
       void humanBrowserSetMobileShellActive(layout.isMobile);
     }
-    const stopNativeLayout = applyNativeMobileShellLayout();
-    const stopMobileViewport = isTauriMobilePlatform()
-      ? () => {
-          layout.setMobile(true);
-        }
-      : watchMobileViewport((mobile) => {
-          const wasMobile = layout.isMobile;
-          layout.setMobile(mobile);
-          if (wasMobile !== mobile) {
-            handoffBrowserShell(mobile);
+    const stopNativeLayout = bindRootResource(
+      "native-mobile-layout",
+      applyNativeMobileShellLayout(),
+    );
+    const stopMobileViewport = bindRootResource(
+      "mobile-viewport",
+      isTauriMobilePlatform()
+        ? () => {
+            layout.setMobile(true);
           }
-        });
-    const stopNative = initMobileNative(openWorkCard, openVaultNote, {
+        : watchMobileViewport((mobile) => {
+            const wasMobile = layout.isMobile;
+            layout.setMobile(mobile);
+            if (wasMobile !== mobile) {
+              handoffBrowserShell(mobile);
+            }
+          }),
+    );
+    const stopNative = bindRootResource(
+      "mobile-native",
+      initMobileNative(openWorkCard, openVaultNote, {
       onPairLink: (pairUrl) => {
         // Global handler for medousa://pair/… (camera / Messages). Wizard may override while onboarding.
         void workshops
@@ -126,8 +136,14 @@
       onOpenPeer: openPeerThread,
       onOpenCalendar: openCalendarEvent,
     });
-    const stopPeerNotifications = startPeerMessageNotificationPolling();
-    const stopAgentBrowserCoord = attachAgentBrowserCoord();
+    const stopPeerNotifications = bindRootResource(
+      "peer-message-notifications",
+      startPeerMessageNotificationPolling(),
+    );
+    const stopAgentBrowserCoord = bindRootResource(
+      "agent-browser-coord",
+      attachAgentBrowserCoord(),
+    );
 
     const onKeydown = (event: KeyboardEvent) => {
       if (layout.isMobile) return;
@@ -168,15 +184,19 @@
       }
     };
     window.addEventListener("keydown", onKeydown);
+    const stopHotkeys = bindRootResource("command-spotlight-hotkeys", () => {
+      window.removeEventListener("keydown", onKeydown);
+    });
 
     return () => {
+      stopWizard();
       stopNativeLayout();
       stopViewport();
       stopMobileViewport();
       stopNative();
       stopPeerNotifications();
       stopAgentBrowserCoord();
-      window.removeEventListener("keydown", onKeydown);
+      stopHotkeys();
     };
   });
 </script>
