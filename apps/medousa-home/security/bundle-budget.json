@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "notes": "FRONT-001 regression ceiling from production Vite client manifest. Raise only with review; splits should lower it.",
+  "manifest": ".svelte-kit/output/client/.vite/manifest.json",
+  "ceilings": {
+    "rootStaticJsBytes": 7129003,
+    "rootStaticJsGzipBytes": 2129065,
+    "rootStaticCssBytes": 1448096,
+    "rootStaticCssGzipBytes": 189858,
+    "largestInitialJsChunkBytes": 2203601
+  },
+  "measured": {
+    "rootEntries": [
+      ".svelte-kit/generated/client-optimized/app.js",
+      ".svelte-kit/generated/client-optimized/nodes/0.js",
+      ".svelte-kit/generated/client-optimized/nodes/2.js",
+      "node_modules/@sveltejs/kit/src/runtime/client/entry.js"
+    ],
+    "jsFiles": 60,
+    "cssFiles": 11,
+    "rootStaticJsBytes": 7129003,
+    "rootStaticJsGzipBytes": 2129065,
+    "rootStaticCssBytes": 1448096,
+    "rootStaticCssGzipBytes": 189858,
+    "largestInitialJsChunkBytes": 2203601
+  }
+}

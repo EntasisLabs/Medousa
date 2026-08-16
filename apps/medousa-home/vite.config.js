@@ -61,6 +61,9 @@ function mobileDevOriginPlugin() {
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [mobileDevOriginPlugin(), sveltekit(), themeBootPlugin()],
+  build: {
+    manifest: true,
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

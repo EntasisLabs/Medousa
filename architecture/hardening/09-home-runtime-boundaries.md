@@ -411,7 +411,10 @@ parameters, note/chat content, filesystem paths, or raw errors containing data.
 
 ### H09.0 — Reproducible graph and P08 baseline
 
-- Check in manifest closure/CSS analyzer and exact P08 workload/machine record.
+- Check in manifest closure/CSS analyzer and exact P08 workload/machine record
+  (`apps/medousa-home/scripts/verify-bundle-budget.mjs`,
+  `apps/medousa-home/security/bundle-budget.json`; `npm run build` then
+  `npm run check:bundle-budget`).
 - Add Svelte/TypeScript runtime graph analyzer and seven-SCC migration ledger
   (`apps/medousa-home/scripts/verify-runtime-graph.mjs`,
   `apps/medousa-home/security/runtime-scc-ledger.json`; `npm run check:runtime-graph`).
