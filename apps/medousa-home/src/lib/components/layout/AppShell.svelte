@@ -1,27 +1,37 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import HomeSplash from "$lib/components/layout/HomeSplash.svelte";
+  import LazyFeatureView from "$lib/components/layout/LazyFeatureView.svelte";
   import ShellChunkError from "$lib/components/layout/ShellChunkError.svelte";
-  import CommandSpotlight from "$lib/components/layout/CommandSpotlight.svelte";
-  import WorkAskDockPopover from "$lib/components/work/WorkAskDockPopover.svelte";
-  import WizardContainer from "$lib/components/wizard/WizardContainer.svelte";
-  import VaultGarageImportWizard from "$lib/components/vault/VaultGarageImportWizard.svelte";
-  import ScriptContextMenu from "$lib/components/automations/ScriptContextMenu.svelte";
-  import ShellContextMenu from "$lib/components/shell/ShellContextMenu.svelte";
-  import VaultContextMenu from "$lib/components/vault/VaultContextMenu.svelte";
-  import VaultNoteWorkshop from "$lib/components/vault/VaultNoteWorkshop.svelte";
-  import VaultAttachmentPanel from "$lib/components/vault/VaultAttachmentPanel.svelte";
-  import MobileBrowserWorkshop from "$lib/components/mobile/MobileBrowserWorkshop.svelte";
   import ToastHost from "$lib/components/layout/ToastHost.svelte";
   import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { noteWorkshop } from "$lib/stores/noteWorkshop.svelte";
+  import { browserWorkshop } from "$lib/stores/browserWorkshop.svelte";
+  import { workAskDock } from "$lib/stores/workAskDock.svelte";
+  import { vaultOverlay } from "$lib/stores/vaultOverlay.svelte";
+  import { vaultContextMenu } from "$lib/stores/vaultContextMenu.svelte";
+  import { scriptContextMenu } from "$lib/stores/scriptContextMenu.svelte";
+  import { shellContextMenu } from "$lib/stores/shellContextMenu.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
-  import BrowserWorkshop from "$lib/components/browser/BrowserWorkshop.svelte";
   import { probeClientPlatform } from "$lib/runtime/platformProbe";
   import { startShellRootResources } from "$lib/runtime/shellLifecycle";
   import { focusChatComposer } from "$lib/runtime/shellUseCases";
+  import {
+    loadBrowserWorkshop,
+    loadCommandSpotlight,
+    loadMobileBrowserWorkshop,
+    loadScriptContextMenu,
+    loadShellContextMenu,
+    loadVaultAttachmentPanel,
+    loadVaultContextMenu,
+    loadVaultGarageImportWizard,
+    loadVaultNoteWorkshop,
+    loadWizardContainer,
+    loadWorkAskDockPopover,
+  } from "$lib/runtime/viewLoaders";
 
   const loadDesktopShell = () => import("$lib/components/layout/WorkshopShell.svelte");
   const loadMobileShell = () => import("$lib/components/mobile/MobileShell.svelte");
@@ -42,7 +52,7 @@
 {#if wizard.loading}
   <HomeSplash />
 {:else if wizard.visible && isTauriMobilePlatform()}
-  <WizardContainer />
+  <LazyFeatureView loader={loadWizardContainer} overlay />
 {:else if layout.isMobile}
   {#key shellEpoch}
     {#await loadMobileShell()}
@@ -65,23 +75,50 @@
   {/key}
 {/if}
 
-<CommandSpotlight onFocusChat={focusChatComposer} />
-{#if !layout.isMobile}
-  <WorkAskDockPopover />
+{#if commandSpotlight.open}
+  <LazyFeatureView
+    loader={loadCommandSpotlight}
+    overlay
+    onFocusChat={focusChatComposer}
+  />
+{/if}
+{#if !layout.isMobile && workAskDock.open}
+  <LazyFeatureView loader={loadWorkAskDockPopover} overlay />
 {/if}
 
-<VaultGarageImportWizard />
-<VaultContextMenu />
-<ScriptContextMenu />
-<ShellContextMenu />
-<VaultAttachmentPanel />
-{#if !layout.isMobile}
-  <VaultNoteWorkshop onOpenFullChat={focusChatComposer} />
-  <BrowserWorkshop onOpenFullChat={focusChatComposer} />
-{:else}
-  <MobileBrowserWorkshop
+{#if vaultOverlay.garageWizardOpen}
+  <LazyFeatureView loader={loadVaultGarageImportWizard} overlay />
+{/if}
+{#if vaultContextMenu.open}
+  <LazyFeatureView loader={loadVaultContextMenu} overlay />
+{/if}
+{#if scriptContextMenu.open}
+  <LazyFeatureView loader={loadScriptContextMenu} overlay />
+{/if}
+{#if shellContextMenu.open}
+  <LazyFeatureView loader={loadShellContextMenu} overlay />
+{/if}
+{#if vaultOverlay.attachmentPanelOpen}
+  <LazyFeatureView loader={loadVaultAttachmentPanel} overlay />
+{/if}
+{#if !layout.isMobile && noteWorkshop.open}
+  <LazyFeatureView
+    loader={loadVaultNoteWorkshop}
+    overlay
+    onOpenFullChat={focusChatComposer}
+  />
+{/if}
+{#if !layout.isMobile && browserWorkshop.open}
+  <LazyFeatureView
+    loader={loadBrowserWorkshop}
+    overlay
+    onOpenFullChat={focusChatComposer}
+  />
+{:else if layout.isMobile && browserWorkshop.open}
+  <LazyFeatureView
+    loader={loadMobileBrowserWorkshop}
+    overlay
     onOpenFullChat={async () => {
-      const { browserWorkshop } = await import("$lib/stores/browserWorkshop.svelte");
       browserWorkshop.close();
       focusChatComposer();
     }}

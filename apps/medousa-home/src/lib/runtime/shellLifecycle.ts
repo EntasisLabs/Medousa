@@ -5,6 +5,7 @@ import { toast } from "$lib/stores/toast.svelte";
 import { wizard } from "$lib/stores/wizard.svelte";
 import { workshops } from "$lib/stores/workshops.svelte";
 import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
+import { workAskDock } from "$lib/stores/workAskDock.svelte";
 import {
   applyNativeMobileShellLayout,
   isTauri,
@@ -13,6 +14,7 @@ import {
 } from "$lib/platform";
 import { handoffBrowserShell } from "$lib/utils/browserShellHandoff";
 import { attachAgentBrowserCoord } from "$lib/utils/agentBrowserCoord";
+import { WORK_FOCUS_ASK_EVENT } from "$lib/utils/workChromeEvents";
 import { humanBrowserSetMobileShellActive } from "$lib/humanBrowser";
 import { bindRootResource, recordRootResource } from "./rootResources";
 import {
@@ -122,6 +124,17 @@ export function startShellRootResources(): () => void {
     window.removeEventListener("keydown", onKeydown);
   });
 
+  const onFocusAsk = () => {
+    if (layout.isMobile) return;
+    const trigger =
+      document.querySelector<HTMLElement>('[data-work-ask-trigger="true"]') ?? null;
+    workAskDock.openDock(trigger);
+  };
+  window.addEventListener(WORK_FOCUS_ASK_EVENT, onFocusAsk);
+  const stopWorkAskFocus = bindRootResource("work-ask-focus", () => {
+    window.removeEventListener(WORK_FOCUS_ASK_EVENT, onFocusAsk);
+  });
+
   return () => {
     stopWizard();
     stopNativeLayout();
@@ -131,5 +144,6 @@ export function startShellRootResources(): () => void {
     stopPeerNotifications();
     stopAgentBrowserCoord();
     stopHotkeys();
+    stopWorkAskFocus();
   };
 }

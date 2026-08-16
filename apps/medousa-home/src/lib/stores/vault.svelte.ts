@@ -149,6 +149,7 @@ import {
   type NoteSaveResult,
 } from "$lib/stores/noteSaveQueue";
 import { noteEditorRuntimes } from "$lib/stores/noteEditorRuntimes.svelte";
+import { vaultOverlay } from "$lib/stores/vaultOverlay.svelte";
 import { invokeVaultLeaveFlush } from "$lib/stores/vaultLeaveFlush";
 import { significantLiveText } from "$lib/vault/live/liveMarkdownCodec";
 import {
@@ -297,7 +298,12 @@ export class VaultStore {
   previewingAttachmentPath = $state<string | null>(null);
   /** pane = Your files library column; panel = floating popup over a note. */
   previewPresentation = $state<"pane" | "panel">("pane");
-  garageWizardOpen = $state(false);
+  get garageWizardOpen() {
+    return vaultOverlay.garageWizardOpen;
+  }
+  set garageWizardOpen(value: boolean) {
+    vaultOverlay.garageWizardOpen = value;
+  }
   newGroupDialogOpen = $state(false);
   noteActionsOpen = $state(false);
   vaultRoots = $state<VaultRootView[]>([]);
@@ -2865,11 +2871,18 @@ export class VaultStore {
     if (!path.trim()) return;
     this.previewingAttachmentPath = path;
     this.previewPresentation = presentation;
+    this.syncAttachmentPanelOverlay();
   }
 
   closeAttachmentPreview() {
     this.previewingAttachmentPath = null;
     this.previewPresentation = "pane";
+    this.syncAttachmentPanelOverlay();
+  }
+
+  private syncAttachmentPanelOverlay() {
+    vaultOverlay.attachmentPanelOpen =
+      this.previewPresentation === "panel" && Boolean(this.previewingAttachmentPath);
   }
 
   openGarageWizard() {

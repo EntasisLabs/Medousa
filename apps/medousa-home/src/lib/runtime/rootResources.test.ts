@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   APP_SHELL_EAGER_MODULES,
+  APP_SHELL_LAZY_OVERLAYS,
   APP_SHELL_ROOT_RESOURCE_IDS,
   SHELL_A11Y_FIXTURES,
   bindRootResource,
@@ -29,6 +30,7 @@ describe("root resource probe", () => {
       "peer-message-notifications",
       "agent-browser-coord",
       "command-spotlight-hotkeys",
+      "work-ask-focus",
     ]);
     const source = readFileSync(
       join(homeRoot, "src/lib/runtime/shellLifecycle.ts"),
@@ -53,7 +55,7 @@ describe("root resource probe", () => {
 });
 
 describe("eager AppShell graph freeze", () => {
-  it("still statically imports dormant feature overlays", () => {
+  it("keeps chat eager and loads overlays only on intent", () => {
     const source = readFileSync(
       join(homeRoot, "src/lib/components/layout/AppShell.svelte"),
       "utf8",
@@ -61,13 +63,19 @@ describe("eager AppShell graph freeze", () => {
     for (const name of APP_SHELL_EAGER_MODULES) {
       expect(source, `missing eager import ${name}`).toContain(name);
     }
+    for (const name of APP_SHELL_LAZY_OVERLAYS) {
+      expect(source, `overlay ${name} must not be a static import`).not.toMatch(
+        new RegExp(`import ${name} from`),
+      );
+    }
     expect(source).not.toMatch(/import WorkshopShell from/);
     expect(source).not.toMatch(/import MobileShell from/);
-    expect(source).not.toMatch(/from ["']\$lib\/stores\/vault/);
+    expect(source).not.toMatch(/from ["']\$lib\/stores\/vault["']/);
     expect(source).not.toMatch(/from ["']\$lib\/stores\/lmeWorkspace/);
     expect(source).not.toMatch(/from ["']\$lib\/stores\/workspace/);
     expect(source).toContain("startShellRootResources");
     expect(source).toContain("ShellChunkError");
+    expect(source).not.toMatch(/void import\(/);
   });
 });
 

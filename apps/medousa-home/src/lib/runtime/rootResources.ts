@@ -9,6 +9,7 @@ export const APP_SHELL_ROOT_RESOURCE_IDS = [
   "peer-message-notifications",
   "agent-browser-coord",
   "command-spotlight-hotkeys",
+  "work-ask-focus",
 ] as const;
 
 export type RootResourceId = (typeof APP_SHELL_ROOT_RESOURCE_IDS)[number];
@@ -40,14 +41,21 @@ export function resetRootResourcesForTests(): void {
   live.clear();
 }
 
-/** Eager AppShell graph frozen before Train 1 lazy splits. */
-export const APP_SHELL_EAGER_MODULES = [
+/** Chat stays in the AppShell static graph; overlays load on intent. */
+export const APP_SHELL_EAGER_MODULES = ["$lib/stores/chat.svelte"] as const;
+
+export const APP_SHELL_LAZY_OVERLAYS = [
   "CommandSpotlight",
   "WizardContainer",
   "VaultNoteWorkshop",
   "BrowserWorkshop",
   "MobileBrowserWorkshop",
-  "$lib/stores/chat.svelte",
+  "WorkAskDockPopover",
+  "VaultGarageImportWizard",
+  "VaultContextMenu",
+  "ScriptContextMenu",
+  "ShellContextMenu",
+  "VaultAttachmentPanel",
 ] as const;
 
 export const SHELL_A11Y_FIXTURES = {
