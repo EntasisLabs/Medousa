@@ -21,11 +21,16 @@ export interface VaultNoteSummary {
 
 export interface VaultNotesListResponse {
   notes: VaultNoteSummary[];
+  vault_generation?: number | null;
+  next_cursor?: string | null;
+  truncated?: boolean;
 }
 
 export interface VaultNoteContentResponse {
   note: VaultNote;
   content: string;
+  vault_generation?: number | null;
+  note_version?: string | null;
 }
 
 export interface VaultFileContentResponse {
@@ -40,6 +45,8 @@ export interface VaultWriteResponse {
   created: boolean;
   /** Body actually persisted after semantic-tag rewrite (when present). */
   content?: string | null;
+  vault_generation?: number | null;
+  note_version?: string | null;
 }
 
 export interface VaultSearchHit {

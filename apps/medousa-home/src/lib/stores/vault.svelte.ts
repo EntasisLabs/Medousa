@@ -89,6 +89,11 @@ import {
 import { workshopSessionIdForVaultSave } from "$lib/utils/vaultNoteWorkshop";
 import { parseWikilinkTarget, resolveWikilinkTarget, suggestPathForWikilinkToken } from "$lib/utils/resolveWikilink";
 import {
+  buildVaultLookupSnapshot,
+  withSelectionAncestors,
+  type VaultLookupSnapshot,
+} from "$lib/utils/vaultLookup";
+import {
   addAttachments,
   guessMimeFromPath,
   listAttachments,
@@ -208,6 +213,9 @@ export type VaultTagCount = { tag: string; count: number };
 
 export class VaultStore {
   notes = $state<VaultNote[]>([]);
+  /** Shared per-generation lookup maps — rebuilt when notes/generation change. */
+  lookupSnapshot = $state<VaultLookupSnapshot>(buildVaultLookupSnapshot([], 0));
+  vaultGeneration = $state(0);
   tree = $state<VaultTreeNode[]>([]);
   selectedPath = $state<string | null>(loadLastNote());
   /** Multi-select in the vault rail (tree / browse lists). */
@@ -1536,6 +1544,8 @@ export class VaultStore {
         backlinks: [],
         kind: note.kind,
       }));
+      this.vaultGeneration = response.vault_generation ?? this.vaultGeneration + 1;
+      this.rebuildLookupSnapshot();
       this.rebuildTree();
       if (this.libraryBrowseMode === "tags") {
         void this.refreshVaultTags();
@@ -1543,6 +1553,23 @@ export class VaultStore {
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
     }
+  }
+
+  rebuildLookupSnapshot() {
+    this.lookupSnapshot = buildVaultLookupSnapshot(
+      this.notes,
+      this.vaultGeneration,
+      this.selectedPath,
+    );
+  }
+
+  selectionAncestorSet(): Set<string> {
+    return this.lookupSnapshot.ancestorIdsForSelection;
+  }
+
+  isSelectionAncestor(pathOrFolder: string | null): boolean {
+    if (!pathOrFolder) return false;
+    return this.lookupSnapshot.ancestorIdsForSelection.has(pathOrFolder);
   }
 
   /**
@@ -1682,6 +1709,7 @@ export class VaultStore {
     // Buffer-first reopen: dirty or recently stashed clean — skip cold refetch.
     if (buffered) {
       this.selectedPath = nextPath;
+      this.lookupSnapshot = withSelectionAncestors(this.lookupSnapshot, nextPath);
       this.restoreBufferIntoFocused(buffered);
       this.restoreEditorUi(nextPath);
       localStorage.setItem(LAST_NOTE_KEY, nextPath);
@@ -1699,6 +1727,7 @@ export class VaultStore {
     this.loading = true;
     this.error = null;
     this.selectedPath = nextPath;
+    this.lookupSnapshot = withSelectionAncestors(this.lookupSnapshot, nextPath);
     this.content = "";
     this.baselineContent = "";
     this.contentHash = null;
@@ -1839,7 +1868,7 @@ export class VaultStore {
   }
 
   resolveWikilinkPath(rawTarget: string): string | null {
-    return resolveWikilinkTarget(rawTarget, this.selectedPath, this.notes);
+    return resolveWikilinkTarget(rawTarget, this.selectedPath, this.lookupSnapshot);
   }
 
   openWikilink(rawTarget: string) {
@@ -1852,7 +1881,7 @@ export class VaultStore {
         : resolveWikilinkTarget(
             pathToken || decoded,
             this.selectedPath,
-            this.notes,
+            this.lookupSnapshot,
           );
     if (!path) {
       this.openNewNoteDialogForWikilink(decoded);
