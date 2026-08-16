@@ -1,0 +1,178 @@
+{
+  "schemaVersion": 1,
+  "notes": "H09 ARCH-001 migration ledger. Zero new first-party runtime SCCs. Burn-down requires --write.",
+  "sccs": [
+    {
+      "id": "markdown-liquid-vault",
+      "size": 75,
+      "members": [
+        "src/lib/components/chat/ArtifactEmbed.svelte",
+        "src/lib/components/chat/ArtifactFullscreen.svelte",
+        "src/lib/components/chat/ArtifactPanel.svelte",
+        "src/lib/components/chat/ChatArtifactStrip.svelte",
+        "src/lib/components/environment/PresentationFrame.svelte",
+        "src/lib/components/ui/HydratedMarkdownBlock.svelte",
+        "src/lib/components/ui/MarkdownContent.svelte",
+        "src/lib/liquid/archetypes/atoms/media/Media.svelte",
+        "src/lib/liquid/archetypes/atoms/media/media.ts",
+        "src/lib/liquid/archetypes/atoms/prose/Prose.svelte",
+        "src/lib/liquid/archetypes/atoms/prose/prose.ts",
+        "src/lib/liquid/archetypes/atoms/whisper/Whisper.svelte",
+        "src/lib/liquid/archetypes/atoms/whisper/whisper.ts",
+        "src/lib/liquid/archetypes/index.ts",
+        "src/lib/liquid/archetypes/molecules/accordion/Accordion.svelte",
+        "src/lib/liquid/archetypes/molecules/accordion/accordion.ts",
+        "src/lib/liquid/archetypes/molecules/callout/Callout.svelte",
+        "src/lib/liquid/archetypes/molecules/callout/callout.ts",
+        "src/lib/liquid/archetypes/molecules/card/Card.svelte",
+        "src/lib/liquid/archetypes/molecules/card/card.ts",
+        "src/lib/liquid/archetypes/molecules/section/Section.svelte",
+        "src/lib/liquid/archetypes/molecules/section/section.ts",
+        "src/lib/liquid/archetypes/molecules/steps/Steps.svelte",
+        "src/lib/liquid/archetypes/molecules/steps/steps.ts",
+        "src/lib/liquid/archetypes/molecules/tabs/Tabs.svelte",
+        "src/lib/liquid/archetypes/molecules/tabs/tabs.ts",
+        "src/lib/liquid/archetypes/molecules/tree/Tree.svelte",
+        "src/lib/liquid/archetypes/molecules/tree/tree.ts",
+        "src/lib/liquid/archetypes/organisms/brief/Brief.svelte",
+        "src/lib/liquid/archetypes/organisms/brief/brief.ts",
+        "src/lib/liquid/archetypes/organisms/chart/Chart.svelte",
+        "src/lib/liquid/archetypes/organisms/chart/chart.ts",
+        "src/lib/liquid/archetypes/organisms/feed/Feed.svelte",
+        "src/lib/liquid/archetypes/organisms/feed/feed.ts",
+        "src/lib/liquid/archetypes/organisms/report/Report.svelte",
+        "src/lib/liquid/archetypes/organisms/report/report.ts",
+        "src/lib/liquid/archetypes/organisms/slides/FigureGridBody.svelte",
+        "src/lib/liquid/archetypes/organisms/slides/Slides.svelte",
+        "src/lib/liquid/archetypes/organisms/slides/slides.ts",
+        "src/lib/liquid/archetypes/shell/presentation/Presentation.svelte",
+        "src/lib/liquid/archetypes/shell/presentation/presentation.ts",
+        "src/lib/markdown/LiquidMdHost.svelte",
+        "src/lib/markdown/hydrateLiquidEmbeds.ts",
+        "src/lib/markdown/hydrateLocalImages.ts",
+        "src/lib/markdown/hydrateMarkdownContainer.ts",
+        "src/lib/markdown/index.ts",
+        "src/lib/markdown/render.ts",
+        "src/lib/stores/vault.svelte.ts",
+        "src/lib/stores/workshops.svelte.ts",
+        "src/lib/utils/chartExport.ts",
+        "src/lib/utils/resolveTransclusion.ts",
+        "src/lib/utils/vaultExportPrep.ts",
+        "src/lib/utils/vaultFilesystem.ts",
+        "src/lib/utils/vaultLocalImages.ts",
+        "src/lib/utils/vaultNoteWorkshop.ts",
+        "src/lib/utils/workshopLocality.ts",
+        "src/lib/vault/live/embedBlockExtension.ts",
+        "src/lib/vault/live/fenceBlockExtension.ts",
+        "src/lib/vault/live/liveAccordionSurface.ts",
+        "src/lib/vault/live/liveChartSurface.ts",
+        "src/lib/vault/live/liveCodeSurface.ts",
+        "src/lib/vault/live/liveCompareSurface.ts",
+        "src/lib/vault/live/liveDashboardSurface.ts",
+        "src/lib/vault/live/liveDocToMarkdown.ts",
+        "src/lib/vault/live/liveExtensions.ts",
+        "src/lib/vault/live/liveMarkdownCodec.ts",
+        "src/lib/vault/live/liveOrganismHost.ts",
+        "src/lib/vault/live/liveReportSurface.ts",
+        "src/lib/vault/live/liveSlidesSurface.ts",
+        "src/lib/vault/live/liveStepsSurface.ts",
+        "src/lib/vault/live/liveTabsSurface.ts",
+        "src/lib/vault/live/liveTimelineSurface.ts",
+        "src/lib/vault/live/liveTreeSurface.ts",
+        "src/lib/vault/live/markdownToLiveDoc.ts",
+        "src/lib/workshopConnection.ts"
+      ],
+      "shortestCycle": [
+        "src/lib/stores/vault.svelte.ts",
+        "src/lib/utils/vaultNoteWorkshop.ts",
+        "src/lib/stores/vault.svelte.ts"
+      ]
+    },
+    {
+      "id": "lme-shell-undertakings",
+      "size": 4,
+      "members": [
+        "src/lib/stores/lmeWorkspace.svelte.ts",
+        "src/lib/stores/shellTabs.svelte.ts",
+        "src/lib/stores/undertakings.svelte.ts",
+        "src/lib/utils/codeWorkspaceController.ts"
+      ],
+      "shortestCycle": [
+        "src/lib/stores/lmeWorkspace.svelte.ts",
+        "src/lib/utils/codeWorkspaceController.ts",
+        "src/lib/stores/undertakings.svelte.ts",
+        "src/lib/stores/shellTabs.svelte.ts",
+        "src/lib/stores/lmeWorkspace.svelte.ts"
+      ]
+    },
+    {
+      "id": "human-browser",
+      "size": 3,
+      "members": [
+        "src/lib/humanBrowser.ts",
+        "src/lib/stores/humanBrowser.svelte.ts",
+        "src/lib/stores/humanBrowserSurface.ts"
+      ],
+      "shortestCycle": [
+        "src/lib/humanBrowser.ts",
+        "src/lib/stores/humanBrowserSurface.ts",
+        "src/lib/stores/humanBrowser.svelte.ts",
+        "src/lib/humanBrowser.ts"
+      ]
+    },
+    {
+      "id": "vault-space-config",
+      "size": 3,
+      "members": [
+        "src/lib/config/vaultSpaces.ts",
+        "src/lib/utils/vaultCustomSpaces.ts",
+        "src/lib/utils/vaultTemplates.ts"
+      ],
+      "shortestCycle": [
+        "src/lib/config/vaultSpaces.ts",
+        "src/lib/utils/vaultCustomSpaces.ts",
+        "src/lib/utils/vaultTemplates.ts",
+        "src/lib/config/vaultSpaces.ts"
+      ]
+    },
+    {
+      "id": "browser-compositor-popover",
+      "size": 2,
+      "members": [
+        "src/lib/utils/browserCompositor.ts",
+        "src/lib/utils/browserPopoverOverlay.ts"
+      ],
+      "shortestCycle": [
+        "src/lib/utils/browserCompositor.ts",
+        "src/lib/utils/browserPopoverOverlay.ts",
+        "src/lib/utils/browserCompositor.ts"
+      ]
+    },
+    {
+      "id": "identity-profiles",
+      "size": 2,
+      "members": [
+        "src/lib/stores/identity.svelte.ts",
+        "src/lib/stores/userProfiles.svelte.ts"
+      ],
+      "shortestCycle": [
+        "src/lib/stores/identity.svelte.ts",
+        "src/lib/stores/userProfiles.svelte.ts",
+        "src/lib/stores/identity.svelte.ts"
+      ]
+    },
+    {
+      "id": "voice-workshop-defaults",
+      "size": 2,
+      "members": [
+        "src/lib/stores/voicePresets.svelte.ts",
+        "src/lib/stores/workshopDefaults.svelte.ts"
+      ],
+      "shortestCycle": [
+        "src/lib/stores/voicePresets.svelte.ts",
+        "src/lib/stores/workshopDefaults.svelte.ts",
+        "src/lib/stores/voicePresets.svelte.ts"
+      ]
+    }
+  ]
+}

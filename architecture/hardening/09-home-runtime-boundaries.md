@@ -412,7 +412,9 @@ parameters, note/chat content, filesystem paths, or raw errors containing data.
 ### H09.0 — Reproducible graph and P08 baseline
 
 - Check in manifest closure/CSS analyzer and exact P08 workload/machine record.
-- Add Svelte/TypeScript runtime graph analyzer and seven-SCC migration ledger.
+- Add Svelte/TypeScript runtime graph analyzer and seven-SCC migration ledger
+  (`apps/medousa-home/scripts/verify-runtime-graph.mjs`,
+  `apps/medousa-home/security/runtime-scc-ledger.json`; `npm run check:runtime-graph`).
 - Instrument feature module evaluation and root-started resources.
 - Add screenshot/accessibility/interaction fixtures for desktop/mobile and major
   overlays before changing composition.
