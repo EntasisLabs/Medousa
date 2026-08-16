@@ -199,9 +199,10 @@ impl VaultProjection {
         }
         let mut candidates = Vec::new();
         if token.contains('/') {
-            if let Ok(path) =
-                crate::vault::path::normalize_vault_path(&format!("{}.md", token.trim_end_matches(".md")))
-            {
+            if let Ok(path) = crate::vault::path::normalize_vault_path(&format!(
+                "{}.md",
+                token.trim_end_matches(".md")
+            )) {
                 candidates.push(path);
             }
         } else {

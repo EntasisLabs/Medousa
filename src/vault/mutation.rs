@@ -476,12 +476,8 @@ mod tests {
         )
         .unwrap();
         let digest = content_hash("body\n");
-        let stale_token = NoteVersion::encode(
-            owner.root_id.as_str(),
-            &VaultNoteSource::User,
-            999,
-            &digest,
-        );
+        let stale_token =
+            NoteVersion::encode(owner.root_id.as_str(), &VaultNoteSource::User, 999, &digest);
         assert_ne!(stale_token.as_str(), first.note_version.as_str());
         let err = commit_write(
             &owner,

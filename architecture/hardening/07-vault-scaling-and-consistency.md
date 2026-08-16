@@ -1,11 +1,11 @@
 # H07 — Incremental vault index and atomic mutation
 
-> **Status:** Implementing — semantics train in progress.
-> Repair cars R0–R8 landed scaffolding (no-replace create, admission, paging
-> hooks, tree windowing). Authoritative NoteVersion, durable generation,
-> relocate no-replace, incremental persist, truthful deltas, fenced search,
-> and complete Home paging remain incomplete. Findings stay Proposed until
-> those semantics exit tests pass; Validated still needs multi-OS evidence.
+> **Status:** Implementing — semantics train exit tests landed.
+> Repair cars R0–R8 plus S0–S8: opaque NoteVersion, durable generation,
+> relocate no-replace, resident reconcile, incremental persist, truthful
+> cursors/deltas, fenced search, and complete Home paging. Findings are
+> Mitigated on those unit exit tests; Validated still needs multi-OS P06/P07
+> evidence.
 >
 > **Accountable owner:** vault engine maintainers
 >

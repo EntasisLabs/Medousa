@@ -78,7 +78,10 @@ impl VaultIndexOwner {
             .generation_lock
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let next = self.vault_generation.load(Ordering::Acquire).saturating_add(1);
+        let next = self
+            .vault_generation
+            .load(Ordering::Acquire)
+            .saturating_add(1);
         persist_generation(self, next)?;
         self.vault_generation.store(next, Ordering::Release);
         Ok(next)
@@ -125,12 +128,11 @@ impl VaultIndexOwner {
             if record.generation <= since {
                 continue;
             }
-            if let (Some(after_gen), Some(after_path)) = (after_generation, after_path) {
-                if record.generation < after_gen
-                    || (record.generation == after_gen && record.path.as_str() <= after_path)
-                {
-                    continue;
-                }
+            if let (Some(after_gen), Some(after_path)) = (after_generation, after_path)
+                && (record.generation < after_gen
+                    || (record.generation == after_gen && record.path.as_str() <= after_path))
+            {
+                continue;
             }
             if changes.len() >= limit {
                 truncated = true;
@@ -225,10 +227,7 @@ fn load_persisted_generation(files: &StoreRoot) -> Option<u64> {
     text.trim().parse().ok()
 }
 
-fn persist_generation(
-    owner: &VaultIndexOwner,
-    generation: u64,
-) -> Result<(), VaultMutationError> {
+fn persist_generation(owner: &VaultIndexOwner, generation: u64) -> Result<(), VaultMutationError> {
     if owner.persist_generation_fault.load(Ordering::Acquire) {
         return Err(VaultMutationError::Persistence(
             "injected generation persist fault".into(),

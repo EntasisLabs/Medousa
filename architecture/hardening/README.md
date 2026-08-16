@@ -88,7 +88,7 @@ and performance budgets must prevent the same classes of defect from returning.
 | H04 | [04-persistence-and-crash-consistency.md](04-persistence-and-crash-consistency.md) | Feed/workspace/task storage ownership and commit policy | STORE-001, STORE-002, MEM-001 | ADR-016 | Implemented; packaged crash/soak validation pending |
 | H05 | [05-runtime-context-and-concurrency.md](05-runtime-context-and-concurrency.md) | Request-scoped turn/browser state and cancellation | CONC-001, CONC-002 | ADR-017 | Implemented; packaged-platform release validation pending |
 | H06 | [06-forge-coder-scaling.md](06-forge-coder-scaling.md) | Incremental Forge state, checkpoint observation, blocking work | PERF-002, PERF-004, ASYNC-001 | ADR-016, H05 | Implementing; H06.0–H06.11 landed; darwin evidence recorded; findings not Validated; multi-OS packaging pending |
-| H07 | [07-vault-scaling-and-consistency.md](07-vault-scaling-and-consistency.md) | Incremental index, atomic mutation, backend/frontend lookups | PERF-003, PERF-006, CONSIST-001 | ADR-014, ADR-016 | Implementing; semantics train in progress |
+| H07 | [07-vault-scaling-and-consistency.md](07-vault-scaling-and-consistency.md) | Incremental index, atomic mutation, backend/frontend lookups | PERF-003, PERF-006, CONSIST-001 | ADR-014, ADR-016 | Implementing; semantics train exit tests landed |
 | H08 | [08-desktop-browser-isolation.md](08-desktop-browser-isolation.md) | Remote webview capabilities and request-correlated bridge | DESKTOP-001 | ADR-018, H05 | Implemented; packaged-platform release validation pending |
 | H09 | [09-home-runtime-boundaries.md](09-home-runtime-boundaries.md) | Feature loading, runtime cycles, store/component/CSS ownership | FRONT-001, ARCH-001, ARCH-002 | ADR-020, H03 | Draft |
 | H10 | [10-api-contract-generation.md](10-api-contract-generation.md) | Authoritative API definition and generated clients/tests | CONTRACT-001 | ADR-019, H01 | Draft |
@@ -143,8 +143,8 @@ one without retaining the history.
 | PERF-002 | Critical | H06 | C | Implementing; not validated | P04 darwin retained metrics show warm tail O(1) but steady append still O(history) decode; see H06 matrix / performance-budgets.md |
 | MEM-001 | Critical | H04 | C | Mitigated; packaged soak evidence pending | Count/byte/TTL bounds plus feed, workspace, and task-run retention tests |
 | ASYNC-001 | High | H06 | C | Implementing; not validated | Admission/Git supervision + execution unit tests landed; live executor-delay/saturation canaries and multi-OS packaging pending |
-| PERF-003 | High | H07 | C | Proposed | Vault cold/warm scaling; mutation hot path still O(N) persist; P06 evidence pending |
-| CONSIST-001 | High | H07 | B | Proposed | Atomic compare-and-write; NoteVersion/generation/recovery/relocate semantics incomplete |
+| PERF-003 | High | H07 | C | Mitigated; P06 multi-OS Validated evidence pending | Vault cold/warm scaling; write path journals deltas instead of rewriting the corpus |
+| CONSIST-001 | High | H07 | B | Mitigated; packaged crash/platform validation pending | Atomic compare-and-write; opaque NoteVersion, durable generation, relocate no-replace, truthful deltas |
 | CONC-001 | Critical | H05 | B | Validating | Concurrent-turn isolation matrix |
 | CONC-002 | High | H05 | B | Validating | Correlated concurrent browser request tests |
 | TYPE-001 | High | H03 | D | Mitigated; H10 generation enforcement pending | Generated exhaustive protocol/reducer tests |
@@ -153,7 +153,7 @@ one without retaining the history.
 | PERF-005 | Critical | H03 | C | Mitigated; retained browser profile pending | Browser streaming render/long-task profile |
 | FRONT-001 | High | H09 | D | Proposed | Manifest and cold-start budgets |
 | ARCH-001 | High | H09 | D | Proposed | Zero-new-cycle check and migration ledger |
-| PERF-006 | High | H07 | C | Proposed | Large-vault tree/link; Home paging/virtualization incomplete; P07 evidence pending |
+| PERF-006 | High | H07 | C | Mitigated; P07 multi-OS Validated evidence pending | Large-vault tree/link; Home pages to completion and virtualizes recents at fixed height |
 | ARCH-002 | High | H09 | D | Proposed | Boundary tests and deleted legacy ownership paths |
 | CONTRACT-001 | High | H10 | D | Proposed | Generated artifact diff plus black-box API contract |
 | DEP-001 | High | H11 | D | Proposed | Feature/dependency graph and build/package budgets |

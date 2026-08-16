@@ -503,10 +503,7 @@ mod tests {
             transaction.root().read_limited(&from, 64).unwrap(),
             b"source"
         );
-        assert_eq!(
-            transaction.root().read_limited(&to, 64).unwrap(),
-            b"winner"
-        );
+        assert_eq!(transaction.root().read_limited(&to, 64).unwrap(), b"winner");
     }
 
     #[test]

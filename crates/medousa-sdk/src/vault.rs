@@ -1,10 +1,10 @@
 #[cfg(feature = "async")]
 use medousa_types::{
-    VaultAddRootRequest, VaultBacklinksQuery, VaultBacklinksResponse, VaultDeleteResponse,
-    VaultFileContentResponse, VaultNoteContentResponse, VaultNotesListResponse,
-    VaultNotesQuery, VaultPutQuery, VaultRootsResponse, VaultSearchQuery, VaultSearchResponse,
-    VaultSetActiveRootRequest, VaultTagsListResponse, VaultTagsQuery, VaultWriteRequest,
-    VaultChangesQuery, VaultChangesResponse, VaultWriteResponse,
+    VaultAddRootRequest, VaultBacklinksQuery, VaultBacklinksResponse, VaultChangesQuery,
+    VaultChangesResponse, VaultDeleteResponse, VaultFileContentResponse, VaultNoteContentResponse,
+    VaultNotesListResponse, VaultNotesQuery, VaultPutQuery, VaultRootsResponse, VaultSearchQuery,
+    VaultSearchResponse, VaultSetActiveRootRequest, VaultTagsListResponse, VaultTagsQuery,
+    VaultWriteRequest, VaultWriteResponse,
 };
 
 #[cfg(feature = "async")]

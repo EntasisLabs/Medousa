@@ -89,10 +89,10 @@ impl VaultService {
             .sorted_paths
             .range::<str, _>((start, std::ops::Bound::Unbounded))
         {
-            if let Some(prefix) = path_prefix.as_deref() {
-                if !path.starts_with(prefix) {
-                    break;
-                }
+            if let Some(prefix) = path_prefix.as_deref()
+                && !path.starts_with(prefix)
+            {
+                break;
             }
             let Some(entry) = projection.by_path.get(path) else {
                 continue;
@@ -159,12 +159,8 @@ impl VaultService {
                 },
                 None => (None, None),
             };
-        let (records, truncated, reset) = owner.changes_since(
-            since,
-            after_generation,
-            after_path.as_deref(),
-            limit,
-        );
+        let (records, truncated, reset) =
+            owner.changes_since(since, after_generation, after_path.as_deref(), limit);
         if reset {
             return changes_reset(generation);
         }
@@ -552,9 +548,8 @@ fn list_filter_hash(prefix: Option<&str>, tags: Option<&str>, tag_prefix: Option
 }
 
 fn encode_list_cursor(root: &str, filter: &str, generation: u64, path: &str) -> String {
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(format!(
-        "{root}\x1f{filter}\x1f{generation}\x1f{path}"
-    ))
+    base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(format!("{root}\x1f{filter}\x1f{generation}\x1f{path}"))
 }
 
 fn decode_list_cursor(raw: &str) -> Option<(String, String, u64, String)> {
@@ -574,7 +569,8 @@ fn decode_list_cursor(raw: &str) -> Option<(String, String, u64, String)> {
 }
 
 fn encode_change_cursor(root: &str, generation: u64, path: &str) -> String {
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(format!("{root}\x1f{generation}\x1f{path}"))
+    base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(format!("{root}\x1f{generation}\x1f{path}"))
 }
 
 fn decode_change_cursor(raw: &str) -> Option<(String, u64, String)> {
@@ -744,11 +740,9 @@ mod tests {
                 "write and get must return the same opaque NoteVersion"
             );
             assert!(
-                written
-                    .note_version
-                    .as_ref()
-                    .is_some_and(|value| crate::vault::contracts::NoteVersion::parse(value.clone())
-                        .is_encoded()),
+                written.note_version.as_ref().is_some_and(|value| {
+                    crate::vault::contracts::NoteVersion::parse(value.clone()).is_encoded()
+                }),
                 "write must return an encoded NoteVersion, not a raw digest"
             );
             assert!(read.content.contains("tags:"));
@@ -946,14 +940,14 @@ mod tests {
                 !cursor.contains('\x1f') && super::decode_list_cursor(&cursor).is_some(),
                 "cursor must be opaque, got {cursor}"
             );
-            let second =
-                VaultService::list_notes_paged(None, 1, None, None, Some(&cursor), None);
+            let second = VaultService::list_notes_paged(None, 1, None, None, Some(&cursor), None);
             assert!(!second.reset_required);
             assert_ne!(
                 first.notes.first().map(|note| note.path.as_str()),
                 second.notes.first().map(|note| note.path.as_str())
             );
-            let stale = VaultService::list_notes_paged(None, 1, None, None, Some("not-a-cursor"), None);
+            let stale =
+                VaultService::list_notes_paged(None, 1, None, None, Some("not-a-cursor"), None);
             assert!(stale.reset_required);
             assert!(stale.notes.is_empty());
         });
