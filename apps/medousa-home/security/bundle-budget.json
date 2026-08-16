@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "notes": "FRONT-001 regression ceiling from production Vite client manifest. Raise only with review; splits should lower it.",
+  "notes": "FRONT-001 regression ceiling after H09 Train 2 destination/overlay splits. Raise only with review; later trains should lower CSS and largest-chunk bytes.",
   "manifest": ".svelte-kit/output/client/.vite/manifest.json",
   "ceilings": {
-    "rootStaticJsBytes": 7129003,
-    "rootStaticJsGzipBytes": 2129065,
-    "rootStaticCssBytes": 1448096,
-    "rootStaticCssGzipBytes": 189858,
-    "largestInitialJsChunkBytes": 2203601
+    "rootStaticJsBytes": 3067547,
+    "rootStaticJsGzipBytes": 970441,
+    "rootStaticCssBytes": 1075634,
+    "rootStaticCssGzipBytes": 134301,
+    "largestInitialJsChunkBytes": 1583570
   },
   "measured": {
     "rootEntries": [
@@ -16,12 +16,12 @@
       ".svelte-kit/generated/client-optimized/nodes/2.js",
       "node_modules/@sveltejs/kit/src/runtime/client/entry.js"
     ],
-    "jsFiles": 60,
-    "cssFiles": 11,
-    "rootStaticJsBytes": 7129003,
-    "rootStaticJsGzipBytes": 2129065,
-    "rootStaticCssBytes": 1448096,
-    "rootStaticCssGzipBytes": 189858,
-    "largestInitialJsChunkBytes": 2203601
+    "jsFiles": 29,
+    "cssFiles": 4,
+    "rootStaticJsBytes": 3067547,
+    "rootStaticJsGzipBytes": 970441,
+    "rootStaticCssBytes": 1075634,
+    "rootStaticCssGzipBytes": 134301,
+    "largestInitialJsChunkBytes": 1583570
   }
 }

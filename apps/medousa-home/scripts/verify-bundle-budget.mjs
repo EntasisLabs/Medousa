@@ -34,6 +34,21 @@ function isRootEntry(key) {
   );
 }
 
+function assertNoMobileDestinations(manifest, jsFiles) {
+  const staticFiles = new Set(jsFiles);
+  for (const [key, entry] of Object.entries(manifest)) {
+    if (!entry?.file || !staticFiles.has(entry.file)) continue;
+    assert.ok(
+      !/MobileShell/.test(key),
+      `desktop static closure includes MobileShell via ${key}`,
+    );
+    assert.ok(
+      !/src\/lib\/components\/mobile\//.test(key),
+      `desktop static closure includes mobile destination ${key}`,
+    );
+  }
+}
+
 function walkStatic(manifest, startKeys) {
   const files = new Set();
   const cssFiles = new Set();
@@ -64,6 +79,7 @@ export function measureRootClosure(manifest = loadManifest()) {
   const startKeys = Object.keys(manifest).filter((key) => isRootEntry(key));
   assert.ok(startKeys.length > 0, "no root Vite entries found in client manifest");
   const { js, css } = walkStatic(manifest, startKeys);
+  assertNoMobileDestinations(manifest, js);
   const jsBytes = js.reduce((sum, file) => sum + assetBytes(file), 0);
   const cssBytes = css.reduce((sum, file) => sum + assetBytes(file), 0);
   const jsGzip = js.reduce((sum, file) => sum + assetGzipBytes(file), 0);

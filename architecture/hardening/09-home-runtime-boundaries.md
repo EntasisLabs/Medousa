@@ -1,9 +1,10 @@
 # H09 — Home runtime and feature boundaries
 
-> **Status:** Implementing — analyzer and lifecycle kernel in progress.
-> Findings FRONT-001 / ARCH-001 / ARCH-002 stay Proposed until owning
-> train exit tests pass. ADR-020 is Accepted with FeatureDescriptor /
-> loader contracts in code. Validated still needs P08 packaged
+> **Status:** Implementing — Train 2 destination and overlay splits landed.
+> FRONT-001 ceiling is now 3,067,547 JS / 1,075,634 CSS (down from
+> 7,129,003 / 1,448,096). Findings stay Proposed: CSS and largest-chunk
+> table targets are unmet, and ARCH-001 / ARCH-002 trains have not
+> closed. ADR-020 is Accepted. Validated still needs P08 packaged
 > multi-OS evidence.
 >
 > **Accountable owner:** Medousa Home maintainers
@@ -438,6 +439,9 @@ parameters, note/chat content, filesystem paths, or raw errors containing data.
 - Keep descriptor registry dependency-light and prove no eager dynamic imports.
 - Move each feature's CSS with its entry and measure ratchet after every split.
 - Establish H11 capability/package state without importing optional implementation.
+- Train 2 measured root static closure: 3,067,547 JS (gzip 970,441) / 1,075,634 CSS
+  across 29 JS / 4 CSS files; largest initial JS chunk 1,583,570. Desktop static
+  closure contains 0 `MobileShell` / `src/lib/components/mobile/` destinations.
 
 ### H09.3 — Break cycles from contracts upward
 
