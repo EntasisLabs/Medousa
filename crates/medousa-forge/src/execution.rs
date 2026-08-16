@@ -328,14 +328,15 @@ impl ForgeExecutionService {
         if admission.nested {
             return work();
         }
-        // Admission (and JobAccount) must outlive join failure / panic so
-        // counters and permits always release.
+        // Move admission into the blocking job. Dropping the request future
+        // cannot release capacity while uncancellable blocking work is still
+        // running in the pool.
         let join = tokio::task::spawn_blocking(move || {
+            let _admission = admission;
             let _nested = NestedAdmissionGuard::enter();
             work()
         })
         .await;
-        drop(admission);
         join.map_err(|err| ForgeError::Store(format!("execution worker failed: {err}")))?
     }
 
@@ -360,6 +361,7 @@ impl ForgeExecutionService {
         }
         let (started_tx, started_rx) = tokio::sync::oneshot::channel::<()>();
         let join = tokio::task::spawn_blocking(move || {
+            let _admission = admission;
             let _nested = NestedAdmissionGuard::enter();
             let _ = started_tx.send(());
             work()
@@ -367,7 +369,6 @@ impl ForgeExecutionService {
         tokio::pin!(join);
         tokio::select! {
             result = &mut join => {
-                drop(admission);
                 return result
                     .map_err(|err| ForgeError::Store(format!("execution worker failed: {err}")))?;
             }
@@ -384,7 +385,6 @@ impl ForgeExecutionService {
         let result = join
             .await
             .map_err(|err| ForgeError::Store(format!("execution worker failed: {err}")))?;
-        drop(admission);
         result
     }
 
@@ -941,6 +941,11 @@ mod tests {
         assert_eq!(service.running_commands(), 1);
         handle.abort();
         let _ = handle.await;
+        assert_eq!(
+            service.running_commands(),
+            1,
+            "cancelled request must retain admission until blocking work exits"
+        );
         // Release the worker so the blocking thread can finish dropping.
         let _ = tokio::task::spawn_blocking({
             let gate = Arc::clone(&gate);
