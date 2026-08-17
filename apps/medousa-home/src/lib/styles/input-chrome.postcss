@@ -2,12 +2,12 @@
  * Unlayered chromeless input resets.
  *
  * @tailwindcss/forms emits unlayered white input/textarea chrome. Destination
- * sheets live in @layer features and always lose that fight. These selectors
+ * sheets live in the features cascade layer and always lose that fight. These selectors
  * stay unlayered so composer, Spotlight, rename, and dock search can keep
  * transparent / themed chrome. Layout (min-height, padding, font) stays in
  * the destination feature sheets.
  *
- * Loaded by app.postcss. Do not wrap in @layer.
+ * Loaded by app.postcss. Do not wrap this file in a cascade layer.
  */
 
 .composer-bar-input,

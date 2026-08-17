@@ -81,7 +81,10 @@ describe("css inventory and cascade", () => {
   });
 
   it("keeps input-chrome unlayered so it beats Tailwind Forms", () => {
-    const sheet = source("src/lib/styles/input-chrome.postcss");
+    const sheet = source("src/lib/styles/input-chrome.postcss").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
     expect(sheet).not.toContain("@layer");
     expect(source("src/app.postcss")).toMatch(/@import[^;]*input-chrome\.postcss/);
     expect(source("src/app.postcss")).toMatch(/@import[^;]*workshop-primitives\.postcss/);
