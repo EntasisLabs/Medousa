@@ -19,10 +19,14 @@ pub use crate::client_tools::{
 };
 
 use crate::browser_sessions::{
-    complete_browser_act_session, complete_browser_session, get_browser_session,
-    BrowserActOutcome, BrowserSessionCompleteRequest,
+    BrowserActOutcome, BrowserSessionCompleteRequest, complete_browser_act_session,
+    complete_browser_session, get_browser_session,
+};
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
 use crate::daemon::state::AppState;
+use crate::request_principal::Capability;
 
 pub async fn register_client(
     State(state): State<AppState>,
@@ -256,9 +260,108 @@ fn browser_routes() -> Router<AppState> {
         )
 }
 
+/// Canonical `/v1` copies of the H08 browser bridge. Unprefixed aliases stay
+/// on [`browser_router`] as a reviewed dual-mount compatibility surface.
+pub fn browser_surface() -> DeclaredRouter<AppState> {
+    DeclaredRouter::default()
+        .route(
+            browser_write_policy(axum::http::Method::POST, "/v1/clients/register", 256 * 1024),
+            post(register_client),
+        )
+        .route(browser_read_policy("/v1/clients"), get(list_clients))
+        .route(
+            browser_policy(
+                axum::http::Method::GET,
+                "/v1/clients/{client_id}/tools/next",
+                Capability::WorkshopInteract,
+                1024,
+                RateLimitClass::Stream,
+            ),
+            get(next_client_tool_request),
+        )
+        .route(
+            browser_write_policy(
+                axum::http::Method::POST,
+                "/v1/clients/{client_id}/tools/{request_id}/result",
+                2 * 1024 * 1024,
+            ),
+            post(complete_client_tool_request),
+        )
+        .route(
+            browser_read_policy("/v1/browser/sessions/{session_id}"),
+            get(get_browser_session_handler),
+        )
+        .route(
+            browser_write_policy(
+                axum::http::Method::POST,
+                "/v1/browser/sessions/{session_id}/complete",
+                2 * 1024 * 1024,
+            ),
+            post(complete_browser_session_handler),
+        )
+        .route(
+            browser_write_policy(
+                axum::http::Method::POST,
+                "/v1/browser/sessions/{session_id}/complete-act",
+                64 * 1024,
+            ),
+            post(complete_browser_act_handler),
+        )
+        .route(
+            browser_write_policy(
+                axum::http::Method::POST,
+                "/v1/browser/sessions/{session_id}/resume",
+                16 * 1024,
+            ),
+            post(resume_browser_session_handler),
+        )
+}
+
+fn browser_read_policy(path: &'static str) -> RoutePolicy {
+    browser_policy(
+        axum::http::Method::GET,
+        path,
+        Capability::WorkshopRead,
+        1024,
+        RateLimitClass::Read,
+    )
+}
+
+fn browser_write_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+) -> RoutePolicy {
+    browser_policy(
+        method,
+        path,
+        Capability::WorkshopInteract,
+        body_limit,
+        RateLimitClass::Mutation,
+    )
+}
+
+fn browser_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    required_capability: Capability,
+    body_limit: usize,
+    rate_limit_class: RateLimitClass,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Portal,
+        required_capability: Some(required_capability),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::ExactOrigin,
+        body_limit,
+        rate_limit_class,
+    }
+}
+
+/// Unprefixed H08 aliases. Canonical `/v1` copies live on [`browser_surface`].
 pub fn browser_router() -> Router<AppState> {
-    let routes = browser_routes();
-    // Dual-mount: unprefixed aliases plus `/v1` nest. Keep
-    // `crate::daemon::contract::BROWSER_COMPATIBILITY_MOUNTS` in lockstep.
-    Router::new().merge(routes.clone()).nest("/v1", routes)
+    // Keep `crate::daemon::contract::BROWSER_COMPATIBILITY_MOUNTS` in lockstep.
+    browser_routes()
 }

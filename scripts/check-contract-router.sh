@@ -19,10 +19,6 @@ while IFS= read -r line; do
       # Test fixtures for the access boundary, not production assembly.
       continue
       ;;
-    src/browser_handlers.rs:*)
-      # H08 dual-mount compatibility adapter; inventoried in daemon::contract.
-      continue
-      ;;
     *)
       echo "ERROR: raw /v1 route registration outside ContractRouter: $line"
       bad=1

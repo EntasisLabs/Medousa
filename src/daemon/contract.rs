@@ -3,15 +3,13 @@
 use axum::http::Method;
 
 use medousa_api_contract::{
-    Audience, ContractRegistry, FeatureProfile, HttpMethod, OperationSpec, ResponseSpec,
-    SchemaRef, Stability, StreamTransport, stable_operation_id,
+    Audience, ContractRegistry, FeatureProfile, HttpMethod, OperationSpec, ResponseSpec, SchemaRef,
+    Stability, StreamTransport, stable_operation_id,
 };
 
 use crate::daemon::contract_bindings::{json_body, stream_binding, stream_spec, wire_binding};
 
-use crate::daemon::route_policy::{
-    RateLimitClass, RouteGroup, RouteInventory, RoutePolicy,
-};
+use crate::daemon::route_policy::{RateLimitClass, RouteGroup, RouteInventory, RoutePolicy};
 use crate::daemon::router::build_declared_route_inventory;
 use crate::request_principal::Capability;
 
@@ -68,7 +66,10 @@ pub fn operation_from_policy(policy: &RoutePolicy, profile: FeatureProfile) -> O
         path: policy.path.to_string(),
         parameters: Vec::new(),
         request_body: binding.and_then(|wire| {
-            if matches!(method, HttpMethod::Get | HttpMethod::Delete | HttpMethod::Head) {
+            if matches!(
+                method,
+                HttpMethod::Get | HttpMethod::Delete | HttpMethod::Head
+            ) {
                 None
             } else {
                 wire.request.map(json_body)
@@ -128,7 +129,8 @@ pub fn registry_from_inventory(
     for policy in inventory.policies() {
         let profile = if matches!(policy.group, RouteGroup::Preview) {
             FeatureProfile::Preview
-        } else if pairing_keys.contains(&(policy.method.as_str().to_string(), policy.path.to_string()))
+        } else if pairing_keys
+            .contains(&(policy.method.as_str().to_string(), policy.path.to_string()))
         {
             FeatureProfile::Pairing
         } else {
@@ -141,8 +143,8 @@ pub fn registry_from_inventory(
     registry
 }
 
-/// H08 browser compatibility routes, mounted both unprefixed and under `/v1`.
-/// These are not in the declared 361/373 inventory until they use `ContractRouter`.
+/// Unprefixed H08 browser compatibility aliases. Canonical `/v1` copies are
+/// registered on `browser_surface` / `DeclaredRouter`.
 pub const BROWSER_COMPATIBILITY_MOUNTS: &[(&str, &str)] = &[
     ("POST", "/clients/register"),
     ("GET", "/clients"),
@@ -152,6 +154,32 @@ pub const BROWSER_COMPATIBILITY_MOUNTS: &[(&str, &str)] = &[
     ("POST", "/browser/sessions/{session_id}/complete"),
     ("POST", "/browser/sessions/{session_id}/complete-act"),
     ("POST", "/browser/sessions/{session_id}/resume"),
+];
+
+/// Reviewed freeze of the Stasis dashboard router in `stasis-rs` 0.9.0.
+/// Stasis does not export method/path descriptors, so this list cannot be
+/// derived from `dashboard_router` and must not silently join DeclaredRouter.
+pub const DASHBOARD_COMPATIBILITY_MOUNTS: &[(&str, &str)] = &[
+    ("GET", "/"),
+    ("GET", "/dashboard"),
+    ("GET", "/view/{name}"),
+    ("GET", "/stream/jobs"),
+    ("GET", "/stream/outbox"),
+    ("GET", "/stream/nodes"),
+    ("GET", "/stream/workflow-reflection"),
+    ("GET", "/inspect/job/{id}"),
+    ("GET", "/inspect/attempt/{id}"),
+    ("GET", "/inspect/node/{id}"),
+    ("GET", "/inspect/endpoint/{id}"),
+    ("GET", "/inspect/event/{id}"),
+    ("GET", "/assets/{name}"),
+    ("POST", "/action/scheduler/materialize"),
+    ("POST", "/action/scheduler/process"),
+    ("POST", "/action/scheduler/publish"),
+    ("POST", "/action/scheduler/replay"),
+    ("POST", "/action/workflows/run-draft"),
+    ("POST", "/action/workflows/save"),
+    ("POST", "/action/workflows/execute"),
 ];
 
 pub fn production_registry(pairing_enabled: bool) -> ContractRegistry {
@@ -278,22 +306,22 @@ fn parse_capability(name: &str) -> Option<Capability> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::daemon::router::build_liveness_surface;
     use crate::daemon::route_policy::{
         BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
     };
+    use crate::daemon::router::build_liveness_surface;
     use crate::peer_scope::{DaemonAccessState, assemble_daemon_access_boundary_with_declared};
     use crate::request_principal::Capability;
     use axum::Router;
-    use axum::extract::ConnectInfo;
-    use std::net::SocketAddr;
     use axum::body::Body;
+    use axum::extract::ConnectInfo;
     use axum::http::{Request, StatusCode};
     use axum::routing::get;
     use medousa_api_contract::{
         CompatibilityClass, DiscrepancyKind, HttpMethod, ListedRoute, StreamTransport,
-        discrepancy_report, diff_contracts, generate_artifacts_with_catalog, parse_manifest_yaml,
+        diff_contracts, discrepancy_report, generate_artifacts_with_catalog, parse_manifest_yaml,
     };
+    use std::net::SocketAddr;
     use tower::ServiceExt;
 
     fn schema_catalog() -> std::collections::BTreeMap<String, serde_json::Value> {
@@ -310,12 +338,12 @@ mod tests {
     fn production_profiles_match_declared_counts() {
         let without_pairing = production_registry(false);
         let with_pairing = production_registry(true);
-        assert_eq!(without_pairing.len(), 361);
-        assert_eq!(with_pairing.len(), 373);
+        assert_eq!(without_pairing.len(), 369);
+        assert_eq!(with_pairing.len(), 381);
         let artifacts = artifacts(&with_pairing);
         let inventory: serde_json::Value =
             serde_json::from_str(&artifacts.route_inventory_json).unwrap();
-        assert_eq!(inventory["operations"].as_array().unwrap().len(), 373);
+        assert_eq!(inventory["operations"].as_array().unwrap().len(), 381);
         assert!(artifacts.openapi_json.contains("\"openapi\": \"3.2.0\""));
     }
 
@@ -405,7 +433,10 @@ mod tests {
     #[test]
     fn liveness_surface_records_contract_with_inventory() {
         let surface = build_liveness_surface();
-        assert_eq!(surface.inventory().entries().len(), surface.contract().len());
+        assert_eq!(
+            surface.inventory().entries().len(),
+            surface.contract().len()
+        );
         assert!(surface.contract().get("liveness.get").is_some());
     }
 
@@ -424,7 +455,7 @@ mod tests {
             })
             .collect();
         let report = discrepancy_report(&registry, &manifest, &listed);
-        assert_eq!(report.declared_count, 373);
+        assert_eq!(report.declared_count, 381);
         assert!(
             report
                 .rows
@@ -432,8 +463,9 @@ mod tests {
                 .any(|row| row.kind == DiscrepancyKind::MissingFromManifest),
             "YAML must stay a known-incomplete shadow of the declared router"
         );
-        let parity = std::fs::read_to_string(root.join("crates/medousa-sdk/tests/contract_parity.rs"))
-            .expect("parity tests");
+        let parity =
+            std::fs::read_to_string(root.join("crates/medousa-sdk/tests/contract_parity.rs"))
+                .expect("parity tests");
         assert!(
             !parity.contains("const PARITY_ROUTES"),
             "handwritten PARITY_ROUTES stays deleted; uniqueness uses generated ops"
@@ -443,7 +475,11 @@ mod tests {
     #[test]
     fn websocket_streams_are_not_event_stream() {
         let registry = production_registry(true);
-        for id in ["code.lsp.get", "grapheme.lsp.get", "sessions.shell.by_id.get"] {
+        for id in [
+            "code.lsp.get",
+            "grapheme.lsp.get",
+            "sessions.shell.by_id.get",
+        ] {
             let spec = registry.get(id).expect(id);
             let stream = spec.stream.as_ref().expect("websocket metadata");
             assert_eq!(stream.transport, StreamTransport::WebSocket);
@@ -461,15 +497,15 @@ mod tests {
             interactive.stream.as_ref().unwrap().transport,
             StreamTransport::Sse
         );
-        assert_eq!(
-            interactive.responses[0].media_type,
-            "text/event-stream"
-        );
+        assert_eq!(interactive.responses[0].media_type, "text/event-stream");
     }
 
     #[test]
     fn named_vault_and_health_schemas_are_not_opaque() {
-        let health = production_registry(false).get("health.get").unwrap().clone();
+        let health = production_registry(false)
+            .get("health.get")
+            .unwrap()
+            .clone();
         assert!(!health.responses[0].schema.opaque);
         assert_eq!(health.responses[0].schema.name, "HealthResponse");
         let vault = production_registry(false)
@@ -492,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn browser_compatibility_mounts_stay_off_declared_router() {
+    fn browser_compatibility_aliases_stay_unprefixed() {
         let declared: std::collections::HashSet<String> = production_registry(true)
             .operations()
             .map(|spec| format!("{} {}", spec.method.as_str(), spec.path))
@@ -504,10 +540,46 @@ mod tests {
                 "unprefixed browser adapter {method} {path} must not silently join DeclaredRouter"
             );
             assert!(
-                !declared.contains(&nested),
-                "browser adapter {nested} must stay on the H08 compatibility router until imported"
+                declared.contains(&nested),
+                "canonical browser adapter {nested} must be imported onto DeclaredRouter"
             );
         }
+        let inventory = crate::daemon::router::build_declared_route_inventory(false);
+        for (method, path) in BROWSER_COMPATIBILITY_MOUNTS {
+            let nested = format!("/v1{path}");
+            let entry = inventory
+                .entries()
+                .find(|entry| entry.method == *method && entry.path == nested)
+                .unwrap_or_else(|| panic!("missing declared browser mount {method} {nested}"));
+            assert_eq!(
+                entry.browser_policy,
+                crate::daemon::route_policy::BrowserPolicy::ExactOrigin,
+                "{method} {nested} must not inherit NativeOnly"
+            );
+        }
+    }
+
+    #[test]
+    fn dashboard_compatibility_stays_off_declared_router() {
+        let declared: std::collections::HashSet<String> = production_registry(true)
+            .operations()
+            .map(|spec| format!("{} {}", spec.method.as_str(), spec.path))
+            .collect();
+        assert!(
+            !DASHBOARD_COMPATIBILITY_MOUNTS.is_empty(),
+            "Stasis dashboard_router does not export method/path descriptors; keep a reviewed freeze"
+        );
+        for (method, path) in DASHBOARD_COMPATIBILITY_MOUNTS {
+            assert!(
+                !declared.contains(&format!("{method} {path}")),
+                "dashboard adapter {method} {path} is third-party opaque and must stay off DeclaredRouter"
+            );
+        }
+        let router_src = include_str!("router.rs");
+        assert!(
+            router_src.contains("dashboard_router("),
+            "dashboard remains a raw Stasis mount until that crate exports descriptors"
+        );
     }
 
     #[tokio::test]
@@ -568,8 +640,11 @@ mod tests {
         if std::env::var("UPDATE_API_CONTRACT").as_deref() == Ok("1") {
             std::fs::create_dir_all(root.join("generated")).unwrap();
             std::fs::write(root.join("openapi.json"), &artifacts.openapi_json).unwrap();
-            std::fs::write(root.join("route-inventory.json"), &artifacts.route_inventory_json)
-                .unwrap();
+            std::fs::write(
+                root.join("route-inventory.json"),
+                &artifacts.route_inventory_json,
+            )
+            .unwrap();
             std::fs::write(
                 std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                     .join("crates/medousa-sdk/src/generated/ops.rs"),

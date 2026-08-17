@@ -156,6 +156,34 @@ pub const AUTH_CHATGPT_REFRESH_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const BROWSER_SESSIONS_BY_SESSION_ID_COMPLETE_POST: Operation = Operation {
+    id: "browser.sessions.by_session_id.complete.post",
+    method: "POST",
+    path: "/v1/browser/sessions/{session_id}/complete",
+    streaming: false,
+};
+
+pub const BROWSER_SESSIONS_BY_SESSION_ID_COMPLETE_ACT_POST: Operation = Operation {
+    id: "browser.sessions.by_session_id.complete_act.post",
+    method: "POST",
+    path: "/v1/browser/sessions/{session_id}/complete-act",
+    streaming: false,
+};
+
+pub const BROWSER_SESSIONS_BY_SESSION_ID_GET: Operation = Operation {
+    id: "browser.sessions.by_session_id.get",
+    method: "GET",
+    path: "/v1/browser/sessions/{session_id}",
+    streaming: false,
+};
+
+pub const BROWSER_SESSIONS_BY_SESSION_ID_RESUME_POST: Operation = Operation {
+    id: "browser.sessions.by_session_id.resume.post",
+    method: "POST",
+    path: "/v1/browser/sessions/{session_id}/resume",
+    streaming: false,
+};
+
 pub const CALENDAR_EVENTS_BY_UID_DELETE: Operation = Operation {
     id: "calendar.events.by_uid.delete",
     method: "DELETE",
@@ -223,6 +251,34 @@ pub const CAPABILITIES_REINDEX_POST: Operation = Operation {
     id: "capabilities.reindex.post",
     method: "POST",
     path: "/v1/capabilities/reindex",
+    streaming: false,
+};
+
+pub const CLIENTS_BY_CLIENT_ID_TOOLS_BY_REQUEST_ID_RESULT_POST: Operation = Operation {
+    id: "clients.by_client_id.tools.by_request_id.result.post",
+    method: "POST",
+    path: "/v1/clients/{client_id}/tools/{request_id}/result",
+    streaming: false,
+};
+
+pub const CLIENTS_BY_CLIENT_ID_TOOLS_NEXT_GET: Operation = Operation {
+    id: "clients.by_client_id.tools.next.get",
+    method: "GET",
+    path: "/v1/clients/{client_id}/tools/next",
+    streaming: false,
+};
+
+pub const CLIENTS_GET: Operation = Operation {
+    id: "clients.get",
+    method: "GET",
+    path: "/v1/clients",
+    streaming: false,
+};
+
+pub const CLIENTS_REGISTER_POST: Operation = Operation {
+    id: "clients.register.post",
+    method: "POST",
+    path: "/v1/clients/register",
     streaming: false,
 };
 
@@ -2642,6 +2698,10 @@ pub static ALL: &[Operation] = &[
     AUTH_CHATGPT_GET,
     AUTH_CHATGPT_MODELS_GET,
     AUTH_CHATGPT_REFRESH_POST,
+    BROWSER_SESSIONS_BY_SESSION_ID_COMPLETE_POST,
+    BROWSER_SESSIONS_BY_SESSION_ID_COMPLETE_ACT_POST,
+    BROWSER_SESSIONS_BY_SESSION_ID_GET,
+    BROWSER_SESSIONS_BY_SESSION_ID_RESUME_POST,
     CALENDAR_EVENTS_BY_UID_DELETE,
     CALENDAR_EVENTS_BY_UID_PUT,
     CALENDAR_EVENTS_GET,
@@ -2652,6 +2712,10 @@ pub static ALL: &[Operation] = &[
     CAPABILITIES_GET,
     CAPABILITIES_INTENTS_GET,
     CAPABILITIES_REINDEX_POST,
+    CLIENTS_BY_CLIENT_ID_TOOLS_BY_REQUEST_ID_RESULT_POST,
+    CLIENTS_BY_CLIENT_ID_TOOLS_NEXT_GET,
+    CLIENTS_GET,
+    CLIENTS_REGISTER_POST,
     CODE_CAPABILITIES_GET,
     CODE_CONVENTIONS_GET,
     CODE_DEFINITION_GET,

@@ -39,8 +39,8 @@ generates clients for that contract.
 Authority is Axum `DeclaredRouter` / `ContractRouter` plus `medousa-types`.
 Generation publishes [`sdk-contract/openapi.json`](../../sdk-contract/openapi.json)
 and [`sdk-contract/route-inventory.json`](../../sdk-contract/route-inventory.json)
-from that inventory. Production inventory is **361** routes without pairing and
-**373** with pairing (`combined_declared_inventory_matches_optional_pairing_composition`).
+from that inventory. Production inventory is **369** routes without pairing and
+**381** with pairing (`combined_declared_inventory_matches_optional_pairing_composition`).
 CI regenerates the contract and requires byte equality plus exact-set equality
 against the declared router.
 
@@ -54,12 +54,12 @@ Remaining copies that still shrink:
 
 | Surface | Current evidence | Failure mode |
 | --- | ---: | --- |
-| Declared production inventory | 361 / 373 method+path rows | real server behavior; H01 policy; generated operation IDs |
+| Declared production inventory | 369 / 381 method+path rows | real server behavior; H01 policy; generated operation IDs |
 | Generated OpenAPI + inventory | checked-in artifacts from declared inventory | named DTO/stream bindings plus catalog components; remaining ops stay opaque/`deferred` |
 | Rust / Python / TS / Tauri op tables | generated from IR; helpers expand `op_path` / `operationPath` | helper no-literal tests in SDK crates; not yet required architecture CI |
 | Shared golden cases | `sdk-contract/golden/client-cases.json` | wrong verb/path/stream flag fails Rust and Python unit tests |
-| Browser compatibility adapter | `BROWSER_COMPATIBILITY_MOUNTS` (dual `/` and `/v1`) | not in 361/373 until imported onto `ContractRouter` |
-| Stasis dashboard adapter | raw `dashboard_router` | third-party; no method/path descriptors yet |
+| Browser compatibility adapter | unprefixed `BROWSER_COMPATIBILITY_MOUNTS`; `/v1` copies on `browser_surface` | unprefixed aliases stay off 369/381; `/v1` copies use explicit `ExactOrigin` |
+| Stasis dashboard adapter | raw `dashboard_router` + frozen `DASHBOARD_COMPATIBILITY_MOUNTS` | third-party; no method/path descriptors; reviewed freeze stays off declared inventory |
 | Tauri daemon proxy modules | closed `daemon_unary` / real `daemon_stream_start`+cancel; endpoint-shaped shims remain | live SSE uses generated stream paths; remaining proxies still own some URLs |
 | Home `$lib/daemon/*` | generated ops for session stream, code/grapheme LSP, code intelligence | `forge.ts` and browser compatibility mounts remain handwritten |
 

@@ -169,6 +169,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::daemon::forge_preview::forge_preview_surface().inventory())
         .expect("duplicate Forge preview route policy");
     inventory
+        .extend(crate::browser_handlers::browser_surface().inventory())
+        .expect("duplicate browser bridge route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {
@@ -521,8 +524,9 @@ pub fn apply_dashboard_action_auth(
 
 /// Transitional compatibility boundary for the dependency-owned Stasis
 /// dashboard. New Medousa routes must use `DeclaredRouter`; this remains raw
-/// only until Stasis exports method/path descriptors with its router. It is
-/// not part of the 361/373 generated contract.
+/// only until Stasis exports method/path descriptors with its router. Reviewed
+/// paths live in [`crate::daemon::contract::DASHBOARD_COMPATIBILITY_MOUNTS`]
+/// and are not part of the declared generated contract.
 pub fn build_dashboard_compatibility_router(
     state: &AppState,
     dashboard_action_auth: &DashboardActionAuthConfig,
@@ -1112,10 +1116,10 @@ fn service_policy(
     }
 }
 
-/// Transitional H08 boundary for the browser bridge and its legacy aliases.
-/// New daemon routes must not be added here. Mounts are inventoried in
-/// [`crate::daemon::contract::BROWSER_COMPATIBILITY_MOUNTS`] and are not part
-/// of the 361/373 `DeclaredRouter` contract until they move onto `ContractRouter`.
+/// Transitional H08 boundary for unprefixed browser-bridge aliases.
+/// Canonical `/v1` copies live on [`crate::browser_handlers::browser_surface`].
+/// New daemon routes must not be added here. Unprefixed mounts are inventoried
+/// in [`crate::daemon::contract::BROWSER_COMPATIBILITY_MOUNTS`].
 pub fn build_browser_compatibility_router(state: AppState) -> Router {
     crate::browser_handlers::browser_router().with_state(state)
 }
@@ -1225,12 +1229,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 361);
-        assert_eq!(with_pairing.entries().len(), 373);
+        assert_eq!(without_pairing.entries().len(), 369);
+        assert_eq!(with_pairing.entries().len(), 381);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 373);
+        assert_eq!(rows.len(), 381);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"

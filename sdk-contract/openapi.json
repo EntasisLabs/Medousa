@@ -8273,6 +8273,246 @@
         }
       }
     },
+    "/v1/browser/sessions/{session_id}": {
+      "get": {
+        "operationId": "browser.sessions.by_session_id.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "BROWSER_SESSIONS_BY_SESSION_ID_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "browser.sessions.by_session_id.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.sessions.by_session_id.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.sessions.by_session_id.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/browser/sessions/{session_id}/complete": {
+      "post": {
+        "operationId": "browser.sessions.by_session_id.complete.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "BROWSER_SESSIONS_BY_SESSION_ID_COMPLETE_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "browser.sessions.by_session_id.complete.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.sessions.by_session_id.complete.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.sessions.by_session_id.complete.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 2097152,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/browser/sessions/{session_id}/complete-act": {
+      "post": {
+        "operationId": "browser.sessions.by_session_id.complete_act.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "BROWSER_SESSIONS_BY_SESSION_ID_COMPLETE_ACT_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "browser.sessions.by_session_id.complete_act.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.sessions.by_session_id.complete_act.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.sessions.by_session_id.complete_act.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/browser/sessions/{session_id}/resume": {
+      "post": {
+        "operationId": "browser.sessions.by_session_id.resume.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "BROWSER_SESSIONS_BY_SESSION_ID_RESUME_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "browser.sessions.by_session_id.resume.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.sessions.by_session_id.resume.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.sessions.by_session_id.resume.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
     "/v1/calendar/events": {
       "get": {
         "operationId": "calendar.events.get",
@@ -8809,6 +9049,236 @@
           "credential_scheme": "bearer",
           "feature_profile": "core",
           "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/clients": {
+      "get": {
+        "operationId": "clients.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "CLIENTS_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "clients.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "clients.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "clients.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/clients/register": {
+      "post": {
+        "operationId": "clients.register.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "CLIENTS_REGISTER_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "clients.register.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "clients.register.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "clients.register.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 262144,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/clients/{client_id}/tools/next": {
+      "get": {
+        "operationId": "clients.by_client_id.tools.next.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "CLIENTS_BY_CLIENT_ID_TOOLS_NEXT_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "clients.by_client_id.tools.next.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "clients.by_client_id.tools.next.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "clients.by_client_id.tools.next.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "stream",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/clients/{client_id}/tools/{request_id}/result": {
+      "post": {
+        "operationId": "clients.by_client_id.tools.by_request_id.result.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "CLIENTS_BY_CLIENT_ID_TOOLS_BY_REQUEST_ID_RESULT_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "clients.by_client_id.tools.by_request_id.result.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "clients.by_client_id.tools.by_request_id.result.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "clients.by_client_id.tools.by_request_id.result.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 2097152,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
           "trust_group": "portal"
         }
       }

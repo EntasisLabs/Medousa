@@ -541,6 +541,70 @@
     {
       "body_limit": 1024,
       "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "browser.sessions.by_session_id.get",
+      "path": "/v1/browser/sessions/{session_id}",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 2097152,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "browser.sessions.by_session_id.complete.post",
+      "path": "/v1/browser/sessions/{session_id}/complete",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 65536,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "browser.sessions.by_session_id.complete_act.post",
+      "path": "/v1/browser/sessions/{session_id}/complete-act",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 16384,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "browser.sessions.by_session_id.resume.post",
+      "path": "/v1/browser/sessions/{session_id}/resume",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
       "browser_policy": "native_only",
       "capabilities": [
         "content.read"
@@ -694,6 +758,70 @@
       "operation_id": "capabilities.by_capability_id.get",
       "path": "/v1/capabilities/{capability_id}",
       "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "clients.get",
+      "path": "/v1/clients",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 262144,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "clients.register.post",
+      "path": "/v1/clients/register",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "clients.by_client_id.tools.next.get",
+      "path": "/v1/clients/{client_id}/tools/next",
+      "rate_limit_class": "stream",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 2097152,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "clients.by_client_id.tools.by_request_id.result.post",
+      "path": "/v1/clients/{client_id}/tools/{request_id}/result",
+      "rate_limit_class": "mutation",
       "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
