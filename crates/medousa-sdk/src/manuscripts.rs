@@ -7,6 +7,8 @@ use medousa_types::{
 
 #[cfg(feature = "async")]
 use crate::client::MedousaClient;
+use crate::generated::ops;
+use crate::op::op_path;
 
 #[cfg(feature = "async")]
 pub struct ManuscriptsApi<'a> {
@@ -36,13 +38,19 @@ impl ManuscriptsApi<'_> {
         }
         self.client
             .http()
-            .get_query("/v1/manuscripts", &params)
+            .get_query(ops::MANUSCRIPTS_GET.path, &params)
             .await
     }
 
-    pub async fn get(&self, manuscript_id: &str) -> Result<ManuscriptDetailResponse, crate::SdkError> {
+    pub async fn get(
+        &self,
+        manuscript_id: &str,
+    ) -> Result<ManuscriptDetailResponse, crate::SdkError> {
         let id = manuscript_id.trim();
-        let path = format!("/v1/manuscripts/{}", urlencoding::encode(id));
+        let path = op_path(
+            &ops::MANUSCRIPTS_BY_MANUSCRIPT_ID_GET,
+            &[("manuscript_id", id)],
+        )?;
         self.client.http().get(&path).await
     }
 
@@ -50,7 +58,10 @@ impl ManuscriptsApi<'_> {
         &self,
         request: &CreateManuscriptRequest,
     ) -> Result<ManuscriptDetailResponse, crate::SdkError> {
-        self.client.http().post("/v1/manuscripts/create", request).await
+        self.client
+            .http()
+            .post(ops::MANUSCRIPTS_CREATE_POST.path, request)
+            .await
     }
 
     pub async fn update(
@@ -59,7 +70,10 @@ impl ManuscriptsApi<'_> {
         request: &UpdateManuscriptRequest,
     ) -> Result<ManuscriptDetailResponse, crate::SdkError> {
         let id = manuscript_id.trim();
-        let path = format!("/v1/manuscripts/{}", urlencoding::encode(id));
+        let path = op_path(
+            &ops::MANUSCRIPTS_BY_MANUSCRIPT_ID_PATCH,
+            &[("manuscript_id", id)],
+        )?;
         self.client.http().patch(&path, request).await
     }
 
@@ -67,6 +81,9 @@ impl ManuscriptsApi<'_> {
         &self,
         request: &ManuscriptImportRequest,
     ) -> Result<ManuscriptImportResponse, crate::SdkError> {
-        self.client.http().post("/v1/manuscripts", request).await
+        self.client
+            .http()
+            .post(ops::MANUSCRIPTS_POST.path, request)
+            .await
     }
 }

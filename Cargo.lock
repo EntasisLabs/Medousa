@@ -7571,6 +7571,7 @@ dependencies = [
  "mdns-sd",
  "medousa-acp-client",
  "medousa-adapter-common",
+ "medousa-api-contract",
  "medousa-browser-lite",
  "medousa-engine",
  "medousa-forge",
@@ -7653,6 +7654,16 @@ dependencies = [
  "reqwest 0.12.28",
  "telegram-escape",
  "tokio",
+]
+
+[[package]]
+name = "medousa-api-contract"
+version = "0.9.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -7891,6 +7902,7 @@ dependencies = [
  "bytes",
  "eventsource-stream",
  "futures-util",
+ "medousa-api-contract",
  "medousa-types",
  "reqwest 0.12.28",
  "serde",

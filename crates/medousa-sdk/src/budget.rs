@@ -6,6 +6,8 @@ use medousa_types::{
 
 #[cfg(feature = "async")]
 use crate::client::MedousaClient;
+use crate::generated::ops;
+use crate::op::{op_path, op_path_query};
 #[cfg(feature = "async")]
 use crate::transport::decode;
 
@@ -21,9 +23,20 @@ impl BudgetApi<'_> {
         pending_only: bool,
     ) -> Result<TurnBudgetRequestListResponse, crate::SdkError> {
         let path = if pending_only {
-            "/v1/turns/budget-requests?status=pending&limit=20".to_string()
+            op_path_query(
+                &ops::TURNS_BUDGET_REQUESTS_GET,
+                &[],
+                &[
+                    ("status", "pending".to_string()),
+                    ("limit", "20".to_string()),
+                ],
+            )?
         } else {
-            "/v1/turns/budget-requests?limit=20".to_string()
+            op_path_query(
+                &ops::TURNS_BUDGET_REQUESTS_GET,
+                &[],
+                &[("limit", "20".to_string())],
+            )?
         };
         let value = self
             .client
@@ -38,11 +51,12 @@ impl BudgetApi<'_> {
         request_id: &str,
         body: &TurnBudgetApproveRequest,
     ) -> Result<TurnBudgetRequestResponse, crate::SdkError> {
-        let payload = serde_json::to_value(body).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let path = format!(
-            "/v1/turns/budget-requests/{}/approve",
-            request_id.trim()
-        );
+        let payload =
+            serde_json::to_value(body).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path = op_path(
+            &ops::TURNS_BUDGET_REQUESTS_BY_REQUEST_ID_APPROVE_POST,
+            &[("request_id", request_id.trim())],
+        )?;
         let value = self
             .client
             .transport()
@@ -56,8 +70,12 @@ impl BudgetApi<'_> {
         request_id: &str,
         body: &TurnBudgetDenyRequest,
     ) -> Result<TurnBudgetRequestResponse, crate::SdkError> {
-        let payload = serde_json::to_value(body).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let path = format!("/v1/turns/budget-requests/{}/deny", request_id.trim());
+        let payload =
+            serde_json::to_value(body).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path = op_path(
+            &ops::TURNS_BUDGET_REQUESTS_BY_REQUEST_ID_DENY_POST,
+            &[("request_id", request_id.trim())],
+        )?;
         let value = self
             .client
             .transport()
@@ -66,11 +84,11 @@ impl BudgetApi<'_> {
         decode(value).await
     }
 
-    pub async fn get(
-        &self,
-        request_id: &str,
-    ) -> Result<TurnBudgetRequestRecord, crate::SdkError> {
-        let path = format!("/v1/turns/budget-requests/{}", request_id.trim());
+    pub async fn get(&self, request_id: &str) -> Result<TurnBudgetRequestRecord, crate::SdkError> {
+        let path = op_path(
+            &ops::TURNS_BUDGET_REQUESTS_BY_REQUEST_ID_GET,
+            &[("request_id", request_id.trim())],
+        )?;
         let value = self
             .client
             .transport()

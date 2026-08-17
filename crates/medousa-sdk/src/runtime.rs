@@ -1,14 +1,15 @@
 #[cfg(feature = "async")]
 use medousa_types::{
     AgentModeListResponse, AgentModeTransitionPolicy, ArtifactCommandRequest,
-    ArtifactCommandResponse, ArtifactDeleteRequest, ArtifactDeleteResponse,
-    ArtifactFetchRequest, ArtifactFetchResponse, ArtifactListUiRequest, ArtifactListUiResponse,
-    ArtifactWriteRequest, ArtifactWriteResponse, RuntimeConfigCommandRequest,
-    RuntimeConfigCommandResponse, StageRouteCommandRequest, StageRouteCommandResponse,
+    ArtifactCommandResponse, ArtifactDeleteRequest, ArtifactDeleteResponse, ArtifactFetchRequest,
+    ArtifactFetchResponse, ArtifactListUiRequest, ArtifactListUiResponse, ArtifactWriteRequest,
+    ArtifactWriteResponse, RuntimeConfigCommandRequest, RuntimeConfigCommandResponse,
+    StageRouteCommandRequest, StageRouteCommandResponse,
 };
 
 #[cfg(feature = "async")]
 use crate::client::MedousaClient;
+use crate::generated::ops;
 
 #[cfg(feature = "async")]
 pub struct RuntimeApi<'a> {
@@ -18,20 +19,26 @@ pub struct RuntimeApi<'a> {
 #[cfg(feature = "async")]
 impl RuntimeApi<'_> {
     pub async fn agent_modes(&self) -> Result<AgentModeListResponse, crate::SdkError> {
-        self.client.http().get("/v1/agent-modes").await
+        self.client.http().get(ops::AGENT_MODES_GET.path).await
     }
 
     pub async fn agent_mode_transition_policy(
         &self,
     ) -> Result<AgentModeTransitionPolicy, crate::SdkError> {
-        self.client.http().get("/v1/agent-modes/policy").await
+        self.client
+            .http()
+            .get(ops::AGENT_MODES_POLICY_GET.path)
+            .await
     }
 
     pub async fn set_agent_mode_transition_policy(
         &self,
         policy: &AgentModeTransitionPolicy,
     ) -> Result<AgentModeTransitionPolicy, crate::SdkError> {
-        self.client.http().put("/v1/agent-modes/policy", policy).await
+        self.client
+            .http()
+            .put(ops::AGENT_MODES_POLICY_PUT.path, policy)
+            .await
     }
 
     pub async fn artifact_command(
@@ -40,7 +47,7 @@ impl RuntimeApi<'_> {
     ) -> Result<ArtifactCommandResponse, crate::SdkError> {
         self.client
             .http()
-            .post("/v1/runtime/artifact/command", request)
+            .post(ops::RUNTIME_ARTIFACT_COMMAND_POST.path, request)
             .await
     }
 
@@ -50,7 +57,7 @@ impl RuntimeApi<'_> {
     ) -> Result<ArtifactFetchResponse, crate::SdkError> {
         self.client
             .http()
-            .post("/v1/runtime/artifact/fetch", request)
+            .post(ops::RUNTIME_ARTIFACT_FETCH_POST.path, request)
             .await
     }
 
@@ -60,7 +67,7 @@ impl RuntimeApi<'_> {
     ) -> Result<ArtifactListUiResponse, crate::SdkError> {
         self.client
             .http()
-            .post("/v1/runtime/artifact/list-ui", request)
+            .post(ops::RUNTIME_ARTIFACT_LIST_UI_POST.path, request)
             .await
     }
 
@@ -70,7 +77,7 @@ impl RuntimeApi<'_> {
     ) -> Result<ArtifactWriteResponse, crate::SdkError> {
         self.client
             .http()
-            .post("/v1/runtime/artifact/write", request)
+            .post(ops::RUNTIME_ARTIFACT_WRITE_POST.path, request)
             .await
     }
 
@@ -80,7 +87,7 @@ impl RuntimeApi<'_> {
     ) -> Result<ArtifactDeleteResponse, crate::SdkError> {
         self.client
             .http()
-            .post("/v1/runtime/artifact/delete", request)
+            .post(ops::RUNTIME_ARTIFACT_DELETE_POST.path, request)
             .await
     }
 
@@ -90,7 +97,7 @@ impl RuntimeApi<'_> {
     ) -> Result<StageRouteCommandResponse, crate::SdkError> {
         self.client
             .http()
-            .post("/v1/runtime/stage-route/command", request)
+            .post(ops::RUNTIME_STAGE_ROUTE_COMMAND_POST.path, request)
             .await
     }
 
@@ -100,7 +107,7 @@ impl RuntimeApi<'_> {
     ) -> Result<RuntimeConfigCommandResponse, crate::SdkError> {
         self.client
             .http()
-            .post("/v1/runtime/config/command", request)
+            .post(ops::RUNTIME_CONFIG_COMMAND_POST.path, request)
             .await
     }
 }

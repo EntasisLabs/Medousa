@@ -4,7 +4,7 @@
 
 Full overview: [README.md](README.md). HTTP routes: [../engine/http-api.md](../engine/http-api.md).
 
-Contract source of truth: [`../../sdk-contract/manifest.yaml`](../../sdk-contract/manifest.yaml) (validated by `scripts/check-sdk-contract.sh`).
+Declared-router publication: [`../../sdk-contract/openapi.json`](../../sdk-contract/openapi.json) (regenerated from `DeclaredRouter`; validated by `scripts/check-api-contract.sh`). SDK helpers expand generated operation IDs rather than embedding `/v1` paths.
 
 Rust async methods require `medousa-sdk` feature `async` (default). SSE requires `sse` (default). Python is async-first with accessor-based sync client.
 
@@ -394,4 +394,4 @@ See [python.md](python.md).
 - Environment patch semantics (`cognition_environment_patch` ops — no HTTP patch route; use `environment().put_spec`)
 - Tauri app uses bridge commands for SSE when `WorkshopTransport` cannot stream directly
 
-Track new wrappers in PRs that update `sdk-contract/manifest.yaml`.
+Track new wrappers in PRs that regenerate `sdk-contract/openapi.json` from the declared router.

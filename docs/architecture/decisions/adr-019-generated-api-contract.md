@@ -1,6 +1,6 @@
 # ADR-019: Route-owned generated API and client contract
 
-> **Status:** Proposed
+> **Status:** Accepted
 >
 > **Date:** 2026-08-13
 >
@@ -175,20 +175,21 @@ schema inventory, copied client routes, and endpoint-shaped Home proxy copies.
 
 ## Verification
 
-H10's static generation, exact router/profile equality, schema/serde, semantic
-diff, black-box multi-client, awkward-encoding, auth/error, SSE, deterministic
-generation, no-route-literal, and mutation-sentinel gates are required before
-the old parity sources are deleted.
+H10 Slices 1–4 generate the public contract from `DeclaredRouter`, cut SDK/Home
+helpers onto operation tables, require no-literal and released-baseline CI, and
+delete `sdk-contract/manifest.yaml`. `PARITY_ROUTES` is deleted in favor of
+uniqueness checks on generated ops.
 
 ## Code anchors
 
-- `src/daemon/router.rs` and all feature router modules
+- `src/daemon/router.rs`, `src/daemon/route_policy.rs`, `src/daemon/contract.rs`
+- `crates/medousa-api-contract/`
 - `crates/medousa-types/` and `crates/medousa-types-schema/`
-- `sdk-contract/manifest.yaml`
+- `sdk-contract/openapi.json` and `sdk-contract/route-inventory.json`
 - `crates/medousa-sdk/` and `python/medousa-sdk/`
-- `apps/medousa-home/src-tauri/src/daemon/`
-- `apps/medousa-home/src/lib/daemon.ts`
-- `scripts/check-sdk-contract.sh`
+- `apps/medousa-home/src-tauri/src/daemon/contract_bridge.rs`
+- `apps/medousa-home/src/lib/daemon/`
+- `scripts/check-api-contract.sh`
 
 ## Standards basis
 

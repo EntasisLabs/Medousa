@@ -6,7 +6,7 @@ Async-first HTTP client for **medousa_daemon**, mirroring the Rust [`medousa-sdk
 
 Rust reference: [README.md](README.md) · [API reference](api-reference.md)
 
-Contract: [`../../sdk-contract/manifest.yaml`](../../sdk-contract/manifest.yaml)
+Contract: [`../../sdk-contract/openapi.json`](../../sdk-contract/openapi.json)
 
 ---
 
@@ -168,9 +168,11 @@ ruff check .
 pytest
 ```
 
-`tests/test_parity_paths.py` loads `sdk-contract/manifest.yaml` and validates every method exists on async + sync clients.
+`tests/test_parity_paths.py` validates generated operations (real HTTP methods, unique paths).
+`tests/test_golden_ops.py` loads [`sdk-contract/golden/client-cases.json`](../../sdk-contract/golden/client-cases.json).
+Helpers expand generated operation IDs via `op_path`; `tests/test_no_helper_route_literals.py` forbids leftover `/v1` strings in handwritten Python helpers.
 
-Repository-wide: `bash scripts/check-sdk-contract.sh`
+Repository-wide: `bash scripts/check-api-contract.sh`
 
 ---
 

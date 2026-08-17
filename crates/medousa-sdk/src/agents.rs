@@ -14,8 +14,10 @@ use futures_util::StreamExt;
 
 #[cfg(feature = "async")]
 use crate::client::MedousaClient;
+use crate::generated::ops;
+use crate::op::{op_path, op_path_query};
 #[cfg(feature = "async")]
-use crate::transport::{decode, path_with_query};
+use crate::transport::decode;
 
 #[cfg(all(feature = "async", feature = "sse"))]
 use crate::streaming::{SseLineStream, decode_sse_json};
@@ -31,7 +33,7 @@ impl AgentsApi<'_> {
         let value = self
             .client
             .transport()
-            .get_json(self.client.base_url(), "/v1/agents/runtimes")
+            .get_json(self.client.base_url(), ops::AGENTS_RUNTIMES_GET.path)
             .await?;
         decode(value).await
     }
@@ -45,7 +47,7 @@ impl AgentsApi<'_> {
         let value = self
             .client
             .transport()
-            .post_json(self.client.base_url(), "/v1/agents/sessions", body)
+            .post_json(self.client.base_url(), ops::AGENTS_SESSIONS_POST.path, body)
             .await?;
         decode(value).await
     }
@@ -57,7 +59,10 @@ impl AgentsApi<'_> {
     ) -> Result<AgentSessionPromptResponse, crate::SdkError> {
         let body =
             serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let path = format!("/v1/agents/sessions/{}/prompt", agent_session_id.trim());
+        let path = op_path(
+            &ops::AGENTS_SESSIONS_BY_AGENT_SESSION_ID_PROMPT_POST,
+            &[("agent_session_id", agent_session_id.trim())],
+        )?;
         let value = self
             .client
             .transport()
@@ -73,7 +78,10 @@ impl AgentsApi<'_> {
     ) -> Result<SetAgentSessionConfigOptionResponse, crate::SdkError> {
         let body =
             serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let path = format!("/v1/agents/sessions/{}/config", agent_session_id.trim());
+        let path = op_path(
+            &ops::AGENTS_SESSIONS_BY_AGENT_SESSION_ID_CONFIG_POST,
+            &[("agent_session_id", agent_session_id.trim())],
+        )?;
         let value = self
             .client
             .transport()
@@ -86,7 +94,10 @@ impl AgentsApi<'_> {
         &self,
         agent_session_id: &str,
     ) -> Result<CancelAgentSessionResponse, crate::SdkError> {
-        let path = format!("/v1/agents/sessions/{}/cancel", agent_session_id.trim());
+        let path = op_path(
+            &ops::AGENTS_SESSIONS_BY_AGENT_SESSION_ID_CANCEL_POST,
+            &[("agent_session_id", agent_session_id.trim())],
+        )?;
         let value = self
             .client
             .transport()
@@ -131,7 +142,7 @@ impl AgentsApi<'_> {
         if let Some(limit) = limit {
             params.push(("limit", limit.to_string()));
         }
-        let path = path_with_query("/v1/agents/permission-requests", &params);
+        let path = op_path_query(&ops::AGENTS_PERMISSION_REQUESTS_GET, &[], &params)?;
         let value = self
             .client
             .transport()
@@ -147,10 +158,10 @@ impl AgentsApi<'_> {
     ) -> Result<AgentPermissionResolveResponse, crate::SdkError> {
         let body =
             serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let path = format!(
-            "/v1/agents/permission-requests/{}/approve",
-            request_id.trim()
-        );
+        let path = op_path(
+            &ops::AGENTS_PERMISSION_REQUESTS_BY_REQUEST_ID_APPROVE_POST,
+            &[("request_id", request_id.trim())],
+        )?;
         let value = self
             .client
             .transport()
@@ -166,7 +177,10 @@ impl AgentsApi<'_> {
     ) -> Result<AgentPermissionResolveResponse, crate::SdkError> {
         let body =
             serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let path = format!("/v1/agents/permission-requests/{}/deny", request_id.trim());
+        let path = op_path(
+            &ops::AGENTS_PERMISSION_REQUESTS_BY_REQUEST_ID_DENY_POST,
+            &[("request_id", request_id.trim())],
+        )?;
         let value = self
             .client
             .transport()

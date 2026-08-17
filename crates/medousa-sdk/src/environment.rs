@@ -12,8 +12,8 @@ use futures_util::StreamExt;
 
 #[cfg(feature = "async")]
 use crate::client::MedousaClient;
-#[cfg(feature = "async")]
-use crate::transport::path_with_query;
+use crate::generated::ops;
+use crate::op::op_path_query;
 
 #[cfg(all(feature = "async", feature = "sse"))]
 use crate::streaming::{SseLineStream, decode_sse_json};
@@ -31,7 +31,10 @@ fn profile_query(profile_id: Option<&str>) -> Vec<(&'static str, String)> {
 }
 
 #[cfg(feature = "async")]
-fn stream_query(profile_id: Option<&str>, since_revision: Option<u64>) -> Vec<(&'static str, String)> {
+fn stream_query(
+    profile_id: Option<&str>,
+    since_revision: Option<u64>,
+) -> Vec<(&'static str, String)> {
     let mut params = profile_query(profile_id);
     if let Some(since) = since_revision {
         params.push(("since_revision", since.to_string()));
@@ -45,7 +48,7 @@ impl EnvironmentApi<'_> {
         &self,
         profile_id: Option<&str>,
     ) -> Result<EnvironmentSpecResponse, crate::SdkError> {
-        let path = path_with_query("/v1/environment/spec", &profile_query(profile_id));
+        let path = op_path_query(&ops::ENVIRONMENT_SPEC_GET, &[], &profile_query(profile_id))?;
         self.client.http().get(&path).await
     }
 
@@ -55,7 +58,7 @@ impl EnvironmentApi<'_> {
     ) -> Result<EnvironmentSpecResponse, crate::SdkError> {
         self.client
             .http()
-            .put("/v1/environment/spec", request)
+            .put(ops::ENVIRONMENT_SPEC_PUT.path, request)
             .await
     }
 
@@ -72,7 +75,7 @@ impl EnvironmentApi<'_> {
         if let Some(include) = include_runtime {
             params.push(("include_runtime", include.to_string()));
         }
-        let path = path_with_query("/v1/environment/status", &params);
+        let path = op_path_query(&ops::ENVIRONMENT_STATUS_GET, &[], &params)?;
         self.client.http().get(&path).await
     }
 
@@ -82,7 +85,7 @@ impl EnvironmentApi<'_> {
     ) -> Result<EnvironmentValidateResponse, crate::SdkError> {
         self.client
             .http()
-            .post("/v1/environment/spec/validate", request)
+            .post(ops::ENVIRONMENT_SPEC_VALIDATE_POST.path, request)
             .await
     }
 
@@ -92,7 +95,7 @@ impl EnvironmentApi<'_> {
     ) -> Result<EnvironmentProposeResponse, crate::SdkError> {
         self.client
             .http()
-            .post("/v1/environment/spec/propose", request)
+            .post(ops::ENVIRONMENT_SPEC_PROPOSE_POST.path, request)
             .await
     }
 
@@ -100,13 +103,24 @@ impl EnvironmentApi<'_> {
         &self,
         profile_id: Option<&str>,
     ) -> Result<EnvironmentPendingResponse, crate::SdkError> {
-        let path = path_with_query("/v1/environment/spec/pending", &profile_query(profile_id));
+        let path = op_path_query(
+            &ops::ENVIRONMENT_SPEC_PENDING_GET,
+            &[],
+            &profile_query(profile_id),
+        )?;
         self.client.http().get(&path).await
     }
 
     pub async fn dismiss_pending(&self, profile_id: Option<&str>) -> Result<(), crate::SdkError> {
-        let path = path_with_query("/v1/environment/spec/pending", &profile_query(profile_id));
-        self.client.http().delete::<serde_json::Value>(&path).await?;
+        let path = op_path_query(
+            &ops::ENVIRONMENT_SPEC_PENDING_DELETE,
+            &[],
+            &profile_query(profile_id),
+        )?;
+        self.client
+            .http()
+            .delete::<serde_json::Value>(&path)
+            .await?;
         Ok(())
     }
 
@@ -114,10 +128,11 @@ impl EnvironmentApi<'_> {
         &self,
         profile_id: Option<&str>,
     ) -> Result<EnvironmentSpecResponse, crate::SdkError> {
-        let path = path_with_query(
-            "/v1/environment/spec/pending/apply",
+        let path = op_path_query(
+            &ops::ENVIRONMENT_SPEC_PENDING_APPLY_POST,
+            &[],
             &profile_query(profile_id),
-        );
+        )?;
         self.client.http().post_empty(&path).await
     }
 
@@ -127,10 +142,12 @@ impl EnvironmentApi<'_> {
         profile_id: Option<&str>,
         since_revision: Option<u64>,
     ) -> impl Stream<Item = Result<EnvironmentStreamEvent, crate::SdkError>> + '_ {
-        let path = path_with_query(
-            "/v1/environment/spec/stream",
+        let path = op_path_query(
+            &ops::ENVIRONMENT_SPEC_STREAM_GET,
+            &[],
             &stream_query(profile_id, since_revision),
-        );
+        )
+        .expect("generated path");
         let byte_stream = self
             .client
             .transport()

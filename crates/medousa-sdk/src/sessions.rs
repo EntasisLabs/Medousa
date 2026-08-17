@@ -2,16 +2,17 @@
 use medousa_types::{
     ActiveSessionTurnResponse, AgentModeProposalListResponse, AgentModeProposalResponse,
     AgentModeScope, CancelActiveSessionTurnResponse, DecideAgentModeProposalRequest,
-    SessionAgentModeResponse, SessionCodeBindingResponse, SessionCodeProjectResponse,
-    SetSessionAgentModeRequest, SetSessionCodeBindingRequest, StartSessionCodeProjectRequest,
-    SessionAppendTurnRequest,
-    SessionAppendTurnResponse, SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse,
-    SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
-    SessionActiveTurnsResponse,
+    SessionActiveTurnsResponse, SessionAgentModeResponse, SessionAppendTurnRequest,
+    SessionAppendTurnResponse, SessionCodeBindingResponse, SessionCodeProjectResponse,
+    SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
+    SessionSetDisplayNameRequest, SessionSetDisplayNameResponse, SetSessionAgentModeRequest,
+    SetSessionCodeBindingRequest, StartSessionCodeProjectRequest,
 };
 
 #[cfg(feature = "async")]
 use crate::client::MedousaClient;
+use crate::generated::ops;
+use crate::op::{op_path, op_path_query};
 #[cfg(feature = "async")]
 use crate::transport::{decode, path_with_query};
 
@@ -23,7 +24,7 @@ pub struct SessionsApi<'a> {
 #[cfg(feature = "async")]
 impl SessionsApi<'_> {
     pub async fn list(&self, limit: usize) -> Result<SessionHistoryListResponse, crate::SdkError> {
-        let path = format!("/v1/sessions?limit={limit}");
+        let path = op_path_query(&ops::SESSIONS_GET, &[], &[("limit", limit.to_string())])?;
         let value = self
             .client
             .transport()
@@ -32,8 +33,14 @@ impl SessionsApi<'_> {
         decode(value).await
     }
 
-    pub async fn history(&self, session_id: &str) -> Result<SessionHistoryResponse, crate::SdkError> {
-        let path = format!("/v1/sessions/{session_id}/history");
+    pub async fn history(
+        &self,
+        session_id: &str,
+    ) -> Result<SessionHistoryResponse, crate::SdkError> {
+        let path = op_path(
+            &ops::SESSIONS_BY_SESSION_ID_HISTORY_GET,
+            &[("session_id", session_id)],
+        )?;
         let value = self
             .client
             .transport()
@@ -51,7 +58,10 @@ impl SessionsApi<'_> {
             display_name: display_name.to_string(),
         })
         .map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let path = format!("/v1/sessions/{session_id}/name");
+        let path = op_path(
+            &ops::SESSIONS_BY_SESSION_ID_NAME_PUT,
+            &[("session_id", session_id)],
+        )?;
         let value = self
             .client
             .transport()
@@ -64,7 +74,10 @@ impl SessionsApi<'_> {
         &self,
         session_id: &str,
     ) -> Result<SessionAgentModeResponse, crate::SdkError> {
-        let path = format!("/v1/sessions/{session_id}/agent-mode");
+        let path = op_path(
+            &ops::SESSIONS_BY_SESSION_ID_AGENT_MODE_GET,
+            &[("session_id", session_id)],
+        )?;
         let value = self
             .client
             .transport()
@@ -80,7 +93,10 @@ impl SessionsApi<'_> {
     ) -> Result<SessionAgentModeResponse, crate::SdkError> {
         let body =
             serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let path = format!("/v1/sessions/{session_id}/agent-mode");
+        let path = op_path(
+            &ops::SESSIONS_BY_SESSION_ID_AGENT_MODE_PUT,
+            &[("session_id", session_id)],
+        )?;
         let value = self
             .client
             .transport()
@@ -98,10 +114,11 @@ impl SessionsApi<'_> {
             AgentModeScope::Session => "session",
             AgentModeScope::Task => "task",
         };
-        let path = path_with_query(
-            &format!("/v1/sessions/{session_id}/agent-mode"),
+        let path = op_path_query(
+            &ops::SESSIONS_BY_SESSION_ID_AGENT_MODE_DELETE,
+            &[("session_id", session_id)],
             &[("scope", scope.to_string())],
-        );
+        )?;
         let value = self
             .client
             .transport()
@@ -114,7 +131,10 @@ impl SessionsApi<'_> {
         &self,
         session_id: &str,
     ) -> Result<AgentModeProposalListResponse, crate::SdkError> {
-        let path = format!("/v1/sessions/{session_id}/agent-mode/proposals");
+        let path = op_path(
+            &ops::SESSIONS_BY_SESSION_ID_AGENT_MODE_PROPOSALS_GET,
+            &[("session_id", session_id)],
+        )?;
         let value = self
             .client
             .transport()
@@ -131,8 +151,10 @@ impl SessionsApi<'_> {
     ) -> Result<AgentModeProposalResponse, crate::SdkError> {
         let body = serde_json::to_value(DecideAgentModeProposalRequest { accept })
             .map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let path =
-            format!("/v1/sessions/{session_id}/agent-mode/proposals/{proposal_id}");
+        let path = op_path(
+            &ops::SESSIONS_BY_SESSION_ID_AGENT_MODE_PROPOSALS_BY_PROPOSAL_ID_PUT,
+            &[("session_id", session_id), ("proposal_id", proposal_id)],
+        )?;
         let value = self
             .client
             .transport()
@@ -145,7 +167,10 @@ impl SessionsApi<'_> {
         &self,
         session_id: &str,
     ) -> Result<SessionCodeBindingResponse, crate::SdkError> {
-        let path = format!("/v1/sessions/{session_id}/code-binding");
+        let path = op_path(
+            &ops::SESSIONS_BY_SESSION_ID_CODE_BINDING_GET,
+            &[("session_id", session_id)],
+        )?;
         let value = self
             .client
             .transport()
@@ -163,7 +188,10 @@ impl SessionsApi<'_> {
             work_id: work_id.to_string(),
         })
         .map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let path = format!("/v1/sessions/{session_id}/code-binding");
+        let path = op_path(
+            &ops::SESSIONS_BY_SESSION_ID_CODE_BINDING_PUT,
+            &[("session_id", session_id)],
+        )?;
         let value = self
             .client
             .transport()
@@ -176,7 +204,10 @@ impl SessionsApi<'_> {
         &self,
         session_id: &str,
     ) -> Result<SessionCodeBindingResponse, crate::SdkError> {
-        let path = format!("/v1/sessions/{session_id}/code-binding");
+        let path = op_path(
+            &ops::SESSIONS_BY_SESSION_ID_CODE_BINDING_DELETE,
+            &[("session_id", session_id)],
+        )?;
         let value = self
             .client
             .transport()
@@ -190,9 +221,12 @@ impl SessionsApi<'_> {
         session_id: &str,
         request: &StartSessionCodeProjectRequest,
     ) -> Result<SessionCodeProjectResponse, crate::SdkError> {
-        let body = serde_json::to_value(request)
-            .map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let path = format!("/v1/sessions/{session_id}/code-project");
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path = op_path(
+            &ops::SESSIONS_BY_SESSION_ID_CODE_PROJECT_POST,
+            &[("session_id", session_id)],
+        )?;
         let value = self
             .client
             .transport()
@@ -206,8 +240,12 @@ impl SessionsApi<'_> {
         session_id: &str,
         request: &SessionAppendTurnRequest,
     ) -> Result<SessionAppendTurnResponse, crate::SdkError> {
-        let body = serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let path = format!("/v1/sessions/{session_id}/turns");
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path = op_path(
+            &ops::SESSIONS_BY_SESSION_ID_TURNS_POST,
+            &[("session_id", session_id)],
+        )?;
         let value = self
             .client
             .transport()
@@ -222,7 +260,10 @@ impl SessionsApi<'_> {
         query: &SessionDeleteQuery,
     ) -> Result<SessionDeleteResponse, crate::SdkError> {
         let path = path_with_query(
-            &format!("/v1/sessions/{session_id}"),
+            &op_path(
+                &ops::SESSIONS_BY_SESSION_ID_DELETE,
+                &[("session_id", session_id)],
+            )?,
             &[("purge_memory", query.purge_memory.to_string())],
         );
         let value = self
@@ -237,7 +278,10 @@ impl SessionsApi<'_> {
         &self,
         session_id: &str,
     ) -> Result<SessionActiveTurnsResponse, crate::SdkError> {
-        let path = format!("/v1/sessions/{session_id}/turns");
+        let path = op_path(
+            &ops::SESSIONS_BY_SESSION_ID_TURNS_GET,
+            &[("session_id", session_id)],
+        )?;
         let value = self
             .client
             .transport()
@@ -250,7 +294,10 @@ impl SessionsApi<'_> {
         &self,
         session_id: &str,
     ) -> Result<ActiveSessionTurnResponse, crate::SdkError> {
-        let path = format!("/v1/sessions/{session_id}/active-turn");
+        let path = op_path(
+            &ops::SESSIONS_BY_SESSION_ID_ACTIVE_TURN_GET,
+            &[("session_id", session_id)],
+        )?;
         let value = self
             .client
             .transport()
@@ -263,7 +310,10 @@ impl SessionsApi<'_> {
         &self,
         session_id: &str,
     ) -> Result<CancelActiveSessionTurnResponse, crate::SdkError> {
-        let path = format!("/v1/sessions/{session_id}/active-turn");
+        let path = op_path(
+            &ops::SESSIONS_BY_SESSION_ID_ACTIVE_TURN_POST,
+            &[("session_id", session_id)],
+        )?;
         let value = self
             .client
             .transport()

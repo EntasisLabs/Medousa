@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from medousa._decode import decode
+from medousa._ops import op_path
 from medousa.client import MedousaClient
 from medousa.types import (
     ArtifactCommandRequest,
@@ -30,7 +31,7 @@ class RuntimeApi:
     ) -> ArtifactCommandResponse:
         value = await self._client.transport.post_json(
             self._client.base_url,
-            "/v1/runtime/artifact/command",
+            op_path("runtime.artifact.command.post"),
             request.model_dump(mode="json", exclude_none=True),
         )
         return decode(ArtifactCommandResponse, value)
@@ -38,7 +39,7 @@ class RuntimeApi:
     async def artifact_fetch(self, request: ArtifactFetchRequest) -> ArtifactFetchResponse:
         value = await self._client.transport.post_json(
             self._client.base_url,
-            "/v1/runtime/artifact/fetch",
+            op_path("runtime.artifact.fetch.post"),
             request.model_dump(mode="json"),
         )
         return decode(ArtifactFetchResponse, value)
@@ -46,7 +47,7 @@ class RuntimeApi:
     async def artifact_write(self, request: ArtifactWriteRequest) -> ArtifactWriteResponse:
         value = await self._client.transport.post_json(
             self._client.base_url,
-            "/v1/runtime/artifact/write",
+            op_path("runtime.artifact.write.post"),
             request.model_dump(mode="json", exclude_none=True),
         )
         return decode(ArtifactWriteResponse, value)
@@ -54,7 +55,7 @@ class RuntimeApi:
     async def artifact_delete(self, request: ArtifactDeleteRequest) -> ArtifactDeleteResponse:
         value = await self._client.transport.post_json(
             self._client.base_url,
-            "/v1/runtime/artifact/delete",
+            op_path("runtime.artifact.delete.post"),
             request.model_dump(mode="json", exclude_none=True),
         )
         return decode(ArtifactDeleteResponse, value)
@@ -62,7 +63,7 @@ class RuntimeApi:
     async def artifact_list_ui(self, request: ArtifactListUiRequest) -> ArtifactListUiResponse:
         value = await self._client.transport.post_json(
             self._client.base_url,
-            "/v1/runtime/artifact/list-ui",
+            op_path("runtime.artifact.list_ui.post"),
             request.model_dump(mode="json", exclude_none=True),
         )
         return decode(ArtifactListUiResponse, value)
@@ -73,7 +74,7 @@ class RuntimeApi:
     ) -> RuntimeConfigCommandResponse:
         value = await self._client.transport.post_json(
             self._client.base_url,
-            "/v1/runtime/config/command",
+            op_path("runtime.config.command.post"),
             request.model_dump(mode="json"),
         )
         return decode(RuntimeConfigCommandResponse, value)
@@ -84,7 +85,7 @@ class RuntimeApi:
     ) -> StageRouteCommandResponse:
         value = await self._client.transport.post_json(
             self._client.base_url,
-            "/v1/runtime/stage-route/command",
+            op_path("runtime.stage_route.command.post"),
             request.model_dump(mode="json"),
         )
         return decode(StageRouteCommandResponse, value)

@@ -61,7 +61,7 @@ reuse Medousa's private first-party local credentials.
 | `calendar()` | Personal calendar (vault `.ics`) |
 | `workspace()` | Work board cards & feed |
 
-Full method table: [api-reference.md](api-reference.md) · contract: [`../../sdk-contract/manifest.yaml`](../../sdk-contract/manifest.yaml)
+Full method table: [api-reference.md](api-reference.md) · contract: [`../../sdk-contract/openapi.json`](../../sdk-contract/openapi.json)
 
 ## Transport diagram
 
@@ -116,4 +116,4 @@ Telegram/Discord/Slack bins use `client.ingest().post()`. TUI uses `MedousaClien
 
 ## Contributing
 
-When adding SDK methods, update [`sdk-contract/manifest.yaml`](../../sdk-contract/manifest.yaml), [api-reference.md](api-reference.md), and [../engine/http-api.md](../engine/http-api.md).
+When adding SDK methods, register them on `DeclaredRouter` / `ContractRouter` and regenerate `sdk-contract/openapi.json` with `UPDATE_API_CONTRACT=1 cargo test -p medousa --lib daemon::contract::tests::checked_in_contract_artifacts_match_generation`.

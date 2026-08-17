@@ -7,6 +7,8 @@ use medousa_types::{
 
 #[cfg(feature = "async")]
 use crate::client::MedousaClient;
+use crate::generated::ops;
+use crate::op::{op_path, op_path_query};
 #[cfg(feature = "async")]
 use crate::transport::{decode, path_with_query};
 
@@ -21,11 +23,16 @@ impl RecurringApi<'_> {
         &self,
         request: &RegisterRecurringPromptRequest,
     ) -> Result<RegisterRecurringResponse, crate::SdkError> {
-        let body = serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
         let value = self
             .client
             .transport()
-            .post_json(self.client.base_url(), "/v1/recurring/prompt", body)
+            .post_json(
+                self.client.base_url(),
+                ops::RECURRING_PROMPT_POST.path,
+                body,
+            )
             .await?;
         decode(value).await
     }
@@ -38,7 +45,7 @@ impl RecurringApi<'_> {
         if let Some(enabled_only) = query.enabled_only {
             params.push(("enabled_only", enabled_only.to_string()));
         }
-        let path = path_with_query("/v1/recurring", &params);
+        let path = op_path_query(&ops::RECURRING_GET, &[], &params)?;
         let value = self
             .client
             .transport()
@@ -52,8 +59,12 @@ impl RecurringApi<'_> {
         recurring_id: &str,
         request: &UpdateRecurringRequest,
     ) -> Result<UpdateRecurringResponse, crate::SdkError> {
-        let body = serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let path = format!("/v1/recurring/{}", recurring_id.trim());
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path = op_path(
+            &ops::RECURRING_BY_RECURRING_ID_PATCH,
+            &[("recurring_id", recurring_id.trim())],
+        )?;
         let value = self
             .client
             .transport()
@@ -66,7 +77,10 @@ impl RecurringApi<'_> {
         &self,
         recurring_id: &str,
     ) -> Result<DeleteRecurringResponse, crate::SdkError> {
-        let path = format!("/v1/recurring/{}", recurring_id.trim());
+        let path = op_path(
+            &ops::RECURRING_BY_RECURRING_ID_DELETE,
+            &[("recurring_id", recurring_id.trim())],
+        )?;
         let value = self
             .client
             .transport()
@@ -85,7 +99,10 @@ impl RecurringApi<'_> {
             params.push(("limit", limit.to_string()));
         }
         let path = path_with_query(
-            &format!("/v1/recurring/{}/runs", recurring_id.trim()),
+            &op_path(
+                &ops::RECURRING_BY_RECURRING_ID_RUNS_GET,
+                &[("recurring_id", recurring_id.trim())],
+            )?,
             &params,
         );
         let value = self
@@ -100,7 +117,10 @@ impl RecurringApi<'_> {
         &self,
         recurring_id: &str,
     ) -> Result<RecurringDeliveryResponse, crate::SdkError> {
-        let path = format!("/v1/recurring/{}/delivery", recurring_id.trim());
+        let path = op_path(
+            &ops::RECURRING_BY_RECURRING_ID_DELIVERY_GET,
+            &[("recurring_id", recurring_id.trim())],
+        )?;
         let value = self
             .client
             .transport()

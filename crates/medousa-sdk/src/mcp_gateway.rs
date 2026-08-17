@@ -3,6 +3,7 @@ use medousa_types::McpGatewayStatusResponse;
 
 #[cfg(feature = "async")]
 use crate::client::MedousaClient;
+use crate::generated::ops;
 #[cfg(feature = "async")]
 use crate::transport::decode;
 
@@ -17,7 +18,7 @@ impl McpGatewayApi<'_> {
         let value = self
             .client
             .transport()
-            .get_json(self.client.base_url(), "/v1/mcp/gateway/status")
+            .get_json(self.client.base_url(), ops::MCP_GATEWAY_STATUS_GET.path)
             .await?;
         decode(value).await
     }

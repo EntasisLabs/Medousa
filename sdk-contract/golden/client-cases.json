@@ -1,0 +1,31 @@
+{
+  "x-medousa-note": "Shared client golden cases for Slice 3. Paths must match generated ops. Wrong verb or path must fail.",
+  "cases": [
+    {
+      "id": "health.get",
+      "method": "GET",
+      "path": "/v1/health",
+      "streaming": false
+    },
+    {
+      "id": "vault.roots.get",
+      "method": "GET",
+      "path": "/v1/vault/roots",
+      "streaming": false
+    },
+    {
+      "id": "workspace.stream.get",
+      "method": "GET",
+      "path": "/v1/workspace/stream",
+      "streaming": true
+    },
+    {
+      "id": "vault.notes.by_note_path.get",
+      "method": "GET",
+      "path": "/v1/vault/notes/{*note_path}",
+      "streaming": false,
+      "params": { "note_path": "a/b.md" },
+      "expanded": "/v1/vault/notes/a%2Fb.md"
+    }
+  ]
+}

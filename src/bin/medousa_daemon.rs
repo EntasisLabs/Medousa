@@ -766,6 +766,7 @@ async fn main() -> Result<()> {
         .merge(medousa::daemon::shell_session_host::shell_session_surface())
         .merge(medousa::daemon::detamu_host::world_surface())
         .merge(medousa::daemon::forge_api::forge_surface())
+        .merge(medousa::browser_handlers::browser_surface())
         .with_state(state.clone());
     declared = declared.merge(medousa::local_credential_handlers::surface().with_state(
         medousa::local_credential_handlers::LocalCredentialApiState {

@@ -2,14 +2,14 @@
 use medousa_types::{
     ComponentRuntimeEventsRequest, ComponentRuntimeEventsResponse,
     ComponentRuntimeEventsTailResponse, ComponentRuntimeProbeResult, ComponentStoreDeleteResponse,
-    ComponentStoreGetResponse, ComponentStoreSetRequest, ComponentStoreSetResponse,
-    ComponentStoreListResponse,
+    ComponentStoreGetResponse, ComponentStoreListResponse, ComponentStoreSetRequest,
+    ComponentStoreSetResponse,
 };
 
 #[cfg(feature = "async")]
 use crate::client::MedousaClient;
-#[cfg(feature = "async")]
-use crate::transport::path_with_query;
+use crate::generated::ops;
+use crate::op::{op_path, op_path_query};
 
 #[cfg(feature = "async")]
 pub struct ComponentsApi<'a> {
@@ -46,10 +46,11 @@ impl ComponentsApi<'_> {
         profile_id: Option<&str>,
         key: Option<&str>,
     ) -> Result<ComponentStoreGetResponse, crate::SdkError> {
-        let path = path_with_query(
-            &format!("/v1/components/{}/store", component_id.trim()),
+        let path = op_path_query(
+            &ops::COMPONENTS_BY_COMPONENT_ID_STORE_GET,
+            &[("component_id", component_id.trim())],
             &component_store_query(profile_id, key),
-        );
+        )?;
         self.client.http().get(&path).await
     }
 
@@ -59,10 +60,11 @@ impl ComponentsApi<'_> {
         key: &str,
         request: &ComponentStoreSetRequest,
     ) -> Result<ComponentStoreSetResponse, crate::SdkError> {
-        let path = path_with_query(
-            &format!("/v1/components/{}/store", component_id.trim()),
+        let path = op_path_query(
+            &ops::COMPONENTS_BY_COMPONENT_ID_STORE_PUT,
+            &[("component_id", component_id.trim())],
             &component_store_query(None, Some(key)),
-        );
+        )?;
         self.client.http().put(&path, request).await
     }
 
@@ -71,10 +73,11 @@ impl ComponentsApi<'_> {
         component_id: &str,
         profile_id: Option<&str>,
     ) -> Result<ComponentStoreListResponse, crate::SdkError> {
-        let path = path_with_query(
-            &format!("/v1/components/{}/store/keys", component_id.trim()),
+        let path = op_path_query(
+            &ops::COMPONENTS_BY_COMPONENT_ID_STORE_KEYS_GET,
+            &[("component_id", component_id.trim())],
             &component_profile_query(profile_id),
-        );
+        )?;
         self.client.http().get(&path).await
     }
 
@@ -84,14 +87,11 @@ impl ComponentsApi<'_> {
         key: &str,
         profile_id: Option<&str>,
     ) -> Result<ComponentStoreGetResponse, crate::SdkError> {
-        let path = path_with_query(
-            &format!(
-                "/v1/components/{}/store/{}",
-                component_id.trim(),
-                urlencoding::encode(key.trim())
-            ),
+        let path = op_path_query(
+            &ops::COMPONENTS_BY_COMPONENT_ID_STORE_BY_KEY_GET,
+            &[("component_id", component_id.trim()), ("key", key.trim())],
             &component_profile_query(profile_id),
-        );
+        )?;
         self.client.http().get(&path).await
     }
 
@@ -101,11 +101,10 @@ impl ComponentsApi<'_> {
         key: &str,
         request: &ComponentStoreSetRequest,
     ) -> Result<ComponentStoreSetResponse, crate::SdkError> {
-        let path = format!(
-            "/v1/components/{}/store/{}",
-            component_id.trim(),
-            urlencoding::encode(key.trim())
-        );
+        let path = op_path(
+            &ops::COMPONENTS_BY_COMPONENT_ID_STORE_BY_KEY_PUT,
+            &[("component_id", component_id.trim()), ("key", key.trim())],
+        )?;
         self.client.http().put(&path, request).await
     }
 
@@ -115,14 +114,11 @@ impl ComponentsApi<'_> {
         key: &str,
         profile_id: Option<&str>,
     ) -> Result<ComponentStoreDeleteResponse, crate::SdkError> {
-        let path = path_with_query(
-            &format!(
-                "/v1/components/{}/store/{}",
-                component_id.trim(),
-                urlencoding::encode(key.trim())
-            ),
+        let path = op_path_query(
+            &ops::COMPONENTS_BY_COMPONENT_ID_STORE_BY_KEY_DELETE,
+            &[("component_id", component_id.trim()), ("key", key.trim())],
             &component_profile_query(profile_id),
-        );
+        )?;
         self.client.http().delete(&path).await
     }
 
@@ -136,10 +132,11 @@ impl ComponentsApi<'_> {
         if let Some(limit) = limit {
             params.push(("limit", limit.to_string()));
         }
-        let path = path_with_query(
-            &format!("/v1/components/{}/runtime/events", component_id.trim()),
+        let path = op_path_query(
+            &ops::COMPONENTS_BY_COMPONENT_ID_RUNTIME_EVENTS_GET,
+            &[("component_id", component_id.trim())],
             &params,
-        );
+        )?;
         self.client.http().get(&path).await
     }
 
@@ -148,7 +145,10 @@ impl ComponentsApi<'_> {
         component_id: &str,
         request: &ComponentRuntimeEventsRequest,
     ) -> Result<ComponentRuntimeEventsResponse, crate::SdkError> {
-        let path = format!("/v1/components/{}/runtime/events", component_id.trim());
+        let path = op_path(
+            &ops::COMPONENTS_BY_COMPONENT_ID_RUNTIME_EVENTS_POST,
+            &[("component_id", component_id.trim())],
+        )?;
         self.client.http().post(&path, request).await
     }
 
@@ -158,11 +158,13 @@ impl ComponentsApi<'_> {
         probe_id: &str,
         request: &ComponentRuntimeProbeResult,
     ) -> Result<serde_json::Value, crate::SdkError> {
-        let path = format!(
-            "/v1/components/{}/runtime/probe/{}/result",
-            component_id.trim(),
-            urlencoding::encode(probe_id.trim())
-        );
+        let path = op_path(
+            &ops::COMPONENTS_BY_COMPONENT_ID_RUNTIME_PROBE_BY_PROBE_ID_RESULT_POST,
+            &[
+                ("component_id", component_id.trim()),
+                ("probe_id", probe_id.trim()),
+            ],
+        )?;
         self.client.http().post(&path, request).await
     }
 }

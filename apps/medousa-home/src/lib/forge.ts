@@ -1,7 +1,7 @@
-/** Forge / Undertakings HTTP client (daemon `/v1/forge` + `/v1/world`). */
+/** Forge / Undertakings HTTP client for daemon forge and world operations. */
 
 import { invoke } from "@tauri-apps/api/core";
-import { getDaemonUrl } from "$lib/daemon";
+import { getDaemonUrl, operationPath, type OperationId } from "$lib/daemon";
 import { streamPathWithSince } from "$lib/stream/reconnect";
 import { isTauri } from "$lib/window";
 
@@ -446,7 +446,7 @@ async function forgeUrl(path: string): Promise<string> {
 }
 
 export async function forgeStreamUrl(): Promise<string> {
-  return forgeUrl("/v1/forge/stream");
+  return forgeUrl(operationPath("forge.stream.get"));
 }
 
 export type ForgeProjectEventKind =
@@ -474,7 +474,7 @@ export async function forgeProjectEventsUrl(
   since = 0,
 ): Promise<string> {
   const path = streamPathWithSince(
-    `/v1/forge/items/${encodeURIComponent(workId)}/project-events`,
+    operationPath("forge.items.by_work_id.project_events.get", { work_id: workId }),
     since,
   );
   return forgeUrl(path);
@@ -546,7 +546,7 @@ function folderNameFromPath(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
-/** Local fallback when `/v1/forge/repositories/inspect` is missing on older daemons. */
+/** Local fallback when repository inspect is missing on older daemons. */
 export function synthesizeRepositoryInspection(path: string): RepositoryInspection {
   const trimmed = path.trim();
   return {
@@ -580,7 +580,7 @@ export async function listUndertakings(): Promise<ItemProjection[]> {
           next_cursor?: string | null;
           truncated?: boolean;
         }
-    >(`/v1/forge/items?${query}`);
+    >(operationPath("forge.items.get") + '?' + query);
     if (Array.isArray(payload)) return payload;
     items.push(...payload.items);
     const next = payload.truncated ? (payload.next_cursor ?? null) : null;
@@ -594,7 +594,7 @@ export async function listUndertakings(): Promise<ItemProjection[]> {
 }
 
 export async function getUndertaking(workId: string): Promise<ItemProjection> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}`);
+  return forgeFetch(operationPath("forge.items.by_work_id.get", { work_id: workId }));
 }
 
 export async function getUndertakingSource(
@@ -603,14 +603,14 @@ export async function getUndertakingSource(
 ): Promise<ForgeSourceFile> {
   const query = new URLSearchParams({ path });
   return forgeFetch(
-    `/v1/forge/items/${encodeURIComponent(workId)}/source?${query}`,
+    operationPath("forge.items.by_work_id.source.get", { work_id: workId }) + '?' + query,
   );
 }
 
 export async function getUndertakingSourceTree(
   workId: string,
 ): Promise<ForgeSourceTree> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/tree`);
+  return forgeFetch(operationPath("forge.items.by_work_id.tree.get", { work_id: workId }));
 }
 
 export async function searchUndertakingSource(
@@ -639,7 +639,7 @@ export async function searchUndertakingSource(
   if (options.limit != null) params.set("limit", String(options.limit));
   if (options.cursor) params.set("cursor", options.cursor);
   return forgeFetch(
-    `/v1/forge/items/${encodeURIComponent(workId)}/search?${params}`,
+    operationPath("forge.items.by_work_id.search.get", { work_id: workId }) + '?' + params,
   );
 }
 
@@ -672,7 +672,7 @@ export async function replaceUndertakingSource(
   options: ForgeSourceReplaceOptions,
 ): Promise<ForgeSourceReplacePlan> {
   return forgeFetch(
-    `/v1/forge/items/${encodeURIComponent(workId)}/search/replace`,
+    operationPath("forge.items.by_work_id.search.replace.post", { work_id: workId }),
     {
       method: "POST",
       body: JSON.stringify({
@@ -700,7 +700,7 @@ export async function getCodeWorkspaceState(
   workId: string,
 ): Promise<ForgeCodeWorkspaceState> {
   return forgeFetch(
-    `/v1/forge/items/${encodeURIComponent(workId)}/workspace-state`,
+    operationPath("forge.items.by_work_id.workspace_state.get", { work_id: workId }),
   );
 }
 
@@ -710,7 +710,7 @@ export async function saveCodeWorkspaceState(
   lease?: { lease_id: string; generation: number } | null,
 ): Promise<ForgeCodeWorkspaceState> {
   return forgeFetch(
-    `/v1/forge/items/${encodeURIComponent(workId)}/workspace-state`,
+    operationPath("forge.items.by_work_id.workspace_state.put", { work_id: workId }),
     {
       method: "PUT",
       body: JSON.stringify({
@@ -732,7 +732,7 @@ export async function saveUndertakingSource(
     expected_digest: string;
   },
 ): Promise<ForgeSourceFile> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/source`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.source.put", { work_id: workId }), {
     method: "PUT",
     body: JSON.stringify(input),
   });
@@ -747,7 +747,7 @@ export async function saveUndertakingSources(
   },
 ): Promise<ForgeSourceFile[]> {
   return forgeFetch(
-    `/v1/forge/items/${encodeURIComponent(workId)}/source/batch`,
+    operationPath("forge.items.by_work_id.source.batch.put", { work_id: workId }),
     {
       method: "PUT",
       body: JSON.stringify(input),
@@ -766,7 +766,7 @@ export async function applyUndertakingSourceWorkspaceEdit(
   },
 ): Promise<ForgeSourceFile[]> {
   return forgeFetch(
-    `/v1/forge/items/${encodeURIComponent(workId)}/source/workspace-edit`,
+    operationPath("forge.items.by_work_id.source.workspace_edit.put", { work_id: workId }),
     {
       method: "PUT",
       body: JSON.stringify(input),
@@ -784,7 +784,7 @@ export async function createUndertakingSource(
     generation: number;
   },
 ): Promise<ForgeSourceFile> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/source`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.source.post", { work_id: workId }), {
     method: "POST",
     body: JSON.stringify({ content: "", ...input }),
   });
@@ -800,7 +800,7 @@ export async function renameUndertakingSource(
     expected_digest: string;
   },
 ): Promise<ForgeSourceFile> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/source`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.source.patch", { work_id: workId }), {
     method: "PATCH",
     body: JSON.stringify(input),
   });
@@ -815,7 +815,7 @@ export async function deleteUndertakingSource(
     expected_digest: string;
   },
 ): Promise<{ work_id: string; path: string; deleted: boolean }> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/source`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.source.delete", { work_id: workId }), {
     method: "DELETE",
     body: JSON.stringify(input),
   });
@@ -827,7 +827,7 @@ export async function createUndertaking(input: {
   repo_path: string;
   base_ref?: string;
 }): Promise<ItemProjection> {
-  return forgeFetch("/v1/forge/items", {
+  return forgeFetch(operationPath("forge.items.post"), {
     method: "POST",
     body: JSON.stringify({
       title: input.title,
@@ -1050,7 +1050,7 @@ export type ChangesBlameHunk = {
 };
 
 export async function getProjectTasks(workId: string): Promise<ProjectTask[]> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/tasks`);
+  return forgeFetch(operationPath("forge.items.by_work_id.tasks.get", { work_id: workId }));
 }
 
 export async function runProjectTask(
@@ -1059,7 +1059,7 @@ export async function runProjectTask(
   lease: { lease_id: string; generation: number; test_id?: string },
 ): Promise<ProjectTaskResult> {
   return forgeFetch(
-    `/v1/forge/items/${encodeURIComponent(workId)}/tasks/${encodeURIComponent(taskId)}/run`,
+    operationPath("forge.items.by_work_id.tasks.by_task_id.run.post", { work_id: workId, task_id: taskId }),
     { method: "POST", body: JSON.stringify(lease) },
   );
 }
@@ -1070,17 +1070,17 @@ export async function startProjectTaskRun(
   lease: { lease_id: string; generation: number; test_id?: string },
 ): Promise<ProjectTaskRun> {
   return forgeFetch(
-    `/v1/forge/items/${encodeURIComponent(workId)}/tasks/${encodeURIComponent(taskId)}/runs`,
+    operationPath("forge.items.by_work_id.tasks.by_task_id.runs.post", { work_id: workId, task_id: taskId }),
     { method: "POST", body: JSON.stringify(lease) },
   );
 }
 
 export async function getProjectTaskRun(workId: string, runId: string): Promise<ProjectTaskRun> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/task-runs/${encodeURIComponent(runId)}`);
+  return forgeFetch(operationPath("forge.items.by_work_id.task_runs.by_run_id.get", { work_id: workId, run_id: runId }));
 }
 
 export async function cancelProjectTaskRun(workId: string, runId: string): Promise<ProjectTaskRun> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/task-runs/${encodeURIComponent(runId)}`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.task_runs.by_run_id.delete", { work_id: workId, run_id: runId }), {
     method: "DELETE",
   });
 }
@@ -1091,7 +1091,7 @@ export async function createProjectTaskRunPreview(
   runId: string,
 ): Promise<ProjectTaskRunPreview> {
   return forgeFetch(
-    `/v1/forge/items/${encodeURIComponent(workId)}/task-runs/${encodeURIComponent(runId)}/preview`,
+    operationPath("forge.items.by_work_id.task_runs.by_run_id.preview.post", { work_id: workId, run_id: runId }),
     { method: "POST" },
   );
 }
@@ -1103,14 +1103,14 @@ export async function forgeTaskRunEventsUrl(
   since = 0,
 ): Promise<string> {
   const path = streamPathWithSince(
-    `/v1/forge/items/${encodeURIComponent(workId)}/task-runs/${encodeURIComponent(runId)}/events`,
+    operationPath("forge.items.by_work_id.task_runs.by_run_id.events.get", { work_id: workId, run_id: runId }),
     since,
   );
   return forgeUrl(path);
 }
 
 export async function getProjectTests(workId: string): Promise<ProjectTest[]> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/tests`);
+  return forgeFetch(operationPath("forge.items.by_work_id.tests.get", { work_id: workId }));
 }
 
 export type ProviderHandoff = {
@@ -1134,14 +1134,14 @@ export type ProviderComment = {
 };
 
 export async function getProviderHandoff(workId: string): Promise<ProviderHandoff> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/provider`);
+  return forgeFetch(operationPath("forge.items.by_work_id.provider.get", { work_id: workId }));
 }
 
 export async function shareProviderHandoff(
   workId: string,
   input: { title?: string; body?: string; attempt_id?: string },
 ): Promise<ProviderHandoff> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/provider`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.provider.post", { work_id: workId }), {
     method: "POST",
     body: JSON.stringify(input),
   });
@@ -1151,21 +1151,21 @@ export async function saveProviderContext(
   workId: string,
   links: string[],
 ): Promise<ProviderHandoff> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/provider/context`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.provider.context.put", { work_id: workId }), {
     method: "PUT",
     body: JSON.stringify({ links }),
   });
 }
 
 export async function getProviderComments(workId: string): Promise<ProviderComment[]> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/provider/comments`);
+  return forgeFetch(operationPath("forge.items.by_work_id.provider.comments.get", { work_id: workId }));
 }
 
 export async function importProviderComment(
   workId: string,
   comment: ProviderComment,
 ): Promise<ItemProjection> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/provider/comments`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.provider.comments.post", { work_id: workId }), {
     method: "POST",
     body: JSON.stringify(comment),
   });
@@ -1173,7 +1173,7 @@ export async function importProviderComment(
 
 export async function inspectForgeRepository(path: string): Promise<RepositoryInspection> {
   try {
-    return await forgeFetch("/v1/forge/repositories/inspect", {
+    return await forgeFetch(operationPath("forge.repositories.inspect.post"), {
       method: "POST",
       body: JSON.stringify({ path }),
     });
@@ -1186,14 +1186,14 @@ export async function inspectForgeRepository(path: string): Promise<RepositoryIn
 }
 
 export async function listForgeRepositories(): Promise<RepositoryCatalogEntry[]> {
-  return forgeFetch("/v1/forge/repositories");
+  return forgeFetch(operationPath("forge.repositories.get"));
 }
 
 export async function setForgeRepositoryPinned(
   path: string,
   pinned: boolean,
 ): Promise<RepositoryCatalogEntry[]> {
-  return forgeFetch("/v1/forge/repositories", {
+  return forgeFetch(operationPath("forge.repositories.put"), {
     method: "PUT",
     body: JSON.stringify({ path, pinned }),
   });
@@ -1203,7 +1203,7 @@ export async function setForgeRepositoryArchived(
   path: string,
   archived: boolean,
 ): Promise<RepositoryCatalogEntry[]> {
-  return forgeFetch("/v1/forge/repositories", {
+  return forgeFetch(operationPath("forge.repositories.put"), {
     method: "PUT",
     body: JSON.stringify({ path, archived }),
   });
@@ -1213,11 +1213,11 @@ export async function browseForgeRepositories(
   path?: string | null,
 ): Promise<RepositoryBrowseResponse> {
   const query = path ? `?path=${encodeURIComponent(path)}` : "";
-  return forgeFetch(`/v1/forge/repositories/browse${query}`);
+  return forgeFetch(operationPath("forge.repositories.browse.get") + query);
 }
 
 export async function getProviderRepositoryCapabilities(): Promise<ProviderRepositoryCapabilities> {
-  return forgeFetch("/v1/forge/repositories/provider");
+  return forgeFetch(operationPath("forge.repositories.provider.get"));
 }
 
 export async function cloneProviderRepository(input: {
@@ -1225,7 +1225,7 @@ export async function cloneProviderRepository(input: {
   repository: string;
   parent: string;
 }): Promise<RepositoryInspection> {
-  return forgeFetch("/v1/forge/repositories/provider", {
+  return forgeFetch(operationPath("forge.repositories.provider.post"), {
     method: "POST",
     body: JSON.stringify(input),
   });
@@ -1238,7 +1238,7 @@ export async function startUndertaking(input: {
   base_ref?: string;
 }): Promise<ItemProjection> {
   try {
-    return await forgeFetch("/v1/forge/items/start", {
+    return await forgeFetch(operationPath("forge.items.start.post"), {
       method: "POST",
       body: JSON.stringify({
         title: input.title,
@@ -1256,14 +1256,14 @@ export async function startUndertaking(input: {
 }
 
 export async function provisionUndertaking(workId: string): Promise<ItemProjection> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/provision`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.provision.post", { work_id: workId }), {
     method: "POST",
     body: "{}",
   });
 }
 
 export async function beginHumanAttempt(workId: string): Promise<BeginAttemptResponse> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/attempts`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.attempts.post", { work_id: workId }), {
     method: "POST",
     body: JSON.stringify({ executor: { kind: "human", detail: {} } }),
   });
@@ -1272,7 +1272,7 @@ export async function beginHumanAttempt(workId: string): Promise<BeginAttemptRes
 /** Reopen sealed review and begin a human attempt (no agent). */
 export async function continueEditing(workId: string): Promise<BeginAttemptResponse> {
   return forgeFetch(
-    `/v1/forge/items/${encodeURIComponent(workId)}/review/continue-editing`,
+    operationPath("forge.items.by_work_id.review.continue_editing.post", { work_id: workId }),
     { method: "POST", body: "{}" },
   );
 }
@@ -1309,7 +1309,7 @@ export async function prepareExecutorHandoff(input: {
   generation: number;
   to_executor: "codex" | "cursor" | "human";
 }): Promise<ItemProjection> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(input.work_id)}/handoff`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.handoff.post", { work_id: input.work_id }), {
     method: "POST",
     body: JSON.stringify({
       lease_id: input.lease_id,
@@ -1323,14 +1323,14 @@ export async function sealLease(
   leaseId: string,
   generation: number,
 ): Promise<ItemProjection> {
-  return forgeFetch(`/v1/forge/leases/${encodeURIComponent(leaseId)}/complete`, {
+  return forgeFetch(operationPath("forge.leases.by_lease_id.complete.post", { lease_id: leaseId }), {
     method: "POST",
     body: JSON.stringify({ generation }),
   });
 }
 
 export async function heartbeatLease(leaseId: string, generation: number): Promise<void> {
-  return forgeFetch(`/v1/forge/leases/${encodeURIComponent(leaseId)}/heartbeat`, {
+  return forgeFetch(operationPath("forge.leases.by_lease_id.heartbeat.post", { lease_id: leaseId }), {
     method: "POST",
     body: JSON.stringify({ generation }),
   });
@@ -1340,11 +1340,11 @@ export async function getReview(workId: string, attemptId?: string): Promise<Rev
   const query = new URLSearchParams();
   if (attemptId) query.set("attempt_id", attemptId);
   const suffix = query.size ? `?${query.toString()}` : "";
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review${suffix}`);
+  return forgeFetch(operationPath("forge.items.by_work_id.review.get", { work_id: workId }) + suffix);
 }
 
 export async function getForgeChanges(workId: string): Promise<ForgeChanges> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/changes`);
+  return forgeFetch(operationPath("forge.items.by_work_id.changes.get", { work_id: workId }));
 }
 
 export async function getChangesFile(
@@ -1353,7 +1353,7 @@ export async function getChangesFile(
 ): Promise<ChangesFileDiff> {
   const query = new URLSearchParams({ path });
   return forgeFetch(
-    `/v1/forge/items/${encodeURIComponent(workId)}/changes/file?${query.toString()}`,
+    operationPath("forge.items.by_work_id.changes.file.get", { work_id: workId }) + '?' + query.toString(),
   );
 }
 
@@ -1366,7 +1366,7 @@ export async function restoreChangesFile(
     generation: number;
   },
 ): Promise<RestoreChangesFileResponse> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/changes/file`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.changes.file.post", { work_id: workId }), {
     method: "POST",
     body: JSON.stringify(input),
   });
@@ -1382,7 +1382,7 @@ async function changesLeaseAction(
     ack_risks?: boolean;
   },
 ): Promise<ChangesSyncResult | ItemProjection> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/changes/${action}`, {
+  return forgeFetch(operationPath(`forge.items.by_work_id.changes.${action}.post` as OperationId, { work_id: workId }), {
     method: "POST",
     body: JSON.stringify(lease),
   });
@@ -1429,7 +1429,7 @@ export async function getChangesHistory(
 ): Promise<{ work_id: string; commits: ChangesHistoryEntry[] }> {
   const query = new URLSearchParams({ limit: String(limit) });
   return forgeFetch(
-    `/v1/forge/items/${encodeURIComponent(workId)}/changes/history?${query.toString()}`,
+    operationPath("forge.items.by_work_id.changes.history.get", { work_id: workId }) + '?' + query.toString(),
   );
 }
 
@@ -1439,7 +1439,7 @@ export async function getChangesBlame(
 ): Promise<{ work_id: string; path: string; hunks: ChangesBlameHunk[] }> {
   const query = new URLSearchParams({ path });
   return forgeFetch(
-    `/v1/forge/items/${encodeURIComponent(workId)}/changes/blame?${query.toString()}`,
+    operationPath("forge.items.by_work_id.changes.blame.get", { work_id: workId }) + '?' + query.toString(),
   );
 }
 
@@ -1453,7 +1453,7 @@ export async function resolveChangesConflict(
     generation: number;
   },
 ): Promise<{ work_id: string; path: string; action: string; changes: ForgeChanges }> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/changes/conflict`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.changes.conflict.post", { work_id: workId }), {
     method: "POST",
     body: JSON.stringify(input),
   });
@@ -1469,7 +1469,7 @@ export async function revertChangesHunk(
     generation: number;
   },
 ): Promise<RestoreChangesFileResponse> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/changes/file/hunk`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.changes.file.hunk.post", { work_id: workId }), {
     method: "POST",
     body: JSON.stringify(input),
   });
@@ -1483,7 +1483,7 @@ export async function getReviewFile(
   const query = new URLSearchParams({ path });
   if (attemptId) query.set("attempt_id", attemptId);
   return forgeFetch(
-    `/v1/forge/items/${encodeURIComponent(workId)}/review/file?${query.toString()}`,
+    operationPath("forge.items.by_work_id.review.file.get", { work_id: workId }) + '?' + query.toString(),
   );
 }
 
@@ -1491,7 +1491,7 @@ export async function restoreReviewFile(
   workId: string,
   input: { path: string; expected_reviewed_oid: string; attempt_id?: string },
 ): Promise<RestoreReviewFileResponse> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review/file`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.review.file.post", { work_id: workId }), {
     method: "POST",
     body: JSON.stringify(input),
   });
@@ -1507,7 +1507,7 @@ export async function getEvidencePatch(
   if (opts?.limit != null) q.set("limit", String(opts.limit));
   const qs = q.toString();
   return forgeFetch(
-    `/v1/forge/evidence/${encodeURIComponent(evidenceId)}/patch${qs ? `?${qs}` : ""}`,
+    operationPath("forge.evidence.by_evidence_id.patch.get", { evidence_id: evidenceId }) + (qs ? "?" + qs : ""),
   );
 }
 
@@ -1521,7 +1521,7 @@ export async function getEvidenceCommands(
   if (opts?.limit != null) q.set("limit", String(opts.limit));
   const qs = q.toString();
   return forgeFetch(
-    `/v1/forge/evidence/${encodeURIComponent(evidenceId)}/commands${qs ? `?${qs}` : ""}`,
+    operationPath("forge.evidence.by_evidence_id.commands.get", { evidence_id: evidenceId }) + (qs ? "?" + qs : ""),
   );
 }
 
@@ -1535,7 +1535,7 @@ export async function recordReviewIntent(
     acknowledged_violations?: string[];
   },
 ): Promise<ItemProjection> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/decisions`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.decisions.post", { work_id: workId }), {
     method: "POST",
     body: JSON.stringify({
       evidence_id: intent.evidence_id,
@@ -1554,7 +1554,7 @@ export async function listReviewComments(
   const query = new URLSearchParams();
   if (attemptId) query.set("attempt_id", attemptId);
   const suffix = query.size ? `?${query.toString()}` : "";
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review/comments${suffix}`);
+  return forgeFetch(operationPath("forge.items.by_work_id.review.comments.get", { work_id: workId }) + suffix);
 }
 
 export async function addReviewComment(
@@ -1571,7 +1571,7 @@ export async function addReviewComment(
     parent_id?: string | null;
   },
 ): Promise<ItemProjection> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review/comments`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.review.comments.post", { work_id: workId }), {
     method: "POST",
     body: JSON.stringify({
       evidence_id: input.evidence_id,
@@ -1592,7 +1592,7 @@ export async function resolveReviewComment(
   commentId: string,
 ): Promise<ItemProjection> {
   return forgeFetch(
-    `/v1/forge/items/${encodeURIComponent(workId)}/review/comments/${encodeURIComponent(commentId)}`,
+    operationPath("forge.items.by_work_id.review.comments.by_comment_id.patch", { work_id: workId, comment_id: commentId }),
     {
       method: "PATCH",
       body: JSON.stringify({ resolve: true }),
@@ -1605,7 +1605,7 @@ export async function deleteReviewComment(
   commentId: string,
 ): Promise<ItemProjection> {
   return forgeFetch(
-    `/v1/forge/items/${encodeURIComponent(workId)}/review/comments/${encodeURIComponent(commentId)}`,
+    operationPath("forge.items.by_work_id.review.comments.by_comment_id.delete", { work_id: workId, comment_id: commentId }),
     { method: "DELETE" },
   );
 }
@@ -1619,7 +1619,7 @@ export async function requestReviewChanges(
     comment_ids?: string[];
   },
 ): Promise<ItemProjection> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review/request-changes`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.review.request_changes.post", { work_id: workId }), {
     method: "POST",
     body: JSON.stringify({
       evidence_id: input.evidence_id,
@@ -1634,21 +1634,21 @@ export async function applyDecision(
   workId: string,
   decisionId: string,
 ): Promise<ItemProjection> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/apply`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.apply.post", { work_id: workId }), {
     method: "POST",
     body: JSON.stringify({ decision_id: decisionId }),
   });
 }
 
 export async function discardUndertaking(workId: string): Promise<ItemProjection> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/discard`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.discard.post", { work_id: workId }), {
     method: "POST",
     body: "{}",
   });
 }
 
 export async function getWorldBinding(workId: string): Promise<WorldBindingStatus> {
-  return forgeFetch(`/v1/world/bindings/${encodeURIComponent(workId)}`);
+  return forgeFetch(operationPath("world.bindings.by_work_id.get", { work_id: workId }));
 }
 
 function worldQuery(workId: string, snapshot?: WorldSnapshotRef | null): URLSearchParams {
@@ -1662,7 +1662,7 @@ export async function getWorldCodeAvec(
   workId: string,
   snapshot?: WorldSnapshotRef | null,
 ): Promise<WorldAvecResult> {
-  return forgeFetch(`/v1/world/code_avec?${worldQuery(workId, snapshot)}`);
+  return forgeFetch(operationPath("world.code_avec.get") + '?' + worldQuery(workId, snapshot));
 }
 
 export async function getWorldFiles(
@@ -1672,7 +1672,7 @@ export async function getWorldFiles(
 ): Promise<WorldFilesResult> {
   const q = worldQuery(workId, snapshot);
   if (path) q.set("path", path);
-  return forgeFetch(`/v1/world/files?${q}`);
+  return forgeFetch(operationPath("world.files.get") + '?' + q);
 }
 
 export async function getWorldFind(
@@ -1688,7 +1688,7 @@ export async function getWorldFind(
   if (opts?.kind) q.set("kind", opts.kind);
   if (opts?.name_contains) q.set("name_contains", opts.name_contains);
   if (opts?.path) q.set("path", opts.path);
-  return forgeFetch(`/v1/world/find?${q}`);
+  return forgeFetch(operationPath("world.find.get") + '?' + q);
 }
 
 export async function getWorldImpact(
@@ -1698,7 +1698,7 @@ export async function getWorldImpact(
 ): Promise<WorldImpactResult> {
   const q = worldQuery(workId, snapshot);
   q.set("entity_id", entityId);
-  return forgeFetch(`/v1/world/impact?${q}`);
+  return forgeFetch(operationPath("world.impact.get") + '?' + q);
 }
 
 export async function getWorldAtLocation(
@@ -1710,14 +1710,14 @@ export async function getWorldAtLocation(
   const q = worldQuery(workId, snapshot);
   q.set("path", path);
   q.set("line", String(Math.max(1, Math.floor(line))));
-  return forgeFetch(`/v1/world/at_location?${q}`);
+  return forgeFetch(operationPath("world.at_location.get") + '?' + q);
 }
 
 export async function exportUndertakingBundle(
   workId: string,
   destination: string,
 ): Promise<{ destination: string }> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/export`, {
+  return forgeFetch(operationPath("forge.items.by_work_id.export.post", { work_id: workId }), {
     method: "POST",
     body: JSON.stringify({ destination }),
   });
@@ -1727,7 +1727,7 @@ export async function queueWorldIndex(
   workId: string,
   kind: "baseline" | "sealed" = "sealed",
 ): Promise<unknown> {
-  return forgeFetch("/v1/world/index", {
+  return forgeFetch(operationPath("world.index.post"), {
     method: "POST",
     body: JSON.stringify({ work_id: workId, kind }),
   });

@@ -323,7 +323,7 @@ substitute for the External Agents API.
 
 **Goal:** prove the integration boundary without committing to three UIs.
 
-- Confirm the minimum typed API surface against `sdk-contract/manifest.yaml`.
+- Confirm the minimum typed API surface against `sdk-contract/openapi.json`.
 - Define the TypeScript package location and workspace/build conventions.
 - Define the context envelope and size/redaction rules.
 - Implement a local daemon health check and one streaming turn.
