@@ -1,6 +1,6 @@
 # H10 — Generated daemon API and client contract
 
-> **Status:** Implementing — Slice 3 (generated clients consume operation tables; Tauri streams are real). Slice 1 inventory shadow remains mergeable. Production still registers `DeclaredRouter::route(policy, handler)`, which also records `OperationSpec`. `sdk-contract/manifest.yaml` and `export_type!` stay until Slice 4. CONTRACT-001 stays **Proposed**. ADR-019 stays **Proposed** until `operation()` is the production registration path and generated clients own remaining Home/forge transports.
+> **Status:** Implemented on unit/CI — Slice 4 gates are required architecture CI. `ContractRouter::operation` records the supplied spec; `.route(policy)` is crate-private sugar. Browser `/v1` copies are on `DeclaredRouter` with explicit `ExactOrigin`. `sdk-contract/manifest.yaml` is deleted. CONTRACT-001 is **Mitigated on unit/CI**. ADR-019 is **Accepted**. Validated/Shipped still need packaged multi-client evidence.
 >
 > **Accountable owner:** daemon API and SDK maintainers
 >
@@ -55,7 +55,7 @@ Remaining copies that still shrink:
 | --- | ---: | --- |
 | Declared production inventory | 369 / 381 method+path rows | real server behavior; H01 policy; generated operation IDs |
 | Generated OpenAPI + inventory | checked-in artifacts from declared inventory | named DTO/stream bindings plus catalog components; remaining ops stay opaque/`deferred` |
-| Rust / Python / TS / Tauri op tables | generated from IR; helpers expand `op_path` / `operationPath` | helper no-literal tests in SDK crates; not yet required architecture CI |
+| Rust / Python / TS / Tauri op tables | generated from IR; helpers expand `op_path` / `operationPath` | helper no-literal tests are required architecture CI |
 | Shared golden cases | `sdk-contract/golden/client-cases.json` | wrong verb/path/stream flag fails Rust and Python unit tests |
 | Browser compatibility adapter | unprefixed `BROWSER_COMPATIBILITY_MOUNTS`; `/v1` copies on `browser_surface` | unprefixed aliases stay off 369/381; `/v1` copies use explicit `ExactOrigin` |
 | Stasis dashboard adapter | raw `dashboard_router` + frozen `DASHBOARD_COMPATIBILITY_MOUNTS` | third-party; no method/path descriptors; reviewed freeze stays off declared inventory |

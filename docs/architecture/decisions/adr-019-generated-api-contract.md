@@ -1,6 +1,6 @@
 # ADR-019: Route-owned generated API and client contract
 
-> **Status:** Proposed
+> **Status:** Accepted
 >
 > **Date:** 2026-08-13
 >
