@@ -1,7 +1,7 @@
 //! Handwritten helpers must not embed daemon `/v1` route literals.
 //!
 //! Generated tables, reconnect path-rewriter fixtures, and this test are
-//! excluded. Slice 4 still owns promoting this to required architecture CI.
+//! excluded. Architecture CI runs this test via `scripts/check-api-contract.sh`.
 
 use std::path::{Path, PathBuf};
 

@@ -21,6 +21,7 @@ import type {
 import type { MediaRef, MediaUploadResponse } from "$lib/types/media";
 import type { StageRoutingMatrix } from "$lib/types/runtime";
 import { getDaemonUrl, invokePlain, type StreamErrorPayload } from "./client";
+import { operationPath } from "./opPath";
 
 export interface InteractiveTurnAccepted {
   turn_id: string;
@@ -475,7 +476,7 @@ export async function uploadMediaPath(
 export async function mediaFetchUrl(sessionId: string, mediaId: string): Promise<string> {
   const base = (await getDaemonUrl()).replace(/\/$/, "");
   const params = new URLSearchParams({ session_id: sessionId });
-  return `${base}/v1/media/${encodeURIComponent(mediaId)}?${params.toString()}`;
+  return `${base}${operationPath("media.by_media_id.get", { media_id: mediaId })}?${params.toString()}`;
 }
 
 export async function startInteractiveStream(streamUrl: string): Promise<void> {

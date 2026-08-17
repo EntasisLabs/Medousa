@@ -677,4 +677,36 @@ mod tests {
         let inventory = std::fs::read_to_string(root.join("route-inventory.json")).unwrap();
         assert_eq!(inventory, artifacts.route_inventory_json);
     }
+
+    #[test]
+    fn released_baseline_is_not_breaking() {
+        let candidate = production_registry(true);
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("sdk-contract/released");
+        if std::env::var("UPDATE_RELEASED_CONTRACT").as_deref() == Ok("1") {
+            std::fs::create_dir_all(&root).unwrap();
+            let ops: Vec<_> = candidate.operations().cloned().collect();
+            std::fs::write(
+                root.join("registry.json"),
+                serde_json::to_string_pretty(&ops).unwrap(),
+            )
+            .unwrap();
+            return;
+        }
+        let ops: Vec<OperationSpec> = serde_json::from_str(
+            &std::fs::read_to_string(root.join("registry.json"))
+                .expect("sdk-contract/released/registry.json; run UPDATE_RELEASED_CONTRACT=1 cargo test -p medousa --lib daemon::contract::tests::released_baseline_is_not_breaking"),
+        )
+        .unwrap();
+        let mut baseline = ContractRegistry::new();
+        for spec in ops {
+            baseline.register(spec).expect("released baseline ops");
+        }
+        let diff = diff_contracts(&baseline, &candidate);
+        assert_ne!(
+            diff.class,
+            CompatibilityClass::Breaking,
+            "released contract baseline is breaking: {:?}",
+            diff.breaking_changes
+        );
+    }
 }

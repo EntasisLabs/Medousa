@@ -5,6 +5,7 @@ import type {
   LocusTagsListResponse,
 } from "$lib/types/locus";
 import { getDaemonUrl } from "./client";
+import { operationPath } from "./opPath";
 
 export async function resumeBrowserHostSession(
   sessionId: string,
@@ -30,7 +31,7 @@ export async function resumeBrowserSession(
   }
   const base = (await getDaemonUrl()).replace(/\/$/, "");
   const response = await fetch(
-    `${base}/v1/browser/sessions/${encodeURIComponent(sessionId)}/resume`,
+    `${base}${operationPath("browser.sessions.by_session_id.resume.post", { session_id: sessionId })}`,
     { method: "POST", headers: { "Content-Type": "application/json" } },
   );
   if (!response.ok) {
@@ -49,7 +50,7 @@ export async function registerBrowserClient(
     return;
   }
   const base = daemonUrl.replace(/\/$/, "");
-  await fetch(`${base}/v1/clients/register`, {
+  await fetch(`${base}${operationPath("clients.register.post")}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -69,7 +70,7 @@ export async function completeBrowserSession(
 ): Promise<Record<string, unknown>> {
   const base = (await getDaemonUrl()).replace(/\/$/, "");
   const response = await fetch(
-    `${base}/v1/browser/sessions/${encodeURIComponent(sessionId)}/complete`,
+    `${base}${operationPath("browser.sessions.by_session_id.complete.post", { session_id: sessionId })}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -110,7 +111,7 @@ export async function completeBrowserActSession(
 ): Promise<Record<string, unknown>> {
   const base = (await getDaemonUrl()).replace(/\/$/, "");
   const response = await fetch(
-    `${base}/v1/browser/sessions/${encodeURIComponent(sessionId)}/complete-act`,
+    `${base}${operationPath("browser.sessions.by_session_id.complete_act.post", { session_id: sessionId })}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -133,7 +134,7 @@ export async function fetchBrowserSession(
 ): Promise<BrowserSessionRecord> {
   const base = (await getDaemonUrl()).replace(/\/$/, "");
   const response = await fetch(
-    `${base}/v1/browser/sessions/${encodeURIComponent(sessionId)}`,
+    `${base}${operationPath("browser.sessions.by_session_id.get", { session_id: sessionId })}`,
   );
   if (!response.ok) {
     const text = await response.text().catch(() => "");
