@@ -108,7 +108,7 @@
         <span class="workshop-faint text-[11px]">full node</span>
       </button>
       {#if rawOpen}
-        <pre class="context-layer-raw max-h-64">{JSON.stringify(detail, null, 2)}</pre>
+        <pre class="workshop-inset context-layer-raw max-h-64">{JSON.stringify(detail, null, 2)}</pre>
       {/if}
     </ContextPlumbingSection>
   </article>

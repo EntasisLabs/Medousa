@@ -79,6 +79,51 @@ describe("css inventory and cascade", () => {
       expect(hits, `${entry.id} not imported by ${entry.loadedBy}`).not.toEqual([]);
     }
   });
+
+  it("does not @apply custom classes defined in other sheets", () => {
+    const inventory = JSON.parse(source("security/css-inventory.json"));
+    const sheetPaths = [
+      ...new Set<string>(
+        inventory.entries
+          .map((entry: { path?: string }) => entry.path)
+          .filter((path: unknown): path is string => typeof path === "string" && path.endsWith(".postcss")),
+      ),
+    ];
+    const definedByFile = new Map<string, Set<string>>();
+    for (const path of sheetPaths) {
+      const names = new Set<string>();
+      for (const match of source(path).matchAll(/^\s*\.([a-zA-Z][\w-]*)/gm)) {
+        names.add(match[1]);
+      }
+      definedByFile.set(path, names);
+    }
+    const owners = new Map<string, string[]>();
+    for (const [path, names] of definedByFile) {
+      for (const name of names) {
+        const list = owners.get(name) ?? [];
+        list.push(path);
+        owners.set(name, list);
+      }
+    }
+    // Skeleton owns these apply targets even though Home also adds selector overrides.
+    const frameworkApplyClasses = new Set(["btn", "input"]);
+    const leaks: string[] = [];
+    for (const path of sheetPaths) {
+      const sheet = source(path);
+      for (const apply of sheet.matchAll(/@apply\s+([^;]+);/g)) {
+        for (const token of apply[1].trim().split(/\s+/)) {
+          const name = token.split("/")[0];
+          if (!/^[a-zA-Z][\w-]*$/.test(name)) continue;
+          if (frameworkApplyClasses.has(name)) continue;
+          const foreign = (owners.get(name) ?? []).filter((owner) => owner !== path);
+          if (foreign.length > 0) {
+            leaks.push(`${path} @apply ${name} (defined in ${foreign.join(", ")})`);
+          }
+        }
+      }
+    }
+    expect(leaks).toEqual([]);
+  });
 });
 
 describe("selected-theme Tailwind compile", () => {

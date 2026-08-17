@@ -66,7 +66,7 @@ export function channelIconClasses(id: ChannelId, large = false): string {
 }
 
 export function channelCredentialsInsetClass(id: ChannelId): string {
-  return `messaging-credentials-inset messaging-credentials-inset-${CHANNEL_ACCENT[id]}`;
+  return `workshop-inset messaging-credentials-inset messaging-credentials-inset-${CHANNEL_ACCENT[id]}`;
 }
 
 export interface ChannelMeta {
