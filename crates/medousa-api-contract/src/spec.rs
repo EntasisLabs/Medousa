@@ -140,8 +140,18 @@ pub struct ResponseSpec {
     pub schema: SchemaRef,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum StreamTransport {
+    #[default]
+    Sse,
+    WebSocket,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StreamSpec {
+    #[serde(default)]
+    pub transport: StreamTransport,
     pub item_schema: SchemaRef,
     #[serde(default)]
     pub last_event_id: bool,
@@ -154,10 +164,21 @@ pub struct StreamSpec {
 impl StreamSpec {
     pub fn json_events(item_schema: SchemaRef) -> Self {
         Self {
+            transport: StreamTransport::Sse,
             item_schema,
             last_event_id: true,
             heartbeat_comments: true,
             replay: true,
+        }
+    }
+
+    pub fn websocket(item_schema: SchemaRef) -> Self {
+        Self {
+            transport: StreamTransport::WebSocket,
+            item_schema,
+            last_event_id: false,
+            heartbeat_comments: false,
+            replay: false,
         }
     }
 }
@@ -234,10 +255,22 @@ impl OperationSpec {
                 "bootstrap route cannot require an application capability",
             ));
         }
-        if self.stream.is_some() && self.method != HttpMethod::Get {
-            return Err(ContractError::invalid(
-                "streams must be HTTP GET operations",
-            ));
+        if let Some(stream) = &self.stream {
+            if self.method != HttpMethod::Get {
+                return Err(ContractError::invalid(
+                    "streams must be HTTP GET operations",
+                ));
+            }
+            if stream.transport == StreamTransport::WebSocket
+                && self
+                    .responses
+                    .iter()
+                    .any(|response| response.media_type == "text/event-stream")
+            {
+                return Err(ContractError::invalid(
+                    "websocket operations must not use text/event-stream",
+                ));
+            }
         }
         for schema in self.schema_refs() {
             forbid_untyped_schema(schema)?;
@@ -371,5 +404,21 @@ mod tests {
                 .to_string()
                 .contains("untagged")
         );
+    }
+
+    #[test]
+    fn websocket_must_not_advertise_event_stream() {
+        let mut spec = sample();
+        spec.method = HttpMethod::Get;
+        spec.stream = Some(StreamSpec::websocket(SchemaRef::named("JsonRpcMessage")));
+        spec.responses[0].media_type = "text/event-stream".into();
+        assert!(
+            spec.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("websocket")
+        );
+        spec.responses[0].media_type = "application/json".into();
+        spec.validate().unwrap();
     }
 }

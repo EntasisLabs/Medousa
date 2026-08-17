@@ -286,7 +286,7 @@ pub const CODE_LSP_GET: Operation = Operation {
     id: "code.lsp.get",
     method: "GET",
     path: "/v1/code/lsp",
-    streaming: true,
+    streaming: false,
 };
 
 pub const CODE_REQUEST_POST: Operation = Operation {
@@ -1161,7 +1161,7 @@ pub const GRAPHEME_LSP_GET: Operation = Operation {
     id: "grapheme.lsp.get",
     method: "GET",
     path: "/v1/grapheme/lsp",
-    streaming: true,
+    streaming: false,
 };
 
 pub const GRAPHEME_LSP_WORKSPACE_GET: Operation = Operation {
@@ -2120,7 +2120,7 @@ pub const SESSIONS_SHELL_BY_ID_GET: Operation = Operation {
     id: "sessions.shell.by_id.get",
     method: "GET",
     path: "/v1/sessions/shell/{id}",
-    streaming: true,
+    streaming: false,
 };
 
 pub const SESSIONS_SHELL_BY_ID_SIGNAL_POST: Operation = Operation {

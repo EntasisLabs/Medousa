@@ -1,6 +1,6 @@
 # H10 — Generated daemon API and client contract
 
-> **Status:** Implementing — Slice 1 (Train 0 + Train 1 inventory shadow). `medousa-api-contract` IR, deterministic OpenAPI/inventory generation, and exact-set equality against the 361/373 declared profiles are in tree. Production still registers `DeclaredRouter::route(policy, handler)`, which now also records `OperationSpec` at the same call. `sdk-contract/manifest.yaml` stays as a known-incomplete SDK accessor shadow. CONTRACT-001 stays **Proposed**. ADR-019 stays **Proposed** until `operation()` is the production registration path and generated clients own SDK/Home transports.
+> **Status:** Implementing — Slice 2 (named DTO/stream bindings, declared error envelope, catalog OpenAPI). Slice 1 inventory shadow remains mergeable. Production still registers `DeclaredRouter::route(policy, handler)`, which also records `OperationSpec`. `sdk-contract/manifest.yaml` and `export_type!` stay until Slice 4. CONTRACT-001 stays **Proposed**. ADR-019 stays **Proposed** until `operation()` is the production registration path and generated clients own SDK/Home transports.
 >
 > **Accountable owner:** daemon API and SDK maintainers
 >
@@ -54,7 +54,7 @@ Remaining copies that still shrink:
 | Surface | Current evidence | Failure mode |
 | --- | ---: | --- |
 | Declared production inventory | 361 / 373 method+path rows | real server behavior; H01 policy; generated operation IDs |
-| Generated OpenAPI + inventory | checked-in artifacts from declared inventory | must match regen; most DTOs stay opaque/`deferred` |
+| Generated OpenAPI + inventory | checked-in artifacts from declared inventory | named DTO/stream bindings plus catalog components; remaining ops stay opaque/`deferred` |
 | Rust / Python / TS / Tauri op tables | generated from IR | low-level verb/path/stream flags; helpers still hardcode `/v1` |
 | Browser compatibility adapter | `BROWSER_COMPATIBILITY_MOUNTS` (dual `/` and `/v1`) | not in 361/373 until imported onto `ContractRouter` |
 | Stasis dashboard adapter | raw `dashboard_router` | third-party; no method/path descriptors yet |

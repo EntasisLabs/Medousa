@@ -18,14 +18,15 @@ pub use discrepancy::{
     parse_manifest_yaml, parse_parity_table,
 };
 pub use generate::{
-    GeneratedArtifacts, generate_artifacts, generate_python_ops, generate_rust_ops,
-    generate_tauri_enum, generate_typescript_ops,
+    GeneratedArtifacts, generate_artifacts, generate_artifacts_with_catalog, generate_python_ops,
+    generate_rust_ops, generate_tauri_enum, generate_typescript_ops,
 };
 pub use id::{const_name, encode_path_segment, expand_path, path_parameters, stable_operation_id};
 pub use registry::ContractRegistry;
 pub use spec::{
     Audience, ContractError, FeatureProfile, HttpMethod, OperationSpec, ParameterLocation,
     ParameterSpec, RequestBodySpec, ResponseSpec, SchemaRef, Stability, StreamSpec,
+    StreamTransport,
 };
 pub use sse::{SseCodec, SseDecodeError, SseEvent};
 

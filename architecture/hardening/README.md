@@ -91,7 +91,7 @@ and performance budgets must prevent the same classes of defect from returning.
 | H07 | [07-vault-scaling-and-consistency.md](07-vault-scaling-and-consistency.md) | Incremental index, atomic mutation, backend/frontend lookups | PERF-003, PERF-006, CONSIST-001 | ADR-014, ADR-016 | Implementing; semantics train exit tests landed |
 | H08 | [08-desktop-browser-isolation.md](08-desktop-browser-isolation.md) | Remote webview capabilities and request-correlated bridge | DESKTOP-001 | ADR-018, H05 | Implemented; packaged-platform release validation pending |
 | H09 | [09-home-runtime-boundaries.md](09-home-runtime-boundaries.md) | Feature loading, runtime cycles, store/component/CSS ownership | FRONT-001, ARCH-001, ARCH-002 | ADR-020, H03 | Implementing; 0 SCCs and empty `crossStoreEdges`; no owner above 2,000 lines; FRONT-001 startup-graph bytes remain |
-| H10 | [10-api-contract-generation.md](10-api-contract-generation.md) | Authoritative API definition and generated clients/tests | CONTRACT-001 | ADR-019, H01 | Implementing; Slice 1 inventory shadow; CONTRACT-001 stays Proposed |
+| H10 | [10-api-contract-generation.md](10-api-contract-generation.md) | Authoritative API definition and generated clients/tests | CONTRACT-001 | ADR-019, H01 | Implementing; Slice 2 schemas/errors/streams; CONTRACT-001 stays Proposed |
 | H11 | `11-package-and-dependency-boundaries.md` | Optional workload features and dependency budgets | DEP-001 | ADR-020 | Proposed |
 | H12 | `12-quality-gates.md` | CI matrix, deterministic tests, benchmarks and budgets | CI-001, TEST-001, PERF-007 | All workstreams | Proposed |
 

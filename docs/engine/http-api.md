@@ -21,6 +21,12 @@ header. This is required on loopback as well as LAN/Iroh: a loopback socket is
 not caller identity. Missing credentials return `401 authentication_required`;
 malformed, expired, revoked, or unknown credentials return `401
 invalid_credential`; insufficient capability returns `403 forbidden`.
+`401` responses include `WWW-Authenticate: Bearer realm="medousa"`.
+
+Declared `/v1` failures use JSON `ApiErrorEnvelope` (`schema_version`, `code`,
+`message`, `request_id`, `details`). Send `x-request-id` to correlate; otherwise
+`request_id` is `unassigned`. Handler plaintext 4xx/5xx on declared routes are
+wrapped into the same envelope. SSE and binary bodies are left unchanged.
 
 Medousa, `medousa`, and `medousa tui` provision and load independent
 `home-local`, `medousa-cli`, and `medousa-tui` credentials without exposing the

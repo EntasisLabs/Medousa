@@ -18635,6 +18635,76 @@
       }
     }
   },
+  "WorkspaceCardsResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorkspaceCardsResponse",
+    "type": "object",
+    "required": [
+      "cards",
+      "workspace_revision"
+    ],
+    "properties": {
+      "cards": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorkCard"
+        }
+      },
+      "workspace_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    },
+    "definitions": {
+      "WorkBoardColumn": {
+        "type": "string",
+        "enum": [
+          "backlog",
+          "in_flight",
+          "wrapping_up",
+          "done",
+          "blocked"
+        ]
+      },
+      "WorkCard": {
+        "type": "object",
+        "required": [
+          "column",
+          "created_at_utc",
+          "id",
+          "status_label",
+          "title",
+          "updated_at_utc"
+        ],
+        "properties": {
+          "column": {
+            "$ref": "#/definitions/WorkBoardColumn"
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "$ref": "#/definitions/WorkCardId"
+          },
+          "status_label": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "WorkCardId": {
+        "type": "string"
+      }
+    }
+  },
   "WorkspaceLinkVaultRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "WorkspaceLinkVaultRequest",

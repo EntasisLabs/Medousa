@@ -3007,6 +3007,11 @@ class TurnStreamEnvelopeV2(MedousaModel):
     turn_id: str
 
 
+class WorkspaceCardsResponse(MedousaModel):
+    cards: list[WorkCard]
+    workspace_revision: int = Field(..., ge=0)
+
+
 class WorkspaceStreamEvent(MedousaModel):
     card: WorkCard | None = None
     counts: dict[str, Any] | None = None

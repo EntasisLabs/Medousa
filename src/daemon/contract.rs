@@ -4,8 +4,10 @@ use axum::http::Method;
 
 use medousa_api_contract::{
     Audience, ContractRegistry, FeatureProfile, HttpMethod, OperationSpec, ResponseSpec,
-    SchemaRef, Stability, StreamSpec, stable_operation_id,
+    SchemaRef, Stability, StreamTransport, stable_operation_id,
 };
+
+use crate::daemon::contract_bindings::{json_body, stream_binding, stream_spec, wire_binding};
 
 use crate::daemon::route_policy::{
     RateLimitClass, RouteGroup, RouteInventory, RoutePolicy,
@@ -35,11 +37,23 @@ pub fn policy_from_operation(spec: &OperationSpec) -> RoutePolicy {
 
 pub fn operation_from_policy(policy: &RoutePolicy, profile: FeatureProfile) -> OperationSpec {
     let method = HttpMethod::parse(policy.method.as_str()).expect("declared methods are HTTP");
-    let streaming = matches!(policy.rate_limit_class, RateLimitClass::Stream);
     let operation_id = stable_operation_id(policy.method.as_str(), policy.path);
-    let schema = schema_for_operation(&operation_id, streaming);
+    let stream = stream_binding(&operation_id);
+    let binding = wire_binding(&operation_id);
+    let response_schema = match (&stream, binding) {
+        (Some((_, name)), _) => SchemaRef::named(*name),
+        (None, Some(wire)) => SchemaRef::named(wire.response),
+        (None, None) => SchemaRef::deferred(format!(
+            "{}Response",
+            medousa_api_contract::const_name(&operation_id)
+        )),
+    };
+    let media_type = match stream {
+        Some((StreamTransport::Sse, _)) => "text/event-stream",
+        _ => "application/json",
+    };
     let mut spec = OperationSpec {
-        operation_id,
+        operation_id: operation_id.clone(),
         stability: Stability::Stable,
         feature_profile: profile,
         audience: if matches!(
@@ -53,15 +67,17 @@ pub fn operation_from_policy(policy: &RoutePolicy, profile: FeatureProfile) -> O
         method,
         path: policy.path.to_string(),
         parameters: Vec::new(),
-        request_body: None,
+        request_body: binding.and_then(|wire| {
+            if matches!(method, HttpMethod::Get | HttpMethod::Delete | HttpMethod::Head) {
+                None
+            } else {
+                wire.request.map(json_body)
+            }
+        }),
         responses: vec![ResponseSpec {
             status: 200,
-            media_type: if streaming {
-                "text/event-stream".into()
-            } else {
-                "application/json".into()
-            },
-            schema: schema.clone(),
+            media_type: media_type.into(),
+            schema: response_schema.clone(),
         }],
         error_codes: default_error_codes(policy.bootstrap_public),
         trust_group: trust_group_name(policy.group).into(),
@@ -81,9 +97,21 @@ pub fn operation_from_policy(policy: &RoutePolicy, profile: FeatureProfile) -> O
         body_limit: policy.body_limit,
         rate_limit_class: rate_class_name(policy.rate_limit_class).into(),
         bootstrap_public: policy.bootstrap_public,
-        stream: streaming.then(|| StreamSpec::json_events(schema)),
+        stream: stream.map(|(transport, name)| stream_spec(transport, name)),
         deprecation: None,
     };
+    if !policy.bootstrap_public {
+        spec.responses.push(ResponseSpec {
+            status: 401,
+            media_type: "application/json".into(),
+            schema: SchemaRef::named("ApiErrorEnvelope"),
+        });
+        spec.responses.push(ResponseSpec {
+            status: 403,
+            media_type: "application/json".into(),
+            schema: SchemaRef::named("ApiErrorEnvelope"),
+        });
+    }
     spec = spec.with_path_parameters();
     spec
 }
@@ -147,21 +175,6 @@ fn pairing_only_inventory(core: &RouteInventory, all: &RouteInventory) -> RouteI
         }
     }
     pairing
-}
-
-fn schema_for_operation(operation_id: &str, streaming: bool) -> SchemaRef {
-    match operation_id {
-        "liveness.get" => SchemaRef::named("HealthLiveness"),
-        "health.get" => SchemaRef::named("HealthResponse"),
-        "ingest.post" => SchemaRef::named("IngestResponse"),
-        "interactive.turn.post" => SchemaRef::named("InteractiveTurnResponse"),
-        "interactive.turn.by_turn_id.stream.get"
-        | "agents.sessions.by_agent_session_id.stream.get" => {
-            SchemaRef::named("TurnStreamEnvelopeV2")
-        }
-        _ if streaming => SchemaRef::named("TurnStreamEnvelopeV2"),
-        other => SchemaRef::deferred(format!("{}Response", medousa_api_contract::const_name(other))),
-    }
 }
 
 fn default_error_codes(bootstrap: bool) -> Vec<String> {
@@ -278,10 +291,20 @@ mod tests {
     use axum::http::{Request, StatusCode};
     use axum::routing::get;
     use medousa_api_contract::{
-        CompatibilityClass, DiscrepancyKind, HttpMethod, ListedRoute, discrepancy_report,
-        diff_contracts, generate_artifacts, parse_manifest_yaml,
+        CompatibilityClass, DiscrepancyKind, HttpMethod, ListedRoute, StreamTransport,
+        discrepancy_report, diff_contracts, generate_artifacts_with_catalog, parse_manifest_yaml,
     };
     use tower::ServiceExt;
+
+    fn schema_catalog() -> std::collections::BTreeMap<String, serde_json::Value> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("sdk-contract/medousa-types.schema.json");
+        serde_json::from_str(&std::fs::read_to_string(path).expect("schema catalog")).unwrap()
+    }
+
+    fn artifacts(registry: &ContractRegistry) -> medousa_api_contract::GeneratedArtifacts {
+        generate_artifacts_with_catalog(registry, &schema_catalog())
+    }
 
     #[test]
     fn production_profiles_match_declared_counts() {
@@ -289,7 +312,7 @@ mod tests {
         let with_pairing = production_registry(true);
         assert_eq!(without_pairing.len(), 361);
         assert_eq!(with_pairing.len(), 373);
-        let artifacts = generate_artifacts(&with_pairing);
+        let artifacts = artifacts(&with_pairing);
         let inventory: serde_json::Value =
             serde_json::from_str(&artifacts.route_inventory_json).unwrap();
         assert_eq!(inventory["operations"].as_array().unwrap().len(), 373);
@@ -418,7 +441,58 @@ mod tests {
     }
 
     #[test]
-    fn browser_compatibility_mounts_are_outside_declared_inventory() {
+    fn websocket_streams_are_not_event_stream() {
+        let registry = production_registry(true);
+        for id in ["code.lsp.get", "grapheme.lsp.get", "sessions.shell.by_id.get"] {
+            let spec = registry.get(id).expect(id);
+            let stream = spec.stream.as_ref().expect("websocket metadata");
+            assert_eq!(stream.transport, StreamTransport::WebSocket);
+            assert!(
+                spec.responses
+                    .iter()
+                    .all(|response| response.media_type != "text/event-stream"),
+                "{id} must not advertise text/event-stream"
+            );
+        }
+        let interactive = registry
+            .get("interactive.turn.by_turn_id.stream.get")
+            .unwrap();
+        assert_eq!(
+            interactive.stream.as_ref().unwrap().transport,
+            StreamTransport::Sse
+        );
+        assert_eq!(
+            interactive.responses[0].media_type,
+            "text/event-stream"
+        );
+    }
+
+    #[test]
+    fn named_vault_and_health_schemas_are_not_opaque() {
+        let health = production_registry(false).get("health.get").unwrap().clone();
+        assert!(!health.responses[0].schema.opaque);
+        assert_eq!(health.responses[0].schema.name, "HealthResponse");
+        let vault = production_registry(false)
+            .get("vault.notes.get")
+            .unwrap()
+            .clone();
+        assert_eq!(vault.responses[0].schema.name, "VaultNotesListResponse");
+        assert!(!vault.responses[0].schema.opaque);
+        let openapi = artifacts(&production_registry(true)).openapi_json;
+        assert!(openapi.contains("\"VaultNotesListResponse\""));
+        assert!(!openapi.contains("x-medousa-unresolved"));
+        let ingest = production_registry(false)
+            .get("ingest.post")
+            .unwrap()
+            .clone();
+        assert_eq!(
+            ingest.request_body.as_ref().unwrap().schema.name,
+            "IngestRequest"
+        );
+    }
+
+    #[test]
+    fn browser_compatibility_mounts_stay_off_declared_router() {
         let declared: std::collections::HashSet<String> = production_registry(true)
             .operations()
             .map(|spec| format!("{} {}", spec.method.as_str(), spec.path))
@@ -436,9 +510,60 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn declared_plaintext_errors_become_api_error_envelope() {
+        use crate::request_principal::{RequestPrincipal, TransportClass};
+        use axum::extract::Extension;
+        use axum::http::header::CONTENT_TYPE;
+        use std::sync::Arc;
+
+        let router = DeclaredRouter::default()
+            .route(
+                RoutePolicy {
+                    method: axum::http::Method::GET,
+                    path: "/v1/vault/search",
+                    group: RouteGroup::Portal,
+                    required_capability: Some(Capability::WorkshopRead),
+                    bootstrap_public: false,
+                    browser_policy: BrowserPolicy::NativeOnly,
+                    body_limit: 1024,
+                    rate_limit_class: RateLimitClass::Read,
+                },
+                get(|| async { (StatusCode::BAD_REQUEST, "q or tags is required".to_string()) }),
+            )
+            .into_router()
+            .layer(Extension(RequestPrincipal::local_app(
+                Arc::from("test-local"),
+                TransportClass::Loopback,
+            )));
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/vault/search")
+                    .header("x-request-id", "req-slice2")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.headers().get(CONTENT_TYPE).unwrap(),
+            "application/json"
+        );
+        let body = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
+        let envelope: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(envelope["schema_version"], 1);
+        assert_eq!(envelope["code"], "invalid_parameter");
+        assert_eq!(envelope["message"], "q or tags is required");
+        assert_eq!(envelope["request_id"], "req-slice2");
+    }
+
     #[test]
     fn checked_in_contract_artifacts_match_generation() {
-        let artifacts = generate_artifacts(&production_registry(true));
+        let artifacts = artifacts(&production_registry(true));
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("sdk-contract");
         if std::env::var("UPDATE_API_CONTRACT").as_deref() == Ok("1") {
             std::fs::create_dir_all(root.join("generated")).unwrap();

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::body::Body;
 use axum::extract::{ConnectInfo, State};
-use axum::http::header::{CONTENT_TYPE, WWW_AUTHENTICATE};
+use axum::http::header::WWW_AUTHENTICATE;
 use axum::http::{HeaderValue, Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::Response;
@@ -95,7 +95,7 @@ impl AccessDenial {
         }
     }
 
-    pub(crate) fn into_response(self) -> Response {
+    pub(crate) fn into_response_with_request_id(self, request_id: impl Into<String>) -> Response {
         let envelope = medousa_types::ApiErrorEnvelope::new(
             self.code(),
             match self {
@@ -103,19 +103,16 @@ impl AccessDenial {
                 Self::InvalidCredential => "the credential is invalid or expired",
                 Self::Forbidden => "the credential cannot access this resource",
             },
-            "unassigned",
+            request_id,
         );
-        let body = serde_json::to_vec(&envelope).expect("error envelope");
-        let status = match self {
-            Self::AuthenticationRequired | Self::InvalidCredential => StatusCode::UNAUTHORIZED,
-            Self::Forbidden => StatusCode::FORBIDDEN,
-        };
-        let mut response = Response::builder()
-            .status(status)
-            .header(CONTENT_TYPE, "application/json")
-            .body(Body::from(body))
-            .expect("access denial response");
-        if status == StatusCode::UNAUTHORIZED {
+        let mut response = crate::daemon::http::envelope_response(
+            match self {
+                Self::AuthenticationRequired | Self::InvalidCredential => StatusCode::UNAUTHORIZED,
+                Self::Forbidden => StatusCode::FORBIDDEN,
+            },
+            envelope,
+        );
+        if response.status() == StatusCode::UNAUTHORIZED {
             response.headers_mut().insert(
                 WWW_AUTHENTICATE,
                 HeaderValue::from_static("Bearer realm=\"medousa\""),
@@ -244,7 +241,11 @@ pub async fn enforce_daemon_access(
         && local_credential.is_none()
         && !mcp_policy_authenticated
     {
-        return deny(&state.credential_lifecycle, AccessDenial::InvalidCredential);
+        return deny(
+            &state.credential_lifecycle,
+            AccessDenial::InvalidCredential,
+            request.headers(),
+        );
     }
 
     if matches!(state.surface, AccessSurface::Bootstrap) {
@@ -269,6 +270,7 @@ pub async fn enforce_daemon_access(
         return deny(
             &state.credential_lifecycle,
             AccessDenial::AuthenticationRequired,
+            request.headers(),
         );
     }
 
@@ -292,15 +294,24 @@ pub async fn enforce_daemon_access(
         deny(
             &state.credential_lifecycle,
             AccessDenial::AuthenticationRequired,
+            request.headers(),
         )
     } else {
-        deny(&state.credential_lifecycle, AccessDenial::Forbidden)
+        deny(
+            &state.credential_lifecycle,
+            AccessDenial::Forbidden,
+            request.headers(),
+        )
     }
 }
 
-fn deny(lifecycle: &CredentialLifecycle, denial: AccessDenial) -> Response {
+fn deny(
+    lifecycle: &CredentialLifecycle,
+    denial: AccessDenial,
+    headers: &axum::http::HeaderMap,
+) -> Response {
     lifecycle.record_denial(denial.code());
-    denial.into_response()
+    denial.into_response_with_request_id(crate::daemon::http::request_id_from(headers))
 }
 
 async fn run_with_principal(
@@ -351,7 +362,7 @@ mod tests {
     use super::*;
     use axum::Extension;
     use axum::body::to_bytes;
-    use axum::http::header::AUTHORIZATION;
+    use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
     use axum::routing::{get, post};
     use tower::ServiceExt;
 
@@ -728,7 +739,9 @@ mod tests {
         ];
 
         for (denial, status, code, message) in cases {
-            let response = denial.into_response();
+            let response = denial.into_response_with_request_id(
+                crate::daemon::http::UNASSIGNED_REQUEST_ID,
+            );
             assert_eq!(response.status(), status);
             assert_eq!(
                 response.headers().get(CONTENT_TYPE).unwrap(),

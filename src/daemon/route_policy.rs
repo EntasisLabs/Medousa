@@ -258,24 +258,25 @@ fn declared_method<S>(
 where
     S: Clone + Send + Sync + 'static,
 {
-    let handler = handler.layer(DefaultBodyLimit::max(body_limit)).layer(
-        axum::middleware::from_fn_with_state(
+    let mut handler = handler
+        .layer(DefaultBodyLimit::max(body_limit))
+        .layer(axum::middleware::from_fn_with_state(
             browser_policy,
             crate::daemon::request_boundary::enforce_declared_browser_policy,
-        ),
-    );
+        ));
     if matches!(group, RouteGroup::Preview) {
-        return handler.layer(axum::middleware::from_fn(
+        handler = handler.layer(axum::middleware::from_fn(
             crate::daemon::forge_preview::enforce_preview_grant,
         ));
-    }
-    match required_capability {
-        Some(required) => handler.layer(axum::middleware::from_fn_with_state(
+    } else if let Some(required) = required_capability {
+        handler = handler.layer(axum::middleware::from_fn_with_state(
             required,
             enforce_declared_capability,
-        )),
-        None => handler,
+        ));
     }
+    handler.layer(axum::middleware::from_fn(
+        crate::daemon::http::normalize_declared_error_envelope,
+    ))
 }
 
 async fn enforce_declared_capability(
@@ -287,7 +288,9 @@ async fn enforce_declared_capability(
     if principal.capabilities().contains(required) {
         next.run(request).await
     } else {
-        AccessDenial::Forbidden.into_response()
+        AccessDenial::Forbidden.into_response_with_request_id(
+            crate::daemon::http::request_id_from(request.headers()),
+        )
     }
 }
 

@@ -10,6 +10,7 @@
       "operation_id": "liveness.get",
       "path": "/health",
       "rate_limit_class": "liveness",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "liveness"
     },
@@ -25,6 +26,7 @@
       "operation_id": "pair.code.get",
       "path": "/pair/code",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -40,6 +42,7 @@
       "operation_id": "pair.heartbeat.get",
       "path": "/pair/heartbeat",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -55,6 +58,7 @@
       "operation_id": "pair.heartbeat.post",
       "path": "/pair/heartbeat",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -68,6 +72,7 @@
       "operation_id": "pair.init.post",
       "path": "/pair/init",
       "rate_limit_class": "pairing_ceremony",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "pairing_ceremony"
     },
@@ -83,6 +88,7 @@
       "operation_id": "pair.iroh_ticket.get",
       "path": "/pair/iroh-ticket",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -98,6 +104,7 @@
       "operation_id": "pair.status.get",
       "path": "/pair/status",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -111,6 +118,7 @@
       "operation_id": "pair.verify.post",
       "path": "/pair/verify",
       "rate_limit_class": "pairing_ceremony",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "pairing_ceremony"
     },
@@ -126,6 +134,7 @@
       "operation_id": "pair.by_pairing_id.delete",
       "path": "/pair/{pairing_id}",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -141,6 +150,7 @@
       "operation_id": "qr.get",
       "path": "/qr",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -156,6 +166,7 @@
       "operation_id": "qr.png.get",
       "path": "/qr.png",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -171,6 +182,7 @@
       "operation_id": "qr.image.get",
       "path": "/qr/image",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -186,6 +198,7 @@
       "operation_id": "qr.rotate.post",
       "path": "/qr/rotate",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -201,6 +214,7 @@
       "operation_id": "admin.local_credentials.get",
       "path": "/v1/admin/local-credentials",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -216,6 +230,7 @@
       "operation_id": "admin.local_credentials.by_name.delete",
       "path": "/v1/admin/local-credentials/{name}",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -231,6 +246,7 @@
       "operation_id": "admin.local_credentials.by_name.rotate.post",
       "path": "/v1/admin/local-credentials/{name}/rotate",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -246,6 +262,7 @@
       "operation_id": "agent_modes.get",
       "path": "/v1/agent-modes",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -261,6 +278,7 @@
       "operation_id": "agent_modes.policy.get",
       "path": "/v1/agent-modes/policy",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -276,6 +294,7 @@
       "operation_id": "agent_modes.policy.put",
       "path": "/v1/agent-modes/policy",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -291,6 +310,7 @@
       "operation_id": "agents.permission_requests.get",
       "path": "/v1/agents/permission-requests",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -306,6 +326,7 @@
       "operation_id": "agents.permission_requests.by_request_id.approve.post",
       "path": "/v1/agents/permission-requests/{request_id}/approve",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -321,6 +342,7 @@
       "operation_id": "agents.permission_requests.by_request_id.deny.post",
       "path": "/v1/agents/permission-requests/{request_id}/deny",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -336,6 +358,7 @@
       "operation_id": "agents.runtimes.get",
       "path": "/v1/agents/runtimes",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -351,6 +374,7 @@
       "operation_id": "agents.sessions.post",
       "path": "/v1/agents/sessions",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -366,6 +390,7 @@
       "operation_id": "agents.sessions.by_agent_session_id.cancel.post",
       "path": "/v1/agents/sessions/{agent_session_id}/cancel",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -381,6 +406,7 @@
       "operation_id": "agents.sessions.by_agent_session_id.config.post",
       "path": "/v1/agents/sessions/{agent_session_id}/config",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -396,6 +422,7 @@
       "operation_id": "agents.sessions.by_agent_session_id.prompt.post",
       "path": "/v1/agents/sessions/{agent_session_id}/prompt",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -411,6 +438,7 @@
       "operation_id": "agents.sessions.by_agent_session_id.stream.get",
       "path": "/v1/agents/sessions/{agent_session_id}/stream",
       "rate_limit_class": "stream",
+      "stream_transport": "sse",
       "streaming": true,
       "trust_group": "portal"
     },
@@ -426,6 +454,7 @@
       "operation_id": "auth.chatgpt.delete",
       "path": "/v1/auth/chatgpt",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -441,6 +470,7 @@
       "operation_id": "auth.chatgpt.get",
       "path": "/v1/auth/chatgpt",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -456,6 +486,7 @@
       "operation_id": "auth.chatgpt.begin.post",
       "path": "/v1/auth/chatgpt/begin",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -471,6 +502,7 @@
       "operation_id": "auth.chatgpt.complete.post",
       "path": "/v1/auth/chatgpt/complete",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -486,6 +518,7 @@
       "operation_id": "auth.chatgpt.models.get",
       "path": "/v1/auth/chatgpt/models",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -501,6 +534,7 @@
       "operation_id": "auth.chatgpt.refresh.post",
       "path": "/v1/auth/chatgpt/refresh",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -516,6 +550,7 @@
       "operation_id": "calendar.events.get",
       "path": "/v1/calendar/events",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -531,6 +566,7 @@
       "operation_id": "calendar.events.post",
       "path": "/v1/calendar/events",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -546,6 +582,7 @@
       "operation_id": "calendar.events.by_uid.delete",
       "path": "/v1/calendar/events/{uid}",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -561,6 +598,7 @@
       "operation_id": "calendar.events.by_uid.put",
       "path": "/v1/calendar/events/{uid}",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -576,6 +614,7 @@
       "operation_id": "calendar.export.get",
       "path": "/v1/calendar/export",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -591,6 +630,7 @@
       "operation_id": "calendar.import.post",
       "path": "/v1/calendar/import",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -606,6 +646,7 @@
       "operation_id": "capabilities.get",
       "path": "/v1/capabilities",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -621,6 +662,7 @@
       "operation_id": "capabilities.intents.get",
       "path": "/v1/capabilities/intents",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -636,6 +678,7 @@
       "operation_id": "capabilities.reindex.post",
       "path": "/v1/capabilities/reindex",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -651,6 +694,7 @@
       "operation_id": "capabilities.by_capability_id.get",
       "path": "/v1/capabilities/{capability_id}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -666,6 +710,7 @@
       "operation_id": "code.capabilities.get",
       "path": "/v1/code/capabilities",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -681,6 +726,7 @@
       "operation_id": "code.conventions.get",
       "path": "/v1/code/conventions",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -696,6 +742,7 @@
       "operation_id": "code.definition.get",
       "path": "/v1/code/definition",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -711,6 +758,7 @@
       "operation_id": "code.diagnostics.get",
       "path": "/v1/code/diagnostics",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -726,6 +774,7 @@
       "operation_id": "code.hover.get",
       "path": "/v1/code/hover",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -741,6 +790,7 @@
       "operation_id": "code.language_matrix.get",
       "path": "/v1/code/language-matrix",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -756,6 +806,7 @@
       "operation_id": "code.language_root.get",
       "path": "/v1/code/language-root",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -771,6 +822,7 @@
       "operation_id": "code.language_sessions.get",
       "path": "/v1/code/language-sessions",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -786,7 +838,8 @@
       "operation_id": "code.lsp.get",
       "path": "/v1/code/lsp",
       "rate_limit_class": "stream",
-      "streaming": true,
+      "stream_transport": "websocket",
+      "streaming": false,
       "trust_group": "administration"
     },
     {
@@ -801,6 +854,7 @@
       "operation_id": "code.request.post",
       "path": "/v1/code/request",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -816,6 +870,7 @@
       "operation_id": "code.symbols.get",
       "path": "/v1/code/symbols",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -831,6 +886,7 @@
       "operation_id": "code.workspace_diagnostics.get",
       "path": "/v1/code/workspace-diagnostics",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -846,6 +902,7 @@
       "operation_id": "code.workspace_symbols.get",
       "path": "/v1/code/workspace-symbols",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -861,6 +918,7 @@
       "operation_id": "coding_engine.get",
       "path": "/v1/coding-engine",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -876,6 +934,7 @@
       "operation_id": "components.by_component_id.runtime.events.get",
       "path": "/v1/components/{component_id}/runtime/events",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -891,6 +950,7 @@
       "operation_id": "components.by_component_id.runtime.events.post",
       "path": "/v1/components/{component_id}/runtime/events",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -906,6 +966,7 @@
       "operation_id": "components.by_component_id.runtime.probe.by_probe_id.result.post",
       "path": "/v1/components/{component_id}/runtime/probe/{probe_id}/result",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -921,6 +982,7 @@
       "operation_id": "components.by_component_id.store.get",
       "path": "/v1/components/{component_id}/store",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -936,6 +998,7 @@
       "operation_id": "components.by_component_id.store.put",
       "path": "/v1/components/{component_id}/store",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -951,6 +1014,7 @@
       "operation_id": "components.by_component_id.store.keys.get",
       "path": "/v1/components/{component_id}/store/keys",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -966,6 +1030,7 @@
       "operation_id": "components.by_component_id.store.by_key.delete",
       "path": "/v1/components/{component_id}/store/{key}",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -981,6 +1046,7 @@
       "operation_id": "components.by_component_id.store.by_key.get",
       "path": "/v1/components/{component_id}/store/{key}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -996,6 +1062,7 @@
       "operation_id": "components.by_component_id.store.by_key.put",
       "path": "/v1/components/{component_id}/store/{key}",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -1011,6 +1078,7 @@
       "operation_id": "continuations.lineage.by_turn_correlation_id.get",
       "path": "/v1/continuations/lineage/{turn_correlation_id}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -1026,6 +1094,7 @@
       "operation_id": "continuations.status.get",
       "path": "/v1/continuations/status",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -1041,6 +1110,7 @@
       "operation_id": "deliver.outbox.post",
       "path": "/v1/deliver/outbox",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -1056,6 +1126,7 @@
       "operation_id": "deliver.poll.by_job_id.get",
       "path": "/v1/deliver/poll/{job_id}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -1071,6 +1142,7 @@
       "operation_id": "delivery.status.get",
       "path": "/v1/delivery/status",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -1086,6 +1158,7 @@
       "operation_id": "environment.spec.get",
       "path": "/v1/environment/spec",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1101,6 +1174,7 @@
       "operation_id": "environment.spec.put",
       "path": "/v1/environment/spec",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1116,6 +1190,7 @@
       "operation_id": "environment.spec.pending.delete",
       "path": "/v1/environment/spec/pending",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1131,6 +1206,7 @@
       "operation_id": "environment.spec.pending.get",
       "path": "/v1/environment/spec/pending",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1146,6 +1222,7 @@
       "operation_id": "environment.spec.pending.apply.post",
       "path": "/v1/environment/spec/pending/apply",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1161,6 +1238,7 @@
       "operation_id": "environment.spec.propose.post",
       "path": "/v1/environment/spec/propose",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1176,6 +1254,7 @@
       "operation_id": "environment.spec.stream.get",
       "path": "/v1/environment/spec/stream",
       "rate_limit_class": "stream",
+      "stream_transport": "sse",
       "streaming": true,
       "trust_group": "administration"
     },
@@ -1191,6 +1270,7 @@
       "operation_id": "environment.spec.validate.post",
       "path": "/v1/environment/spec/validate",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1206,6 +1286,7 @@
       "operation_id": "environment.status.get",
       "path": "/v1/environment/status",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1221,6 +1302,7 @@
       "operation_id": "feeds.get",
       "path": "/v1/feeds",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -1236,6 +1318,7 @@
       "operation_id": "feeds.stream.get",
       "path": "/v1/feeds/stream",
       "rate_limit_class": "stream",
+      "stream_transport": "sse",
       "streaming": true,
       "trust_group": "portal"
     },
@@ -1251,6 +1334,7 @@
       "operation_id": "feeds.by_feed_id.latest_good.get",
       "path": "/v1/feeds/{feed_id}/latest-good",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -1266,6 +1350,7 @@
       "operation_id": "feeds.by_feed_id.read.post",
       "path": "/v1/feeds/{feed_id}/read",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -1281,6 +1366,7 @@
       "operation_id": "feeds.by_feed_id.tail.get",
       "path": "/v1/feeds/{feed_id}/tail",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -1296,6 +1382,7 @@
       "operation_id": "forge.evidence.by_evidence_id.commands.get",
       "path": "/v1/forge/evidence/{evidence_id}/commands",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1311,6 +1398,7 @@
       "operation_id": "forge.evidence.by_evidence_id.patch.get",
       "path": "/v1/forge/evidence/{evidence_id}/patch",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1326,6 +1414,7 @@
       "operation_id": "forge.evidence.by_evidence_id.receipts.get",
       "path": "/v1/forge/evidence/{evidence_id}/receipts",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1341,6 +1430,7 @@
       "operation_id": "forge.items.get",
       "path": "/v1/forge/items",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1356,6 +1446,7 @@
       "operation_id": "forge.items.post",
       "path": "/v1/forge/items",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1371,6 +1462,7 @@
       "operation_id": "forge.items.start.post",
       "path": "/v1/forge/items/start",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1386,6 +1478,7 @@
       "operation_id": "forge.items.by_work_id.get",
       "path": "/v1/forge/items/{work_id}",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1401,6 +1494,7 @@
       "operation_id": "forge.items.by_work_id.apply.post",
       "path": "/v1/forge/items/{work_id}/apply",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1416,6 +1510,7 @@
       "operation_id": "forge.items.by_work_id.attempts.post",
       "path": "/v1/forge/items/{work_id}/attempts",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1431,6 +1526,7 @@
       "operation_id": "forge.items.by_work_id.changes.get",
       "path": "/v1/forge/items/{work_id}/changes",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1446,6 +1542,7 @@
       "operation_id": "forge.items.by_work_id.changes.blame.get",
       "path": "/v1/forge/items/{work_id}/changes/blame",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1461,6 +1558,7 @@
       "operation_id": "forge.items.by_work_id.changes.checkpoint.post",
       "path": "/v1/forge/items/{work_id}/changes/checkpoint",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1476,6 +1574,7 @@
       "operation_id": "forge.items.by_work_id.changes.conflict.post",
       "path": "/v1/forge/items/{work_id}/changes/conflict",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1491,6 +1590,7 @@
       "operation_id": "forge.items.by_work_id.changes.fetch.post",
       "path": "/v1/forge/items/{work_id}/changes/fetch",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1506,6 +1606,7 @@
       "operation_id": "forge.items.by_work_id.changes.file.get",
       "path": "/v1/forge/items/{work_id}/changes/file",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1521,6 +1622,7 @@
       "operation_id": "forge.items.by_work_id.changes.file.post",
       "path": "/v1/forge/items/{work_id}/changes/file",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1536,6 +1638,7 @@
       "operation_id": "forge.items.by_work_id.changes.file.hunk.post",
       "path": "/v1/forge/items/{work_id}/changes/file/hunk",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1551,6 +1654,7 @@
       "operation_id": "forge.items.by_work_id.changes.history.get",
       "path": "/v1/forge/items/{work_id}/changes/history",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1566,6 +1670,7 @@
       "operation_id": "forge.items.by_work_id.changes.pull.post",
       "path": "/v1/forge/items/{work_id}/changes/pull",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1581,6 +1686,7 @@
       "operation_id": "forge.items.by_work_id.changes.push.post",
       "path": "/v1/forge/items/{work_id}/changes/push",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1596,6 +1702,7 @@
       "operation_id": "forge.items.by_work_id.changes.sync.post",
       "path": "/v1/forge/items/{work_id}/changes/sync",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1611,6 +1718,7 @@
       "operation_id": "forge.items.by_work_id.decisions.post",
       "path": "/v1/forge/items/{work_id}/decisions",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1626,6 +1734,7 @@
       "operation_id": "forge.items.by_work_id.discard.post",
       "path": "/v1/forge/items/{work_id}/discard",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1641,6 +1750,7 @@
       "operation_id": "forge.items.by_work_id.export.post",
       "path": "/v1/forge/items/{work_id}/export",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1656,6 +1766,7 @@
       "operation_id": "forge.items.by_work_id.handoff.post",
       "path": "/v1/forge/items/{work_id}/handoff",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1671,6 +1782,7 @@
       "operation_id": "forge.items.by_work_id.project_events.get",
       "path": "/v1/forge/items/{work_id}/project-events",
       "rate_limit_class": "stream",
+      "stream_transport": "sse",
       "streaming": true,
       "trust_group": "administration"
     },
@@ -1686,6 +1798,7 @@
       "operation_id": "forge.items.by_work_id.provider.get",
       "path": "/v1/forge/items/{work_id}/provider",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1701,6 +1814,7 @@
       "operation_id": "forge.items.by_work_id.provider.post",
       "path": "/v1/forge/items/{work_id}/provider",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1716,6 +1830,7 @@
       "operation_id": "forge.items.by_work_id.provider.comments.get",
       "path": "/v1/forge/items/{work_id}/provider/comments",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1731,6 +1846,7 @@
       "operation_id": "forge.items.by_work_id.provider.comments.post",
       "path": "/v1/forge/items/{work_id}/provider/comments",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1746,6 +1862,7 @@
       "operation_id": "forge.items.by_work_id.provider.context.put",
       "path": "/v1/forge/items/{work_id}/provider/context",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1761,6 +1878,7 @@
       "operation_id": "forge.items.by_work_id.provision.post",
       "path": "/v1/forge/items/{work_id}/provision",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1776,6 +1894,7 @@
       "operation_id": "forge.items.by_work_id.review.get",
       "path": "/v1/forge/items/{work_id}/review",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1791,6 +1910,7 @@
       "operation_id": "forge.items.by_work_id.review.comments.get",
       "path": "/v1/forge/items/{work_id}/review/comments",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1806,6 +1926,7 @@
       "operation_id": "forge.items.by_work_id.review.comments.post",
       "path": "/v1/forge/items/{work_id}/review/comments",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1821,6 +1942,7 @@
       "operation_id": "forge.items.by_work_id.review.comments.by_comment_id.delete",
       "path": "/v1/forge/items/{work_id}/review/comments/{comment_id}",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1836,6 +1958,7 @@
       "operation_id": "forge.items.by_work_id.review.comments.by_comment_id.patch",
       "path": "/v1/forge/items/{work_id}/review/comments/{comment_id}",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1851,6 +1974,7 @@
       "operation_id": "forge.items.by_work_id.review.continue_editing.post",
       "path": "/v1/forge/items/{work_id}/review/continue-editing",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1866,6 +1990,7 @@
       "operation_id": "forge.items.by_work_id.review.file.get",
       "path": "/v1/forge/items/{work_id}/review/file",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1881,6 +2006,7 @@
       "operation_id": "forge.items.by_work_id.review.file.post",
       "path": "/v1/forge/items/{work_id}/review/file",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1896,6 +2022,7 @@
       "operation_id": "forge.items.by_work_id.review.request_changes.post",
       "path": "/v1/forge/items/{work_id}/review/request-changes",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1911,6 +2038,7 @@
       "operation_id": "forge.items.by_work_id.run_script.post",
       "path": "/v1/forge/items/{work_id}/run-script",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1926,6 +2054,7 @@
       "operation_id": "forge.items.by_work_id.search.get",
       "path": "/v1/forge/items/{work_id}/search",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1941,6 +2070,7 @@
       "operation_id": "forge.items.by_work_id.search.replace.post",
       "path": "/v1/forge/items/{work_id}/search/replace",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1956,6 +2086,7 @@
       "operation_id": "forge.items.by_work_id.source.delete",
       "path": "/v1/forge/items/{work_id}/source",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1971,6 +2102,7 @@
       "operation_id": "forge.items.by_work_id.source.get",
       "path": "/v1/forge/items/{work_id}/source",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -1986,6 +2118,7 @@
       "operation_id": "forge.items.by_work_id.source.patch",
       "path": "/v1/forge/items/{work_id}/source",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2001,6 +2134,7 @@
       "operation_id": "forge.items.by_work_id.source.post",
       "path": "/v1/forge/items/{work_id}/source",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2016,6 +2150,7 @@
       "operation_id": "forge.items.by_work_id.source.put",
       "path": "/v1/forge/items/{work_id}/source",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2031,6 +2166,7 @@
       "operation_id": "forge.items.by_work_id.source.batch.put",
       "path": "/v1/forge/items/{work_id}/source/batch",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2046,6 +2182,7 @@
       "operation_id": "forge.items.by_work_id.source.workspace_edit.put",
       "path": "/v1/forge/items/{work_id}/source/workspace-edit",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2061,6 +2198,7 @@
       "operation_id": "forge.items.by_work_id.task_runs.by_run_id.delete",
       "path": "/v1/forge/items/{work_id}/task-runs/{run_id}",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2076,6 +2214,7 @@
       "operation_id": "forge.items.by_work_id.task_runs.by_run_id.get",
       "path": "/v1/forge/items/{work_id}/task-runs/{run_id}",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2091,6 +2230,7 @@
       "operation_id": "forge.items.by_work_id.task_runs.by_run_id.events.get",
       "path": "/v1/forge/items/{work_id}/task-runs/{run_id}/events",
       "rate_limit_class": "stream",
+      "stream_transport": "sse",
       "streaming": true,
       "trust_group": "administration"
     },
@@ -2106,6 +2246,7 @@
       "operation_id": "forge.items.by_work_id.task_runs.by_run_id.preview.post",
       "path": "/v1/forge/items/{work_id}/task-runs/{run_id}/preview",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2121,6 +2262,7 @@
       "operation_id": "forge.items.by_work_id.tasks.get",
       "path": "/v1/forge/items/{work_id}/tasks",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2136,6 +2278,7 @@
       "operation_id": "forge.items.by_work_id.tasks.by_task_id.run.post",
       "path": "/v1/forge/items/{work_id}/tasks/{task_id}/run",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2151,6 +2294,7 @@
       "operation_id": "forge.items.by_work_id.tasks.by_task_id.runs.post",
       "path": "/v1/forge/items/{work_id}/tasks/{task_id}/runs",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2166,6 +2310,7 @@
       "operation_id": "forge.items.by_work_id.tests.get",
       "path": "/v1/forge/items/{work_id}/tests",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2181,6 +2326,7 @@
       "operation_id": "forge.items.by_work_id.tree.get",
       "path": "/v1/forge/items/{work_id}/tree",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2196,6 +2342,7 @@
       "operation_id": "forge.items.by_work_id.workspace_state.get",
       "path": "/v1/forge/items/{work_id}/workspace-state",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2211,6 +2358,7 @@
       "operation_id": "forge.items.by_work_id.workspace_state.put",
       "path": "/v1/forge/items/{work_id}/workspace-state",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2226,6 +2374,7 @@
       "operation_id": "forge.leases.by_lease_id.complete.post",
       "path": "/v1/forge/leases/{lease_id}/complete",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2241,6 +2390,7 @@
       "operation_id": "forge.leases.by_lease_id.fail.post",
       "path": "/v1/forge/leases/{lease_id}/fail",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2256,6 +2406,7 @@
       "operation_id": "forge.leases.by_lease_id.heartbeat.post",
       "path": "/v1/forge/leases/{lease_id}/heartbeat",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2271,6 +2422,7 @@
       "operation_id": "forge.leases.by_lease_id.interrupt.post",
       "path": "/v1/forge/leases/{lease_id}/interrupt",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2284,6 +2436,7 @@
       "operation_id": "forge.preview.by_token.delete",
       "path": "/v1/forge/preview/{token}",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "preview"
     },
@@ -2297,6 +2450,7 @@
       "operation_id": "forge.preview.by_token.get",
       "path": "/v1/forge/preview/{token}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "preview"
     },
@@ -2310,6 +2464,7 @@
       "operation_id": "forge.preview.by_token.head",
       "path": "/v1/forge/preview/{token}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "preview"
     },
@@ -2323,6 +2478,7 @@
       "operation_id": "forge.preview.by_token.options",
       "path": "/v1/forge/preview/{token}",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "preview"
     },
@@ -2336,6 +2492,7 @@
       "operation_id": "forge.preview.by_token.patch",
       "path": "/v1/forge/preview/{token}",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "preview"
     },
@@ -2349,6 +2506,7 @@
       "operation_id": "forge.preview.by_token.post",
       "path": "/v1/forge/preview/{token}",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "preview"
     },
@@ -2362,6 +2520,7 @@
       "operation_id": "forge.preview.by_token.put",
       "path": "/v1/forge/preview/{token}",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "preview"
     },
@@ -2375,6 +2534,7 @@
       "operation_id": "forge.preview.by_token.by_rest.delete",
       "path": "/v1/forge/preview/{token}/{*rest}",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "preview"
     },
@@ -2388,6 +2548,7 @@
       "operation_id": "forge.preview.by_token.by_rest.get",
       "path": "/v1/forge/preview/{token}/{*rest}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "preview"
     },
@@ -2401,6 +2562,7 @@
       "operation_id": "forge.preview.by_token.by_rest.head",
       "path": "/v1/forge/preview/{token}/{*rest}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "preview"
     },
@@ -2414,6 +2576,7 @@
       "operation_id": "forge.preview.by_token.by_rest.options",
       "path": "/v1/forge/preview/{token}/{*rest}",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "preview"
     },
@@ -2427,6 +2590,7 @@
       "operation_id": "forge.preview.by_token.by_rest.patch",
       "path": "/v1/forge/preview/{token}/{*rest}",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "preview"
     },
@@ -2440,6 +2604,7 @@
       "operation_id": "forge.preview.by_token.by_rest.post",
       "path": "/v1/forge/preview/{token}/{*rest}",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "preview"
     },
@@ -2453,6 +2618,7 @@
       "operation_id": "forge.preview.by_token.by_rest.put",
       "path": "/v1/forge/preview/{token}/{*rest}",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "preview"
     },
@@ -2468,6 +2634,7 @@
       "operation_id": "forge.repositories.get",
       "path": "/v1/forge/repositories",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2483,6 +2650,7 @@
       "operation_id": "forge.repositories.put",
       "path": "/v1/forge/repositories",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2498,6 +2666,7 @@
       "operation_id": "forge.repositories.browse.get",
       "path": "/v1/forge/repositories/browse",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2513,6 +2682,7 @@
       "operation_id": "forge.repositories.inspect.post",
       "path": "/v1/forge/repositories/inspect",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2528,6 +2698,7 @@
       "operation_id": "forge.repositories.provider.get",
       "path": "/v1/forge/repositories/provider",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2543,6 +2714,7 @@
       "operation_id": "forge.repositories.provider.post",
       "path": "/v1/forge/repositories/provider",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2558,6 +2730,7 @@
       "operation_id": "forge.stream.get",
       "path": "/v1/forge/stream",
       "rate_limit_class": "stream",
+      "stream_transport": "sse",
       "streaming": true,
       "trust_group": "administration"
     },
@@ -2573,6 +2746,7 @@
       "operation_id": "grapheme.allowlist.get",
       "path": "/v1/grapheme/allowlist",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2588,6 +2762,7 @@
       "operation_id": "grapheme.allowlist.put",
       "path": "/v1/grapheme/allowlist",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2603,6 +2778,7 @@
       "operation_id": "grapheme.compile.post",
       "path": "/v1/grapheme/compile",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2618,6 +2794,7 @@
       "operation_id": "grapheme.lifecycle.get",
       "path": "/v1/grapheme/lifecycle",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2633,7 +2810,8 @@
       "operation_id": "grapheme.lsp.get",
       "path": "/v1/grapheme/lsp",
       "rate_limit_class": "stream",
-      "streaming": true,
+      "stream_transport": "websocket",
+      "streaming": false,
       "trust_group": "portal"
     },
     {
@@ -2648,6 +2826,7 @@
       "operation_id": "grapheme.lsp.workspace.get",
       "path": "/v1/grapheme/lsp/workspace",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2663,6 +2842,7 @@
       "operation_id": "grapheme.modules.get",
       "path": "/v1/grapheme/modules",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2678,6 +2858,7 @@
       "operation_id": "grapheme.modules.load.post",
       "path": "/v1/grapheme/modules/load",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2693,6 +2874,7 @@
       "operation_id": "grapheme.modules.by_module_id.get",
       "path": "/v1/grapheme/modules/{module_id}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2708,6 +2890,7 @@
       "operation_id": "grapheme.modules.by_module_id.ops.get",
       "path": "/v1/grapheme/modules/{module_id}/ops",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2723,6 +2906,7 @@
       "operation_id": "grapheme.run.post",
       "path": "/v1/grapheme/run",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2738,6 +2922,7 @@
       "operation_id": "grapheme.scripts.get",
       "path": "/v1/grapheme/scripts",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2753,6 +2938,7 @@
       "operation_id": "grapheme.scripts.post",
       "path": "/v1/grapheme/scripts",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2768,6 +2954,7 @@
       "operation_id": "grapheme.scripts.by_script_id.delete",
       "path": "/v1/grapheme/scripts/{script_id}",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2783,6 +2970,7 @@
       "operation_id": "grapheme.scripts.by_script_id.get",
       "path": "/v1/grapheme/scripts/{script_id}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2798,6 +2986,7 @@
       "operation_id": "grapheme.scripts.by_script_id.rename.post",
       "path": "/v1/grapheme/scripts/{script_id}/rename",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2813,6 +3002,7 @@
       "operation_id": "health.get",
       "path": "/v1/health",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2828,6 +3018,7 @@
       "operation_id": "heartbeat.status.get",
       "path": "/v1/heartbeat/status",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2843,6 +3034,7 @@
       "operation_id": "identity.context.post",
       "path": "/v1/identity/context",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2858,6 +3050,7 @@
       "operation_id": "identity.digest_preview.post",
       "path": "/v1/identity/digest-preview",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2873,6 +3066,7 @@
       "operation_id": "identity.export_markdown.post",
       "path": "/v1/identity/export-markdown",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2888,6 +3082,7 @@
       "operation_id": "identity.history.post",
       "path": "/v1/identity/history",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2903,6 +3098,7 @@
       "operation_id": "identity.profiles.get",
       "path": "/v1/identity/profiles",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2918,6 +3114,7 @@
       "operation_id": "identity.profiles.post",
       "path": "/v1/identity/profiles",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2933,6 +3130,7 @@
       "operation_id": "identity.profiles.active.put",
       "path": "/v1/identity/profiles/active",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2948,6 +3146,7 @@
       "operation_id": "identity.profiles.export.post",
       "path": "/v1/identity/profiles/export",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2963,6 +3162,7 @@
       "operation_id": "identity.profiles.import.post",
       "path": "/v1/identity/profiles/import",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -2978,6 +3178,7 @@
       "operation_id": "identity.remember.post",
       "path": "/v1/identity/remember",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -2993,6 +3194,7 @@
       "operation_id": "identity.rollback.post",
       "path": "/v1/identity/rollback",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3008,6 +3210,7 @@
       "operation_id": "identity.update.commit.post",
       "path": "/v1/identity/update/commit",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3023,6 +3226,7 @@
       "operation_id": "identity.update.propose.post",
       "path": "/v1/identity/update/propose",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3038,6 +3242,7 @@
       "operation_id": "ingest.post",
       "path": "/v1/ingest",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3053,6 +3258,7 @@
       "operation_id": "ingest.by_stream_id.stream.get",
       "path": "/v1/ingest/{stream_id}/stream",
       "rate_limit_class": "stream",
+      "stream_transport": "sse",
       "streaming": true,
       "trust_group": "portal"
     },
@@ -3068,6 +3274,7 @@
       "operation_id": "interactive.turn.post",
       "path": "/v1/interactive/turn",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3083,6 +3290,7 @@
       "operation_id": "interactive.turn.by_turn_id.stream.get",
       "path": "/v1/interactive/turn/{turn_id}/stream",
       "rate_limit_class": "stream",
+      "stream_transport": "sse",
       "streaming": true,
       "trust_group": "portal"
     },
@@ -3098,6 +3306,7 @@
       "operation_id": "jobs.ask.post",
       "path": "/v1/jobs/ask",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3113,6 +3322,7 @@
       "operation_id": "jobs.prompt.post",
       "path": "/v1/jobs/prompt",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3128,6 +3338,7 @@
       "operation_id": "jobs.report.post",
       "path": "/v1/jobs/report",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3143,6 +3354,7 @@
       "operation_id": "jobs.by_job_id.archive.post",
       "path": "/v1/jobs/{job_id}/archive",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3158,6 +3370,7 @@
       "operation_id": "jobs.by_job_id.complete_actions.post",
       "path": "/v1/jobs/{job_id}/complete-actions",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3173,6 +3386,7 @@
       "operation_id": "jobs.by_job_id.replay_and_resume.post",
       "path": "/v1/jobs/{job_id}/replay-and-resume",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3188,6 +3402,7 @@
       "operation_id": "jobs.by_job_id.report.get",
       "path": "/v1/jobs/{job_id}/report",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3203,6 +3418,7 @@
       "operation_id": "jobs.by_job_id.result.get",
       "path": "/v1/jobs/{job_id}/result",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3218,6 +3434,7 @@
       "operation_id": "lan.workshops.get",
       "path": "/v1/lan/workshops",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3233,6 +3450,7 @@
       "operation_id": "local.catalog.get",
       "path": "/v1/local/catalog",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3248,6 +3466,7 @@
       "operation_id": "local.engine.status.get",
       "path": "/v1/local/engine/status",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3263,6 +3482,7 @@
       "operation_id": "local.hardware.get",
       "path": "/v1/local/hardware",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3278,6 +3498,7 @@
       "operation_id": "local.models.get",
       "path": "/v1/local/models",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3293,6 +3514,7 @@
       "operation_id": "local.models.download.post",
       "path": "/v1/local/models/download",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3308,6 +3530,7 @@
       "operation_id": "local.models.download.by_job_id.get",
       "path": "/v1/local/models/download/{job_id}",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3323,6 +3546,7 @@
       "operation_id": "local.models.download.by_job_id.events.get",
       "path": "/v1/local/models/download/{job_id}/events",
       "rate_limit_class": "stream",
+      "stream_transport": "sse",
       "streaming": true,
       "trust_group": "administration"
     },
@@ -3338,6 +3562,7 @@
       "operation_id": "local.models.by_model_id.delete",
       "path": "/v1/local/models/{model_id}",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3353,6 +3578,7 @@
       "operation_id": "locus.nodes.get",
       "path": "/v1/locus/nodes",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3368,6 +3594,7 @@
       "operation_id": "locus.nodes.by_sync_key.get",
       "path": "/v1/locus/nodes/{sync_key}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3383,6 +3610,7 @@
       "operation_id": "locus.tags.get",
       "path": "/v1/locus/tags",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3398,6 +3626,7 @@
       "operation_id": "maintenance.artifacts.get",
       "path": "/v1/maintenance/artifacts",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3413,6 +3642,7 @@
       "operation_id": "maintenance.artifacts.put",
       "path": "/v1/maintenance/artifacts",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3428,6 +3658,7 @@
       "operation_id": "maintenance.storage.get",
       "path": "/v1/maintenance/storage",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3443,6 +3674,7 @@
       "operation_id": "maintenance.storage.post",
       "path": "/v1/maintenance/storage",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3458,6 +3690,7 @@
       "operation_id": "maintenance.storage.put",
       "path": "/v1/maintenance/storage",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3473,6 +3706,7 @@
       "operation_id": "manuscripts.get",
       "path": "/v1/manuscripts",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3488,6 +3722,7 @@
       "operation_id": "manuscripts.post",
       "path": "/v1/manuscripts",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3503,6 +3738,7 @@
       "operation_id": "manuscripts.create.post",
       "path": "/v1/manuscripts/create",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3518,6 +3754,7 @@
       "operation_id": "manuscripts.by_manuscript_id.get",
       "path": "/v1/manuscripts/{manuscript_id}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3533,6 +3770,7 @@
       "operation_id": "manuscripts.by_manuscript_id.patch",
       "path": "/v1/manuscripts/{manuscript_id}",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3548,6 +3786,7 @@
       "operation_id": "mcp.gateway.status.get",
       "path": "/v1/mcp/gateway/status",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3563,6 +3802,7 @@
       "operation_id": "mcp.policy.evaluate.post",
       "path": "/v1/mcp/policy/evaluate",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3578,6 +3818,7 @@
       "operation_id": "media.upload.post",
       "path": "/v1/media/upload",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3593,6 +3834,7 @@
       "operation_id": "media.by_media_id.get",
       "path": "/v1/media/{media_id}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3608,6 +3850,7 @@
       "operation_id": "mesh.inbox.get",
       "path": "/v1/mesh/inbox",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -3623,6 +3866,7 @@
       "operation_id": "mesh.intros.get",
       "path": "/v1/mesh/intros",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -3638,6 +3882,7 @@
       "operation_id": "mesh.intros.post",
       "path": "/v1/mesh/intros",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -3653,6 +3898,7 @@
       "operation_id": "mesh.intros.candidates.get",
       "path": "/v1/mesh/intros/candidates",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -3668,6 +3914,7 @@
       "operation_id": "mesh.intros.by_intro_id.accept.post",
       "path": "/v1/mesh/intros/{intro_id}/accept",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -3683,6 +3930,7 @@
       "operation_id": "mesh.intros.by_intro_id.decline.post",
       "path": "/v1/mesh/intros/{intro_id}/decline",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -3698,6 +3946,7 @@
       "operation_id": "mesh.outbox.get",
       "path": "/v1/mesh/outbox",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -3713,6 +3962,7 @@
       "operation_id": "mesh.outbox.post",
       "path": "/v1/mesh/outbox",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -3728,6 +3978,7 @@
       "operation_id": "mesh.outbox.by_item_id.flush.post",
       "path": "/v1/mesh/outbox/{item_id}/flush",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -3743,6 +3994,7 @@
       "operation_id": "mesh.peers.get",
       "path": "/v1/mesh/peers",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -3758,6 +4010,7 @@
       "operation_id": "mesh.peers.by_device_id.patch",
       "path": "/v1/mesh/peers/{device_id}",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -3773,6 +4026,7 @@
       "operation_id": "mesh.receipts.get",
       "path": "/v1/mesh/receipts",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -3788,6 +4042,7 @@
       "operation_id": "mesh.receipts.post",
       "path": "/v1/mesh/receipts",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -3803,6 +4058,7 @@
       "operation_id": "models.capabilities.get",
       "path": "/v1/models/capabilities",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3818,6 +4074,7 @@
       "operation_id": "models.catalog.get",
       "path": "/v1/models/catalog",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3833,6 +4090,7 @@
       "operation_id": "models.catalog.refresh.post",
       "path": "/v1/models/catalog/refresh",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3848,6 +4106,7 @@
       "operation_id": "peer.messages.get",
       "path": "/v1/peer/messages",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -3863,6 +4122,7 @@
       "operation_id": "peer.messages.post",
       "path": "/v1/peer/messages",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -3878,6 +4138,7 @@
       "operation_id": "peer.messages.unread_count.get",
       "path": "/v1/peer/messages/unread-count",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -3893,6 +4154,7 @@
       "operation_id": "peer.messages.by_message_id.read.post",
       "path": "/v1/peer/messages/{message_id}/read",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -3908,6 +4170,7 @@
       "operation_id": "recurring.get",
       "path": "/v1/recurring",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3923,6 +4186,7 @@
       "operation_id": "recurring.prompt.post",
       "path": "/v1/recurring/prompt",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3938,6 +4202,7 @@
       "operation_id": "recurring.by_recurring_id.delete",
       "path": "/v1/recurring/{recurring_id}",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3953,6 +4218,7 @@
       "operation_id": "recurring.by_recurring_id.patch",
       "path": "/v1/recurring/{recurring_id}",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -3968,6 +4234,7 @@
       "operation_id": "recurring.by_recurring_id.delivery.get",
       "path": "/v1/recurring/{recurring_id}/delivery",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3983,6 +4250,7 @@
       "operation_id": "recurring.by_recurring_id.runs.get",
       "path": "/v1/recurring/{recurring_id}/runs",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -3998,6 +4266,7 @@
       "operation_id": "runtime.artifact.command.post",
       "path": "/v1/runtime/artifact/command",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4013,6 +4282,7 @@
       "operation_id": "runtime.artifact.delete.post",
       "path": "/v1/runtime/artifact/delete",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4028,6 +4298,7 @@
       "operation_id": "runtime.artifact.fetch.post",
       "path": "/v1/runtime/artifact/fetch",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4043,6 +4314,7 @@
       "operation_id": "runtime.artifact.list_ui.post",
       "path": "/v1/runtime/artifact/list-ui",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4058,6 +4330,7 @@
       "operation_id": "runtime.artifact.write.post",
       "path": "/v1/runtime/artifact/write",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4073,6 +4346,7 @@
       "operation_id": "runtime.config.command.post",
       "path": "/v1/runtime/config/command",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4088,6 +4362,7 @@
       "operation_id": "runtime.defaults.get",
       "path": "/v1/runtime/defaults",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4103,6 +4378,7 @@
       "operation_id": "runtime.inference_profiles.put",
       "path": "/v1/runtime/inference-profiles",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4118,6 +4394,7 @@
       "operation_id": "runtime.stage_route.command.post",
       "path": "/v1/runtime/stage-route/command",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4133,6 +4410,7 @@
       "operation_id": "runtime.tui_defaults.get",
       "path": "/v1/runtime/tui-defaults",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4148,6 +4426,7 @@
       "operation_id": "runtime.tui_defaults.put",
       "path": "/v1/runtime/tui-defaults",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4163,6 +4442,7 @@
       "operation_id": "runtime.workers.get",
       "path": "/v1/runtime/workers",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4178,6 +4458,7 @@
       "operation_id": "runtime.workers.put",
       "path": "/v1/runtime/workers",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4193,6 +4474,7 @@
       "operation_id": "session_deletions.by_deletion_id.get",
       "path": "/v1/session-deletions/{deletion_id}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4208,6 +4490,7 @@
       "operation_id": "sessions.get",
       "path": "/v1/sessions",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4223,6 +4506,7 @@
       "operation_id": "sessions.post",
       "path": "/v1/sessions",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4238,6 +4522,7 @@
       "operation_id": "sessions.shell.get",
       "path": "/v1/sessions/shell",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4253,6 +4538,7 @@
       "operation_id": "sessions.shell.post",
       "path": "/v1/sessions/shell",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4268,7 +4554,8 @@
       "operation_id": "sessions.shell.by_id.get",
       "path": "/v1/sessions/shell/{id}",
       "rate_limit_class": "stream",
-      "streaming": true,
+      "stream_transport": "websocket",
+      "streaming": false,
       "trust_group": "administration"
     },
     {
@@ -4283,6 +4570,7 @@
       "operation_id": "sessions.shell.by_id.signal.post",
       "path": "/v1/sessions/shell/{id}/signal",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4298,6 +4586,7 @@
       "operation_id": "sessions.by_session_id.delete",
       "path": "/v1/sessions/{session_id}",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4313,6 +4602,7 @@
       "operation_id": "sessions.by_session_id.active_turn.get",
       "path": "/v1/sessions/{session_id}/active-turn",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4328,6 +4618,7 @@
       "operation_id": "sessions.by_session_id.active_turn.post",
       "path": "/v1/sessions/{session_id}/active-turn",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4343,6 +4634,7 @@
       "operation_id": "sessions.by_session_id.agent_mode.delete",
       "path": "/v1/sessions/{session_id}/agent-mode",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4358,6 +4650,7 @@
       "operation_id": "sessions.by_session_id.agent_mode.get",
       "path": "/v1/sessions/{session_id}/agent-mode",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4373,6 +4666,7 @@
       "operation_id": "sessions.by_session_id.agent_mode.put",
       "path": "/v1/sessions/{session_id}/agent-mode",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4388,6 +4682,7 @@
       "operation_id": "sessions.by_session_id.agent_mode.proposals.get",
       "path": "/v1/sessions/{session_id}/agent-mode/proposals",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4403,6 +4698,7 @@
       "operation_id": "sessions.by_session_id.agent_mode.proposals.by_proposal_id.put",
       "path": "/v1/sessions/{session_id}/agent-mode/proposals/{proposal_id}",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4418,6 +4714,7 @@
       "operation_id": "sessions.by_session_id.code_binding.delete",
       "path": "/v1/sessions/{session_id}/code-binding",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4433,6 +4730,7 @@
       "operation_id": "sessions.by_session_id.code_binding.get",
       "path": "/v1/sessions/{session_id}/code-binding",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4448,6 +4746,7 @@
       "operation_id": "sessions.by_session_id.code_binding.put",
       "path": "/v1/sessions/{session_id}/code-binding",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4463,6 +4762,7 @@
       "operation_id": "sessions.by_session_id.code_project.post",
       "path": "/v1/sessions/{session_id}/code-project",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4478,6 +4778,7 @@
       "operation_id": "sessions.by_session_id.history.get",
       "path": "/v1/sessions/{session_id}/history",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4493,6 +4794,7 @@
       "operation_id": "sessions.by_session_id.name.put",
       "path": "/v1/sessions/{session_id}/name",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4508,6 +4810,7 @@
       "operation_id": "sessions.by_session_id.turns.get",
       "path": "/v1/sessions/{session_id}/turns",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4523,6 +4826,7 @@
       "operation_id": "sessions.by_session_id.turns.post",
       "path": "/v1/sessions/{session_id}/turns",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4538,6 +4842,7 @@
       "operation_id": "sessions.by_session_id.workshop.steer.post",
       "path": "/v1/sessions/{session_id}/workshop/steer",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4553,6 +4858,7 @@
       "operation_id": "share.capabilities.get",
       "path": "/v1/share/capabilities",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -4568,6 +4874,7 @@
       "operation_id": "share.export.post",
       "path": "/v1/share/export",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -4583,6 +4890,7 @@
       "operation_id": "share.import.post",
       "path": "/v1/share/import",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -4598,6 +4906,7 @@
       "operation_id": "share.push.post",
       "path": "/v1/share/push",
       "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
     },
@@ -4613,6 +4922,7 @@
       "operation_id": "shared_mode.get",
       "path": "/v1/shared-mode",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4628,6 +4938,7 @@
       "operation_id": "shared_mode.put",
       "path": "/v1/shared-mode",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4643,6 +4954,7 @@
       "operation_id": "shell_sessions.get",
       "path": "/v1/shell-sessions",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4658,6 +4970,7 @@
       "operation_id": "stats.get",
       "path": "/v1/stats",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4673,6 +4986,7 @@
       "operation_id": "stt.status.get",
       "path": "/v1/stt/status",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4688,6 +5002,7 @@
       "operation_id": "stt.transcribe.post",
       "path": "/v1/stt/transcribe",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4703,6 +5018,7 @@
       "operation_id": "tool_history.slices.get",
       "path": "/v1/tool-history/slices",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4718,6 +5034,7 @@
       "operation_id": "turns.post",
       "path": "/v1/turns",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4733,6 +5050,7 @@
       "operation_id": "turns.budget_requests.get",
       "path": "/v1/turns/budget-requests",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4748,6 +5066,7 @@
       "operation_id": "turns.budget_requests.by_request_id.get",
       "path": "/v1/turns/budget-requests/{request_id}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4763,6 +5082,7 @@
       "operation_id": "turns.budget_requests.by_request_id.approve.post",
       "path": "/v1/turns/budget-requests/{request_id}/approve",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4778,6 +5098,7 @@
       "operation_id": "turns.budget_requests.by_request_id.deny.post",
       "path": "/v1/turns/budget-requests/{request_id}/deny",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4793,6 +5114,7 @@
       "operation_id": "turns.by_turn_id.get",
       "path": "/v1/turns/{turn_id}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4808,6 +5130,7 @@
       "operation_id": "vault.active.put",
       "path": "/v1/vault/active",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4823,6 +5146,7 @@
       "operation_id": "vault.backlinks.get",
       "path": "/v1/vault/backlinks",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4838,6 +5162,7 @@
       "operation_id": "vault.changes.get",
       "path": "/v1/vault/changes",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4853,6 +5178,7 @@
       "operation_id": "vault.files.by_file_path.get",
       "path": "/v1/vault/files/{*file_path}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -4868,6 +5194,7 @@
       "operation_id": "vault.git.commit.post",
       "path": "/v1/vault/git/commit",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4883,6 +5210,7 @@
       "operation_id": "vault.git.detect.get",
       "path": "/v1/vault/git/detect",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4898,6 +5226,7 @@
       "operation_id": "vault.git.diff.get",
       "path": "/v1/vault/git/diff",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4913,6 +5242,7 @@
       "operation_id": "vault.git.enable.post",
       "path": "/v1/vault/git/enable",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4928,6 +5258,7 @@
       "operation_id": "vault.git.init.post",
       "path": "/v1/vault/git/init",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4943,6 +5274,7 @@
       "operation_id": "vault.git.install.post",
       "path": "/v1/vault/git/install",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4958,6 +5290,7 @@
       "operation_id": "vault.git.log.get",
       "path": "/v1/vault/git/log",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4973,6 +5306,7 @@
       "operation_id": "vault.git.restore.post",
       "path": "/v1/vault/git/restore",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -4988,6 +5322,7 @@
       "operation_id": "vault.git.status.get",
       "path": "/v1/vault/git/status",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -5003,6 +5338,7 @@
       "operation_id": "vault.git.worktrees.get",
       "path": "/v1/vault/git/worktrees",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -5018,6 +5354,7 @@
       "operation_id": "vault.notes.get",
       "path": "/v1/vault/notes",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5033,6 +5370,7 @@
       "operation_id": "vault.notes.post",
       "path": "/v1/vault/notes",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5048,6 +5386,7 @@
       "operation_id": "vault.notes.by_note_path.delete",
       "path": "/v1/vault/notes/{*note_path}",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5063,6 +5402,7 @@
       "operation_id": "vault.notes.by_note_path.get",
       "path": "/v1/vault/notes/{*note_path}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5078,6 +5418,7 @@
       "operation_id": "vault.notes.by_note_path.put",
       "path": "/v1/vault/notes/{*note_path}",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5093,6 +5434,7 @@
       "operation_id": "vault.roots.get",
       "path": "/v1/vault/roots",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -5108,6 +5450,7 @@
       "operation_id": "vault.roots.post",
       "path": "/v1/vault/roots",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -5123,6 +5466,7 @@
       "operation_id": "vault.search.get",
       "path": "/v1/vault/search",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5138,6 +5482,7 @@
       "operation_id": "vault.tags.get",
       "path": "/v1/vault/tags",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5153,6 +5498,7 @@
       "operation_id": "vault.trash.get",
       "path": "/v1/vault/trash",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5168,6 +5514,7 @@
       "operation_id": "vault.trash.restore.post",
       "path": "/v1/vault/trash/restore",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5183,6 +5530,7 @@
       "operation_id": "workflows.get",
       "path": "/v1/workflows",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5198,6 +5546,7 @@
       "operation_id": "workflows.post",
       "path": "/v1/workflows",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5213,6 +5562,7 @@
       "operation_id": "workflows.from_slice.post",
       "path": "/v1/workflows/from-slice",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5228,6 +5578,7 @@
       "operation_id": "workflows.plan.post",
       "path": "/v1/workflows/plan",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5243,6 +5594,7 @@
       "operation_id": "workflows.schedule.post",
       "path": "/v1/workflows/schedule",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5258,6 +5610,7 @@
       "operation_id": "workflows.by_workflow_id.get",
       "path": "/v1/workflows/{workflow_id}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5273,6 +5626,7 @@
       "operation_id": "workflows.by_workflow_id.runs.get",
       "path": "/v1/workflows/{workflow_id}/runs",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5288,6 +5642,7 @@
       "operation_id": "workspace.cards.get",
       "path": "/v1/workspace/cards",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5303,6 +5658,7 @@
       "operation_id": "workspace.cards.by_card_id.get",
       "path": "/v1/workspace/cards/{card_id}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5318,6 +5674,7 @@
       "operation_id": "workspace.cards.by_card_id.archive.post",
       "path": "/v1/workspace/cards/{card_id}/archive",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5333,6 +5690,7 @@
       "operation_id": "workspace.cards.by_card_id.cancel.post",
       "path": "/v1/workspace/cards/{card_id}/cancel",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5348,6 +5706,7 @@
       "operation_id": "workspace.cards.by_card_id.link_vault.post",
       "path": "/v1/workspace/cards/{card_id}/link-vault",
       "rate_limit_class": "mutation",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5363,6 +5722,7 @@
       "operation_id": "workspace.cards.by_card_id.retry.post",
       "path": "/v1/workspace/cards/{card_id}/retry",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -5378,6 +5738,7 @@
       "operation_id": "workspace.feed.get",
       "path": "/v1/workspace/feed",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5393,6 +5754,7 @@
       "operation_id": "workspace.rebuild.post",
       "path": "/v1/workspace/rebuild",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -5408,6 +5770,7 @@
       "operation_id": "workspace.snapshot.get",
       "path": "/v1/workspace/snapshot",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5423,6 +5786,7 @@
       "operation_id": "workspace.stream.get",
       "path": "/v1/workspace/stream",
       "rate_limit_class": "stream",
+      "stream_transport": "sse",
       "streaming": true,
       "trust_group": "portal"
     },
@@ -5438,6 +5802,7 @@
       "operation_id": "world.get",
       "path": "/v1/world",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5453,6 +5818,7 @@
       "operation_id": "world.at_location.get",
       "path": "/v1/world/at_location",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5468,6 +5834,7 @@
       "operation_id": "world.bindings.by_work_id.get",
       "path": "/v1/world/bindings/{work_id}",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5483,6 +5850,7 @@
       "operation_id": "world.code_avec.get",
       "path": "/v1/world/code_avec",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5498,6 +5866,7 @@
       "operation_id": "world.files.get",
       "path": "/v1/world/files",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5513,6 +5882,7 @@
       "operation_id": "world.find.get",
       "path": "/v1/world/find",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5528,6 +5898,7 @@
       "operation_id": "world.impact.get",
       "path": "/v1/world/impact",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     },
@@ -5543,6 +5914,7 @@
       "operation_id": "world.index.post",
       "path": "/v1/world/index",
       "rate_limit_class": "administration",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
     },
@@ -5558,6 +5930,7 @@
       "operation_id": "world.status.get",
       "path": "/v1/world/status",
       "rate_limit_class": "read",
+      "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
     }

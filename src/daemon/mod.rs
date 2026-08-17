@@ -11,6 +11,7 @@ pub mod detamu_host;
 pub mod shell_session_host;
 pub mod continuations;
 pub mod contract;
+mod contract_bindings;
 pub mod core;
 pub mod forge_api;
 pub mod forge_preview;

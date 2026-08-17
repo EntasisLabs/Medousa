@@ -160,6 +160,7 @@ fn main() {
 
     // Workspace
     export_type!(schemas, WorkspaceCardActionResponse, "WorkspaceCardActionResponse");
+    export_type!(schemas, WorkspaceCardsResponse, "WorkspaceCardsResponse");
     export_type!(schemas, WorkspaceLinkVaultRequest, "WorkspaceLinkVaultRequest");
     export_type!(schemas, WorkspaceStreamEvent, "WorkspaceStreamEvent");
 
