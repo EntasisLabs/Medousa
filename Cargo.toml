@@ -12,6 +12,7 @@ members = [
     ".",
     "crates/medousa-types",
     "crates/medousa-types-schema",
+    "crates/medousa-api-contract",
     "crates/medousa-tool-macros",
     "crates/medousa-engine",
     "crates/medousa-sdk",
