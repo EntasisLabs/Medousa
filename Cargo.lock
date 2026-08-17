@@ -7571,6 +7571,7 @@ dependencies = [
  "mdns-sd",
  "medousa-acp-client",
  "medousa-adapter-common",
+ "medousa-api-contract",
  "medousa-browser-lite",
  "medousa-engine",
  "medousa-forge",

@@ -175,20 +175,23 @@ schema inventory, copied client routes, and endpoint-shaped Home proxy copies.
 
 ## Verification
 
-H10's static generation, exact router/profile equality, schema/serde, semantic
-diff, black-box multi-client, awkward-encoding, auth/error, SSE, deterministic
-generation, no-route-literal, and mutation-sentinel gates are required before
-the old parity sources are deleted.
+H10 Slice 1 is inventory shadow: IR generation, exact declared-router equality,
+and architecture grep for raw `/v1` Axum literals. `sdk-contract/manifest.yaml`
+remains until generated clients own SDK accessors. `PARITY_ROUTES` is deleted in
+favor of uniqueness checks on generated ops. CONTRACT-001 is not Mitigated until
+Slice 4 gates (regen-and-diff, no-literal lint, black-box suite, old SoT deleted
+after those proofs) land.
 
 ## Code anchors
 
-- `src/daemon/router.rs` and all feature router modules
+- `src/daemon/router.rs`, `src/daemon/route_policy.rs`, `src/daemon/contract.rs`
+- `crates/medousa-api-contract/`
 - `crates/medousa-types/` and `crates/medousa-types-schema/`
-- `sdk-contract/manifest.yaml`
+- `sdk-contract/openapi.json` and `sdk-contract/route-inventory.json`
 - `crates/medousa-sdk/` and `python/medousa-sdk/`
-- `apps/medousa-home/src-tauri/src/daemon/`
-- `apps/medousa-home/src/lib/daemon.ts`
-- `scripts/check-sdk-contract.sh`
+- `apps/medousa-home/src-tauri/src/daemon/contract_bridge.rs`
+- `apps/medousa-home/src/lib/daemon/`
+- `scripts/check-api-contract.sh`
 
 ## Standards basis
 

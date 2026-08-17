@@ -7,6 +7,7 @@ Override: `MEDOUSA_DAEMON_URL`
 
 Types: [`medousa-types`](../../crates/medousa-types/) (`daemon_api`, `session`, `local`, …).  
 SDK: [`docs/sdk/api-reference.md`](../sdk/api-reference.md).  
+Generated publication: [`sdk-contract/openapi.json`](../../sdk-contract/openapi.json) (operation IDs from the declared router; regenerate with `UPDATE_API_CONTRACT=1 cargo test -p medousa --lib daemon::contract::tests::checked_in_contract_artifacts_match_generation`). The YAML accessor list in [`sdk-contract/manifest.yaml`](../../sdk-contract/manifest.yaml) is a known-incomplete shadow until generated clients own SDK helpers.  
 Component notes: [component-daemon.md](../../architecture/component-daemon.md).
 
 Subsystem guides: [interactive-streaming](interactive-streaming.md) · [artifacts](artifacts.md) · [vault](vault.md) · [calendar](calendar.md) · [workspace](workspace.md) · [forge](forge.md) · [agent-tools](agent-tools.md) · [runtime-config](runtime-config.md) · [extensions](extensions.md)

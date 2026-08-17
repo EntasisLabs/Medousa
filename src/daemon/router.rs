@@ -521,7 +521,8 @@ pub fn apply_dashboard_action_auth(
 
 /// Transitional compatibility boundary for the dependency-owned Stasis
 /// dashboard. New Medousa routes must use `DeclaredRouter`; this remains raw
-/// only until Stasis exports method/path descriptors with its router.
+/// only until Stasis exports method/path descriptors with its router. It is
+/// not part of the 361/373 generated contract.
 pub fn build_dashboard_compatibility_router(
     state: &AppState,
     dashboard_action_auth: &DashboardActionAuthConfig,
@@ -1112,7 +1113,9 @@ fn service_policy(
 }
 
 /// Transitional H08 boundary for the browser bridge and its legacy aliases.
-/// New daemon routes must not be added here.
+/// New daemon routes must not be added here. Mounts are inventoried in
+/// [`crate::daemon::contract::BROWSER_COMPATIBILITY_MOUNTS`] and are not part
+/// of the 361/373 `DeclaredRouter` contract until they move onto `ContractRouter`.
 pub fn build_browser_compatibility_router(state: AppState) -> Router {
     crate::browser_handlers::browser_router().with_state(state)
 }

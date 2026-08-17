@@ -258,5 +258,7 @@ fn browser_routes() -> Router<AppState> {
 
 pub fn browser_router() -> Router<AppState> {
     let routes = browser_routes();
+    // Dual-mount: unprefixed aliases plus `/v1` nest. Keep
+    // `crate::daemon::contract::BROWSER_COMPATIBILITY_MOUNTS` in lockstep.
     Router::new().merge(routes.clone()).nest("/v1", routes)
 }

@@ -11,6 +11,7 @@ use serde::Serialize;
 
 use crate::peer_scope::AccessDenial;
 use crate::request_principal::{Capability, RequestPrincipal};
+use medousa_api_contract::{ContractRegistry, FeatureProfile};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -118,6 +119,7 @@ pub struct RouteInventory {
 pub struct DeclaredRouter<S = ()> {
     router: Router<S>,
     inventory: RouteInventory,
+    contract: ContractRegistry,
 }
 
 impl<S> Default for DeclaredRouter<S>
@@ -128,6 +130,7 @@ where
         Self {
             router: Router::new(),
             inventory: RouteInventory::default(),
+            contract: ContractRegistry::default(),
         }
     }
 }
@@ -148,9 +151,7 @@ where
         let first_group = first_policy.group;
         let first_capability = first_policy.required_capability;
         let first_browser_policy = first_policy.browser_policy;
-        self.inventory
-            .declare(first_policy)
-            .expect("invalid daemon route policy");
+        self.record_policy(&first_policy);
         let mut handler = declared_method(
             first_handler,
             first_limit,
@@ -164,9 +165,7 @@ where
             let group = policy.group;
             let required_capability = policy.required_capability;
             let browser_policy = policy.browser_policy;
-            self.inventory
-                .declare(policy)
-                .expect("invalid daemon route policy");
+            self.record_policy(&policy);
             handler = handler.merge(declared_method(
                 method_handler,
                 body_limit,
@@ -183,10 +182,17 @@ where
         &self.inventory
     }
 
+    pub fn contract(&self) -> &ContractRegistry {
+        &self.contract
+    }
+
     pub fn merge(mut self, other: Self) -> Self {
         self.inventory
             .extend(&other.inventory)
             .expect("duplicate declared route policy");
+        self.contract
+            .extend(&other.contract)
+            .expect("duplicate declared contract operation");
         self.router = self.router.merge(other.router);
         self
     }
@@ -198,11 +204,47 @@ where
         DeclaredRouter {
             router: self.router.with_state(state),
             inventory: self.inventory,
+            contract: self.contract,
         }
     }
 
     pub fn into_router(self) -> Router<S> {
         self.router
+    }
+
+    pub fn operation(
+        self,
+        spec: medousa_api_contract::OperationSpec,
+        handler: MethodRouter<S>,
+    ) -> Self {
+        spec.validate()
+            .expect("operation spec must include policy, responses, and a real HTTP method");
+        self.route(
+            crate::daemon::contract::policy_from_operation(&spec),
+            handler,
+        )
+    }
+
+    fn record_policy(&mut self, policy: &RoutePolicy) {
+        self.inventory
+            .declare(policy.clone())
+            .expect("invalid daemon route policy");
+        self.contract
+            .register(crate::daemon::contract::operation_from_policy(
+                policy,
+                feature_profile_for(policy),
+            ))
+            .expect("declared route policy must form a valid contract operation");
+    }
+}
+
+fn feature_profile_for(policy: &RoutePolicy) -> FeatureProfile {
+    if matches!(policy.group, RouteGroup::Preview) {
+        FeatureProfile::Preview
+    } else if matches!(policy.group, RouteGroup::PairingCeremony) {
+        FeatureProfile::Pairing
+    } else {
+        FeatureProfile::Core
     }
 }
 
@@ -285,6 +327,10 @@ impl RouteInventory {
 
     pub fn entries(&self) -> impl ExactSizeIterator<Item = RouteInventoryEntry> + '_ {
         self.entries.iter().map(RouteInventoryEntry::from)
+    }
+
+    pub fn policies(&self) -> impl ExactSizeIterator<Item = &RoutePolicy> + '_ {
+        self.entries.iter()
     }
 
     pub fn extend(&mut self, other: &Self) -> Result<(), &'static str> {
@@ -399,6 +445,26 @@ mod tests {
         let mut right = RouteInventory::default();
         right.declare(protected()).unwrap();
         assert_eq!(left.extend(&right), Err("duplicate route method and path"));
+    }
+
+    #[test]
+    fn contract_router_operation_registers_inventory() {
+        let spec = crate::daemon::contract::operation_from_policy(
+            &protected(),
+            medousa_api_contract::FeatureProfile::Core,
+        );
+        let router: DeclaredRouter =
+            DeclaredRouter::default().operation(spec, get(|| async { StatusCode::NO_CONTENT }));
+        assert_eq!(router.inventory().entries().len(), 1);
+        assert_eq!(
+            router.inventory().entries().next().unwrap().path,
+            "/v1/health"
+        );
+        assert_eq!(router.contract().len(), 1);
+        assert_eq!(
+            router.contract().get("health.get").unwrap().path,
+            "/v1/health"
+        );
     }
 
     #[test]

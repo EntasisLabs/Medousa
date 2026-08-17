@@ -1,5 +1,6 @@
-# SDK contract — single source of truth for Rust + Python accessor parity.
-# Validated by scripts/check-sdk-contract.sh
+# SDK accessor shadow for Rust + Python helpers. DeclaredRouter is the production
+# inventory; this YAML is known-incomplete until generated clients own accessors.
+# Validated as a discrepancy report by scripts/check-api-contract.sh.
 
 version: 1
 

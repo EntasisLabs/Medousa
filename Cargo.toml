@@ -61,6 +61,7 @@ path = "examples/p06_vault_backend.rs"
 
 [dependencies]
 medousa-types = { path = "crates/medousa-types", features = ["json-schema"] }
+medousa-api-contract = { path = "crates/medousa-api-contract" }
 medousa-tool-macros = { path = "crates/medousa-tool-macros" }
 medousa-adapter-common = { path = "crates/medousa-adapter-common" }
 medousa-mcp-gateway = { path = "adapters/medousa-mcp-gateway" }
