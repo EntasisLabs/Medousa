@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use crate::local::LocalModelsApi;
 #[cfg(feature = "async")]
 use crate::agents::AgentsApi;
 #[cfg(feature = "async")]
@@ -23,6 +22,7 @@ use crate::http::HttpApi;
 use crate::interactive::InteractiveApi;
 #[cfg(feature = "async")]
 use crate::jobs::JobsApi;
+use crate::local::LocalModelsApi;
 #[cfg(feature = "async")]
 use crate::manuscripts::ManuscriptsApi;
 #[cfg(feature = "async")]
@@ -33,11 +33,11 @@ use crate::recurring::RecurringApi;
 use crate::runtime::RuntimeApi;
 #[cfg(feature = "async")]
 use crate::sessions::SessionsApi;
+use crate::transport::Transport;
 #[cfg(feature = "async")]
 use crate::vault::VaultApi;
 #[cfg(feature = "async")]
 use crate::workspace::WorkspaceApi;
-use crate::transport::Transport;
 
 pub struct MedousaClient {
     transport: Arc<dyn Transport>,

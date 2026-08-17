@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from medousa._decode import decode
-from medousa.transport import path_with_query
+from medousa._ops import op_path, op_path_query
 from medousa.types import (
     CalendarDeleteResponse,
     CalendarExportResponse,
@@ -36,14 +36,14 @@ class CalendarApiSync:
             query.append(("to", to))
         if path is not None:
             query.append(("path", path))
-        route = path_with_query("/v1/calendar/events", query)
+        route = op_path_query("calendar.events.get", query)
         value = self._client._transport.get_json(self._client.base_url, route)
         return decode(CalendarListResponse, value)
 
     def create_event(self, request: CalendarWriteRequest) -> CalendarWriteResponse:
         value = self._client._transport.post_json(
             self._client.base_url,
-            "/v1/calendar/events",
+            op_path("calendar.events.post"),
             request.model_dump(mode="json", exclude_none=True),
         )
         return decode(CalendarWriteResponse, value)
@@ -51,7 +51,7 @@ class CalendarApiSync:
     def update_event(self, uid: str, request: CalendarWriteRequest) -> CalendarWriteResponse:
         value = self._client._transport.put_json(
             self._client.base_url,
-            f"/v1/calendar/events/{uid.strip()}",
+            op_path("calendar.events.by_uid.put", uid=uid.strip()),
             request.model_dump(mode="json", exclude_none=True),
         )
         return decode(CalendarWriteResponse, value)
@@ -60,14 +60,14 @@ class CalendarApiSync:
         query: list[tuple[str, str]] = []
         if path is not None:
             query.append(("path", path))
-        route = path_with_query(f"/v1/calendar/events/{uid.strip()}", query)
+        route = op_path_query("calendar.events.by_uid.delete", query, uid=uid.strip())
         value = self._client._transport.delete_json(self._client.base_url, route)
         return decode(CalendarDeleteResponse, value)
 
     def import_ics(self, request: CalendarImportRequest) -> CalendarImportResponse:
         value = self._client._transport.post_json(
             self._client.base_url,
-            "/v1/calendar/import",
+            op_path("calendar.import.post"),
             request.model_dump(mode="json", exclude_none=True),
         )
         return decode(CalendarImportResponse, value)
@@ -76,6 +76,6 @@ class CalendarApiSync:
         query: list[tuple[str, str]] = []
         if path is not None:
             query.append(("path", path))
-        route = path_with_query("/v1/calendar/export", query)
+        route = op_path_query("calendar.export.get", query)
         value = self._client._transport.get_json(self._client.base_url, route)
         return decode(CalendarExportResponse, value)

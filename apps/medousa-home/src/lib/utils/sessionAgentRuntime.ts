@@ -1,12 +1,14 @@
 /**
  * Per-session agent runtime preference (Medousa native vs ACP external).
  *
- * External runtimes (Cursor / Codex) use the daemon `/v1/agents` SDK façade.
+ * External runtimes (Cursor / Codex) use the daemon agents SDK façade.
  * Stasis 0.8 can also park `workflow.stasis.agent_turn.waitable` jobs on the
  * process-local TurnWaitStore until ACP completion feeds AgentEventIngress.
  * Home chat still selects runtimes here; it does not speak ACP or Stasis wait
  * stores directly.
  */
+
+import { operationPath } from "$lib/daemon/opPath";
 
 const STORAGE_KEY = "medousa-home-agent-runtime-v1";
 const AGENT_SESSION_KEY = "medousa-home-agent-session-v1";
@@ -92,7 +94,7 @@ export function getSessionAgentRuntime(sessionId: string): ChatAgentRuntime {
   return loadMap()[trimmed] ?? "medousa";
 }
 
-/** Active `/v1/agents` session for this chat (create once, prompt thereafter). */
+/** Active agents session for this chat (create once, prompt thereafter). */
 export function getSessionAgentSessionId(sessionId: string): string | null {
   const trimmed = sessionId.trim();
   if (!trimmed) return null;
@@ -204,5 +206,7 @@ export function agentRuntimeLabel(runtime: ChatAgentRuntime): string {
 }
 
 export function agentSessionStreamUrl(agentSessionId: string): string {
-  return `/v1/agents/sessions/${agentSessionId.trim()}/stream`;
+  return operationPath("agents.sessions.by_agent_session_id.stream.get", {
+    agent_session_id: agentSessionId.trim(),
+  });
 }

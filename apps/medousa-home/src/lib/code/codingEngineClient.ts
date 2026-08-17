@@ -1,12 +1,11 @@
 /**
  * Discover + connect to the workshop LSP Interoperability Orchestrator.
- * Prefer daemon-proxied `/v1/code/lsp` so remote Connection works.
- * Falls back to in-daemon Grapheme LSP when the coding engine is unavailable.
+ * Prefer generated `code.lsp.get`; fall back to in-daemon Grapheme LSP.
  */
 
-import type { Transport } from "@codemirror/lsp-client";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  type Transport,
   LSPClient,
   languageServerExtensions,
 } from "@codemirror/lsp-client";
@@ -26,6 +25,7 @@ import {
   getCodingEngineInfo,
   getDaemonUrl,
   getGraphemeLspWorkspace,
+  OPERATIONS,
 } from "$lib/daemon";
 import type { GraphemeLspWorkspaceResponse } from "$lib/types/grapheme";
 
@@ -242,7 +242,7 @@ export async function connectOrchestratorLspClient(options?: ConnectOrchestrator
       const query = new URLSearchParams({ language });
       if (options?.workId) query.set("work_id", options.workId);
       if (options?.documentUri) query.set("document_uri", options.documentUri);
-      const path = `${info.daemon_lsp_path || "/v1/code/lsp"}?${query}`;
+      const path = `${info.daemon_lsp_path || OPERATIONS["code.lsp.get"].path}?${query}`;
       const wsUrl = await daemonWebSocketUrl(path);
       const connection = await createCloseableWebSocketTransport(
         wsUrl,
@@ -298,7 +298,7 @@ export async function connectOrchestratorLspClient(options?: ConnectOrchestrator
     // Grapheme has an in-daemon fallback.
   }
 
-  const wsUrl = await daemonWebSocketUrl("/v1/grapheme/lsp");
+  const wsUrl = await daemonWebSocketUrl(OPERATIONS["grapheme.lsp.get"].path);
   const connection = await createCloseableWebSocketTransport(
     wsUrl,
     options?.onServerEvent,
@@ -658,14 +658,14 @@ async function codeAgentGet<T>(
 ): Promise<T> {
   if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
     const operations: Record<string, string> = {
-      "/v1/code/language-root": "language_root",
-      "/v1/code/language-sessions": "language_sessions",
-      "/v1/code/language-matrix": "language_matrix",
-      "/v1/code/symbols": "symbols",
-      "/v1/code/workspace-symbols": "workspace_symbols",
-      "/v1/code/workspace-diagnostics": "workspace_diagnostics",
-      "/v1/code/capabilities": "capabilities",
-      "/v1/code/conventions": "conventions",
+      [OPERATIONS["code.language_root.get"].path]: "language_root",
+      [OPERATIONS["code.language_sessions.get"].path]: "language_sessions",
+      [OPERATIONS["code.language_matrix.get"].path]: "language_matrix",
+      [OPERATIONS["code.symbols.get"].path]: "symbols",
+      [OPERATIONS["code.workspace_symbols.get"].path]: "workspace_symbols",
+      [OPERATIONS["code.workspace_diagnostics.get"].path]: "workspace_diagnostics",
+      [OPERATIONS["code.capabilities.get"].path]: "capabilities",
+      [OPERATIONS["code.conventions.get"].path]: "conventions",
     };
     const operation = operations[path];
     if (!operation) throw new Error(`Unsupported Code Intelligence read: ${path}`);
@@ -687,7 +687,7 @@ async function codeAgentPost<T>(
   body: Record<string, unknown>,
 ): Promise<T> {
   if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-    if (path !== "/v1/code/request") {
+    if (path !== OPERATIONS["code.request.post"].path) {
       throw new Error(`Unsupported Code Intelligence mutation: ${path}`);
     }
     return invoke<T>("code_request", { body });
@@ -720,7 +720,7 @@ export async function getCodeLanguageRoot(options: {
     language?: string;
     root_uri?: string;
     relative_root?: string;
-  }>("/v1/code/language-root", {
+  }>(OPERATIONS["code.language_root.get"].path, {
     work_id: options.workId,
     uri: options.uri,
     language: options.language,
@@ -780,7 +780,7 @@ export async function getCodeLanguageSessions(options: {
     language?: string;
     root_uri?: string;
     sessions?: CodeLanguageSessionSnapshot[];
-  }>("/v1/code/language-sessions", {
+  }>(OPERATIONS["code.language_sessions.get"].path, {
     work_id: options.workId,
     uri: options.uri,
     language: options.language,
@@ -816,7 +816,7 @@ export async function getCodeLanguageMatrix(): Promise<CodeLanguageMatrixEntry[]
       extensions?: string[];
       args?: string[];
     }>;
-  }>("/v1/code/language-matrix", {});
+  }>(OPERATIONS["code.language_matrix.get"].path, {});
   if (!Array.isArray(response.languages)) return [];
   return response.languages
     .filter((entry) => typeof entry.language === "string" && entry.language)
@@ -866,7 +866,7 @@ export async function getCodeDocumentSymbols(options: {
   language: string;
 }): Promise<CodeDocumentSymbol[]> {
   const response = await codeAgentGet<{ ok: boolean; result?: CodeDocumentSymbol[] }>(
-    "/v1/code/symbols",
+    OPERATIONS["code.symbols.get"].path,
     {
       work_id: options.workId,
       uri: options.uri,
@@ -899,7 +899,7 @@ export async function getCodeWorkspaceSymbols(options: {
   };
   if (options.uri) query.uri = options.uri;
   const response = await codeAgentGet<{ ok: boolean; result?: CodeWorkspaceSymbol[] }>(
-    "/v1/code/workspace-symbols",
+    OPERATIONS["code.workspace_symbols.get"].path,
     query,
   );
   return Array.isArray(response.result) ? response.result : [];
@@ -950,7 +950,7 @@ export async function getCodeWorkspaceDiagnostics(options: {
     scope?: string;
     languages?: string[];
     documents?: CodeWorkspaceDiagnostic[];
-  }>("/v1/code/workspace-diagnostics", query);
+  }>(OPERATIONS["code.workspace_diagnostics.get"].path, query);
   return {
     scope: response.scope,
     languages: Array.isArray(response.languages)
@@ -1011,7 +1011,7 @@ export async function getCodeLanguageCapabilities(options: {
   const response = await codeAgentGet<{
     ok: boolean;
     capabilities?: CodeLanguageCapabilities;
-  }>("/v1/code/capabilities", {
+  }>(OPERATIONS["code.capabilities.get"].path, {
     work_id: options.workId,
     uri: options.uri,
     language: options.language,
@@ -1035,7 +1035,7 @@ export async function getCodeEditorConventions(options: {
   const response = await codeAgentGet<{
     ok: boolean;
     conventions?: CodeEditorConventions;
-  }>("/v1/code/conventions", {
+  }>(OPERATIONS["code.conventions.get"].path, {
     work_id: options.workId,
     uri: options.uri,
     language: options.language,
@@ -1056,7 +1056,7 @@ export async function requestCodeLanguageAction(options: {
   editorOptions?: { tabSize: number; insertSpaces: boolean };
 }): Promise<unknown> {
   const response = await codeAgentPost<{ ok: boolean; result?: unknown }>(
-    "/v1/code/request",
+    OPERATIONS["code.request.post"].path,
     {
       work_id: options.workId,
       action: options.action,

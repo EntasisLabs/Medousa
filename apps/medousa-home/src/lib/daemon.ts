@@ -7,6 +7,14 @@ export {
   type StreamErrorPayload,
   daemonWebSocketUrl,
 } from "./daemon/client";
+export {
+  OPERATIONS,
+  type OperationId,
+  daemonUnary,
+  daemonStreamStart,
+  daemonStreamCancel,
+} from "./daemon/contractClient";
+export { expandPath, operationPath } from "./daemon/opPath";
 export * from "./daemon/session";
 export * from "./daemon/vault";
 export * from "./daemon/workspace";

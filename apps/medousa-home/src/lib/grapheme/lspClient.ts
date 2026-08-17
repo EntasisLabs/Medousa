@@ -6,6 +6,7 @@ import {
 import {
   daemonWebSocketUrl,
   getGraphemeLspWorkspace,
+  OPERATIONS,
 } from "$lib/daemon";
 import type { GraphemeLspWorkspaceResponse } from "$lib/types/grapheme";
 import {
@@ -40,7 +41,7 @@ export async function connectLegacyGraphemeOnly(): Promise<{
   workspace: GraphemeLspWorkspaceResponse;
 }> {
   const [wsUrl, workspace] = await Promise.all([
-    daemonWebSocketUrl("/v1/grapheme/lsp"),
+    daemonWebSocketUrl(OPERATIONS["grapheme.lsp.get"].path),
     getGraphemeLspWorkspace(),
   ]);
   const transport = await createWebSocketTransport(wsUrl);

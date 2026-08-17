@@ -22,6 +22,12 @@
       "loadedBy": "app.postcss"
     },
     {
+      "id": "workshop-primitives",
+      "class": "primitive",
+      "path": "src/lib/styles/workshop-primitives.postcss",
+      "loadedBy": "app.postcss"
+    },
+    {
       "id": "theme-semantic",
       "class": "primitive",
       "path": "src/lib/styles/theme-semantic.postcss",

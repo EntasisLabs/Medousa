@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 from pydantic import BaseModel
 
 from medousa._decode import decode
+from medousa._ops import op_path
 from medousa.reconnect import (
     TURN_STREAM_V2_MEDIA_TYPE,
     ReconnectingInteractiveStream,
@@ -86,7 +87,7 @@ class InteractiveApi:
     async def start_turn(self, request: InteractiveTurnRequest) -> InteractiveTurnResponse:
         value = await self._client.transport.post_json(
             self._client.base_url,
-            "/v1/interactive/turn",
+            op_path("interactive.turn.post"),
             request.model_dump(mode="json", exclude_none=True),
         )
         return decode(InteractiveTurnResponse, value)

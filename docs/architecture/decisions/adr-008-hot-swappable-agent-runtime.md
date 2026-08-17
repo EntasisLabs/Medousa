@@ -30,7 +30,7 @@ External agent → Medousa MCP server → vault / context / calendar
 ## Consequences
 
 - Native turns remain default; ACP is opt-in per session (Home: Runtime select).
-- Contract parity includes `agents` accessor rows in `sdk-contract/manifest.yaml`.
+- Contract parity includes `agents` accessor rows in the generated [`sdk-contract/openapi.json`](../../../sdk-contract/openapi.json).
 - Stream events reuse `InteractiveTurnStreamEvent` with `agent_session_id` / `permission_request_id` fields.
 - **Stasis 0.8 alignment:** Medousa wires process-local `TurnWaitStore` + `AgentEventIngress` + `AcpAgentMessageCodec` in `stasis_wire`. ACP session completion/fail/cancel publishes terminal envelopes so `workflow.stasis.agent_turn.waitable` jobs can unpark. `/v1/agents` remains the thin SDK façade; native Medousa tool-loop stays on `/v1/turns`.
 - **Wait-store limits:** the Stasis 0.8 turn wait store is **process-local** (not durable across daemon restarts). Do not rely on waitable external turns surviving a crash or rolling deploy.

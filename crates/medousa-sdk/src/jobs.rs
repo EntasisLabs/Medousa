@@ -7,6 +7,8 @@ use medousa_types::{
 
 #[cfg(feature = "async")]
 use crate::client::MedousaClient;
+use crate::generated::ops;
+use crate::op::op_path;
 #[cfg(feature = "async")]
 use crate::transport::decode;
 
@@ -21,17 +23,21 @@ impl JobsApi<'_> {
         &self,
         request: &EnqueueAskRequest,
     ) -> Result<EnqueueResponse, crate::SdkError> {
-        let body = serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
         let value = self
             .client
             .transport()
-            .post_json(self.client.base_url(), "/v1/jobs/ask", body)
+            .post_json(self.client.base_url(), ops::JOBS_ASK_POST.path, body)
             .await?;
         decode(value).await
     }
 
     pub async fn result(&self, job_id: &str) -> Result<JobResultResponse, crate::SdkError> {
-        let path = format!("/v1/jobs/{}/result", job_id.trim());
+        let path = op_path(
+            &ops::JOBS_BY_JOB_ID_RESULT_GET,
+            &[("job_id", job_id.trim())],
+        )?;
         let value = self
             .client
             .transport()
@@ -41,7 +47,10 @@ impl JobsApi<'_> {
     }
 
     pub async fn report(&self, job_id: &str) -> Result<JobReportResponse, crate::SdkError> {
-        let path = format!("/v1/jobs/{}/report", job_id.trim());
+        let path = op_path(
+            &ops::JOBS_BY_JOB_ID_REPORT_GET,
+            &[("job_id", job_id.trim())],
+        )?;
         let value = self
             .client
             .transport()
@@ -54,11 +63,12 @@ impl JobsApi<'_> {
         &self,
         request: &EnqueueReportRequest,
     ) -> Result<EnqueueResponse, crate::SdkError> {
-        let body = serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
         let value = self
             .client
             .transport()
-            .post_json(self.client.base_url(), "/v1/jobs/report", body)
+            .post_json(self.client.base_url(), ops::JOBS_REPORT_POST.path, body)
             .await?;
         decode(value).await
     }
@@ -67,11 +77,12 @@ impl JobsApi<'_> {
         &self,
         request: &EnqueuePromptRequest,
     ) -> Result<EnqueueResponse, crate::SdkError> {
-        let body = serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
         let value = self
             .client
             .transport()
-            .post_json(self.client.base_url(), "/v1/jobs/prompt", body)
+            .post_json(self.client.base_url(), ops::JOBS_PROMPT_POST.path, body)
             .await?;
         decode(value).await
     }
@@ -81,8 +92,12 @@ impl JobsApi<'_> {
         job_id: &str,
         request: &AskJobCompleteActionsRequest,
     ) -> Result<AskJobCompleteActionsResponse, crate::SdkError> {
-        let body = serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let path = format!("/v1/jobs/{}/complete-actions", job_id.trim());
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path = op_path(
+            &ops::JOBS_BY_JOB_ID_COMPLETE_ACTIONS_POST,
+            &[("job_id", job_id.trim())],
+        )?;
         let value = self
             .client
             .transport()
@@ -96,8 +111,12 @@ impl JobsApi<'_> {
         job_id: &str,
         request: &ArchiveAskJobRequest,
     ) -> Result<ArchiveAskJobResponse, crate::SdkError> {
-        let body = serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let path = format!("/v1/jobs/{}/archive", job_id.trim());
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path = op_path(
+            &ops::JOBS_BY_JOB_ID_ARCHIVE_POST,
+            &[("job_id", job_id.trim())],
+        )?;
         let value = self
             .client
             .transport()

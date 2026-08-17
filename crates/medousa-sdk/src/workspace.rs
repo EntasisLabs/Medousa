@@ -7,8 +7,10 @@ use medousa_types::{
 
 #[cfg(feature = "async")]
 use crate::client::MedousaClient;
+use crate::generated::ops;
+use crate::op::{op_path, op_path_query};
 #[cfg(feature = "async")]
-use crate::transport::{decode, path_with_query};
+use crate::transport::decode;
 
 #[cfg(feature = "async")]
 pub struct WorkspaceApi<'a> {
@@ -69,7 +71,11 @@ impl WorkspaceApi<'_> {
         &self,
         query: &WorkspaceCardsQuery,
     ) -> Result<WorkspaceCardsResponse, crate::SdkError> {
-        let path = path_with_query("/v1/workspace/cards", &workspace_cards_query_params(query));
+        let path = op_path_query(
+            &ops::WORKSPACE_CARDS_GET,
+            &[],
+            &workspace_cards_query_params(query),
+        )?;
         let value = self
             .client
             .transport()
@@ -79,7 +85,10 @@ impl WorkspaceApi<'_> {
     }
 
     pub async fn get_card(&self, card_id: &str) -> Result<WorkCardDetail, crate::SdkError> {
-        let path = format!("/v1/workspace/cards/{}", card_id.trim());
+        let path = op_path(
+            &ops::WORKSPACE_CARDS_BY_CARD_ID_GET,
+            &[("card_id", card_id.trim())],
+        )?;
         let value = self
             .client
             .transport()
@@ -92,7 +101,10 @@ impl WorkspaceApi<'_> {
         &self,
         card_id: &str,
     ) -> Result<WorkspaceCardActionResponse, crate::SdkError> {
-        let path = format!("/v1/workspace/cards/{}/cancel", card_id.trim());
+        let path = op_path(
+            &ops::WORKSPACE_CARDS_BY_CARD_ID_CANCEL_POST,
+            &[("card_id", card_id.trim())],
+        )?;
         let value = self
             .client
             .transport()
@@ -106,8 +118,12 @@ impl WorkspaceApi<'_> {
         card_id: &str,
         request: &ArchiveAskJobRequest,
     ) -> Result<WorkspaceCardActionResponse, crate::SdkError> {
-        let body = serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let path = format!("/v1/workspace/cards/{}/archive", card_id.trim());
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path = op_path(
+            &ops::WORKSPACE_CARDS_BY_CARD_ID_ARCHIVE_POST,
+            &[("card_id", card_id.trim())],
+        )?;
         let value = self
             .client
             .transport()
@@ -120,7 +136,10 @@ impl WorkspaceApi<'_> {
         &self,
         card_id: &str,
     ) -> Result<WorkspaceCardActionResponse, crate::SdkError> {
-        let path = format!("/v1/workspace/cards/{}/retry", card_id.trim());
+        let path = op_path(
+            &ops::WORKSPACE_CARDS_BY_CARD_ID_RETRY_POST,
+            &[("card_id", card_id.trim())],
+        )?;
         let value = self
             .client
             .transport()
@@ -134,8 +153,12 @@ impl WorkspaceApi<'_> {
         card_id: &str,
         request: &WorkspaceLinkVaultRequest,
     ) -> Result<WorkspaceCardActionResponse, crate::SdkError> {
-        let body = serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let path = format!("/v1/workspace/cards/{}/link-vault", card_id.trim());
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path = op_path(
+            &ops::WORKSPACE_CARDS_BY_CARD_ID_LINK_VAULT_POST,
+            &[("card_id", card_id.trim())],
+        )?;
         let value = self
             .client
             .transport()
@@ -148,7 +171,11 @@ impl WorkspaceApi<'_> {
         &self,
         query: &WorkspaceFeedQuery,
     ) -> Result<WorkspaceFeedResponse, crate::SdkError> {
-        let path = path_with_query("/v1/workspace/feed", &workspace_feed_query_params(query));
+        let path = op_path_query(
+            &ops::WORKSPACE_FEED_GET,
+            &[],
+            &workspace_feed_query_params(query),
+        )?;
         let value = self
             .client
             .transport()
@@ -161,7 +188,11 @@ impl WorkspaceApi<'_> {
         &self,
         query: &WorkspaceSnapshotQuery,
     ) -> Result<WorkspaceSnapshot, crate::SdkError> {
-        let path = path_with_query("/v1/workspace/snapshot", &workspace_snapshot_query_params(query));
+        let path = op_path_query(
+            &ops::WORKSPACE_SNAPSHOT_GET,
+            &[],
+            &workspace_snapshot_query_params(query),
+        )?;
         let value = self
             .client
             .transport()

@@ -1,6 +1,6 @@
 # H10 — Generated daemon API and client contract
 
-> **Status:** Draft for protocol/tooling review
+> **Status:** Implemented on unit/CI — Slice 4 gates are required architecture CI. `ContractRouter::operation` records the supplied spec; `.route(policy)` is crate-private sugar. Browser `/v1` copies are on `DeclaredRouter` with explicit `ExactOrigin`. `sdk-contract/manifest.yaml` is deleted. CONTRACT-001 is **Mitigated on unit/CI**. ADR-019 is **Accepted**. Validated/Shipped still need packaged multi-client evidence.
 >
 > **Accountable owner:** daemon API and SDK maintainers
 >
@@ -36,44 +36,42 @@ generates clients for that contract.
 
 ## Current evidence
 
-The current `sdk-contract/manifest.yaml` says it is the single source of truth,
-but its 108 entries are not consumed by daemon routing or SDK code generation.
-Two are marked planned and therefore describe no callable contract. Its fields
-cover accessor/method labels, verb, path, two type names, a streaming boolean,
-and sync availability. They cannot express parameter location/encoding,
-statuses, media types, errors, authentication, capabilities, body limits,
-feature profiles, deprecation, or SSE lifecycle.
+Authority is Axum `DeclaredRouter` / `ContractRouter` plus `medousa-types`.
+Generation publishes [`sdk-contract/openapi.json`](../../sdk-contract/openapi.json)
+and [`sdk-contract/route-inventory.json`](../../sdk-contract/route-inventory.json)
+from that inventory. Production inventory is **369** routes without pairing and
+**381** with pairing (`combined_declared_inventory_matches_optional_pairing_composition`).
+CI regenerates the contract and requires byte equality plus exact-set equality
+against the declared router.
 
-The same surface is independently copied into:
+`sdk-contract/manifest.yaml` is deleted. Named wire schemas in the production
+registry must appear in `medousa-types.schema.json` unless they are the documented
+uncatalogued exceptions (`schema_catalog_covers_named_contract_bindings`).
+`PARITY_ROUTES` stays deleted; uniqueness/SSE checks run against generated ops.
+
+Remaining copies that still shrink:
 
 | Surface | Current evidence | Failure mode |
 | --- | ---: | --- |
-| Daemon route text | 315 `.route(...)` calls under `src/`, including tests | production literals are the real server behavior but emit no inventory |
-| Rust SDK top-level modules | 3,515 lines | handwritten paths, verbs, request and response calls |
-| Python SDK top-level modules | 2,163 lines | separate async/sync path and transport behavior |
-| Tauri daemon proxy modules | 4,622 lines, 190 commands in 29 files | another endpoint-shaped proxy and error/encoding layer |
-| Home `daemon.ts` | 2,135 lines | handwritten command names, DTOs, stream entry points, and wrappers |
-| Rust parity table | 115 handwritten tuples | differs from manifest and validates only spelling shape/minimum groups |
+| Declared production inventory | 369 / 381 method+path rows | real server behavior; H01 policy; generated operation IDs |
+| Generated OpenAPI + inventory | checked-in artifacts from declared inventory | named DTO/stream bindings plus catalog components; remaining ops stay opaque/`deferred` |
+| Rust / Python / TS / Tauri op tables | generated from IR; helpers expand `op_path` / `operationPath` | helper no-literal tests are required architecture CI |
+| Shared golden cases | `sdk-contract/golden/client-cases.json` | wrong verb/path/stream flag fails Rust and Python unit tests |
+| Browser compatibility adapter | unprefixed `BROWSER_COMPATIBILITY_MOUNTS`; `/v1` copies on `browser_surface` | unprefixed aliases stay off 369/381; `/v1` copies use explicit `ExactOrigin` |
+| Stasis dashboard adapter | raw `dashboard_router` + frozen `DASHBOARD_COMPATIBILITY_MOUNTS` | third-party; no method/path descriptors; reviewed freeze stays off declared inventory |
+| Tauri daemon proxy modules | closed `daemon_unary` / real `daemon_stream_start`+cancel; endpoint-shaped shims remain | live SSE uses generated stream paths; remaining proxies still own some URLs |
+| Home `$lib/daemon/*` | generated ops for session stream, LSP, code intelligence, forge, browser sessions | Home no-literal CI except generated tables, tests, and local `browserBridge` |
 
-Concrete drift already exists. The Rust parity table contains session
-agent-mode, code-binding, and agent operations absent from the manifest; path
-placeholder names differ; one table embeds `?limit={limit}` in a path; and SSE
-is represented as a fake HTTP verb in one place but `GET + streaming: true` in
-another.
-
-`scripts/check-sdk-contract.sh` parses YAML through a CI-only PyYAML dependency,
-maps accessors to guessed filenames, and greps for function names. It does not
-prove that a matching method uses the declared verb, path, parameter encoding,
-body, response, error, authentication, or stream decoder. The Rust parity tests
-only require selected accessor names, an allowed verb string, and a leading
-slash. Python parity checks that attributes exist and validates paths against
-the manifest that supplied those same paths.
+`scripts/check-api-contract.sh` runs IR tests, production inventory equality,
+released-baseline `diff_contracts`, helper/Home no-literal scans, and the
+architecture check that production `/v1` string literals cannot call raw Axum
+`.route`/`.nest` outside reviewed adapters. `scripts/check-sdk-contract.sh`
+wraps that gate.
 
 `medousa-types` already derives `serde` and optional `schemars::JsonSchema` for
-many wire types. `medousa-types-schema` exports a manually maintained subset to
-one JSON map. That is useful migration input, but the manual `export_type!`
-list is another incomplete inventory and does not bind a type to an operation,
-status, content type, or actual handler behavior.
+many wire types. `medousa-types-schema` exports schemars for names bound by the
+daemon contract. CI requires those named non-opaque schemas to appear in
+`medousa-types.schema.json` unless they are documented uncatalogued exceptions.
 
 ## Invariants
 

@@ -943,6 +943,45 @@
       }
     }
   },
+  "ApiErrorEnvelope": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ApiErrorEnvelope",
+    "description": "Versioned `/v1` error envelope. `code` is a stable machine vocabulary; unknown future codes must be treated as forward-compatible by clients.",
+    "type": "object",
+    "required": [
+      "code",
+      "message",
+      "request_id",
+      "schema_version"
+    ],
+    "properties": {
+      "code": {
+        "type": "string"
+      },
+      "details": {
+        "default": null
+      },
+      "message": {
+        "type": "string"
+      },
+      "request_id": {
+        "type": "string"
+      },
+      "retry_after_ms": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "schema_version": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      }
+    }
+  },
   "ArchiveAskJobRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "ArchiveAskJobRequest",
@@ -18036,6 +18075,20 @@
       },
       "note": {
         "$ref": "#/definitions/VaultNote"
+      },
+      "note_version": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "vault_generation": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
       }
     },
     "definitions": {
@@ -18109,11 +18162,35 @@
       "notes"
     ],
     "properties": {
+      "next_cursor": {
+        "description": "Opaque cursor for the next page; absent when complete or v1 adapter.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "notes": {
         "type": "array",
         "items": {
           "$ref": "#/definitions/VaultNoteSummary"
         }
+      },
+      "reset_required": {
+        "description": "Client must drop its cache and restart listing from the head.",
+        "type": "boolean"
+      },
+      "truncated": {
+        "description": "When true, this page is a bounded adapter and must not be treated as complete.",
+        "type": "boolean"
+      },
+      "vault_generation": {
+        "description": "Opaque vault generation for this page (H07.4).",
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
       }
     },
     "definitions": {
@@ -18218,6 +18295,13 @@
         "items": {
           "$ref": "#/definitions/VaultSearchHit"
         }
+      },
+      "indexing": {
+        "description": "True when the search index is rebuilding / not yet warm.",
+        "type": [
+          "boolean",
+          "null"
+        ]
       },
       "query": {
         "type": "string"
@@ -18385,6 +18469,20 @@
       },
       "note": {
         "$ref": "#/definitions/VaultNote"
+      },
+      "note_version": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "vault_generation": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
       }
     },
     "definitions": {
@@ -18534,6 +18632,76 @@
             }
           }
         }
+      }
+    }
+  },
+  "WorkspaceCardsResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorkspaceCardsResponse",
+    "type": "object",
+    "required": [
+      "cards",
+      "workspace_revision"
+    ],
+    "properties": {
+      "cards": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorkCard"
+        }
+      },
+      "workspace_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    },
+    "definitions": {
+      "WorkBoardColumn": {
+        "type": "string",
+        "enum": [
+          "backlog",
+          "in_flight",
+          "wrapping_up",
+          "done",
+          "blocked"
+        ]
+      },
+      "WorkCard": {
+        "type": "object",
+        "required": [
+          "column",
+          "created_at_utc",
+          "id",
+          "status_label",
+          "title",
+          "updated_at_utc"
+        ],
+        "properties": {
+          "column": {
+            "$ref": "#/definitions/WorkBoardColumn"
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "$ref": "#/definitions/WorkCardId"
+          },
+          "status_label": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "WorkCardId": {
+        "type": "string"
       }
     }
   },

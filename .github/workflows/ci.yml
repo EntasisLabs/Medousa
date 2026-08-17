@@ -171,13 +171,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
-          python-version: "3.12"
-      - name: install pyyaml
-        run: pip install pyyaml
-      - name: check SDK contract
-        run: bash scripts/check-sdk-contract.sh
+          workspaces: |
+            . -> .cache/cargo-target
+          cache-workspace-crates: true
+          cache-on-failure: true
+      - name: check generated API contract
+        run: bash scripts/check-api-contract.sh
 
   rust-sdk:
     runs-on: ubuntu-latest

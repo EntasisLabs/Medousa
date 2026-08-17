@@ -2,6 +2,7 @@
 //!
 //! Used by the server, SDK clients, and channel adapters to prevent contract drift.
 
+pub mod api_error;
 pub mod capability;
 pub mod authority_id;
 pub mod component_runtime;
@@ -31,6 +32,7 @@ pub mod turn_ticket;
 pub mod workflow;
 pub mod workflow_plan;
 
+pub use api_error::*;
 pub use capability::*;
 pub use authority_id::*;
 pub use component_runtime::*;

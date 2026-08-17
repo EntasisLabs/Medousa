@@ -181,7 +181,7 @@
         <span class="workshop-faint text-[11px]">advanced</span>
       </button>
       {#if idsOpen}
-        <dl class="context-layer-body text-xs">
+        <dl class="workshop-inset context-layer-body text-xs">
           <div>
             <dt class="workshop-label">kind</dt>
             <dd class="mt-0.5 text-surface-200">{entry.kind}</dd>

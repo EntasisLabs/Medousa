@@ -6,9 +6,11 @@ pub mod chatgpt;
 pub mod code;
 pub mod component_runtime;
 pub mod component_store;
+pub mod contract_bridge;
 pub mod environment;
 pub mod feeds;
 pub mod forge;
+pub mod generated_ops;
 pub mod grapheme;
 pub mod identity;
 pub mod iroh_hook;
@@ -54,6 +56,7 @@ pub struct DaemonState {
     environment_cancel: Mutex<Option<watch::Sender<bool>>>,
     /// One SSE listener per turn id — Tier 2c multi-stream bridge.
     interactive_streams: Mutex<HashMap<String, watch::Sender<bool>>>,
+    pub(crate) contract_streams: Mutex<HashMap<String, watch::Sender<bool>>>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -70,6 +73,7 @@ impl DaemonState {
             workspace_cancel: Mutex::new(None),
             environment_cancel: Mutex::new(None),
             interactive_streams: Mutex::new(HashMap::new()),
+            contract_streams: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -256,10 +260,14 @@ pub async fn workspace_stream_start(
     state: State<'_, DaemonState>,
     since_revision: Option<u64>,
 ) -> Result<(), String> {
-    let mut path = "/v1/workspace/stream".to_string();
+    let mut query = Vec::new();
     if let Some(revision) = since_revision {
-        path.push_str(&format!("?since_revision={revision}"));
+        query.push(("since_revision", revision.to_string()));
     }
+    let path = medousa_sdk::transport::path_with_query(
+        medousa_sdk::generated::ops::WORKSPACE_STREAM_GET.path,
+        &query,
+    );
 
     let config = self::sdk::transport_config(&state);
     let cancel_rx = replace_cancel_slot(&state.workspace_cancel);
@@ -305,18 +313,17 @@ pub async fn environment_stream_start(
     since_revision: Option<u64>,
     profile_id: Option<String>,
 ) -> Result<(), String> {
-    let mut path = "/v1/environment/spec/stream".to_string();
-    let mut query_parts = Vec::new();
+    let mut query = Vec::new();
     if let Some(revision) = since_revision {
-        query_parts.push(format!("since_revision={revision}"));
+        query.push(("since_revision", revision.to_string()));
     }
     if let Some(id) = profile_id.filter(|value| !value.trim().is_empty()) {
-        query_parts.push(format!("profile_id={}", urlencoding::encode(id.trim())));
+        query.push(("profile_id", id.trim().to_string()));
     }
-    if !query_parts.is_empty() {
-        path.push('?');
-        path.push_str(&query_parts.join("&"));
-    }
+    let path = medousa_sdk::transport::path_with_query(
+        medousa_sdk::generated::ops::ENVIRONMENT_SPEC_STREAM_GET.path,
+        &query,
+    );
 
     let config = self::sdk::transport_config(&state);
     let cancel_rx = replace_cancel_slot(&state.environment_cancel);

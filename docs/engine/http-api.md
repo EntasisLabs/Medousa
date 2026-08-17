@@ -7,6 +7,7 @@ Override: `MEDOUSA_DAEMON_URL`
 
 Types: [`medousa-types`](../../crates/medousa-types/) (`daemon_api`, `session`, `local`, …).  
 SDK: [`docs/sdk/api-reference.md`](../sdk/api-reference.md).  
+Generated publication: [`sdk-contract/openapi.json`](../../sdk-contract/openapi.json) (operation IDs from the declared router; regenerate with `UPDATE_API_CONTRACT=1 cargo test -p medousa --lib daemon::contract::tests::checked_in_contract_artifacts_match_generation`). Rust/Python helpers and Home transports expand those generated operation tables. Endpoint-shaped Tauri command names remain shims; their paths come from generated ops.  
 Component notes: [component-daemon.md](../../architecture/component-daemon.md).
 
 Subsystem guides: [interactive-streaming](interactive-streaming.md) · [artifacts](artifacts.md) · [vault](vault.md) · [calendar](calendar.md) · [workspace](workspace.md) · [forge](forge.md) · [agent-tools](agent-tools.md) · [runtime-config](runtime-config.md) · [extensions](extensions.md)
@@ -20,6 +21,12 @@ header. This is required on loopback as well as LAN/Iroh: a loopback socket is
 not caller identity. Missing credentials return `401 authentication_required`;
 malformed, expired, revoked, or unknown credentials return `401
 invalid_credential`; insufficient capability returns `403 forbidden`.
+`401` responses include `WWW-Authenticate: Bearer realm="medousa"`.
+
+Declared `/v1` failures use JSON `ApiErrorEnvelope` (`schema_version`, `code`,
+`message`, `request_id`, `details`). Send `x-request-id` to correlate; otherwise
+`request_id` is `unassigned`. Handler plaintext 4xx/5xx on declared routes are
+wrapped into the same envelope. SSE and binary bodies are left unchanged.
 
 Medousa, `medousa`, and `medousa tui` provision and load independent
 `home-local`, `medousa-cli`, and `medousa-tui` credentials without exposing the

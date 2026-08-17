@@ -12,7 +12,7 @@ export function isEngineTelemetryText(message: string | null | undefined): boole
   return false;
 }
 
-/** ACP external-agent turn (Cursor / Codex via `/v1/agents`). */
+/** ACP external-agent turn (Cursor / Codex via the agents façade). */
 export function isAgentStreamEvent(event: InteractiveTurnStreamEvent): boolean {
   return Boolean(event.agent_runtime || event.agent_session_id);
 }

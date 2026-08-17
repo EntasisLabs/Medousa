@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from medousa._decode import decode
+from medousa._ops import op_path
 from medousa.types import IngestRequest, IngestResponse
 
 if TYPE_CHECKING:
@@ -16,7 +17,7 @@ class IngestApiSync:
     def post(self, request: IngestRequest) -> IngestResponse:
         value = self._client._transport.post_json(
             self._client.base_url,
-            "/v1/ingest",
+            op_path("ingest.post"),
             request.model_dump(mode="json", exclude_none=True),
         )
         return decode(IngestResponse, value)

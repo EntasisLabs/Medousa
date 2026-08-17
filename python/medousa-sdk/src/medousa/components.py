@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from urllib.parse import quote
 
 from medousa._decode import decode
-from medousa.transport import path_with_query
+from medousa._ops import op_path, op_path_query
 from medousa.types import (
     ComponentRuntimeEventsRequest,
     ComponentRuntimeEventsResponse,
@@ -46,9 +45,10 @@ class ComponentsApi:
         profile_id: str | None = None,
         key: str | None = None,
     ) -> ComponentStoreGetResponse:
-        path = path_with_query(
-            f"/v1/components/{component_id.strip()}/store",
+        path = op_path_query(
+            "components.by_component_id.store.get",
             _store_query(profile_id, key),
+            component_id=component_id.strip(),
         )
         value = await self._client.transport.get_json(self._client.base_url, path)
         return decode(ComponentStoreGetResponse, value)
@@ -59,9 +59,10 @@ class ComponentsApi:
         key: str,
         request: ComponentStoreSetRequest,
     ) -> ComponentStoreSetResponse:
-        path = path_with_query(
-            f"/v1/components/{component_id.strip()}/store",
+        path = op_path_query(
+            "components.by_component_id.store.put",
             _store_query(None, key),
+            component_id=component_id.strip(),
         )
         value = await self._client.transport.put_json(
             self._client.base_url,
@@ -76,9 +77,10 @@ class ComponentsApi:
         *,
         profile_id: str | None = None,
     ) -> ComponentStoreListResponse:
-        path = path_with_query(
-            f"/v1/components/{component_id.strip()}/store/keys",
+        path = op_path_query(
+            "components.by_component_id.store.keys.get",
             _profile_query(profile_id),
+            component_id=component_id.strip(),
         )
         value = await self._client.transport.get_json(self._client.base_url, path)
         return decode(ComponentStoreListResponse, value)
@@ -90,10 +92,11 @@ class ComponentsApi:
         *,
         profile_id: str | None = None,
     ) -> ComponentStoreGetResponse:
-        encoded_key = quote(key.strip(), safe="")
-        path = path_with_query(
-            f"/v1/components/{component_id.strip()}/store/{encoded_key}",
+        path = op_path_query(
+            "components.by_component_id.store.by_key.get",
             _profile_query(profile_id),
+            component_id=component_id.strip(),
+            key=key.strip(),
         )
         value = await self._client.transport.get_json(self._client.base_url, path)
         return decode(ComponentStoreGetResponse, value)
@@ -104,10 +107,13 @@ class ComponentsApi:
         key: str,
         request: ComponentStoreSetRequest,
     ) -> ComponentStoreSetResponse:
-        encoded_key = quote(key.strip(), safe="")
         value = await self._client.transport.put_json(
             self._client.base_url,
-            f"/v1/components/{component_id.strip()}/store/{encoded_key}",
+            op_path(
+                "components.by_component_id.store.by_key.put",
+                component_id=component_id.strip(),
+                key=key.strip(),
+            ),
             request.model_dump(mode="json", exclude_none=True),
         )
         return decode(ComponentStoreSetResponse, value)
@@ -119,10 +125,11 @@ class ComponentsApi:
         *,
         profile_id: str | None = None,
     ) -> ComponentStoreDeleteResponse:
-        encoded_key = quote(key.strip(), safe="")
-        path = path_with_query(
-            f"/v1/components/{component_id.strip()}/store/{encoded_key}",
+        path = op_path_query(
+            "components.by_component_id.store.by_key.delete",
             _profile_query(profile_id),
+            component_id=component_id.strip(),
+            key=key.strip(),
         )
         value = await self._client.transport.delete_json(self._client.base_url, path)
         return decode(ComponentStoreDeleteResponse, value)
@@ -137,9 +144,10 @@ class ComponentsApi:
         query = _profile_query(profile_id)
         if limit is not None:
             query.append(("limit", str(limit)))
-        path = path_with_query(
-            f"/v1/components/{component_id.strip()}/runtime/events",
+        path = op_path_query(
+            "components.by_component_id.runtime.events.get",
             query,
+            component_id=component_id.strip(),
         )
         value = await self._client.transport.get_json(self._client.base_url, path)
         return decode(ComponentRuntimeEventsTailResponse, value)
@@ -151,7 +159,9 @@ class ComponentsApi:
     ) -> ComponentRuntimeEventsResponse:
         value = await self._client.transport.post_json(
             self._client.base_url,
-            f"/v1/components/{component_id.strip()}/runtime/events",
+            op_path(
+                "components.by_component_id.runtime.events.post", component_id=component_id.strip()
+            ),
             request.model_dump(mode="json", exclude_none=True),
         )
         return decode(ComponentRuntimeEventsResponse, value)
@@ -162,10 +172,13 @@ class ComponentsApi:
         probe_id: str,
         request: ComponentRuntimeProbeResult,
     ) -> dict:
-        encoded_probe = quote(probe_id.strip(), safe="")
         value = await self._client.transport.post_json(
             self._client.base_url,
-            f"/v1/components/{component_id.strip()}/runtime/probe/{encoded_probe}/result",
+            op_path(
+                "components.by_component_id.runtime.probe.by_probe_id.result.post",
+                component_id=component_id.strip(),
+                probe_id=probe_id.strip(),
+            ),
             request.model_dump(mode="json", exclude_none=True),
         )
         return value

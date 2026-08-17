@@ -9,8 +9,10 @@ use medousa_types::{
 
 #[cfg(feature = "async")]
 use crate::client::MedousaClient;
+use crate::generated::ops;
+use crate::op::{op_path, op_path_query};
 #[cfg(feature = "async")]
-use crate::transport::{decode, path_with_query};
+use crate::transport::decode;
 
 #[cfg(feature = "async")]
 pub struct VaultApi<'a> {
@@ -77,7 +79,7 @@ impl VaultApi<'_> {
         let value = self
             .client
             .transport()
-            .get_json(self.client.base_url(), "/v1/vault/roots")
+            .get_json(self.client.base_url(), ops::VAULT_ROOTS_GET.path)
             .await?;
         decode(value).await
     }
@@ -91,7 +93,7 @@ impl VaultApi<'_> {
         let value = self
             .client
             .transport()
-            .post_json(self.client.base_url(), "/v1/vault/roots", body)
+            .post_json(self.client.base_url(), ops::VAULT_ROOTS_POST.path, body)
             .await?;
         decode(value).await
     }
@@ -105,7 +107,7 @@ impl VaultApi<'_> {
         let value = self
             .client
             .transport()
-            .put_json(self.client.base_url(), "/v1/vault/active", body)
+            .put_json(self.client.base_url(), ops::VAULT_ACTIVE_PUT.path, body)
             .await?;
         decode(value).await
     }
@@ -114,7 +116,7 @@ impl VaultApi<'_> {
         &self,
         query: &VaultNotesQuery,
     ) -> Result<VaultNotesListResponse, crate::SdkError> {
-        let path = path_with_query("/v1/vault/notes", &vault_notes_query_params(query));
+        let path = op_path_query(&ops::VAULT_NOTES_GET, &[], &vault_notes_query_params(query))?;
         let value = self
             .client
             .transport()
@@ -127,7 +129,11 @@ impl VaultApi<'_> {
         &self,
         query: &VaultChangesQuery,
     ) -> Result<VaultChangesResponse, crate::SdkError> {
-        let path = path_with_query("/v1/vault/changes", &vault_changes_query_params(query));
+        let path = op_path_query(
+            &ops::VAULT_CHANGES_GET,
+            &[],
+            &vault_changes_query_params(query),
+        )?;
         let value = self
             .client
             .transport()
@@ -145,7 +151,7 @@ impl VaultApi<'_> {
         let value = self
             .client
             .transport()
-            .post_json(self.client.base_url(), "/v1/vault/notes", body)
+            .post_json(self.client.base_url(), ops::VAULT_NOTES_POST.path, body)
             .await?;
         decode(value).await
     }
@@ -154,7 +160,10 @@ impl VaultApi<'_> {
         &self,
         note_path: &str,
     ) -> Result<VaultNoteContentResponse, crate::SdkError> {
-        let path = format!("/v1/vault/notes/{}", note_path.trim_start_matches('/'));
+        let path = op_path(
+            &ops::VAULT_NOTES_BY_NOTE_PATH_GET,
+            &[("note_path", note_path.trim_start_matches('/'))],
+        )?;
         let value = self
             .client
             .transport()
@@ -167,7 +176,10 @@ impl VaultApi<'_> {
         &self,
         file_path: &str,
     ) -> Result<VaultFileContentResponse, crate::SdkError> {
-        let path = format!("/v1/vault/files/{}", file_path.trim_start_matches('/'));
+        let path = op_path(
+            &ops::VAULT_FILES_BY_FILE_PATH_GET,
+            &[("file_path", file_path.trim_start_matches('/'))],
+        )?;
         let value = self
             .client
             .transport()
@@ -190,10 +202,11 @@ impl VaultApi<'_> {
         if let Some(auto_workshop_tags) = query.auto_workshop_tags {
             params.push(("auto_workshop_tags", auto_workshop_tags.to_string()));
         }
-        let path = path_with_query(
-            &format!("/v1/vault/notes/{}", note_path.trim_start_matches('/')),
+        let path = op_path_query(
+            &ops::VAULT_NOTES_BY_NOTE_PATH_PUT,
+            &[("note_path", note_path.trim_start_matches('/'))],
             &params,
-        );
+        )?;
         let mut headers = Vec::new();
         if let Some(etag) = if_match {
             headers.push(("if-match", etag.to_string()));
@@ -210,7 +223,10 @@ impl VaultApi<'_> {
         &self,
         note_path: &str,
     ) -> Result<VaultDeleteResponse, crate::SdkError> {
-        let path = format!("/v1/vault/notes/{}", note_path.trim_start_matches('/'));
+        let path = op_path(
+            &ops::VAULT_NOTES_BY_NOTE_PATH_DELETE,
+            &[("note_path", note_path.trim_start_matches('/'))],
+        )?;
         let value = self
             .client
             .transport()
@@ -230,7 +246,7 @@ impl VaultApi<'_> {
         if let Some(limit) = query.limit {
             params.push(("limit", limit.to_string()));
         }
-        let path = path_with_query("/v1/vault/tags", &params);
+        let path = op_path_query(&ops::VAULT_TAGS_GET, &[], &params)?;
         let value = self
             .client
             .transport()
@@ -243,7 +259,11 @@ impl VaultApi<'_> {
         &self,
         query: &VaultSearchQuery,
     ) -> Result<VaultSearchResponse, crate::SdkError> {
-        let path = path_with_query("/v1/vault/search", &vault_search_query_params(query));
+        let path = op_path_query(
+            &ops::VAULT_SEARCH_GET,
+            &[],
+            &vault_search_query_params(query),
+        )?;
         let value = self
             .client
             .transport()
@@ -260,7 +280,7 @@ impl VaultApi<'_> {
         if let Some(path) = &query.path {
             params.push(("path", path.clone()));
         }
-        let path = path_with_query("/v1/vault/backlinks", &params);
+        let path = op_path_query(&ops::VAULT_BACKLINKS_GET, &[], &params)?;
         let value = self
             .client
             .transport()
@@ -277,7 +297,7 @@ impl VaultApi<'_> {
         if let Some(limit) = limit {
             params.push(("limit", limit.to_string()));
         }
-        let route = path_with_query("/v1/vault/trash", &params);
+        let route = op_path_query(&ops::VAULT_TRASH_GET, &[], &params)?;
         let value = self
             .client
             .transport()
@@ -291,7 +311,11 @@ impl VaultApi<'_> {
         let value = self
             .client
             .transport()
-            .post_json(self.client.base_url(), "/v1/vault/trash/restore", body)
+            .post_json(
+                self.client.base_url(),
+                ops::VAULT_TRASH_RESTORE_POST.path,
+                body,
+            )
             .await?;
         decode(value).await
     }
@@ -300,7 +324,7 @@ impl VaultApi<'_> {
         let value = self
             .client
             .transport()
-            .get_json(self.client.base_url(), "/v1/vault/git/detect")
+            .get_json(self.client.base_url(), ops::VAULT_GIT_DETECT_GET.path)
             .await?;
         decode(value).await
     }
@@ -309,7 +333,7 @@ impl VaultApi<'_> {
         let value = self
             .client
             .transport()
-            .get_json(self.client.base_url(), "/v1/vault/git/status")
+            .get_json(self.client.base_url(), ops::VAULT_GIT_STATUS_GET.path)
             .await?;
         decode(value).await
     }
@@ -326,7 +350,11 @@ impl VaultApi<'_> {
         let value = self
             .client
             .transport()
-            .post_json(self.client.base_url(), "/v1/vault/git/enable", body)
+            .post_json(
+                self.client.base_url(),
+                ops::VAULT_GIT_ENABLE_POST.path,
+                body,
+            )
             .await?;
         decode(value).await
     }
@@ -337,7 +365,7 @@ impl VaultApi<'_> {
             .transport()
             .post_json(
                 self.client.base_url(),
-                "/v1/vault/git/init",
+                ops::VAULT_GIT_INIT_POST.path,
                 serde_json::json!({}),
             )
             .await?;
@@ -350,7 +378,7 @@ impl VaultApi<'_> {
             .transport()
             .post_json(
                 self.client.base_url(),
-                "/v1/vault/git/install",
+                ops::VAULT_GIT_INSTALL_POST.path,
                 serde_json::json!({}),
             )
             .await?;
@@ -369,7 +397,7 @@ impl VaultApi<'_> {
         if let Some(limit) = limit {
             params.push(("limit", limit.to_string()));
         }
-        let route = path_with_query("/v1/vault/git/log", &params);
+        let route = op_path_query(&ops::VAULT_GIT_LOG_GET, &[], &params)?;
         let value = self
             .client
             .transport()
@@ -390,7 +418,11 @@ impl VaultApi<'_> {
         let value = self
             .client
             .transport()
-            .post_json(self.client.base_url(), "/v1/vault/git/commit", body)
+            .post_json(
+                self.client.base_url(),
+                ops::VAULT_GIT_COMMIT_POST.path,
+                body,
+            )
             .await?;
         decode(value).await
     }
@@ -403,7 +435,11 @@ impl VaultApi<'_> {
         let _ = self
             .client
             .transport()
-            .post_json(self.client.base_url(), "/v1/vault/git/restore", body)
+            .post_json(
+                self.client.base_url(),
+                ops::VAULT_GIT_RESTORE_POST.path,
+                body,
+            )
             .await?;
         Ok(())
     }
@@ -417,7 +453,7 @@ impl VaultApi<'_> {
         if let Some(commit) = commit.filter(|c| !c.is_empty()) {
             params.push(("commit", commit.to_string()));
         }
-        let route = path_with_query("/v1/vault/git/diff", &params);
+        let route = op_path_query(&ops::VAULT_GIT_DIFF_GET, &[], &params)?;
         let value = self
             .client
             .transport()
@@ -430,7 +466,7 @@ impl VaultApi<'_> {
         let value = self
             .client
             .transport()
-            .get_json(self.client.base_url(), "/v1/vault/git/worktrees")
+            .get_json(self.client.base_url(), ops::VAULT_GIT_WORKTREES_GET.path)
             .await?;
         decode(value).await
     }

@@ -11,7 +11,7 @@
   let { avec, compact = false, label = "How you showed up" }: Props = $props();
 </script>
 
-<div class="context-posture-fingerprint {compact ? 'context-posture-fingerprint-compact' : ''}">
+<div class="workshop-inset context-posture-fingerprint {compact ? 'context-posture-fingerprint-compact' : ''}">
   <div class="flex flex-wrap items-center justify-between gap-2">
     <p class="workshop-label">{label}</p>
     <span class="context-posture-psi-chip">ψ {avec.psi.toFixed(2)}</span>

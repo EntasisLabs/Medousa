@@ -11,6 +11,8 @@ use futures_util::StreamExt;
 
 #[cfg(feature = "async")]
 use crate::client::MedousaClient;
+use crate::generated::ops;
+use crate::op::op_path;
 #[cfg(feature = "async")]
 use crate::transport::decode;
 
@@ -35,13 +37,20 @@ impl InteractiveApi<'_> {
         let value = self
             .client
             .transport()
-            .post_json(self.client.base_url(), "/v1/interactive/turn", body)
+            .post_json(
+                self.client.base_url(),
+                ops::INTERACTIVE_TURN_POST.path,
+                body,
+            )
             .await?;
         decode(value).await
     }
 
     pub async fn cancel(&self, session_id: &str) -> Result<serde_json::Value, crate::SdkError> {
-        let path = format!("/v1/sessions/{session_id}/active-turn");
+        let path = op_path(
+            &ops::SESSIONS_BY_SESSION_ID_ACTIVE_TURN_POST,
+            &[("session_id", session_id)],
+        )?;
         self.client
             .transport()
             .post_empty_json(self.client.base_url(), &path)

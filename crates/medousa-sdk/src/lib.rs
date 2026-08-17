@@ -2,13 +2,15 @@
 
 mod client;
 mod error;
+pub mod generated;
 mod local;
+mod op;
 pub mod transport;
 
 #[cfg(feature = "async")]
-mod budget;
-#[cfg(feature = "async")]
 mod agents;
+#[cfg(feature = "async")]
+mod budget;
 #[cfg(feature = "async")]
 mod calendar;
 #[cfg(feature = "async")]
@@ -26,15 +28,15 @@ mod http;
 #[cfg(feature = "async")]
 mod interactive;
 #[cfg(feature = "async")]
-pub mod reconnect;
-#[cfg(all(feature = "async", feature = "sse"))]
-pub mod reconnecting_stream;
-#[cfg(feature = "async")]
 mod jobs;
 #[cfg(feature = "async")]
 mod manuscripts;
 #[cfg(feature = "async")]
 mod mcp_gateway;
+#[cfg(feature = "async")]
+pub mod reconnect;
+#[cfg(all(feature = "async", feature = "sse"))]
+pub mod reconnecting_stream;
 #[cfg(feature = "async")]
 mod recurring;
 #[cfg(feature = "async")]
@@ -54,12 +56,13 @@ pub mod blocking;
 
 pub use client::MedousaClient;
 pub use error::SdkError;
+pub use generated::ops as operations;
 pub use transport::{HttpTransport, Transport, path_with_query};
 
 #[cfg(feature = "async")]
 pub use reconnect::{
-    BackoffPolicy, CircuitBreaker, CircuitBreakerConfig, CircuitState, OverlapGuard,
-    OverlapPermit, ReconnectPolicy, stream_path_with_since,
+    BackoffPolicy, CircuitBreaker, CircuitBreakerConfig, CircuitState, OverlapGuard, OverlapPermit,
+    ReconnectPolicy, stream_path_with_since,
 };
 #[cfg(all(feature = "async", feature = "sse"))]
 pub use reconnecting_stream::{
@@ -68,6 +71,6 @@ pub use reconnecting_stream::{
 };
 
 #[cfg(feature = "blocking")]
-pub use blocking::BlockingMedousaClient;
-#[cfg(feature = "blocking")]
 pub use blocking::BlockingLocalModelsClient;
+#[cfg(feature = "blocking")]
+pub use blocking::BlockingMedousaClient;
