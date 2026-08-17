@@ -96,25 +96,25 @@ impl AccessDenial {
     }
 
     pub(crate) fn into_response(self) -> Response {
-        let (status, body) = match self {
-            Self::AuthenticationRequired => (
-                StatusCode::UNAUTHORIZED,
-                r#"{"code":"authentication_required","message":"authentication is required"}"#,
-            ),
-            Self::InvalidCredential => (
-                StatusCode::UNAUTHORIZED,
-                r#"{"code":"invalid_credential","message":"the credential is invalid or expired"}"#,
-            ),
-            Self::Forbidden => (
-                StatusCode::FORBIDDEN,
-                r#"{"code":"forbidden","message":"the credential cannot access this resource"}"#,
-            ),
+        let envelope = medousa_types::ApiErrorEnvelope::new(
+            self.code(),
+            match self {
+                Self::AuthenticationRequired => "authentication is required",
+                Self::InvalidCredential => "the credential is invalid or expired",
+                Self::Forbidden => "the credential cannot access this resource",
+            },
+            "unassigned",
+        );
+        let body = serde_json::to_vec(&envelope).expect("error envelope");
+        let status = match self {
+            Self::AuthenticationRequired | Self::InvalidCredential => StatusCode::UNAUTHORIZED,
+            Self::Forbidden => StatusCode::FORBIDDEN,
         };
         let mut response = Response::builder()
             .status(status)
             .header(CONTENT_TYPE, "application/json")
             .body(Body::from(body))
-            .expect("static access denial response");
+            .expect("access denial response");
         if status == StatusCode::UNAUTHORIZED {
             response.headers_mut().insert(
                 WWW_AUTHENTICATE,
@@ -710,21 +710,24 @@ mod tests {
             (
                 AccessDenial::AuthenticationRequired,
                 StatusCode::UNAUTHORIZED,
-                r#"{"code":"authentication_required","message":"authentication is required"}"#,
+                "authentication_required",
+                "authentication is required",
             ),
             (
                 AccessDenial::InvalidCredential,
                 StatusCode::UNAUTHORIZED,
-                r#"{"code":"invalid_credential","message":"the credential is invalid or expired"}"#,
+                "invalid_credential",
+                "the credential is invalid or expired",
             ),
             (
                 AccessDenial::Forbidden,
                 StatusCode::FORBIDDEN,
-                r#"{"code":"forbidden","message":"the credential cannot access this resource"}"#,
+                "forbidden",
+                "the credential cannot access this resource",
             ),
         ];
 
-        for (denial, status, expected_body) in cases {
+        for (denial, status, code, message) in cases {
             let response = denial.into_response();
             assert_eq!(response.status(), status);
             assert_eq!(
@@ -738,8 +741,11 @@ mod tests {
                     .map(|value| value.to_str().unwrap()),
                 (status == StatusCode::UNAUTHORIZED).then_some("Bearer realm=\"medousa\"")
             );
-            let body = to_bytes(response.into_body(), 256).await.unwrap();
-            assert_eq!(body.as_ref(), expected_body.as_bytes());
+            let body = to_bytes(response.into_body(), 1024).await.unwrap();
+            let envelope: medousa_types::ApiErrorEnvelope = serde_json::from_slice(&body).unwrap();
+            assert_eq!(envelope.schema_version, 1);
+            assert_eq!(envelope.code, code);
+            assert_eq!(envelope.message, message);
         }
     }
 

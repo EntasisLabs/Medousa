@@ -19,6 +19,7 @@ fn main() {
 
     // Health & jobs
     export_type!(schemas, HealthResponse, "HealthResponse");
+    export_type!(schemas, ApiErrorEnvelope, "ApiErrorEnvelope");
     export_type!(schemas, EnqueueAskRequest, "EnqueueAskRequest");
     export_type!(schemas, EnqueueReportRequest, "EnqueueReportRequest");
     export_type!(schemas, EnqueuePromptRequest, "EnqueuePromptRequest");

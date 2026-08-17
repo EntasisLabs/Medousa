@@ -1718,6 +1718,15 @@ class AgentSessionPromptResponse(MedousaModel):
     agent_session_id: str
 
 
+class ApiErrorEnvelope(MedousaModel):
+    code: str
+    details: Any | None = None
+    message: str
+    request_id: str
+    retry_after_ms: int | None = Field(None, ge=0)
+    schema_version: int = Field(..., ge=0)
+
+
 class ArchiveAskJobRequest(MedousaModel):
     purge_output: bool | None = False
 
@@ -2527,10 +2536,25 @@ class VaultDeleteResponse(MedousaModel):
 class VaultNoteContentResponse(MedousaModel):
     content: str
     note: VaultNote
+    note_version: str | None = None
+    vault_generation: int | None = Field(None, ge=0)
 
 
 class VaultNotesListResponse(MedousaModel):
+    next_cursor: str | None = Field(
+        None, description='Opaque cursor for the next page; absent when complete or v1 adapter.'
+    )
     notes: list[VaultNoteSummary]
+    reset_required: bool | None = Field(
+        None, description='Client must drop its cache and restart listing from the head.'
+    )
+    truncated: bool | None = Field(
+        None,
+        description='When true, this page is a bounded adapter and must not be treated as complete.',
+    )
+    vault_generation: int | None = Field(
+        None, description='Opaque vault generation for this page (H07.4).', ge=0
+    )
 
 
 class VaultRootsResponse(MedousaModel):
@@ -2540,6 +2564,9 @@ class VaultRootsResponse(MedousaModel):
 
 class VaultSearchResponse(MedousaModel):
     hits: list[VaultSearchHit]
+    indexing: bool | None = Field(
+        None, description='True when the search index is rebuilding / not yet warm.'
+    )
     query: str
 
 
@@ -2572,6 +2599,8 @@ class VaultWriteResponse(MedousaModel):
     )
     created: bool
     note: VaultNote
+    note_version: str | None = None
+    vault_generation: int | None = Field(None, ge=0)
 
 
 class WorkspaceCardActionResponse(MedousaModel):
