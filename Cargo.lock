@@ -7902,6 +7902,7 @@ dependencies = [
  "bytes",
  "eventsource-stream",
  "futures-util",
+ "medousa-api-contract",
  "medousa-types",
  "reqwest 0.12.28",
  "serde",

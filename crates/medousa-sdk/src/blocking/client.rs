@@ -274,14 +274,14 @@ impl BlockingMedousaClient {
 #[cfg(feature = "blocking")]
 impl BlockingHealthApi<'_> {
     pub fn get(&self) -> Result<HealthResponse, SdkError> {
-        self.http.get("/v1/health")
+        self.http.get(crate::generated::ops::HEALTH_GET.path)
     }
 }
 
 #[cfg(feature = "blocking")]
 impl BlockingIngestApi<'_> {
     pub fn post(&self, request: &IngestRequest) -> Result<IngestResponse, SdkError> {
-        self.http.post("/v1/ingest", request)
+        self.http.post(crate::generated::ops::INGEST_POST.path, request)
     }
 }
 

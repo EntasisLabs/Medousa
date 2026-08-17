@@ -1,6 +1,7 @@
 //! Medousa daemon HTTP client SDK.
 
 mod client;
+pub mod generated;
 mod error;
 mod local;
 pub mod transport;
@@ -54,6 +55,7 @@ pub mod blocking;
 
 pub use client::MedousaClient;
 pub use error::SdkError;
+pub use generated::ops as operations;
 pub use transport::{HttpTransport, Transport, path_with_query};
 
 #[cfg(feature = "async")]

@@ -17,7 +17,7 @@ impl HealthApi<'_> {
         let value = self
             .client
             .transport()
-            .get_json(self.client.base_url(), "/v1/health")
+            .get_json(self.client.base_url(), crate::generated::ops::HEALTH_GET.path)
             .await?;
         decode(value).await
     }
@@ -35,7 +35,7 @@ impl IngestApi<'_> {
         let value = self
             .client
             .transport()
-            .post_json(self.client.base_url(), "/v1/ingest", body)
+            .post_json(self.client.base_url(), crate::generated::ops::INGEST_POST.path, body)
             .await?;
         decode(value).await
     }
