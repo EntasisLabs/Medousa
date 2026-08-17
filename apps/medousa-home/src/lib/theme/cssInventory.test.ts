@@ -79,6 +79,26 @@ describe("css inventory and cascade", () => {
       expect(hits, `${entry.id} not imported by ${entry.loadedBy}`).not.toEqual([]);
     }
   });
+
+  it("keeps input-chrome unlayered so it beats Tailwind Forms", () => {
+    const sheet = source("src/lib/styles/input-chrome.postcss");
+    expect(sheet).not.toContain("@layer");
+    expect(source("src/app.postcss")).toMatch(/@import[^;]*input-chrome\.postcss/);
+    expect(source("src/app.postcss")).toMatch(/@import[^;]*workshop-primitives\.postcss/);
+  });
+
+  it("loads LME rail and mobile library CSS from always-mounted hosts", () => {
+    const side = source("src/lib/components/lme/LmeSidePanel.svelte");
+    expect(side).toContain("$lib/styles/lme.postcss");
+    expect(side).toContain("$lib/styles/vault-browse.postcss");
+    expect(side).toContain("$lib/styles/vault-workshop.postcss");
+    expect(source("src/lib/components/mobile/MobileCodePanel.svelte")).toContain(
+      "$lib/styles/lme.postcss",
+    );
+    expect(source("src/lib/components/mobile/MobileLibraryPanel.svelte")).toContain(
+      "$lib/styles/vault-browse.postcss",
+    );
+  });
 });
 
 describe("selected-theme Tailwind compile", () => {

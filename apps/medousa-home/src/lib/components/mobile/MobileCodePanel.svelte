@@ -1,4 +1,7 @@
 <script lang="ts">
+  import "$lib/styles/lme.postcss";
+  import "$lib/styles/vault-browse.postcss";
+  import "$lib/styles/vault-workshop.postcss";
   import LmeCodeExplorer from "$lib/components/lme/explorers/LmeCodeExplorer.svelte";
   import MobileCodeWorkspace from "$lib/components/mobile/code/MobileCodeWorkspace.svelte";
   import { Code2 } from "@lucide/svelte";

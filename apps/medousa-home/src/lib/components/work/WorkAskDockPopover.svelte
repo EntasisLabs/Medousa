@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "$lib/styles/work.postcss";
+  import "$lib/styles/composer.postcss";
   import { tick } from "svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import AskComposer from "$lib/components/work/AskComposer.svelte";

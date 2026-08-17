@@ -5,6 +5,7 @@
   import ChatPaneIdle from "$lib/components/shell/ChatPaneIdle.svelte";
   import WebPaneIdle from "$lib/components/shell/WebPaneIdle.svelte";
   import ShellTabStrip from "$lib/components/shell/ShellTabStrip.svelte";
+  import EmptyState from "$lib/components/ui/EmptyState.svelte";
   import { chatStreamPool } from "$lib/chat/chatStreamPool.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -115,6 +116,11 @@
 
   function focusPane() {
     if (!focused) shellTabs.focusGroup(groupId);
+  }
+
+  function openEmptyPaneSurface(surfaceId: "library" | "chat" | "code") {
+    focusPane();
+    shellTabs.openSurface(surfaceId, { activate: true, groupId });
   }
 
   function handlePanePointerMove(event: PointerEvent) {
@@ -284,8 +290,29 @@
     {:else if activeTab?.kind === "web"}
       <WebPaneIdle {groupId} />
     {:else}
-      <div class="flex h-full items-center justify-center p-8 text-sm text-content-quiet">
-        Open something from the rail.
+      <div class="flex h-full items-center justify-center p-8">
+        <EmptyState
+          title="Open something"
+          description="Start from Notes, Chat, or Code. The rail stays available for everything else."
+        >
+          <div class="flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              class="rounded bg-primary-500/80 px-3 py-1.5 text-chrome-md font-medium text-surface-50"
+              onclick={() => openEmptyPaneSurface("library")}
+            >Notes</button>
+            <button
+              type="button"
+              class="rounded border border-surface-500/40 px-3 py-1.5 text-chrome-md text-surface-200 hover:bg-surface-800"
+              onclick={() => openEmptyPaneSurface("chat")}
+            >Chat</button>
+            <button
+              type="button"
+              class="rounded border border-surface-500/40 px-3 py-1.5 text-chrome-md text-surface-200 hover:bg-surface-800"
+              onclick={() => openEmptyPaneSurface("code")}
+            >Code</button>
+          </div>
+        </EmptyState>
       </div>
     {/if}
   </div>

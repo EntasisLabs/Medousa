@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/editor-host.postcss";
   import { onDestroy, onMount, untrack } from "svelte";
   import {
     Compartment,

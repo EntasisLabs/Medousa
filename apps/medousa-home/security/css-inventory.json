@@ -22,6 +22,19 @@
       "loadedBy": "app.postcss"
     },
     {
+      "id": "workshop-primitives",
+      "class": "primitive",
+      "path": "src/lib/styles/workshop-primitives.postcss",
+      "loadedBy": "app.postcss"
+    },
+    {
+      "id": "input-chrome",
+      "class": "primitive",
+      "path": "src/lib/styles/input-chrome.postcss",
+      "loadedBy": "app.postcss",
+      "notes": "Unlayered chromeless input resets so Tailwind Forms cannot paint white boxes"
+    },
+    {
       "id": "theme-semantic",
       "class": "primitive",
       "path": "src/lib/styles/theme-semantic.postcss",
@@ -97,13 +110,19 @@
       "id": "vault-browse",
       "class": "feature",
       "path": "src/lib/styles/vault-browse.postcss",
-      "loadedBy": "LibraryPanel.svelte"
+      "loadedBy": "LibraryPanel.svelte / LmeSidePanel.svelte / MobileCodePanel.svelte / MobileLibraryPanel.svelte / CodeEditorContextMenu.svelte"
     },
     {
       "id": "vault-editor",
       "class": "feature",
       "path": "src/lib/styles/vault-editor.postcss",
       "loadedBy": "VaultEditor.svelte"
+    },
+    {
+      "id": "editor-host",
+      "class": "feature",
+      "path": "src/lib/styles/editor-host.postcss",
+      "loadedBy": "CodeMirrorHost.svelte"
     },
     {
       "id": "vault-live",
@@ -145,7 +164,7 @@
       "id": "vault-workshop",
       "class": "feature",
       "path": "src/lib/styles/vault-workshop.postcss",
-      "loadedBy": "VaultNoteWorkshop.svelte"
+      "loadedBy": "VaultNoteWorkshop.svelte / LmeSidePanel.svelte / MobileCodePanel.svelte / ScriptWorkbenchChatPanel.svelte"
     },
     {
       "id": "chat",
@@ -157,7 +176,7 @@
       "id": "composer",
       "class": "feature",
       "path": "src/lib/styles/composer.postcss",
-      "loadedBy": "ChatComposerBar.svelte"
+      "loadedBy": "ChatComposerBar.svelte / CronPanel.svelte / WorkAskDockPopover.svelte"
     },
     {
       "id": "settings",
@@ -187,7 +206,7 @@
       "id": "lme",
       "class": "feature",
       "path": "src/lib/styles/lme.postcss",
-      "loadedBy": "LmePanel.svelte"
+      "loadedBy": "LmePanel.svelte / LmeSidePanel.svelte / MobileCodePanel.svelte"
     },
     {
       "id": "profiles",
@@ -217,7 +236,7 @@
       "id": "work",
       "class": "feature",
       "path": "src/lib/styles/work.postcss",
-      "loadedBy": "WorkAsksPanel.svelte"
+      "loadedBy": "WorkAsksPanel.svelte / WorkAskDockPopover.svelte"
     },
     {
       "id": "messaging",
@@ -241,7 +260,7 @@
       "id": "workshop-surfaces",
       "class": "feature",
       "path": "src/lib/styles/workshop-surfaces.postcss",
-      "loadedBy": "WorkshopShell.svelte / EnvironmentPresetSwitcher.svelte"
+      "loadedBy": "WorkshopShell.svelte / EnvironmentPresetSwitcher.svelte / MobileWorkCard.svelte"
     }
   ]
 }

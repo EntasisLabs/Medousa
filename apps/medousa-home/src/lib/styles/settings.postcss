@@ -34,50 +34,6 @@
     @apply min-w-0 flex-1 truncate;
   }
 
-  .manifest-result {
-    @apply text-[15px] leading-relaxed text-surface-100;
-  }
-
-  .manifest-result .markdown-content {
-    @apply text-[15px] leading-relaxed;
-  }
-
-  .manifest-timeline-list {
-    @apply relative m-0 list-none p-0;
-  }
-
-  .manifest-timeline-item {
-    @apply relative flex gap-3 pl-1;
-  }
-
-  .manifest-timeline-item::before {
-    content: "";
-    @apply absolute bottom-0 left-[5px] top-3 w-px;
-    background: linear-gradient(
-      to bottom,
-      rgb(var(--color-primary-500) / 0.35),
-      rgb(var(--color-surface-700) / 0.4)
-    );
-  }
-
-  .manifest-timeline-item-last::before {
-    display: none;
-  }
-
-  .manifest-timeline-dot {
-    @apply relative z-[1] mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full;
-    background-color: rgb(var(--color-primary-500) / 0.55);
-    box-shadow: 0 0 0 3px rgb(var(--color-surface-900) / 0.9);
-  }
-
-  .manifest-details summary {
-    list-style: none;
-  }
-
-  .manifest-details summary::-webkit-details-marker {
-    display: none;
-  }
-
   .daemon-portal-chip {
     @apply flex min-w-0 items-center gap-2 text-[10px] text-content-tertiary;
   }
@@ -185,10 +141,6 @@
     @apply divide-y divide-surface-500/35 rounded-container-token border border-surface-500/35 bg-surface-900/30;
   }
 
-  .settings-toggle-row {
-    @apply flex cursor-pointer items-center gap-4 px-4 py-3.5;
-  }
-
   .settings-metric-row {
     cursor: default;
   }
@@ -276,22 +228,6 @@
 
   .settings-charter-line {
     @apply max-w-2xl leading-relaxed;
-  }
-
-  .settings-depth-card {
-    @apply rounded-container-token border border-surface-500/40 bg-surface-900/30 px-3 py-3 text-left transition;
-  }
-
-  .settings-depth-card:hover:not(:disabled) {
-    @apply border-surface-400/50 bg-surface-800/50;
-  }
-
-  .settings-depth-card-active {
-    @apply border-primary-500/45 bg-primary-500/10 ring-1 ring-inset ring-primary-500/25;
-  }
-
-  .settings-depth-card:disabled {
-    @apply cursor-not-allowed opacity-70;
   }
 
   .settings-profile-stack {

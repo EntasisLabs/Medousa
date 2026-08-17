@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/vault-browse.postcss";
   import { onMount } from "svelte";
 
   export type CodeEditorMenuAction =

@@ -1,0 +1,92 @@
+/**
+ * Unlayered chromeless input resets.
+ *
+ * @tailwindcss/forms emits unlayered white input/textarea chrome. Destination
+ * sheets live in @layer features and always lose that fight. These selectors
+ * stay unlayered so composer, Spotlight, rename, and dock search can keep
+ * transparent / themed chrome. Layout (min-height, padding, font) stays in
+ * the destination feature sheets.
+ *
+ * Loaded by app.postcss. Do not wrap in @layer.
+ */
+
+.composer-bar-input,
+.mobile-composer-dock-input.composer-bar-input,
+.command-spotlight-input,
+.script-editor-tab-rename,
+.script-library-rename,
+.vault-editor-textarea,
+.lme-dock-search-expand input {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+.composer-bar-input,
+.mobile-composer-dock-input.composer-bar-input,
+.vault-editor-textarea,
+.lme-dock-search-expand input {
+  border-width: 0;
+  border-radius: 0;
+}
+
+.composer-bar-input:focus,
+.composer-bar-input:focus-visible,
+.mobile-composer-dock-input.composer-bar-input:focus,
+.command-spotlight-input:focus,
+.script-editor-tab-rename:focus,
+.script-editor-tab-rename:focus-visible,
+.script-library-rename:focus,
+.script-library-rename:focus-visible,
+.vault-editor-textarea:focus,
+.lme-dock-search-expand input:focus {
+  outline: none;
+  box-shadow: none;
+  --tw-ring-shadow: 0 0 #0000;
+}
+
+.command-spotlight-input {
+  border-width: 0;
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  border-bottom-color: rgb(var(--color-surface-800) / 0.9);
+  background-color: transparent;
+}
+
+.script-editor-tab-rename,
+.script-library-rename {
+  border-width: 0;
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  border-radius: 0;
+  background-color: transparent;
+}
+
+.script-editor-tab-rename {
+  border-bottom-color: rgb(var(--color-primary-400) / 0.45);
+}
+
+.script-library-rename {
+  border-bottom-color: rgb(var(--color-surface-500) / 0.55);
+}
+
+.lme-dock-search-input {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: rgb(var(--color-surface-800) / 0.7);
+  border: 1px solid rgb(var(--color-surface-500) / 0.4);
+  border-radius: 0.375rem;
+  box-shadow: none;
+}
+
+textarea:not(.input):not(.textarea),
+input:not([type]):not(.input),
+input[type="search"]:not(.input),
+input[type="text"]:not(.input):not(.settings-metric-input) {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
