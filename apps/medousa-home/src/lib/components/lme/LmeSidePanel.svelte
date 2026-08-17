@@ -1,4 +1,7 @@
 <script lang="ts">
+  import "$lib/styles/lme.postcss";
+  import "$lib/styles/vault-browse.postcss";
+  import "$lib/styles/vault-workshop.postcss";
   import LmeAgentsExplorer from "$lib/components/lme/explorers/LmeAgentsExplorer.svelte";
   import LmeAutomationsExplorer from "$lib/components/lme/explorers/LmeAutomationsExplorer.svelte";
   import LmeCodeExplorer from "$lib/components/lme/explorers/LmeCodeExplorer.svelte";

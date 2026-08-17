@@ -242,4 +242,48 @@
   .work-manifest-close {
     @apply absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-md text-content-tertiary transition hover:bg-surface-800 hover:text-surface-100;
   }
+
+  .manifest-result {
+    @apply text-[15px] leading-relaxed text-surface-100;
+  }
+
+  .manifest-result .markdown-content {
+    @apply text-[15px] leading-relaxed;
+  }
+
+  .manifest-timeline-list {
+    @apply relative m-0 list-none p-0;
+  }
+
+  .manifest-timeline-item {
+    @apply relative flex gap-3 pl-1;
+  }
+
+  .manifest-timeline-item::before {
+    content: "";
+    @apply absolute bottom-0 left-[5px] top-3 w-px;
+    background: linear-gradient(
+      to bottom,
+      rgb(var(--color-primary-500) / 0.35),
+      rgb(var(--color-surface-700) / 0.4)
+    );
+  }
+
+  .manifest-timeline-item-last::before {
+    display: none;
+  }
+
+  .manifest-timeline-dot {
+    @apply relative z-[1] mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full;
+    background-color: rgb(var(--color-primary-500) / 0.55);
+    box-shadow: 0 0 0 3px rgb(var(--color-surface-900) / 0.9);
+  }
+
+  .manifest-details summary {
+    list-style: none;
+  }
+
+  .manifest-details summary::-webkit-details-marker {
+    display: none;
+  }
 }

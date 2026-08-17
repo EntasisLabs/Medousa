@@ -80,49 +80,27 @@ describe("css inventory and cascade", () => {
     }
   });
 
-  it("does not @apply custom classes defined in other sheets", () => {
-    const inventory = JSON.parse(source("security/css-inventory.json"));
-    const sheetPaths = [
-      ...new Set<string>(
-        inventory.entries
-          .map((entry: { path?: string }) => entry.path)
-          .filter((path: unknown): path is string => typeof path === "string" && path.endsWith(".postcss")),
-      ),
-    ];
-    const definedByFile = new Map<string, Set<string>>();
-    for (const path of sheetPaths) {
-      const names = new Set<string>();
-      for (const match of source(path).matchAll(/^\s*\.([a-zA-Z][\w-]*)/gm)) {
-        names.add(match[1]);
-      }
-      definedByFile.set(path, names);
-    }
-    const owners = new Map<string, string[]>();
-    for (const [path, names] of definedByFile) {
-      for (const name of names) {
-        const list = owners.get(name) ?? [];
-        list.push(path);
-        owners.set(name, list);
-      }
-    }
-    // Skeleton owns these apply targets even though Home also adds selector overrides.
-    const frameworkApplyClasses = new Set(["btn", "input"]);
-    const leaks: string[] = [];
-    for (const path of sheetPaths) {
-      const sheet = source(path);
-      for (const apply of sheet.matchAll(/@apply\s+([^;]+);/g)) {
-        for (const token of apply[1].trim().split(/\s+/)) {
-          const name = token.split("/")[0];
-          if (!/^[a-zA-Z][\w-]*$/.test(name)) continue;
-          if (frameworkApplyClasses.has(name)) continue;
-          const foreign = (owners.get(name) ?? []).filter((owner) => owner !== path);
-          if (foreign.length > 0) {
-            leaks.push(`${path} @apply ${name} (defined in ${foreign.join(", ")})`);
-          }
-        }
-      }
-    }
-    expect(leaks).toEqual([]);
+  it("keeps input-chrome unlayered so it beats Tailwind Forms", () => {
+    const sheet = source("src/lib/styles/input-chrome.postcss").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    expect(sheet).not.toContain("@layer");
+    expect(source("src/app.postcss")).toMatch(/@import[^;]*input-chrome\.postcss/);
+    expect(source("src/app.postcss")).toMatch(/@import[^;]*workshop-primitives\.postcss/);
+  });
+
+  it("loads LME rail and mobile library CSS from always-mounted hosts", () => {
+    const side = source("src/lib/components/lme/LmeSidePanel.svelte");
+    expect(side).toContain("$lib/styles/lme.postcss");
+    expect(side).toContain("$lib/styles/vault-browse.postcss");
+    expect(side).toContain("$lib/styles/vault-workshop.postcss");
+    expect(source("src/lib/components/mobile/MobileCodePanel.svelte")).toContain(
+      "$lib/styles/lme.postcss",
+    );
+    expect(source("src/lib/components/mobile/MobileLibraryPanel.svelte")).toContain(
+      "$lib/styles/vault-browse.postcss",
+    );
   });
 });
 

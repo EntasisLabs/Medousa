@@ -4,6 +4,8 @@
   import LazyFeatureView from "$lib/components/layout/LazyFeatureView.svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import ConnectionsInviteSheet from "$lib/components/lme/ConnectionsInviteSheet.svelte";
+  import EmptyState from "$lib/components/ui/EmptyState.svelte";
+  import VaultEmptyState from "$lib/components/vault/VaultEmptyState.svelte";
   import VaultNewGroupDialog from "$lib/components/vault/VaultNewGroupDialog.svelte";
   import VaultNewNoteDialog from "$lib/components/vault/VaultNewNoteDialog.svelte";
   import { automationsNav } from "$lib/stores/automationsNav.svelte";
@@ -12,6 +14,7 @@
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import { loadLmeEditorHost } from "$lib/runtime/viewLoaders";
+  import { isLmeLibraryMode } from "$lib/utils/lmeExplorerModes";
 
   interface Props {
     visible: boolean;
@@ -96,9 +99,25 @@
           <ShellSidebarExpandButton label="Show workspace browser" />
         </div>
       {/if}
-      <div class="flex flex-1 items-center justify-center p-8 text-sm text-content-quiet">
-        {emptyMessage}
-      </div>
+      {#if isLmeLibraryMode(lmeWorkspace.explorerMode)}
+        <div class="flex min-h-0 flex-1 overflow-auto">
+          <VaultEmptyState />
+        </div>
+      {:else if lmeWorkspace.explorerMode === "code"}
+        <div class="flex flex-1 items-center justify-center p-8">
+          <EmptyState
+            title="Open a file"
+            description="Pick a project from the side panel, then a path from the tree."
+          />
+        </div>
+      {:else}
+        <div class="flex flex-1 items-center justify-center p-8">
+          <EmptyState
+            title={emptyMessage}
+            description="Use the side panel to open something here."
+          />
+        </div>
+      {/if}
     </div>
   {/if}
 </section>

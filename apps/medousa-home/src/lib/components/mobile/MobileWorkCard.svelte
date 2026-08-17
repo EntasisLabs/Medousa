@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/workshop-surfaces.postcss";
   import { haptic } from "$lib/haptics";
   import { workspace } from "$lib/stores/workspace.svelte";
   import type { WorkCard } from "$lib/types/workspace";

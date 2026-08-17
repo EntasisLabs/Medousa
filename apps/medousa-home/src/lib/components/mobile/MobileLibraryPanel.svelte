@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/vault-browse.postcss";
   import { onMount, tick } from "svelte";
   import ArtifactFullscreen from "$lib/components/chat/ArtifactFullscreen.svelte";
   import ArtifactLibraryList from "$lib/components/artifacts/ArtifactLibraryList.svelte";

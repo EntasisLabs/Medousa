@@ -41,6 +41,10 @@
       "specifier": "$lib/styles/scripts.postcss"
     },
     {
+      "from": "src/lib/components/automations/ScriptWorkbenchChatPanel.svelte",
+      "specifier": "$lib/styles/vault-workshop.postcss"
+    },
+    {
       "from": "src/lib/components/browser/HumanBrowserPanel.svelte",
       "specifier": "$lib/styles/browser.postcss"
     },
@@ -69,8 +73,20 @@
       "specifier": "$lib/styles/chat.postcss"
     },
     {
+      "from": "src/lib/components/code/CodeEditorContextMenu.svelte",
+      "specifier": "$lib/styles/vault-browse.postcss"
+    },
+    {
+      "from": "src/lib/components/code/CodeMirrorHost.svelte",
+      "specifier": "$lib/styles/editor-host.postcss"
+    },
+    {
       "from": "src/lib/components/context/MapPanel.svelte",
       "specifier": "$lib/styles/context.postcss"
+    },
+    {
+      "from": "src/lib/components/cron/CronPanel.svelte",
+      "specifier": "$lib/styles/composer.postcss"
     },
     {
       "from": "src/lib/components/cron/CronPanel.svelte",
@@ -117,6 +133,18 @@
       "specifier": "$lib/styles/lme.postcss"
     },
     {
+      "from": "src/lib/components/lme/LmeSidePanel.svelte",
+      "specifier": "$lib/styles/lme.postcss"
+    },
+    {
+      "from": "src/lib/components/lme/LmeSidePanel.svelte",
+      "specifier": "$lib/styles/vault-browse.postcss"
+    },
+    {
+      "from": "src/lib/components/lme/LmeSidePanel.svelte",
+      "specifier": "$lib/styles/vault-workshop.postcss"
+    },
+    {
       "from": "src/lib/components/messaging/MessagingChannelsSettings.svelte",
       "specifier": "$lib/styles/messaging.postcss"
     },
@@ -125,12 +153,32 @@
       "specifier": "$lib/styles/mobile-home-convergence.postcss"
     },
     {
+      "from": "src/lib/components/mobile/MobileCodePanel.svelte",
+      "specifier": "$lib/styles/lme.postcss"
+    },
+    {
+      "from": "src/lib/components/mobile/MobileCodePanel.svelte",
+      "specifier": "$lib/styles/vault-browse.postcss"
+    },
+    {
+      "from": "src/lib/components/mobile/MobileCodePanel.svelte",
+      "specifier": "$lib/styles/vault-workshop.postcss"
+    },
+    {
+      "from": "src/lib/components/mobile/MobileLibraryPanel.svelte",
+      "specifier": "$lib/styles/vault-browse.postcss"
+    },
+    {
       "from": "src/lib/components/mobile/MobileShell.svelte",
       "specifier": "$lib/styles/mobile-home-convergence.postcss"
     },
     {
       "from": "src/lib/components/mobile/MobileShell.svelte",
       "specifier": "$lib/styles/mobile-shell.postcss"
+    },
+    {
+      "from": "src/lib/components/mobile/MobileWorkCard.svelte",
+      "specifier": "$lib/styles/workshop-surfaces.postcss"
     },
     {
       "from": "src/lib/components/onboarding/HomeOnboarding.svelte",
@@ -219,6 +267,14 @@
     {
       "from": "src/lib/components/wizard/WizardContainer.svelte",
       "specifier": "./wizardExperience.css"
+    },
+    {
+      "from": "src/lib/components/work/WorkAskDockPopover.svelte",
+      "specifier": "$lib/styles/composer.postcss"
+    },
+    {
+      "from": "src/lib/components/work/WorkAskDockPopover.svelte",
+      "specifier": "$lib/styles/work.postcss"
     },
     {
       "from": "src/lib/components/work/WorkAsksPanel.svelte",

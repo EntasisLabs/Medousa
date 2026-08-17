@@ -1,5 +1,6 @@
 <script lang="ts">
   import "$lib/styles/cron.postcss";
+  import "$lib/styles/composer.postcss";
   import CronCreateForm from "$lib/components/cron/CronCreateForm.svelte";
   import WorkshopLivelinessChip from "$lib/components/ui/WorkshopLivelinessChip.svelte";
   import { cronDraft } from "$lib/stores/automationDraft.svelte";

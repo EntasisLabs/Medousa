@@ -27,6 +27,9 @@ describe("ShellPane destination loaders", () => {
     expect(source).not.toMatch(/import TerminalPane from/);
     expect(source).not.toMatch(/import CalendarPanel from/);
     expect(source).toContain("loadLmePanel");
+    expect(source).toContain("EmptyState");
+    expect(source).toContain("openEmptyPaneSurface");
+    expect(source).not.toMatch(/Open something from the rail\./);
     expect(source).not.toMatch(/void import\(/);
     expect(source).not.toMatch(/onMount\(/);
   });
@@ -42,6 +45,8 @@ describe("browse vs edit and settings splits", () => {
     expect(pane).not.toMatch(/@tiptap/);
     expect(pane).not.toMatch(/@codemirror/);
     expect(pane).toContain("loadLmeEditorHost");
+    expect(pane).toContain("VaultEmptyState");
+    expect(pane).toContain("EmptyState");
     const host = readFileSync(
       join(homeRoot, "src/lib/components/lme/LmeEditorHost.svelte"),
       "utf8",

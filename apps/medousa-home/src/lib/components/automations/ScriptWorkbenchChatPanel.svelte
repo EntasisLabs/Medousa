@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/vault-workshop.postcss";
   import { ExternalLink, History } from "@lucide/svelte";
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import ScriptWorkbenchChatSessionMenu from "$lib/components/automations/ScriptWorkbenchChatSessionMenu.svelte";
