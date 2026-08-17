@@ -1,4 +1,9 @@
-//! Export JSON Schema definitions for all public medousa-types structs.
+//! Export JSON Schema for `medousa-types` wire DTOs used by the daemon contract.
+//!
+//! This is the schemars implementation for names bound in
+//! `src/daemon/contract_bindings.rs`, not a second route inventory. Adding a
+//! named non-opaque SchemaRef requires an `export_type!` here (or an explicit
+//! allowlist in `schema_catalog_covers_named_contract_bindings`).
 
 use std::collections::BTreeMap;
 use std::fs;

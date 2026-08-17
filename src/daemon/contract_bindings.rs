@@ -1,6 +1,6 @@
 //! Wire DTO and stream-transport bindings for declared operations.
 //!
-//! Names match `medousa-types` / `export_type!` titles. Unlisted operations
+//! Names match `medousa-types` / types-schema titles. Unlisted operations
 //! stay deferred until a DTO exists.
 
 use medousa_api_contract::{RequestBodySpec, SchemaRef, StreamSpec, StreamTransport};

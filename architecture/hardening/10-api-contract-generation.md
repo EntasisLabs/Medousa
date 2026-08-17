@@ -44,11 +44,10 @@ from that inventory. Production inventory is **369** routes without pairing and
 CI regenerates the contract and requires byte equality plus exact-set equality
 against the declared router.
 
-`sdk-contract/manifest.yaml` is retained as a known-incomplete SDK accessor
-list. `PARITY_ROUTES` is deleted; uniqueness/SSE checks run against generated
-ops. Slice 3 helpers consume those tables and unit-test the absence of `/v1`
-literals. Slice 4 still owns deleting YAML after remaining Home/forge
-transports migrate and no-literal gates exist as required CI.
+`sdk-contract/manifest.yaml` is deleted. Named wire schemas in the production
+registry must appear in `medousa-types.schema.json` unless they are the documented
+uncatalogued exceptions (`schema_catalog_covers_named_contract_bindings`).
+`PARITY_ROUTES` stays deleted; uniqueness/SSE checks run against generated ops.
 
 Remaining copies that still shrink:
 
@@ -61,18 +60,18 @@ Remaining copies that still shrink:
 | Browser compatibility adapter | unprefixed `BROWSER_COMPATIBILITY_MOUNTS`; `/v1` copies on `browser_surface` | unprefixed aliases stay off 369/381; `/v1` copies use explicit `ExactOrigin` |
 | Stasis dashboard adapter | raw `dashboard_router` + frozen `DASHBOARD_COMPATIBILITY_MOUNTS` | third-party; no method/path descriptors; reviewed freeze stays off declared inventory |
 | Tauri daemon proxy modules | closed `daemon_unary` / real `daemon_stream_start`+cancel; endpoint-shaped shims remain | live SSE uses generated stream paths; remaining proxies still own some URLs |
-| Home `$lib/daemon/*` | generated ops for session stream, code/grapheme LSP, code intelligence | `forge.ts` and browser compatibility mounts remain handwritten |
+| Home `$lib/daemon/*` | generated ops for session stream, LSP, code intelligence, forge, browser sessions | Home no-literal CI except generated tables, tests, and local `browserBridge` |
 
 `scripts/check-api-contract.sh` runs IR tests, production inventory equality,
-YAML discrepancy (incomplete by design), and the architecture check that
-production `/v1` string literals cannot call raw Axum `.route`/`.nest` outside
-reviewed adapters. `scripts/check-sdk-contract.sh` wraps that gate.
+released-baseline `diff_contracts`, helper/Home no-literal scans, and the
+architecture check that production `/v1` string literals cannot call raw Axum
+`.route`/`.nest` outside reviewed adapters. `scripts/check-sdk-contract.sh`
+wraps that gate.
 
 `medousa-types` already derives `serde` and optional `schemars::JsonSchema` for
-many wire types. `medousa-types-schema` exports a manually maintained subset to
-one JSON map. That is useful migration input, but the manual `export_type!`
-list is another incomplete inventory and does not bind a type to an operation,
-status, content type, or actual handler behavior.
+many wire types. `medousa-types-schema` exports schemars for names bound by the
+daemon contract. CI requires those named non-opaque schemas to appear in
+`medousa-types.schema.json` unless they are documented uncatalogued exceptions.
 
 ## Invariants
 

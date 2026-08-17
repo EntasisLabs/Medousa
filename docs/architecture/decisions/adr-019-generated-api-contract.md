@@ -175,12 +175,10 @@ schema inventory, copied client routes, and endpoint-shaped Home proxy copies.
 
 ## Verification
 
-H10 Slice 1 is inventory shadow: IR generation, exact declared-router equality,
-and architecture grep for raw `/v1` Axum literals. `sdk-contract/manifest.yaml`
-remains until generated clients own SDK accessors. `PARITY_ROUTES` is deleted in
-favor of uniqueness checks on generated ops. CONTRACT-001 is not Mitigated until
-Slice 4 gates (regen-and-diff, no-literal lint, black-box suite, old SoT deleted
-after those proofs) land.
+H10 Slices 1–4 generate the public contract from `DeclaredRouter`, cut SDK/Home
+helpers onto operation tables, require no-literal and released-baseline CI, and
+delete `sdk-contract/manifest.yaml`. `PARITY_ROUTES` is deleted in favor of
+uniqueness checks on generated ops.
 
 ## Code anchors
 

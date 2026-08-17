@@ -318,8 +318,8 @@ mod tests {
     use axum::http::{Request, StatusCode};
     use axum::routing::get;
     use medousa_api_contract::{
-        CompatibilityClass, DiscrepancyKind, HttpMethod, ListedRoute, StreamTransport,
-        diff_contracts, discrepancy_report, generate_artifacts_with_catalog, parse_manifest_yaml,
+        CompatibilityClass, HttpMethod, StreamTransport, diff_contracts,
+        generate_artifacts_with_catalog,
     };
     use std::net::SocketAddr;
     use tower::ServiceExt;
@@ -333,6 +333,16 @@ mod tests {
     fn artifacts(registry: &ContractRegistry) -> medousa_api_contract::GeneratedArtifacts {
         generate_artifacts_with_catalog(registry, &schema_catalog())
     }
+
+    /// Bound names that are not `medousa-types` schemars titles (constants,
+    /// JSON-RPC, or Forge event bags). They must not silently grow; prefer
+    /// adding a DTO + `export_type!` instead.
+    const UNCATALOGUED_WIRE_NAMES: &[&str] = &[
+        "HealthLiveness",
+        "JsonRpcMessage",
+        "ForgeStreamEvent",
+        "ForgeProjectEvent",
+    ];
 
     #[test]
     fn production_profiles_match_declared_counts() {
@@ -441,34 +451,57 @@ mod tests {
     }
 
     #[test]
-    fn yaml_manifest_remains_known_incomplete_shadow() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let yaml = std::fs::read_to_string(root.join("sdk-contract/manifest.yaml"))
-            .expect("Slice 1 keeps manifest.yaml until generated clients own SDK accessors");
-        let manifest = parse_manifest_yaml(&yaml).expect("manifest.yaml parses");
-        let registry = production_registry(true);
-        let listed: Vec<ListedRoute> = registry
-            .operations()
-            .map(|spec| ListedRoute {
-                method: spec.method.as_str().to_string(),
-                path: spec.path.clone(),
-            })
-            .collect();
-        let report = discrepancy_report(&registry, &manifest, &listed);
-        assert_eq!(report.declared_count, 381);
-        assert!(
-            report
-                .rows
-                .iter()
-                .any(|row| row.kind == DiscrepancyKind::MissingFromManifest),
-            "YAML must stay a known-incomplete shadow of the declared router"
-        );
-        let parity =
-            std::fs::read_to_string(root.join("crates/medousa-sdk/tests/contract_parity.rs"))
-                .expect("parity tests");
+    fn parity_routes_stay_deleted() {
+        let parity = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("crates/medousa-sdk/tests/contract_parity.rs"),
+        )
+        .expect("parity tests");
         assert!(
             !parity.contains("const PARITY_ROUTES"),
             "handwritten PARITY_ROUTES stays deleted; uniqueness uses generated ops"
+        );
+        assert!(
+            !std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("sdk-contract/manifest.yaml")
+                .exists(),
+            "manifest.yaml is deleted; OpenAPI and generated ops own the public contract"
+        );
+    }
+
+    #[test]
+    fn schema_catalog_covers_named_contract_bindings() {
+        let catalog = schema_catalog();
+        let registry = production_registry(true);
+        let mut missing = Vec::new();
+        for spec in registry.operations() {
+            let mut refs = Vec::new();
+            if let Some(body) = &spec.request_body {
+                refs.push(&body.schema);
+            }
+            for response in &spec.responses {
+                refs.push(&response.schema);
+            }
+            if let Some(stream) = &spec.stream {
+                refs.push(&stream.item_schema);
+            }
+            for schema in refs {
+                if schema.opaque {
+                    continue;
+                }
+                if catalog.contains_key(&schema.name) {
+                    continue;
+                }
+                if UNCATALOGUED_WIRE_NAMES.contains(&schema.name.as_str()) {
+                    continue;
+                }
+                missing.push(format!("{}: {}", spec.operation_id, schema.name));
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "named contract schemas missing from medousa-types.schema.json:\n{}",
+            missing.join("\n")
         );
     }
 
