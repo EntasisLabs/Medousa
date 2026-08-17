@@ -139,43 +139,28 @@ impl<S> DeclaredRouter<S>
 where
     S: Clone + Send + Sync + 'static,
 {
-    pub fn route(self, policy: RoutePolicy, handler: MethodRouter<S>) -> Self {
+    /// Crate-private sugar: derive an `OperationSpec` from H01 policy and register
+    /// through [`Self::operation`]. Production call sites should prefer `operation`
+    /// when they already have a bound spec.
+    pub(crate) fn route(self, policy: RoutePolicy, handler: MethodRouter<S>) -> Self {
         self.methods([(policy, handler)])
     }
 
-    pub fn methods<const N: usize>(mut self, routes: [(RoutePolicy, MethodRouter<S>); N]) -> Self {
-        let mut routes = routes.into_iter();
-        let (first_policy, first_handler) = routes.next().expect("route set cannot be empty");
-        let path = first_policy.path;
-        let first_limit = first_policy.body_limit;
-        let first_group = first_policy.group;
-        let first_capability = first_policy.required_capability;
-        let first_browser_policy = first_policy.browser_policy;
-        self.record_policy(&first_policy);
-        let mut handler = declared_method(
-            first_handler,
-            first_limit,
-            first_group,
-            first_capability,
-            first_browser_policy,
-        );
-        for (policy, method_handler) in routes {
-            assert_eq!(policy.path, path, "route set must share one path");
-            let body_limit = policy.body_limit;
-            let group = policy.group;
-            let required_capability = policy.required_capability;
-            let browser_policy = policy.browser_policy;
-            self.record_policy(&policy);
-            handler = handler.merge(declared_method(
-                method_handler,
-                body_limit,
-                group,
-                required_capability,
-                browser_policy,
-            ));
-        }
-        self.router = self.router.route(path, handler);
-        self
+    pub(crate) fn methods<const N: usize>(
+        self,
+        routes: [(RoutePolicy, MethodRouter<S>); N],
+    ) -> Self {
+        let mounted: Vec<_> = routes
+            .into_iter()
+            .map(|(policy, handler)| {
+                let spec = crate::daemon::contract::operation_from_policy(
+                    &policy,
+                    feature_profile_for(&policy),
+                );
+                (policy, spec, handler)
+            })
+            .collect();
+        self.mount_declared(mounted)
     }
 
     pub fn inventory(&self) -> &RouteInventory {
@@ -219,21 +204,59 @@ where
     ) -> Self {
         spec.validate()
             .expect("operation spec must include policy, responses, and a real HTTP method");
-        self.route(
-            crate::daemon::contract::policy_from_operation(&spec),
-            handler,
-        )
+        let policy = crate::daemon::contract::policy_from_operation(&spec);
+        self.mount_declared(vec![(policy, spec, handler)])
     }
 
-    fn record_policy(&mut self, policy: &RoutePolicy) {
+    fn mount_declared(
+        mut self,
+        routes: Vec<(
+            RoutePolicy,
+            medousa_api_contract::OperationSpec,
+            MethodRouter<S>,
+        )>,
+    ) -> Self {
+        let mut routes = routes.into_iter();
+        let (first_policy, first_spec, first_handler) =
+            routes.next().expect("route set cannot be empty");
+        let path = first_policy.path;
+        let first_limit = first_policy.body_limit;
+        let first_group = first_policy.group;
+        let first_capability = first_policy.required_capability;
+        let first_browser_policy = first_policy.browser_policy;
+        self.record_declared(&first_policy, first_spec);
+        let mut handler = declared_method(
+            first_handler,
+            first_limit,
+            first_group,
+            first_capability,
+            first_browser_policy,
+        );
+        for (policy, spec, method_handler) in routes {
+            assert_eq!(policy.path, path, "route set must share one path");
+            let body_limit = policy.body_limit;
+            let group = policy.group;
+            let required_capability = policy.required_capability;
+            let browser_policy = policy.browser_policy;
+            self.record_declared(&policy, spec);
+            handler = handler.merge(declared_method(
+                method_handler,
+                body_limit,
+                group,
+                required_capability,
+                browser_policy,
+            ));
+        }
+        self.router = self.router.route(path, handler);
+        self
+    }
+
+    fn record_declared(&mut self, policy: &RoutePolicy, spec: medousa_api_contract::OperationSpec) {
         self.inventory
             .declare(policy.clone())
             .expect("invalid daemon route policy");
         self.contract
-            .register(crate::daemon::contract::operation_from_policy(
-                policy,
-                feature_profile_for(policy),
-            ))
+            .register(spec)
             .expect("declared route policy must form a valid contract operation");
     }
 }
@@ -258,12 +281,12 @@ fn declared_method<S>(
 where
     S: Clone + Send + Sync + 'static,
 {
-    let mut handler = handler
-        .layer(DefaultBodyLimit::max(body_limit))
-        .layer(axum::middleware::from_fn_with_state(
+    let mut handler = handler.layer(DefaultBodyLimit::max(body_limit)).layer(
+        axum::middleware::from_fn_with_state(
             browser_policy,
             crate::daemon::request_boundary::enforce_declared_browser_policy,
-        ));
+        ),
+    );
     if matches!(group, RouteGroup::Preview) {
         handler = handler.layer(axum::middleware::from_fn(
             crate::daemon::forge_preview::enforce_preview_grant,
@@ -288,9 +311,8 @@ async fn enforce_declared_capability(
     if principal.capabilities().contains(required) {
         next.run(request).await
     } else {
-        AccessDenial::Forbidden.into_response_with_request_id(
-            crate::daemon::http::request_id_from(request.headers()),
-        )
+        AccessDenial::Forbidden
+            .into_response_with_request_id(crate::daemon::http::request_id_from(request.headers()))
     }
 }
 
@@ -468,6 +490,20 @@ mod tests {
             router.contract().get("health.get").unwrap().path,
             "/v1/health"
         );
+    }
+
+    #[test]
+    fn operation_preserves_supplied_schema_bindings() {
+        let mut spec = crate::daemon::contract::operation_from_policy(
+            &protected(),
+            medousa_api_contract::FeatureProfile::Core,
+        );
+        spec.responses[0].schema = medousa_api_contract::SchemaRef::named("HealthLiveness");
+        let router: DeclaredRouter =
+            DeclaredRouter::default().operation(spec, get(|| async { StatusCode::NO_CONTENT }));
+        let recorded = router.contract().get("health.get").unwrap();
+        assert_eq!(recorded.responses[0].schema.name, "HealthLiveness");
+        assert!(!recorded.responses[0].schema.opaque);
     }
 
     #[test]
