@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from medousa._decode import decode
+from medousa._ops import op_path, op_path_query
 from medousa.sync.client import MedousaClientSync
-from medousa.transport import path_with_query
 from medousa.types import (
     AgentPermissionRequestListResponse,
     AgentPermissionResolveRequest,
@@ -22,16 +22,14 @@ class AgentsApiSync:
 
     def list_runtimes(self) -> AgentRuntimeListResponse:
         value = self._client._transport.get_json(
-            self._client.base_url, "/v1/agents/runtimes"
+            self._client.base_url, op_path("agents.runtimes.get")
         )
         return decode(AgentRuntimeListResponse, value)
 
-    def create_session(
-        self, request: CreateAgentSessionRequest
-    ) -> CreateAgentSessionResponse:
+    def create_session(self, request: CreateAgentSessionRequest) -> CreateAgentSessionResponse:
         value = self._client._transport.post_json(
             self._client.base_url,
-            "/v1/agents/sessions",
+            op_path("agents.sessions.post"),
             request.model_dump(mode="json", exclude_none=True),
         )
         return decode(CreateAgentSessionResponse, value)
@@ -41,7 +39,10 @@ class AgentsApiSync:
     ) -> AgentSessionPromptResponse:
         value = self._client._transport.post_json(
             self._client.base_url,
-            f"/v1/agents/sessions/{agent_session_id.strip()}/prompt",
+            op_path(
+                "agents.sessions.by_agent_session_id.prompt.post",
+                agent_session_id=agent_session_id.strip(),
+            ),
             request.model_dump(mode="json", exclude_none=True),
         )
         return decode(AgentSessionPromptResponse, value)
@@ -49,7 +50,10 @@ class AgentsApiSync:
     def cancel(self, agent_session_id: str) -> CancelAgentSessionResponse:
         value = self._client._transport.post_empty_json(
             self._client.base_url,
-            f"/v1/agents/sessions/{agent_session_id.strip()}/cancel",
+            op_path(
+                "agents.sessions.by_agent_session_id.cancel.post",
+                agent_session_id=agent_session_id.strip(),
+            ),
         )
         return decode(CancelAgentSessionResponse, value)
 
@@ -61,7 +65,7 @@ class AgentsApiSync:
             query.append(("status", status))
         if limit is not None:
             query.append(("limit", str(limit)))
-        route = path_with_query("/v1/agents/permission-requests", query)
+        route = op_path_query("agents.permission_requests.get", query)
         value = self._client._transport.get_json(self._client.base_url, route)
         return decode(AgentPermissionRequestListResponse, value)
 
@@ -73,7 +77,10 @@ class AgentsApiSync:
         )
         value = self._client._transport.post_json(
             self._client.base_url,
-            f"/v1/agents/permission-requests/{request_id.strip()}/approve",
+            op_path(
+                "agents.permission_requests.by_request_id.approve.post",
+                request_id=request_id.strip(),
+            ),
             body,
         )
         return decode(AgentPermissionResolveResponse, value)
@@ -86,7 +93,9 @@ class AgentsApiSync:
         )
         value = self._client._transport.post_json(
             self._client.base_url,
-            f"/v1/agents/permission-requests/{request_id.strip()}/deny",
+            op_path(
+                "agents.permission_requests.by_request_id.deny.post", request_id=request_id.strip()
+            ),
             body,
         )
         return decode(AgentPermissionResolveResponse, value)

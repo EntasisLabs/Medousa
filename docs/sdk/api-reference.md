@@ -4,7 +4,7 @@
 
 Full overview: [README.md](README.md). HTTP routes: [../engine/http-api.md](../engine/http-api.md).
 
-Declared-router publication: [`../../sdk-contract/openapi.json`](../../sdk-contract/openapi.json) (regenerated from `DeclaredRouter`; validated by `scripts/check-api-contract.sh`). [`../../sdk-contract/manifest.yaml`](../../sdk-contract/manifest.yaml) remains a known-incomplete SDK accessor list until helpers consume generated ops.
+Declared-router publication: [`../../sdk-contract/openapi.json`](../../sdk-contract/openapi.json) (regenerated from `DeclaredRouter`; validated by `scripts/check-api-contract.sh`). SDK helpers expand generated operation IDs rather than embedding `/v1` paths. [`../../sdk-contract/manifest.yaml`](../../sdk-contract/manifest.yaml) remains a known-incomplete SDK accessor list until Slice 4.
 
 Rust async methods require `medousa-sdk` feature `async` (default). SSE requires `sse` (default). Python is async-first with accessor-based sync client.
 

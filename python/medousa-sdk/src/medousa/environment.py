@@ -6,8 +6,8 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from medousa._decode import decode
+from medousa._ops import op_path, op_path_query
 from medousa.streaming import iter_sse_events
-from medousa.transport import path_with_query
 from medousa.types import (
     EnvironmentPendingResponse,
     EnvironmentProposeResponse,
@@ -76,14 +76,14 @@ class EnvironmentApi:
         self._client = client
 
     async def get_spec(self, profile_id: str | None = None) -> EnvironmentSpecResponse:
-        path = path_with_query("/v1/environment/spec", _profile_query(profile_id))
+        path = op_path_query("environment.spec.get", _profile_query(profile_id))
         value = await self._client.transport.get_json(self._client.base_url, path)
         return decode(EnvironmentSpecResponse, value)
 
     async def put_spec(self, request: EnvironmentSpecPutRequest) -> EnvironmentSpecResponse:
         value = await self._client.transport.put_json(
             self._client.base_url,
-            "/v1/environment/spec",
+            op_path("environment.spec.put"),
             request.model_dump(mode="json", exclude_none=True),
         )
         return decode(EnvironmentSpecResponse, value)
@@ -100,7 +100,7 @@ class EnvironmentApi:
             query.append(("surface_id", surface_id))
         if include_runtime is not None:
             query.append(("include_runtime", str(include_runtime).lower()))
-        path = path_with_query("/v1/environment/status", query)
+        path = op_path_query("environment.status.get", query)
         value = await self._client.transport.get_json(self._client.base_url, path)
         return decode(EnvironmentStatusResponse, value)
 
@@ -110,7 +110,7 @@ class EnvironmentApi:
     ) -> EnvironmentValidateResponse:
         value = await self._client.transport.post_json(
             self._client.base_url,
-            "/v1/environment/spec/validate",
+            op_path("environment.spec.validate.post"),
             request.model_dump(mode="json", exclude_none=True),
         )
         return decode(EnvironmentValidateResponse, value)
@@ -121,22 +121,22 @@ class EnvironmentApi:
     ) -> EnvironmentProposeResponse:
         value = await self._client.transport.post_json(
             self._client.base_url,
-            "/v1/environment/spec/propose",
+            op_path("environment.spec.propose.post"),
             request.model_dump(mode="json", exclude_none=True),
         )
         return decode(EnvironmentProposeResponse, value)
 
     async def get_pending(self, profile_id: str | None = None) -> EnvironmentPendingResponse:
-        path = path_with_query("/v1/environment/spec/pending", _profile_query(profile_id))
+        path = op_path_query("environment.spec.pending.get", _profile_query(profile_id))
         value = await self._client.transport.get_json(self._client.base_url, path)
         return decode(EnvironmentPendingResponse, value)
 
     async def dismiss_pending(self, profile_id: str | None = None) -> None:
-        path = path_with_query("/v1/environment/spec/pending", _profile_query(profile_id))
+        path = op_path_query("environment.spec.pending.delete", _profile_query(profile_id))
         await self._client.transport.delete_json(self._client.base_url, path)
 
     async def apply_pending(self, profile_id: str | None = None) -> EnvironmentSpecResponse:
-        path = path_with_query("/v1/environment/spec/pending/apply", _profile_query(profile_id))
+        path = op_path_query("environment.spec.pending.apply.post", _profile_query(profile_id))
         value = await self._client.transport.post_empty_json(self._client.base_url, path)
         return decode(EnvironmentSpecResponse, value)
 
@@ -146,9 +146,8 @@ class EnvironmentApi:
         profile_id: str | None = None,
         since_revision: int | None = None,
     ) -> EnvironmentSpecStream:
-        path = path_with_query(
-            "/v1/environment/spec/stream",
-            _stream_query(profile_id, since_revision),
+        path = op_path_query(
+            "environment.spec.stream.get", _stream_query(profile_id, since_revision)
         )
         return EnvironmentSpecStream(self._client, path)
 

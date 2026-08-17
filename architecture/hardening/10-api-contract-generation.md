@@ -1,6 +1,6 @@
 # H10 — Generated daemon API and client contract
 
-> **Status:** Implementing — Slice 2 (named DTO/stream bindings, declared error envelope, catalog OpenAPI). Slice 1 inventory shadow remains mergeable. Production still registers `DeclaredRouter::route(policy, handler)`, which also records `OperationSpec`. `sdk-contract/manifest.yaml` and `export_type!` stay until Slice 4. CONTRACT-001 stays **Proposed**. ADR-019 stays **Proposed** until `operation()` is the production registration path and generated clients own SDK/Home transports.
+> **Status:** Implementing — Slice 3 (generated clients consume operation tables; Tauri streams are real). Slice 1 inventory shadow remains mergeable. Production still registers `DeclaredRouter::route(policy, handler)`, which also records `OperationSpec`. `sdk-contract/manifest.yaml` and `export_type!` stay until Slice 4. CONTRACT-001 stays **Proposed**. ADR-019 stays **Proposed** until `operation()` is the production registration path and generated clients own remaining Home/forge transports.
 >
 > **Accountable owner:** daemon API and SDK maintainers
 >
@@ -46,8 +46,9 @@ against the declared router.
 
 `sdk-contract/manifest.yaml` is retained as a known-incomplete SDK accessor
 list. `PARITY_ROUTES` is deleted; uniqueness/SSE checks run against generated
-ops. Slice 4 still owns deleting YAML after generated clients consume the ops
-tables and no-literal gates exist.
+ops. Slice 3 helpers consume those tables and unit-test the absence of `/v1`
+literals. Slice 4 still owns deleting YAML after remaining Home/forge
+transports migrate and no-literal gates exist as required CI.
 
 Remaining copies that still shrink:
 
@@ -55,11 +56,12 @@ Remaining copies that still shrink:
 | --- | ---: | --- |
 | Declared production inventory | 361 / 373 method+path rows | real server behavior; H01 policy; generated operation IDs |
 | Generated OpenAPI + inventory | checked-in artifacts from declared inventory | named DTO/stream bindings plus catalog components; remaining ops stay opaque/`deferred` |
-| Rust / Python / TS / Tauri op tables | generated from IR | low-level verb/path/stream flags; helpers still hardcode `/v1` |
+| Rust / Python / TS / Tauri op tables | generated from IR; helpers expand `op_path` / `operationPath` | helper no-literal tests in SDK crates; not yet required architecture CI |
+| Shared golden cases | `sdk-contract/golden/client-cases.json` | wrong verb/path/stream flag fails Rust and Python unit tests |
 | Browser compatibility adapter | `BROWSER_COMPATIBILITY_MOUNTS` (dual `/` and `/v1`) | not in 361/373 until imported onto `ContractRouter` |
 | Stasis dashboard adapter | raw `dashboard_router` | third-party; no method/path descriptors yet |
-| Tauri daemon proxy modules | unused closed `daemon_unary` plus endpoint-shaped proxies | stream start/cancel are stubs |
-| Home `$lib/daemon/*` | H09 split plus generated ops / unused contract client | DTOs and remaining invoke wrappers |
+| Tauri daemon proxy modules | closed `daemon_unary` / real `daemon_stream_start`+cancel; endpoint-shaped shims remain | live SSE uses generated stream paths; remaining proxies still own some URLs |
+| Home `$lib/daemon/*` | generated ops for session stream, code/grapheme LSP, code intelligence | `forge.ts` and browser compatibility mounts remain handwritten |
 
 `scripts/check-api-contract.sh` runs IR tests, production inventory equality,
 YAML discrepancy (incomplete by design), and the architecture check that

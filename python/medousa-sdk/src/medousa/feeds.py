@@ -6,8 +6,8 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from medousa._decode import decode
+from medousa._ops import op_path, op_path_query
 from medousa.streaming import iter_sse_events
-from medousa.transport import path_with_query
 from medousa.types import (
     FeedListResponse,
     FeedReadRequest,
@@ -70,24 +70,26 @@ class FeedsApi:
         self._client = client
 
     async def list(self, profile_id: str | None = None) -> FeedListResponse:
-        path = path_with_query("/v1/feeds", _profile_query(profile_id))
+        path = op_path_query("feeds.get", _profile_query(profile_id))
         value = await self._client.transport.get_json(self._client.base_url, path)
         return decode(FeedListResponse, value)
 
     async def tail(self, feed_id: str, query: FeedTailQuery) -> FeedTailResponse:
-        path = path_with_query(f"/v1/feeds/{feed_id.strip()}/tail", _tail_query(query))
+        path = op_path_query(
+            "feeds.by_feed_id.tail.get", _tail_query(query), feed_id=feed_id.strip()
+        )
         value = await self._client.transport.get_json(self._client.base_url, path)
         return decode(FeedTailResponse, value)
 
     async def mark_read(self, feed_id: str, request: FeedReadRequest) -> None:
         await self._client.transport.post_json(
             self._client.base_url,
-            f"/v1/feeds/{feed_id.strip()}/read",
+            op_path("feeds.by_feed_id.read.post", feed_id=feed_id.strip()),
             request.model_dump(mode="json", exclude_none=True),
         )
 
     def stream(self, profile_id: str | None = None) -> FeedsStream:
-        path = path_with_query("/v1/feeds/stream", _profile_query(profile_id))
+        path = op_path_query("feeds.stream.get", _profile_query(profile_id))
         return FeedsStream(self._client, path)
 
     @asynccontextmanager

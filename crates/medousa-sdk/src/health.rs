@@ -17,7 +17,10 @@ impl HealthApi<'_> {
         let value = self
             .client
             .transport()
-            .get_json(self.client.base_url(), crate::generated::ops::HEALTH_GET.path)
+            .get_json(
+                self.client.base_url(),
+                crate::generated::ops::HEALTH_GET.path,
+            )
             .await?;
         decode(value).await
     }
@@ -31,11 +34,16 @@ pub struct IngestApi<'a> {
 #[cfg(feature = "async")]
 impl IngestApi<'_> {
     pub async fn post(&self, request: &IngestRequest) -> Result<IngestResponse, crate::SdkError> {
-        let body = serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
         let value = self
             .client
             .transport()
-            .post_json(self.client.base_url(), crate::generated::ops::INGEST_POST.path, body)
+            .post_json(
+                self.client.base_url(),
+                crate::generated::ops::INGEST_POST.path,
+                body,
+            )
             .await?;
         decode(value).await
     }

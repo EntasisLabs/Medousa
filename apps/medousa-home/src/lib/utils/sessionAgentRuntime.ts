@@ -8,6 +8,8 @@
  * stores directly.
  */
 
+import { operationPath } from "$lib/daemon/opPath";
+
 const STORAGE_KEY = "medousa-home-agent-runtime-v1";
 const AGENT_SESSION_KEY = "medousa-home-agent-session-v1";
 const AGENT_CONFIG_KEY = "medousa-home-agent-config-v1";
@@ -204,5 +206,7 @@ export function agentRuntimeLabel(runtime: ChatAgentRuntime): string {
 }
 
 export function agentSessionStreamUrl(agentSessionId: string): string {
-  return `/v1/agents/sessions/${agentSessionId.trim()}/stream`;
+  return operationPath("agents.sessions.by_agent_session_id.stream.get", {
+    agent_session_id: agentSessionId.trim(),
+  });
 }

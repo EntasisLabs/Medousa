@@ -136,11 +136,7 @@ impl Transport for MockTransport {
         &'a self,
         _base_url: &'a str,
         path: String,
-    ) -> Pin<
-        Box<
-            dyn futures_util::Stream<Item = Result<bytes::Bytes, SdkError>> + Send + 'a,
-        >,
-    > {
+    ) -> Pin<Box<dyn futures_util::Stream<Item = Result<bytes::Bytes, SdkError>> + Send + 'a>> {
         let _path = path;
         Box::pin(futures_util::stream::once(async move {
             Err(SdkError::Transport("mock SSE not configured".to_string()))
@@ -231,8 +227,7 @@ async fn typed_v2_stream_exhausts_retries_without_sequence_progress() {
     use std::time::Duration;
 
     let transport = Arc::new(MockTransport::new().with_sse_batches(vec![vec![], vec![]]));
-    let client =
-        medousa_sdk::MedousaClient::with_transport(transport, "http://127.0.0.1:8080");
+    let client = medousa_sdk::MedousaClient::with_transport(transport, "http://127.0.0.1:8080");
     let policy = ReconnectPolicy {
         backoff: BackoffPolicy {
             base: Duration::ZERO,
@@ -255,18 +250,17 @@ async fn typed_v2_stream_exhausts_retries_without_sequence_progress() {
 
 #[tokio::test]
 async fn mock_transport_routes_health_get() {
-    let transport = Arc::new(
-        MockTransport::new().on_get(
-            "/v1/health",
-            serde_json::json!({
-                "status": "ok",
-                "backend": "test",
-                "worker_id": "worker-1",
-                "now_utc": "2026-01-01T00:00:00Z",
-            }),
-        ),
-    );
-    let client = medousa_sdk::MedousaClient::with_transport(transport.clone(), "http://127.0.0.1:8080");
+    let transport = Arc::new(MockTransport::new().on_get(
+        "/v1/health",
+        serde_json::json!({
+            "status": "ok",
+            "backend": "test",
+            "worker_id": "worker-1",
+            "now_utc": "2026-01-01T00:00:00Z",
+        }),
+    ));
+    let client =
+        medousa_sdk::MedousaClient::with_transport(transport.clone(), "http://127.0.0.1:8080");
     let health = client.health().get().await.expect("health get");
     assert_eq!(health.status, "ok");
     assert_eq!(transport.call_count(), 1);
@@ -282,7 +276,8 @@ async fn mock_transport_routes_jobs_enqueue_ask() {
             "accepted_at_utc": "2026-01-01T00:00:00Z",
         }),
     ));
-    let client = medousa_sdk::MedousaClient::with_transport(transport.clone(), "http://127.0.0.1:8080");
+    let client =
+        medousa_sdk::MedousaClient::with_transport(transport.clone(), "http://127.0.0.1:8080");
     let response = client
         .jobs()
         .enqueue_ask(&medousa_types::EnqueueAskRequest {
@@ -305,16 +300,15 @@ async fn mock_transport_routes_jobs_enqueue_ask() {
 
 #[tokio::test]
 async fn mock_transport_routes_vault_list_roots() {
-    let transport = Arc::new(
-        MockTransport::new().on_get(
-            "/v1/vault/roots",
-            serde_json::json!({
-                "roots": [],
-                "activeRootId": "",
-            }),
-        ),
-    );
-    let client = medousa_sdk::MedousaClient::with_transport(transport.clone(), "http://127.0.0.1:8080");
+    let transport = Arc::new(MockTransport::new().on_get(
+        "/v1/vault/roots",
+        serde_json::json!({
+            "roots": [],
+            "activeRootId": "",
+        }),
+    ));
+    let client =
+        medousa_sdk::MedousaClient::with_transport(transport.clone(), "http://127.0.0.1:8080");
     let roots = client.vault().list_roots().await.expect("vault roots");
     assert!(roots.roots.is_empty());
     assert_eq!(transport.call_count(), 1);

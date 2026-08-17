@@ -7,8 +7,10 @@ use medousa_types::{
 
 #[cfg(feature = "async")]
 use crate::client::MedousaClient;
+use crate::generated::ops;
+use crate::op::{op_path, op_path_query};
 #[cfg(feature = "async")]
-use crate::transport::{decode, path_with_query};
+use crate::transport::decode;
 
 #[cfg(feature = "async")]
 pub struct CalendarApi<'a> {
@@ -36,7 +38,7 @@ impl CalendarApi<'_> {
         &self,
         query: &CalendarListQuery,
     ) -> Result<CalendarListResponse, crate::SdkError> {
-        let path = path_with_query("/v1/calendar/events", &list_query_params(query));
+        let path = op_path_query(&ops::CALENDAR_EVENTS_GET, &[], &list_query_params(query))?;
         let value = self
             .client
             .transport()
@@ -54,7 +56,7 @@ impl CalendarApi<'_> {
         let value = self
             .client
             .transport()
-            .post_json(self.client.base_url(), "/v1/calendar/events", body)
+            .post_json(self.client.base_url(), ops::CALENDAR_EVENTS_POST.path, body)
             .await?;
         decode(value).await
     }
@@ -66,7 +68,7 @@ impl CalendarApi<'_> {
     ) -> Result<CalendarWriteResponse, crate::SdkError> {
         let body =
             serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let path = format!("/v1/calendar/events/{}", uid.trim());
+        let path = op_path(&ops::CALENDAR_EVENTS_BY_UID_PUT, &[("uid", uid.trim())])?;
         let value = self
             .client
             .transport()
@@ -84,7 +86,11 @@ impl CalendarApi<'_> {
         if let Some(path) = &query.path {
             params.push(("path", path.clone()));
         }
-        let path = path_with_query(&format!("/v1/calendar/events/{}", uid.trim()), &params);
+        let path = op_path_query(
+            &ops::CALENDAR_EVENTS_BY_UID_DELETE,
+            &[("uid", uid.trim())],
+            &params,
+        )?;
         let value = self
             .client
             .transport()
@@ -102,7 +108,7 @@ impl CalendarApi<'_> {
         let value = self
             .client
             .transport()
-            .post_json(self.client.base_url(), "/v1/calendar/import", body)
+            .post_json(self.client.base_url(), ops::CALENDAR_IMPORT_POST.path, body)
             .await?;
         decode(value).await
     }
@@ -115,7 +121,7 @@ impl CalendarApi<'_> {
         if let Some(path) = &query.path {
             params.push(("path", path.clone()));
         }
-        let path = path_with_query("/v1/calendar/export", &params);
+        let path = op_path_query(&ops::CALENDAR_EXPORT_GET, &[], &params)?;
         let value = self
             .client
             .transport()

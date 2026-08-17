@@ -18,8 +18,13 @@ export async function daemonUnary<T>(
 export async function daemonStreamStart(
   id: OperationId,
   pathParams: Record<string, string> = {},
+  query?: Record<string, string>,
 ): Promise<string> {
-  return invoke<string>("daemon_stream_start", { operation: id, pathParams });
+  return invoke<string>("daemon_stream_start", {
+    operation: id,
+    pathParams,
+    query,
+  });
 }
 
 export async function daemonStreamCancel(handle: string): Promise<void> {

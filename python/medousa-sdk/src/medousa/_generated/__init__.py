@@ -1,3 +1,3 @@
-from medousa._generated.ops import OPERATIONS
+from medousa._generated.ops import OPERATIONS, by_id
 
-__all__ = ["OPERATIONS"]
+__all__ = ["OPERATIONS", "by_id"]

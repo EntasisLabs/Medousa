@@ -4,6 +4,7 @@ import json
 from collections.abc import AsyncIterator
 
 from medousa._decode import decode
+from medousa._ops import op_path
 from medousa.client import MedousaClient
 from medousa.streaming import iter_sse_events
 from medousa.types import (
@@ -58,28 +59,28 @@ class LocalModelsApi:
     async def hardware(self) -> LocalHardwareResponse:
         value = await self._client.transport.get_json(
             self._client.base_url,
-            "/v1/local/hardware",
+            op_path("local.hardware.get"),
         )
         return decode(LocalHardwareResponse, value)
 
     async def catalog(self) -> LocalCatalogResponse:
         value = await self._client.transport.get_json(
             self._client.base_url,
-            "/v1/local/catalog",
+            op_path("local.catalog.get"),
         )
         return decode(LocalCatalogResponse, value)
 
     async def list(self) -> LocalModelsResponse:
         value = await self._client.transport.get_json(
             self._client.base_url,
-            "/v1/local/models",
+            op_path("local.models.get"),
         )
         return decode(LocalModelsResponse, value)
 
     async def engine_status(self) -> LocalEngineStatus:
         value = await self._client.transport.get_json(
             self._client.base_url,
-            "/v1/local/engine/status",
+            op_path("local.engine.status.get"),
         )
         return decode(LocalEngineStatus, value)
 
@@ -87,7 +88,7 @@ class LocalModelsApi:
         body = LocalModelDownloadRequest(modelId=model_id)
         value = await self._client.transport.post_json(
             self._client.base_url,
-            "/v1/local/models/download",
+            op_path("local.models.download.post"),
             body.model_dump(mode="json", exclude_none=True),
         )
         return decode(LocalModelDownloadResponse, value)
@@ -95,18 +96,18 @@ class LocalModelsApi:
     async def remove_model(self, model_id: str) -> dict:
         return await self._client.transport.delete_json(
             self._client.base_url,
-            f"/v1/local/models/{model_id}",
+            op_path("local.models.by_model_id.delete", model_id=model_id),
         )
 
     async def download_status(self, job_id: str) -> ModelDownloadProgress:
         value = await self._client.transport.get_json(
             self._client.base_url,
-            f"/v1/local/models/download/{job_id}",
+            op_path("local.models.download.by_job_id.get", job_id=job_id),
         )
         return decode(ModelDownloadProgress, value)
 
     def download_events(self, job_id: str) -> DownloadEventsStream:
         return DownloadEventsStream(
             self._client,
-            f"/v1/local/models/download/{job_id}/events",
+            op_path("local.models.download.by_job_id.events.get", job_id=job_id),
         )

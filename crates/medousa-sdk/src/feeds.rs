@@ -11,6 +11,8 @@ use futures_util::StreamExt;
 
 #[cfg(feature = "async")]
 use crate::client::MedousaClient;
+use crate::generated::ops;
+use crate::op::{op_path, op_path_query};
 #[cfg(feature = "async")]
 use crate::transport::path_with_query;
 
@@ -47,8 +49,11 @@ fn feed_latest_good_query_params(query: &FeedLatestGoodQuery) -> Vec<(&'static s
 
 #[cfg(feature = "async")]
 impl FeedsApi<'_> {
-    pub async fn list(&self, profile_id: Option<&str>) -> Result<FeedListResponse, crate::SdkError> {
-        let path = path_with_query("/v1/feeds", &feed_profile_query(profile_id));
+    pub async fn list(
+        &self,
+        profile_id: Option<&str>,
+    ) -> Result<FeedListResponse, crate::SdkError> {
+        let path = op_path_query(&ops::FEEDS_GET, &[], &feed_profile_query(profile_id))?;
         self.client.http().get(&path).await
     }
 
@@ -58,7 +63,10 @@ impl FeedsApi<'_> {
         query: &FeedTailQuery,
     ) -> Result<FeedTailResponse, crate::SdkError> {
         let path = path_with_query(
-            &format!("/v1/feeds/{}/tail", feed_id.trim()),
+            &op_path(
+                &ops::FEEDS_BY_FEED_ID_TAIL_GET,
+                &[("feed_id", feed_id.trim())],
+            )?,
             &feed_tail_query_params(query),
         );
         self.client.http().get(&path).await
@@ -70,7 +78,10 @@ impl FeedsApi<'_> {
         query: &FeedLatestGoodQuery,
     ) -> Result<FeedLatestGoodResponse, crate::SdkError> {
         let path = path_with_query(
-            &format!("/v1/feeds/{}/latest-good", feed_id.trim()),
+            &op_path(
+                &ops::FEEDS_BY_FEED_ID_LATEST_GOOD_GET,
+                &[("feed_id", feed_id.trim())],
+            )?,
             &feed_latest_good_query_params(query),
         );
         self.client.http().get(&path).await
@@ -81,7 +92,10 @@ impl FeedsApi<'_> {
         feed_id: &str,
         request: &FeedReadRequest,
     ) -> Result<(), crate::SdkError> {
-        let path = format!("/v1/feeds/{}/read", feed_id.trim());
+        let path = op_path(
+            &ops::FEEDS_BY_FEED_ID_READ_POST,
+            &[("feed_id", feed_id.trim())],
+        )?;
         self.client
             .http()
             .post::<serde_json::Value, _>(&path, request)
@@ -94,7 +108,8 @@ impl FeedsApi<'_> {
         &self,
         profile_id: Option<&str>,
     ) -> impl Stream<Item = Result<FeedStreamEvent, crate::SdkError>> + '_ {
-        let path = path_with_query("/v1/feeds/stream", &feed_profile_query(profile_id));
+        let path = op_path_query(&ops::FEEDS_STREAM_GET, &[], &feed_profile_query(profile_id))
+            .expect("generated path");
         let byte_stream = self
             .client
             .transport()

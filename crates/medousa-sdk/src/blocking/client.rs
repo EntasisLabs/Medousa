@@ -3,49 +3,51 @@ use medousa_types::{
     ActiveSessionTurnResponse, AgentModeListResponse, AgentModeProposalListResponse,
     AgentModeProposalResponse, AgentModeScope, AgentModeTransitionPolicy, ArchiveAskJobRequest,
     ArchiveAskJobResponse, ArtifactCommandRequest, ArtifactCommandResponse, ArtifactDeleteRequest,
-    ArtifactDeleteResponse,
-    ArtifactFetchRequest, ArtifactFetchResponse, ArtifactListUiRequest, ArtifactListUiResponse,
-    ArtifactWriteRequest, ArtifactWriteResponse, AskJobCompleteActionsRequest,
-    AskJobCompleteActionsResponse, CancelActiveSessionTurnResponse, CapabilityListResponse,
-    CapabilityResolveResponse, DeleteRecurringResponse, EnqueueAskRequest, EnqueuePromptRequest,
-    EnqueueReportRequest, EnqueueResponse, HealthResponse, IngestRequest, IngestResponse,
-    InteractiveTurnRequest, InteractiveTurnResponse, JobReportResponse, JobResultResponse,
-    LocalCatalogResponse, LocalEngineStatus, LocalHardwareResponse, LocalModelDownloadRequest,
-    LocalModelDownloadResponse, LocalModelsResponse, McpGatewayStatusResponse,
-    ModelDownloadProgress, RecurringDeliveryResponse, RecurringListQuery, RecurringListResponse,
-    RecurringRunsQuery, RecurringRunsResponse, RegisterRecurringPromptRequest,
-    RegisterRecurringResponse, RuntimeConfigCommandRequest, RuntimeConfigCommandResponse,
-    SessionActiveTurnsResponse, SessionAppendTurnRequest, SessionAppendTurnResponse,
-    SessionAgentModeResponse, SessionCodeBindingResponse, SessionCodeProjectResponse,
-    SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
-    SessionSetDisplayNameRequest, SessionSetDisplayNameResponse, SetSessionCodeBindingRequest,
-    StartSessionCodeProjectRequest,
-    DecideAgentModeProposalRequest, SetSessionAgentModeRequest, StageRouteCommandRequest,
-    StageRouteCommandResponse, TurnBudgetApproveRequest, TurnBudgetDenyRequest,
-    TurnBudgetRequestListResponse, TurnBudgetRequestRecord, TurnBudgetRequestResponse,
-    UpdateRecurringRequest, UpdateRecurringResponse, VaultAddRootRequest, VaultBacklinksQuery,
-    VaultBacklinksResponse, VaultDeleteResponse, VaultNoteContentResponse, VaultNotesListResponse,
-    VaultNotesQuery, VaultRootsResponse, VaultSearchQuery, VaultSearchResponse,
-    VaultSetActiveRootRequest, VaultTagsListResponse, VaultTagsQuery, VaultWriteRequest,
-    VaultWriteResponse, WorkCardDetail, WorkspaceCardActionResponse, WorkspaceCardsQuery,
-    WorkspaceCardsResponse, WorkspaceFeedQuery, WorkspaceFeedResponse, WorkspaceLinkVaultRequest,
-    WorkspaceSnapshot, WorkspaceSnapshotQuery, ComponentRuntimeEventsRequest,
-    ComponentRuntimeEventsResponse, ComponentRuntimeEventsTailResponse,
-    ComponentRuntimeProbeResult, ComponentStoreDeleteResponse, ComponentStoreGetResponse,
-    ComponentStoreListResponse, ComponentStoreSetRequest, ComponentStoreSetResponse,
+    ArtifactDeleteResponse, ArtifactFetchRequest, ArtifactFetchResponse, ArtifactListUiRequest,
+    ArtifactListUiResponse, ArtifactWriteRequest, ArtifactWriteResponse,
+    AskJobCompleteActionsRequest, AskJobCompleteActionsResponse, CalendarDeleteResponse,
+    CalendarExportQuery, CalendarExportResponse, CalendarImportRequest, CalendarImportResponse,
+    CalendarListQuery, CalendarListResponse, CalendarWriteRequest, CalendarWriteResponse,
+    CancelActiveSessionTurnResponse, CapabilityListResponse, CapabilityResolveResponse,
+    ComponentRuntimeEventsRequest, ComponentRuntimeEventsResponse,
+    ComponentRuntimeEventsTailResponse, ComponentRuntimeProbeResult, ComponentStoreDeleteResponse,
+    ComponentStoreGetResponse, ComponentStoreListResponse, ComponentStoreSetRequest,
+    ComponentStoreSetResponse, DecideAgentModeProposalRequest, DeleteRecurringResponse,
+    EnqueueAskRequest, EnqueuePromptRequest, EnqueueReportRequest, EnqueueResponse,
     EnvironmentPendingResponse, EnvironmentProposeResponse, EnvironmentSpecPutRequest,
     EnvironmentSpecResponse, EnvironmentStatusResponse, EnvironmentValidateRequest,
     EnvironmentValidateResponse, FeedLatestGoodQuery, FeedLatestGoodResponse, FeedListResponse,
-    FeedReadRequest, FeedTailQuery,
-    FeedTailResponse, CalendarDeleteResponse, CalendarExportQuery, CalendarExportResponse,
-    CalendarImportRequest, CalendarImportResponse, CalendarListQuery, CalendarListResponse,
-    CalendarWriteRequest, CalendarWriteResponse,
+    FeedReadRequest, FeedTailQuery, FeedTailResponse, HealthResponse, IngestRequest,
+    IngestResponse, InteractiveTurnRequest, InteractiveTurnResponse, JobReportResponse,
+    JobResultResponse, LocalCatalogResponse, LocalEngineStatus, LocalHardwareResponse,
+    LocalModelDownloadRequest, LocalModelDownloadResponse, LocalModelsResponse,
+    McpGatewayStatusResponse, ModelDownloadProgress, RecurringDeliveryResponse, RecurringListQuery,
+    RecurringListResponse, RecurringRunsQuery, RecurringRunsResponse,
+    RegisterRecurringPromptRequest, RegisterRecurringResponse, RuntimeConfigCommandRequest,
+    RuntimeConfigCommandResponse, SessionActiveTurnsResponse, SessionAgentModeResponse,
+    SessionAppendTurnRequest, SessionAppendTurnResponse, SessionCodeBindingResponse,
+    SessionCodeProjectResponse, SessionDeleteQuery, SessionDeleteResponse,
+    SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameRequest,
+    SessionSetDisplayNameResponse, SetSessionAgentModeRequest, SetSessionCodeBindingRequest,
+    StageRouteCommandRequest, StageRouteCommandResponse, StartSessionCodeProjectRequest,
+    TurnBudgetApproveRequest, TurnBudgetDenyRequest, TurnBudgetRequestListResponse,
+    TurnBudgetRequestRecord, TurnBudgetRequestResponse, UpdateRecurringRequest,
+    UpdateRecurringResponse, VaultAddRootRequest, VaultBacklinksQuery, VaultBacklinksResponse,
+    VaultDeleteResponse, VaultNoteContentResponse, VaultNotesListResponse, VaultNotesQuery,
+    VaultRootsResponse, VaultSearchQuery, VaultSearchResponse, VaultSetActiveRootRequest,
+    VaultTagsListResponse, VaultTagsQuery, VaultWriteRequest, VaultWriteResponse, WorkCardDetail,
+    WorkspaceCardActionResponse, WorkspaceCardsQuery, WorkspaceCardsResponse, WorkspaceFeedQuery,
+    WorkspaceFeedResponse, WorkspaceLinkVaultRequest, WorkspaceSnapshot, WorkspaceSnapshotQuery,
 };
 
 #[cfg(feature = "blocking")]
-use crate::transport::path_with_query;
-#[cfg(feature = "blocking")]
 use crate::SdkError;
+#[cfg(feature = "blocking")]
+use crate::generated::ops;
+#[cfg(feature = "blocking")]
+use crate::op::{op_path, op_path_query};
+#[cfg(feature = "blocking")]
+use crate::transport::path_with_query;
 
 #[cfg(feature = "blocking")]
 struct SyncHttp {
@@ -88,9 +90,7 @@ impl SyncHttp {
         }
         let response = builder.send().map_err(|e| SdkError::Http(e.to_string()))?;
         let status = response.status();
-        let text = response
-            .text()
-            .map_err(|e| SdkError::Http(e.to_string()))?;
+        let text = response.text().map_err(|e| SdkError::Http(e.to_string()))?;
         if !status.is_success() {
             return Err(SdkError::Http(format!("{status}: {text}")));
         }
@@ -281,31 +281,32 @@ impl BlockingHealthApi<'_> {
 #[cfg(feature = "blocking")]
 impl BlockingIngestApi<'_> {
     pub fn post(&self, request: &IngestRequest) -> Result<IngestResponse, SdkError> {
-        self.http.post(crate::generated::ops::INGEST_POST.path, request)
+        self.http
+            .post(crate::generated::ops::INGEST_POST.path, request)
     }
 }
 
 #[cfg(feature = "blocking")]
 impl BlockingLocalModelsApi<'_> {
     pub fn hardware(&self) -> Result<LocalHardwareResponse, SdkError> {
-        self.http.get("/v1/local/hardware")
+        self.http.get(ops::LOCAL_HARDWARE_GET.path)
     }
 
     pub fn catalog(&self) -> Result<LocalCatalogResponse, SdkError> {
-        self.http.get("/v1/local/catalog")
+        self.http.get(ops::LOCAL_CATALOG_GET.path)
     }
 
     pub fn list(&self) -> Result<LocalModelsResponse, SdkError> {
-        self.http.get("/v1/local/models")
+        self.http.get(ops::LOCAL_MODELS_GET.path)
     }
 
     pub fn engine_status(&self) -> Result<LocalEngineStatus, SdkError> {
-        self.http.get("/v1/local/engine/status")
+        self.http.get(ops::LOCAL_ENGINE_STATUS_GET.path)
     }
 
     pub fn start_download(&self, model_id: &str) -> Result<LocalModelDownloadResponse, SdkError> {
         self.http.post(
-            "/v1/local/models/download",
+            ops::LOCAL_MODELS_DOWNLOAD_POST.path,
             &LocalModelDownloadRequest {
                 model_id: model_id.to_string(),
             },
@@ -313,38 +314,56 @@ impl BlockingLocalModelsApi<'_> {
     }
 
     pub fn download_status(&self, job_id: &str) -> Result<ModelDownloadProgress, SdkError> {
-        self.http
-            .get(&format!("/v1/local/models/download/{}", job_id.trim()))
+        self.http.get(&op_path(
+            &ops::LOCAL_MODELS_DOWNLOAD_BY_JOB_ID_GET,
+            &[("job_id", job_id.trim())],
+        )?)
     }
 
     pub fn remove_model(&self, model_id: &str) -> Result<serde_json::Value, SdkError> {
-        self.http
-            .request(reqwest::Method::DELETE, &format!("/v1/local/models/{model_id}"), None)
+        self.http.request(
+            reqwest::Method::DELETE,
+            &op_path(
+                &ops::LOCAL_MODELS_BY_MODEL_ID_DELETE,
+                &[("model_id", model_id)],
+            )?,
+            None,
+        )
     }
 }
 
 #[cfg(feature = "blocking")]
 impl BlockingJobsApi<'_> {
     pub fn enqueue_ask(&self, request: &EnqueueAskRequest) -> Result<EnqueueResponse, SdkError> {
-        self.http.post("/v1/jobs/ask", request)
+        self.http.post(ops::JOBS_ASK_POST.path, request)
     }
 
     pub fn result(&self, job_id: &str) -> Result<JobResultResponse, SdkError> {
-        self.http
-            .get(&format!("/v1/jobs/{}/result", job_id.trim()))
+        self.http.get(&op_path(
+            &ops::JOBS_BY_JOB_ID_RESULT_GET,
+            &[("job_id", job_id.trim())],
+        )?)
     }
 
     pub fn report(&self, job_id: &str) -> Result<JobReportResponse, SdkError> {
-        self.http
-            .get(&format!("/v1/jobs/{}/report", job_id.trim()))
+        self.http.get(&op_path(
+            &ops::JOBS_BY_JOB_ID_REPORT_GET,
+            &[("job_id", job_id.trim())],
+        )?)
     }
 
-    pub fn enqueue_report(&self, request: &EnqueueReportRequest) -> Result<EnqueueResponse, SdkError> {
-        self.http.post("/v1/jobs/report", request)
+    pub fn enqueue_report(
+        &self,
+        request: &EnqueueReportRequest,
+    ) -> Result<EnqueueResponse, SdkError> {
+        self.http.post(ops::JOBS_REPORT_POST.path, request)
     }
 
-    pub fn enqueue_prompt(&self, request: &EnqueuePromptRequest) -> Result<EnqueueResponse, SdkError> {
-        self.http.post("/v1/jobs/prompt", request)
+    pub fn enqueue_prompt(
+        &self,
+        request: &EnqueuePromptRequest,
+    ) -> Result<EnqueueResponse, SdkError> {
+        self.http.post(ops::JOBS_PROMPT_POST.path, request)
     }
 
     pub fn complete_actions(
@@ -352,8 +371,13 @@ impl BlockingJobsApi<'_> {
         job_id: &str,
         request: &AskJobCompleteActionsRequest,
     ) -> Result<AskJobCompleteActionsResponse, SdkError> {
-        self.http
-            .post(&format!("/v1/jobs/{}/complete-actions", job_id.trim()), request)
+        self.http.post(
+            &op_path(
+                &ops::JOBS_BY_JOB_ID_COMPLETE_ACTIONS_POST,
+                &[("job_id", job_id.trim())],
+            )?,
+            request,
+        )
     }
 
     pub fn archive(
@@ -361,8 +385,13 @@ impl BlockingJobsApi<'_> {
         job_id: &str,
         request: &ArchiveAskJobRequest,
     ) -> Result<ArchiveAskJobResponse, SdkError> {
-        self.http
-            .post(&format!("/v1/jobs/{}/archive", job_id.trim()), request)
+        self.http.post(
+            &op_path(
+                &ops::JOBS_BY_JOB_ID_ARCHIVE_POST,
+                &[("job_id", job_id.trim())],
+            )?,
+            request,
+        )
     }
 }
 
@@ -372,7 +401,7 @@ impl BlockingRecurringApi<'_> {
         &self,
         request: &RegisterRecurringPromptRequest,
     ) -> Result<RegisterRecurringResponse, SdkError> {
-        self.http.post("/v1/recurring/prompt", request)
+        self.http.post(ops::RECURRING_PROMPT_POST.path, request)
     }
 
     pub fn list(&self, query: &RecurringListQuery) -> Result<RecurringListResponse, SdkError> {
@@ -380,7 +409,7 @@ impl BlockingRecurringApi<'_> {
         if let Some(enabled_only) = query.enabled_only {
             params.push(("enabled_only", enabled_only.to_string()));
         }
-        let path = path_with_query("/v1/recurring", &params);
+        let path = op_path_query(&ops::RECURRING_GET, &[], &params)?;
         self.http.get(&path)
     }
 
@@ -390,14 +419,19 @@ impl BlockingRecurringApi<'_> {
         request: &UpdateRecurringRequest,
     ) -> Result<UpdateRecurringResponse, SdkError> {
         self.http.patch(
-            &format!("/v1/recurring/{}", recurring_id.trim()),
+            &op_path(
+                &ops::RECURRING_BY_RECURRING_ID_PATCH,
+                &[("recurring_id", recurring_id.trim())],
+            )?,
             request,
         )
     }
 
     pub fn delete(&self, recurring_id: &str) -> Result<DeleteRecurringResponse, SdkError> {
-        self.http
-            .delete(&format!("/v1/recurring/{}", recurring_id.trim()))
+        self.http.delete(&op_path(
+            &ops::RECURRING_BY_RECURRING_ID_DELETE,
+            &[("recurring_id", recurring_id.trim())],
+        )?)
     }
 
     pub fn runs(
@@ -410,7 +444,10 @@ impl BlockingRecurringApi<'_> {
             params.push(("limit", limit.to_string()));
         }
         let path = path_with_query(
-            &format!("/v1/recurring/{}/runs", recurring_id.trim()),
+            &op_path(
+                &ops::RECURRING_BY_RECURRING_ID_RUNS_GET,
+                &[("recurring_id", recurring_id.trim())],
+            )?,
             &params,
         );
         self.http.get(&path)
@@ -420,20 +457,28 @@ impl BlockingRecurringApi<'_> {
         &self,
         recurring_id: &str,
     ) -> Result<RecurringDeliveryResponse, SdkError> {
-        self.http
-            .get(&format!("/v1/recurring/{}/delivery", recurring_id.trim()))
+        self.http.get(&op_path(
+            &ops::RECURRING_BY_RECURRING_ID_DELIVERY_GET,
+            &[("recurring_id", recurring_id.trim())],
+        )?)
     }
 }
 
 #[cfg(feature = "blocking")]
 impl BlockingSessionsApi<'_> {
     pub fn list(&self, limit: usize) -> Result<SessionHistoryListResponse, SdkError> {
-        self.http.get(&format!("/v1/sessions?limit={limit}"))
+        self.http.get(&op_path_query(
+            &ops::SESSIONS_GET,
+            &[],
+            &[("limit", limit.to_string())],
+        )?)
     }
 
     pub fn history(&self, session_id: &str) -> Result<SessionHistoryResponse, SdkError> {
-        self.http
-            .get(&format!("/v1/sessions/{session_id}/history"))
+        self.http.get(&op_path(
+            &ops::SESSIONS_BY_SESSION_ID_HISTORY_GET,
+            &[("session_id", session_id)],
+        )?)
     }
 
     pub fn set_display_name(
@@ -442,7 +487,10 @@ impl BlockingSessionsApi<'_> {
         display_name: &str,
     ) -> Result<SessionSetDisplayNameResponse, SdkError> {
         self.http.put(
-            &format!("/v1/sessions/{session_id}/name"),
+            &op_path(
+                &ops::SESSIONS_BY_SESSION_ID_NAME_PUT,
+                &[("session_id", session_id)],
+            )?,
             &SessionSetDisplayNameRequest {
                 display_name: display_name.to_string(),
             },
@@ -450,8 +498,10 @@ impl BlockingSessionsApi<'_> {
     }
 
     pub fn agent_mode(&self, session_id: &str) -> Result<SessionAgentModeResponse, SdkError> {
-        self.http
-            .get(&format!("/v1/sessions/{session_id}/agent-mode"))
+        self.http.get(&op_path(
+            &ops::SESSIONS_BY_SESSION_ID_AGENT_MODE_GET,
+            &[("session_id", session_id)],
+        )?)
     }
 
     pub fn set_agent_mode(
@@ -460,7 +510,10 @@ impl BlockingSessionsApi<'_> {
         request: &SetSessionAgentModeRequest,
     ) -> Result<SessionAgentModeResponse, SdkError> {
         self.http.put(
-            &format!("/v1/sessions/{session_id}/agent-mode"),
+            &op_path(
+                &ops::SESSIONS_BY_SESSION_ID_AGENT_MODE_PUT,
+                &[("session_id", session_id)],
+            )?,
             request,
         )
     }
@@ -475,7 +528,10 @@ impl BlockingSessionsApi<'_> {
             AgentModeScope::Task => "task",
         };
         self.http.delete(&path_with_query(
-            &format!("/v1/sessions/{session_id}/agent-mode"),
+            &op_path(
+                &ops::SESSIONS_BY_SESSION_ID_AGENT_MODE_DELETE,
+                &[("session_id", session_id)],
+            )?,
             &[("scope", scope.to_string())],
         ))
     }
@@ -484,9 +540,10 @@ impl BlockingSessionsApi<'_> {
         &self,
         session_id: &str,
     ) -> Result<AgentModeProposalListResponse, SdkError> {
-        self.http.get(&format!(
-            "/v1/sessions/{session_id}/agent-mode/proposals"
-        ))
+        self.http.get(&op_path(
+            &ops::SESSIONS_BY_SESSION_ID_AGENT_MODE_PROPOSALS_GET,
+            &[("session_id", session_id)],
+        )?)
     }
 
     pub fn decide_agent_mode_proposal(
@@ -496,16 +553,19 @@ impl BlockingSessionsApi<'_> {
         accept: bool,
     ) -> Result<AgentModeProposalResponse, SdkError> {
         self.http.put(
-            &format!(
-                "/v1/sessions/{session_id}/agent-mode/proposals/{proposal_id}"
-            ),
+            &op_path(
+                &ops::SESSIONS_BY_SESSION_ID_AGENT_MODE_PROPOSALS_BY_PROPOSAL_ID_PUT,
+                &[("session_id", session_id), ("proposal_id", proposal_id)],
+            )?,
             &DecideAgentModeProposalRequest { accept },
         )
     }
 
     pub fn code_binding(&self, session_id: &str) -> Result<SessionCodeBindingResponse, SdkError> {
-        self.http
-            .get(&format!("/v1/sessions/{session_id}/code-binding"))
+        self.http.get(&op_path(
+            &ops::SESSIONS_BY_SESSION_ID_CODE_BINDING_GET,
+            &[("session_id", session_id)],
+        )?)
     }
 
     pub fn set_code_binding(
@@ -514,7 +574,10 @@ impl BlockingSessionsApi<'_> {
         work_id: &str,
     ) -> Result<SessionCodeBindingResponse, SdkError> {
         self.http.put(
-            &format!("/v1/sessions/{session_id}/code-binding"),
+            &op_path(
+                &ops::SESSIONS_BY_SESSION_ID_CODE_BINDING_PUT,
+                &[("session_id", session_id)],
+            )?,
             &SetSessionCodeBindingRequest {
                 work_id: work_id.to_string(),
             },
@@ -525,8 +588,10 @@ impl BlockingSessionsApi<'_> {
         &self,
         session_id: &str,
     ) -> Result<SessionCodeBindingResponse, SdkError> {
-        self.http
-            .delete(&format!("/v1/sessions/{session_id}/code-binding"))
+        self.http.delete(&op_path(
+            &ops::SESSIONS_BY_SESSION_ID_CODE_BINDING_DELETE,
+            &[("session_id", session_id)],
+        )?)
     }
 
     pub fn start_code_project(
@@ -535,7 +600,10 @@ impl BlockingSessionsApi<'_> {
         request: &StartSessionCodeProjectRequest,
     ) -> Result<SessionCodeProjectResponse, SdkError> {
         self.http.post(
-            &format!("/v1/sessions/{session_id}/code-project"),
+            &op_path(
+                &ops::SESSIONS_BY_SESSION_ID_CODE_PROJECT_POST,
+                &[("session_id", session_id)],
+            )?,
             request,
         )
     }
@@ -545,8 +613,13 @@ impl BlockingSessionsApi<'_> {
         session_id: &str,
         request: &SessionAppendTurnRequest,
     ) -> Result<SessionAppendTurnResponse, SdkError> {
-        self.http
-            .post(&format!("/v1/sessions/{session_id}/turns"), request)
+        self.http.post(
+            &op_path(
+                &ops::SESSIONS_BY_SESSION_ID_TURNS_POST,
+                &[("session_id", session_id)],
+            )?,
+            request,
+        )
     }
 
     pub fn delete(
@@ -555,28 +628,37 @@ impl BlockingSessionsApi<'_> {
         query: &SessionDeleteQuery,
     ) -> Result<SessionDeleteResponse, SdkError> {
         let path = path_with_query(
-            &format!("/v1/sessions/{session_id}"),
+            &op_path(
+                &ops::SESSIONS_BY_SESSION_ID_DELETE,
+                &[("session_id", session_id)],
+            )?,
             &[("purge_memory", query.purge_memory.to_string())],
         );
         self.http.delete(&path)
     }
 
     pub fn list_turns(&self, session_id: &str) -> Result<SessionActiveTurnsResponse, SdkError> {
-        self.http
-            .get(&format!("/v1/sessions/{session_id}/turns"))
+        self.http.get(&op_path(
+            &ops::SESSIONS_BY_SESSION_ID_TURNS_GET,
+            &[("session_id", session_id)],
+        )?)
     }
 
     pub fn active_turn(&self, session_id: &str) -> Result<ActiveSessionTurnResponse, SdkError> {
-        self.http
-            .get(&format!("/v1/sessions/{session_id}/active-turn"))
+        self.http.get(&op_path(
+            &ops::SESSIONS_BY_SESSION_ID_ACTIVE_TURN_GET,
+            &[("session_id", session_id)],
+        )?)
     }
 
     pub fn cancel_active_turn(
         &self,
         session_id: &str,
     ) -> Result<CancelActiveSessionTurnResponse, SdkError> {
-        self.http
-            .post_empty(&format!("/v1/sessions/{session_id}/active-turn"))
+        self.http.post_empty(&op_path(
+            &ops::SESSIONS_BY_SESSION_ID_ACTIVE_TURN_POST,
+            &[("session_id", session_id)],
+        )?)
     }
 }
 
@@ -586,107 +668,122 @@ impl BlockingInteractiveApi<'_> {
         &self,
         request: &InteractiveTurnRequest,
     ) -> Result<InteractiveTurnResponse, SdkError> {
-        self.http.post("/v1/interactive/turn", request)
+        self.http.post(ops::INTERACTIVE_TURN_POST.path, request)
     }
 
     pub fn cancel(&self, session_id: &str) -> Result<serde_json::Value, SdkError> {
-        self.http
-            .request(
-                reqwest::Method::POST,
-                &format!("/v1/sessions/{session_id}/active-turn"),
-                None,
-            )
+        self.http.request(
+            reqwest::Method::POST,
+            &op_path(
+                &ops::SESSIONS_BY_SESSION_ID_ACTIVE_TURN_POST,
+                &[("session_id", session_id)],
+            )?,
+            None,
+        )
     }
 }
 
 #[cfg(feature = "blocking")]
 impl BlockingRuntimeApi<'_> {
     pub fn agent_modes(&self) -> Result<AgentModeListResponse, SdkError> {
-        self.http.get("/v1/agent-modes")
+        self.http.get(ops::AGENT_MODES_GET.path)
     }
 
     pub fn agent_mode_transition_policy(&self) -> Result<AgentModeTransitionPolicy, SdkError> {
-        self.http.get("/v1/agent-modes/policy")
+        self.http.get(ops::AGENT_MODES_POLICY_GET.path)
     }
 
     pub fn set_agent_mode_transition_policy(
         &self,
         policy: &AgentModeTransitionPolicy,
     ) -> Result<AgentModeTransitionPolicy, SdkError> {
-        self.http.put("/v1/agent-modes/policy", policy)
+        self.http.put(ops::AGENT_MODES_POLICY_PUT.path, policy)
     }
 
     pub fn artifact_command(
         &self,
         request: &ArtifactCommandRequest,
     ) -> Result<ArtifactCommandResponse, SdkError> {
-        self.http.post("/v1/runtime/artifact/command", request)
+        self.http
+            .post(ops::RUNTIME_ARTIFACT_COMMAND_POST.path, request)
     }
 
     pub fn artifact_fetch(
         &self,
         request: &ArtifactFetchRequest,
     ) -> Result<ArtifactFetchResponse, SdkError> {
-        self.http.post("/v1/runtime/artifact/fetch", request)
+        self.http
+            .post(ops::RUNTIME_ARTIFACT_FETCH_POST.path, request)
     }
 
     pub fn artifact_list_ui(
         &self,
         request: &ArtifactListUiRequest,
     ) -> Result<ArtifactListUiResponse, SdkError> {
-        self.http.post("/v1/runtime/artifact/list-ui", request)
+        self.http
+            .post(ops::RUNTIME_ARTIFACT_LIST_UI_POST.path, request)
     }
 
     pub fn artifact_write(
         &self,
         request: &ArtifactWriteRequest,
     ) -> Result<ArtifactWriteResponse, SdkError> {
-        self.http.post("/v1/runtime/artifact/write", request)
+        self.http
+            .post(ops::RUNTIME_ARTIFACT_WRITE_POST.path, request)
     }
 
     pub fn artifact_delete(
         &self,
         request: &ArtifactDeleteRequest,
     ) -> Result<ArtifactDeleteResponse, SdkError> {
-        self.http.post("/v1/runtime/artifact/delete", request)
+        self.http
+            .post(ops::RUNTIME_ARTIFACT_DELETE_POST.path, request)
     }
 
     pub fn config_command(
         &self,
         request: &RuntimeConfigCommandRequest,
     ) -> Result<RuntimeConfigCommandResponse, SdkError> {
-        self.http.post("/v1/runtime/config/command", request)
+        self.http
+            .post(ops::RUNTIME_CONFIG_COMMAND_POST.path, request)
     }
 
     pub fn stage_route_command(
         &self,
         request: &StageRouteCommandRequest,
     ) -> Result<StageRouteCommandResponse, SdkError> {
-        self.http.post("/v1/runtime/stage-route/command", request)
+        self.http
+            .post(ops::RUNTIME_STAGE_ROUTE_COMMAND_POST.path, request)
     }
 }
 
 #[cfg(feature = "blocking")]
 impl BlockingCapabilitiesApi<'_> {
     pub fn list(&self) -> Result<CapabilityListResponse, SdkError> {
-        self.http.get("/v1/capabilities")
+        self.http.get(ops::CAPABILITIES_GET.path)
     }
 
     pub fn get(&self, capability_id: &str) -> Result<CapabilityResolveResponse, SdkError> {
-        let path = format!("/v1/capabilities/{}", urlencoding::encode(capability_id.trim()));
+        let path = op_path(
+            &ops::CAPABILITIES_BY_CAPABILITY_ID_GET,
+            &[("capability_id", capability_id.trim())],
+        )?;
         self.http.get(&path)
     }
 
     pub fn reindex(&self) -> Result<serde_json::Value, SdkError> {
-        self.http
-            .request(reqwest::Method::POST, "/v1/capabilities/reindex", None)
+        self.http.request(
+            reqwest::Method::POST,
+            ops::CAPABILITIES_REINDEX_POST.path,
+            None,
+        )
     }
 }
 
 #[cfg(feature = "blocking")]
 impl BlockingMcpGatewayApi<'_> {
     pub fn status(&self) -> Result<McpGatewayStatusResponse, SdkError> {
-        self.http.get("/v1/mcp/gateway/status")
+        self.http.get(ops::MCP_GATEWAY_STATUS_GET.path)
     }
 }
 
@@ -694,16 +791,29 @@ impl BlockingMcpGatewayApi<'_> {
 impl BlockingBudgetApi<'_> {
     pub fn list(&self, pending_only: bool) -> Result<TurnBudgetRequestListResponse, SdkError> {
         let path = if pending_only {
-            "/v1/turns/budget-requests?status=pending&limit=20"
+            op_path_query(
+                &ops::TURNS_BUDGET_REQUESTS_GET,
+                &[],
+                &[
+                    ("status", "pending".to_string()),
+                    ("limit", "20".to_string()),
+                ],
+            )?
         } else {
-            "/v1/turns/budget-requests?limit=20"
+            op_path_query(
+                &ops::TURNS_BUDGET_REQUESTS_GET,
+                &[],
+                &[("limit", "20".to_string())],
+            )?
         };
-        self.http.get(path)
+        self.http.get(&path)
     }
 
     pub fn get(&self, request_id: &str) -> Result<TurnBudgetRequestRecord, SdkError> {
-        self.http
-            .get(&format!("/v1/turns/budget-requests/{}", request_id.trim()))
+        self.http.get(&op_path(
+            &ops::TURNS_BUDGET_REQUESTS_BY_REQUEST_ID_GET,
+            &[("request_id", request_id.trim())],
+        )?)
     }
 
     pub fn approve(
@@ -712,7 +822,10 @@ impl BlockingBudgetApi<'_> {
         body: &TurnBudgetApproveRequest,
     ) -> Result<TurnBudgetRequestResponse, SdkError> {
         self.http.post(
-            &format!("/v1/turns/budget-requests/{}/approve", request_id.trim()),
+            &op_path(
+                &ops::TURNS_BUDGET_REQUESTS_BY_REQUEST_ID_APPROVE_POST,
+                &[("request_id", request_id.trim())],
+            )?,
             body,
         )
     }
@@ -723,7 +836,10 @@ impl BlockingBudgetApi<'_> {
         body: &TurnBudgetDenyRequest,
     ) -> Result<TurnBudgetRequestResponse, SdkError> {
         self.http.post(
-            &format!("/v1/turns/budget-requests/{}/deny", request_id.trim()),
+            &op_path(
+                &ops::TURNS_BUDGET_REQUESTS_BY_REQUEST_ID_DENY_POST,
+                &[("request_id", request_id.trim())],
+            )?,
             body,
         )
     }
@@ -732,18 +848,18 @@ impl BlockingBudgetApi<'_> {
 #[cfg(feature = "blocking")]
 impl BlockingVaultApi<'_> {
     pub fn list_roots(&self) -> Result<VaultRootsResponse, SdkError> {
-        self.http.get("/v1/vault/roots")
+        self.http.get(ops::VAULT_ROOTS_GET.path)
     }
 
     pub fn add_root(&self, request: &VaultAddRootRequest) -> Result<VaultRootsResponse, SdkError> {
-        self.http.post("/v1/vault/roots", request)
+        self.http.post(ops::VAULT_ROOTS_POST.path, request)
     }
 
     pub fn set_active_root(
         &self,
         request: &VaultSetActiveRootRequest,
     ) -> Result<VaultRootsResponse, SdkError> {
-        self.http.put("/v1/vault/active", request)
+        self.http.put(ops::VAULT_ACTIVE_PUT.path, request)
     }
 
     pub fn list_notes(&self, query: &VaultNotesQuery) -> Result<VaultNotesListResponse, SdkError> {
@@ -760,21 +876,26 @@ impl BlockingVaultApi<'_> {
         if let Some(tag_prefix) = &query.tag_prefix {
             params.push(("tag_prefix", tag_prefix.clone()));
         }
-        self.http.get(&path_with_query("/v1/vault/notes", &params))
+        self.http
+            .get(&op_path_query(&ops::VAULT_NOTES_GET, &[], &params)?)
     }
 
     pub fn create_note(&self, request: &VaultWriteRequest) -> Result<VaultWriteResponse, SdkError> {
-        self.http.post("/v1/vault/notes", request)
+        self.http.post(ops::VAULT_NOTES_POST.path, request)
     }
 
     pub fn get_note(&self, note_path: &str) -> Result<VaultNoteContentResponse, SdkError> {
-        self.http
-            .get(&format!("/v1/vault/notes/{}", note_path.trim_start_matches('/')))
+        self.http.get(&op_path(
+            &ops::VAULT_NOTES_BY_NOTE_PATH_GET,
+            &[("note_path", note_path.trim_start_matches('/'))],
+        )?)
     }
 
     pub fn delete_note(&self, note_path: &str) -> Result<VaultDeleteResponse, SdkError> {
-        self.http
-            .delete(&format!("/v1/vault/notes/{}", note_path.trim_start_matches('/')))
+        self.http.delete(&op_path(
+            &ops::VAULT_NOTES_BY_NOTE_PATH_DELETE,
+            &[("note_path", note_path.trim_start_matches('/'))],
+        )?)
     }
 
     pub fn list_tags(&self, query: &VaultTagsQuery) -> Result<VaultTagsListResponse, SdkError> {
@@ -785,7 +906,8 @@ impl BlockingVaultApi<'_> {
         if let Some(limit) = query.limit {
             params.push(("limit", limit.to_string()));
         }
-        self.http.get(&path_with_query("/v1/vault/tags", &params))
+        self.http
+            .get(&op_path_query(&ops::VAULT_TAGS_GET, &[], &params)?)
     }
 
     pub fn search(&self, query: &VaultSearchQuery) -> Result<VaultSearchResponse, SdkError> {
@@ -799,7 +921,8 @@ impl BlockingVaultApi<'_> {
         if let Some(tags) = &query.tags {
             params.push(("tags", tags.clone()));
         }
-        self.http.get(&path_with_query("/v1/vault/search", &params))
+        self.http
+            .get(&op_path_query(&ops::VAULT_SEARCH_GET, &[], &params)?)
     }
 
     pub fn backlinks(
@@ -810,7 +933,8 @@ impl BlockingVaultApi<'_> {
         if let Some(path) = &query.path {
             params.push(("path", path.clone()));
         }
-        self.http.get(&path_with_query("/v1/vault/backlinks", &params))
+        self.http
+            .get(&op_path_query(&ops::VAULT_BACKLINKS_GET, &[], &params)?)
     }
 }
 
@@ -828,14 +952,14 @@ impl BlockingCalendarApi<'_> {
             params.push(("path", path.clone()));
         }
         self.http
-            .get(&path_with_query("/v1/calendar/events", &params))
+            .get(&op_path_query(&ops::CALENDAR_EVENTS_GET, &[], &params)?)
     }
 
     pub fn create_event(
         &self,
         request: &CalendarWriteRequest,
     ) -> Result<CalendarWriteResponse, SdkError> {
-        self.http.post("/v1/calendar/events", request)
+        self.http.post(ops::CALENDAR_EVENTS_POST.path, request)
     }
 
     pub fn update_event(
@@ -843,8 +967,10 @@ impl BlockingCalendarApi<'_> {
         uid: &str,
         request: &CalendarWriteRequest,
     ) -> Result<CalendarWriteResponse, SdkError> {
-        self.http
-            .put(&format!("/v1/calendar/events/{}", uid.trim()), request)
+        self.http.put(
+            &op_path(&ops::CALENDAR_EVENTS_BY_UID_PUT, &[("uid", uid.trim())])?,
+            request,
+        )
     }
 
     pub fn delete_event(
@@ -857,7 +983,7 @@ impl BlockingCalendarApi<'_> {
             params.push(("path", path.clone()));
         }
         self.http.delete(&path_with_query(
-            &format!("/v1/calendar/events/{}", uid.trim()),
+            &op_path(&ops::CALENDAR_EVENTS_BY_UID_DELETE, &[("uid", uid.trim())])?,
             &params,
         ))
     }
@@ -866,7 +992,7 @@ impl BlockingCalendarApi<'_> {
         &self,
         request: &CalendarImportRequest,
     ) -> Result<CalendarImportResponse, SdkError> {
-        self.http.post("/v1/calendar/import", request)
+        self.http.post(ops::CALENDAR_IMPORT_POST.path, request)
     }
 
     pub fn export(&self, query: &CalendarExportQuery) -> Result<CalendarExportResponse, SdkError> {
@@ -875,7 +1001,7 @@ impl BlockingCalendarApi<'_> {
             params.push(("path", path.clone()));
         }
         self.http
-            .get(&path_with_query("/v1/calendar/export", &params))
+            .get(&op_path_query(&ops::CALENDAR_EXPORT_GET, &[], &params)?)
     }
 }
 
@@ -899,17 +1025,21 @@ impl BlockingWorkspaceApi<'_> {
             params.push(("include_terminal", include_terminal.to_string()));
         }
         self.http
-            .get(&path_with_query("/v1/workspace/cards", &params))
+            .get(&op_path_query(&ops::WORKSPACE_CARDS_GET, &[], &params)?)
     }
 
     pub fn get_card(&self, card_id: &str) -> Result<WorkCardDetail, SdkError> {
-        self.http
-            .get(&format!("/v1/workspace/cards/{}", card_id.trim()))
+        self.http.get(&op_path(
+            &ops::WORKSPACE_CARDS_BY_CARD_ID_GET,
+            &[("card_id", card_id.trim())],
+        )?)
     }
 
     pub fn cancel_card(&self, card_id: &str) -> Result<WorkspaceCardActionResponse, SdkError> {
-        self.http
-            .post_empty(&format!("/v1/workspace/cards/{}/cancel", card_id.trim()))
+        self.http.post_empty(&op_path(
+            &ops::WORKSPACE_CARDS_BY_CARD_ID_CANCEL_POST,
+            &[("card_id", card_id.trim())],
+        )?)
     }
 
     pub fn archive_card(
@@ -918,14 +1048,19 @@ impl BlockingWorkspaceApi<'_> {
         request: &ArchiveAskJobRequest,
     ) -> Result<WorkspaceCardActionResponse, SdkError> {
         self.http.post(
-            &format!("/v1/workspace/cards/{}/archive", card_id.trim()),
+            &op_path(
+                &ops::WORKSPACE_CARDS_BY_CARD_ID_ARCHIVE_POST,
+                &[("card_id", card_id.trim())],
+            )?,
             request,
         )
     }
 
     pub fn retry_card(&self, card_id: &str) -> Result<WorkspaceCardActionResponse, SdkError> {
-        self.http
-            .post_empty(&format!("/v1/workspace/cards/{}/retry", card_id.trim()))
+        self.http.post_empty(&op_path(
+            &ops::WORKSPACE_CARDS_BY_CARD_ID_RETRY_POST,
+            &[("card_id", card_id.trim())],
+        )?)
     }
 
     pub fn link_vault(
@@ -934,7 +1069,10 @@ impl BlockingWorkspaceApi<'_> {
         request: &WorkspaceLinkVaultRequest,
     ) -> Result<WorkspaceCardActionResponse, SdkError> {
         self.http.post(
-            &format!("/v1/workspace/cards/{}/link-vault", card_id.trim()),
+            &op_path(
+                &ops::WORKSPACE_CARDS_BY_CARD_ID_LINK_VAULT_POST,
+                &[("card_id", card_id.trim())],
+            )?,
             request,
         )
     }
@@ -954,13 +1092,10 @@ impl BlockingWorkspaceApi<'_> {
             params.push(("card_id", card_id.clone()));
         }
         self.http
-            .get(&path_with_query("/v1/workspace/feed", &params))
+            .get(&op_path_query(&ops::WORKSPACE_FEED_GET, &[], &params)?)
     }
 
-    pub fn snapshot(
-        &self,
-        query: &WorkspaceSnapshotQuery,
-    ) -> Result<WorkspaceSnapshot, SdkError> {
+    pub fn snapshot(&self, query: &WorkspaceSnapshotQuery) -> Result<WorkspaceSnapshot, SdkError> {
         let mut params = Vec::new();
         if let Some(since_revision) = query.since_revision {
             params.push(("since_revision", since_revision.to_string()));
@@ -969,7 +1104,7 @@ impl BlockingWorkspaceApi<'_> {
             params.push(("feed_tail_limit", feed_tail_limit.to_string()));
         }
         self.http
-            .get(&path_with_query("/v1/workspace/snapshot", &params))
+            .get(&op_path_query(&ops::WORKSPACE_SNAPSHOT_GET, &[], &params)?)
     }
 }
 
@@ -982,15 +1117,18 @@ impl BlockingEnvironmentApi<'_> {
     }
 
     pub fn get_spec(&self, profile_id: Option<&str>) -> Result<EnvironmentSpecResponse, SdkError> {
-        self.http
-            .get(&path_with_query("/v1/environment/spec", &Self::profile_query(profile_id)))
+        self.http.get(&op_path_query(
+            &ops::ENVIRONMENT_SPEC_GET,
+            &[],
+            &Self::profile_query(profile_id),
+        )?)
     }
 
     pub fn put_spec(
         &self,
         request: &EnvironmentSpecPutRequest,
     ) -> Result<EnvironmentSpecResponse, SdkError> {
-        self.http.put("/v1/environment/spec", request)
+        self.http.put(ops::ENVIRONMENT_SPEC_PUT.path, request)
     }
 
     pub fn get_status(
@@ -1007,38 +1145,42 @@ impl BlockingEnvironmentApi<'_> {
             params.push(("include_runtime", include.to_string()));
         }
         self.http
-            .get(&path_with_query("/v1/environment/status", &params))
+            .get(&op_path_query(&ops::ENVIRONMENT_STATUS_GET, &[], &params)?)
     }
 
     pub fn validate_spec(
         &self,
         request: &EnvironmentValidateRequest,
     ) -> Result<EnvironmentValidateResponse, SdkError> {
-        self.http.post("/v1/environment/spec/validate", request)
+        self.http
+            .post(ops::ENVIRONMENT_SPEC_VALIDATE_POST.path, request)
     }
 
     pub fn propose_spec(
         &self,
         request: &EnvironmentSpecPutRequest,
     ) -> Result<EnvironmentProposeResponse, SdkError> {
-        self.http.post("/v1/environment/spec/propose", request)
+        self.http
+            .post(ops::ENVIRONMENT_SPEC_PROPOSE_POST.path, request)
     }
 
     pub fn get_pending(
         &self,
         profile_id: Option<&str>,
     ) -> Result<EnvironmentPendingResponse, SdkError> {
-        self.http.get(&path_with_query(
-            "/v1/environment/spec/pending",
+        self.http.get(&op_path_query(
+            &ops::ENVIRONMENT_SPEC_PENDING_GET,
+            &[],
             &Self::profile_query(profile_id),
-        ))
+        )?)
     }
 
     pub fn dismiss_pending(&self, profile_id: Option<&str>) -> Result<(), SdkError> {
-        self.http.delete::<serde_json::Value>(&path_with_query(
-            "/v1/environment/spec/pending",
+        self.http.delete::<serde_json::Value>(&op_path_query(
+            &ops::ENVIRONMENT_SPEC_PENDING_DELETE,
+            &[],
             &Self::profile_query(profile_id),
-        ))?;
+        )?)?;
         Ok(())
     }
 
@@ -1046,10 +1188,11 @@ impl BlockingEnvironmentApi<'_> {
         &self,
         profile_id: Option<&str>,
     ) -> Result<EnvironmentSpecResponse, SdkError> {
-        self.http.post_empty(&path_with_query(
-            "/v1/environment/spec/pending/apply",
+        self.http.post_empty(&op_path_query(
+            &ops::ENVIRONMENT_SPEC_PENDING_APPLY_POST,
+            &[],
             &Self::profile_query(profile_id),
-        ))
+        )?)
     }
 }
 
@@ -1082,7 +1225,10 @@ impl BlockingComponentsApi<'_> {
         key: Option<&str>,
     ) -> Result<ComponentStoreGetResponse, SdkError> {
         self.http.get(&path_with_query(
-            &format!("/v1/components/{}/store", component_id.trim()),
+            &op_path(
+                &ops::COMPONENTS_BY_COMPONENT_ID_STORE_GET,
+                &[("component_id", component_id.trim())],
+            )?,
             &Self::component_store_query(profile_id, key),
         ))
     }
@@ -1095,7 +1241,10 @@ impl BlockingComponentsApi<'_> {
     ) -> Result<ComponentStoreSetResponse, SdkError> {
         self.http.put(
             &path_with_query(
-                &format!("/v1/components/{}/store", component_id.trim()),
+                &op_path(
+                    &ops::COMPONENTS_BY_COMPONENT_ID_STORE_PUT,
+                    &[("component_id", component_id.trim())],
+                )?,
                 &Self::component_store_query(None, Some(key)),
             ),
             request,
@@ -1108,7 +1257,10 @@ impl BlockingComponentsApi<'_> {
         profile_id: Option<&str>,
     ) -> Result<ComponentStoreListResponse, SdkError> {
         self.http.get(&path_with_query(
-            &format!("/v1/components/{}/store/keys", component_id.trim()),
+            &op_path(
+                &ops::COMPONENTS_BY_COMPONENT_ID_STORE_KEYS_GET,
+                &[("component_id", component_id.trim())],
+            )?,
             &Self::component_profile_query(profile_id),
         ))
     }
@@ -1120,11 +1272,10 @@ impl BlockingComponentsApi<'_> {
         profile_id: Option<&str>,
     ) -> Result<ComponentStoreGetResponse, SdkError> {
         self.http.get(&path_with_query(
-            &format!(
-                "/v1/components/{}/store/{}",
-                component_id.trim(),
-                urlencoding::encode(key.trim())
-            ),
+            &op_path(
+                &ops::COMPONENTS_BY_COMPONENT_ID_STORE_BY_KEY_GET,
+                &[("component_id", component_id.trim()), ("key", key.trim())],
+            )?,
             &Self::component_profile_query(profile_id),
         ))
     }
@@ -1136,11 +1287,10 @@ impl BlockingComponentsApi<'_> {
         request: &ComponentStoreSetRequest,
     ) -> Result<ComponentStoreSetResponse, SdkError> {
         self.http.put(
-            &format!(
-                "/v1/components/{}/store/{}",
-                component_id.trim(),
-                urlencoding::encode(key.trim())
-            ),
+            &op_path(
+                &ops::COMPONENTS_BY_COMPONENT_ID_STORE_BY_KEY_PUT,
+                &[("component_id", component_id.trim()), ("key", key.trim())],
+            )?,
             request,
         )
     }
@@ -1152,11 +1302,10 @@ impl BlockingComponentsApi<'_> {
         profile_id: Option<&str>,
     ) -> Result<ComponentStoreDeleteResponse, SdkError> {
         self.http.delete(&path_with_query(
-            &format!(
-                "/v1/components/{}/store/{}",
-                component_id.trim(),
-                urlencoding::encode(key.trim())
-            ),
+            &op_path(
+                &ops::COMPONENTS_BY_COMPONENT_ID_STORE_BY_KEY_DELETE,
+                &[("component_id", component_id.trim()), ("key", key.trim())],
+            )?,
             &Self::component_profile_query(profile_id),
         ))
     }
@@ -1172,7 +1321,10 @@ impl BlockingComponentsApi<'_> {
             params.push(("limit", limit.to_string()));
         }
         self.http.get(&path_with_query(
-            &format!("/v1/components/{}/runtime/events", component_id.trim()),
+            &op_path(
+                &ops::COMPONENTS_BY_COMPONENT_ID_RUNTIME_EVENTS_GET,
+                &[("component_id", component_id.trim())],
+            )?,
             &params,
         ))
     }
@@ -1183,7 +1335,10 @@ impl BlockingComponentsApi<'_> {
         request: &ComponentRuntimeEventsRequest,
     ) -> Result<ComponentRuntimeEventsResponse, SdkError> {
         self.http.post(
-            &format!("/v1/components/{}/runtime/events", component_id.trim()),
+            &op_path(
+                &ops::COMPONENTS_BY_COMPONENT_ID_RUNTIME_EVENTS_POST,
+                &[("component_id", component_id.trim())],
+            )?,
             request,
         )
     }
@@ -1195,11 +1350,13 @@ impl BlockingComponentsApi<'_> {
         request: &ComponentRuntimeProbeResult,
     ) -> Result<serde_json::Value, SdkError> {
         self.http.post(
-            &format!(
-                "/v1/components/{}/runtime/probe/{}/result",
-                component_id.trim(),
-                urlencoding::encode(probe_id.trim())
-            ),
+            &op_path(
+                &ops::COMPONENTS_BY_COMPONENT_ID_RUNTIME_PROBE_BY_PROBE_ID_RESULT_POST,
+                &[
+                    ("component_id", component_id.trim()),
+                    ("probe_id", probe_id.trim()),
+                ],
+            )?,
             request,
         )
     }
@@ -1225,13 +1382,19 @@ impl BlockingFeedsApi<'_> {
     }
 
     pub fn list(&self, profile_id: Option<&str>) -> Result<FeedListResponse, SdkError> {
-        self.http
-            .get(&path_with_query("/v1/feeds", &Self::feed_profile_query(profile_id)))
+        self.http.get(&op_path_query(
+            &ops::FEEDS_GET,
+            &[],
+            &Self::feed_profile_query(profile_id),
+        )?)
     }
 
     pub fn tail(&self, feed_id: &str, query: &FeedTailQuery) -> Result<FeedTailResponse, SdkError> {
         self.http.get(&path_with_query(
-            &format!("/v1/feeds/{}/tail", feed_id.trim()),
+            &op_path(
+                &ops::FEEDS_BY_FEED_ID_TAIL_GET,
+                &[("feed_id", feed_id.trim())],
+            )?,
             &Self::feed_tail_query_params(query),
         ))
     }
@@ -1242,14 +1405,20 @@ impl BlockingFeedsApi<'_> {
         query: &FeedLatestGoodQuery,
     ) -> Result<FeedLatestGoodResponse, SdkError> {
         self.http.get(&path_with_query(
-            &format!("/v1/feeds/{}/latest-good", feed_id.trim()),
+            &op_path(
+                &ops::FEEDS_BY_FEED_ID_LATEST_GOOD_GET,
+                &[("feed_id", feed_id.trim())],
+            )?,
             &Self::feed_profile_query(query.profile_id.as_deref()),
         ))
     }
 
     pub fn mark_read(&self, feed_id: &str, request: &FeedReadRequest) -> Result<(), SdkError> {
         self.http.post::<serde_json::Value, _>(
-            &format!("/v1/feeds/{}/read", feed_id.trim()),
+            &op_path(
+                &ops::FEEDS_BY_FEED_ID_READ_POST,
+                &[("feed_id", feed_id.trim())],
+            )?,
             request,
         )?;
         Ok(())

@@ -1,8 +1,8 @@
-use crate::daemon::DaemonState;
 use crate::daemon::sdk;
 use crate::daemon::sse::stream_sse_json_workshop;
 use crate::daemon::workshop_http;
-use crate::workshop_registry::{PERSONAL_WORKSHOP_ID, load_registry};
+use crate::daemon::DaemonState;
+use crate::workshop_registry::{load_registry, PERSONAL_WORKSHOP_ID};
 use crate::workshop_runtime;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 use medousa_types::LocalResourceAdmission;
@@ -11,8 +11,8 @@ use medousa_types::{
     LocalRuntimePhase, ModelDownloadProgress,
 };
 use std::collections::HashMap;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::watch;
 
@@ -284,7 +284,10 @@ pub async fn local_inference_stream_download(
     *stream_state.cancel.lock().expect("lock") = Some(cancel_tx);
 
     let config = workshop_http::transport_config(&state);
-    let path = format!("/v1/local/models/download/{}/events", job_id.trim());
+    let path = medousa_sdk::generated::expand_path(
+        medousa_sdk::generated::ops::LOCAL_MODELS_DOWNLOAD_BY_JOB_ID_EVENTS_GET.path,
+        &[("job_id", job_id.trim())],
+    )?;
 
     tauri::async_runtime::spawn(async move {
         match workshop_http::get_bytes_stream_for_config(&config, &path).await {

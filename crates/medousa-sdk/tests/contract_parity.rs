@@ -9,14 +9,22 @@ fn generated_ops_are_unique_http_methods() {
     for op in operations::ALL {
         assert_ne!(op.method, "SSE", "SSE is not an HTTP method: {}", op.id);
         assert!(
-            matches!(op.method, "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"),
+            matches!(
+                op.method,
+                "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
+            ),
             "unexpected method {} for {}",
             op.method,
             op.id
         );
         assert!(op.path.starts_with('/'));
         assert!(!op.path.contains('?'));
-        assert!(seen.insert((op.method, op.path)), "duplicate {} {}", op.method, op.path);
+        assert!(
+            seen.insert((op.method, op.path)),
+            "duplicate {} {}",
+            op.method,
+            op.path
+        );
     }
 }
 

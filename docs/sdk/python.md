@@ -169,6 +169,8 @@ pytest
 ```
 
 `tests/test_parity_paths.py` validates generated operations (real HTTP methods, unique paths).
+`tests/test_golden_ops.py` loads [`sdk-contract/golden/client-cases.json`](../../sdk-contract/golden/client-cases.json).
+Helpers expand generated operation IDs via `op_path`; `tests/test_no_helper_route_literals.py` forbids leftover `/v1` strings in handwritten Python helpers.
 
 Repository-wide: `bash scripts/check-api-contract.sh`
 

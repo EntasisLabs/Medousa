@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from medousa._decode import decode
+from medousa._ops import op_path, op_path_query
 from medousa.types import (
     SessionAppendTurnRequest,
     SessionAppendTurnResponse,
@@ -24,14 +25,14 @@ class SessionsApiSync:
     def list(self, limit: int = 50) -> SessionHistoryListResponse:
         value = self._client._transport.get_json(
             self._client.base_url,
-            f"/v1/sessions?limit={limit}",
+            op_path_query("sessions.get", [("limit", str(limit))]),
         )
         return decode(SessionHistoryListResponse, value)
 
     def history(self, session_id: str) -> SessionHistoryResponse:
         value = self._client._transport.get_json(
             self._client.base_url,
-            f"/v1/sessions/{session_id}/history",
+            op_path("sessions.by_session_id.history.get", session_id=session_id),
         )
         return decode(SessionHistoryResponse, value)
 
@@ -43,7 +44,7 @@ class SessionsApiSync:
         body = SessionSetDisplayNameRequest(display_name=display_name)
         value = self._client._transport.put_json(
             self._client.base_url,
-            f"/v1/sessions/{session_id}/name",
+            op_path("sessions.by_session_id.name.put", session_id=session_id),
             body.model_dump(mode="json"),
         )
         return decode(SessionSetDisplayNameResponse, value)
@@ -55,7 +56,7 @@ class SessionsApiSync:
     ) -> SessionAppendTurnResponse:
         value = self._client._transport.post_json(
             self._client.base_url,
-            f"/v1/sessions/{session_id}/turns",
+            op_path("sessions.by_session_id.turns.post", session_id=session_id),
             request.model_dump(mode="json"),
         )
         return decode(SessionAppendTurnResponse, value)
@@ -63,25 +64,25 @@ class SessionsApiSync:
     def delete(self, session_id: str) -> SessionDeleteResponse:
         value = self._client._transport.delete_json(
             self._client.base_url,
-            f"/v1/sessions/{session_id}",
+            op_path("sessions.by_session_id.delete", session_id=session_id),
         )
         return decode(SessionDeleteResponse, value)
 
     def list_turns(self, session_id: str) -> SessionHistoryResponse:
         value = self._client._transport.get_json(
             self._client.base_url,
-            f"/v1/sessions/{session_id}/turns",
+            op_path("sessions.by_session_id.turns.get", session_id=session_id),
         )
         return decode(SessionHistoryResponse, value)
 
     def active_turn(self, session_id: str) -> dict[str, Any]:
         return self._client._transport.get_json(
             self._client.base_url,
-            f"/v1/sessions/{session_id}/active-turn",
+            op_path("sessions.by_session_id.active_turn.get", session_id=session_id),
         )
 
     def cancel_active_turn(self, session_id: str) -> dict[str, Any]:
         return self._client._transport.post_empty_json(
             self._client.base_url,
-            f"/v1/sessions/{session_id}/active-turn",
+            op_path("sessions.by_session_id.active_turn.post", session_id=session_id),
         )
