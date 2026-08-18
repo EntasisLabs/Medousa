@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use futures_util::StreamExt;
-use httparse::{Request, Status, EMPTY_HEADER};
+use httparse::{EMPTY_HEADER, Request, Status};
 use iroh::endpoint::Connection;
 use iroh::protocol::{AcceptError, ProtocolHandler, Router};
 use iroh::{Endpoint, SecretKey, endpoint::presets};
@@ -134,9 +134,7 @@ pub async fn spawn_workshop_gateway_with_secret(
         client: Arc::new(build_upstream_client()?),
         accept_limit: Arc::new(Semaphore::new(MAX_CONCURRENT_PROXY_STREAMS)),
     };
-    let router = Router::builder(endpoint)
-        .accept(ALPN, proxy)
-        .spawn();
+    let router = Router::builder(endpoint).accept(ALPN, proxy).spawn();
     Ok(WorkshopGateway { router, info })
 }
 
@@ -215,7 +213,11 @@ async fn forward_request_stream(
     send: &mut iroh::endpoint::SendStream,
 ) -> Result<()> {
     let (method, path, header_end) = parse_request_line(raw)?;
-    if method != "GET" && method != "HEAD" && method != "POST" && method != "PUT" && method != "DELETE"
+    if method != "GET"
+        && method != "HEAD"
+        && method != "POST"
+        && method != "PUT"
+        && method != "DELETE"
     {
         bail!("unsupported HTTP method {method}");
     }
@@ -325,17 +327,12 @@ async fn forward_request_stream(
 fn parse_request_line(raw: &[u8]) -> Result<(String, String, usize)> {
     let mut headers = [EMPTY_HEADER; 32];
     let mut request = Request::new(&mut headers);
-    let status = request
-        .parse(raw)
-        .context("parse HTTP request")?;
+    let status = request.parse(raw).context("parse HTTP request")?;
     let header_end = match status {
         Status::Complete(offset) => offset,
         Status::Partial => bail!("incomplete HTTP request"),
     };
-    let method = request
-        .method
-        .context("missing HTTP method")?
-        .to_string();
+    let method = request.method.context("missing HTTP method")?.to_string();
     let path = request.path.context("missing HTTP path")?.to_string();
     Ok((method, path, header_end))
 }
@@ -344,9 +341,7 @@ fn parse_headers(raw: &[u8], header_end: usize) -> Result<Vec<(String, String)>>
     let header_bytes = &raw[..header_end];
     let mut headers = [EMPTY_HEADER; 32];
     let mut request = Request::new(&mut headers);
-    let status = request
-        .parse(header_bytes)
-        .context("parse HTTP headers")?;
+    let status = request.parse(header_bytes).context("parse HTTP headers")?;
     if !matches!(status, Status::Complete(_)) {
         bail!("incomplete HTTP headers");
     }

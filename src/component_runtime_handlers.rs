@@ -1,9 +1,9 @@
 //! HTTP handlers for component runtime logs and probes.
 
+use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
-use axum::Json;
 use medousa_types::component_runtime::{
     ComponentRuntimeEventsQuery, ComponentRuntimeEventsRequest, ComponentRuntimeEventsResponse,
     ComponentRuntimeEventsTailResponse, ComponentRuntimeProbeResult,
@@ -92,10 +92,7 @@ async fn append_runtime_events(
     Path(component_id): Path<String>,
     Json(body): Json<ComponentRuntimeEventsRequest>,
 ) -> Result<Json<ComponentRuntimeEventsResponse>, (StatusCode, String)> {
-    let profile_id = resolve_profile_id(
-        body.profile_id
-            .as_deref(),
-    );
+    let profile_id = resolve_profile_id(body.profile_id.as_deref());
     let component_id = component_id.trim();
     ensure_component_allowed(&profile_id, component_id).await?;
     let session_id = body.session_id.as_deref();
@@ -103,10 +100,7 @@ async fn append_runtime_events(
         .append_events(&profile_id, component_id, session_id, &body.events)
         .await
         .map_err(internal_error)?;
-    Ok(Json(ComponentRuntimeEventsResponse {
-        ok: true,
-        accepted,
-    }))
+    Ok(Json(ComponentRuntimeEventsResponse { ok: true, accepted }))
 }
 
 async fn tail_runtime_events(

@@ -1,12 +1,12 @@
 //! Platform helpers to obtain a Git binary when missing.
 
-use std::path::PathBuf;
 #[cfg(any(windows, test))]
 use std::io::Cursor;
+use std::path::PathBuf;
 
-use anyhow::{Result, bail};
 #[cfg(any(windows, test))]
 use anyhow::Context;
+use anyhow::{Result, bail};
 #[cfg(windows)]
 use medousa_install_support::shared_bin_dir;
 
@@ -28,9 +28,7 @@ pub struct GitInstallProgress {
 }
 
 /// Install portable Git when possible. macOS/Linux return guidance errors.
-pub async fn install_portable_git(
-    mut progress: impl FnMut(GitInstallProgress),
-) -> Result<PathBuf> {
+pub async fn install_portable_git(mut progress: impl FnMut(GitInstallProgress)) -> Result<PathBuf> {
     if let Some(existing) = resolve_git_binary() {
         return Ok(existing);
     }
@@ -56,16 +54,12 @@ pub async fn install_portable_git(
 }
 
 #[cfg(not(windows))]
-async fn install_mingit_windows(
-    _progress: &mut impl FnMut(GitInstallProgress),
-) -> Result<PathBuf> {
+async fn install_mingit_windows(_progress: &mut impl FnMut(GitInstallProgress)) -> Result<PathBuf> {
     bail!("portable Git download is only available on Windows")
 }
 
 #[cfg(windows)]
-async fn install_mingit_windows(
-    progress: &mut impl FnMut(GitInstallProgress),
-) -> Result<PathBuf> {
+async fn install_mingit_windows(progress: &mut impl FnMut(GitInstallProgress)) -> Result<PathBuf> {
     if !cfg!(windows) {
         bail!("portable Git download is only available on Windows");
     }
@@ -78,11 +72,7 @@ async fn install_mingit_windows(
     let client = reqwest::Client::builder()
         .build()
         .context("build HTTP client")?;
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .context("download MinGit")?;
+    let response = client.get(url).send().await.context("download MinGit")?;
     if !response.status().is_success() {
         bail!("download failed: {}", response.status());
     }
@@ -162,9 +152,7 @@ fn extract_zip(bytes: &[u8], extract_dir: &std::path::Path) -> Result<()> {
             bail!("MinGit archive exceeds the 512 MiB extraction limit");
         }
     }
-    archive
-        .extract(extract_dir)
-        .context("extract MinGit zip")
+    archive.extract(extract_dir).context("extract MinGit zip")
 }
 
 #[cfg(test)]

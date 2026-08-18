@@ -7,6 +7,15 @@ use stasis::prelude::{RuntimeBackend, SurrealAuth};
 const DEFAULT_NAMESPACE: &str = "medousa";
 const DEFAULT_DATABASE: &str = "runtime";
 
+/// Fixed in-process SurrealKV memtable. Must not follow the engine's RAM-proportional
+/// default (16 GiB hosts select a 1 GiB arena because the bucket is `mem < 16 GiB`).
+pub const DEFAULT_DESKTOP_SURREALKV_MEMTABLE_BYTES: u64 = 64 * 1024 * 1024;
+/// Fixed in-process SurrealKV block-cache cap (engine default is RAM/2 − 1 GiB).
+pub const DEFAULT_DESKTOP_SURREALKV_BLOCK_CACHE_BYTES: u64 = 32 * 1024 * 1024;
+
+const ENV_DETAMU_MEMTABLE_BYTES: &str = "MEDOUSA_DETAMU_MEMTABLE_BYTES";
+const ENV_DETAMU_BLOCK_CACHE_BYTES: &str = "MEDOUSA_DETAMU_BLOCK_CACHE_BYTES";
+
 #[derive(Debug, Clone, Default)]
 pub struct SurrealConnectionSettings {
     pub endpoint: Option<String>,
@@ -142,7 +151,10 @@ pub fn apply_surreal_auth_to_backend(
 /// `product_config.json` / `MEDOUSA_SURREAL_ENDPOINT` (via [`resolve_surreal_connection_settings`])
 /// wins over a URL embedded in `--backend` or `onboard_profile.daemon_backend`, so stale profile
 /// values cannot override a corrected Surreal endpoint.
-pub fn resolve_surreal_ws_endpoint(raw_backend: &str, settings: &SurrealConnectionSettings) -> String {
+pub fn resolve_surreal_ws_endpoint(
+    raw_backend: &str,
+    settings: &SurrealConnectionSettings,
+) -> String {
     if let Some(endpoint) = settings
         .endpoint
         .as_deref()
@@ -174,11 +186,19 @@ pub fn resolve_daemon_launch_backend(
     }
 
     let settings = resolve_surreal_connection_settings(product, defaults);
-    if let Some(endpoint) = settings.endpoint.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    if let Some(endpoint) = settings
+        .endpoint
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         return format!("surreal-ws:{endpoint}");
     }
 
-    if let Some(backend) = profile_daemon_backend.map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(backend) = profile_daemon_backend
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         return backend.to_string();
     }
 
@@ -198,7 +218,12 @@ pub fn sync_profile_daemon_backend(
     defaults: &TuiDefaults,
 ) {
     let settings = resolve_surreal_connection_settings(product, defaults);
-    if let Some(endpoint) = settings.endpoint.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    if let Some(endpoint) = settings
+        .endpoint
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         *profile_daemon_backend = Some(format!("surreal-ws:{endpoint}"));
     }
 }
@@ -232,16 +257,17 @@ fn strip_endpoint_userinfo(endpoint: &str) -> (String, Option<String>, Option<St
 
     let (username, password) = auth
         .split_once(':')
-        .map(|(user, pass)| (decode_userinfo_component(user), decode_userinfo_component(pass)))
+        .map(|(user, pass)| {
+            (
+                decode_userinfo_component(user),
+                decode_userinfo_component(pass),
+            )
+        })
         .unwrap_or_else(|| (decode_userinfo_component(auth), String::new()));
 
     let username = (!username.is_empty()).then_some(username);
     let password = (!password.is_empty()).then_some(password);
-    (
-        format!("{scheme}{host_rest}"),
-        username,
-        password,
-    )
+    (format!("{scheme}{host_rest}"), username, password)
 }
 
 fn decode_userinfo_component(value: &str) -> String {
@@ -272,6 +298,43 @@ fn decode_userinfo_component(value: &str) -> String {
     out
 }
 
+/// Bytes before `?` so LOCK / mkdir treat the engine query string as not part of the path.
+pub fn surrealkv_filesystem_path(path: &str) -> &str {
+    path.split_once('?')
+        .map(|(prefix, _)| prefix)
+        .unwrap_or(path)
+}
+
+pub fn desktop_surrealkv_memtable_bytes() -> u64 {
+    parse_positive_bytes_env(ENV_DETAMU_MEMTABLE_BYTES)
+        .unwrap_or(DEFAULT_DESKTOP_SURREALKV_MEMTABLE_BYTES)
+}
+
+pub fn desktop_surrealkv_block_cache_bytes() -> u64 {
+    parse_positive_bytes_env(ENV_DETAMU_BLOCK_CACHE_BYTES)
+        .unwrap_or(DEFAULT_DESKTOP_SURREALKV_BLOCK_CACHE_BYTES)
+}
+
+fn parse_positive_bytes_env(key: &str) -> Option<u64> {
+    std::env::var(key)
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .filter(|value| *value > 0)
+}
+
+/// Append desktop memtable/cache/vlog caps unless the path already has a query string.
+pub fn with_desktop_surrealkv_caps(path: &str) -> String {
+    let path = path.trim();
+    if path.is_empty() || path.contains('?') {
+        return path.to_string();
+    }
+    format!(
+        "{path}?surrealkv_max_memtable_size={}&surrealkv_block_cache_capacity={}&surrealkv_enable_vlog=false",
+        desktop_surrealkv_memtable_bytes(),
+        desktop_surrealkv_block_cache_bytes(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -290,8 +353,7 @@ mod tests {
 
     #[test]
     fn strips_userinfo_from_ws_endpoint() {
-        let (endpoint, auth) =
-            split_endpoint_userinfo("ws://root:pass@127.0.0.1:8000/rpc");
+        let (endpoint, auth) = split_endpoint_userinfo("ws://root:pass@127.0.0.1:8000/rpc");
         assert_eq!(endpoint, "ws://127.0.0.1:8000/rpc");
         let auth = auth.expect("auth");
         assert_eq!(auth.username, "root");
@@ -318,5 +380,42 @@ mod tests {
         };
         let out = resolve_surreal_ws_endpoint("surreal-ws:ws://10.12.0.11:906/rpc", &settings);
         assert_eq!(out, "ws://10.12.0.13:9096/rpc");
+    }
+
+    #[test]
+    fn desktop_surrealkv_caps_append_default_query() {
+        let _lock = crate::test_env::lock();
+        let endpoint = with_desktop_surrealkv_caps("/tmp/runtime.surrealkv");
+        assert!(
+            endpoint.starts_with("/tmp/runtime.surrealkv?"),
+            "{endpoint}"
+        );
+        assert!(endpoint.contains("surrealkv_max_memtable_size=67108864"));
+        assert!(endpoint.contains("surrealkv_block_cache_capacity=33554432"));
+        assert!(endpoint.contains("surrealkv_enable_vlog=false"));
+        assert_eq!(
+            surrealkv_filesystem_path(&endpoint),
+            "/tmp/runtime.surrealkv"
+        );
+    }
+
+    #[test]
+    fn desktop_surrealkv_caps_skip_existing_query() {
+        let path = "/tmp/db?surrealkv_max_memtable_size=1";
+        assert_eq!(with_desktop_surrealkv_caps(path), path);
+    }
+
+    #[test]
+    fn desktop_surrealkv_memtable_honors_env() {
+        let _guard = crate::test_env::set_var(ENV_DETAMU_MEMTABLE_BYTES, "1048576");
+        let endpoint = with_desktop_surrealkv_caps("/tmp/runtime.surrealkv");
+        assert!(endpoint.contains("surrealkv_max_memtable_size=1048576"));
+    }
+
+    #[test]
+    fn desktop_surrealkv_block_cache_honors_env() {
+        let _guard = crate::test_env::set_var(ENV_DETAMU_BLOCK_CACHE_BYTES, "2097152");
+        let endpoint = with_desktop_surrealkv_caps("/tmp/runtime.surrealkv");
+        assert!(endpoint.contains("surrealkv_block_cache_capacity=2097152"));
     }
 }

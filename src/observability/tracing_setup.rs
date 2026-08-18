@@ -45,8 +45,7 @@ fn init_tracing_inner() -> String {
         .or_else(|_| std::env::var("RUST_LOG"))
         .unwrap_or_else(|_| "medousa=info,stasis=warn".to_string());
 
-    let env_filter =
-        EnvFilter::try_new(filter).unwrap_or_else(|_| EnvFilter::new("medousa=info"));
+    let env_filter = EnvFilter::try_new(filter).unwrap_or_else(|_| EnvFilter::new("medousa=info"));
 
     #[cfg(feature = "otel-export")]
     {
@@ -67,8 +66,8 @@ fn init_tracing_inner() -> String {
 fn init_with_otel(env_filter: EnvFilter) -> String {
     use opentelemetry::KeyValue;
     use opentelemetry_otlp::WithExportConfig;
-    use opentelemetry_sdk::trace::TracerProvider;
     use opentelemetry_sdk::Resource;
+    use opentelemetry_sdk::trace::TracerProvider;
 
     let endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
         .unwrap_or_else(|_| "http://localhost:4317".to_string());

@@ -7,10 +7,12 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use chrono::Utc;
 use medousa_types::authority_id::EnvironmentProfileId;
-use medousa_types::environment::{EnvironmentSpec, EnvironmentStreamEvent, EnvironmentPendingProposal};
-use medousa_types::environment_default::{default_environment_spec, DEFAULT_PROFILE_ID};
+use medousa_types::environment::{
+    EnvironmentPendingProposal, EnvironmentSpec, EnvironmentStreamEvent,
+};
+use medousa_types::environment_default::{DEFAULT_PROFILE_ID, default_environment_spec};
 use medousa_types::environment_validate::is_valid_environment_spec;
-use tokio::sync::{broadcast, RwLock as AsyncRwLock};
+use tokio::sync::{RwLock as AsyncRwLock, broadcast};
 
 use crate::store_root::{StorePath, StoreRoot};
 
@@ -88,8 +90,8 @@ impl EnvironmentHub {
             Err(error) => return Err(error.into()),
         };
         if let Some(raw) = raw {
-            let spec: EnvironmentSpec = serde_json::from_slice(&raw)
-                .context("parse environment spec")?;
+            let spec: EnvironmentSpec =
+                serde_json::from_slice(&raw).context("parse environment spec")?;
             if is_valid_environment_spec(&spec) {
                 return Ok(EnvironmentRecord {
                     revision: spec.updated_at.timestamp() as u64,
@@ -106,10 +108,7 @@ impl EnvironmentHub {
 
     async fn persist_default(profile_id: &str) -> Result<EnvironmentRecord> {
         let spec = default_environment_spec(profile_id);
-        let record = EnvironmentRecord {
-            revision: 1,
-            spec,
-        };
+        let record = EnvironmentRecord { revision: 1, spec };
         Self::persist_record(profile_id, &record).await?;
         Ok(record)
     }
@@ -136,7 +135,11 @@ impl EnvironmentHub {
         Ok(record)
     }
 
-    pub async fn put(&self, mut spec: EnvironmentSpec, updated_by: &str) -> Result<EnvironmentRecord> {
+    pub async fn put(
+        &self,
+        mut spec: EnvironmentSpec,
+        updated_by: &str,
+    ) -> Result<EnvironmentRecord> {
         if !is_valid_environment_spec(&spec) {
             anyhow::bail!("invalid environment spec");
         }
@@ -165,11 +168,7 @@ impl EnvironmentHub {
         Ok(record)
     }
 
-    pub async fn set_pending(
-        &self,
-        profile_id: &str,
-        proposal: EnvironmentPendingProposal,
-    ) {
+    pub async fn set_pending(&self, profile_id: &str, proposal: EnvironmentPendingProposal) {
         let mut guard = self.pending.write().await;
         guard.insert(profile_id.to_string(), proposal);
     }

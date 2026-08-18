@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::daemon_api::{WorkBoardColumn, WorkCardAssociations, WorkspaceEvent};
 use crate::session;
-use crate::workspace::persist::{queue_mutation, startup_projection, WorkspaceMutation};
+use crate::workspace::persist::{WorkspaceMutation, queue_mutation, startup_projection};
 
 const FEED_FILE: &str = "workspace/feed.jsonl";
 const REVISION_FILE: &str = "workspace/revision";
@@ -93,9 +93,10 @@ impl WorkspaceStore {
         }
 
         if let Ok(raw) = std::fs::read_to_string(Self::path(REVISION_FILE))
-            && let Ok(value) = raw.trim().parse::<u64>() {
-                *self.revision.lock().expect("revision") = value;
-            }
+            && let Ok(value) = raw.trim().parse::<u64>()
+        {
+            *self.revision.lock().expect("revision") = value;
+        }
 
         let mut events = VecDeque::new();
         if let Ok(file) = File::open(Self::path(FEED_FILE)) {
@@ -116,25 +117,27 @@ impl WorkspaceStore {
         *self.feed.lock().expect("feed") = events;
 
         if let Ok(raw) = std::fs::read_to_string(Self::path(CARD_STATE_FILE))
-            && let Ok(snapshot) = serde_json::from_str::<CardStateSnapshot>(&raw) {
-                *self.card_states.write().expect("card states") = snapshot;
-            }
+            && let Ok(snapshot) = serde_json::from_str::<CardStateSnapshot>(&raw)
+        {
+            *self.card_states.write().expect("card states") = snapshot;
+        }
 
         if let Ok(raw) = std::fs::read_to_string(Self::path(ASSOC_FILE))
-            && let Ok(rows) = serde_json::from_str::<Vec<AssociationRecord>>(&raw) {
-                let mut map = HashMap::new();
-                for row in rows {
-                    map.insert(
-                        row.card_id.clone(),
-                        WorkCardAssociations {
-                            vault_paths: row.vault_paths,
-                            artifact_ids: row.artifact_ids,
-                            locus_node_ids: row.locus_node_ids,
-                        },
-                    );
-                }
-                *self.associations.write().expect("associations") = map;
+            && let Ok(rows) = serde_json::from_str::<Vec<AssociationRecord>>(&raw)
+        {
+            let mut map = HashMap::new();
+            for row in rows {
+                map.insert(
+                    row.card_id.clone(),
+                    WorkCardAssociations {
+                        vault_paths: row.vault_paths,
+                        artifact_ids: row.artifact_ids,
+                        locus_node_ids: row.locus_node_ids,
+                    },
+                );
             }
+            *self.associations.write().expect("associations") = map;
+        }
     }
 
     pub fn revision(&self) -> u64 {
@@ -159,9 +162,8 @@ impl WorkspaceStore {
             let Some(evicted) = feed.pop_front() else {
                 break;
             };
-            *feed_bytes = feed_bytes.saturating_sub(
-                serde_json::to_vec(&evicted).map_or(0, |bytes| bytes.len()),
-            );
+            *feed_bytes = feed_bytes
+                .saturating_sub(serde_json::to_vec(&evicted).map_or(0, |bytes| bytes.len()));
         }
         drop(feed_bytes);
         drop(feed);

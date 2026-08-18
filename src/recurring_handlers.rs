@@ -48,12 +48,16 @@ fn truncate_line(value: &str, max: usize) -> String {
     if line.chars().count() <= max {
         line.to_string()
     } else {
-        format!("{}…", line.chars().take(max.saturating_sub(1)).collect::<String>())
+        format!(
+            "{}…",
+            line.chars().take(max.saturating_sub(1)).collect::<String>()
+        )
     }
 }
 
 fn prompt_excerpt_from_recurring(definition: &RecurringDefinition) -> Option<String> {
-    let payload = serde_json::from_str::<serde_json::Value>(&definition.payload_template_ref).ok()?;
+    let payload =
+        serde_json::from_str::<serde_json::Value>(&definition.payload_template_ref).ok()?;
     let prompt = payload.get("user_prompt")?.as_str()?.trim();
     if prompt.is_empty() {
         return None;
@@ -72,7 +76,10 @@ pub fn display_name_from_payload(payload_ref: &str) -> Option<String> {
 }
 
 pub fn inject_display_name_into_payload(payload_ref: &str, display_name: Option<&str>) -> String {
-    let Some(display_name) = display_name.map(str::trim).filter(|value| !value.is_empty()) else {
+    let Some(display_name) = display_name
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
         return payload_ref.to_string();
     };
     let Ok(mut payload) = serde_json::from_str::<serde_json::Value>(payload_ref) else {
@@ -139,9 +146,9 @@ async fn definition_to_entry(
         &definition.id,
         RecurringRunsQuery { limit: Some(1) },
     )
-        .await
-        .ok()
-        .and_then(|response| response.runs.first().map(|run| run.status.clone()));
+    .await
+    .ok()
+    .and_then(|response| response.runs.first().map(|run| run.status.clone()));
 
     RecurringDefinitionEntry {
         recurring_id: definition.id.clone(),
@@ -211,7 +218,10 @@ pub async fn list_recurring_runs(
     query: RecurringRunsQuery,
 ) -> stasis::prelude::Result<RecurringRunsResponse> {
     let limit = query.limit.unwrap_or(20).clamp(1, 100);
-    if get_recurring_definition(runtime, recurring_id).await?.is_none() {
+    if get_recurring_definition(runtime, recurring_id)
+        .await?
+        .is_none()
+    {
         return Err(StasisError::PortFailure(format!(
             "recurring_id={recurring_id} not found"
         )));
@@ -380,7 +390,9 @@ pub async fn delete_recurring(
     runtime: &RuntimeComposition,
     recurring_id: &str,
 ) -> stasis::prelude::Result<DeleteRecurringResponse> {
-    let exists = get_recurring_definition(runtime, recurring_id).await?.is_some();
+    let exists = get_recurring_definition(runtime, recurring_id)
+        .await?
+        .is_some();
     if !exists {
         return Err(StasisError::PortFailure(format!(
             "recurring_id={recurring_id} not found"

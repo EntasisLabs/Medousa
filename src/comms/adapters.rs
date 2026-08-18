@@ -110,7 +110,10 @@ impl Transport for HttpAdapter {
             builder = builder.body(body.clone());
         }
 
-        let response = builder.send().await.map_err(|err| map_reqwest_error(&err))?;
+        let response = builder
+            .send()
+            .await
+            .map_err(|err| map_reqwest_error(&err))?;
         let status = response.status().as_u16();
         let headers = response
             .headers()
@@ -156,7 +159,10 @@ impl Transport for HttpAdapter {
                 body: ResponseBody::Stream(rx),
             })
         } else {
-            let bytes = response.bytes().await.map_err(|err| map_reqwest_error(&err))?;
+            let bytes = response
+                .bytes()
+                .await
+                .map_err(|err| map_reqwest_error(&err))?;
             Ok(TransportResponse {
                 kind: self.kind,
                 status,
@@ -226,7 +232,9 @@ impl Transport for IrohAdapter {
                         }
                         Ok(None) => break,
                         Err(err) => {
-                            let _ = tx.send(Err(TransportError::protocol(err.to_string()))).await;
+                            let _ = tx
+                                .send(Err(TransportError::protocol(err.to_string())))
+                                .await;
                             break;
                         }
                     }

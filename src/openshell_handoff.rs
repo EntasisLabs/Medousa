@@ -90,7 +90,9 @@ pub fn resolve_openshell_local_bin(name: &str) -> Option<PathBuf> {
     [
         home.join(".local").join("openshell").join("bin").join(name),
         home.join(".local").join("bin").join(name),
-    ].into_iter().find(|candidate| candidate.is_file())
+    ]
+    .into_iter()
+    .find(|candidate| candidate.is_file())
 }
 
 pub fn podman_user_socket_path() -> PathBuf {
@@ -204,14 +206,12 @@ fn count_yaml_policies(dir: &Path) -> usize {
 
 pub fn install_starter_openshell_policies_if_missing() -> Result<bool> {
     let target = medousa_openshell_policies_dir();
-    std::fs::create_dir_all(&target)
-        .with_context(|| format!("create {}", target.display()))?;
+    std::fs::create_dir_all(&target).with_context(|| format!("create {}", target.display()))?;
     let mut wrote_any = false;
     for (name, contents) in STARTER_OPENSHELL_POLICIES {
         let path = target.join(name);
         if !path.exists() {
-            std::fs::write(&path, contents)
-                .with_context(|| format!("write {}", path.display()))?;
+            std::fs::write(&path, contents).with_context(|| format!("write {}", path.display()))?;
             wrote_any = true;
         }
     }
@@ -281,7 +281,10 @@ mod tests {
 
     #[test]
     fn probe_tcp_parses_host_port() {
-        assert!(!probe_tcp_endpoint("http://127.0.0.1:1", Duration::from_millis(50)));
+        assert!(!probe_tcp_endpoint(
+            "http://127.0.0.1:1",
+            Duration::from_millis(50)
+        ));
     }
 
     #[test]

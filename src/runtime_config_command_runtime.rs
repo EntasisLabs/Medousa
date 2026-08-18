@@ -4,7 +4,9 @@ use crate::daemon_api::{
     RuntimeConfigCommandRequest, RuntimeConfigCommandResponse, RuntimeConfigCommandSpec,
     RuntimeVerifyPolicyState,
 };
-use crate::reasoning_effort::{normalize_reasoning_effort_value, reasoning_effort_hint, REASONING_EFFORT_DEFAULT};
+use crate::reasoning_effort::{
+    REASONING_EFFORT_DEFAULT, normalize_reasoning_effort_value, reasoning_effort_hint,
+};
 
 pub fn execute_runtime_config_command(
     request: RuntimeConfigCommandRequest,
@@ -53,11 +55,15 @@ pub fn execute_runtime_config_command(
                     next_response_depth_mode,
                 ))
             } else {
-                let normalized = normalize_response_depth_mode(mode.as_deref().unwrap_or("standard"));
+                let normalized =
+                    normalize_response_depth_mode(mode.as_deref().unwrap_or("standard"));
                 next_response_depth_mode = normalized.clone();
                 should_persist_depth_defaults = true;
                 let hint = depth_mode_hint(&normalized);
-                Some(format!("✓ response depth mode set to {} ({hint})", normalized))
+                Some(format!(
+                    "✓ response depth mode set to {} ({hint})",
+                    normalized
+                ))
             }
         }
         RuntimeConfigCommandSpec::Reasoning { mode } => {
@@ -68,8 +74,9 @@ pub fn execute_runtime_config_command(
                     next_reasoning_effort,
                 ))
             } else {
-                let normalized =
-                    normalize_reasoning_effort_value(mode.as_deref().unwrap_or(REASONING_EFFORT_DEFAULT));
+                let normalized = normalize_reasoning_effort_value(
+                    mode.as_deref().unwrap_or(REASONING_EFFORT_DEFAULT),
+                );
                 next_reasoning_effort = normalized.clone();
                 should_persist_reasoning_defaults = true;
                 let hint = reasoning_effort_hint(&normalized);

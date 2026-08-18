@@ -85,17 +85,20 @@ fn try_load_from_env() -> anyhow::Result<Option<ApnsConfig>> {
         Some(value) => value,
         None => return Ok(None),
     };
-    let key_id = env_trimmed("MEDOUSA_APNS_KEY_ID")
-        .ok_or_else(|| anyhow::anyhow!("MEDOUSA_APNS_TEAM_ID is set but MEDOUSA_APNS_KEY_ID is missing"))?;
-    let key_path = env_trimmed("MEDOUSA_APNS_KEY_PATH")
-        .ok_or_else(|| anyhow::anyhow!("MEDOUSA_APNS_TEAM_ID is set but MEDOUSA_APNS_KEY_PATH is missing"))?;
-    let key_pem = fs::read_to_string(&key_path)
-        .with_context(|| format!("read APNs key at {key_path}"))?;
+    let key_id = env_trimmed("MEDOUSA_APNS_KEY_ID").ok_or_else(|| {
+        anyhow::anyhow!("MEDOUSA_APNS_TEAM_ID is set but MEDOUSA_APNS_KEY_ID is missing")
+    })?;
+    let key_path = env_trimmed("MEDOUSA_APNS_KEY_PATH").ok_or_else(|| {
+        anyhow::anyhow!("MEDOUSA_APNS_TEAM_ID is set but MEDOUSA_APNS_KEY_PATH is missing")
+    })?;
+    let key_pem =
+        fs::read_to_string(&key_path).with_context(|| format!("read APNs key at {key_path}"))?;
     Ok(Some(ApnsConfig {
         team_id,
         key_id,
         key_pem,
-        bundle_id: env_trimmed("MEDOUSA_APNS_BUNDLE_ID").unwrap_or_else(|| DEFAULT_BUNDLE_ID.to_string()),
+        bundle_id: env_trimmed("MEDOUSA_APNS_BUNDLE_ID")
+            .unwrap_or_else(|| DEFAULT_BUNDLE_ID.to_string()),
         sandbox: parse_sandbox_env(),
     }))
 }
@@ -252,7 +255,12 @@ mod tests {
     }
 
     fn resolve_key_path_in(base: &Path, file: &ApnsConfigFile) -> Result<PathBuf> {
-        if let Some(name) = file.key_file.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        if let Some(name) = file
+            .key_file
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+        {
             let path = Path::new(name);
             if path.is_absolute() {
                 return Ok(path.to_path_buf());

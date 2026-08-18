@@ -1073,10 +1073,7 @@ mod tests {
                 "Bearer access-secret"
             );
             assert_eq!(headers.get("chatgpt-account-id").unwrap(), "acct_123");
-            assert_eq!(
-                headers.get("originator").unwrap(),
-                CODEX_COMPAT_ORIGINATOR
-            );
+            assert_eq!(headers.get("originator").unwrap(), CODEX_COMPAT_ORIGINATOR);
             assert_eq!(headers.get("version").unwrap(), CODEX_COMPAT_VERSION);
             assert_eq!(
                 headers.get("user-agent").unwrap(),

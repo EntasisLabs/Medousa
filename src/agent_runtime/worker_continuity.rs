@@ -231,10 +231,7 @@ pub fn record_in_process_delegation(record: &InProcessDelegationRecord) {
         record.work_id,
         record.session_id,
         record.intent,
-        record
-            .parent_turn_correlation_id
-            .as_deref()
-            .unwrap_or("-"),
+        record.parent_turn_correlation_id.as_deref().unwrap_or("-"),
         record.parent_stream_turn_id,
         record.sequential,
         record.manuscript_id.as_deref().unwrap_or("-"),
@@ -309,8 +306,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            speaker_profile_id: None,
-        })
+                speaker_profile_id: None,
+            })
             .collect::<Vec<_>>();
 
         let excerpts = select_handoff_conversation_excerpts(&conversation);
@@ -330,8 +327,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            speaker_profile_id: None,
-        }],
+                speaker_profile_id: None,
+            }],
             Some("turn-abc".to_string()),
         );
         let block = bundle.format_user_block();

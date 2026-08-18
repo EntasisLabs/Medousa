@@ -60,15 +60,13 @@ use super::turn_worker::{
 use crate::turn_continuation::StoredDeliveryTarget;
 use crate::turn_slice::session_scratch_seed_from_history;
 
-use super::provider_stream::{
-    ProviderStreamBridge as TurnStreamBridge, fail_on_stream_overflow,
-};
 #[cfg(test)]
 use super::provider_stream::{
     PROVIDER_STREAM_BYTE_CAPACITY as STREAM_BRIDGE_BYTE_CAPACITY,
     PROVIDER_STREAM_MESSAGE_CAPACITY as STREAM_BRIDGE_MESSAGE_CAPACITY,
     ProviderStreamReport as AttemptStreamReport,
 };
+use super::provider_stream::{ProviderStreamBridge as TurnStreamBridge, fail_on_stream_overflow};
 pub const MAX_PRIOR_TOTAL_CHARS: usize = 24_000;
 pub const MAX_SINGLE_PRIOR_MESSAGE_CHARS: usize = 4_000;
 pub const DEFAULT_HOT_WINDOW_TURNS: usize = 8;
@@ -792,10 +790,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
     super::turn_worker::with_worker_parent_scope(execute_local_turn_inner(sink, params)).await;
 }
 
-async fn execute_local_turn_inner(
-    sink: SharedAgentStreamSink,
-    params: LocalTurnExecutionParams,
-) {
+async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurnExecutionParams) {
     let LocalTurnExecutionParams {
         agent_mode,
         turn_id,
@@ -925,31 +920,31 @@ async fn execute_local_turn_inner(
         turn_scope: turn_scope.clone(),
     };
     let worker_bus = ActiveWorkerBusSession {
-            sink: sink.clone(),
-            stream_turn_id: turn_id,
-            session_id: session_id.clone(),
-            identity_user_id: scope_snapshot
-                .as_ref()
-                .and_then(|scope| scope.identity_user_id.clone()),
-            backend: backend.clone(),
-            parent_user_prompt: original_prompt.clone(),
-            provider: provider.clone(),
-            model: model.clone(),
-            response_depth_mode: response_depth_mode.clone(),
-            parent_turn_correlation_id: scope_snapshot
-                .as_ref()
-                .map(|scope| scope.turn_correlation_id.clone()),
-            delivery_target: scope_snapshot
-                .as_ref()
-                .and_then(|scope| scope.delivery_target.as_ref())
-                .map(StoredDeliveryTarget::from),
-            host_handoff_slot: host_handoff_slot.clone(),
-            host_continuity_bundle,
-            configured_max_tool_rounds: turn_loop_settings.configured_max_tool_rounds,
-            supports_ui_artifacts: params.supports_ui_artifacts,
-            supports_liquid_markdown: params.supports_liquid_markdown,
-            supports_browser_host: params.supports_browser_host,
-        };
+        sink: sink.clone(),
+        stream_turn_id: turn_id,
+        session_id: session_id.clone(),
+        identity_user_id: scope_snapshot
+            .as_ref()
+            .and_then(|scope| scope.identity_user_id.clone()),
+        backend: backend.clone(),
+        parent_user_prompt: original_prompt.clone(),
+        provider: provider.clone(),
+        model: model.clone(),
+        response_depth_mode: response_depth_mode.clone(),
+        parent_turn_correlation_id: scope_snapshot
+            .as_ref()
+            .map(|scope| scope.turn_correlation_id.clone()),
+        delivery_target: scope_snapshot
+            .as_ref()
+            .and_then(|scope| scope.delivery_target.as_ref())
+            .map(StoredDeliveryTarget::from),
+        host_handoff_slot: host_handoff_slot.clone(),
+        host_continuity_bundle,
+        configured_max_tool_rounds: turn_loop_settings.configured_max_tool_rounds,
+        supports_ui_artifacts: params.supports_ui_artifacts,
+        supports_liquid_markdown: params.supports_liquid_markdown,
+        supports_browser_host: params.supports_browser_host,
+    };
     let _worker_parent_lease = match worker_scheduler.register_parent(worker_runtime, worker_bus) {
         Ok(lease) => lease,
         Err(error) => {
@@ -1909,9 +1904,9 @@ mod stream_bridge_tests {
         let attempt = bridge.attempt();
         attempt
             .sender()
-            .send(StreamDelta::Content("x".repeat(
-                STREAM_BRIDGE_BYTE_CAPACITY + 1,
-            )))
+            .send(StreamDelta::Content(
+                "x".repeat(STREAM_BRIDGE_BYTE_CAPACITY + 1),
+            ))
             .await
             .expect("provider delta");
 

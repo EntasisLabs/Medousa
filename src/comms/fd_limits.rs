@@ -79,10 +79,7 @@ fn rlim_to_u64(value: libc::rlim_t) -> u64 {
 /// Non-unix fallback: nothing to raise.
 #[cfg(not(unix))]
 pub fn raise_nofile_limit(_target: u64) -> std::io::Result<NofileLimits> {
-    Ok(NofileLimits {
-        soft: 0,
-        hard: 0,
-    })
+    Ok(NofileLimits { soft: 0, hard: 0 })
 }
 
 #[cfg(all(test, unix))]

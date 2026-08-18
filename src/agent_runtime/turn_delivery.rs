@@ -19,8 +19,7 @@ pub fn classify_agent_turn_delivery(
     tool_names: &[String],
     hint: AgentTurnDeliveryHint<'_>,
 ) -> AgentTurnDeliveryKind {
-    if hint.activation_reason == "classifier_clarify"
-        || hint.activation_reason.contains("clarify")
+    if hint.activation_reason == "classifier_clarify" || hint.activation_reason.contains("clarify")
     {
         return AgentTurnDeliveryKind::NeedsInput;
     }

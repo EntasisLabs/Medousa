@@ -100,8 +100,8 @@ impl Reconnector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::Duration;
 
     fn fast_backoff(max_attempts: Option<u32>) -> BackoffPolicy {
@@ -124,11 +124,7 @@ mod tests {
                 let calls = calls2.clone();
                 async move {
                     let n = calls.fetch_add(1, Ordering::SeqCst);
-                    if n < 2 {
-                        Err(())
-                    } else {
-                        Ok(())
-                    }
+                    if n < 2 { Err(()) } else { Ok(()) }
                 }
             })
             .await

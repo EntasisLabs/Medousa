@@ -25,16 +25,18 @@ pub(crate) fn refuse_host_keyring() -> Result<(), keyring::Error> {
 
 pub(crate) fn panic_if_hermetic_host(what: &str) {
     if hermetic() {
-        panic!(
-            "TEST-001 hermetic suite forbids host {what}; inject fakes or #[ignore] the test"
-        );
+        panic!("TEST-001 hermetic suite forbids host {what}; inject fakes or #[ignore] the test");
     }
 }
 
 pub(crate) struct EnvLock(#[allow(dead_code)] MutexGuard<'static, ()>);
 
 pub(crate) fn lock() -> EnvLock {
-    EnvLock(ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner()))
+    EnvLock(
+        ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()),
+    )
 }
 
 pub(crate) struct EnvVarGuard {

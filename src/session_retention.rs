@@ -22,7 +22,10 @@ impl SessionRetentionConfig {
     pub fn from_env() -> Self {
         Self {
             locus_raw_max_age_days: parse_env_u32("MEDOUSA_LOCUS_RAW_RETENTION_DAYS", 0),
-            runtime_terminal_max_age_days: parse_env_u32("MEDOUSA_RUNTIME_TERMINAL_RETENTION_DAYS", 0),
+            runtime_terminal_max_age_days: parse_env_u32(
+                "MEDOUSA_RUNTIME_TERMINAL_RETENTION_DAYS",
+                0,
+            ),
         }
     }
 
@@ -57,30 +60,32 @@ pub async fn run_retention_pass(
     }
 
     if config.locus_raw_max_age_days > 0
-        && let Some(ops) = memory_operations {
-            let cutoff = Utc::now() - ChronoDuration::days(i64::from(config.locus_raw_max_age_days));
-            if let Ok(response) = ops
-                .evict(&MemoryEvictRequest {
-                    mode: MemoryEvictMode::ByFilter,
-                    scope: MemoryScope {
-                        tiers: Some(vec!["raw".to_string()]),
-                        to_utc: Some(cutoff),
-                        ..Default::default()
-                    },
-                    filter: MemoryFilter::default(),
-                    dry_run: false,
-                    force: false,
-                    max_nodes: 10_000,
+        && let Some(ops) = memory_operations
+    {
+        let cutoff = Utc::now() - ChronoDuration::days(i64::from(config.locus_raw_max_age_days));
+        if let Ok(response) = ops
+            .evict(&MemoryEvictRequest {
+                mode: MemoryEvictMode::ByFilter,
+                scope: MemoryScope {
+                    tiers: Some(vec!["raw".to_string()]),
+                    to_utc: Some(cutoff),
                     ..Default::default()
-                })
-                .await
-            {
-                report.locus_raw_deleted = response.deleted;
-            }
+                },
+                filter: MemoryFilter::default(),
+                dry_run: false,
+                force: false,
+                max_nodes: 10_000,
+                ..Default::default()
+            })
+            .await
+        {
+            report.locus_raw_deleted = response.deleted;
         }
+    }
 
     if config.runtime_terminal_max_age_days > 0 {
-        let cutoff = Utc::now() - ChronoDuration::days(i64::from(config.runtime_terminal_max_age_days));
+        let cutoff =
+            Utc::now() - ChronoDuration::days(i64::from(config.runtime_terminal_max_age_days));
         match composition {
             RuntimeComposition::Surreal(rt) => {
                 if let Ok(summary) = rt.prune_terminal_records(cutoff).await {

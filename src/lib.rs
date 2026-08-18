@@ -1,233 +1,233 @@
-pub mod engine_adapters;
-pub mod engine_recovery;
-pub mod sse_turn_projection;
 pub mod adapter_ingest;
+pub mod agent_permission_request;
 pub mod agent_runtime;
-pub mod channel_delivery;
-pub mod comms;
-pub mod recurring_delivery;
-pub mod recurring_feed;
-pub mod recurring_schedule;
-pub mod runtime_job_spec;
-pub mod feed_sink;
-pub mod recurring_agent_turn;
-pub mod recurring_handlers;
-pub mod line_grep;
 pub mod artifact_chunking;
-pub mod artifact_tools;
 pub mod artifact_command_runtime;
 pub mod artifact_extraction;
 pub mod artifact_maintenance_job;
 pub mod artifact_retention;
 pub mod artifact_store;
+pub mod artifact_tools;
+pub mod capability_catalog;
+pub mod channel_delivery;
+pub mod channel_session_store;
+pub mod chat_history_tools;
+pub mod comms;
+pub mod context_pack;
+pub mod engine_adapters;
+pub mod engine_recovery;
+pub mod feed_sink;
+pub mod grapheme_handlers;
+pub mod grapheme_host_catalog;
+pub mod grapheme_lsp_bridge;
+pub mod grapheme_medousa_bridge;
+pub mod grapheme_script;
+pub mod grapheme_script_tools;
+pub mod grapheme_workshop;
+pub mod learning_artifacts;
+pub mod line_grep;
 pub mod maintenance_handlers;
+pub mod manuscript_overlay_tools;
+pub mod mcp_daemon_handlers;
 pub mod media_handlers;
 pub mod media_store;
 pub mod media_text_extract;
 pub mod media_vision;
 pub mod model_capability_registry;
-pub mod channel_session_store;
-pub mod turn_continuation;
-pub mod turn_parts;
-pub mod turn_slice;
+pub mod recurring_agent_turn;
+pub mod recurring_delivery;
+pub mod recurring_feed;
+pub mod recurring_handlers;
+pub mod recurring_schedule;
+pub mod runtime_composition_ext;
+pub mod runtime_job_spec;
+pub mod semantic_values;
+pub mod sse_turn_projection;
 pub mod tool_bootstrap;
-pub(crate) mod tool_catalog;
 pub mod tool_bootstrap_tools;
-pub mod chat_history_tools;
-pub mod tool_history_tools;
-pub mod tool_history_index;
+pub(crate) mod tool_catalog;
+pub mod tool_error;
 pub mod tool_history_handlers;
-pub mod grapheme_script;
-pub mod grapheme_script_tools;
-pub mod grapheme_handlers;
-pub mod grapheme_host_catalog;
-pub mod grapheme_lsp_bridge;
-pub mod grapheme_medousa_bridge;
-pub mod grapheme_workshop;
-pub mod learning_artifacts;
-pub mod manuscript_overlay_tools;
-pub mod turn_budget_request;
-pub mod agent_permission_request;
+pub mod tool_history_index;
+pub mod tool_history_tools;
 pub mod turn_budget_handlers;
 pub mod turn_budget_notify;
-pub mod turn_worker_notify;
+pub mod turn_budget_request;
+pub mod turn_continuation;
 pub mod turn_control_tools;
-pub mod typed_tools;
-pub mod semantic_values;
-pub mod tool_error;
-pub mod runtime_composition_ext;
+pub mod turn_parts;
+pub mod turn_slice;
 pub mod turn_text_heuristics;
-pub mod context_pack;
-pub mod capability_catalog;
-pub mod mcp_daemon_handlers;
+pub mod turn_worker_notify;
+pub mod typed_tools;
 /// Re-export slim MCP gateway crate (binary lives in adapters/medousa-mcp-gateway).
 pub use medousa_mcp_gateway::mcp_gateway;
-pub mod openshell_handoff;
-pub mod openshell_sandbox_run;
-pub mod openshell_tools;
-pub mod shell_sandbox;
-pub mod shell_grapheme;
-pub mod shell_tools;
-pub mod coding_tools;
-pub mod detamu_tools;
-pub mod code_intelligence_tools;
-pub mod observability;
-pub mod ui_present_tools;
-pub mod ui_scene_tools;
-pub mod ui_build_tools;
-pub mod mcp_gateway_client;
-pub mod mcp_gateway_api;
-pub mod mcp_turn_token;
-pub mod mcp_policy;
-pub mod daemon;
-pub mod daemon_api;
-pub mod daemon_self_url;
-pub mod local_daemon_auth;
-pub mod local_credential_handlers;
-pub mod credential_lifecycle;
-pub mod daemon_handlers;
-pub mod vault;
-pub mod vault_handlers;
-pub mod vault_git;
-pub mod vault_git_handlers;
-pub mod vault_tools;
+pub mod artifact_html_lint;
 pub mod calendar;
 pub mod calendar_handlers;
 pub mod calendar_tools;
-pub mod workspace;
-pub mod workspace_handlers;
+pub mod chatgpt_oauth;
+pub mod code_intelligence_tools;
+pub mod coding_tools;
+pub mod cognitive_identity;
+pub mod cognitive_identity_writer;
+pub mod component_runtime_diagnostics;
+pub mod component_runtime_handlers;
+pub mod component_runtime_store;
+pub mod component_store;
+pub mod component_store_handlers;
+pub mod context_pointer_index;
+pub mod context_pointer_tools;
+pub mod credential_lifecycle;
+pub mod custom_view_status;
+pub mod custom_view_tools;
+pub mod daemon;
+pub mod daemon_api;
+pub mod daemon_handlers;
+pub mod daemon_self_url;
+pub mod detamu_tools;
+pub mod engine_context;
+pub mod environment_handlers;
+pub mod environment_patch;
+pub mod environment_store;
+pub mod environment_tools;
+pub mod environment_wiki_tools;
+pub mod events;
+pub mod execution_policy;
 pub mod feed_adapters;
 pub mod feed_bus;
 pub mod feed_handlers;
 pub mod feed_store;
 pub mod feed_tools;
-pub mod component_store;
-pub mod component_store_handlers;
-pub mod artifact_html_lint;
-pub mod component_runtime_store;
-pub mod component_runtime_handlers;
-pub mod component_runtime_diagnostics;
-pub mod layout_tools;
-pub mod environment_handlers;
-pub mod environment_store;
-pub mod environment_tools;
-pub mod environment_wiki_tools;
-pub mod custom_view_status;
-pub mod environment_patch;
-pub mod custom_view_tools;
-pub mod context_pointer_index;
-pub mod context_pointer_tools;
-pub mod engine_context;
-pub mod events;
-pub mod execution_policy;
-pub mod medousa_tool_loop;
 pub mod grapheme_sttp_compaction;
-pub mod identity_markdown;
 pub mod identity_manuscript;
-pub mod manuscript_handlers;
-pub mod skill_import;
-pub mod skill_execution;
-pub mod skill_ingest;
-pub mod skill_tools;
-pub mod manuscript_tools;
-pub mod cognitive_identity;
-pub mod cognitive_identity_writer;
+pub mod identity_markdown;
 pub mod identity_memory;
 pub mod identity_store_ext;
 pub mod identity_tools;
 pub mod identity_write_policy;
 pub mod inference_profiles;
 pub mod inference_profiles_handlers;
-pub mod model_route;
 pub mod inference_router;
-pub mod chatgpt_oauth;
-pub mod openai_codex_chat_client;
-pub mod stt;
-pub mod stt_handlers;
-pub mod user_profiles;
-pub mod profile_portability;
+pub mod install;
+pub mod layout_tools;
+pub mod local_credential_handlers;
+pub mod local_daemon_auth;
 pub mod locus_handlers;
 pub mod locus_memory;
-pub mod install;
+pub mod manuscript_handlers;
+pub mod manuscript_tools;
+pub mod mcp_gateway_api;
+pub mod mcp_gateway_client;
+pub mod mcp_policy;
+pub mod mcp_turn_token;
+pub mod medousa_tool_loop;
+pub mod model_route;
+pub mod observability;
+pub mod openai_codex_chat_client;
+pub mod openshell_handoff;
+pub mod openshell_sandbox_run;
+pub mod openshell_tools;
+pub mod profile_portability;
+pub mod shell_grapheme;
+pub mod shell_sandbox;
+pub mod shell_tools;
+pub mod skill_execution;
+pub mod skill_import;
+pub mod skill_ingest;
+pub mod skill_tools;
+pub mod stt;
+pub mod stt_handlers;
+pub mod ui_build_tools;
+pub mod ui_present_tools;
+pub mod ui_scene_tools;
+pub mod user_profiles;
+pub mod vault;
+pub mod vault_git;
+pub mod vault_git_handlers;
+pub mod vault_handlers;
+pub mod vault_tools;
+pub mod workspace;
+pub mod workspace_handlers;
 pub use medousa_local_inference as local_inference;
-pub mod local_inference_cli;
-pub mod local_inference_handlers;
-pub mod memory_tools;
-pub mod tool_aliases;
-pub mod tool_names;
-#[cfg(test)]
-mod tool_contract_baseline;
 pub mod adapter_heartbeat;
-pub mod paths;
-#[cfg(test)]
-pub(crate) mod test_env;
-pub mod product_config;
-pub mod ingest_stream;
-pub mod interactive_turn_runtime;
-pub mod home_push;
-pub mod home_live_activity;
-pub mod home_widget_push;
-pub mod pairing;
-pub mod pairing_handlers;
-pub mod lan_handlers;
-pub mod share;
-pub mod share_handlers;
-pub mod peer_messages;
-pub mod peer_message_handlers;
-pub mod peer_scope;
-pub mod request_principal;
-pub mod mesh;
-pub mod remote_trust;
-pub mod iroh_transport;
-pub mod payload_receipt;
-pub mod shared_mode;
-pub mod shared_session_catalog;
-pub mod runtime_config_command_runtime;
-pub mod reasoning_effort;
-pub mod session;
-pub mod session_catalog;
-pub mod session_active_turn;
-pub mod turn_failure;
-pub mod turn_ticket;
-pub mod service_launch;
-pub mod session_mapping;
-pub mod session_store;
-pub mod session_storage;
-pub mod store_root;
-pub mod persistence;
-pub mod session_writer;
-pub mod session_lifecycle;
-pub mod session_deletion;
-pub mod session_migration;
-pub mod session_retention;
-pub mod locus_semantic_tags;
-pub mod session_meta_store;
 pub mod agent_mode_state;
-pub mod surreal_config;
-pub mod settings_guard;
-pub mod stage_route_command_runtime;
-pub mod stage_routing;
 pub mod bridge_tools;
 pub mod browser_act_tools;
 pub mod browser_fetch_tools;
 pub mod browser_handlers;
-pub mod client_tools;
 pub mod browser_host_client;
 pub mod browser_search;
 pub mod browser_sessions;
 pub mod browser_snapshot_tools;
 pub mod browser_tools;
+pub mod client_tools;
+pub mod home_live_activity;
+pub mod home_push;
+pub mod home_widget_push;
+pub mod ingest_stream;
+pub mod interactive_turn_runtime;
+pub mod iroh_transport;
+pub mod lan_handlers;
+pub mod local_inference_cli;
+pub mod local_inference_handlers;
+pub mod locus_semantic_tags;
+pub mod memory_tools;
+pub mod mesh;
+pub mod pairing;
+pub mod pairing_handlers;
+pub mod paths;
+pub mod payload_receipt;
+pub mod peer_message_handlers;
+pub mod peer_messages;
+pub mod peer_scope;
+pub mod persistence;
+pub mod product_config;
+pub mod reasoning_effort;
+pub mod remote_trust;
+pub mod request_principal;
 pub mod runtime;
+pub mod runtime_config_command_runtime;
 pub mod runtime_session;
 pub mod runtime_tools;
-pub mod workflow_handlers;
-pub mod workflow;
-pub mod workflow_plan;
-pub mod workshop_env;
+pub mod service_launch;
+pub mod session;
+pub mod session_active_turn;
+pub mod session_catalog;
+pub mod session_deletion;
+pub mod session_lifecycle;
+pub mod session_mapping;
+pub mod session_meta_store;
+pub mod session_migration;
+pub mod session_retention;
+pub mod session_storage;
+pub mod session_store;
+pub mod session_writer;
+pub mod settings_guard;
+pub mod share;
+pub mod share_handlers;
+pub mod shared_mode;
+pub mod shared_session_catalog;
+pub mod stage_route_command_runtime;
+pub mod stage_routing;
+pub mod store_root;
+pub mod surreal_config;
+#[cfg(test)]
+pub(crate) mod test_env;
+pub mod tool_aliases;
+#[cfg(test)]
+mod tool_contract_baseline;
+pub mod tool_names;
 pub mod tools;
 pub mod tui;
+pub mod turn_failure;
+pub mod turn_ticket;
 pub mod verification_store;
 pub mod verifier;
+pub mod workflow;
+pub mod workflow_handlers;
+pub mod workflow_plan;
+pub mod workshop_env;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -245,70 +245,56 @@ use stasis::ports::outbound::runtime::delivery_endpoint_store::DeliveryEndpointS
 use stasis::prelude::{RuntimeBackend, RuntimeComposition, StasisRuntimeBuilder};
 use stasis::runtime_prelude_ext::InMemoryDeliveryEndpointStore;
 
-pub use daemon_api::{
-    ArtifactCommandRequest, ArtifactCommandResponse, ArtifactCommandSpec,
-    ArtifactFetchRequest, ArtifactFetchResponse, ArtifactListUiRequest, ArtifactListUiResponse,
-    ArtifactDeleteRequest, ArtifactDeleteResponse, ArtifactWriteRequest, ArtifactWriteResponse,
-    ArtifactSummary, ArtifactVerificationPolicyInput, DaemonStatsResponse, EnqueueAskRequest,
-    EnqueuePromptRequest, EnqueueReportRequest, EnqueueResponse,
-    HealthResponse, HeartbeatDeliveryMetricsResponse, HeartbeatDeliveryPolicyResponse,
-    HeartbeatPolicyResponse, HeartbeatStatusResponse,
-    IngestRequest, IngestResponse, IngestAttachment,
-    DeliverPollResponse, DeliveryHealthResponse, ContinuationStatusResponse,
-    TurnContinuationLineageResponse, ReplayAndResumeResponse,
-    InteractiveTurnRequest, InteractiveTurnResponse, InteractiveTurnStreamEvent,
-    MediaRef, MediaUploadResponse, TurnSurfaceContext,
-    IdentityContextRequest, JobCitationResponse, JobEvidenceReportResponse,
-    ArchiveAskJobRequest, ArchiveAskJobResponse, AskJobCompleteActionsRequest,
-    AskJobCompleteActionsResponse, JobReportResponse, RegisterRecurringPromptRequest,
-    JobResultResponse,
-    RuntimeConfigCommandRequest, RuntimeConfigCommandResponse, RuntimeConfigCommandSpec,
-    RuntimeVerifyPolicyState,
-    SessionAppendTurnRequest, SessionAppendTurnResponse, SessionHistoryListRequest,
-    SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameRequest,
-    SessionSetDisplayNameResponse,
-    RegisterRecurringResponse, StageRouteCommandRequest, StageRouteCommandResponse,
-    StageRouteCommandSpec, resolve_daemon_url,
-};
-pub use capability_catalog::{
-    CapabilityBinding, CapabilityDefinition, CapabilityImplementations, CapabilityListEntry,
-    CapabilityListResponse, CapabilityManifest, CapabilityManifestBindings,
-    CapabilityManifestEntry, CapabilityRecommendation, CapabilityRegistry,
-    CapabilityResolveRequest, CapabilityResolveResponse, CapabilitySearchMatch,
-    CapabilitySearchRequest, CapabilitySearchResponse, CapabilitySource, GraphemeCapabilityBindingSpec,
-    McpCapabilityBindingSpec, McpCatalogSyncEntry, McpCatalogSyncResponse,
-    CapabilityReindexResponse, capabilities_manifest_path, embedded_capability_manifest,
-    load_capability_manifest,
-};
-pub use mcp_gateway_api::{
-    McpAdminStatusResponse, McpDiscoverRequest, McpDiscoverResponse, McpEffectClass,
-    McpGatewayHealthResponse, McpInvokeError, McpInvokeRequest, McpInvokeResponse,
-    McpPolicyDecision, McpPolicyEvaluateRequest, McpPolicyEvaluateResponse, McpServerSummary,
-    McpServersResponse, McpToolCatalogEntry, McpTurnContext, McpTurnLane,
-    resolve_mcp_gateway_url, DEFAULT_MCP_GATEWAY_BIND, DEFAULT_MCP_GATEWAY_URL,
-};
-pub use medousa_types::{
-    McpGatewayHealthSnapshot, McpGatewayServerRuntime, McpGatewayStatusResponse,
-};
-pub use product_config::{
-    ProductConfig, load_product_config, save_product_config, ingest_sender_allowed,
-    apply_adapter_env, apply_daemon_env, apply_surreal_env, apply_surreal_env_from_fields,
-    parse_u64_csv, parse_i64_csv, format_u64_csv, format_i64_csv, SurrealProductConfig,
-    migrate_from_onboard_profile,
-};
-pub use surreal_config::{
-    resolve_daemon_launch_backend, resolve_surreal_connection_settings, sync_profile_daemon_backend,
-};
-pub use ingest_stream::{build_ingest_stream_url, consume_ingest_stream, render_stream_body};
-pub use workshop_env::{apply_workshop_llm_env, load_dotenv_overlay};
 pub use adapter_ingest::{
-    AdapterDeliveryOutcome, default_delivery_timeout, fetch_job_result, format_ingest_ack,
-    should_send_immediate_ingest_reply, wait_for_ask_delivery, ADAPTER_COMMAND_HINT,
+    ADAPTER_COMMAND_HINT, AdapterDeliveryOutcome, default_delivery_timeout, fetch_job_result,
+    format_ingest_ack, should_send_immediate_ingest_reply, wait_for_ask_delivery,
 };
 pub use agent_runtime::{
     AgentStreamEvent, AgentTurnRequest, MedousaAgentRuntime, build_agent_runtime,
     build_daemon_agent_runtime, run_agent_turn, run_daemon_interactive_turn,
 };
+pub use capability_catalog::{
+    CapabilityBinding, CapabilityDefinition, CapabilityImplementations, CapabilityListEntry,
+    CapabilityListResponse, CapabilityManifest, CapabilityManifestBindings,
+    CapabilityManifestEntry, CapabilityRecommendation, CapabilityRegistry,
+    CapabilityReindexResponse, CapabilityResolveRequest, CapabilityResolveResponse,
+    CapabilitySearchMatch, CapabilitySearchRequest, CapabilitySearchResponse, CapabilitySource,
+    GraphemeCapabilityBindingSpec, McpCapabilityBindingSpec, McpCatalogSyncEntry,
+    McpCatalogSyncResponse, capabilities_manifest_path, embedded_capability_manifest,
+    load_capability_manifest,
+};
+pub use daemon_api::{
+    ArchiveAskJobRequest, ArchiveAskJobResponse, ArtifactCommandRequest, ArtifactCommandResponse,
+    ArtifactCommandSpec, ArtifactDeleteRequest, ArtifactDeleteResponse, ArtifactFetchRequest,
+    ArtifactFetchResponse, ArtifactListUiRequest, ArtifactListUiResponse, ArtifactSummary,
+    ArtifactVerificationPolicyInput, ArtifactWriteRequest, ArtifactWriteResponse,
+    AskJobCompleteActionsRequest, AskJobCompleteActionsResponse, ContinuationStatusResponse,
+    DaemonStatsResponse, DeliverPollResponse, DeliveryHealthResponse, EnqueueAskRequest,
+    EnqueuePromptRequest, EnqueueReportRequest, EnqueueResponse, HealthResponse,
+    HeartbeatDeliveryMetricsResponse, HeartbeatDeliveryPolicyResponse, HeartbeatPolicyResponse,
+    HeartbeatStatusResponse, IdentityContextRequest, IngestAttachment, IngestRequest,
+    IngestResponse, InteractiveTurnRequest, InteractiveTurnResponse, InteractiveTurnStreamEvent,
+    JobCitationResponse, JobEvidenceReportResponse, JobReportResponse, JobResultResponse, MediaRef,
+    MediaUploadResponse, RegisterRecurringPromptRequest, RegisterRecurringResponse,
+    ReplayAndResumeResponse, RuntimeConfigCommandRequest, RuntimeConfigCommandResponse,
+    RuntimeConfigCommandSpec, RuntimeVerifyPolicyState, SessionAppendTurnRequest,
+    SessionAppendTurnResponse, SessionHistoryListRequest, SessionHistoryListResponse,
+    SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
+    StageRouteCommandRequest, StageRouteCommandResponse, StageRouteCommandSpec,
+    TurnContinuationLineageResponse, TurnSurfaceContext, resolve_daemon_url,
+};
+pub use ingest_stream::{build_ingest_stream_url, consume_ingest_stream, render_stream_body};
+pub use mcp_gateway::{
+    STARTER_MCP_GATEWAY_TOML, gateway_config_path, install_starter_gateway_config_if_missing,
+};
+pub use mcp_gateway_api::{
+    DEFAULT_MCP_GATEWAY_BIND, DEFAULT_MCP_GATEWAY_URL, McpAdminStatusResponse, McpDiscoverRequest,
+    McpDiscoverResponse, McpEffectClass, McpGatewayHealthResponse, McpInvokeError,
+    McpInvokeRequest, McpInvokeResponse, McpPolicyDecision, McpPolicyEvaluateRequest,
+    McpPolicyEvaluateResponse, McpServerSummary, McpServersResponse, McpToolCatalogEntry,
+    McpTurnContext, McpTurnLane, resolve_mcp_gateway_url,
+};
+pub use mcp_gateway_client::{McpGatewayClient, gateway_auth_configured};
 pub use medousa_engine::{
     self, AgentStreamSink, ChannelToolSink, EngineTurnHandle, Principal, PrincipalKind,
     RecoveredTurn, SequencedTurnEvent, SharedAgentStreamSink, StoreError, ToolSinkEvent,
@@ -316,24 +302,33 @@ pub use medousa_engine::{
     TurnStorePort, TurnStreamRegistryPort, TurnSurface, TurnTicketPort, UpsertOutcome,
     configure_log_root, default_log_root, project_turn_to_history, recover_uncommitted, run_turn,
 };
-pub use mcp_gateway_client::{McpGatewayClient, gateway_auth_configured};
-pub use mcp_gateway::{
-    gateway_config_path, install_starter_gateway_config_if_missing, STARTER_MCP_GATEWAY_TOML,
+pub use medousa_types::{
+    McpGatewayHealthSnapshot, McpGatewayServerRuntime, McpGatewayStatusResponse,
 };
 pub use openshell_handoff::{
-    collect_openshell_doctor_report, install_starter_openshell_policies_if_missing,
-    resolve_openshell_gateway_url, DEFAULT_OPENSHELL_GATEWAY_URL, ENV_OPENSHELL_GATEWAY_URL,
+    DEFAULT_OPENSHELL_GATEWAY_URL, ENV_OPENSHELL_GATEWAY_URL, collect_openshell_doctor_report,
+    install_starter_openshell_policies_if_missing, resolve_openshell_gateway_url,
 };
 pub use openshell_sandbox_run::{
-    register_openshell_sandbox_run_handler, OpenshellSandboxRunPayload,
-    OPENSHELL_SANDBOX_RUN_JOB_TYPE,
+    OPENSHELL_SANDBOX_RUN_JOB_TYPE, OpenshellSandboxRunPayload,
+    register_openshell_sandbox_run_handler,
+};
+pub use product_config::{
+    ProductConfig, SurrealProductConfig, apply_adapter_env, apply_daemon_env, apply_surreal_env,
+    apply_surreal_env_from_fields, format_i64_csv, format_u64_csv, ingest_sender_allowed,
+    load_product_config, migrate_from_onboard_profile, parse_i64_csv, parse_u64_csv,
+    save_product_config,
 };
 pub use runtime::{
     MedousaPlatformRuntime, PlatformBuildConfig, TuiPlatformBuildConfig, TuiPlatformMode,
     build_daemon_platform, build_medousa_platform, build_tui_platform, is_daemon_bind_reachable,
     resolve_tui_platform_mode,
 };
+pub use surreal_config::{
+    resolve_daemon_launch_backend, resolve_surreal_connection_settings, sync_profile_daemon_backend,
+};
 pub use tools::{TuiRuntime, build_tui_runtime};
+pub use workshop_env::{apply_workshop_llm_env, load_dotenv_overlay};
 
 const DEFAULT_LLM_MODEL: &str = "gpt-4o-mini";
 const DEFAULT_LLM_PROVIDER: &str = "openai";
@@ -568,8 +563,7 @@ pub async fn build_daemon_runtime(
     });
 
     let in_memory_endpoint_store = if matches!(backend, RuntimeBackend::InMemory) {
-        Some(Arc::new(InMemoryDeliveryEndpointStore::default())
-            as Arc<dyn DeliveryEndpointStore>)
+        Some(Arc::new(InMemoryDeliveryEndpointStore::default()) as Arc<dyn DeliveryEndpointStore>)
     } else {
         None
     };
@@ -649,7 +643,8 @@ pub fn parse_backend(value: Option<&str>) -> RuntimeBackend {
 }
 
 fn parse_surreal_kv_path(raw: &str) -> String {
-    raw.strip_prefix("surreal-kv:")
+    let path = raw
+        .strip_prefix("surreal-kv:")
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
@@ -657,7 +652,8 @@ fn parse_surreal_kv_path(raw: &str) -> String {
         .or_else(|| std::env::var("STASIS_SURREALKV_PATH").ok())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(default_surrealkv_path)
+        .unwrap_or_else(default_surrealkv_path);
+    surreal_config::with_desktop_surrealkv_caps(&path)
 }
 
 fn default_surrealkv_path() -> String {
@@ -669,7 +665,7 @@ fn default_surrealkv_path() -> String {
 
 pub(crate) fn ensure_runtime_backend_prerequisites(backend: &RuntimeBackend) -> Result<()> {
     if let RuntimeBackend::SurrealKv { path, .. } = backend {
-        let path_buf = PathBuf::from(path);
+        let path_buf = PathBuf::from(surreal_config::surrealkv_filesystem_path(path));
         if let Some(parent) = path_buf.parent()
             && !parent.as_os_str().is_empty()
         {
@@ -690,7 +686,7 @@ pub(crate) fn ensure_runtime_backend_prerequisites(backend: &RuntimeBackend) -> 
 /// Remove a leftover SurrealKV `LOCK` file when no daemon holds the database.
 pub fn clear_stale_surrealkv_lock(backend: &RuntimeBackend) -> Result<()> {
     if let RuntimeBackend::SurrealKv { path, .. } = backend {
-        let lock_path = PathBuf::from(path).join("LOCK");
+        let lock_path = PathBuf::from(surreal_config::surrealkv_filesystem_path(path)).join("LOCK");
         if !lock_path.exists() {
             return Ok(());
         }
@@ -710,7 +706,9 @@ pub fn clear_stale_surrealkv_lock(backend: &RuntimeBackend) -> Result<()> {
 /// Path to the SurrealKV lock file for diagnostics (`None` for non-KV backends).
 pub fn surrealkv_lock_path(backend: &RuntimeBackend) -> Option<PathBuf> {
     match backend {
-        RuntimeBackend::SurrealKv { path, .. } => Some(PathBuf::from(path).join("LOCK")),
+        RuntimeBackend::SurrealKv { path, .. } => {
+            Some(PathBuf::from(surreal_config::surrealkv_filesystem_path(path)).join("LOCK"))
+        }
         _ => None,
     }
 }
@@ -718,15 +716,16 @@ pub fn surrealkv_lock_path(backend: &RuntimeBackend) -> Option<PathBuf> {
 /// Remove the SurrealKV lock file for a given backend (used during graceful shutdown).
 pub fn remove_surrealkv_lock(backend: &RuntimeBackend) {
     if let RuntimeBackend::SurrealKv { path, .. } = backend {
-        let lock_path = PathBuf::from(path).join("LOCK");
+        let lock_path = PathBuf::from(surreal_config::surrealkv_filesystem_path(path)).join("LOCK");
         if lock_path.exists()
-            && let Err(err) = std::fs::remove_file(&lock_path) {
-                tracing::warn!(
-                    path = %lock_path.display(),
-                    error = %err,
-                    "failed to remove SurrealKV lock file during shutdown"
-                );
-            }
+            && let Err(err) = std::fs::remove_file(&lock_path)
+        {
+            tracing::warn!(
+                path = %lock_path.display(),
+                error = %err,
+                "failed to remove SurrealKV lock file during shutdown"
+            );
+        }
     }
 }
 
@@ -776,5 +775,30 @@ mod genai_target_tests {
             genai_model_target("openai", "gpt-4o", None),
             "openai::gpt-4o"
         );
+    }
+}
+
+#[cfg(test)]
+mod surreal_kv_path_tests {
+    use super::*;
+    use stasis::prelude::RuntimeBackend;
+
+    #[test]
+    fn parse_surreal_kv_backend_gets_desktop_caps() {
+        let _lock = crate::test_env::lock();
+        let backend = parse_backend(Some("surreal-kv:/tmp/runtime.surrealkv"));
+        match backend {
+            RuntimeBackend::SurrealKv { path, .. } => {
+                assert!(path.starts_with("/tmp/runtime.surrealkv?"), "{path}");
+                assert!(path.contains("surrealkv_max_memtable_size=67108864"));
+                assert!(path.contains("surrealkv_block_cache_capacity=33554432"));
+                assert!(path.contains("surrealkv_enable_vlog=false"));
+                assert_eq!(
+                    surreal_config::surrealkv_filesystem_path(&path),
+                    "/tmp/runtime.surrealkv"
+                );
+            }
+            other => panic!("expected SurrealKv, got {other:?}"),
+        }
     }
 }

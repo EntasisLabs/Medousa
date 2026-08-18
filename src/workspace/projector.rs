@@ -10,7 +10,7 @@ use stasis::application::runtime::runtime_factory::RuntimeComposition;
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::daemon_api::WorkCard;
-use crate::workspace::card::{counts_by_column, project_workspace_items, ProjectedWorkItem};
+use crate::workspace::card::{ProjectedWorkItem, counts_by_column, project_workspace_items};
 use crate::workspace::domain_event::WorkspaceDomainEvent;
 use crate::workspace::event::event_for_column_transition;
 use crate::workspace::incremental::{domain_event_for_kind, project_domain_event};
@@ -96,9 +96,7 @@ impl WorkspaceHub {
     }
 
     pub fn notify_event(&self, event: WorkspaceDomainEvent) {
-        let _ = self
-            .request_tx
-            .try_send(ProjectorRequest::Event(event));
+        let _ = self.request_tx.try_send(ProjectorRequest::Event(event));
     }
 
     pub fn trigger_invalidate(&self) {
@@ -159,8 +157,7 @@ async fn run_projector_loop(
     snapshot_tx: watch::Sender<Arc<WorkspaceReadSnapshot>>,
     mut request_rx: mpsc::Receiver<ProjectorRequest>,
 ) {
-    let mut full_reconcile =
-        tokio::time::interval(Duration::from_secs(FULL_RECONCILE_SECS));
+    let mut full_reconcile = tokio::time::interval(Duration::from_secs(FULL_RECONCILE_SECS));
     full_reconcile.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let _ = full_reconcile.tick().await;
 
@@ -378,16 +375,10 @@ fn apply_item_column_transition(item: &ProjectedWorkItem) {
     let card_id = &item.card.id.0;
     let previous = store.previous_column(card_id);
     if previous != Some(item.card.column) {
-        if let Some(event) =
-            event_for_column_transition(&item.detail, previous, item.card.column)
-        {
+        if let Some(event) = event_for_column_transition(&item.detail, previous, item.card.column) {
             store.append_event(event);
         }
-        crate::home_push::notify_column_transition(
-            &item.detail,
-            previous,
-            item.card.column,
-        );
+        crate::home_push::notify_column_transition(&item.detail, previous, item.card.column);
         store.remember_column(card_id, item.card.column);
     }
 }

@@ -43,10 +43,10 @@ use stasis::application::orchestration::tool_registry::{
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta};
 
-use crate::agent_runtime::stream_sink::{AgentStreamSink, SharedAgentStreamSink};
 use crate::agent_runtime::execution_context::{
     ProviderRoute, SurfaceCapabilities, TurnExecutionContext, with_turn_execution_context,
 };
+use crate::agent_runtime::stream_sink::{AgentStreamSink, SharedAgentStreamSink};
 use crate::agent_runtime::turn_completion::ToolLoopCompletionGate;
 use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use crate::payload_receipt::ArtifactReceiptMeta;
@@ -458,8 +458,8 @@ async fn run_golden(
             None,
         ),
     )
-        .await
-        .expect("golden tool loop should not error");
+    .await
+    .expect("golden tool loop should not error");
 
     drop(chunk_tx);
     if let Some(handle) = bridge {
@@ -522,8 +522,8 @@ async fn golden_round_context_is_injected_before_the_next_inference() {
             None,
         ),
     )
-        .await
-        .expect("tool loop");
+    .await
+    .expect("tool loop");
     assert_eq!(response.termination_reason, "cognition_turn_finish");
     let requests = client.requests();
     assert!(requests.len() >= 2);
@@ -571,8 +571,8 @@ async fn golden_large_tool_output_is_bounded_for_model_but_preserved_in_receipt(
             None,
         ),
     )
-        .await
-        .expect("tool loop");
+    .await
+    .expect("tool loop");
     assert_eq!(
         response.tool_invocations[0].tool_output["content"]
             .as_str()
@@ -620,8 +620,8 @@ async fn golden_model_visible_tools_refresh_after_a_tool_round() {
             None,
         ),
     )
-        .await
-        .expect("tool loop");
+    .await
+    .expect("tool loop");
     let requests = client.requests();
     assert!(requests.len() >= 2);
     assert!(

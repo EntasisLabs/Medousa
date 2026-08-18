@@ -2,10 +2,10 @@
 
 use chrono::Utc;
 use medousa_types::feed::{FeedRef, FeedSource, WORKSHOP_PULSE_FEED_ID};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::agent_runtime::turn_worker::{TurnWorkRecord, TurnWorkStatus};
-use crate::feed_bus::{publish, FeedPublishRequest};
+use crate::feed_bus::{FeedPublishRequest, publish};
 use crate::recurring_feed::FeedPayloadMode;
 
 pub const TRIP_LONDON_TRAINS_FEED_ID: &str = "trip.london.trains";
@@ -70,10 +70,7 @@ pub async fn publish_workshop_finish_activity(
         "workId": record.work_id,
         "sessionId": record.session_id,
     });
-    if let Some(excerpt) = excerpt
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
+    if let Some(excerpt) = excerpt.map(str::trim).filter(|value| !value.is_empty()) {
         payload["excerpt"] = Value::String(truncate(excerpt, 400));
     }
     let _ = publish(FeedPublishRequest {
@@ -93,7 +90,10 @@ pub async fn publish_workshop_started(record: &TurnWorkRecord) {
         profile_id: None,
         feed_id: WORKSHOP_PULSE.to_string(),
         source: medousa_types::feed::FeedSource::BoundWorkshop,
-        summary: format!("Bound workshop started — {}", truncate(&record.task_prompt, 80)),
+        summary: format!(
+            "Bound workshop started — {}",
+            truncate(&record.task_prompt, 80)
+        ),
         refs: workshop_refs(record),
         payload_slice: Some(json!({
             "phase": "started",
@@ -106,11 +106,7 @@ pub async fn publish_workshop_started(record: &TurnWorkRecord) {
     .await;
 }
 
-pub async fn publish_workshop_working(
-    record: &TurnWorkRecord,
-    round: u32,
-    tools: &[String],
-) {
+pub async fn publish_workshop_working(record: &TurnWorkRecord, round: u32, tools: &[String]) {
     let tool_list: Vec<_> = tools.iter().take(12).cloned().collect();
     let _ = publish(FeedPublishRequest {
         profile_id: None,
@@ -146,7 +142,11 @@ pub async fn publish_workshop_synthesis(record: &TurnWorkRecord, excerpt: &str) 
     .await;
 }
 
-pub async fn publish_workshop_terminal(record: &TurnWorkRecord, phase: &str, excerpt: Option<&str>) {
+pub async fn publish_workshop_terminal(
+    record: &TurnWorkRecord,
+    phase: &str,
+    excerpt: Option<&str>,
+) {
     let status = match record.status {
         TurnWorkStatus::Completed => "done",
         TurnWorkStatus::Failed => "failed",
@@ -223,14 +223,10 @@ pub struct RecurringTickContext {
 pub async fn publish_recurring_tick(feed_id: &str, ctx: &RecurringTickContext) {
     let slice = build_recurring_tick_slice(ctx);
     let summary = match ctx.phase {
-        JobTerminalPhase::TickSucceeded => format!(
-            "Recurring tick succeeded — {}",
-            ctx.job_type.trim()
-        ),
-        JobTerminalPhase::TickFailed => format!(
-            "Recurring tick failed — {}",
-            ctx.job_type.trim()
-        ),
+        JobTerminalPhase::TickSucceeded => {
+            format!("Recurring tick succeeded — {}", ctx.job_type.trim())
+        }
+        JobTerminalPhase::TickFailed => format!("Recurring tick failed — {}", ctx.job_type.trim()),
     };
     let _ = publish(FeedPublishRequest {
         profile_id: None,
@@ -276,7 +272,9 @@ pub fn build_recurring_tick_slice(ctx: &RecurringTickContext) -> Value {
 
     let excerpt_source = match ctx.payload_mode {
         FeedPayloadMode::ParsedPoll => parsed_body_excerpt.or(raw_excerpt),
-        FeedPayloadMode::Summary | FeedPayloadMode::RawExcerpt => raw_excerpt.or(parsed_body_excerpt),
+        FeedPayloadMode::Summary | FeedPayloadMode::RawExcerpt => {
+            raw_excerpt.or(parsed_body_excerpt)
+        }
     };
     let excerpt = excerpt_source.map(|text| truncate(text, excerpt_cap));
 
@@ -287,7 +285,9 @@ pub fn build_recurring_tick_slice(ctx: &RecurringTickContext) -> Value {
     };
     let body_source = match ctx.payload_mode {
         FeedPayloadMode::ParsedPoll => parsed_body_excerpt.or(raw_excerpt),
-        FeedPayloadMode::Summary | FeedPayloadMode::RawExcerpt => raw_excerpt.or(parsed_body_excerpt),
+        FeedPayloadMode::Summary | FeedPayloadMode::RawExcerpt => {
+            raw_excerpt.or(parsed_body_excerpt)
+        }
     };
     let body = body_source
         .map(|text| truncate(text, body_cap))
@@ -314,14 +314,15 @@ pub fn build_recurring_tick_slice(ctx: &RecurringTickContext) -> Value {
     }
 
     if ctx.payload_mode == FeedPayloadMode::ParsedPoll
-        && let Some(parsed) = &ctx.parsed_poll {
-            if let Some(headers) = parsed.get("headerCount") {
-                payload["headerCount"] = headers.clone();
-            }
-            if let Some(body_len) = parsed.get("bodyLength") {
-                payload["bodyLength"] = body_len.clone();
-            }
+        && let Some(parsed) = &ctx.parsed_poll
+    {
+        if let Some(headers) = parsed.get("headerCount") {
+            payload["headerCount"] = headers.clone();
         }
+        if let Some(body_len) = parsed.get("bodyLength") {
+            payload["bodyLength"] = body_len.clone();
+        }
+    }
 
     payload
 }
@@ -372,10 +373,7 @@ fn looks_like_csv(text: &str) -> bool {
     if lines.len() < 2 {
         return false;
     }
-    let comma_lines = lines
-        .iter()
-        .filter(|line| line.contains(','))
-        .count();
+    let comma_lines = lines.iter().filter(|line| line.contains(',')).count();
     comma_lines >= 2 && comma_lines * 2 >= lines.len()
 }
 

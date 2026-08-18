@@ -534,19 +534,12 @@ async fn main() -> Result<()> {
         forge_events,
         coding_engine: Some(medousa::daemon::coding_engine_host::CodingEngineHost::new()),
         shell_sessions: Some(medousa::daemon::shell_session_host::ShellSessionHost::new()),
-        detamu: match medousa::daemon::detamu_host::DetamuHost::open(
-            medousa::daemon::detamu_host::DetamuHost::default_root(),
-        )
-        .await
-        {
-            Ok(host) => {
-                tracing::info!("detamu host opened");
-                Some(host)
-            }
-            Err(err) => {
-                tracing::warn!(%err, "detamu host unavailable — world tools disabled");
-                None
-            }
+        detamu: {
+            let handle = medousa::daemon::detamu_host::DetamuHandle::dormant(
+                medousa::daemon::detamu_host::DetamuHost::default_root(),
+            );
+            tracing::info!("detamu host dormant (SurrealKV opens on first world/Forge index)");
+            handle
         },
     };
     medousa::daemon::forge_watch::spawn_forge_worktree_watcher(

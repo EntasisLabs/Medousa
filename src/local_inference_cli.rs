@@ -10,9 +10,9 @@ use medousa_types::{
     LocalModelsResponse, ModelDownloadProgress,
 };
 
+use crate::DEFAULT_MEDOUSA_LOCAL_BASE_URL;
 use crate::daemon_api::resolve_daemon_url;
 use crate::local_inference::DEFAULT_LOCAL_ENGINE_BIND;
-use crate::DEFAULT_MEDOUSA_LOCAL_BASE_URL;
 
 fn local_models_client(daemon_url: &str) -> BlockingLocalModelsClient {
     BlockingLocalModelsClient::new(daemon_url.trim_end_matches('/'))
@@ -161,9 +161,9 @@ pub fn run_models_command(args: &[String]) -> Result<()> {
         Some("remove") => run_models_remove(&daemon_url, args),
         Some("engine-status") | Some("status") => run_models_engine_status(&daemon_url),
         Some("engine-load") | Some("load") => run_models_engine_load(&daemon_url, args),
-        Some(other) => bail!(
-            "unknown models subcommand '{other}'. run 'medousa models --help' for usage"
-        ),
+        Some(other) => {
+            bail!("unknown models subcommand '{other}'. run 'medousa models --help' for usage")
+        }
     }
 }
 
@@ -234,11 +234,7 @@ fn run_models_list(daemon_url: &str) -> Result<()> {
         for job in &models.active_downloads {
             println!(
                 "{}  {}  {}  {:.0}%  {}",
-                job.job_id,
-                job.model_id,
-                job.phase,
-                job.percent,
-                job.message
+                job.job_id, job.model_id, job.phase, job.percent, job.message
             );
         }
     }
@@ -297,14 +293,12 @@ fn run_models_download(daemon_url: &str, args: &[String]) -> Result<()> {
             return Ok(());
         }
         if progress.phase == "failed" {
-            bail!(
-                progress
-                    .error
-                    .unwrap_or_else(|| progress.message.clone())
-            );
+            bail!(progress.error.unwrap_or_else(|| progress.message.clone()));
         }
         if started.elapsed() > Duration::from_secs(60 * 60) {
-            bail!("download timed out after 1 hour (job still running — check medousa models list)");
+            bail!(
+                "download timed out after 1 hour (job still running — check medousa models list)"
+            );
         }
         thread::sleep(Duration::from_millis(500));
     }
@@ -470,7 +464,9 @@ pub fn print_doctor_local_inference(daemon_url: &str, daemon_healthy: bool, verb
         println!("→ Troubleshooting: medousa doctor --local-engine  |  medousa models --help");
     } else {
         println!("→ dev offline path: medousa start daemon --inference");
-        println!("→ then: medousa models download <id> --wait && medousa models engine-load --model <id>");
+        println!(
+            "→ then: medousa models download <id> --wait && medousa models engine-load --model <id>"
+        );
     }
 }
 

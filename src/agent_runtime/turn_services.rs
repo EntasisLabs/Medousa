@@ -1,24 +1,24 @@
 use std::sync::Arc;
 
+use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use genai::chat::ChatMessage;
 use stasis::application::orchestration::prompt_pipeline::PromptExecutionPipeline;
-use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use stasis::application::orchestration::tool_loop_pipeline::ToolCallMode;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
 
-use crate::session::ConversationTurn;
 use crate::learning_artifacts::{
-    build_grapheme_script_recall_block, build_runtime_learnings_block,
     DEFAULT_LEARNING_RECALL_BLOCK_CHARS, DEFAULT_SCRIPT_RECALL_BLOCK_CHARS,
+    build_grapheme_script_recall_block, build_runtime_learnings_block,
 };
-use crate::tool_bootstrap::{build_tool_hints_block, DEFAULT_TOOL_HINTS_BLOCK_CHARS};
-use crate::turn_slice::{
-    build_tool_slices_block, format_cold_history_line, prior_turn_content,
-    DEFAULT_SLICE_BLOCK_CHARS, DEFAULT_SLICE_HOT_LINE_CHARS,
-};
+use crate::session::ConversationTurn;
 use crate::stage_routing::StageRoute;
+use crate::tool_bootstrap::{DEFAULT_TOOL_HINTS_BLOCK_CHARS, build_tool_hints_block};
 use crate::tools::TuiRuntime;
 use crate::tui::settings::RuntimeSettings;
+use crate::turn_slice::{
+    DEFAULT_SLICE_BLOCK_CHARS, DEFAULT_SLICE_HOT_LINE_CHARS, build_tool_slices_block,
+    format_cold_history_line, prior_turn_content,
+};
 
 #[derive(Debug, Clone)]
 pub struct TurnActivationDecision {
@@ -97,10 +97,7 @@ pub fn select_pipeline_for_turn_with_registry_and_allowlist(
     use crate::tui::runtime_services::build_tool_loop_pipeline_for_target;
 
     let registry: Arc<dyn ToolRegistry> = match tool_allowlist {
-        Some(allowlist) => Arc::new(AllowlistToolRegistry::new(
-            tool_registry.clone(),
-            allowlist,
-        )),
+        Some(allowlist) => Arc::new(AllowlistToolRegistry::new(tool_registry.clone(), allowlist)),
         None => tool_registry,
     };
 
@@ -165,9 +162,10 @@ pub fn build_prior_messages(
 
     if current_user_persisted
         && let Some(last) = selected.last()
-            && last.role == "user" {
-                selected.pop();
-            }
+        && last.role == "user"
+    {
+        selected.pop();
+    }
 
     let mut accepted: Vec<ChatMessage> = Vec::new();
     let mut total_chars = 0usize;
@@ -217,10 +215,8 @@ pub fn build_prior_messages(
             format_cold_history_line(turn, limits.cold_summary_line_chars).or_else(|| {
                 match turn.role.as_str() {
                     "user" | "assistant" | "agent" => {
-                        let line = truncate_text_for_budget(
-                            &turn.content,
-                            limits.cold_summary_line_chars,
-                        );
+                        let line =
+                            truncate_text_for_budget(&turn.content, limits.cold_summary_line_chars);
                         if line.trim().is_empty() {
                             None
                         } else {
@@ -275,8 +271,7 @@ pub fn build_prior_messages(
         .hot_window_char_budget
         .min(DEFAULT_SCRIPT_RECALL_BLOCK_CHARS)
         .min(limits.max_prior_total_chars.saturating_sub(total_chars));
-    let script_recall_block =
-        build_grapheme_script_recall_block(current_prompt, script_budget);
+    let script_recall_block = build_grapheme_script_recall_block(current_prompt, script_budget);
     let script_recall_chars = script_recall_block.chars().count();
     if !script_recall_block.trim().is_empty() {
         total_chars = total_chars.saturating_add(script_recall_chars);
@@ -287,8 +282,7 @@ pub fn build_prior_messages(
         .hot_window_char_budget
         .min(DEFAULT_LEARNING_RECALL_BLOCK_CHARS)
         .min(limits.max_prior_total_chars.saturating_sub(total_chars));
-    let learning_recall_block =
-        build_runtime_learnings_block(current_prompt, learning_budget);
+    let learning_recall_block = build_runtime_learnings_block(current_prompt, learning_budget);
     let learning_recall_chars = learning_recall_block.chars().count();
     if !learning_recall_block.trim().is_empty() {
         total_chars = total_chars.saturating_add(learning_recall_chars);
@@ -458,9 +452,10 @@ pub fn build_intent_classifier_recent_context(
 
     if current_user_persisted
         && let Some(last) = selected.last()
-            && last.role == "user" {
-                selected.pop();
-            }
+        && last.role == "user"
+    {
+        selected.pop();
+    }
 
     let mut lines = Vec::new();
     let mut total_chars = 0usize;
@@ -471,8 +466,8 @@ pub fn build_intent_classifier_recent_context(
             _ => continue,
         };
 
-        let text = truncate_text_for_budget(&turn.content, limits.context_line_chars)
-            .replace('\n', " ");
+        let text =
+            truncate_text_for_budget(&turn.content, limits.context_line_chars).replace('\n', " ");
         if text.trim().is_empty() {
             continue;
         }
@@ -491,32 +486,11 @@ pub fn build_intent_classifier_recent_context(
 
 fn contains_tool_intent(prompt_lower: &str) -> bool {
     [
-        "search",
-        "look up",
-        "lookup",
-        "run ",
-        "execute",
-        "query",
-        "fetch",
-        "verify",
-        "evidence",
-        "grapheme",
-        "tool",
-        "call",
-        "api",
-        "latest",
+        "search", "look up", "lookup", "run ", "execute", "query", "fetch", "verify", "evidence",
+        "grapheme", "tool", "call", "api", "latest",
         // memory / AVEC / posture (avoid long-session no-tools misclassification)
-        "calibrat",
-        "avec",
-        "memory",
-        "mood",
-        "locus",
-        "recall",
-        "context",
-        "schema",
-        "store",
-        "pull",
-        "focus",
+        "calibrat", "avec", "memory", "mood", "locus", "recall", "context", "schema", "store",
+        "pull", "focus",
     ]
     .iter()
     .any(|needle| prompt_lower.contains(needle))
@@ -540,7 +514,10 @@ fn contains_direct_answer_intent(prompt_lower: &str) -> bool {
 }
 
 fn route_base_url(route: &StageRoute, settings: &RuntimeSettings) -> Option<String> {
-    if route.provider.eq_ignore_ascii_case(settings.provider.trim()) {
+    if route
+        .provider
+        .eq_ignore_ascii_case(settings.provider.trim())
+    {
         let candidate = settings.base_url.trim();
         if !candidate.is_empty() {
             return Some(candidate.to_string());
@@ -579,8 +556,9 @@ mod tests {
     use stasis::application::orchestration::tool_loop_pipeline::ToolCallMode;
 
     use super::{
-        PriorMessageLimits, apply_context_compiler_activation_gate, build_intent_classifier_recent_context,
-        build_prior_messages, decide_turn_activation, parse_tool_call_mode,
+        PriorMessageLimits, apply_context_compiler_activation_gate,
+        build_intent_classifier_recent_context, build_prior_messages, decide_turn_activation,
+        parse_tool_call_mode,
     };
     use crate::session::ConversationTurn;
 
@@ -692,8 +670,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            speaker_profile_id: None,
-        });
+                speaker_profile_id: None,
+            });
         }
 
         let built = build_prior_messages(
@@ -722,8 +700,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            speaker_profile_id: None,
-        },
+                speaker_profile_id: None,
+            },
             ConversationTurn {
                 role: "agent".to_string(),
                 content: "hi there".to_string(),
@@ -732,8 +710,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            speaker_profile_id: None,
-        },
+                speaker_profile_id: None,
+            },
         ];
 
         let built = build_prior_messages(
@@ -764,8 +742,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            speaker_profile_id: None,
-        },
+                speaker_profile_id: None,
+            },
             ConversationTurn {
                 role: "agent".to_string(),
                 content: "earlier answer".to_string(),
@@ -774,8 +752,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            speaker_profile_id: None,
-        },
+                speaker_profile_id: None,
+            },
             ConversationTurn {
                 role: "user".to_string(),
                 content: "thanks".to_string(),
@@ -784,8 +762,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            speaker_profile_id: None,
-        },
+                speaker_profile_id: None,
+            },
         ];
 
         let context = build_intent_classifier_recent_context(
@@ -806,7 +784,7 @@ mod tests {
     #[test]
     fn prior_messages_include_tool_slices_block() {
         use crate::turn_parts::TurnPart;
-        use crate::turn_slice::{TurnSliceSummary, TOOL_SLICES_PREFIX};
+        use crate::turn_slice::{TOOL_SLICES_PREFIX, TurnSliceSummary};
 
         let turns = vec![
             ConversationTurn {
@@ -817,8 +795,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            speaker_profile_id: None,
-        },
+                speaker_profile_id: None,
+            },
             ConversationTurn {
                 role: "assistant".to_string(),
                 content: "resolved base-researcher".to_string(),
@@ -843,8 +821,8 @@ mod tests {
                     outcomes: vec!["base-researcher".to_string()],
                     ..Default::default()
                 }),
-            speaker_profile_id: None,
-        },
+                speaker_profile_id: None,
+            },
         ];
 
         let built = build_prior_messages(
@@ -872,8 +850,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            speaker_profile_id: None,
-        },
+                speaker_profile_id: None,
+            },
             ConversationTurn {
                 role: "user".to_string(),
                 content: "ok".to_string(),
@@ -882,8 +860,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            speaker_profile_id: None,
-        },
+                speaker_profile_id: None,
+            },
         ];
 
         let context = build_intent_classifier_recent_context(

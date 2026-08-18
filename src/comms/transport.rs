@@ -208,13 +208,19 @@ impl TransportError {
     /// HTTP failures and `Unsupported` are *not* retryable on the same route —
     /// only connectivity-class failures are.
     pub fn is_retryable(&self) -> bool {
-        matches!(self.kind, TransportErrorKind::Connect | TransportErrorKind::Timeout)
+        matches!(
+            self.kind,
+            TransportErrorKind::Connect | TransportErrorKind::Timeout
+        )
     }
 
     /// True when the failure indicates the *route itself* is down, so the
     /// selector should fail over to the next transport.
     pub fn is_connectivity(&self) -> bool {
-        matches!(self.kind, TransportErrorKind::Connect | TransportErrorKind::Timeout)
+        matches!(
+            self.kind,
+            TransportErrorKind::Connect | TransportErrorKind::Timeout
+        )
     }
 }
 

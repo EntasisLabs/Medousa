@@ -1,6 +1,5 @@
 //! Host-bus vault tools: list, read, search, write, tags.
 
-
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;

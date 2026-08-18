@@ -49,7 +49,9 @@ where
         Ok(Err(err)) => {
             let elapsed_ms = started.elapsed().as_millis();
             tracing::error!(step = label, elapsed_ms, error = %err, "startup step failed");
-            eprintln!("medousa-daemon: step failed label={label} elapsed_ms={elapsed_ms} error={err}");
+            eprintln!(
+                "medousa-daemon: step failed label={label} elapsed_ms={elapsed_ms} error={err}"
+            );
             Err(anyhow::anyhow!(
                 "startup step `{label}` failed after {elapsed_ms}ms: {err}"
             ))

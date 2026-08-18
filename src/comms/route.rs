@@ -79,9 +79,8 @@ impl RouteSelector {
 
     /// Returns the cached decision if still fresh at `now`.
     pub fn cached(&self, now: Instant) -> Option<TransportKind> {
-        self.cached.and_then(|decision| {
-            (decision.expires_at > now).then_some(decision.kind)
-        })
+        self.cached
+            .and_then(|decision| (decision.expires_at > now).then_some(decision.kind))
     }
 
     /// Record a freshly probed decision, stamping its TTL from `now`.
@@ -130,7 +129,10 @@ mod tests {
             Some(TransportKind::Lan)
         );
         assert_eq!(
-            first_available(&order, &healthy(&[TransportKind::Iroh, TransportKind::HttpFallback])),
+            first_available(
+                &order,
+                &healthy(&[TransportKind::Iroh, TransportKind::HttpFallback])
+            ),
             Some(TransportKind::Iroh)
         );
         assert_eq!(
@@ -149,11 +151,17 @@ mod tests {
         });
         let t0 = Instant::now();
         selector.record(TransportKind::Lan, t0);
-        assert_eq!(selector.cached(t0 + Duration::from_secs(9)), Some(TransportKind::Lan));
+        assert_eq!(
+            selector.cached(t0 + Duration::from_secs(9)),
+            Some(TransportKind::Lan)
+        );
         assert_eq!(selector.cached(t0 + Duration::from_secs(11)), None);
 
         selector.record(TransportKind::Iroh, t0);
-        assert_eq!(selector.cached(t0 + Duration::from_secs(39)), Some(TransportKind::Iroh));
+        assert_eq!(
+            selector.cached(t0 + Duration::from_secs(39)),
+            Some(TransportKind::Iroh)
+        );
         assert_eq!(selector.cached(t0 + Duration::from_secs(41)), None);
     }
 

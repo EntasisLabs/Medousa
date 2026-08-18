@@ -312,9 +312,7 @@ impl TurnWorkerStore {
             );
         }
         let _ = crate::workspace::persist::queue_mutation(
-            crate::workspace::persist::WorkspaceMutation::RetainTurnWorkers {
-                work_ids: retained,
-            },
+            crate::workspace::persist::WorkspaceMutation::RetainTurnWorkers { work_ids: retained },
         );
         Self::notify_turn_worker_changed(work_id, stasis_job_id);
     }
@@ -548,9 +546,7 @@ impl TurnWorkerStore {
         let retained = guard.keys().cloned().collect::<Vec<_>>();
         drop(guard);
         crate::workspace::persist::queue_mutation(
-            crate::workspace::persist::WorkspaceMutation::RetainTurnWorkers {
-                work_ids: retained,
-            },
+            crate::workspace::persist::WorkspaceMutation::RetainTurnWorkers { work_ids: retained },
         )
         .map_err(|error| error.to_string())?;
         Ok(())

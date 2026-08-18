@@ -30,7 +30,10 @@ pub fn reasoning_effort_hint(mode: &str) -> &'static str {
     }
 }
 
-pub fn prompt_execution_context(model: &str, reasoning_effort: Option<&str>) -> PromptExecutionContext {
+pub fn prompt_execution_context(
+    model: &str,
+    reasoning_effort: Option<&str>,
+) -> PromptExecutionContext {
     let model_hint = model.trim();
     PromptExecutionContext {
         model_hint: (!model_hint.is_empty()).then(|| model_hint.to_string()),

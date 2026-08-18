@@ -1,7 +1,6 @@
 //! Rich HTML presentation tool (`cognition_ui_present`) for surfaces that opt in via
 //! `TurnSurfaceContext.supports_ui_artifacts`.
 
-
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stasis::prelude::{Result as StasisResult, StasisError};
@@ -463,20 +462,22 @@ mod tests {
 
     #[tokio::test]
     async fn ui_present_uses_active_turn_session_not_bootstrap() {
-        let turn_scope = crate::agent_runtime::execution_context::TurnScopeAccess::for_test(crate::turn_continuation::TurnContinuationScope {
-            turn_correlation_id: "turn-1".to_string(),
-            session_id: "medousa-home".to_string(),
-            identity_user_id: None,
-            original_prompt: "hi".to_string(),
-            delivery_target: None,
-            provider: "openai".to_string(),
-            model: "gpt-4".to_string(),
-            response_depth_mode: "standard".to_string(),
-            supports_ui_artifacts: true,
-            supports_liquid_markdown: true,
-            supports_browser_host: false,
-            channel_surface: Some("home-desktop".to_string()),
-        });
+        let turn_scope = crate::agent_runtime::execution_context::TurnScopeAccess::for_test(
+            crate::turn_continuation::TurnContinuationScope {
+                turn_correlation_id: "turn-1".to_string(),
+                session_id: "medousa-home".to_string(),
+                identity_user_id: None,
+                original_prompt: "hi".to_string(),
+                delivery_target: None,
+                provider: "openai".to_string(),
+                model: "gpt-4".to_string(),
+                response_depth_mode: "standard".to_string(),
+                supports_ui_artifacts: true,
+                supports_liquid_markdown: true,
+                supports_browser_host: false,
+                channel_surface: Some("home-desktop".to_string()),
+            },
+        );
         let tool = CognitionUiPresentTool::new(turn_scope);
         let session_id = tool.resolve_session_id().await.expect("turn scope session");
         assert_eq!(session_id, "medousa-home");

@@ -37,15 +37,20 @@ impl Default for RateLimiter {
 
 /// Emit a `warn!` at most `burst` times per minute per key.
 pub fn rate_limited_warn(key: &str, message: impl FnOnce() -> String) {
-    let mut guard = LIMITER.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut guard = LIMITER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let interval = guard.interval;
     let burst = guard.burst;
     let now = Instant::now();
-    let window = guard.windows.entry(key.to_string()).or_insert_with(|| Window {
-        window_start: now,
-        emitted: 0,
-        suppressed: 0,
-    });
+    let window = guard
+        .windows
+        .entry(key.to_string())
+        .or_insert_with(|| Window {
+            window_start: now,
+            emitted: 0,
+            suppressed: 0,
+        });
 
     if now.duration_since(window.window_start) >= interval {
         let suppressed = window.suppressed;
@@ -71,15 +76,20 @@ pub fn rate_limited_warn(key: &str, message: impl FnOnce() -> String) {
 
 /// Emit an `error!` at most `burst` times per minute per key.
 pub fn rate_limited_error(key: &str, message: impl FnOnce() -> String) {
-    let mut guard = LIMITER.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut guard = LIMITER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let interval = guard.interval;
     let burst = guard.burst;
     let now = Instant::now();
-    let window = guard.windows.entry(key.to_string()).or_insert_with(|| Window {
-        window_start: now,
-        emitted: 0,
-        suppressed: 0,
-    });
+    let window = guard
+        .windows
+        .entry(key.to_string())
+        .or_insert_with(|| Window {
+            window_start: now,
+            emitted: 0,
+            suppressed: 0,
+        });
 
     if now.duration_since(window.window_start) >= interval {
         let suppressed = window.suppressed;
@@ -105,15 +115,20 @@ pub fn rate_limited_error(key: &str, message: impl FnOnce() -> String) {
 
 /// Emit a `debug!` at most `burst` times per minute per key.
 pub fn rate_limited_debug(key: &str, message: impl FnOnce() -> String) {
-    let mut guard = LIMITER.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut guard = LIMITER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let interval = guard.interval;
     let burst = guard.burst;
     let now = Instant::now();
-    let window = guard.windows.entry(key.to_string()).or_insert_with(|| Window {
-        window_start: now,
-        emitted: 0,
-        suppressed: 0,
-    });
+    let window = guard
+        .windows
+        .entry(key.to_string())
+        .or_insert_with(|| Window {
+            window_start: now,
+            emitted: 0,
+            suppressed: 0,
+        });
 
     if now.duration_since(window.window_start) >= interval {
         window.window_start = now;

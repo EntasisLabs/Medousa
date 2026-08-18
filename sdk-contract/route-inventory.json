@@ -6051,6 +6051,22 @@
       "bootstrap_public": false,
       "browser_policy": "native_only",
       "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "world.reset_store.post",
+      "path": "/v1/world/reset-store",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
         "workshop.read"
       ],
       "feature_profile": "core",

@@ -8,7 +8,6 @@
 //! never inspects their shape). The model can go bones-first: emit a
 //! `plan_layout` with skeleton slots, then follow up with `fill_slot` batches.
 
-
 use schemars::JsonSchema;
 use schemars::schema::{InstanceType, Schema, SchemaObject};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -214,20 +213,22 @@ mod tests {
     use crate::daemon_api::TurnSurfaceContext;
 
     fn scope(supports: bool) -> crate::agent_runtime::execution_context::TurnScopeAccess {
-        crate::agent_runtime::execution_context::TurnScopeAccess::for_test(crate::turn_continuation::TurnContinuationScope {
-            turn_correlation_id: "turn-1".to_string(),
-            session_id: "medousa-home".to_string(),
-            identity_user_id: None,
-            original_prompt: "hi".to_string(),
-            delivery_target: None,
-            provider: "openai".to_string(),
-            model: "gpt-4".to_string(),
-            response_depth_mode: "standard".to_string(),
-            supports_ui_artifacts: supports,
-            supports_liquid_markdown: supports,
-            supports_browser_host: false,
-            channel_surface: Some("home-desktop".to_string()),
-        })
+        crate::agent_runtime::execution_context::TurnScopeAccess::for_test(
+            crate::turn_continuation::TurnContinuationScope {
+                turn_correlation_id: "turn-1".to_string(),
+                session_id: "medousa-home".to_string(),
+                identity_user_id: None,
+                original_prompt: "hi".to_string(),
+                delivery_target: None,
+                provider: "openai".to_string(),
+                model: "gpt-4".to_string(),
+                response_depth_mode: "standard".to_string(),
+                supports_ui_artifacts: supports,
+                supports_liquid_markdown: supports,
+                supports_browser_host: false,
+                channel_surface: Some("home-desktop".to_string()),
+            },
+        )
     }
 
     #[test]

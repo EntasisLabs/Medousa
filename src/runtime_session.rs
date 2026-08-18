@@ -3,9 +3,9 @@
 //! The daemon builds one shared agent runtime at startup with a non-chat bootstrap
 //! session label. Per-turn chat identity lives in [`TurnContinuationScope`].
 
+use crate::turn_continuation::TurnContinuationScope;
 use serde_json::Value;
 use stasis::prelude::{Result as StasisResult, StasisError};
-use crate::turn_continuation::TurnContinuationScope;
 
 /// Assembly-time label for the singleton daemon agent runtime — not a chat session.
 pub const RUNTIME_BOOTSTRAP_SESSION_ID: &str = "__runtime_bootstrap__";
@@ -50,8 +50,7 @@ pub async fn resolve_active_chat_session_id_async(
     turn_scope: &crate::agent_runtime::execution_context::TurnScopeAccess,
     _bootstrap_fallback: &str,
 ) -> StasisResult<String> {
-    let scope =
-        crate::agent_runtime::execution_context::turn_continuation_scope(turn_scope).await;
+    let scope = crate::agent_runtime::execution_context::turn_continuation_scope(turn_scope).await;
     session_id_from_scope(scope.as_ref(), "tool")
 }
 
@@ -136,8 +135,12 @@ mod tests {
 
     #[test]
     fn bootstrap_session_ids_are_detected() {
-        assert!(is_runtime_bootstrap_session_id(RUNTIME_BOOTSTRAP_SESSION_ID));
-        assert!(is_runtime_bootstrap_session_id(LEGACY_RUNTIME_BOOTSTRAP_SESSION_ID));
+        assert!(is_runtime_bootstrap_session_id(
+            RUNTIME_BOOTSTRAP_SESSION_ID
+        ));
+        assert!(is_runtime_bootstrap_session_id(
+            LEGACY_RUNTIME_BOOTSTRAP_SESSION_ID
+        ));
         assert!(!is_runtime_bootstrap_session_id("medousa-home"));
     }
 

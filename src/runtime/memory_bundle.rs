@@ -2,11 +2,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use locus_core_rs::domain::contracts::{NodeStore, NodeStoreInitializer, SemanticIndexStoreInitializer};
+use locus_core_rs::domain::contracts::{
+    NodeStore, NodeStoreInitializer, SemanticIndexStoreInitializer,
+};
 use locus_core_rs::storage::surrealdb::node_store::SurrealDbNodeStore;
 use stasis::infrastructure::memory::locus_context_reader::LocusContextReader;
-use stasis::infrastructure::memory::locus_node_store_factory::LocusMemoryStore;
 use stasis::infrastructure::memory::locus_memory_operations::LocusMemoryOperations;
+use stasis::infrastructure::memory::locus_node_store_factory::LocusMemoryStore;
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 use stasis::ports::outbound::memory::memory_context_reader::MemoryContextReader;
 use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
@@ -18,8 +20,8 @@ use tokio::time::timeout;
 use crate::identity_memory;
 use crate::identity_store_ext::MedousaIdentityMemoryStore;
 use crate::locus_memory::{MedousaLocusContextWriter, resolve_locus_ingest_profile};
-use crate::runtime::locus_surreal_client::StasisSurrealDbClient;
 use crate::runtime::locus_semantic_index_store::MedousaSurrealSemanticIndexStore;
+use crate::runtime::locus_surreal_client::StasisSurrealDbClient;
 use crate::runtime::surreal_startup::{timed_step, verify_surreal_responsive};
 
 fn parse_env_flag(key: &str) -> Option<bool> {
@@ -32,7 +34,9 @@ fn parse_env_flag(key: &str) -> Option<bool> {
 }
 
 /// Skip full Locus `initialize_async` (includes heavy backfill scans on existing data).
-async fn surreal_locus_node_table_exists(db: &surrealdb::Surreal<surrealdb::engine::any::Any>) -> bool {
+async fn surreal_locus_node_table_exists(
+    db: &surrealdb::Surreal<surrealdb::engine::any::Any>,
+) -> bool {
     db.query("INFO FOR TABLE node").await.is_ok()
 }
 
@@ -135,10 +139,13 @@ impl MemoryAdapterBundle {
         }
 
         let index_initializer: Arc<dyn SemanticIndexStoreInitializer> = semantic_index.clone();
-        timeout(Duration::from_secs(60), index_initializer.initialize_async())
-            .await
-            .map_err(|_| anyhow::anyhow!("Locus semantic index init timed out"))?
-            .map_err(|err| anyhow::anyhow!("failed to initialize surreal semantic index: {err}"))?;
+        timeout(
+            Duration::from_secs(60),
+            index_initializer.initialize_async(),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("Locus semantic index init timed out"))?
+        .map_err(|err| anyhow::anyhow!("failed to initialize surreal semantic index: {err}"))?;
 
         let locus_memory = Arc::new(LocusMemoryStore {
             node_store: node_store as Arc<dyn NodeStore>,

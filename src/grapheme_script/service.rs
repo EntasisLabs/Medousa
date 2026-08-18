@@ -65,11 +65,7 @@ impl GraphemeScriptService {
         Ok((entry, body))
     }
 
-    pub fn list(
-        module: Option<&str>,
-        tag: Option<&str>,
-        limit: usize,
-    ) -> Vec<GraphemeScriptEntry> {
+    pub fn list(module: Option<&str>, tag: Option<&str>, limit: usize) -> Vec<GraphemeScriptEntry> {
         let module = module.map(str::trim).filter(|value| !value.is_empty());
         let tag = tag.map(str::trim).filter(|value| !value.is_empty());
         grapheme_script_store()
@@ -119,11 +115,7 @@ impl GraphemeScriptService {
                     if intent.contains(term) {
                         score += TAG_WEIGHT / terms.len() as f32;
                     }
-                    if entry
-                        .modules
-                        .iter()
-                        .any(|module| module.contains(term))
-                    {
+                    if entry.modules.iter().any(|module| module.contains(term)) {
                         score += MODULE_WEIGHT / terms.len() as f32;
                     }
                     if entry.tags.iter().any(|tag| tag.contains(term)) {
@@ -133,7 +125,11 @@ impl GraphemeScriptService {
                         score += BODY_WEIGHT / terms.len() as f32;
                     }
                 }
-                if query.len() >= 3 && body.to_ascii_lowercase().contains(&query.to_ascii_lowercase()) {
+                if query.len() >= 3
+                    && body
+                        .to_ascii_lowercase()
+                        .contains(&query.to_ascii_lowercase())
+                {
                     score += 0.15;
                 }
             }
@@ -173,10 +169,7 @@ impl GraphemeScriptService {
 
 fn module_filter(entry: &GraphemeScriptEntry, module: Option<&str>) -> bool {
     match module {
-        Some(module) => entry
-            .modules
-            .iter()
-            .any(|value| value.contains(module)),
+        Some(module) => entry.modules.iter().any(|value| value.contains(module)),
         None => true,
     }
 }

@@ -5,8 +5,8 @@
 //! tables before any row exists, so we define them up front.
 
 use stasis::prelude::RuntimeComposition;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 
 /// Schemaless table definitions for Stasis runtime stores. Matches table names in stasis-rs
 /// (`surreal_recurring_store`, `surreal_workflow_definition_store`, etc.).

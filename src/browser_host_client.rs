@@ -29,7 +29,10 @@ pub async fn browser_host_healthy() -> bool {
         .unwrap_or(false)
 }
 
-pub async fn browser_host_search(query: &str, max_results: usize) -> Result<SearchResponse, String> {
+pub async fn browser_host_search(
+    query: &str,
+    max_results: usize,
+) -> Result<SearchResponse, String> {
     post_json(
         "/v1/search",
         serde_json::json!({
@@ -55,7 +58,10 @@ pub async fn browser_host_fetch(url: &str, max_chars: usize) -> Result<FetchResu
     .await
 }
 
-async fn post_json<T: serde::de::DeserializeOwned>(path: &str, body: serde_json::Value) -> Result<T, String> {
+async fn post_json<T: serde::de::DeserializeOwned>(
+    path: &str,
+    body: serde_json::Value,
+) -> Result<T, String> {
     let url = format!("{}{}", browser_host_base_url(), path);
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))

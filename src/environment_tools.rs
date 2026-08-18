@@ -1,6 +1,5 @@
 //! Agent tools for environment spec and component canvas CRUD.
 
-
 use chrono::Utc;
 use medousa_types::environment::{
     ComponentDef, ComponentType, EnvironmentPendingProposal, EnvironmentSpec, SurfaceDef,

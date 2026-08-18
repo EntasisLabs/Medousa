@@ -21,9 +21,7 @@ use stasis::ports::outbound::runtime::workflow_engine::WorkflowEngine;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::execution_policy::{
-    load_parallel_execution_settings, validate_concurrent_workflow,
-};
+use crate::execution_policy::{load_parallel_execution_settings, validate_concurrent_workflow};
 use crate::identity_memory;
 use crate::mcp_gateway_api::{McpInvokeRequest, McpTurnContext, McpTurnLane};
 use crate::mcp_gateway_client::McpGatewayClient;
@@ -175,7 +173,9 @@ impl WorkflowRegistry {
     }
 }
 
-pub fn encode_workflow_payload(payload: &MedousaWorkflowPayload) -> stasis::prelude::Result<String> {
+pub fn encode_workflow_payload(
+    payload: &MedousaWorkflowPayload,
+) -> stasis::prelude::Result<String> {
     let raw = serde_json::to_string(payload).map_err(|error| {
         stasis::prelude::StasisError::PortFailure(format!(
             "failed to encode workflow payload: {error}"
@@ -184,14 +184,14 @@ pub fn encode_workflow_payload(payload: &MedousaWorkflowPayload) -> stasis::prel
     Ok(format!("{WORKFLOW_PAYLOAD_PREFIX}{raw}"))
 }
 
-pub fn decode_workflow_payload(payload_ref: &str) -> stasis::prelude::Result<MedousaWorkflowPayload> {
+pub fn decode_workflow_payload(
+    payload_ref: &str,
+) -> stasis::prelude::Result<MedousaWorkflowPayload> {
     let raw = payload_ref
         .strip_prefix(WORKFLOW_PAYLOAD_PREFIX)
         .unwrap_or(payload_ref);
     serde_json::from_str(raw).map_err(|error| {
-        stasis::prelude::StasisError::PortFailure(format!(
-            "invalid workflow payload json: {error}"
-        ))
+        stasis::prelude::StasisError::PortFailure(format!("invalid workflow payload json: {error}"))
     })
 }
 
@@ -262,8 +262,8 @@ pub fn apply_step_refs(
         result = result.replace(&needle, &replacement);
     }
     if let Some(handoff_value) = handoff {
-        let handoff_json = serde_json::to_string(handoff_value)
-            .unwrap_or_else(|_| handoff_value.to_string());
+        let handoff_json =
+            serde_json::to_string(handoff_value).unwrap_or_else(|_| handoff_value.to_string());
         result = result.replace("$handoff.context", &handoff_json);
     }
     result
@@ -289,7 +289,10 @@ impl MedousaSequentialWorkflowHandler {
         Self { executor }
     }
 
-    pub fn with_defaults(registry: Arc<WorkflowRegistry>, prompt_pipeline: PromptExecutionPipeline) -> Self {
+    pub fn with_defaults(
+        registry: Arc<WorkflowRegistry>,
+        prompt_pipeline: PromptExecutionPipeline,
+    ) -> Self {
         Self::new(WorkflowExecutor::with_defaults(registry, prompt_pipeline))
     }
 }
@@ -316,7 +319,10 @@ impl MedousaConcurrentWorkflowHandler {
         Self { executor }
     }
 
-    pub fn with_defaults(registry: Arc<WorkflowRegistry>, prompt_pipeline: PromptExecutionPipeline) -> Self {
+    pub fn with_defaults(
+        registry: Arc<WorkflowRegistry>,
+        prompt_pipeline: PromptExecutionPipeline,
+    ) -> Self {
         Self::new(WorkflowExecutor::with_defaults(registry, prompt_pipeline))
     }
 }
@@ -343,7 +349,10 @@ impl MedousaHandoffWorkflowHandler {
         Self { executor }
     }
 
-    pub fn with_defaults(registry: Arc<WorkflowRegistry>, prompt_pipeline: PromptExecutionPipeline) -> Self {
+    pub fn with_defaults(
+        registry: Arc<WorkflowRegistry>,
+        prompt_pipeline: PromptExecutionPipeline,
+    ) -> Self {
         Self::new(WorkflowExecutor::with_defaults(registry, prompt_pipeline))
     }
 }
@@ -391,7 +400,10 @@ impl WorkflowExecutor {
         }
     }
 
-    fn with_defaults(registry: Arc<WorkflowRegistry>, prompt_pipeline: PromptExecutionPipeline) -> Self {
+    fn with_defaults(
+        registry: Arc<WorkflowRegistry>,
+        prompt_pipeline: PromptExecutionPipeline,
+    ) -> Self {
         Self::new(
             crate::grapheme_medousa_bridge::medousa_workflow_engine(),
             prompt_pipeline,
@@ -428,12 +440,8 @@ impl WorkflowExecutor {
         };
 
         let step_results = match mode {
-            WorkflowExecutionMode::Sequential => {
-                self.run_sequential(&payload, lane).await
-            }
-            WorkflowExecutionMode::Concurrent => {
-                self.run_concurrent(&payload, lane).await
-            }
+            WorkflowExecutionMode::Sequential => self.run_sequential(&payload, lane).await,
+            WorkflowExecutionMode::Concurrent => self.run_concurrent(&payload, lane).await,
             WorkflowExecutionMode::Handoff => self.run_handoff(&payload, lane).await,
         };
 
@@ -930,28 +938,17 @@ where
 }
 
 pub trait WorkflowHandlerRegistrar {
-    fn register_handler<H: JobHandler + 'static>(
-        &self,
-        handler: H,
-    ) -> stasis::prelude::Result<()>;
+    fn register_handler<H: JobHandler + 'static>(&self, handler: H) -> stasis::prelude::Result<()>;
 }
 
-impl WorkflowHandlerRegistrar
-    for stasis::application::runtime::in_memory_runtime::InMemoryRuntime
-{
-    fn register_handler<H: JobHandler + 'static>(
-        &self,
-        handler: H,
-    ) -> stasis::prelude::Result<()> {
+impl WorkflowHandlerRegistrar for stasis::application::runtime::in_memory_runtime::InMemoryRuntime {
+    fn register_handler<H: JobHandler + 'static>(&self, handler: H) -> stasis::prelude::Result<()> {
         self.register_handler(handler)
     }
 }
 
 impl WorkflowHandlerRegistrar for stasis::application::runtime::surreal_runtime::SurrealRuntime {
-    fn register_handler<H: JobHandler + 'static>(
-        &self,
-        handler: H,
-    ) -> stasis::prelude::Result<()> {
+    fn register_handler<H: JobHandler + 'static>(&self, handler: H) -> stasis::prelude::Result<()> {
         self.register_handler(handler)
     }
 }

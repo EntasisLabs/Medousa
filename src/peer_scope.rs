@@ -739,9 +739,8 @@ mod tests {
         ];
 
         for (denial, status, code, message) in cases {
-            let response = denial.into_response_with_request_id(
-                crate::daemon::http::UNASSIGNED_REQUEST_ID,
-            );
+            let response =
+                denial.into_response_with_request_id(crate::daemon::http::UNASSIGNED_REQUEST_ID);
             assert_eq!(response.status(), status);
             assert_eq!(
                 response.headers().get(CONTENT_TYPE).unwrap(),

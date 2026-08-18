@@ -16,9 +16,7 @@ use axum::routing::{delete, get, head, options, patch, post, put};
 use futures_util::StreamExt;
 use tokio::sync::RwLock;
 
-use super::route_policy::{
-    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
-};
+use super::route_policy::{BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy};
 use super::state::AppState;
 
 const PREVIEW_TTL: Duration = Duration::from_secs(2 * 60 * 60);
@@ -72,10 +70,7 @@ fn normalize_loopback_url(raw: &str) -> Option<String> {
     } else {
         (authority.to_ascii_lowercase(), 80)
     };
-    let loopback = matches!(
-        host.as_str(),
-        "localhost" | "127.0.0.1" | "0.0.0.0" | "::1"
-    );
+    let loopback = matches!(host.as_str(), "localhost" | "127.0.0.1" | "0.0.0.0" | "::1");
     if !loopback {
         return None;
     }
@@ -125,32 +120,72 @@ pub fn preview_path_for_token(token: &str) -> String {
 }
 
 pub fn forge_preview_surface() -> DeclaredRouter<AppState> {
-    preview_methods("/v1/forge/preview/{token}", true).merge(preview_methods(
-        "/v1/forge/preview/{token}/{*rest}",
-        false,
-    ))
+    preview_methods("/v1/forge/preview/{token}", true)
+        .merge(preview_methods("/v1/forge/preview/{token}/{*rest}", false))
 }
 
 fn preview_methods(path: &'static str, root: bool) -> DeclaredRouter<AppState> {
     if root {
         DeclaredRouter::default().methods([
-            (preview_policy(axum::http::Method::GET, path), get(preview_proxy_root)),
-            (preview_policy(axum::http::Method::HEAD, path), head(preview_proxy_root)),
-            (preview_policy(axum::http::Method::OPTIONS, path), options(preview_proxy_root)),
-            (preview_policy(axum::http::Method::POST, path), post(preview_proxy_root)),
-            (preview_policy(axum::http::Method::PUT, path), put(preview_proxy_root)),
-            (preview_policy(axum::http::Method::PATCH, path), patch(preview_proxy_root)),
-            (preview_policy(axum::http::Method::DELETE, path), delete(preview_proxy_root)),
+            (
+                preview_policy(axum::http::Method::GET, path),
+                get(preview_proxy_root),
+            ),
+            (
+                preview_policy(axum::http::Method::HEAD, path),
+                head(preview_proxy_root),
+            ),
+            (
+                preview_policy(axum::http::Method::OPTIONS, path),
+                options(preview_proxy_root),
+            ),
+            (
+                preview_policy(axum::http::Method::POST, path),
+                post(preview_proxy_root),
+            ),
+            (
+                preview_policy(axum::http::Method::PUT, path),
+                put(preview_proxy_root),
+            ),
+            (
+                preview_policy(axum::http::Method::PATCH, path),
+                patch(preview_proxy_root),
+            ),
+            (
+                preview_policy(axum::http::Method::DELETE, path),
+                delete(preview_proxy_root),
+            ),
         ])
     } else {
         DeclaredRouter::default().methods([
-            (preview_policy(axum::http::Method::GET, path), get(preview_proxy)),
-            (preview_policy(axum::http::Method::HEAD, path), head(preview_proxy)),
-            (preview_policy(axum::http::Method::OPTIONS, path), options(preview_proxy)),
-            (preview_policy(axum::http::Method::POST, path), post(preview_proxy)),
-            (preview_policy(axum::http::Method::PUT, path), put(preview_proxy)),
-            (preview_policy(axum::http::Method::PATCH, path), patch(preview_proxy)),
-            (preview_policy(axum::http::Method::DELETE, path), delete(preview_proxy)),
+            (
+                preview_policy(axum::http::Method::GET, path),
+                get(preview_proxy),
+            ),
+            (
+                preview_policy(axum::http::Method::HEAD, path),
+                head(preview_proxy),
+            ),
+            (
+                preview_policy(axum::http::Method::OPTIONS, path),
+                options(preview_proxy),
+            ),
+            (
+                preview_policy(axum::http::Method::POST, path),
+                post(preview_proxy),
+            ),
+            (
+                preview_policy(axum::http::Method::PUT, path),
+                put(preview_proxy),
+            ),
+            (
+                preview_policy(axum::http::Method::PATCH, path),
+                patch(preview_proxy),
+            ),
+            (
+                preview_policy(axum::http::Method::DELETE, path),
+                delete(preview_proxy),
+            ),
         ])
     }
 }
@@ -284,9 +319,9 @@ async fn proxy_preview(_state: AppState, token: String, rest: String, req: Reque
             }
         }
     }
-    let stream = upstream_response.bytes_stream().map(|chunk| {
-        chunk.map_err(|err| std::io::Error::other(err.to_string()))
-    });
+    let stream = upstream_response
+        .bytes_stream()
+        .map(|chunk| chunk.map_err(|err| std::io::Error::other(err.to_string())));
     response
         .body(Body::from_stream(stream))
         .unwrap_or_else(|_| StatusCode::BAD_GATEWAY.into_response())
@@ -318,7 +353,11 @@ fn preview_token_from_path(path: &str) -> Option<&str> {
 }
 
 fn preview_not_found() -> Response {
-    (StatusCode::NOT_FOUND, "Preview link expired or was not found").into_response()
+    (
+        StatusCode::NOT_FOUND,
+        "Preview link expired or was not found",
+    )
+        .into_response()
 }
 
 fn preview_expired() -> Response {

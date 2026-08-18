@@ -50,9 +50,7 @@ pub enum CommsCommand {
         reply: oneshot::Sender<Option<TransportKind>>,
     },
     /// Drop the cached route so the next request re-probes.
-    Refresh {
-        reply: oneshot::Sender<()>,
-    },
+    Refresh { reply: oneshot::Sender<()> },
 }
 
 /// Cheap-to-clone handle the engine uses to talk to the service.
@@ -157,8 +155,7 @@ impl CommsService {
     ) -> Result<TransportResponse, TransportError> {
         let now = Instant::now();
         let order = self.candidate_order(now);
-        let mut last_error =
-            TransportError::connect("no reachable transport route");
+        let mut last_error = TransportError::connect("no reachable transport route");
 
         for kind in order {
             let Some(adapter) = self.adapters.get(&kind).cloned() else {
@@ -308,7 +305,11 @@ mod tests {
         assert_eq!(iroh_calls.load(Ordering::SeqCst), 1);
         // Subsequent request prefers the now-cached Iroh route, skipping LAN.
         let _ = handle.request(req()).await.expect("iroh again");
-        assert_eq!(lan_calls.load(Ordering::SeqCst), 1, "dead LAN not retried while cached");
+        assert_eq!(
+            lan_calls.load(Ordering::SeqCst),
+            1,
+            "dead LAN not retried while cached"
+        );
         assert_eq!(iroh_calls.load(Ordering::SeqCst), 2);
     }
 
@@ -334,7 +335,11 @@ mod tests {
         let response = handle.request(req()).await.expect("lan reached server");
         assert_eq!(response.status, 500);
         assert_eq!(lan_calls.load(Ordering::SeqCst), 1);
-        assert_eq!(iroh_calls.load(Ordering::SeqCst), 0, "5xx must not silently reroute");
+        assert_eq!(
+            iroh_calls.load(Ordering::SeqCst),
+            0,
+            "5xx must not silently reroute"
+        );
     }
 
     #[tokio::test]
@@ -354,7 +359,10 @@ mod tests {
             }),
         ];
         let handle = CommsService::spawn(adapters, CommsConfig::default());
-        assert_eq!(handle.active_route().await, Some(TransportKind::HttpFallback));
+        assert_eq!(
+            handle.active_route().await,
+            Some(TransportKind::HttpFallback)
+        );
     }
 
     #[tokio::test]

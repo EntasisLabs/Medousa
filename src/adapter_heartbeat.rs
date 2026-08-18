@@ -8,7 +8,12 @@ pub fn heartbeat_nudges_enabled(env_prefix: &str) -> bool {
     let key = format!("{env_prefix}_HEARTBEAT_NUDGES_ENABLED");
     std::env::var(&key)
         .ok()
-        .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
         .unwrap_or(false)
 }
 

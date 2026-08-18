@@ -1,8 +1,8 @@
 //! Surreal schema bootstrap for vault link index (Phase V1).
 
 use stasis::prelude::RuntimeComposition;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 
 const VAULT_LINK_TABLES: &[&str] = &[
     "DEFINE TABLE vault_note_link SCHEMAFULL",

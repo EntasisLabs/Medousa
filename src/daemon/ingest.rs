@@ -2405,11 +2405,8 @@ mod stream_version_tests {
         let entry = TurnStreamEntry {
             channel: TurnEventChannel::new(8),
             log: Arc::new(
-                TurnEventLog::open_in(
-                    &root,
-                    TurnEnvelope::new(turn_id, Principal::operator()),
-                )
-                .unwrap(),
+                TurnEventLog::open_in(&root, TurnEnvelope::new(turn_id, Principal::operator()))
+                    .unwrap(),
             ),
         };
         publish_interactive_turn_event(

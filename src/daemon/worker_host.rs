@@ -17,8 +17,8 @@ pub const AGENT_QUEUE: &str = "agents";
 pub const SCHEDULED_QUEUE: &str = "default";
 pub const MAINTENANCE_QUEUE: &str = "maintenance";
 
-const IDLE_BACKOFF_MIN: Duration = Duration::from_millis(50);
-const IDLE_BACKOFF_MAX: Duration = Duration::from_secs(2);
+pub(crate) const IDLE_BACKOFF_MIN: Duration = Duration::from_millis(500);
+pub(crate) const IDLE_BACKOFF_MAX: Duration = Duration::from_secs(10);
 const ERROR_BACKOFF: Duration = Duration::from_secs(1);
 const DELIVERY_BATCH_SIZE: usize = 200;
 
@@ -252,34 +252,43 @@ mod tests {
     fn default_slots_match_capacity_and_lane_shares() {
         let config = RuntimeWorkerConfig::default();
         let slots = slot_kinds(&config);
-        assert_eq!(slots.len(), 25);
+        assert_eq!(slots.len(), 8);
         assert_eq!(
             slots
                 .iter()
                 .filter(|slot| matches!(slot, SlotKind::Agent))
                 .count(),
-            8
+            2
         );
         assert_eq!(
             slots
                 .iter()
                 .filter(|slot| matches!(slot, SlotKind::Scheduled))
                 .count(),
-            8
+            2
         );
         assert_eq!(
             slots
                 .iter()
                 .filter(|slot| matches!(slot, SlotKind::Delivery))
                 .count(),
-            5
+            1
         );
         assert_eq!(
             slots
                 .iter()
                 .filter(|slot| matches!(slot, SlotKind::Maintenance))
                 .count(),
-            4
+            1
         );
+        assert_eq!(
+            slots
+                .iter()
+                .filter(|slot| matches!(slot, SlotKind::Flexible))
+                .count(),
+            2
+        );
+        assert_eq!(IDLE_BACKOFF_MIN, Duration::from_millis(500));
+        assert_eq!(IDLE_BACKOFF_MAX, Duration::from_secs(10));
     }
 }

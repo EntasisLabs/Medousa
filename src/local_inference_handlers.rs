@@ -2,23 +2,22 @@ use std::convert::Infallible;
 use std::time::Duration;
 
 use axum::{
+    Json,
     extract::Path,
     response::sse::{Event, KeepAlive, Sse},
     routing::{delete, get, post},
-    Json,
 };
 use futures_util::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
 
-use crate::local_inference::{
-    build_hardware_profile, builtin_catalog, compiled_backends,
-    filter_catalog_for_tier, probe_hardware, read_hardware_profile,
-    resolve_inference_device, write_hardware_profile, CatalogModelEntry, HardwareProfile,
-    HardwareTier, InstalledModelRecord, LocalEngineStatus, ModelDownloadProgress, MODEL_STORE,
-    LOCAL_ENGINE,
-};
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
+use crate::local_inference::{
+    CatalogModelEntry, HardwareProfile, HardwareTier, InstalledModelRecord, LOCAL_ENGINE,
+    LocalEngineStatus, MODEL_STORE, ModelDownloadProgress, build_hardware_profile, builtin_catalog,
+    compiled_backends, filter_catalog_for_tier, probe_hardware, read_hardware_profile,
+    resolve_inference_device, write_hardware_profile,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -265,7 +264,9 @@ async fn local_model_download_events(
     });
 
     Ok(Sse::new(stream).keep_alive(
-        KeepAlive::new().interval(Duration::from_secs(15)).text("keep-alive"),
+        KeepAlive::new()
+            .interval(Duration::from_secs(15))
+            .text("keep-alive"),
     ))
 }
 
@@ -276,7 +277,9 @@ async fn local_model_delete(
         .remove_model(&model_id)
         .await
         .map_err(internal_error)?;
-    Ok(Json(serde_json::json!({ "modelId": model_id, "removed": true })))
+    Ok(Json(
+        serde_json::json!({ "modelId": model_id, "removed": true }),
+    ))
 }
 
 async fn local_engine_status() -> Json<LocalEngineStatus> {
@@ -290,18 +293,18 @@ fn internal_error(message: String) -> (axum::http::StatusCode, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::body::Body;
     use axum::Extension;
+    use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use tower::ServiceExt;
 
     fn test_router() -> axum::Router {
-        surface()
-            .into_router()
-            .layer(Extension(crate::request_principal::RequestPrincipal::local_app(
+        surface().into_router().layer(Extension(
+            crate::request_principal::RequestPrincipal::local_app(
                 std::sync::Arc::from("test-local"),
                 crate::request_principal::TransportClass::Loopback,
-            )))
+            ),
+        ))
     }
 
     #[tokio::test]

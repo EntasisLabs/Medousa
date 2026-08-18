@@ -17,11 +17,11 @@ pub use gateway::{
     workshop_ticket_from_router,
 };
 #[cfg(feature = "iroh-transport")]
-pub use medousa_iroh_http::{
-    iroh_http_get_text, iroh_http_request, IrohHttpBody, IrohHttpResponse,
-};
-#[cfg(feature = "iroh-transport")]
 pub use identity::secret_key_from_pairing_identity;
+#[cfg(feature = "iroh-transport")]
+pub use medousa_iroh_http::{
+    IrohHttpBody, IrohHttpResponse, iroh_http_get_text, iroh_http_request,
+};
 
 #[cfg(feature = "iroh-transport")]
 pub use medousa_iroh_http::ALPN;

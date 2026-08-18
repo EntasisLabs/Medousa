@@ -2,18 +2,17 @@
 
 use std::time::Duration;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use medousa_browser_lite::{search_ddg_html_cached_async, SearchResponse};
+use medousa_browser_lite::{SearchResponse, search_ddg_html_cached_async};
 
 use medousa_engine::{ToolSinkEvent, ToolSinkPort};
 
 use crate::agent_runtime::stream_sink::SharedAgentStreamSink;
 use crate::browser_host_client::{browser_host_healthy, browser_host_search};
 use crate::browser_sessions::{
-    complete_browser_session, create_browser_session, get_browser_session,
-    mark_browser_challenge, BrowserSessionCompleteRequest, BrowserSessionCreateRequest,
-    BrowserSessionStatus,
+    BrowserSessionCompleteRequest, BrowserSessionCreateRequest, BrowserSessionStatus,
+    complete_browser_session, create_browser_session, get_browser_session, mark_browser_challenge,
 };
 use crate::browser_tools::{is_client_executed_browser, surface_supports_browser_host};
 use crate::turn_continuation::TurnContinuationScope;
@@ -77,13 +76,8 @@ async fn emit_browser_challenge(
     };
     match delivery {
         BrowserToolDelivery::Stream(sink) => {
-            sink.browser_challenge_required(
-                turn_correlation_id,
-                session_id,
-                challenge_url,
-                reason,
-            )
-            .await;
+            sink.browser_challenge_required(turn_correlation_id, session_id, challenge_url, reason)
+                .await;
         }
         BrowserToolDelivery::Port(port) => {
             port.emit(ToolSinkEvent::BrowserChallenge {
@@ -142,8 +136,7 @@ pub fn search_response_to_tool_json(
 pub async fn resolve_browser_host_enabled(
     turn_scope: &crate::agent_runtime::execution_context::TurnScopeAccess,
 ) -> (bool, Option<String>) {
-    let scope =
-        crate::agent_runtime::execution_context::turn_continuation_scope(turn_scope).await;
+    let scope = crate::agent_runtime::execution_context::turn_continuation_scope(turn_scope).await;
     let Some(scope) = scope else {
         return (false, None);
     };
@@ -204,10 +197,7 @@ pub async fn run_browser_backed_search(
         )
         .await;
     }
-    let search_url = format!(
-        "https://html.duckduckgo.com/html/?q={}",
-        urlencoding(query)
-    );
+    let search_url = format!("https://html.duckduckgo.com/html/?q={}", urlencoding(query));
     emit_browser_navigated(
         delivery.as_ref(),
         turn_correlation_id,
@@ -227,10 +217,7 @@ async fn wait_for_challenge_resolution(
     initial: &SearchResponse,
     delivery: Option<&BrowserToolDelivery>,
 ) -> Result<SearchResponse, String> {
-    let challenge_url = format!(
-        "https://html.duckduckgo.com/html/?q={}",
-        urlencoding(query)
-    );
+    let challenge_url = format!("https://html.duckduckgo.com/html/?q={}", urlencoding(query));
     let reason = initial
         .challenge
         .clone()
@@ -268,9 +255,9 @@ async fn wait_for_challenge_resolution(
         if let Some(current) = get_browser_session(&session.session_id) {
             match current.status {
                 BrowserSessionStatus::Completed => {
-                    return current.search_response.ok_or_else(|| {
-                        "browser session completed without results".to_string()
-                    });
+                    return current
+                        .search_response
+                        .ok_or_else(|| "browser session completed without results".to_string());
                 }
                 BrowserSessionStatus::Failed => {
                     return Err(current
@@ -302,10 +289,7 @@ async fn run_client_executed_search(
 
     let delivery = resolve_browser_tool_delivery(&sink).await;
 
-    let navigate_url = format!(
-        "https://html.duckduckgo.com/html/?q={}",
-        urlencoding(query)
-    );
+    let navigate_url = format!("https://html.duckduckgo.com/html/?q={}", urlencoding(query));
 
     emit_browser_challenge(
         delivery.as_ref(),
@@ -398,7 +382,9 @@ fn urlencoding(value: &str) -> String {
         .collect()
 }
 
-pub fn surface_from_scope(scope: Option<&TurnContinuationScope>) -> Option<crate::daemon_api::TurnSurfaceContext> {
+pub fn surface_from_scope(
+    scope: Option<&TurnContinuationScope>,
+) -> Option<crate::daemon_api::TurnSurfaceContext> {
     scope.map(|scope| crate::daemon_api::TurnSurfaceContext {
         channel_surface: scope.channel_surface.clone(),
         channel_id: Some(scope.session_id.clone()),

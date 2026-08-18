@@ -1,15 +1,14 @@
 //! On-demand session tool history (Phase 8C) — summary + detail by slice id.
 
-
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 
-use crate::session::load_history;
 use crate::semantic_values::TrimmedText;
+use crate::session::load_history;
 use crate::turn_slice::{
-    DEFAULT_TOOL_HISTORY_DETAIL_CHARS, DEFAULT_TOOL_HISTORY_SUMMARY_TURNS, tool_history_detail_markdown,
-    tool_history_summary_rows, ToolHistorySliceRow,
+    DEFAULT_TOOL_HISTORY_DETAIL_CHARS, DEFAULT_TOOL_HISTORY_SUMMARY_TURNS, ToolHistorySliceRow,
+    tool_history_detail_markdown, tool_history_summary_rows,
 };
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
@@ -282,28 +281,26 @@ mod tests {
 
     #[test]
     fn summary_and_detail_round_trip() {
-        let turns = vec![
-            ConversationTurn {
-                role: "assistant".to_string(),
-                content: "done".to_string(),
-                timestamp: Utc::now(),
-                tool_names: vec!["cognition_manuscript_list".to_string()],
-                answer_state: None,
-                parts: Some(vec![TurnPart::ToolRun {
-                    run_id: "r1".to_string(),
-                    tool_name: "cognition_manuscript_list".to_string(),
-                    status: "succeeded".to_string(),
-                    input_summary: "list".to_string(),
-                    output_summary: Some("base-researcher".to_string()),
-                    artifact_refs: vec![],
-                    tool_round: Some(1),
-                    started_at: Utc::now(),
-                    finished_at: None,
-                }]),
-                slice_summary: None,
+        let turns = vec![ConversationTurn {
+            role: "assistant".to_string(),
+            content: "done".to_string(),
+            timestamp: Utc::now(),
+            tool_names: vec!["cognition_manuscript_list".to_string()],
+            answer_state: None,
+            parts: Some(vec![TurnPart::ToolRun {
+                run_id: "r1".to_string(),
+                tool_name: "cognition_manuscript_list".to_string(),
+                status: "succeeded".to_string(),
+                input_summary: "list".to_string(),
+                output_summary: Some("base-researcher".to_string()),
+                artifact_refs: vec![],
+                tool_round: Some(1),
+                started_at: Utc::now(),
+                finished_at: None,
+            }]),
+            slice_summary: None,
             speaker_profile_id: None,
-        },
-        ];
+        }];
         let rows = tool_history_summary_rows(&turns, 5, None, None);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].slice_id, "turn:1");

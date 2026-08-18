@@ -4,11 +4,11 @@ use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::routing::{get, post};
-use axum::Json;
 use futures_util::stream::{self, Stream};
 use stasis::application::runtime::runtime_factory::RuntimeComposition;
 
@@ -21,7 +21,7 @@ use crate::daemon_api::{
     WorkspaceSnapshot, WorkspaceSnapshotQuery, WorkspaceStreamQuery,
 };
 use crate::workspace::WorkspaceService;
-use crate::workspace::actions::{archive_card, cancel_card, link_vault_card, CardActionError};
+use crate::workspace::actions::{CardActionError, archive_card, cancel_card, link_vault_card};
 use crate::workspace::feed::spawn_workspace_stream;
 
 #[derive(Clone)]
@@ -40,24 +40,15 @@ pub fn workspace_surface() -> DeclaredRouter<WorkspaceHandlerState> {
             get(get_workspace_card),
         )
         .route(
-            workspace_write_policy(
-                "/v1/workspace/cards/{card_id}/cancel",
-                1024,
-            ),
+            workspace_write_policy("/v1/workspace/cards/{card_id}/cancel", 1024),
             post(cancel_workspace_card),
         )
         .route(
-            workspace_write_policy(
-                "/v1/workspace/cards/{card_id}/archive",
-                16 * 1024,
-            ),
+            workspace_write_policy("/v1/workspace/cards/{card_id}/archive", 16 * 1024),
             post(archive_workspace_card),
         )
         .route(
-            workspace_write_policy(
-                "/v1/workspace/cards/{card_id}/link-vault",
-                64 * 1024,
-            ),
+            workspace_write_policy("/v1/workspace/cards/{card_id}/link-vault", 64 * 1024),
             post(link_workspace_card_vault),
         )
         .route(
@@ -228,10 +219,7 @@ pub async fn link_workspace_card_vault(
 ) -> Result<Json<WorkspaceCardActionResponse>, (StatusCode, String)> {
     match WorkspaceService::get_card_detail(state.composition.clone(), &card_id).await {
         Ok(None) => {
-            return Err((
-                StatusCode::NOT_FOUND,
-                format!("card not found: {card_id}"),
-            ));
+            return Err((StatusCode::NOT_FOUND, format!("card not found: {card_id}")));
         }
         Err(err) => return Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
         Ok(Some(_)) => {}
@@ -264,11 +252,11 @@ pub async fn workspace_stream(
         }
     });
 
-    Ok(
-        Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)).text(
-            "keep-alive",
-        )),
-    )
+    Ok(Sse::new(stream).keep_alive(
+        KeepAlive::new()
+            .interval(Duration::from_secs(15))
+            .text("keep-alive"),
+    ))
 }
 
 #[cfg(test)]

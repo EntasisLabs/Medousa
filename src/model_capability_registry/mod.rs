@@ -10,14 +10,12 @@ use std::sync::{OnceLock, RwLock};
 use chrono::{Duration, Utc};
 
 use self::adapters::{fetch_provider_catalog, http_client, openrouter_slug_for};
-use self::cache::{
-    load_all_snapshots, load_index, save_index, save_provider_snapshot,
-};
+use self::cache::{load_all_snapshots, load_index, save_index, save_provider_snapshot};
 use self::heuristic::{infer_capability, infer_supports_vision};
 use self::types::{
     CatalogFreshnessResponse, CatalogIndex, CatalogIndexEntry, CatalogProviderFreshness,
-    ModelCapabilitiesLookupResponse, ModelCatalogListQuery, ModelCatalogListResponse,
-    ModelCatalogRefreshFailure, ModelCatalogRefreshResponse, ModelCapabilityRecord,
+    ModelCapabilitiesLookupResponse, ModelCapabilityRecord, ModelCatalogListQuery,
+    ModelCatalogListResponse, ModelCatalogRefreshFailure, ModelCatalogRefreshResponse,
     ProviderCatalogSnapshot,
 };
 
@@ -155,10 +153,7 @@ impl ModelCapabilityRegistry {
         })
     }
 
-    pub async fn refresh(
-        &self,
-        providers: Option<Vec<String>>,
-    ) -> ModelCatalogRefreshResponse {
+    pub async fn refresh(&self, providers: Option<Vec<String>>) -> ModelCatalogRefreshResponse {
         let targets = normalize_provider_list(providers);
         let client = match http_client() {
             Ok(client) => client,
@@ -186,9 +181,7 @@ impl ModelCapabilityRegistry {
             .get("openrouter")
             .map(|snapshot| snapshot.models.clone());
 
-        if targets.iter().any(|provider| provider == "openrouter")
-            || openrouter_overlay.is_none()
-        {
+        if targets.iter().any(|provider| provider == "openrouter") || openrouter_overlay.is_none() {
             let snapshot = fetch_provider_catalog(&client, "openrouter", None, None, None).await;
             if snapshot.error.is_none() {
                 openrouter_overlay = Some(snapshot.models.clone());
@@ -204,9 +197,14 @@ impl ModelCapabilityRegistry {
             }
             let api_key = provider_api_key(&provider);
             let base_url = provider_base_url(&provider);
-            let snapshot =
-                fetch_provider_catalog(&client, &provider, api_key.as_deref(), base_url.as_deref(), overlay)
-                    .await;
+            let snapshot = fetch_provider_catalog(
+                &client,
+                &provider,
+                api_key.as_deref(),
+                base_url.as_deref(),
+                overlay,
+            )
+            .await;
             if let Some(err) = snapshot.error.clone() {
                 failures.push(ModelCatalogRefreshFailure {
                     provider: provider.clone(),
@@ -260,16 +258,18 @@ impl ModelCapabilityRegistry {
 
         let snapshots = self.snapshots.read().expect("catalog snapshots lock");
         if let Some(snapshot) = snapshots.get(&provider)
-            && let Some(record) = find_model_record(&snapshot.models, model) {
-                return Some(record);
-            }
+            && let Some(record) = find_model_record(&snapshot.models, model)
+        {
+            return Some(record);
+        }
 
         if provider != "openrouter" {
             let slug = openrouter_slug_for(&provider, model);
             if let Some(snapshot) = snapshots.get("openrouter")
-                && let Some(record) = find_model_record(&snapshot.models, &slug) {
-                    return Some(enrich_record_provider(record, &provider, model));
-                }
+                && let Some(record) = find_model_record(&snapshot.models, &slug)
+            {
+                return Some(enrich_record_provider(record, &provider, model));
+            }
         }
 
         None
@@ -310,7 +310,10 @@ fn dedupe_providers(providers: Vec<String>) -> Vec<String> {
         .collect()
 }
 
-fn find_model_record(models: &[ModelCapabilityRecord], model: &str) -> Option<ModelCapabilityRecord> {
+fn find_model_record(
+    models: &[ModelCapabilityRecord],
+    model: &str,
+) -> Option<ModelCapabilityRecord> {
     models
         .iter()
         .find(|record| {
@@ -352,8 +355,7 @@ fn is_entry_stale(entry: &CatalogIndexEntry, ttl_secs: u64) -> bool {
     match entry.fetched_at {
         None => true,
         Some(fetched_at) => {
-            Utc::now().signed_duration_since(fetched_at)
-                > Duration::seconds(ttl_secs as i64)
+            Utc::now().signed_duration_since(fetched_at) > Duration::seconds(ttl_secs as i64)
         }
     }
 }
@@ -374,9 +376,9 @@ fn provider_base_url(provider: &str) -> Option<String> {
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
-        {
-            return Some(url.to_string());
-        }
+    {
+        return Some(url.to_string());
+    }
 
     let normalized = provider.to_ascii_uppercase().replace('-', "_");
     for key in [

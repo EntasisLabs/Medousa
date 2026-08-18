@@ -6,9 +6,7 @@ use serde_json::Value;
 use stasis::infrastructure::agent::{
     InMemoryAgentEventIngress, InMemoryTurnWaitStore, WaitCorrelatingAgentEventIngress,
 };
-use stasis::ports::outbound::agent::{
-    AgentEventIngress, AgentMessageCodec, TurnWaitStore,
-};
+use stasis::ports::outbound::agent::{AgentEventIngress, AgentMessageCodec, TurnWaitStore};
 
 use super::acp_codec::AcpAgentMessageCodec;
 

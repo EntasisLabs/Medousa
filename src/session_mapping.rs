@@ -15,10 +15,18 @@ pub enum IngestAction {
     CancelActiveJob,
     Regenerate,
     ListHistory,
-    ResumeSession { target_session_id: String },
-    ConfigureModel { args: Vec<String> },
-    ConfigureDepth { mode: Option<String> },
-    SetDisplayName { label: Option<String> },
+    ResumeSession {
+        target_session_id: String,
+    },
+    ConfigureModel {
+        args: Vec<String>,
+    },
+    ConfigureDepth {
+        mode: Option<String>,
+    },
+    SetDisplayName {
+        label: Option<String>,
+    },
     QueryHealth,
     QueryHeartbeat,
     QueryContextUsage,
@@ -117,7 +125,11 @@ fn split_slash_command(text: &str) -> Option<(String, String)> {
     }
 
     let token = trimmed.split_whitespace().next().unwrap_or("");
-    let normalized = token.split('@').next().unwrap_or(token).to_ascii_lowercase();
+    let normalized = token
+        .split('@')
+        .next()
+        .unwrap_or(token)
+        .to_ascii_lowercase();
     let args = trimmed
         .strip_prefix(token)
         .map(str::trim)
@@ -238,8 +250,8 @@ pub fn process_ingest(
         }
 
         IngestCommand::Help => {
-            let session_id = existing_session_id
-                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
+            let session_id =
+                existing_session_id.unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
             let commands = [
                 "/new - Start a new conversation session",
                 "/help - Show this help message",
@@ -278,26 +290,24 @@ pub fn process_ingest(
         }
 
         IngestCommand::Stop => IngestOutcome {
-            session_id: existing_session_id.unwrap_or_else(|| {
-                uuid::Uuid::new_v4().simple().to_string()
-            }),
+            session_id: existing_session_id
+                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string()),
             is_new_session: false,
             reply: "stopping active job…".to_string(),
             action: IngestAction::CancelActiveJob,
         },
 
         IngestCommand::Regen => IngestOutcome {
-            session_id: existing_session_id.unwrap_or_else(|| {
-                uuid::Uuid::new_v4().simple().to_string()
-            }),
+            session_id: existing_session_id
+                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string()),
             is_new_session: false,
             reply: "regenerating last response…".to_string(),
             action: IngestAction::Regenerate,
         },
 
         IngestCommand::History { target } => {
-            let session_id = existing_session_id
-                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
+            let session_id =
+                existing_session_id.unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
             if let Some(target_raw) = target {
                 let target_session_id = crate::session::resolve_history_resume_target(&target_raw)
                     .unwrap_or(target_raw);
@@ -309,9 +319,7 @@ pub fn process_ingest(
                     session_id: target_session_id.clone(),
                     is_new_session: false,
                     reply: format!("resumed session {label}"),
-                    action: IngestAction::ResumeSession {
-                        target_session_id,
-                    },
+                    action: IngestAction::ResumeSession { target_session_id },
                 }
             } else {
                 IngestOutcome {
@@ -324,26 +332,24 @@ pub fn process_ingest(
         }
 
         IngestCommand::Model { args } => IngestOutcome {
-            session_id: existing_session_id.unwrap_or_else(|| {
-                uuid::Uuid::new_v4().simple().to_string()
-            }),
+            session_id: existing_session_id
+                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string()),
             is_new_session: false,
             reply: "updating model routing…".to_string(),
             action: IngestAction::ConfigureModel { args },
         },
 
         IngestCommand::Depth { mode } => IngestOutcome {
-            session_id: existing_session_id.unwrap_or_else(|| {
-                uuid::Uuid::new_v4().simple().to_string()
-            }),
+            session_id: existing_session_id
+                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string()),
             is_new_session: false,
             reply: "updating response depth…".to_string(),
             action: IngestAction::ConfigureDepth { mode },
         },
 
         IngestCommand::Name { label } => {
-            let session_id = existing_session_id
-                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
+            let session_id =
+                existing_session_id.unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
             let reply = match label {
                 None => {
                     let current = crate::session::get_session_display_name(&session_id);
@@ -359,16 +365,14 @@ pub fn process_ingest(
                         ),
                     }
                 }
-                Some(ref raw) => {
-                    match crate::session::set_session_display_name(&session_id, raw) {
-                        Ok(()) => {
-                            let name = crate::session::get_session_display_name(&session_id)
-                                .unwrap_or_else(|| raw.clone());
-                            format!("✓ session name set to \"{name}\" (global)")
-                        }
-                        Err(err) => format!("⚠ could not set session name: {err}"),
+                Some(ref raw) => match crate::session::set_session_display_name(&session_id, raw) {
+                    Ok(()) => {
+                        let name = crate::session::get_session_display_name(&session_id)
+                            .unwrap_or_else(|| raw.clone());
+                        format!("✓ session name set to \"{name}\" (global)")
                     }
-                }
+                    Err(err) => format!("⚠ could not set session name: {err}"),
+                },
             };
             IngestOutcome {
                 session_id,
@@ -379,27 +383,24 @@ pub fn process_ingest(
         }
 
         IngestCommand::Health => IngestOutcome {
-            session_id: existing_session_id.unwrap_or_else(|| {
-                uuid::Uuid::new_v4().simple().to_string()
-            }),
+            session_id: existing_session_id
+                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string()),
             is_new_session: false,
             reply: "checking daemon health…".to_string(),
             action: IngestAction::QueryHealth,
         },
 
         IngestCommand::Heartbeat => IngestOutcome {
-            session_id: existing_session_id.unwrap_or_else(|| {
-                uuid::Uuid::new_v4().simple().to_string()
-            }),
+            session_id: existing_session_id
+                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string()),
             is_new_session: false,
             reply: "checking daemon heartbeat…".to_string(),
             action: IngestAction::QueryHeartbeat,
         },
 
         IngestCommand::Usage => IngestOutcome {
-            session_id: existing_session_id.unwrap_or_else(|| {
-                uuid::Uuid::new_v4().simple().to_string()
-            }),
+            session_id: existing_session_id
+                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string()),
             is_new_session: false,
             reply: "loading context usage…".to_string(),
             action: IngestAction::QueryContextUsage,
@@ -407,8 +408,8 @@ pub fn process_ingest(
 
         IngestCommand::Brief { args } => {
             let is_new = existing_session_id.is_none();
-            let session_id = existing_session_id
-                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
+            let session_id =
+                existing_session_id.unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
             let prompt = resolve_brief_ingest_prompt(&args);
             let merged_prompt = merge_attachments_into_prompt(&prompt, &request.attachments);
 
@@ -424,8 +425,8 @@ pub fn process_ingest(
         }
 
         IngestCommand::SkillsList => {
-            let session_id = existing_session_id
-                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
+            let session_id =
+                existing_session_id.unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
             let reply = crate::skill_ingest::format_skill_manuscripts_list()
                 .unwrap_or_else(|err| format!("could not list skills: {err:#}"));
             IngestOutcome {
@@ -438,8 +439,8 @@ pub fn process_ingest(
 
         IngestCommand::SkillRun { args } => {
             let is_new = existing_session_id.is_none();
-            let session_id = existing_session_id
-                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
+            let session_id =
+                existing_session_id.unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
             let reply = match crate::skill_ingest::parse_skill_command_args(&args)
                 .and_then(|parsed| crate::skill_ingest::build_skill_run_ingest_prompt(&parsed))
             {
@@ -468,8 +469,8 @@ pub fn process_ingest(
 
         IngestCommand::Ask { prompt } => {
             let is_new = existing_session_id.is_none();
-            let session_id = existing_session_id
-                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
+            let session_id =
+                existing_session_id.unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
             let merged_prompt = merge_attachments_into_prompt(&prompt, &request.attachments);
 
             IngestOutcome {
@@ -532,22 +533,20 @@ pub fn build_interactive_turn_request_for_ingest(
     suggested_capability_ids: Option<Vec<String>>,
 ) -> InteractiveTurnRequest {
     let defaults = crate::session::load_tui_defaults();
-    let surface = ingest.map(|request| {
-        TurnSurfaceContext::from_ingest(
-            &request.channel,
-            &request.channel_id,
-            &request.user_id,
-        )
-    }).or_else(|| {
-        Some(TurnSurfaceContext {
-            channel_surface: Some("api".to_string()),
-            channel_id: None,
-            user_id: None,
-            supports_ui_artifacts: false,
-            supports_liquid_markdown: false,
-            supports_browser_host: false,
+    let surface = ingest
+        .map(|request| {
+            TurnSurfaceContext::from_ingest(&request.channel, &request.channel_id, &request.user_id)
         })
-    });
+        .or_else(|| {
+            Some(TurnSurfaceContext {
+                channel_surface: Some("api".to_string()),
+                channel_id: None,
+                user_id: None,
+                supports_ui_artifacts: false,
+                supports_liquid_markdown: false,
+                supports_browser_host: false,
+            })
+        });
     InteractiveTurnRequest {
         session_id: session_id.to_string(),
         prompt,
@@ -564,9 +563,9 @@ pub fn build_interactive_turn_request_for_ingest(
         host_context: None,
         max_tool_rounds: None,
         retry_runtime_max_rounds: Some(
-            defaults
-                .retry_runtime_max_rounds
-                .unwrap_or(crate::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS),
+            defaults.retry_runtime_max_rounds.unwrap_or(
+                crate::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS,
+            ),
         ),
         manuscript_id,
         additional_manuscript_ids,

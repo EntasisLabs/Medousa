@@ -6,8 +6,8 @@ use std::sync::Mutex;
 
 use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::paths::medousa_data_dir;
 use crate::session::atomic_write;

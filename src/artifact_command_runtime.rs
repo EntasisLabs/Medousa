@@ -6,13 +6,16 @@ use crate::daemon_api::{
     ArtifactVerificationPolicyInput,
 };
 
-pub fn execute_artifact_command(request: ArtifactCommandRequest) -> Result<ArtifactCommandResponse> {
+pub fn execute_artifact_command(
+    request: ArtifactCommandRequest,
+) -> Result<ArtifactCommandResponse> {
     let session_id = request.session_id.trim().to_string();
     if session_id.is_empty() {
         return Err(anyhow!("session_id is required"));
     }
 
-    let mut selected_context_pack_query = normalize_optional_query(request.selected_context_pack_query);
+    let mut selected_context_pack_query =
+        normalize_optional_query(request.selected_context_pack_query);
     let rendered_output = match request.command {
         ArtifactCommandSpec::Lookup { query } => {
             let query = normalize_optional_query(query);
@@ -133,7 +136,10 @@ pub fn execute_artifact_command(request: ArtifactCommandRequest) -> Result<Artif
                             .unwrap_or_else(|_| "[]".to_string());
                             format!(
                                 "◈ extraction {} artifact={} claims={}\n{}",
-                                record.extraction_id, record.artifact_id, record.claim_count, preview
+                                record.extraction_id,
+                                record.artifact_id,
+                                record.claim_count,
+                                preview
                             )
                         }
                         Err(err) => format!("⚠ extraction persist failed: {err}"),
@@ -186,11 +192,10 @@ pub fn execute_artifact_command(request: ArtifactCommandRequest) -> Result<Artif
                         240,
                     );
 
-                    let extraction =
-                        crate::artifact_extraction::find_extraction(
-                            &session_id,
-                            Some(&found.record.artifact_id),
-                        );
+                    let extraction = crate::artifact_extraction::find_extraction(
+                        &session_id,
+                        Some(&found.record.artifact_id),
+                    );
                     let claims = extraction.map(|run| run.claims).unwrap_or_else(|| {
                         crate::artifact_extraction::extract_claims_from_chunks(
                             &found.record.artifact_id,
@@ -402,7 +407,9 @@ fn normalize_optional_query(input: Option<String>) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-fn verification_policy_from_input(input: ArtifactVerificationPolicyInput) -> crate::verifier::VerificationPolicy {
+fn verification_policy_from_input(
+    input: ArtifactVerificationPolicyInput,
+) -> crate::verifier::VerificationPolicy {
     crate::verifier::VerificationPolicy {
         min_citation_coverage: input.min_citation_coverage.clamp(0.0, 1.0),
         min_avg_support_strength: input.min_avg_support_strength.clamp(0.0, 1.0),
@@ -459,9 +466,7 @@ pub fn execute_artifact_list_ui(
         .map(|record| crate::daemon_api::ArtifactSummary {
             artifact_id: record.artifact_id,
             session_id: record.session_id,
-            label: record
-                .label
-                .unwrap_or_else(|| "Presentation".to_string()),
+            label: record.label.unwrap_or_else(|| "Presentation".to_string()),
             presentation: record.presentation,
             byte_size: record.byte_size,
             stored_at_utc: record.stored_at_utc,
@@ -540,9 +545,8 @@ pub fn execute_artifact_delete(
     if artifact_id.is_empty() {
         return Err(anyhow!("artifact_id is required"));
     }
-    let deleted_artifact_ids =
-        crate::artifact_store::delete_ui_artifact(&session_id, &artifact_id)
-            .map_err(|err| anyhow!(err))?;
+    let deleted_artifact_ids = crate::artifact_store::delete_ui_artifact(&session_id, &artifact_id)
+        .map_err(|err| anyhow!(err))?;
     Ok(crate::daemon_api::ArtifactDeleteResponse {
         deleted_artifact_ids,
     })

@@ -123,11 +123,9 @@ impl PairingStore {
             match self.read_record(&root, &entry.path) {
                 Ok(record) => {
                     if !revoked.pairing_ids.contains(&record.pairing_id) {
-                        let replace = by_phone_id
-                            .get(&record.phone_id)
-                            .is_none_or(|current: &PairedDeviceRecord| {
-                                record.last_seen > current.last_seen
-                            });
+                        let replace = by_phone_id.get(&record.phone_id).is_none_or(
+                            |current: &PairedDeviceRecord| record.last_seen > current.last_seen,
+                        );
                         if replace {
                             by_phone_id.insert(record.phone_id.clone(), record);
                         }
@@ -252,8 +250,7 @@ impl PairingStore {
 
     fn write_revoked(&self, revoked: &RevokedPairings) -> Result<()> {
         let root = pairing_root()?;
-        let encoded =
-            serde_json::to_vec_pretty(revoked).context("serialize revoked pairings")?;
+        let encoded = serde_json::to_vec_pretty(revoked).context("serialize revoked pairings")?;
         root.atomic_write(&revoked_pairings_store_path(), &encoded)?;
         Ok(())
     }
@@ -264,8 +261,7 @@ impl PairingStore {
         phone_id: &str,
     ) -> Result<Option<PairedDeviceRecord>> {
         for entry in root.list_root()? {
-            if entry.kind != StoreEntryKind::File
-                || entry.path.file_name() == REVOKED_PAIRINGS_FILE
+            if entry.kind != StoreEntryKind::File || entry.path.file_name() == REVOKED_PAIRINGS_FILE
             {
                 continue;
             }

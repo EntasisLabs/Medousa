@@ -6,15 +6,15 @@ use stasis::application::runtime::runtime_factory::RuntimeComposition;
 use stasis::domain::runtime::job::{Job, JobState};
 
 use crate::agent_runtime::turn_worker::{TurnWorkRecord, TurnWorkStatus, turn_worker_store};
-use crate::daemon_api::{
-    WorkBoardColumn, WorkCard, WorkCardDetail, WorkCardId, WorkCardKind,
+use crate::daemon_api::{WorkBoardColumn, WorkCard, WorkCardDetail, WorkCardId, WorkCardKind};
+use crate::openshell_sandbox_run::OPENSHELL_SANDBOX_RUN_JOB_TYPE;
+use crate::runtime_composition_ext::RuntimeCompositionExt;
+use crate::turn_budget_request::{
+    TurnBudgetRequest, TurnBudgetRequestStatus, turn_budget_request_store,
 };
 use crate::workspace::ask_job_store::{AskJobRecord, AskJobStatus, ask_job_store};
 use crate::workspace::retention::{self, WorkspaceRetentionConfig};
-use crate::turn_budget_request::{turn_budget_request_store, TurnBudgetRequest, TurnBudgetRequestStatus};
-use crate::openshell_sandbox_run::OPENSHELL_SANDBOX_RUN_JOB_TYPE;
 use crate::workspace::store::workspace_store;
-use crate::runtime_composition_ext::RuntimeCompositionExt;
 
 const WRAPPING_UP_STALE: Duration = Duration::hours(2);
 
@@ -256,7 +256,10 @@ fn column_for_ask_job(
         }
         AskJobStatus::Failed => {
             if !include_terminal
-                && terminal_ask_stale(record.finished_at_utc.or(Some(record.updated_at_utc)), hide_ttl)
+                && terminal_ask_stale(
+                    record.finished_at_utc.or(Some(record.updated_at_utc)),
+                    hide_ttl,
+                )
             {
                 return None;
             }
@@ -264,7 +267,10 @@ fn column_for_ask_job(
         }
         AskJobStatus::Canceled => {
             if !include_terminal
-                && terminal_ask_stale(record.finished_at_utc.or(Some(record.updated_at_utc)), hide_ttl)
+                && terminal_ask_stale(
+                    record.finished_at_utc.or(Some(record.updated_at_utc)),
+                    hide_ttl,
+                )
             {
                 return None;
             }
@@ -330,17 +336,19 @@ pub fn project_turn_worker(
         live_tool_activity: record
             .live_tool_activity
             .iter()
-            .map(|activity| medousa_types::daemon_api::WorkerToolActivityDto {
-                run_id: activity.run_id.clone(),
-                name: activity.name.clone(),
-                round: activity.round,
-                status: activity.status.clone(),
-                input_summary: activity.input_summary.clone(),
-                input_params: activity.input_params.clone(),
-                output_summary: activity.output_summary.clone(),
-                started_at: activity.started_at,
-                finished_at: activity.finished_at,
-            })
+            .map(
+                |activity| medousa_types::daemon_api::WorkerToolActivityDto {
+                    run_id: activity.run_id.clone(),
+                    name: activity.name.clone(),
+                    round: activity.round,
+                    status: activity.status.clone(),
+                    input_summary: activity.input_summary.clone(),
+                    input_params: activity.input_params.clone(),
+                    output_summary: activity.output_summary.clone(),
+                    started_at: activity.started_at,
+                    finished_at: activity.finished_at,
+                },
+            )
             .collect(),
         live_thinking: record.live_thinking.clone(),
         live_output: record.live_output.clone(),
@@ -357,7 +365,11 @@ pub fn project_turn_worker(
     Some(ProjectedWorkItem { card, detail })
 }
 
-pub fn project_job(job: &Job, include_terminal: bool, hide_ttl: Duration) -> Option<ProjectedWorkItem> {
+pub fn project_job(
+    job: &Job,
+    include_terminal: bool,
+    hide_ttl: Duration,
+) -> Option<ProjectedWorkItem> {
     let (column, status_label, wrapping_up_reasons, terminal) =
         column_for_job(job, include_terminal, hide_ttl)?;
 
@@ -435,53 +447,18 @@ pub fn column_for_job(
     hide_ttl: Duration,
 ) -> Option<(WorkBoardColumn, &'static str, Vec<String>, bool)> {
     match job.state {
-        JobState::Enqueued => Some((
-            WorkBoardColumn::Backlog,
-            "queued",
-            Vec::new(),
-            false,
-        )),
-        JobState::Leased => Some((
-            WorkBoardColumn::InFlight,
-            "leased",
-            Vec::new(),
-            false,
-        )),
-        JobState::Running => Some((
-            WorkBoardColumn::InFlight,
-            "running",
-            Vec::new(),
-            false,
-        )),
+        JobState::Enqueued => Some((WorkBoardColumn::Backlog, "queued", Vec::new(), false)),
+        JobState::Leased => Some((WorkBoardColumn::InFlight, "leased", Vec::new(), false)),
+        JobState::Running => Some((WorkBoardColumn::InFlight, "running", Vec::new(), false)),
         JobState::Succeeded => {
             if !include_terminal && terminal_job_stale(job.finished_at, hide_ttl) {
                 return None;
             }
-            Some((
-                WorkBoardColumn::Done,
-                "succeeded",
-                Vec::new(),
-                true,
-            ))
+            Some((WorkBoardColumn::Done, "succeeded", Vec::new(), true))
         }
-        JobState::Failed => Some((
-            WorkBoardColumn::Blocked,
-            "failed",
-            Vec::new(),
-            true,
-        )),
-        JobState::DeadLetter => Some((
-            WorkBoardColumn::Blocked,
-            "dead_letter",
-            Vec::new(),
-            true,
-        )),
-        JobState::Canceled => Some((
-            WorkBoardColumn::Blocked,
-            "canceled",
-            Vec::new(),
-            true,
-        )),
+        JobState::Failed => Some((WorkBoardColumn::Blocked, "failed", Vec::new(), true)),
+        JobState::DeadLetter => Some((WorkBoardColumn::Blocked, "dead_letter", Vec::new(), true)),
+        JobState::Canceled => Some((WorkBoardColumn::Blocked, "canceled", Vec::new(), true)),
     }
 }
 
@@ -499,7 +476,10 @@ pub fn column_for_turn_worker(
 }
 
 /// Align worker board column with durable Stasis job state when the worker record lags.
-fn effective_turn_worker_status(record: &TurnWorkRecord, stasis_job: Option<&Job>) -> TurnWorkStatus {
+fn effective_turn_worker_status(
+    record: &TurnWorkRecord,
+    stasis_job: Option<&Job>,
+) -> TurnWorkStatus {
     if record.synthesis_delivered {
         return TurnWorkStatus::Completed;
     }
@@ -542,29 +522,14 @@ fn column_for_turn_worker_status(
     hide_ttl: Duration,
 ) -> Option<(WorkBoardColumn, &'static str, Vec<String>, bool)> {
     match status {
-        TurnWorkStatus::Pending => Some((
-            WorkBoardColumn::Backlog,
-            "pending",
-            Vec::new(),
-            false,
-        )),
-        TurnWorkStatus::Running => Some((
-            WorkBoardColumn::InFlight,
-            "running",
-            Vec::new(),
-            false,
-        )),
+        TurnWorkStatus::Pending => Some((WorkBoardColumn::Backlog, "pending", Vec::new(), false)),
+        TurnWorkStatus::Running => Some((WorkBoardColumn::InFlight, "running", Vec::new(), false)),
         TurnWorkStatus::Completed => {
             if record.synthesis_delivered || wrapping_up_stale(record.updated_at) {
                 if !include_terminal && wrapping_up_stale(record.updated_at) {
                     return None;
                 }
-                return Some((
-                    WorkBoardColumn::Done,
-                    "completed",
-                    Vec::new(),
-                    true,
-                ));
+                return Some((WorkBoardColumn::Done, "completed", Vec::new(), true));
             }
             Some((
                 WorkBoardColumn::WrappingUp,
@@ -577,23 +542,13 @@ fn column_for_turn_worker_status(
             if !include_terminal && terminal_turn_worker_stale(record.updated_at, hide_ttl) {
                 return None;
             }
-            Some((
-                WorkBoardColumn::Blocked,
-                "failed",
-                Vec::new(),
-                true,
-            ))
+            Some((WorkBoardColumn::Blocked, "failed", Vec::new(), true))
         }
         TurnWorkStatus::Cancelled => {
             if !include_terminal && terminal_turn_worker_stale(record.updated_at, hide_ttl) {
                 return None;
             }
-            Some((
-                WorkBoardColumn::Blocked,
-                "cancelled",
-                Vec::new(),
-                true,
-            ))
+            Some((WorkBoardColumn::Blocked, "cancelled", Vec::new(), true))
         }
     }
 }
@@ -634,9 +589,10 @@ pub fn title_for_job(job: &Job, payload: &Value) -> String {
     }
 
     if let Some(manuscript) = payload.get("manuscript_id").and_then(|v| v.as_str())
-        && manuscript.contains("brief") {
-            return "Scheduled: morning brief".to_string();
-        }
+        && manuscript.contains("brief")
+    {
+        return "Scheduled: morning brief".to_string();
+    }
 
     if job.job_type.contains("workflow") {
         return format!(

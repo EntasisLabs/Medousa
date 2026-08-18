@@ -40,10 +40,7 @@ pub fn event_for_column_transition(
         ),
         (_, WorkBoardColumn::WrappingUp) => (
             WorkspaceEventKind::WorkWrappingUp,
-            format!(
-                "Wrapping up — {detail_line} ({})",
-                card.status_label
-            ),
+            format!("Wrapping up — {detail_line} ({})", card.status_label),
         ),
         (Some(WorkBoardColumn::WrappingUp), WorkBoardColumn::Done) => (
             WorkspaceEventKind::WorkUnblocked,
@@ -114,9 +111,10 @@ pub fn filter_events_by_card<'a>(
     events
         .iter()
         .filter(|event| {
-            event.refs.iter().any(|reference| {
-                reference.ref_type == "card" && reference.ref_id == card_id
-            })
+            event
+                .refs
+                .iter()
+                .any(|reference| reference.ref_type == "card" && reference.ref_id == card_id)
         })
         .collect()
 }
@@ -202,9 +200,10 @@ pub fn resolve_detail_line(detail: &WorkCardDetail) -> String {
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            && (is_slug_like_title(title) || is_generic_workflow_title(title)) {
-                return truncate_line(task, 88);
-            }
+            && (is_slug_like_title(title) || is_generic_workflow_title(title))
+        {
+            return truncate_line(task, 88);
+        }
         if !title.is_empty() && !is_slug_like_title(title) && !is_generic_workflow_title(title) {
             return title.to_string();
         }
@@ -317,9 +316,7 @@ mod tests {
             terminal: true,
             error: None,
             result_excerpt: None,
-            task_line: Some(
-                "Researching the latest OpenClaw trends give me a moment.".to_string(),
-            ),
+            task_line: Some("Researching the latest OpenClaw trends give me a moment.".to_string()),
             tool_names: Some(vec![
                 "cognition_capability_invoke".to_string(),
                 "cognition_grapheme_run".to_string(),
@@ -360,9 +357,11 @@ mod tests {
         );
         assert_eq!(event.intent.as_deref(), Some("research"));
         assert_eq!(event.tool_names.len(), 2);
-        assert!(event
-            .context_line
-            .as_deref()
-            .is_some_and(|line| line.contains("capability invoke")));
+        assert!(
+            event
+                .context_line
+                .as_deref()
+                .is_some_and(|line| line.contains("capability invoke"))
+        );
     }
 }

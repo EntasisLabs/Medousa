@@ -123,14 +123,16 @@ impl ShellPermissionProfile {
                 profile.writable_roots = call_writable
                     .into_iter()
                     .filter(|path| {
-                        charter.writable_roots.iter().any(|root| {
-                            path.starts_with(root) || root.starts_with(path)
-                        })
+                        charter
+                            .writable_roots
+                            .iter()
+                            .any(|root| path.starts_with(root) || root.starts_with(path))
                     })
                     .collect();
                 if profile.writable_roots.is_empty() {
                     return Err(
-                        "writable_roots must stay within Settings → Shell charter roots".to_string(),
+                        "writable_roots must stay within Settings → Shell charter roots"
+                            .to_string(),
                     );
                 }
             }
@@ -253,9 +255,10 @@ fn path_list_from_args(args: &Value, keys: &[&str]) -> Vec<PathBuf> {
                 .collect();
         }
         if let Some(s) = args.get(*key).and_then(Value::as_str)
-            && !s.trim().is_empty() {
-                return vec![PathBuf::from(s.trim())];
-            }
+            && !s.trim().is_empty()
+        {
+            return vec![PathBuf::from(s.trim())];
+        }
     }
     Vec::new()
 }
@@ -430,9 +433,12 @@ pub fn run_sandboxed(request: &ShellRunRequest) -> Result<ShellRunResult, String
         if which_bin("systemd-run").is_some() {
             return run_with_systemd_run(request, &cwd);
         }
-        run_unsandboxed(request, &cwd, "process", Some(
-            "bwrap/systemd-run not found; ran without OS jail".to_string(),
-        ))
+        run_unsandboxed(
+            request,
+            &cwd,
+            "process",
+            Some("bwrap/systemd-run not found; ran without OS jail".to_string()),
+        )
     }
     #[cfg(target_os = "macos")]
     {
@@ -481,7 +487,10 @@ fn enforce_binary_allowlist(argv: &[String], allowlist: &[String]) -> Result<(),
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or(argv[0].as_str());
-    if matches!(program, "sh" | "bash" | "zsh" | "cmd.exe" | "cmd" | "powershell") {
+    if matches!(
+        program,
+        "sh" | "bash" | "zsh" | "cmd.exe" | "cmd" | "powershell"
+    ) {
         return Ok(());
     }
     let allowed = allowlist
@@ -524,7 +533,10 @@ fn run_unsandboxed(
         .stderr(Stdio::piped())
         .env_clear()
         .env("PATH", default_path())
-        .env("HOME", dirs::home_dir().unwrap_or_else(|| PathBuf::from("/")))
+        .env(
+            "HOME",
+            dirs::home_dir().unwrap_or_else(|| PathBuf::from("/")),
+        )
         .env("TMPDIR", std::env::temp_dir())
         .env("LANG", "C.UTF-8");
     wait_command(cmd, &request.profile, backend, false, warning)
@@ -591,14 +603,20 @@ fn run_with_systemd_run(request: &ShellRunRequest, cwd: &Path) -> Result<ShellRu
     ];
     for root in &request.profile.writable_roots {
         args.push("-p".to_string());
-        args.push(format!("ReadWritePaths={}", canonicalize_or_clone(root).display()));
+        args.push(format!(
+            "ReadWritePaths={}",
+            canonicalize_or_clone(root).display()
+        ));
     }
     if !request.profile.network {
         args.push("-p".to_string());
         args.push("PrivateNetwork=yes".to_string());
     }
     args.push("-p".to_string());
-    args.push(format!("WorkingDirectory={}", canonicalize_or_clone(cwd).display()));
+    args.push(format!(
+        "WorkingDirectory={}",
+        canonicalize_or_clone(cwd).display()
+    ));
     args.push("--".to_string());
     args.extend(request.argv.iter().cloned());
 
@@ -616,10 +634,7 @@ fn run_with_seatbelt(request: &ShellRunRequest, cwd: &Path) -> Result<ShellRunRe
     let profile_file = tempfile_seatbelt(&profile)?;
     let profile_path = profile_file.path().to_path_buf();
 
-    let mut args = vec![
-        "-f".to_string(),
-        profile_path.display().to_string(),
-    ];
+    let mut args = vec!["-f".to_string(), profile_path.display().to_string()];
     args.extend(request.argv.iter().cloned());
 
     let mut cmd = Command::new("/usr/bin/sandbox-exec");
@@ -628,7 +643,10 @@ fn run_with_seatbelt(request: &ShellRunRequest, cwd: &Path) -> Result<ShellRunRe
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .env("HOME", dirs::home_dir().unwrap_or_else(|| PathBuf::from("/")))
+        .env(
+            "HOME",
+            dirs::home_dir().unwrap_or_else(|| PathBuf::from("/")),
+        )
         .env("TMPDIR", std::env::temp_dir())
         .env("PATH", default_path())
         .env("LANG", "C.UTF-8");
@@ -678,7 +696,10 @@ fn build_seatbelt_profile(profile: &ShellPermissionProfile, cwd: &Path) -> Resul
 
 #[cfg(target_os = "macos")]
 fn escape_sb_path(path: &Path) -> String {
-    path.display().to_string().replace('\\', "\\\\").replace('"', "\\\"")
+    path.display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
 }
 
 #[cfg(target_os = "macos")]
@@ -742,12 +763,14 @@ fn wait_command(
         .spawn()
         .map_err(|err| format!("failed to spawn shell backend '{backend}': {err}"))?;
 
-    let stdout_thread = child.stdout.take().map(|pipe| {
-        std::thread::spawn(move || read_limited(pipe, max_output))
-    });
-    let stderr_thread = child.stderr.take().map(|pipe| {
-        std::thread::spawn(move || read_limited(pipe, max_output))
-    });
+    let stdout_thread = child
+        .stdout
+        .take()
+        .map(|pipe| std::thread::spawn(move || read_limited(pipe, max_output)));
+    let stderr_thread = child
+        .stderr
+        .take()
+        .map(|pipe| std::thread::spawn(move || read_limited(pipe, max_output)));
 
     let timeout = Duration::from_millis(profile.timeout_ms);
     let mut timed_out = false;

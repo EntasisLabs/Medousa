@@ -213,7 +213,13 @@ pub fn merge_target_for_leaf(root: &SplitNode, group_id: &str) -> Option<String>
 pub fn remove_leaf(root: &SplitNode, group_id: &str) -> (SplitNode, bool) {
     match root {
         SplitNode::Group { .. } => (root.clone(), false),
-        SplitNode::Branch { a, b, id, direction, ratio } => {
+        SplitNode::Branch {
+            a,
+            b,
+            id,
+            direction,
+            ratio,
+        } => {
             if let SplitNode::Group { id: aid } = a.as_ref()
                 && aid == group_id
             {
@@ -293,11 +299,7 @@ pub fn leaf_order(node: &SplitNode) -> Vec<String> {
     collect_group_ids(node)
 }
 
-pub fn neighbor_in_direction(
-    root: &SplitNode,
-    group_id: &str,
-    dir: FocusDir,
-) -> Option<String> {
+pub fn neighbor_in_direction(root: &SplitNode, group_id: &str, dir: FocusDir) -> Option<String> {
     let order = leaf_order(root);
     let idx = order.iter().position(|id| id == group_id)?;
     let step: isize = match dir {
@@ -323,9 +325,7 @@ mod tests {
     use super::*;
 
     fn g(id: &str) -> SplitNode {
-        SplitNode::Group {
-            id: id.to_string(),
-        }
+        SplitNode::Group { id: id.to_string() }
     }
 
     #[test]
@@ -343,7 +343,10 @@ mod tests {
             split_leaf(&root, "main", SplitDirection::Right, "pane-2".into()).unwrap();
         assert_eq!(new_id, "pane-2");
         assert_eq!(count_leaves(&split), 2);
-        assert_eq!(leaf_order(&split), vec!["main".to_string(), "pane-2".to_string()]);
+        assert_eq!(
+            leaf_order(&split),
+            vec!["main".to_string(), "pane-2".to_string()]
+        );
 
         let (merged, removed) = remove_leaf(&split, "pane-2");
         assert!(removed);
@@ -354,8 +357,7 @@ mod tests {
     #[test]
     fn split_down_places_new_below() {
         let root = g("main");
-        let (split, _) =
-            split_leaf(&root, "main", SplitDirection::Down, "below".into()).unwrap();
+        let (split, _) = split_leaf(&root, "main", SplitDirection::Down, "below".into()).unwrap();
         match &split {
             SplitNode::Branch {
                 direction: SplitBranchDirection::Row,
@@ -373,8 +375,7 @@ mod tests {
     #[test]
     fn split_left_edge_puts_new_first() {
         let root = g("main");
-        let (split, _) =
-            split_leaf_at_edge(&root, "main", SplitEdge::Left, "left".into()).unwrap();
+        let (split, _) = split_leaf_at_edge(&root, "main", SplitEdge::Left, "left".into()).unwrap();
         match &split {
             SplitNode::Branch {
                 direction: SplitBranchDirection::Column,
@@ -392,8 +393,7 @@ mod tests {
     #[test]
     fn merge_target_is_sash_adjacent() {
         let root = g("main");
-        let (split, _) =
-            split_leaf(&root, "main", SplitDirection::Right, "right".into()).unwrap();
+        let (split, _) = split_leaf(&root, "main", SplitDirection::Right, "right".into()).unwrap();
         assert_eq!(
             merge_target_for_leaf(&split, "main").as_deref(),
             Some("right")
@@ -431,8 +431,7 @@ mod tests {
     #[test]
     fn set_branch_ratio_clamps() {
         let root = g("main");
-        let (split, _) =
-            split_leaf(&root, "main", SplitDirection::Right, "right".into()).unwrap();
+        let (split, _) = split_leaf(&root, "main", SplitDirection::Right, "right".into()).unwrap();
         let branch_id = match &split {
             SplitNode::Branch { id, .. } => id.clone(),
             _ => panic!("branch"),

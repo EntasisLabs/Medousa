@@ -110,8 +110,7 @@ pub struct DisabledBindingRef {
 }
 
 /// Manifest entry: definition fields + declared bindings (TOML-friendly layout).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CapabilityManifestEntry {
     pub id: CapabilityId,
     pub title: String,
@@ -151,7 +150,6 @@ impl CapabilityManifestEntry {
         }
     }
 }
-
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CapabilityManifestBindings {
@@ -401,7 +399,8 @@ impl CapabilityRegistry {
                 if !binding.enabled {
                     continue;
                 }
-                if manifest.is_binding_disabled(&id, CapabilitySource::Grapheme, &binding.module_op) {
+                if manifest.is_binding_disabled(&id, CapabilitySource::Grapheme, &binding.module_op)
+                {
                     continue;
                 }
                 resolved.push(CapabilityBinding::grapheme(
@@ -464,7 +463,9 @@ impl CapabilityRegistry {
                 let has_grapheme = bindings_summary
                     .iter()
                     .any(|binding| binding.source == "grapheme");
-                let has_mcp = bindings_summary.iter().any(|binding| binding.source == "mcp");
+                let has_mcp = bindings_summary
+                    .iter()
+                    .any(|binding| binding.source == "mcp");
                 CapabilityListEntry {
                     id: id.clone(),
                     title: def.title.clone(),
@@ -522,7 +523,11 @@ impl CapabilityRegistry {
             }
         }
 
-        matches.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.capability.cmp(&b.capability)));
+        matches.sort_by(|a, b| {
+            b.score
+                .cmp(&a.score)
+                .then_with(|| a.capability.cmp(&b.capability))
+        });
         matches.truncate(limit);
 
         CapabilitySearchResponse {
@@ -569,23 +574,24 @@ impl CapabilityRegistry {
                     .intents
                     .iter()
                     .any(|entry| entry.eq_ignore_ascii_case(intent_value))
-                {
-                    matched_on = Some("intent".to_string());
-                }
+            {
+                matched_on = Some("intent".to_string());
+            }
             if matched_on.is_none()
-                && let Some(query_value) = normalized_query {
-                    let (score, matched) =
-                        score_capability_match(&def.id, def, &normalize_tokens(query_value));
-                    if score > 0 {
-                        matched_on = matched;
-                    } else if def.intents.iter().any(|entry| {
-                        entry
-                            .to_ascii_lowercase()
-                            .contains(&query_value.to_ascii_lowercase())
-                    }) {
-                        matched_on = Some("intent_keyword".to_string());
-                    }
+                && let Some(query_value) = normalized_query
+            {
+                let (score, matched) =
+                    score_capability_match(&def.id, def, &normalize_tokens(query_value));
+                if score > 0 {
+                    matched_on = matched;
+                } else if def.intents.iter().any(|entry| {
+                    entry
+                        .to_ascii_lowercase()
+                        .contains(&query_value.to_ascii_lowercase())
+                }) {
+                    matched_on = Some("intent_keyword".to_string());
                 }
+            }
             if matched_on.is_some() {
                 matches.push(medousa_types::feed::IntentResolveMatch {
                     capability_id: def.id.clone(),
@@ -610,12 +616,7 @@ impl CapabilityRegistry {
         let catalog_index = sync
             .entries
             .iter()
-            .map(|entry| {
-                (
-                    format!("{}.{}", entry.server_id, entry.tool_name),
-                    entry,
-                )
-            })
+            .map(|entry| (format!("{}.{}", entry.server_id, entry.tool_name), entry))
             .collect::<HashMap<_, _>>();
 
         for bindings in self.bindings.values_mut() {
@@ -710,8 +711,7 @@ fn score_capability_match(
     }
 
     let query_joined = query_tokens.join(" ");
-    if id.eq_ignore_ascii_case(&query_joined) || id.eq_ignore_ascii_case(query_tokens[0].as_str())
-    {
+    if id.eq_ignore_ascii_case(&query_joined) || id.eq_ignore_ascii_case(query_tokens[0].as_str()) {
         return (100, Some("id".to_string()));
     }
 
@@ -772,10 +772,7 @@ pub fn load_capability_manifest() -> (CapabilityManifest, bool) {
             (manifest, true)
         }
         Err(error) => {
-            eprintln!(
-                "medousa: failed to parse {}: {error}",
-                path.display()
-            );
+            eprintln!("medousa: failed to parse {}: {error}", path.display());
             (manifest, false)
         }
     }
@@ -783,7 +780,11 @@ pub fn load_capability_manifest() -> (CapabilityManifest, bool) {
 
 fn merge_capability_manifests(base: &mut CapabilityManifest, overlay: CapabilityManifest) {
     for entry in overlay.capabilities {
-        if let Some(existing) = base.capabilities.iter_mut().find(|item| item.id == entry.id) {
+        if let Some(existing) = base
+            .capabilities
+            .iter_mut()
+            .find(|item| item.id == entry.id)
+        {
             *existing = entry;
         } else {
             base.capabilities.push(entry);
@@ -793,7 +794,11 @@ fn merge_capability_manifests(base: &mut CapabilityManifest, overlay: Capability
         base.web_search.preferred_provider = overlay.web_search.preferred_provider;
     }
     for disabled in overlay.disabled_bindings {
-        if !base.disabled_bindings.iter().any(|entry| entry == &disabled) {
+        if !base
+            .disabled_bindings
+            .iter()
+            .any(|entry| entry == &disabled)
+        {
             base.disabled_bindings.push(disabled);
         }
     }
@@ -1138,26 +1143,25 @@ mod tests {
     fn resolve_intent_finds_personal_app_poll_dashboard() {
         let registry = CapabilityRegistry::with_embedded_seed();
         let response = registry.resolve_intent(Some("live_poll_dashboard"), None);
-        assert!(
-            response.matches.iter().any(|entry| {
-                entry.capability_id == "environment_canvas"
-                    && entry
-                        .publish_feeds
-                        .contains(&crate::feed_adapters::TRIP_LONDON_TRAINS_FEED_ID.to_string())
-            })
-        );
+        assert!(response.matches.iter().any(|entry| {
+            entry.capability_id == "environment_canvas"
+                && entry
+                    .publish_feeds
+                    .contains(&crate::feed_adapters::TRIP_LONDON_TRAINS_FEED_ID.to_string())
+        }));
     }
 
     #[test]
     fn resolve_intent_finds_setup_personal_app() {
         let registry = CapabilityRegistry::with_embedded_seed();
         let response = registry.resolve_intent(Some("setup_personal_app"), None);
-        assert!(
-            response.matches.iter().any(|entry| {
-                entry.capability_id == "environment_canvas"
-                    && entry.publish_feeds.iter().any(|feed| feed.contains("trip.london"))
-            })
-        );
+        assert!(response.matches.iter().any(|entry| {
+            entry.capability_id == "environment_canvas"
+                && entry
+                    .publish_feeds
+                    .iter()
+                    .any(|feed| feed.contains("trip.london"))
+        }));
     }
 
     #[test]

@@ -96,7 +96,10 @@ impl CalendarService {
         })
     }
 
-    pub fn update_event(uid: &str, request: &CalendarWriteRequest) -> Result<CalendarWriteResponse> {
+    pub fn update_event(
+        uid: &str,
+        request: &CalendarWriteRequest,
+    ) -> Result<CalendarWriteResponse> {
         let calendar_path = Self::resolve_path(request.calendar_path.as_deref())?;
         let uid = uid.trim();
         if uid.is_empty() {
@@ -322,10 +325,7 @@ fn build_event(request: &CalendarWriteRequest, uid: &str) -> Result<Event> {
 
 fn event_to_dto(event: &Event, calendar_path: &str) -> Option<CalendarEvent> {
     let uid = event.get_uid()?.to_string();
-    let summary = event
-        .get_summary()
-        .unwrap_or("(untitled)")
-        .to_string();
+    let summary = event.get_summary().unwrap_or("(untitled)").to_string();
     let description = event.get_description().map(str::to_string);
     let location = event.get_location().map(str::to_string);
     let (dtstart, all_day) = start_to_utc(event.get_start()?)?;
@@ -428,9 +428,7 @@ fn parse_trigger_minutes_before(raw: &str) -> Option<i32> {
 fn start_to_utc(value: DatePerhapsTime) -> Option<(DateTime<Utc>, bool)> {
     match value {
         DatePerhapsTime::Date(date) => {
-            let dt = date
-                .and_time(NaiveTime::MIN)
-                .and_utc();
+            let dt = date.and_time(NaiveTime::MIN).and_utc();
             Some((dt, true))
         }
         DatePerhapsTime::DateTime(dt) => Some((calendar_dt_to_utc(dt)?, false)),
@@ -500,16 +498,13 @@ fn expand_occurrences(
     let byday = parse_byday(rrule);
 
     let mut out = Vec::new();
-    let duration = base
-        .dtend
-        .map(|end| end - base.dtstart)
-        .unwrap_or_else(|| {
-            if base.all_day {
-                Duration::days(1)
-            } else {
-                Duration::hours(1)
-            }
-        });
+    let duration = base.dtend.map(|end| end - base.dtstart).unwrap_or_else(|| {
+        if base.all_day {
+            Duration::days(1)
+        } else {
+            Duration::hours(1)
+        }
+    });
 
     let mut cursor = base.dtstart;
     let mut emitted = 0usize;
@@ -594,18 +589,25 @@ fn parse_until(rrule: &str) -> Option<DateTime<Utc>> {
     }
     if raw.len() == 8 {
         let date = NaiveDate::parse_from_str(raw, "%Y%m%d").ok()?;
-        return Some(date.and_time(NaiveTime::from_hms_opt(23, 59, 59)?).and_utc());
+        return Some(
+            date.and_time(NaiveTime::from_hms_opt(23, 59, 59)?)
+                .and_utc(),
+        );
     }
     if raw.ends_with('Z') && raw.len() >= 16 {
-        let naive = chrono::NaiveDateTime::parse_from_str(raw.trim_end_matches('Z'), "%Y%m%dT%H%M%S")
-            .ok()?;
+        let naive =
+            chrono::NaiveDateTime::parse_from_str(raw.trim_end_matches('Z'), "%Y%m%dT%H%M%S")
+                .ok()?;
         return Some(Utc.from_utc_datetime(&naive));
     }
     None
 }
 
 fn parse_byday(rrule: &str) -> Vec<Weekday> {
-    let Some(raw) = rrule.split(';').find_map(|part| part.strip_prefix("BYDAY=")) else {
+    let Some(raw) = rrule
+        .split(';')
+        .find_map(|part| part.strip_prefix("BYDAY="))
+    else {
         return Vec::new();
     };
     raw.split(',')
@@ -640,9 +642,7 @@ fn add_months(dt: DateTime<Utc>, months: i32) -> DateTime<Utc> {
     let month_adj = ((month - 1).rem_euclid(12) + 1) as u32;
     let day = date.day().min(days_in_month(year_adj, month_adj));
     let naive_date = NaiveDate::from_ymd_opt(year_adj, month_adj, day).unwrap_or(date);
-    naive_date
-        .and_time(dt.time())
-        .and_utc()
+    naive_date.and_time(dt.time()).and_utc()
 }
 
 fn days_in_month(year: i32, month: u32) -> u32 {

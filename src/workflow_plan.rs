@@ -66,7 +66,10 @@ fn mentions_notify(goal: &str) -> bool {
 }
 
 fn mentions_csv(goal: &str) -> bool {
-    mentions_any(goal, &["csv", "spreadsheet", "anomaly", "anomalies", "digest"])
+    mentions_any(
+        goal,
+        &["csv", "spreadsheet", "anomaly", "anomalies", "digest"],
+    )
 }
 
 fn mentions_research(goal: &str) -> bool {
@@ -101,7 +104,10 @@ fn mentions_document_search(goal: &str) -> bool {
 }
 
 fn mentions_http_poll(goal: &str) -> bool {
-    mentions_any(goal, &["poll", "monitor url", "check url", "http poll", "endpoint"])
+    mentions_any(
+        goal,
+        &["poll", "monitor url", "check url", "http poll", "endpoint"],
+    )
 }
 
 fn infer_cron_expr(goal: &str) -> Option<String> {
@@ -186,18 +192,23 @@ query DigestCsv {
   set { raw: "{{ $steps.fetch_csv.output.body }}" }
   |> core.echo(message: $current.raw) { state { current } }
 }"#
-        .to_string()
+    .to_string()
 }
 
 fn build_csv_digest_workflow(
     goal: &str,
     context: Option<&Value>,
     scheduled: bool,
-) -> (WorkflowRunRequest, WorkflowScheduleSuggestion, String, Vec<String>) {
+) -> (
+    WorkflowRunRequest,
+    WorkflowScheduleSuggestion,
+    String,
+    Vec<String>,
+) {
     let url = context_url(context).unwrap_or_else(|| "https://example.com/data.csv".to_string());
-    let mut assumptions = vec![
-        format!("CSV URL placeholder set to '{url}' — replace via context.url before execution."),
-    ];
+    let mut assumptions = vec![format!(
+        "CSV URL placeholder set to '{url}' — replace via context.url before execution."
+    )];
     if scheduled {
         assumptions.push(
             "Cron inferred from goal text; verify timezone and cron_expr before scheduling."
@@ -378,15 +389,12 @@ pub fn plan_workflow_from_goal(request: &WorkflowPlanRequest) -> WorkflowPlanRes
                 "cognition_runtime_workflow_run".to_string()
             },
             suggested_workflow: Some(workflow),
-            suggested_schedule: if scheduled {
-                Some(schedule)
-            } else {
-                None
-            },
+            suggested_schedule: if scheduled { Some(schedule) } else { None },
             suggested_tool_input: None,
             notes: vec![
                 "Multi-step CSV digest workflow with optional Telegram notify step.".to_string(),
-                "Review grapheme sources and MCP args before calling execute_with tool.".to_string(),
+                "Review grapheme sources and MCP args before calling execute_with tool."
+                    .to_string(),
             ],
             assumptions,
         };

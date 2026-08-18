@@ -19,22 +19,20 @@ use rappct::{
 };
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JOBOBJECT_BASIC_UI_RESTRICTIONS,
+    AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
+    JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    JOB_OBJECT_LIMIT_PROCESS_MEMORY, JOB_OBJECT_NET_RATE_CONTROL_ENABLE,
+    JOB_OBJECT_NET_RATE_CONTROL_MAX_BANDWIDTH, JOB_OBJECT_UILIMIT_DESKTOP,
+    JOB_OBJECT_UILIMIT_DISPLAYSETTINGS, JOB_OBJECT_UILIMIT_EXITWINDOWS, JOB_OBJECT_UILIMIT_HANDLES,
+    JOB_OBJECT_UILIMIT_READCLIPBOARD, JOB_OBJECT_UILIMIT_SYSTEMPARAMETERS,
+    JOB_OBJECT_UILIMIT_WRITECLIPBOARD, JOBOBJECT_BASIC_UI_RESTRICTIONS,
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOBOBJECT_NET_RATE_CONTROL_INFORMATION,
-    JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION,
-    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
-    JOB_OBJECT_NET_RATE_CONTROL_ENABLE, JOB_OBJECT_NET_RATE_CONTROL_MAX_BANDWIDTH,
-    JOB_OBJECT_UILIMIT_DESKTOP, JOB_OBJECT_UILIMIT_DISPLAYSETTINGS,
-    JOB_OBJECT_UILIMIT_EXITWINDOWS, JOB_OBJECT_UILIMIT_HANDLES, JOB_OBJECT_UILIMIT_READCLIPBOARD,
-    JOB_OBJECT_UILIMIT_SYSTEMPARAMETERS, JOB_OBJECT_UILIMIT_WRITECLIPBOARD,
     JobObjectBasicUIRestrictions, JobObjectExtendedLimitInformation,
     JobObjectNetRateControlInformation, SetInformationJobObject, TerminateJobObject,
 };
 use windows::core::PCWSTR;
 
-use super::{
-    ShellPermissionProfile, ShellRunRequest, ShellRunResult, default_path, read_limited,
-};
+use super::{ShellPermissionProfile, ShellRunRequest, ShellRunResult, default_path, read_limited};
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const DEFAULT_PROCESS_MEMORY_BYTES: usize = 512 * 1024 * 1024;
@@ -53,9 +51,7 @@ pub fn probe_backend() -> (&'static str, bool, String) {
         Err(err) => (
             "job_object",
             true,
-            format!(
-                "AppContainer unavailable ({err}); Job Object fallback (no FS ACL jail)"
-            ),
+            format!("AppContainer unavailable ({err}); Job Object fallback (no FS ACL jail)"),
         ),
     }
 }
@@ -77,10 +73,7 @@ pub fn run_with_job(request: &ShellRunRequest, cwd: &Path) -> Result<ShellRunRes
     }
 }
 
-fn run_with_appcontainer(
-    request: &ShellRunRequest,
-    cwd: &Path,
-) -> Result<ShellRunResult, String> {
+fn run_with_appcontainer(request: &ShellRunRequest, cwd: &Path) -> Result<ShellRunResult, String> {
     let profile = AppContainerProfile::ensure(
         PROFILE_NAME,
         PROFILE_DISPLAY,
@@ -150,12 +143,14 @@ fn run_with_appcontainer(
         .map_err(|err| format!("launch_in_container_with_io failed: {err}"))?;
 
     let max_output = request.profile.max_output_bytes;
-    let stdout_thread = launched.stdout.take().map(|pipe| {
-        std::thread::spawn(move || read_limited(pipe, max_output))
-    });
-    let stderr_thread = launched.stderr.take().map(|pipe| {
-        std::thread::spawn(move || read_limited(pipe, max_output))
-    });
+    let stdout_thread = launched
+        .stdout
+        .take()
+        .map(|pipe| std::thread::spawn(move || read_limited(pipe, max_output)));
+    let stderr_thread = launched
+        .stderr
+        .take()
+        .map(|pipe| std::thread::spawn(move || read_limited(pipe, max_output)));
     // Drop stdin so the child isn't blocked waiting for input.
     drop(launched.stdin.take());
 
@@ -170,10 +165,7 @@ fn run_with_appcontainer(
         .and_then(|handle| handle.join().ok())
         .unwrap_or_default();
     let stderr = if timed_out {
-        let mut msg = format!(
-            "shell.run timed out after {}ms",
-            request.profile.timeout_ms
-        );
+        let mut msg = format!("shell.run timed out after {}ms", request.profile.timeout_ms);
         let captured = stderr_thread
             .and_then(|handle| handle.join().ok())
             .unwrap_or_default();
@@ -233,11 +225,7 @@ fn grant_profile_paths(
     Ok(())
 }
 
-fn grant_dir(
-    profile: &AppContainerProfile,
-    path: &Path,
-    access: AccessMask,
-) -> Result<(), String> {
+fn grant_dir(profile: &AppContainerProfile, path: &Path, access: AccessMask) -> Result<(), String> {
     let canon = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     if !canon.exists() {
         return Ok(());
@@ -266,14 +254,9 @@ fn windows_cmdline(argv: &[String]) -> String {
         .join(" ")
 }
 
-fn run_with_job_object(
-    request: &ShellRunRequest,
-    cwd: &Path,
-) -> Result<ShellRunResult, String> {
+fn run_with_job_object(request: &ShellRunRequest, cwd: &Path) -> Result<ShellRunResult, String> {
     let job = WindowsJob::create(!request.profile.network)?;
-    let warning = Some(
-        "Windows Job Object active (no AppContainer FS ACL jail)".to_string(),
-    );
+    let warning = Some("Windows Job Object active (no AppContainer FS ACL jail)".to_string());
 
     let mut cmd = Command::new(&request.argv[0]);
     if request.argv.len() > 1 {

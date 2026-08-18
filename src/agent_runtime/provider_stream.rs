@@ -128,8 +128,9 @@ impl ProviderStreamAttempt {
                     report.overflowed = true;
                     break;
                 };
-                let Ok(global_permit) =
-                    Arc::clone(&global_bytes).acquire_many_owned(bytes as u32).await
+                let Ok(global_permit) = Arc::clone(&global_bytes)
+                    .acquire_many_owned(bytes as u32)
+                    .await
                 else {
                     report.overflowed = true;
                     break;

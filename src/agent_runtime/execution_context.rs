@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use tokio_util::sync::CancellationToken;
@@ -547,9 +547,7 @@ where
 /// Compatibility read for tools whose upstream trait cannot yet accept context.
 /// The marker carries no fallback: an unscoped invocation fails closed.
 #[allow(unused_variables)]
-pub async fn turn_continuation_scope(
-    access: &TurnScopeAccess,
-) -> Option<TurnContinuationScope> {
+pub async fn turn_continuation_scope(access: &TurnScopeAccess) -> Option<TurnContinuationScope> {
     if let Some(context) = active_turn_execution_context() {
         return Some(context.legacy_scope().clone());
     }
@@ -641,8 +639,14 @@ mod tests {
         first.remember_grapheme_source("first-source");
         second.remember_grapheme_source("second-source");
 
-        assert_eq!(first.last_grapheme_source().as_deref(), Some("first-source"));
-        assert_eq!(second.last_grapheme_source().as_deref(), Some("second-source"));
+        assert_eq!(
+            first.last_grapheme_source().as_deref(),
+            Some("first-source")
+        );
+        assert_eq!(
+            second.last_grapheme_source().as_deref(),
+            Some("second-source")
+        );
     }
 
     #[test]
@@ -844,14 +848,11 @@ mod tests {
         let expected = context.handle();
         let cancellation = context.cancellation().clone();
         let child_context = context.clone();
-        let child = tokio::spawn(with_turn_execution_context(
-            child_context,
-            async move {
-                let observed = active_turn_execution_context().unwrap().handle();
-                let result = await_turn_boundary(std::future::pending::<()>()).await;
-                (observed, result)
-            },
-        ));
+        let child = tokio::spawn(with_turn_execution_context(child_context, async move {
+            let observed = active_turn_execution_context().unwrap().handle();
+            let result = await_turn_boundary(std::future::pending::<()>()).await;
+            (observed, result)
+        }));
         tokio::task::yield_now().await;
         cancellation.cancel();
         let (observed, result) = child.await.unwrap();

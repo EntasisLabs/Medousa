@@ -1,25 +1,25 @@
 //! HTTP handlers for `/v1/feeds/*`.
 
+use axum::Json;
 use axum::extract::{Path, Query};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::routing::{get, post};
-use axum::Json;
 use chrono::Utc;
 use futures_util::stream::{self, Stream};
+use medousa_types::authority_id::{EnvironmentProfileId, FeedId};
 use medousa_types::feed::{
     FeedLatestGoodQuery, FeedLatestGoodResponse, FeedListResponse, FeedReadRequest,
     FeedStreamEvent, FeedStreamQuery, FeedTailQuery, FeedTailResponse,
 };
-use medousa_types::authority_id::{EnvironmentProfileId, FeedId};
 use std::convert::Infallible;
 use std::time::Duration;
 use tokio::sync::broadcast;
 
-use crate::environment_store::resolve_profile_id;
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
+use crate::environment_store::resolve_profile_id;
 use crate::feed_bus::{feed_hub, list_feeds};
 use crate::feed_store::feed_store;
 
@@ -41,10 +41,7 @@ pub fn feed_surface() -> DeclaredRouter<FeedApiState> {
             ),
             get(stream_feeds),
         )
-        .route(
-            feed_read_policy("/v1/feeds/{feed_id}/tail"),
-            get(tail_feed),
-        )
+        .route(feed_read_policy("/v1/feeds/{feed_id}/tail"), get(tail_feed))
         .route(
             feed_read_policy("/v1/feeds/{feed_id}/latest-good"),
             get(latest_good_feed),
@@ -90,9 +87,7 @@ fn feed_policy(
     }
 }
 
-async fn list_feeds_handler(
-    Query(query): Query<FeedTailQuery>,
-) -> Json<FeedListResponse> {
+async fn list_feeds_handler(Query(query): Query<FeedTailQuery>) -> Json<FeedListResponse> {
     Json(list_feeds(query.profile_id.as_deref()).await)
 }
 
@@ -103,10 +98,12 @@ async fn tail_feed(
     let profile_id = resolve_profile_id(query.profile_id.as_deref());
     EnvironmentProfileId::parse(&profile_id)
         .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
-    let feed_id = FeedId::parse(&feed_id)
-        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let feed_id =
+        FeedId::parse(&feed_id).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     let limit = query.limit.unwrap_or(20).clamp(1, 100);
-    let events = feed_store().tail(&profile_id, feed_id.as_str(), limit).await;
+    let events = feed_store()
+        .tail(&profile_id, feed_id.as_str(), limit)
+        .await;
     Ok(Json(FeedTailResponse {
         feed_id: feed_id.to_string(),
         events,
@@ -120,12 +117,17 @@ async fn latest_good_feed(
     let profile_id = resolve_profile_id(query.profile_id.as_deref());
     EnvironmentProfileId::parse(&profile_id)
         .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
-    let feed_id = FeedId::parse(&feed_id)
-        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
-    let result = feed_store().latest_good(&profile_id, feed_id.as_str()).await;
+    let feed_id =
+        FeedId::parse(&feed_id).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let result = feed_store()
+        .latest_good(&profile_id, feed_id.as_str())
+        .await;
     match result {
         Some(response) => Ok(Json(response)),
-        None => Err((StatusCode::NOT_FOUND, format!("no latest good result for feed '{feed_id}'"))),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            format!("no latest good result for feed '{feed_id}'"),
+        )),
     }
 }
 
@@ -136,8 +138,8 @@ async fn mark_feed_read(
     let profile_id = resolve_profile_id(body.profile_id.as_deref());
     EnvironmentProfileId::parse(&profile_id)
         .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
-    let feed_id = FeedId::parse(&feed_id)
-        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let feed_id =
+        FeedId::parse(&feed_id).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     let seq = body.seq.unwrap_or(0);
     feed_store()
         .set_read_cursor(&profile_id, feed_id.as_str(), seq)

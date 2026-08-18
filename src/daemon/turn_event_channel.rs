@@ -1,8 +1,8 @@
 //! Per-turn live SSE fan-out channel. Replay durability lives on the
 //! per-turn [`TurnEventLog`] spine; this type broadcasts pre-sequenced events only.
 
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use tokio::sync::{broadcast, watch};
 
@@ -31,9 +31,7 @@ pub struct TurnEventSubscription {
 }
 
 impl TurnEventSubscription {
-    pub async fn recv(
-        &mut self,
-    ) -> Result<PublishedTurnEvent, broadcast::error::RecvError> {
+    pub async fn recv(&mut self) -> Result<PublishedTurnEvent, broadcast::error::RecvError> {
         if *self.closed.borrow() {
             return Err(broadcast::error::RecvError::Closed);
         }
@@ -48,9 +46,7 @@ impl TurnEventSubscription {
     }
 
     #[cfg(test)]
-    fn try_recv(
-        &mut self,
-    ) -> Result<PublishedTurnEvent, broadcast::error::TryRecvError> {
+    fn try_recv(&mut self) -> Result<PublishedTurnEvent, broadcast::error::TryRecvError> {
         self.receiver.try_recv()
     }
 }

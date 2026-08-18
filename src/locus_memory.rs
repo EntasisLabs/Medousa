@@ -16,7 +16,6 @@ use stasis::ports::outbound::memory::memory_models::{
     MemoryAvecState, MemoryNode, MemoryStoreRequest, MemoryStoreResponse,
 };
 
-
 pub const LOCUS_TENANT_SCOPE_PREFIX: &str = "tenant:";
 pub const LOCUS_TENANT_SCOPE_SEPARATOR: &str = "::session:";
 pub const LOCUS_DEFAULT_TENANT: &str = "default";

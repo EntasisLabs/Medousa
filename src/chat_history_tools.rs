@@ -1,6 +1,5 @@
 //! Read-only, profile-scoped access to durable Medousa chat history.
 
-
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stasis::domain::errors::{Result as StasisResult, StasisError};
@@ -502,20 +501,22 @@ mod tests {
 
     #[tokio::test]
     async fn cross_session_access_requires_a_turn_principal() {
-        let scope = crate::agent_runtime::execution_context::TurnScopeAccess::for_test(crate::turn_continuation::TurnContinuationScope {
-            turn_correlation_id: "turn-1".to_string(),
-            session_id: "session-a".to_string(),
-            identity_user_id: None,
-            original_prompt: "find the pager chat".to_string(),
-            delivery_target: None,
-            provider: "test".to_string(),
-            model: "test".to_string(),
-            response_depth_mode: "standard".to_string(),
-            supports_ui_artifacts: false,
-            supports_liquid_markdown: false,
-            supports_browser_host: false,
-            channel_surface: None,
-        });
+        let scope = crate::agent_runtime::execution_context::TurnScopeAccess::for_test(
+            crate::turn_continuation::TurnContinuationScope {
+                turn_correlation_id: "turn-1".to_string(),
+                session_id: "session-a".to_string(),
+                identity_user_id: None,
+                original_prompt: "find the pager chat".to_string(),
+                delivery_target: None,
+                provider: "test".to_string(),
+                model: "test".to_string(),
+                response_depth_mode: "standard".to_string(),
+                supports_ui_artifacts: false,
+                supports_liquid_markdown: false,
+                supports_browser_host: false,
+                channel_surface: None,
+            },
+        );
         let error = history_access(&scope, COGNITION_CHAT_HISTORY_SEARCH)
             .await
             .expect_err("missing principal must be denied");

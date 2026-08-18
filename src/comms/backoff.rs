@@ -6,8 +6,8 @@
 //! injectable (`Instant` is passed in) so the logic is unit-testable without
 //! sleeping.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 /// Exponential backoff with a hard cap and optional full-jitter.
@@ -342,7 +342,10 @@ mod tests {
         let guard = OverlapGuard::new();
         let permit = guard.try_enter().expect("first enters");
         assert!(guard.is_active());
-        assert!(guard.try_enter().is_none(), "second is rejected while in flight");
+        assert!(
+            guard.try_enter().is_none(),
+            "second is rejected while in flight"
+        );
         drop(permit);
         assert!(!guard.is_active());
         assert!(guard.try_enter().is_some(), "slot reusable after release");

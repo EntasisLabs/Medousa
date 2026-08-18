@@ -16,8 +16,8 @@ pub fn execute_stage_route_command(
             if let Some(role) = role {
                 match stage_routing.get(&role) {
                     Some(route) => {
-                        let rendered =
-                            serde_json::to_string_pretty(route).unwrap_or_else(|_| "{}".to_string());
+                        let rendered = serde_json::to_string_pretty(route)
+                            .unwrap_or_else(|_| "{}".to_string());
                         format!("◈ stage route {}\n{}", route.role, rendered)
                     }
                     None => format!(

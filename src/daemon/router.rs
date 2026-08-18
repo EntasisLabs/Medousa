@@ -1229,12 +1229,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 369);
-        assert_eq!(with_pairing.entries().len(), 381);
+        assert_eq!(without_pairing.entries().len(), 370);
+        assert_eq!(with_pairing.entries().len(), 382);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 381);
+        assert_eq!(rows.len(), 382);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
@@ -1590,13 +1590,13 @@ mod tests {
             .chain(&world)
             .collect::<Vec<_>>();
 
-        assert_eq!(entries.len(), 28);
+        assert_eq!(entries.len(), 29);
         assert_eq!(
             entries
                 .iter()
                 .filter(|entry| entry.required_capability == Some("admin.execute"))
                 .count(),
-            20
+            21
         );
         assert_eq!(
             entries

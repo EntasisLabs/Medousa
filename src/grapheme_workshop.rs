@@ -66,7 +66,9 @@ pub async fn update_allowlist(
     Ok(get_allowlist().await)
 }
 
-pub fn save_script(request: GraphemeScriptSaveRequest) -> Result<GraphemeScriptSaveResponse, String> {
+pub fn save_script(
+    request: GraphemeScriptSaveRequest,
+) -> Result<GraphemeScriptSaveResponse, String> {
     let name = request.name.trim();
     let body = request.body.trim();
     if name.is_empty() {
@@ -101,10 +103,7 @@ pub fn delete_script(script_id: &str) -> Result<GraphemeScriptDeleteResponse, St
     })
 }
 
-pub fn rename_script(
-    script_id: &str,
-    name: &str,
-) -> Result<GraphemeScriptSaveResponse, String> {
+pub fn rename_script(script_id: &str, name: &str) -> Result<GraphemeScriptSaveResponse, String> {
     let name = name.trim();
     if name.is_empty() {
         return Err("name is required".to_string());
@@ -116,7 +115,9 @@ pub fn rename_script(
     })
 }
 
-pub async fn compile_source(request: GraphemeCompileRequest) -> Result<GraphemeCompileResponse, String> {
+pub async fn compile_source(
+    request: GraphemeCompileRequest,
+) -> Result<GraphemeCompileResponse, String> {
     let source = request.source.trim();
     if source.is_empty() {
         return Err("source is required".to_string());
@@ -144,7 +145,8 @@ pub async fn compile_source(request: GraphemeCompileRequest) -> Result<GraphemeC
             artifact_id: Some(aot.base_artifact.artifact_id.clone()),
             lint_warnings: Vec::new(),
             compile_hints: vec![
-                "AOT envelope ready — repeat runs can use execute_aot for lower latency.".to_string(),
+                "AOT envelope ready — repeat runs can use execute_aot for lower latency."
+                    .to_string(),
                 format!("Stage: {:?}", aot.stage),
             ],
             aot_stage: Some(format!("{:?}", aot.stage)),
@@ -181,7 +183,12 @@ pub async fn compile_source(request: GraphemeCompileRequest) -> Result<GraphemeC
 }
 
 fn parse_module_abi(raw: Option<&str>) -> ModuleAbi {
-    match raw.unwrap_or("wasix_v1").trim().to_ascii_lowercase().as_str() {
+    match raw
+        .unwrap_or("wasix_v1")
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "mir_v1" | "mir" => ModuleAbi::MirV1,
         "wasix_wit_v15" | "wit" => ModuleAbi::WasixWitV15,
         _ => ModuleAbi::WasixV1,

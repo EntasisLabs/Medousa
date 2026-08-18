@@ -49,7 +49,9 @@ pub fn presentation_profile_for_channel(channel: &str) -> PresentationProfile {
     }
 }
 
-pub fn presentation_profile_for_surface(surface: Option<&TurnSurfaceContext>) -> PresentationProfile {
+pub fn presentation_profile_for_surface(
+    surface: Option<&TurnSurfaceContext>,
+) -> PresentationProfile {
     let channel = surface
         .and_then(|ctx| ctx.channel_surface.as_deref())
         .unwrap_or(channel_delivery::CHANNEL_INTERACTIVE);
@@ -93,10 +95,7 @@ pub fn format_tools_footer_markdown(tool_names: &[String]) -> Option<String> {
     if names.is_empty() {
         return None;
     }
-    Some(format!(
-        "\n\n---\n_Tools this turn:_ {}",
-        names.join(", ")
-    ))
+    Some(format!("\n\n---\n_Tools this turn:_ {}", names.join(", ")))
 }
 
 pub fn format_tools_footer_plain(tool_names: &[String]) -> Option<String> {
@@ -121,11 +120,7 @@ pub fn maybe_append_tools_to_canonical_body(
 }
 
 /// Format assistant answer text for an external channel push.
-pub fn format_channel_delivery_text(
-    answer: &str,
-    tool_names: &[String],
-    channel: &str,
-) -> String {
+pub fn format_channel_delivery_text(answer: &str, tool_names: &[String], channel: &str) -> String {
     match presentation_profile_for_channel(channel).channel_tools_footer {
         ChannelToolsFooter::None => answer.to_string(),
         ChannelToolsFooter::PlainList => {
@@ -161,7 +156,10 @@ mod tests {
 
         let body = format_channel_delivery_text(
             "Here is the answer.",
-            &["cognition_mcp_invoke".to_string(), "cognition_mcp_invoke".to_string()],
+            &[
+                "cognition_mcp_invoke".to_string(),
+                "cognition_mcp_invoke".to_string(),
+            ],
             "telegram",
         );
         assert!(body.starts_with("Here is the answer."));
@@ -182,11 +180,7 @@ mod tests {
     #[test]
     fn canonical_append_respects_profile_gate() {
         let mut body = "Answer".to_string();
-        maybe_append_tools_to_canonical_body(
-            &mut body,
-            &[],
-            PresentationProfile::RICH_SURFACE,
-        );
+        maybe_append_tools_to_canonical_body(&mut body, &[], PresentationProfile::RICH_SURFACE);
         assert_eq!(body, "Answer");
 
         let invocations = vec![ToolInvocation {

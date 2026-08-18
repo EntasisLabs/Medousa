@@ -551,9 +551,15 @@ mod tests {
             &lease(),
             Path::new("/tmp/worktree"),
         );
-        assert!(claims.iter().all(|claim| claim.mode == CoderClaimMode::Write));
-        assert!(claims.iter().any(|claim| {
-            claim.target == "resource://lockfile/cargo.lock" && claim.hazardous
-        }));
+        assert!(
+            claims
+                .iter()
+                .all(|claim| claim.mode == CoderClaimMode::Write)
+        );
+        assert!(
+            claims.iter().any(|claim| {
+                claim.target == "resource://lockfile/cargo.lock" && claim.hazardous
+            })
+        );
     }
 }

@@ -107,10 +107,7 @@ pub fn init_shared_mode() {
 }
 
 pub fn current_mode() -> DaemonWorkshopMode {
-    config_slot()
-        .read()
-        .expect("shared mode lock")
-        .mode
+    config_slot().read().expect("shared mode lock").mode
 }
 
 pub fn is_shared_mode() -> bool {
@@ -118,10 +115,7 @@ pub fn is_shared_mode() -> bool {
 }
 
 pub fn enabled_at() -> Option<chrono::DateTime<Utc>> {
-    config_slot()
-        .read()
-        .expect("shared mode lock")
-        .enabled_at
+    config_slot().read().expect("shared mode lock").enabled_at
 }
 
 pub fn root_profile_id() -> String {
@@ -133,7 +127,9 @@ pub fn general_profile_id() -> String {
 }
 
 /// Enable Shared mode and ensure `root` + `general` profiles exist.
-pub fn enable_shared_mode(registry: Arc<StdRwLock<UserProfileRegistry>>) -> Result<SharedModeConfig> {
+pub fn enable_shared_mode(
+    registry: Arc<StdRwLock<UserProfileRegistry>>,
+) -> Result<SharedModeConfig> {
     {
         let mut reg = registry.write().expect("profile registry lock");
         ensure_shared_bootstrap_profiles(&mut reg)?;
@@ -190,8 +186,14 @@ mod tests {
 
     #[test]
     fn mode_parse() {
-        assert_eq!(DaemonWorkshopMode::parse("shared"), DaemonWorkshopMode::Shared);
-        assert_eq!(DaemonWorkshopMode::parse("personal"), DaemonWorkshopMode::Personal);
+        assert_eq!(
+            DaemonWorkshopMode::parse("shared"),
+            DaemonWorkshopMode::Shared
+        );
+        assert_eq!(
+            DaemonWorkshopMode::parse("personal"),
+            DaemonWorkshopMode::Personal
+        );
         assert_eq!(DaemonWorkshopMode::parse(""), DaemonWorkshopMode::Personal);
     }
 

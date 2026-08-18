@@ -1,8 +1,8 @@
+use axum::Json;
 use axum::body::Body;
 use axum::extract::{Multipart, Path, Query};
-use axum::http::{header, StatusCode};
+use axum::http::{StatusCode, header};
 use axum::response::Response;
-use axum::Json;
 
 use crate::daemon_api::MediaUploadResponse;
 
@@ -77,17 +77,11 @@ pub async fn get_media(
         return Err((StatusCode::BAD_REQUEST, "media_id is required".to_string()));
     }
 
-    let record = crate::media_store::get_media_record(session_id, media_id).ok_or((
-        StatusCode::NOT_FOUND,
-        "media not found".to_string(),
-    ))?;
+    let record = crate::media_store::get_media_record(session_id, media_id)
+        .ok_or((StatusCode::NOT_FOUND, "media not found".to_string()))?;
 
-    let bytes = crate::media_store::open_media_payload(&record).map_err(|err| {
-        (
-            StatusCode::NOT_FOUND,
-            err,
-        )
-    })?;
+    let bytes = crate::media_store::open_media_payload(&record)
+        .map_err(|err| (StatusCode::NOT_FOUND, err))?;
 
     Response::builder()
         .status(StatusCode::OK)

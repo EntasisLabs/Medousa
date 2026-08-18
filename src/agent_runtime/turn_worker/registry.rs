@@ -10,15 +10,15 @@ use stasis::application::orchestration::tool_registry::ToolRegistry;
 use stasis::domain::errors::StasisError;
 use stasis::prelude::Result;
 
-use crate::client_tools::ClientRegistry;
 use super::policy::tool_allowed;
+use crate::browser_tools::BROWSER_COGNITION_TOOLS;
+use crate::client_tools::ClientRegistry;
 use crate::tool_bootstrap::{
     ToolSurfaceLane, effective_tool_names, ensure_bound_workshop_session_tool_defaults,
     ensure_browser_domain_for_capable_clients, ensure_environment_domain_for_ui_clients,
     ensure_host_session_tool_defaults, ensure_worker_browser_domain_for_capable_clients,
     ensure_worker_environment_domain_for_ui_clients,
 };
-use crate::browser_tools::BROWSER_COGNITION_TOOLS;
 
 fn memory_tool_needs_session(tool_name: &str) -> bool {
     let lower = tool_name.to_ascii_lowercase();
@@ -58,11 +58,7 @@ trait NonEmpty {
 impl NonEmpty for &str {
     fn non_empty(self) -> Option<Self> {
         let t = self.trim();
-        if t.is_empty() {
-            None
-        } else {
-            Some(t)
-        }
+        if t.is_empty() { None } else { Some(t) }
     }
 }
 
@@ -175,8 +171,7 @@ impl SessionBootstrapToolRegistry {
     }
 
     fn effective_allowlist(&self) -> HashSet<String> {
-        let mut allowed =
-            effective_tool_names(&self.session_id, self.lane, &self.full_allowlist);
+        let mut allowed = effective_tool_names(&self.session_id, self.lane, &self.full_allowlist);
         allowed.extend(
             self.client_registry
                 .tool_names_for_surface(self.channel_surface.as_deref()),
@@ -271,18 +266,15 @@ mod tests {
 
     #[test]
     fn preserves_explicit_session() {
-        let out = inject_worker_session_id(
-            json!({ "session_id": "other" }),
-            "my-session",
-        );
+        let out = inject_worker_session_id(json!({ "session_id": "other" }), "my-session");
         assert_eq!(out["session_id"], "other");
     }
 
     #[test]
     fn browser_tools_stripped_when_host_disabled() {
+        use stasis::application::orchestration::tool_registry::InMemoryToolRegistry;
         use std::collections::HashSet;
         use std::sync::Arc;
-        use stasis::application::orchestration::tool_registry::InMemoryToolRegistry;
 
         let inner = Arc::new(InMemoryToolRegistry::default());
         let registry = SessionBootstrapToolRegistry::host(

@@ -15,8 +15,8 @@ pub mod tracing_setup;
 
 pub use correlation::{correlation_span, enter_turn_span, turn_span};
 pub use dead_letter::{
-    dead_letter_cap, enforce_dead_letter_cap, DeadLetterCapMetrics, DeadLetterCapReport,
+    DeadLetterCapMetrics, DeadLetterCapReport, dead_letter_cap, enforce_dead_letter_cap,
 };
-pub use log_rotation::{rotate_if_oversized, RotateConfig};
+pub use log_rotation::{RotateConfig, rotate_if_oversized};
 pub use rate_limit::{rate_limited_debug, rate_limited_error, rate_limited_warn};
 pub use tracing_setup::{init_tracing, init_tracing_from_env, tracing_status_line};

@@ -20,10 +20,9 @@ pub fn parse_skill_command_args(args: &str) -> Result<SkillRunArgs> {
     let mut parts = trimmed.split_whitespace().collect::<Vec<_>>();
     let manuscript_id = parts.remove(0).to_string();
     let mut script = None;
-    if parts
-        .first()
-        .is_some_and(|value| value.contains('/') || value.ends_with(".sh") || value.ends_with(".py"))
-    {
+    if parts.first().is_some_and(|value| {
+        value.contains('/') || value.ends_with(".sh") || value.ends_with(".py")
+    }) {
         script = Some(parts.remove(0).to_string());
     }
     let extra = parts.join(" ");
@@ -44,9 +43,7 @@ pub fn resolve_skill_run_script(manuscript_id: &str, script: Option<&str>) -> Re
         .scripts
         .first()
         .map(|entry| entry.relative_path.clone())
-        .ok_or_else(|| {
-            anyhow::anyhow!("manuscript '{manuscript_id}' has no runnable scripts")
-        })
+        .ok_or_else(|| anyhow::anyhow!("manuscript '{manuscript_id}' has no runnable scripts"))
 }
 
 /// Host-bus prompt: orchestrate via `cognition_spawn_turn_worker` (worker gets manuscript tools).
@@ -66,7 +63,8 @@ pub fn build_skill_run_ingest_prompt(args: &SkillRunArgs) -> Result<String> {
         format!(" Extra operator note: {}", args.extra.trim())
     };
 
-    let lines = [format!(
+    let lines = [
+        format!(
             "Run imported skill specialty '{}' the way Medousa would — delegate to a research worker, never execute scripts on the host.",
             args.manuscript_id
         ),
@@ -82,15 +80,15 @@ pub fn build_skill_run_ingest_prompt(args: &SkillRunArgs) -> Result<String> {
             "   user_ack: \"Running skill {} in sealed OpenShell sandbox…\"",
             args.manuscript_id
         ),
-        "2. After the worker completes, synthesize a concise operator summary.".to_string()];
+        "2. After the worker completes, synthesize a concise operator summary.".to_string(),
+    ];
     Ok(lines.join("\n"))
 }
 
 pub fn format_skill_manuscripts_list() -> Result<String> {
     let entries = list_manuscripts()?;
-    let mut lines = vec![
-        "Imported skill specialties (manuscripts with runnable scripts):".to_string(),
-    ];
+    let mut lines =
+        vec!["Imported skill specialties (manuscripts with runnable scripts):".to_string()];
     let mut count = 0usize;
     for entry in entries {
         let Ok(discovery) = discover_skill_for_manuscript(&entry.id) else {
@@ -153,7 +151,8 @@ mod tests {
 
     #[test]
     fn parse_skill_args_with_script() {
-        let args = parse_skill_command_args("echo-skill scripts/echo.sh focus calendar").expect("parse");
+        let args =
+            parse_skill_command_args("echo-skill scripts/echo.sh focus calendar").expect("parse");
         assert_eq!(args.manuscript_id, "echo-skill");
         assert_eq!(args.script.as_deref(), Some("scripts/echo.sh"));
         assert_eq!(args.extra, "focus calendar");

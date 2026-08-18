@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use crate::session::{load_tui_defaults, load_provider_api_key};
-use crate::tui::settings::parse_env_overrides;
 use crate::resolve_llm_provider;
+use crate::session::{load_provider_api_key, load_tui_defaults};
+use crate::tui::settings::parse_env_overrides;
 
 /// Load a `.env` overlay (timezone, grapheme module timeouts, feature toggles,
 /// etc.) via stasis' dotenv loader.
@@ -110,7 +110,10 @@ mod tests {
     #[test]
     fn inject_deepseek_sets_provider_env_names() {
         inject_provider_api_key_env("deepseek", "sk-test");
-        assert_eq!(std::env::var("DEEPSEEK_API_KEY").ok(), Some("sk-test".to_string()));
+        assert_eq!(
+            std::env::var("DEEPSEEK_API_KEY").ok(),
+            Some("sk-test".to_string())
+        );
         assert_eq!(
             std::env::var("STASIS_DEEPSEEK_API_KEY").ok(),
             Some("sk-test".to_string())

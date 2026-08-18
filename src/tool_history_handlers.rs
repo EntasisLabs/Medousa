@@ -1,22 +1,22 @@
 //! HTTP handlers for tool-history index and slice → workflow promotion (W4).
 
+use axum::Json;
 use axum::extract::Query;
 use axum::http::StatusCode;
 use axum::routing::{get, post};
-use axum::Json;
 
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::daemon_api::{
     ToolHistoryListQuery, ToolHistoryListResponse, WorkflowFromSliceRequest,
     WorkflowFromSliceResponse,
-};
-use crate::daemon::route_policy::{
-    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
 use crate::tool_history_index::{
     build_workflow_from_slice_refs, list_tool_history_runs, new_workflow_id_for_promotion,
 };
 use crate::workflow::{
-    MedousaWorkflowPayload, WorkflowRecord, WorkflowStatus, WORKFLOW_SEQUENTIAL_JOB_TYPE,
+    MedousaWorkflowPayload, WORKFLOW_SEQUENTIAL_JOB_TYPE, WorkflowRecord, WorkflowStatus,
     enqueue_workflow_job, preflight_grapheme_steps, shared_workflow_registry,
     validate_workflow_request, workflow_job_type_for_strategy,
 };
@@ -43,8 +43,7 @@ pub async fn workflow_from_slice(
     let (draft, mut notes) = build_workflow_from_slice_refs(&request.refs, request.name.as_deref())
         .map_err(|err| (StatusCode::BAD_REQUEST, err))?;
 
-    validate_workflow_request(&draft)
-        .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+    validate_workflow_request(&draft).map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
 
     let preflight = preflight_grapheme_steps(state.composition.as_ref(), &draft.steps)
         .await
@@ -82,8 +81,8 @@ pub async fn workflow_from_slice(
         let job_id = enqueue_workflow_job(state.composition.as_ref(), &payload, queue, None)
             .await
             .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
-        let _job_type = workflow_job_type_for_strategy(&draft.strategy)
-            .unwrap_or(WORKFLOW_SEQUENTIAL_JOB_TYPE);
+        let _job_type =
+            workflow_job_type_for_strategy(&draft.strategy).unwrap_or(WORKFLOW_SEQUENTIAL_JOB_TYPE);
 
         shared_workflow_registry()
             .insert(WorkflowRecord {

@@ -66,7 +66,10 @@ impl TurnFailure {
         }
     }
 
-    pub fn validation(operator_message: impl Into<String>, debug_message: impl Into<String>) -> Self {
+    pub fn validation(
+        operator_message: impl Into<String>,
+        debug_message: impl Into<String>,
+    ) -> Self {
         Self {
             category: TurnFailureCategory::Validation,
             operator_message: operator_message.into(),
@@ -132,9 +135,7 @@ fn classify_category(raw: &str) -> TurnFailureCategory {
     {
         return TurnFailureCategory::ModelNotFound;
     }
-    if text.contains("timeout")
-        || text.contains("timed out")
-        || text.contains("deadline exceeded")
+    if text.contains("timeout") || text.contains("timed out") || text.contains("deadline exceeded")
     {
         return TurnFailureCategory::Timeout;
     }
@@ -173,8 +174,7 @@ fn operator_message_for(category: TurnFailureCategory, raw: &str) -> String {
                 .to_string()
         }
         TurnFailureCategory::RateLimit => {
-            "The model provider is rate-limiting requests. Wait a moment and try again."
-                .to_string()
+            "The model provider is rate-limiting requests. Wait a moment and try again.".to_string()
         }
         TurnFailureCategory::ModelNotFound => {
             "That model isn't available right now. Choose a different model in Settings."
@@ -224,7 +224,12 @@ mod tests {
     fn classifies_auth_without_leaking_to_operator() {
         let failure = TurnFailure::from_debug("Invalid API key provided");
         assert_eq!(failure.category, TurnFailureCategory::Auth);
-        assert!(!failure.operator_message.to_ascii_lowercase().contains("api key provided"));
+        assert!(
+            !failure
+                .operator_message
+                .to_ascii_lowercase()
+                .contains("api key provided")
+        );
     }
 
     #[test]

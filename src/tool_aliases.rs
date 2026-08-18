@@ -96,10 +96,7 @@ mod tests {
             .into_iter()
             .map(str::to_string)
             .collect();
-        assert!(tool_allowed_matches(
-            "cognition_job_enqueue",
-            &allowlist
-        ));
+        assert!(tool_allowed_matches("cognition_job_enqueue", &allowlist));
         assert!(tool_allowed_matches(
             "cognition_capability_list",
             &allowlist

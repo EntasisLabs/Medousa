@@ -6,13 +6,13 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use stasis::ports::outbound::runtime::delivery_endpoint_store::DeliveryEndpointStore;
 use stasis::prelude::RuntimeComposition;
-use stasis::runtime_prelude_ext::{DeliveryProtocol, NewDeliveryEndpoint, SurrealDeliveryEndpointStore};
+use stasis::runtime_prelude_ext::{
+    DeliveryProtocol, NewDeliveryEndpoint, SurrealDeliveryEndpointStore,
+};
 use surrealdb::Surreal;
 use surrealdb::engine::any::Any;
 
-use crate::session::{
-    load_discord_bot_token, load_slack_bot_token, load_telegram_bot_token,
-};
+use crate::session::{load_discord_bot_token, load_slack_bot_token, load_telegram_bot_token};
 
 const DELIVERY_SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE TABLE delivery_endpoint SCHEMALESS",
@@ -72,9 +72,7 @@ pub fn is_home_channel(channel: &str) -> bool {
 /// Principal-facing surfaces where continuation synthesis and legacy loop extras stay off.
 pub fn is_principal_interactive_channel(channel: &str) -> bool {
     let normalized = normalize_channel_surface(channel);
-    normalized == CHANNEL_INTERACTIVE
-        || normalized == CHANNEL_TUI
-        || is_home_channel(&normalized)
+    normalized == CHANNEL_INTERACTIVE || normalized == CHANNEL_TUI || is_home_channel(&normalized)
 }
 
 pub fn is_external_push_channel(channel: &str) -> bool {
@@ -114,11 +112,7 @@ pub fn delivery_target_from_interactive_turn(
             .map(str::to_string)
             .unwrap_or_else(|| session_id.clone());
         return ChannelDeliveryTarget::interactive(
-            channel,
-            user_id,
-            channel_id,
-            session_id,
-            turn_id,
+            channel, user_id, channel_id, session_id, turn_id,
         );
     }
 
@@ -285,9 +279,7 @@ pub async fn seed_internal_outbox_endpoint(
         })
         .await
         .with_context(|| {
-            format!(
-                "delivery_endpoint.insert id={INTERNAL_OUTBOX_ENDPOINT_ID} target={target_url}"
-            )
+            format!("delivery_endpoint.insert id={INTERNAL_OUTBOX_ENDPOINT_ID} target={target_url}")
         })?;
 
     Ok(())
@@ -380,12 +372,7 @@ pub fn resolve_whatsapp_deliver_url() -> String {
                 .ok()
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty())
-                .unwrap_or_else(|| {
-                    crate::load_product_config()
-                        .whatsapp
-                        .deliver_bind
-                        .clone()
-                });
+                .unwrap_or_else(|| crate::load_product_config().whatsapp.deliver_bind.clone());
             format!("http://{bind}/v1/deliver")
         })
 }
@@ -695,9 +682,10 @@ fn find_output_text(payload: &Value) -> Option<String> {
                 .and_then(|value| value.as_str())
                 .map(|value| value.to_ascii_lowercase());
             if (role.as_deref() == Some("assistant") || role.is_none())
-                && let Some(text) = read_non_empty_text(message.get("content")) {
-                    return Some(text);
-                }
+                && let Some(text) = read_non_empty_text(message.get("content"))
+            {
+                return Some(text);
+            }
         }
     }
 
@@ -715,10 +703,11 @@ fn read_non_empty_text(value: Option<&Value>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        delivery_target_from_interactive_turn, extract_output_text_from_diagnostics,
-        format_for_telegram_markdown_v2, internal_deliver_webhook_url, is_home_channel,
-        is_missing_runtime_table_error, normalize_channel_surface, parse_slack_channel_id,
-        parse_telegram_chat_id, truncate_for_slack, truncate_for_telegram, ChannelDeliveryTarget,
+        ChannelDeliveryTarget, delivery_target_from_interactive_turn,
+        extract_output_text_from_diagnostics, format_for_telegram_markdown_v2,
+        internal_deliver_webhook_url, is_home_channel, is_missing_runtime_table_error,
+        normalize_channel_surface, parse_slack_channel_id, parse_telegram_chat_id,
+        truncate_for_slack, truncate_for_telegram,
     };
     use crate::daemon_api::{InteractiveTurnRequest, TurnSurfaceContext};
     use crate::stage_routing::StageRoutingMatrix;

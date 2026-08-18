@@ -9,9 +9,7 @@ use once_cell::sync::Lazy;
 use tokio::sync::{Mutex as AsyncMutex, oneshot};
 use uuid::Uuid;
 
-use medousa_types::{
-    AgentPermissionRequestRecord, AgentPermissionRequestStatus,
-};
+use medousa_types::{AgentPermissionRequestRecord, AgentPermissionRequestStatus};
 
 static STORE: Lazy<AgentPermissionRequestStore> = Lazy::new(AgentPermissionRequestStore::new);
 
@@ -120,10 +118,7 @@ impl AgentPermissionRequestStore {
         let (tx, rx) = oneshot::channel();
         {
             let mut waiters = self.waiters.lock().await;
-            waiters.insert(
-                request_id.to_string(),
-                WaiterState { tx: Some(tx) },
-            );
+            waiters.insert(request_id.to_string(), WaiterState { tx: Some(tx) });
         }
         let timeout = std::time::Duration::from_secs(Self::permission_timeout_secs());
         match tokio::time::timeout(timeout, rx).await {
@@ -144,7 +139,11 @@ impl AgentPermissionRequestStore {
         request_id: &str,
         resolved_by: Option<String>,
     ) -> Result<AgentPermissionRequestRecord, String> {
-        self.resolve(request_id, AgentPermissionRequestStatus::Approved, resolved_by)
+        self.resolve(
+            request_id,
+            AgentPermissionRequestStatus::Approved,
+            resolved_by,
+        )
     }
 
     pub fn deny(
@@ -152,7 +151,11 @@ impl AgentPermissionRequestStore {
         request_id: &str,
         resolved_by: Option<String>,
     ) -> Result<AgentPermissionRequestRecord, String> {
-        self.resolve(request_id, AgentPermissionRequestStatus::Denied, resolved_by)
+        self.resolve(
+            request_id,
+            AgentPermissionRequestStatus::Denied,
+            resolved_by,
+        )
     }
 
     pub fn expire(
@@ -160,7 +163,11 @@ impl AgentPermissionRequestStore {
         request_id: &str,
         resolved_by: Option<String>,
     ) -> Result<AgentPermissionRequestRecord, String> {
-        self.resolve(request_id, AgentPermissionRequestStatus::Expired, resolved_by)
+        self.resolve(
+            request_id,
+            AgentPermissionRequestStatus::Expired,
+            resolved_by,
+        )
     }
 
     fn resolve(
@@ -175,9 +182,7 @@ impl AgentPermissionRequestStore {
             .get_mut(request_id)
             .ok_or_else(|| format!("permission request not found: {request_id}"))?;
         if record.status != AgentPermissionRequestStatus::Pending {
-            return Err(format!(
-                "permission request {request_id} is not pending"
-            ));
+            return Err(format!("permission request {request_id} is not pending"));
         }
         record.status = status;
         record.updated_at_utc = now;

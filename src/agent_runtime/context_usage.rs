@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use stasis::application::orchestration::tool_registry::ToolRegistry;
 
-use crate::daemon_api::{ContextUsageLayer, ContextUsageReport};
 use super::turn_services::PriorMessageBuild;
+use crate::daemon_api::{ContextUsageLayer, ContextUsageReport};
 
 pub const ESTIMATOR_LABEL: &str = "chars_div_4";
 
@@ -54,7 +54,11 @@ pub fn build_context_usage_report(input: ContextUsageInput<'_>) -> ContextUsageR
 
     let mut layers = vec![
         layer("system_prompt", "System prompt", input.system_prompt_chars),
-        layer("tool_definitions", "Tool definitions", input.tool_schema_chars),
+        layer(
+            "tool_definitions",
+            "Tool definitions",
+            input.tool_schema_chars,
+        ),
     ];
 
     if input.ambient_chars > 0 {
@@ -114,7 +118,11 @@ pub fn build_context_usage_report(input: ContextUsageInput<'_>) -> ContextUsageR
     }
 
     if input.user_prompt_chars > 0 {
-        layers.push(layer("user_message", "Your message", input.user_prompt_chars));
+        layers.push(layer(
+            "user_message",
+            "Your message",
+            input.user_prompt_chars,
+        ));
     }
 
     let total_chars = layers.iter().map(|l| l.chars as usize).sum::<usize>();
@@ -130,18 +138,13 @@ pub fn build_context_usage_report(input: ContextUsageInput<'_>) -> ContextUsageR
     }
 }
 
-pub async fn estimate_tool_schema_chars(
-    registry: &Arc<dyn ToolRegistry>,
-) -> (usize, usize) {
+pub async fn estimate_tool_schema_chars(registry: &Arc<dyn ToolRegistry>) -> (usize, usize) {
     let tools = match registry.list_tools().await {
         Ok(tools) => tools,
         Err(_) => return (0, 0),
     };
     let count = tools.len();
-    let chars: usize = tools
-        .iter()
-        .map(estimate_single_tool_chars)
-        .sum();
+    let chars: usize = tools.iter().map(estimate_single_tool_chars).sum();
     (count, chars)
 }
 

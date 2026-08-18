@@ -5,7 +5,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-pub use medousa_types::turn_ticket::{TurnTicket, TurnTicketConflict, TurnTicketMode, TurnTicketPhase};
+pub use medousa_types::turn_ticket::{
+    TurnTicket, TurnTicketConflict, TurnTicketMode, TurnTicketPhase,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TurnTicketResponse {
@@ -155,30 +157,26 @@ pub async fn mark_cancelled(registry: &TurnTicketRegistry, turn_id: &str) {
 pub async fn clear_turn(registry: &TurnTicketRegistry, turn_id: &str) {
     let mut guard = registry.write().await;
     if let Some(ticket) = guard.by_id.remove(turn_id)
-        && ticket.mode == TurnTicketMode::Interactive {
-            guard.interactive_by_session.remove(&ticket.session_id);
-        }
+        && ticket.mode == TurnTicketMode::Interactive
+    {
+        guard.interactive_by_session.remove(&ticket.session_id);
+    }
 }
 
 /// Drop the turn ticket after the orchestrator returns unless handoff is still active.
 pub async fn clear_turn_after_run(registry: &TurnTicketRegistry, turn_id: &str) {
-    let keep = get_turn(registry, turn_id)
-        .await
-        .is_some_and(|ticket| {
-            matches!(
-                ticket.phase,
-                TurnTicketPhase::WorkerHandoff | TurnTicketPhase::BudgetBlocked
-            )
-        });
+    let keep = get_turn(registry, turn_id).await.is_some_and(|ticket| {
+        matches!(
+            ticket.phase,
+            TurnTicketPhase::WorkerHandoff | TurnTicketPhase::BudgetBlocked
+        )
+    });
     if !keep {
         clear_turn(registry, turn_id).await;
     }
 }
 
-pub async fn get_turn(
-    registry: &TurnTicketRegistry,
-    turn_id: &str,
-) -> Option<TurnTicket> {
+pub async fn get_turn(registry: &TurnTicketRegistry, turn_id: &str) -> Option<TurnTicket> {
     registry.read().await.by_id.get(turn_id).cloned()
 }
 
@@ -357,10 +355,17 @@ mod tests {
         .expect("fork during worker handoff");
 
         let forked = get_active_interactive_turn(&registry, "session-a").await;
-        assert_eq!(forked.turn.as_ref().map(|t| t.turn_id.as_str()), Some("turn-2"));
+        assert_eq!(
+            forked.turn.as_ref().map(|t| t.turn_id.as_str()),
+            Some("turn-2")
+        );
 
         note_stream_event(&registry, "turn-1", "final", "final", true).await;
-        assert!(get_active_interactive_turn(&registry, "session-a").await.active);
+        assert!(
+            get_active_interactive_turn(&registry, "session-a")
+                .await
+                .active
+        );
     }
 
     #[tokio::test]

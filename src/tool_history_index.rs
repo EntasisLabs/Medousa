@@ -5,7 +5,7 @@ use std::hash::{Hash, Hasher};
 
 use serde_json::{Value, json};
 
-use crate::session::{ConversationTurn, load_history, list_history_sessions_page};
+use crate::session::{ConversationTurn, list_history_sessions_page, load_history};
 use crate::turn_parts::TurnPart;
 use crate::turn_slice::{format_slice_id, parse_turn_index_from_slice_id, session_turn_index};
 use crate::workflow::{WorkflowRunRequest, WorkflowStepSpec, new_workflow_id};
@@ -77,9 +77,8 @@ fn redact_value(value: &mut Value) -> bool {
 
 pub fn sanitize_tool_input(tool_name: &str, input_summary: &str) -> (Value, bool, String) {
     let mut value = if looks_like_json(input_summary) {
-        serde_json::from_str(input_summary).unwrap_or_else(|_| {
-            json!({ "summary": input_summary.trim(), "tool_name": tool_name })
-        })
+        serde_json::from_str(input_summary)
+            .unwrap_or_else(|_| json!({ "summary": input_summary.trim(), "tool_name": tool_name }))
     } else {
         json!({ "summary": input_summary.trim(), "tool_name": tool_name })
     };
@@ -88,12 +87,7 @@ pub fn sanitize_tool_input(tool_name: &str, input_summary: &str) -> (Value, bool
     (value, redacted, hash_text(&serialized))
 }
 
-fn entry_id_for_run(
-    session_id: &str,
-    slice_id: &str,
-    tool_round: usize,
-    run_id: &str,
-) -> String {
+fn entry_id_for_run(session_id: &str, slice_id: &str, tool_round: usize, run_id: &str) -> String {
     format!("{session_id}:{slice_id}:r{tool_round}:{run_id}")
 }
 
@@ -198,12 +192,7 @@ pub fn list_tool_history_runs(query: &ToolHistoryListQuery) -> ToolHistoryListRe
                 Some(session.preview.as_str())
             };
             for turn in &turns {
-                runs.extend(extract_runs_from_turn(
-                    &session_id,
-                    &turns,
-                    turn,
-                    preview,
-                ));
+                runs.extend(extract_runs_from_turn(&session_id, &turns, turn, preview));
             }
         }
     }
@@ -217,10 +206,7 @@ pub fn list_tool_history_runs(query: &ToolHistoryListQuery) -> ToolHistoryListRe
         runs.retain(|entry| {
             let haystack = format!(
                 "{} {} {} {}",
-                entry.tool_name,
-                entry.input_summary,
-                entry.slice_id,
-                entry.session_id
+                entry.tool_name, entry.input_summary, entry.slice_id, entry.session_id
             )
             .to_ascii_lowercase();
             haystack.contains(kw.as_str())
@@ -270,7 +256,10 @@ pub fn resolve_tool_history_refs(
     Ok(resolved)
 }
 
-pub fn promote_run_to_step(entry: &ToolHistoryRunEntry, step_id: &str) -> (WorkflowStepSpec, Vec<String>) {
+pub fn promote_run_to_step(
+    entry: &ToolHistoryRunEntry,
+    step_id: &str,
+) -> (WorkflowStepSpec, Vec<String>) {
     let mut notes = Vec::new();
     let tool = entry.tool_name.as_str();
     let input = &entry.sanitized_input;
@@ -311,10 +300,7 @@ pub fn promote_run_to_step(entry: &ToolHistoryRunEntry, step_id: &str) -> (Workf
             .unwrap_or("")
             .trim()
             .to_string();
-        let args = input
-            .get("input")
-            .cloned()
-            .unwrap_or_else(|| json!({}));
+        let args = input.get("input").cloned().unwrap_or_else(|| json!({}));
         if server_id.is_empty() || tool_name.is_empty() {
             notes.push(
                 "MCP invoke args incomplete — edit server_id and tool_name before run.".to_string(),
@@ -391,7 +377,10 @@ pub fn build_workflow_from_slice_refs(
 
     Ok((
         WorkflowRunRequest {
-            name: name.map(str::trim).filter(|value| !value.is_empty()).map(str::to_string),
+            name: name
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
             strategy: "sequential".to_string(),
             mode: "default".to_string(),
             on_failure: "stop".to_string(),

@@ -433,13 +433,7 @@ impl Perform for VtGrid {
         }
     }
 
-    fn csi_dispatch(
-        &mut self,
-        params: &Params,
-        _intermediates: &[u8],
-        ignore: bool,
-        action: char,
-    ) {
+    fn csi_dispatch(&mut self, params: &Params, _intermediates: &[u8], ignore: bool, action: char) {
         if ignore {
             return;
         }

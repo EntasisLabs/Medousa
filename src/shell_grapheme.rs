@@ -51,7 +51,9 @@ pub fn intercept_shell_call(call: &CapabilityCall) -> Option<Result<Value, HostC
     let op = resolve_shell_op(call);
     match op.as_str() {
         "run" => Some(handle_shell_run(&call.args)),
-        "status" => Some(Ok(serde_json::to_value(probe_shell_sandbox()).unwrap_or(Value::Null))),
+        "status" => Some(Ok(
+            serde_json::to_value(probe_shell_sandbox()).unwrap_or(Value::Null)
+        )),
         other => Some(Err(HostCallError::Fatal(format!(
             "unsupported shell op '{other}' (expected run or status)"
         )))),
@@ -124,7 +126,12 @@ pub fn synthesize_shell_run_source(args: &Value) -> Result<String, String> {
             .profile
             .writable_roots
             .iter()
-            .map(|path| format!("\"{}\"", escape_grapheme_literal(&path.display().to_string())))
+            .map(|path| {
+                format!(
+                    "\"{}\"",
+                    escape_grapheme_literal(&path.display().to_string())
+                )
+            })
             .collect::<Vec<_>>()
             .join(", ");
         format!(",\n    writable_roots: [{items}]")

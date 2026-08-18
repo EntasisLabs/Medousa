@@ -1,6 +1,5 @@
 //! Explicit main / vision / STT inference profiles (Phase 2).
 
-
 use crate::session::TuiDefaults;
 
 pub use medousa_types::inference::{InferenceProfile, InferenceProfilesConfig, InferenceTarget};
@@ -18,9 +17,16 @@ pub fn normalize_tui_defaults(defaults: &mut TuiDefaults) {
     if defaults.inference_profiles.is_none() {
         defaults.inference_profiles = Some(InferenceProfilesConfig::default());
     }
-    let profiles = defaults.inference_profiles.get_or_insert_with(Default::default);
+    let profiles = defaults
+        .inference_profiles
+        .get_or_insert_with(Default::default);
 
-    if profiles.main.as_ref().and_then(|profile| profile.trimmed()).is_none() {
+    if profiles
+        .main
+        .as_ref()
+        .and_then(|profile| profile.trimmed())
+        .is_none()
+    {
         profiles.main = Some(InferenceProfile {
             provider: crate::resolve_llm_provider(defaults.provider.as_deref()),
             model: crate::resolve_llm_model(defaults.model.as_deref()),
@@ -34,7 +40,12 @@ pub fn normalize_tui_defaults(defaults: &mut TuiDefaults) {
         });
     }
 
-    if profiles.stt.as_ref().and_then(|profile| profile.trimmed()).is_none() {
+    if profiles
+        .stt
+        .as_ref()
+        .and_then(|profile| profile.trimmed())
+        .is_none()
+    {
         let provider = defaults
             .stt_provider
             .as_deref()
@@ -63,9 +74,10 @@ pub fn normalize_tui_defaults(defaults: &mut TuiDefaults) {
     }
 
     if let Some(main) = profiles.main.as_mut()
-        && let Some(trimmed) = main.trimmed() {
-            *main = trimmed;
-        }
+        && let Some(trimmed) = main.trimmed()
+    {
+        *main = trimmed;
+    }
     if let Some(vision) = profiles.vision.as_mut() {
         if let Some(trimmed) = vision.trimmed() {
             *vision = trimmed;
@@ -74,9 +86,10 @@ pub fn normalize_tui_defaults(defaults: &mut TuiDefaults) {
         }
     }
     if let Some(stt) = profiles.stt.as_mut()
-        && let Some(trimmed) = stt.trimmed() {
-            *stt = trimmed;
-        }
+        && let Some(trimmed) = stt.trimmed()
+    {
+        *stt = trimmed;
+    }
 
     sync_flat_fields_from_profiles(defaults);
 }
@@ -242,7 +255,11 @@ pub fn validate_profiles(profiles: &InferenceProfilesConfig) -> Result<(), Strin
     for (label, profile) in [("main", &main), ("stt", &stt)] {
         validate_fallbacks(label, &profile.fallbacks)?;
     }
-    if let Some(vision) = profiles.vision.as_ref().and_then(|profile| profile.trimmed()) {
+    if let Some(vision) = profiles
+        .vision
+        .as_ref()
+        .and_then(|profile| profile.trimmed())
+    {
         validate_fallbacks("vision", &vision.fallbacks)?;
     }
     Ok(())
@@ -272,7 +289,10 @@ pub fn default_stt_model(provider: &str) -> String {
     }
 }
 
-pub fn apply_profiles(defaults: &mut TuiDefaults, profiles: InferenceProfilesConfig) -> Result<(), String> {
+pub fn apply_profiles(
+    defaults: &mut TuiDefaults,
+    profiles: InferenceProfilesConfig,
+) -> Result<(), String> {
     validate_profiles(&profiles)?;
     defaults.inference_profiles = Some(profiles);
     normalize_tui_defaults(defaults);
@@ -300,7 +320,10 @@ mod tests {
             Some("gpt-4o-mini")
         );
         assert_eq!(
-            profiles.stt.as_ref().map(|profile| profile.provider.as_str()),
+            profiles
+                .stt
+                .as_ref()
+                .map(|profile| profile.provider.as_str()),
             Some("groq")
         );
     }

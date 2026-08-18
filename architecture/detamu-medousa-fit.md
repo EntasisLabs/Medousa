@@ -3,10 +3,10 @@
 > **Status:** Depth epic landed (2026-07): Rust Tree-sitter pack enriches indexing;
 > impact / `code_avec` / `find` / `at_location` routes and `cognition_detamu_impact` /
 > `cognition_detamu_code_avec` / `cognition_detamu_find` tools live.
-> Detamu not yet on crates.io — Medousa depends on `../../detamu/crates/detamu`
-> (+ `detamu-source-git`, `detamu-language-rust`). Daemon opens SurrealKV at
-> `{dataDir}/detamu`, exposes `/v1/world/*`, indexes on Forge provision/seal, and
-> registers `cognition_detamu_*` (domain `detamu`, opt-in).
+> Detamu is on crates.io. Daemon keeps a dormant `DetamuHandle` at
+> `{dataDir}/detamu` (mkdir only at boot), opens capped SurrealKV on first world
+> query or Forge index, exposes `/v1/world/*`, and registers `cognition_detamu_*`
+> (domain `detamu`, opt-in).
 >
 > Companion plans: [coding-engine-orchestrator.md](coding-engine-orchestrator.md),
 > [coding-session-terminal.md](coding-session-terminal.md),
@@ -121,9 +121,8 @@ Prefer `code_avec` or `detamu_score`. Already noted in
 
 ### 1. Daemon host (queued)
 
-- Open Detamu at `{medousa_data_dir()}/detamu` (SurrealKV) beside `{dataDir}/forge`
-- Hold `Arc<DetamuHost>` on `AppState` wrapping umbrella `detamu` + store path
-- Boot: open store; **do not** auto-index all repos (on-demand / Forge lifecycle)
+- Hold `Arc<DetamuHandle>` on `AppState` at `{medousa_data_dir()}/detamu` (capped SurrealKV beside `{dataDir}/forge`)
+- Boot: dormant handle (mkdir `{dataDir}/detamu` + `bindings/` only); open capped SurrealKV on first world query or Forge index; **do not** auto-index all repos
 - Thin world-query HTTP on the **daemon** — use `/v1/world/...` (not
   `/v1/detamu/...`) to avoid colliding with orchestrator stubs
   `/v1/detamu/snapshot|handles` on `medousa-code`. Optionally rename orchestrator
@@ -198,7 +197,7 @@ Daemon AppState
   forge: Arc<Forge>
   coding_engine: Arc<CodingEngineHost>
   shell_sessions: Arc<ShellSessionHost>
-  detamu: Arc<DetamuHost>    // wraps detamu crate + SurrealKV path
+  detamu: Arc<DetamuHandle>  // dormant at boot; capped SurrealKV on first index/query
 
 detamu (published)
   source-git → analyzers → scores → store
@@ -221,7 +220,7 @@ Bottom-up order: **SDK publish → daemon host → Forge lifecycle hooks → too
 
 | Spike | Status |
 |-------|--------|
-| **Host** | ✅ crates.io `detamu` + `DetamuHost` in `AppState` (`src/daemon/detamu_host.rs`); SurrealKV at `{dataDir}/detamu` |
+| **Host** | ✅ crates.io `detamu` + `DetamuHandle` in `AppState` (`src/daemon/detamu_host.rs`); boot dormant; open on first world/Forge index with fixed 64 MiB memtable / 32 MiB cache / vlog off |
 | **HTTP** | ✅ `/v1/world`, `/v1/world/index`, `/v1/world/files`, `/v1/world/bindings/{work_id}` (orchestrator `/v1/detamu/*` stubs untouched) |
 | **Forge hooks** | ✅ provision → baseline index; `complete_attempt` → sealed index; bindings sidecar JSON (not on EvidenceManifest) |
 | **Tools** | ✅ `cognition_detamu_status` / `files` / `impact` / `code_avec` / `find`; domain `detamu` + `ensure_detamu_domain_for_session` |

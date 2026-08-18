@@ -8,10 +8,10 @@ use anyhow::Result;
 use once_cell::sync::OnceCell;
 
 use crate::daemon_api::{WorkBoardColumn, WorkCard};
-use crate::pairing::apns::{
-    ensure_apns_client, shared_apns_client, ApnsConfig, LiveActivityContentState,
-};
 use crate::pairing::PairingService;
+use crate::pairing::apns::{
+    ApnsConfig, LiveActivityContentState, ensure_apns_client, shared_apns_client,
+};
 use crate::workspace::projector::WorkspaceReadSnapshot;
 
 static HOME_LIVE_ACTIVITY: OnceCell<Arc<HomeLiveActivityService>> = OnceCell::new();
@@ -176,10 +176,7 @@ impl HomeLiveActivityService {
             if !self.should_send(&target.phone_id, "end") {
                 continue;
             }
-            if let Err(err) = apns
-                .send_live_activity_end(&target.push_token, state)
-                .await
-            {
+            if let Err(err) = apns.send_live_activity_end(&target.push_token, state).await {
                 tracing::warn!(
                     error = %err,
                     phone_id = %target.phone_id,
@@ -214,7 +211,11 @@ pub(crate) fn compose_live_activity_state(
     let primary_card = primary_in_motion_card(snapshot);
 
     if blocked > 0 {
-        let noun = if blocked == 1 { "decision" } else { "decisions" };
+        let noun = if blocked == 1 {
+            "decision"
+        } else {
+            "decisions"
+        };
         return Some(LiveActivityContentState {
             mood: "waiting".to_string(),
             eyebrow: "Needs you".to_string(),
@@ -362,8 +363,8 @@ fn card_headline(card: &WorkCard) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use chrono::Utc;
+    use std::sync::Arc;
 
     fn sample_card(column: WorkBoardColumn, title: &str) -> WorkCard {
         WorkCard {

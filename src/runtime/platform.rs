@@ -5,23 +5,23 @@ use stasis::application::use_cases::identity_memory_service::IdentityMemoryServi
 use stasis::prelude::RuntimeBackend;
 use tokio::sync::mpsc;
 
-use crate::events::TuiEvent;
-use crate::runtime::stasis_surreal_schema::ensure_stasis_runtime_schema;
-use crate::runtime::vault_surreal_schema::ensure_vault_surreal_schema;
-use crate::runtime::stasis_wire::{DaemonStasisWireConfig, build_daemon_stasis_composition};
-use crate::client_tools::ClientRegistry;
 use crate::artifact_store;
 use crate::channel_session_store;
-use crate::turn_continuation;
-use crate::recurring_agent_turn;
+use crate::client_tools::ClientRegistry;
+use crate::events::TuiEvent;
 use crate::openshell_sandbox_run;
+use crate::recurring_agent_turn;
 use crate::recurring_delivery;
 use crate::recurring_feed;
+use crate::runtime::stasis_surreal_schema::ensure_stasis_runtime_schema;
+use crate::runtime::stasis_wire::{DaemonStasisWireConfig, build_daemon_stasis_composition};
+use crate::runtime::vault_surreal_schema::ensure_vault_surreal_schema;
 use crate::session_meta_store;
 use crate::session_store;
-use crate::verification_store;
 use crate::tools::TuiRuntime;
 use crate::tui::runtime_services::assemble_tui_runtime;
+use crate::turn_continuation;
+use crate::verification_store;
 
 /// Single root handle for daemon and offline runtimes: Stasis composition + agent tooling.
 pub struct MedousaPlatformRuntime {
@@ -46,11 +46,15 @@ impl MedousaPlatformRuntime {
         self.agent.runtime.as_ref()
     }
 
-    pub fn identity_store(&self) -> Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore> {
+    pub fn identity_store(
+        &self,
+    ) -> Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore> {
         self.agent.identity_memory_store.clone()
     }
 
-    pub fn medousa_identity_store(&self) -> Arc<crate::identity_store_ext::MedousaIdentityMemoryStore> {
+    pub fn medousa_identity_store(
+        &self,
+    ) -> Arc<crate::identity_store_ext::MedousaIdentityMemoryStore> {
         self.agent.medousa_identity_store.clone()
     }
 
@@ -58,7 +62,9 @@ impl MedousaPlatformRuntime {
         Arc::new(IdentityMemoryService::new(self.identity_store()))
     }
 
-    pub fn memory_operations(&self) -> Arc<dyn stasis::ports::outbound::memory::memory_operations::MemoryOperations> {
+    pub fn memory_operations(
+        &self,
+    ) -> Arc<dyn stasis::ports::outbound::memory::memory_operations::MemoryOperations> {
         self.agent.memory_operations.clone()
     }
 }
@@ -103,9 +109,7 @@ pub async fn build_daemon_platform(
     config: PlatformBuildConfig,
 ) -> Result<Arc<MedousaPlatformRuntime>> {
     let (event_tx, mut event_rx) = mpsc::channel(256);
-    tokio::spawn(async move {
-        while event_rx.recv().await.is_some() {}
-    });
+    tokio::spawn(async move { while event_rx.recv().await.is_some() {} });
     build_platform_inner(backend, config, event_tx).await
 }
 
@@ -175,10 +179,7 @@ async fn build_platform_inner(
     sync_mcp_catalog(&agent).await;
 
     let agent = Arc::new(agent);
-    agent
-        .worker_scheduler
-        .attach_runtime(agent.clone())
-        .await;
+    agent.worker_scheduler.attach_runtime(agent.clone()).await;
     recurring_agent_turn::register_recurring_agent_turn_handler(
         agent.runtime.as_ref(),
         agent.clone(),

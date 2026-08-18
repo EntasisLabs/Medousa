@@ -5,14 +5,14 @@
 
 use std::sync::Arc;
 
+use crate::runtime_session::runtime_bootstrap_session_id;
 use anyhow::Result;
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 use stasis::prelude::RuntimeComposition;
-use crate::runtime_session::runtime_bootstrap_session_id;
 use tokio::sync::mpsc;
 
-use crate::runtime::memory_bundle::MemoryAdapterBundle;
 use crate::client_tools::ClientRegistry;
+use crate::runtime::memory_bundle::MemoryAdapterBundle;
 use crate::tools::TuiRuntime;
 use crate::tui::runtime_services::assemble_tui_runtime;
 
@@ -31,9 +31,7 @@ pub async fn build_daemon_agent_runtime_from_composition(
     allowed_grapheme_modules: Vec<String>,
 ) -> Result<MedousaAgentRuntime> {
     let (event_tx, mut event_rx) = mpsc::channel(256);
-    tokio::spawn(async move {
-        while event_rx.recv().await.is_some() {}
-    });
+    tokio::spawn(async move { while event_rx.recv().await.is_some() {} });
 
     let memory = MemoryAdapterBundle::from_runtime_shell(runtime.as_ref()).await?;
 
@@ -81,9 +79,7 @@ pub async fn build_daemon_agent_runtime(
     use crate::tools::build_tui_runtime;
 
     let (event_tx, mut event_rx) = mpsc::channel(256);
-    tokio::spawn(async move {
-        while event_rx.recv().await.is_some() {}
-    });
+    tokio::spawn(async move { while event_rx.recv().await.is_some() {} });
 
     let runtime = build_tui_runtime(
         backend,

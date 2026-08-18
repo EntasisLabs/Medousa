@@ -29,7 +29,8 @@ mod tests {
         let log = TurnEventLog::open_in(&root, env(tag)).unwrap();
         log.append(TurnEvent::ContentDelta {
             delta: "live token".into(),
-        }).unwrap();
+        })
+        .unwrap();
         log.append(event).unwrap();
         let folded = log.fold_history();
         assert_eq!(folded.len(), 1, "[{tag}] exactly one history body");
@@ -119,12 +120,14 @@ mod tests {
             vec!["spawn".into()],
             Some("work-1".into()),
         );
-        assert!(legacy
-            .parts
-            .as_ref()
-            .unwrap()
-            .iter()
-            .any(|p| matches!(p, TurnPart::Handoff { .. })));
+        assert!(
+            legacy
+                .parts
+                .as_ref()
+                .unwrap()
+                .iter()
+                .any(|p| matches!(p, TurnPart::Handoff { .. }))
+        );
         let event = TurnEvent::worker_ack_from_turn(&legacy, Some("work-1".into()));
         assert_fold_matches_legacy("be-worker-ack", &legacy, event);
     }

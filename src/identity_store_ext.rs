@@ -14,17 +14,16 @@ use stasis::domain::errors::{Result as StasisResult, StasisError};
 use stasis::infrastructure::memory::in_memory_identity_memory_store::InMemoryIdentityMemoryStore;
 use stasis::infrastructure::memory::surreal_identity_memory_store::SurrealIdentityMemoryStore;
 use stasis::ports::outbound::memory::identity_memory_models::{
-    CommitEntityUpdateRequest, CommitEntityUpdateResponse, CommitOutcomeCode, ChannelProfileEntity,
-    ContactEntity, RelationshipEntity,
-    EntityUpdateProposalRecord, GetIdentityContextRequest, GetIdentityContextResponse,
-    IdentityContextMode, IdentityEntityType, ListEntityHistoryRequest, ListEntityHistoryResponse, PersonaEntity,
-    ProposalState, ProposeEntityUpdateRequest, ProposeEntityUpdateResponse,
-    RollbackEntityVersionRequest, RollbackEntityVersionResponse, UpdateSource, UpdateTier,
-    UserEntity,
+    ChannelProfileEntity, CommitEntityUpdateRequest, CommitEntityUpdateResponse, CommitOutcomeCode,
+    ContactEntity, EntityUpdateProposalRecord, GetIdentityContextRequest,
+    GetIdentityContextResponse, IdentityContextMode, IdentityEntityType, ListEntityHistoryRequest,
+    ListEntityHistoryResponse, PersonaEntity, ProposalState, ProposeEntityUpdateRequest,
+    ProposeEntityUpdateResponse, RelationshipEntity, RollbackEntityVersionRequest,
+    RollbackEntityVersionResponse, UpdateSource, UpdateTier, UserEntity,
 };
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 use surrealdb_types::SurrealValue;
 
 use crate::identity_memory::{
@@ -103,10 +102,7 @@ impl MedousaIdentityMemoryStore {
         }
     }
 
-    pub async fn upsert_channel_entity(
-        &self,
-        channel: ChannelProfileEntity,
-    ) -> StasisResult<()> {
+    pub async fn upsert_channel_entity(&self, channel: ChannelProfileEntity) -> StasisResult<()> {
         match &self.backing {
             Backing::InMemory { store, .. } => store.upsert_channel(channel),
             Backing::Surreal { store, .. } => store.upsert_channel(channel).await,
@@ -255,20 +251,24 @@ fn patch_requires_approval(tier: UpdateTier) -> bool {
 }
 
 fn apply_persona_patch(persona: &mut PersonaEntity, patch: &Value) -> StasisResult<()> {
-    let map = patch.as_object().ok_or_else(|| {
-        StasisError::PortFailure("identity patch must be an object".to_string())
-    })?;
+    let map = patch
+        .as_object()
+        .ok_or_else(|| StasisError::PortFailure("identity patch must be an object".to_string()))?;
     for (path, value) in map {
         match path.as_str() {
             "display_name" => {
-                persona.display_name = value.as_str().ok_or_else(|| {
-                    StasisError::PortFailure("display_name must be a string".to_string())
-                })?.to_string();
+                persona.display_name = value
+                    .as_str()
+                    .ok_or_else(|| {
+                        StasisError::PortFailure("display_name must be a string".to_string())
+                    })?
+                    .to_string();
             }
             "status" => {
-                persona.status = value.as_str().ok_or_else(|| {
-                    StasisError::PortFailure("status must be a string".to_string())
-                })?.to_string();
+                persona.status = value
+                    .as_str()
+                    .ok_or_else(|| StasisError::PortFailure("status must be a string".to_string()))?
+                    .to_string();
             }
             other => {
                 return Err(StasisError::PortFailure(format!(
@@ -283,9 +283,9 @@ fn apply_persona_patch(persona: &mut PersonaEntity, patch: &Value) -> StasisResu
 }
 
 fn apply_user_patch(user: &mut UserEntity, patch: &Value) -> StasisResult<()> {
-    let map = patch.as_object().ok_or_else(|| {
-        StasisError::PortFailure("identity patch must be an object".to_string())
-    })?;
+    let map = patch
+        .as_object()
+        .ok_or_else(|| StasisError::PortFailure("identity patch must be an object".to_string()))?;
     for (path, value) in map {
         if let Some(key) = path.strip_prefix("preferences.") {
             user.preferences.insert(key.to_string(), value.clone());
@@ -303,17 +303,21 @@ fn apply_user_patch(user: &mut UserEntity, patch: &Value) -> StasisResult<()> {
                 }
             }
             "timezone" => {
-                user.timezone = value.as_str().ok_or_else(|| {
-                    StasisError::PortFailure("timezone must be a string".to_string())
-                })?.to_string();
+                user.timezone = value
+                    .as_str()
+                    .ok_or_else(|| {
+                        StasisError::PortFailure("timezone must be a string".to_string())
+                    })?
+                    .to_string();
             }
             "language_variant" => {
                 user.language_variant = value.as_str().map(|v| v.to_string());
             }
             "status" => {
-                user.status = value.as_str().ok_or_else(|| {
-                    StasisError::PortFailure("status must be a string".to_string())
-                })?.to_string();
+                user.status = value
+                    .as_str()
+                    .ok_or_else(|| StasisError::PortFailure("status must be a string".to_string()))?
+                    .to_string();
             }
             other => {
                 return Err(StasisError::PortFailure(format!(
@@ -329,35 +333,45 @@ fn apply_user_patch(user: &mut UserEntity, patch: &Value) -> StasisResult<()> {
 
 fn parse_string_array(value: &Value, field: &str) -> StasisResult<Vec<String>> {
     let Some(items) = value.as_array() else {
-        return Err(StasisError::PortFailure(format!("{field} must be an array")));
+        return Err(StasisError::PortFailure(format!(
+            "{field} must be an array"
+        )));
     };
     let mut out = Vec::with_capacity(items.len());
     for item in items {
-        out.push(item.as_str().ok_or_else(|| {
-            StasisError::PortFailure(format!("{field} entries must be strings"))
-        })?.to_string());
+        out.push(
+            item.as_str()
+                .ok_or_else(|| {
+                    StasisError::PortFailure(format!("{field} entries must be strings"))
+                })?
+                .to_string(),
+        );
     }
     Ok(out)
 }
 
 fn apply_contact_patch(contact: &mut ContactEntity, patch: &Value) -> StasisResult<()> {
-    let map = patch.as_object().ok_or_else(|| {
-        StasisError::PortFailure("identity patch must be an object".to_string())
-    })?;
+    let map = patch
+        .as_object()
+        .ok_or_else(|| StasisError::PortFailure("identity patch must be an object".to_string()))?;
     for (path, value) in map {
         match path.as_str() {
             "display_name" => {
-                contact.display_name = value.as_str().ok_or_else(|| {
-                    StasisError::PortFailure("display_name must be a string".to_string())
-                })?.to_string();
+                contact.display_name = value
+                    .as_str()
+                    .ok_or_else(|| {
+                        StasisError::PortFailure("display_name must be a string".to_string())
+                    })?
+                    .to_string();
             }
             "aliases" => {
                 contact.aliases = parse_string_array(value, "aliases")?;
             }
             "status" => {
-                contact.status = value.as_str().ok_or_else(|| {
-                    StasisError::PortFailure("status must be a string".to_string())
-                })?.to_string();
+                contact.status = value
+                    .as_str()
+                    .ok_or_else(|| StasisError::PortFailure("status must be a string".to_string()))?
+                    .to_string();
             }
             other => {
                 return Err(StasisError::PortFailure(format!(
@@ -372,7 +386,11 @@ fn apply_contact_patch(contact: &mut ContactEntity, patch: &Value) -> StasisResu
 }
 
 impl MedousaIdentityMemoryStore {
-    fn cache_proposals(&self, request: &ProposeEntityUpdateRequest, response: &ProposeEntityUpdateResponse) {
+    fn cache_proposals(
+        &self,
+        request: &ProposeEntityUpdateRequest,
+        response: &ProposeEntityUpdateResponse,
+    ) {
         let cache = match &self.backing {
             Backing::InMemory { proposal_cache, .. } => proposal_cache,
             Backing::Surreal { proposal_cache, .. } => proposal_cache,
@@ -381,7 +399,11 @@ impl MedousaIdentityMemoryStore {
             return;
         };
         for (idx, proposal_id) in response.proposal_ids.iter().enumerate() {
-            let tier = response.tiers.get(idx).copied().unwrap_or(UpdateTier::AutoCommit);
+            let tier = response
+                .tiers
+                .get(idx)
+                .copied()
+                .unwrap_or(UpdateTier::AutoCommit);
             guard.insert(
                 proposal_id.clone(),
                 CachedProposal {
@@ -715,7 +737,9 @@ fn parse_update_tier(value: &str) -> StasisResult<UpdateTier> {
         "auto_commit" => Ok(UpdateTier::AutoCommit),
         "confirm_required" => Ok(UpdateTier::ConfirmRequired),
         "approval_required" => Ok(UpdateTier::ApprovalRequired),
-        other => Err(StasisError::PortFailure(format!("invalid update tier: {other}"))),
+        other => Err(StasisError::PortFailure(format!(
+            "invalid update tier: {other}"
+        ))),
     }
 }
 
@@ -725,7 +749,9 @@ fn parse_proposal_state(value: &str) -> StasisResult<ProposalState> {
         "committed" => Ok(ProposalState::Committed),
         "rejected" => Ok(ProposalState::Rejected),
         "expired" => Ok(ProposalState::Expired),
-        other => Err(StasisError::PortFailure(format!("invalid proposal state: {other}"))),
+        other => Err(StasisError::PortFailure(format!(
+            "invalid proposal state: {other}"
+        ))),
     }
 }
 
@@ -734,7 +760,9 @@ fn parse_update_source(value: &str) -> StasisResult<UpdateSource> {
         "user_direct" => Ok(UpdateSource::UserDirect),
         "model_inferred" => Ok(UpdateSource::ModelInferred),
         "system_event" => Ok(UpdateSource::SystemEvent),
-        other => Err(StasisError::PortFailure(format!("invalid update source: {other}"))),
+        other => Err(StasisError::PortFailure(format!(
+            "invalid update source: {other}"
+        ))),
     }
 }
 
@@ -829,7 +857,9 @@ async fn load_surreal_proposal(
         .take(0)
         .map_err(|e| port_err("decode identity proposal", e))?;
 
-    proposal_row.map(EntityUpdateProposalRecord::try_from).transpose()
+    proposal_row
+        .map(EntityUpdateProposalRecord::try_from)
+        .transpose()
 }
 
 async fn surreal_commit_overlay_entity(
@@ -1013,7 +1043,8 @@ async fn surreal_commit_overlay_entity(
                 version: user_row.version,
                 updated_at: user_row.updated_at,
             };
-            if proposal.state == ProposalState::Committed && user_patch_already_applied(&user, &patch)
+            if proposal.state == ProposalState::Committed
+                && user_patch_already_applied(&user, &patch)
             {
                 return Ok(CommitEntityUpdateResponse {
                     committed: true,
@@ -1219,8 +1250,7 @@ impl IdentityMemoryStore for MedousaIdentityMemoryStore {
                 ) -> StasisResult<GetIdentityContextResponse> {
                     if request.mode == IdentityContextMode::Cognitive {
                         crate::identity_memory::get_medousa_cognitive_identity_context(
-                            store,
-                            request,
+                            store, request,
                         )
                         .await
                     } else {
@@ -1274,9 +1304,10 @@ impl IdentityMemoryStore for MedousaIdentityMemoryStore {
         // committed without applying these patches — always route through our overlay.
         if matches!(&self.backing, Backing::Surreal { .. })
             && let Some(proposal) = self.proposal_for_commit(request).await?
-                && is_medousa_overlay_entity(&proposal.entity_type) {
-                    return self.commit_overlay_entity(request, proposal).await;
-                }
+            && is_medousa_overlay_entity(&proposal.entity_type)
+        {
+            return self.commit_overlay_entity(request, proposal).await;
+        }
 
         let inner = match &self.backing {
             Backing::InMemory { store, .. } => store.commit_entity_update(request).await?,

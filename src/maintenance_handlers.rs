@@ -1,12 +1,13 @@
 //! HTTP handlers for artifact retention settings (`/v1/maintenance/artifacts`).
 
+use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::Json;
 
 use crate::daemon::state::AppState;
 use crate::daemon_api::{
-    ArtifactRetentionStatusResponse, UpdateArtifactRetentionRequest, UpdateArtifactRetentionResponse,
+    ArtifactRetentionStatusResponse, UpdateArtifactRetentionRequest,
+    UpdateArtifactRetentionResponse,
 };
 
 pub async fn get_artifact_retention_status(

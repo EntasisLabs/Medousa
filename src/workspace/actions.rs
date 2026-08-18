@@ -4,15 +4,15 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use stasis::application::runtime::runtime_factory::RuntimeComposition;
-use stasis::sdk::runtime_sdk::RuntimeSdk;
 use stasis::domain::runtime::job::JobState;
+use stasis::sdk::runtime_sdk::RuntimeSdk;
 
 use crate::agent_runtime::turn_worker::{TurnWorkStatus, turn_worker_store};
 use crate::daemon_api::{
     ReplayAndResumeResponse, WorkCardDetail, WorkCardKind, WorkspaceCardActionResponse,
 };
-use crate::turn_continuation;
 use crate::runtime_composition_ext::RuntimeCompositionExt;
+use crate::turn_continuation;
 use crate::workspace::ask_job_store::ask_job_store;
 use crate::workspace::event::event_for_vault_link;
 use crate::workspace::service::WorkspaceService;
@@ -183,11 +183,7 @@ pub async fn archive_card(
             turn_worker_store()
                 .archive(&work_id, purge_output)
                 .ok_or(CardActionError::NotFound)?;
-            (
-                true,
-                format!("turn worker {work_id} archived"),
-                None,
-            )
+            (true, format!("turn worker {work_id} archived"), None)
         }
         WorkCardKind::AskJob => {
             let job_id = detail.job_id.clone().ok_or_else(|| {
@@ -196,11 +192,7 @@ pub async fn archive_card(
             ask_job_store()
                 .archive(&job_id, purge_output)
                 .ok_or(CardActionError::NotFound)?;
-            (
-                true,
-                format!("ask {job_id} archived"),
-                Some(job_id),
-            )
+            (true, format!("ask {job_id} archived"), Some(job_id))
         }
         other => {
             return Err(CardActionError::NotActionable(format!(
@@ -242,9 +234,10 @@ pub async fn retry_card(
         ));
     }
 
-    let job_id = detail.job_id.clone().ok_or_else(|| {
-        CardActionError::NotActionable("job card missing job_id".to_string())
-    })?;
+    let job_id = detail
+        .job_id
+        .clone()
+        .ok_or_else(|| CardActionError::NotActionable("job card missing job_id".to_string()))?;
 
     let replay = replay_runtime_job(runtime.clone(), &job_id, worker_id)
         .await

@@ -4,14 +4,14 @@ use locus_core_rs::NodeQuery;
 use stasis::prelude::MemoryRecallRequest;
 
 use crate::agent_runtime::ambient_context::ChannelAmbientPolicy;
+use crate::cognitive_identity::{
+    DEFAULT_RELATIONAL_DIGEST_BUDGET, DigestCompileOptions,
+    cognitive_identity_diagnostics_with_stats, compile_relational_memory_digest_with_options,
+    load_cognitive_identity_snapshot,
+};
 use crate::engine_context::{
     ContextCompilerInput, EngineExecutionLane, RecallReadiness, compile_context_prompt,
     default_policy_profile_for_lane,
-};
-use crate::cognitive_identity::{
-    DigestCompileOptions, cognitive_identity_diagnostics_with_stats,
-    compile_relational_memory_digest_with_options, load_cognitive_identity_snapshot,
-    DEFAULT_RELATIONAL_DIGEST_BUDGET,
 };
 use crate::identity_manuscript::{
     ManuscriptContext, digest_options_for_manuscript, format_manuscript_prompt_block,
@@ -185,7 +185,11 @@ pub async fn channel_policy_probe(
     let effective_policy_profile = policy_profile
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .or_else(|| Some(default_policy_profile_for_lane(EngineExecutionLane::Interactive)));
+        .or_else(|| {
+            Some(default_policy_profile_for_lane(
+                EngineExecutionLane::Interactive,
+            ))
+        });
 
     let request = policy_identity_context_request(
         identity_user_id.to_string(),
@@ -200,8 +204,14 @@ pub async fn channel_policy_probe(
         .await
     {
         Ok(context) => ChannelAmbientPolicy {
-            proactive_allowed: context.channel.as_ref().map(|channel| channel.proactive_allowed),
-            identity_channel_type: context.channel.as_ref().map(|channel| channel.channel_type.clone()),
+            proactive_allowed: context
+                .channel
+                .as_ref()
+                .map(|channel| channel.proactive_allowed),
+            identity_channel_type: context
+                .channel
+                .as_ref()
+                .map(|channel| channel.channel_type.clone()),
         },
         Err(_) => ChannelAmbientPolicy::default(),
     }
@@ -217,7 +227,11 @@ pub async fn identity_context_probe(
     let effective_policy_profile = policy_profile
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .or_else(|| Some(default_policy_profile_for_lane(EngineExecutionLane::Interactive)));
+        .or_else(|| {
+            Some(default_policy_profile_for_lane(
+                EngineExecutionLane::Interactive,
+            ))
+        });
 
     let snapshot = load_cognitive_identity_snapshot(
         Some(&tui_rt.identity_memory_store),
@@ -232,8 +246,7 @@ pub async fn identity_context_probe(
         options = digest_options_for_manuscript(options, manuscript);
     }
     let ranked = compile_relational_memory_digest_with_options(&snapshot, options);
-    let diagnostics =
-        cognitive_identity_diagnostics_with_stats(&snapshot, Some(&ranked.stats));
+    let diagnostics = cognitive_identity_diagnostics_with_stats(&snapshot, Some(&ranked.stats));
     let summary = Some(format!("{}\n{diagnostics}", ranked.text));
     let error = snapshot.error;
 
@@ -369,7 +382,9 @@ pub fn append_voice_preset_hint(
     voice_preset_id: Option<&str>,
     voice_appendix: Option<&str>,
 ) -> String {
-    let appendix = voice_appendix.map(str::trim).filter(|value| !value.is_empty());
+    let appendix = voice_appendix
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
     let Some(appendix) = appendix else {
         return prompt.to_string();
     };
@@ -629,8 +644,8 @@ mod tests {
     use super::{
         CheapRecallProbe, IdentityContextProbe, RecallSnippet, append_identity_context_hint,
         append_manuscript_hint, append_memory_recall_hint, build_prompt_with_context_pack,
-        compile_interactive_context_prompt,
-        derive_recall_readiness, verifier_policy_from_settings_and_route,
+        compile_interactive_context_prompt, derive_recall_readiness,
+        verifier_policy_from_settings_and_route,
     };
     use crate::tui::settings::RuntimeSettings;
 
@@ -831,9 +846,17 @@ mod tests {
             RecallReadiness::Verified,
         );
 
-        assert!(output.compiled_prompt.contains("[MEDOUSA_CONTEXT_COMPILER]"));
+        assert!(
+            output
+                .compiled_prompt
+                .contains("[MEDOUSA_CONTEXT_COMPILER]")
+        );
         assert!(output.compiled_prompt.contains("lane=interactive"));
-        assert!(output.compiled_prompt.contains("lane_policy_profile=interactive"));
+        assert!(
+            output
+                .compiled_prompt
+                .contains("lane_policy_profile=interactive")
+        );
         assert!(output.allow_no_tools_fallback);
     }
 

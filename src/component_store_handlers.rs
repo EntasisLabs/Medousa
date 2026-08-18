@@ -1,9 +1,9 @@
 //! HTTP handlers for `/v1/components/{component_id}/store/*` (MedousaStore).
 
+use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::get;
-use axum::Json;
 use medousa_types::component_store::{
     ComponentStoreDeleteResponse, ComponentStoreGetResponse, ComponentStoreListResponse,
     ComponentStoreQuery, ComponentStoreSetRequest, ComponentStoreSetResponse,
@@ -162,11 +162,7 @@ async fn put_store_entry(
     Query(query): Query<ComponentStoreQuery>,
     Json(body): Json<ComponentStoreSetRequest>,
 ) -> Result<Json<ComponentStoreSetResponse>, (StatusCode, String)> {
-    let profile_id = resolve_profile_id(
-        body.profile_id
-            .as_deref()
-            .or(query.profile_id.as_deref()),
-    );
+    let profile_id = resolve_profile_id(body.profile_id.as_deref().or(query.profile_id.as_deref()));
     let component_id = component_id.trim();
     let key = query
         .key

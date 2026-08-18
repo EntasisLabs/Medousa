@@ -9,14 +9,14 @@ use crate::artifact_store;
 use crate::client_tools::ClientRegistry;
 use crate::events::TuiEvent;
 use crate::runtime::stasis_surreal_schema::ensure_stasis_runtime_schema;
-use crate::runtime::vault_surreal_schema::ensure_vault_surreal_schema;
 use crate::runtime::stasis_wire::LocalStasisWireConfig;
 use crate::runtime::stasis_wire::build_local_stasis_composition;
+use crate::runtime::vault_surreal_schema::ensure_vault_surreal_schema;
 use crate::session_meta_store;
 use crate::session_store;
-use crate::verification_store;
 use crate::tools::TuiRuntime;
 use crate::tui::runtime_services::assemble_tui_runtime;
+use crate::verification_store;
 
 /// How the TUI connects to runtime services.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,7 +65,9 @@ impl TuiPlatformBuildConfig {
 }
 
 /// Resolve backend + mode for TUI startup or settings rebind.
-pub fn resolve_tui_platform_mode(config: &TuiPlatformBuildConfig) -> (RuntimeBackend, TuiPlatformMode) {
+pub fn resolve_tui_platform_mode(
+    config: &TuiPlatformBuildConfig,
+) -> (RuntimeBackend, TuiPlatformMode) {
     if config.local_runtime_only {
         return (config.backend.clone(), TuiPlatformMode::LocalFull);
     }
@@ -85,9 +87,7 @@ pub async fn build_tui_platform(
     crate::runtime::stasis_otel::prepare_stasis_otel_from_tui_defaults();
     let (backend, mode) = resolve_tui_platform_mode(&config);
 
-    if mode == TuiPlatformMode::ClientStub
-        && !matches!(config.backend, RuntimeBackend::InMemory)
-    {
+    if mode == TuiPlatformMode::ClientStub && !matches!(config.backend, RuntimeBackend::InMemory) {
         eprintln!(
             "daemon reachable at {} — TUI using in-memory client stub (persistence via daemon API)",
             config.daemon_url
@@ -95,16 +95,12 @@ pub async fn build_tui_platform(
     }
 
     match mode {
-        TuiPlatformMode::ClientStub => {
-            build_tui_client_stub(&config, event_tx)
-                .await
-                .context("failed to build TUI client-stub runtime")
-        }
-        TuiPlatformMode::LocalFull => {
-            build_tui_local_platform(backend, &config, event_tx)
-                .await
-                .context("failed to build TUI local platform runtime")
-        }
+        TuiPlatformMode::ClientStub => build_tui_client_stub(&config, event_tx)
+            .await
+            .context("failed to build TUI client-stub runtime"),
+        TuiPlatformMode::LocalFull => build_tui_local_platform(backend, &config, event_tx)
+            .await
+            .context("failed to build TUI local platform runtime"),
     }
 }
 
