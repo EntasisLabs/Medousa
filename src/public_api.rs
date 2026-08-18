@@ -16,6 +16,8 @@ pub const COGNITION_MEMORY_QUERY: &str = "cognition_memory_query";
 pub const COGNITION_MEMORY_MUTATE: &str = "cognition_memory_mutate";
 pub const COGNITION_IDENTITY_QUERY: &str = "cognition_identity_query";
 pub const COGNITION_IDENTITY_MUTATE: &str = "cognition_identity_mutate";
+pub const COGNITION_CALENDAR_QUERY: &str = "cognition_calendar_query";
+pub const COGNITION_CALENDAR_MUTATE: &str = "cognition_calendar_mutate";
 
 /// Primitives that every mode may call. Grows as families collapse.
 pub const PUBLIC_API_TOOLS: &[&str] = &[
@@ -30,6 +32,8 @@ pub const PUBLIC_API_TOOLS: &[&str] = &[
     COGNITION_MEMORY_MUTATE,
     COGNITION_IDENTITY_QUERY,
     COGNITION_IDENTITY_MUTATE,
+    COGNITION_CALENDAR_QUERY,
+    COGNITION_CALENDAR_MUTATE,
 ];
 
 pub fn is_public_api_tool(name: &str) -> bool {

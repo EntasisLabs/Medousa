@@ -26,14 +26,8 @@ static SESSION_SURFACE_FILES: Lazy<crate::session_storage::SessionFileStore> = L
 /// Host console domains unlocked at session start (no `cognition_tools_discover` step).
 pub const DEFAULT_HOST_AUTO_UNLOCK_DOMAINS: &[&str] = &["memory", "vault", "calendar"];
 
-pub const CALENDAR_DOMAIN_TOOLS: &[&str] = &[
-    "cognition_calendar_list",
-    "cognition_calendar_create",
-    "cognition_calendar_update",
-    "cognition_calendar_delete",
-    "cognition_calendar_import",
-    "cognition_calendar_export",
-];
+pub const CALENDAR_DOMAIN_TOOLS: &[&str] =
+    &["cognition_calendar_query", "cognition_calendar_mutate"];
 
 pub const BROWSER_HOST_AUTO_UNLOCK_DOMAIN: &str = "browser";
 
@@ -80,7 +74,8 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_web_search",
     "cognition_store_read",
     "cognition_store_write",
-    "cognition_calendar_list",
+    "cognition_calendar_query",
+    "cognition_calendar_mutate",
     "cognition_turn",
     "cognition_turn_worker_status",
     "cognition_ui_present",
@@ -103,6 +98,8 @@ pub const WORKER_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_memory_mutate",
     "cognition_identity_query",
     "cognition_identity_mutate",
+    "cognition_calendar_query",
+    "cognition_calendar_mutate",
     "cognition_ui_build",
     "cognition_ui_scene",
     "cognition_ui_present",
@@ -849,7 +846,8 @@ mod tests {
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_turn"));
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_mutate"));
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_query"));
-        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_calendar_list"));
+        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_calendar_query"));
+        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_calendar_mutate"));
     }
 
     #[test]
@@ -933,7 +931,9 @@ mod tests {
         let before = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
         assert!(before.contains("cognition_store_read"));
         assert!(before.contains("cognition_store_write"));
-        assert!(!before.contains("cognition_calendar_create"));
+        assert!(before.contains("cognition_calendar_query"));
+        assert!(before.contains("cognition_calendar_mutate"));
+        assert!(!before.contains("cognition_skill_discover"));
 
         ensure_host_session_tool_defaults(&session_id);
         let after = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
@@ -941,7 +941,8 @@ mod tests {
         assert!(after.contains("cognition_store_write"));
         assert!(after.contains("cognition_memory_query"));
         assert!(after.contains("cognition_memory_mutate"));
-        assert!(after.contains("cognition_calendar_create"));
+        assert!(after.contains("cognition_calendar_query"));
+        assert!(after.contains("cognition_calendar_mutate"));
 
         let _ = delete_session_tool_surface(&session_id);
     }
@@ -956,11 +957,13 @@ mod tests {
         assert!(before.contains("cognition_memory_mutate"));
         assert!(before.contains("cognition_identity_mutate"));
         assert!(before.contains("cognition_identity_query"));
-        assert!(!before.contains("cognition_calendar_create"));
+        assert!(before.contains("cognition_calendar_query"));
+        assert!(before.contains("cognition_calendar_mutate"));
+        assert!(!before.contains("cognition_skill_discover"));
 
-        unlock_session_domains(&session_id, ToolSurfaceLane::Host, &["calendar"]).expect("unlock");
+        unlock_session_domains(&session_id, ToolSurfaceLane::Host, &["skill"]).expect("unlock");
         let after = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
-        assert!(after.contains("cognition_calendar_create"));
+        assert!(after.contains("cognition_skill_discover"));
 
         let _ = delete_session_tool_surface(&session_id);
     }

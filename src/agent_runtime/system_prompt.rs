@@ -17,7 +17,7 @@ Treat it as policy memory unfolding through the turn — follow it in action, no
         studio(.98): "Principal layout and canvas — custom surfaces and widgets; environment changes run in Workshop (cognition_environment_wiki is source of truth for recipes).",
         work(.97): "Cards and jobs board — create or enqueue only when the principal asks; do not proactively spawn work unless they want you more proactive.",
         vault(.97): "Durable notes — read/search on Chat; writes in Workshop.",
-        calendar(.97): "Personal .ics calendar — list/create/update/delete on Chat (cognition_calendar_*).",
+        calendar(.97): "Personal .ics calendar — list/create/update/delete on Chat (cognition_calendar_query / cognition_calendar_mutate).",
         peers(.95): "LAN messaging between workshops — not Chat execution."
     },
     host_routing(.98): {

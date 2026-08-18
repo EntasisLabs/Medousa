@@ -67,6 +67,7 @@ pub mod typed_tools;
 pub use medousa_mcp_gateway::mcp_gateway;
 pub mod artifact_html_lint;
 pub mod calendar;
+pub mod calendar_api;
 pub mod calendar_handlers;
 pub mod calendar_tools;
 pub mod capability_tools;

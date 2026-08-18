@@ -82,12 +82,6 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_skill_discover",
                     "cognition_skill_propose",
                     "cognition_skill_probe",
-                    "cognition_calendar_list",
-                    "cognition_calendar_create",
-                    "cognition_calendar_update",
-                    "cognition_calendar_delete",
-                    "cognition_calendar_import",
-                    "cognition_calendar_export",
                 ],
             );
             push(
@@ -112,12 +106,6 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_code_definition",
                     "cognition_code_diagnostics",
                     "cognition_code_symbols",
-                    "cognition_calendar_list",
-                    "cognition_calendar_create",
-                    "cognition_calendar_update",
-                    "cognition_calendar_delete",
-                    "cognition_calendar_import",
-                    "cognition_calendar_export",
                     "cognition_ui_build",
                     "cognition_ui_scene",
                     "cognition_ui_present",
@@ -165,12 +153,6 @@ pub fn host_bus_tool_names() -> HashSet<String> {
         &[
             "cognition_manuscript_list",
             "cognition_manuscript_resolve",
-            "cognition_calendar_list",
-            "cognition_calendar_create",
-            "cognition_calendar_update",
-            "cognition_calendar_delete",
-            "cognition_calendar_import",
-            "cognition_calendar_export",
             "cognition_tool_history_summary",
             "cognition_tool_history_detail",
             "cognition_chat_history_search",
@@ -282,8 +264,10 @@ mod tests {
         assert!(names.contains("cognition_skill_discover"));
         assert!(names.contains("cognition_skill_probe"));
         assert!(names.contains("cognition_store_write"));
-        assert!(names.contains("cognition_calendar_list"));
-        assert!(names.contains("cognition_calendar_create"));
+        assert!(names.contains("cognition_calendar_query"));
+        assert!(names.contains("cognition_calendar_mutate"));
+        assert!(!names.contains("cognition_calendar_list"));
+        assert!(!names.contains("cognition_calendar_create"));
         assert!(names.contains("cognition_memory_mutate"));
     }
 
@@ -321,8 +305,10 @@ mod tests {
         assert!(!names.contains("cognition_job_enqueue"));
         assert!(!names.contains("cognition_runtime_workflow_run"));
         assert!(names.contains("cognition_store_read"));
-        assert!(names.contains("cognition_calendar_list"));
-        assert!(names.contains("cognition_calendar_create"));
+        assert!(names.contains("cognition_calendar_query"));
+        assert!(names.contains("cognition_calendar_mutate"));
+        assert!(!names.contains("cognition_calendar_list"));
+        assert!(!names.contains("cognition_calendar_create"));
         assert!(names.contains("cognition_workshop_steer"));
         assert!(!names.contains("cognition_grapheme_run"));
         assert!(!names.contains("cognition_capability_invoke"));

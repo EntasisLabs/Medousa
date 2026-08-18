@@ -47,7 +47,7 @@ Source: `src/tool_bootstrap.rs`
 | Turn | `cognition_turn` (`action=turn.finish\|turn.checkpoint\|turn.begin_work\|…`) |
 | Memory | `cognition_memory_query` / `cognition_memory_mutate` (`action=memory.context\|memory.store\|…`) |
 | Identity | `cognition_identity_query` / `cognition_identity_mutate` (`action=identity.recall\|identity.remember\|…`) |
-| Calendar | `cognition_calendar_*` — [calendar.md](calendar.md) |
+| Calendar | `cognition_calendar_query` / `cognition_calendar_mutate` (`action=calendar.list\|calendar.create\|…`) — [calendar.md](calendar.md) |
 | MCP | `cognition.mcp.*` — [mcp-gateway-setup.md](../mcp-gateway-setup.md) |
 | UI present | `cognition_ui_present` — emits `ui_artifact` on stream |
 | Web | `cognition_web_search` — all surfaces; BrowserHost → lite → Grapheme chain |

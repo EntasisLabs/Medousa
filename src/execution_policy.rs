@@ -209,6 +209,7 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         "cognition_runtime_mutate"
         | "cognition_memory_mutate"
         | "cognition_identity_mutate"
+        | "cognition_calendar_mutate"
         | "cognition_openshell_sandbox_run" => StepExecutionClass::Mutating,
         "cognition_openshell_status" | "cognition_skill_discover" | "cognition_skill_propose" => {
             StepExecutionClass::ReadOnly
@@ -216,6 +217,7 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         "cognition_skill_probe" => StepExecutionClass::Mutating,
         "cognition_memory_query"
         | "cognition_identity_query"
+        | "cognition_calendar_query"
         | "cognition_store_read"
         | "cognition_runtime_query"
         | "cognition_schema"
@@ -482,6 +484,24 @@ mod tests {
         );
         assert_eq!(
             classify_tool_call("cognition_identity_mutate", &mutate),
+            StepExecutionClass::Mutating
+        );
+    }
+
+    #[test]
+    fn calendar_query_is_parallel_safe_and_mutate_is_mutating() {
+        let query = json!({ "action": "calendar.list", "from": "2026-08-18T00:00:00Z" });
+        let mutate = json!({
+            "action": "calendar.create",
+            "summary": "Standup",
+            "dtstart": "2026-08-18T17:00:00Z"
+        });
+        assert_eq!(
+            classify_tool_call("cognition_calendar_query", &query),
+            StepExecutionClass::ReadOnly
+        );
+        assert_eq!(
+            classify_tool_call("cognition_calendar_mutate", &mutate),
             StepExecutionClass::Mutating
         );
     }

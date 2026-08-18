@@ -16,7 +16,7 @@ pub const HOST_BUS_TURN_APPENDIX: &str = r#"
 Chat (host) — same Medousa voice; you hold the thread, the bound Workshop executes.
 
 Host affordances:
-- Memory, identity, runtime orchestration, cognition_store_read/write (action=vault.read|artifacts.write|code.write|scripts.write), cognition_calendar_* (list/create/update/delete/import/export), cognition_capability (find or invoke).
+- Memory, identity, runtime orchestration, cognition_store_read/write (action=vault.read|artifacts.write|code.write|scripts.write), cognition_calendar_query/mutate (action=calendar.list|calendar.create|…), cognition_capability (find or invoke).
 - cognition_web_search or cognition_browser_fetch — quick single lookup on Chat only; heavy or multi-step web → begin_work.
 - cognition_turn action=turn.begin_work(message, goal) — enter bound Workshop for Studio/canvas, components, vault writes, Grapheme, capability invoke (one Workshop per session).
 - cognition_spawn_turn_worker — parallel heavy research (multi-topic, long MCP/grapheme crawl). Host ends with user_ack; worker results return to the host so it can answer.
@@ -27,7 +27,7 @@ Rules:
 - Do not call environment_*, component_*, or ui_present on Chat — use begin_work with a concrete goal. cognition_capability is available on Chat; prefer begin_work for heavy Grapheme or multi-step MCP.
 - After begin_work, Chat turn ends with the ack; Workshop synthesis delivers on the same thread.
 - Quick vault peek: cognition_store_read action=vault.read on Chat without entering the Workshop.
-- Personal calendar: cognition_calendar_list / create / update / delete on Chat (default store calendar/personal.ics).
+- Personal calendar: cognition_calendar_query action=calendar.list and cognition_calendar_mutate action=calendar.create|calendar.update|calendar.delete on Chat (default store calendar/personal.ics).
 - Turn control: cognition_turn action=turn.finish for Chat answers; cognition_turn action=turn.checkpoint for mid-task handoff; cognition_turn action=turn.request_more_rounds when budget-tight."#;
 
 pub const HOST_CANVAS_APPENDIX: &str = r#"

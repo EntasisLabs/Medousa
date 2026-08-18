@@ -6,6 +6,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use stasis::prelude::StasisError;
 
+use crate::calendar_api::calendar_type_schemas;
 use crate::capability_tools::capability_type_schemas;
 use crate::identity_api::identity_type_schemas;
 use crate::memory_api::memory_type_schemas;
@@ -26,6 +27,7 @@ enum SchemaDomain {
     Turn,
     Memory,
     Identity,
+    Calendar,
 }
 
 impl SchemaDomain {
@@ -37,6 +39,7 @@ impl SchemaDomain {
             Self::Turn => "turn",
             Self::Memory => "memory",
             Self::Identity => "identity",
+            Self::Calendar => "calendar",
         }
     }
 }
@@ -82,6 +85,7 @@ impl JsonSchema for SchemaInput {
                     "turn",
                     "memory",
                     "identity",
+                    "calendar",
                 ]),
                 false,
             ),
@@ -187,6 +191,10 @@ fn catalog() -> Vec<CatalogItem> {
         .chain(generated_items(
             SchemaDomain::Identity,
             identity_type_schemas(),
+        ))
+        .chain(generated_items(
+            SchemaDomain::Calendar,
+            calendar_type_schemas(),
         ))
         .collect()
 }
@@ -393,5 +401,6 @@ mod tests {
         assert!(names.iter().any(|value| value == "turn.finish"));
         assert!(names.iter().any(|value| value == "memory.store"));
         assert!(names.iter().any(|value| value == "identity.remember"));
+        assert!(names.iter().any(|value| value == "calendar.create"));
     }
 }

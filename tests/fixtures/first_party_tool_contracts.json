@@ -132,6 +132,70 @@
     },
     {
       "registry": "coder_bound",
+      "name": "cognition_calendar_mutate",
+      "description": "Write personal calendar: create, update, delete, or import ICS. action is a typed name (calendar.create, calendar.update, calendar.delete, calendar.import). Fetch fields with cognition_schema types=[...].",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "enum": [
+              "calendar.create",
+              "calendar.delete",
+              "calendar.import",
+              "calendar.update"
+            ],
+            "type": "string"
+          },
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "intent"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:initial"
+      ]
+    },
+    {
+      "registry": "coder_bound",
+      "name": "cognition_calendar_query",
+      "description": "Read personal calendar: list events or export ICS. action is a typed name (calendar.list, calendar.export). Fetch fields with cognition_schema types=[...].",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "enum": [
+              "calendar.export",
+              "calendar.list"
+            ],
+            "type": "string"
+          },
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "intent"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:initial"
+      ]
+    },
+    {
+      "registry": "coder_bound",
       "name": "cognition_capability",
       "description": "Find or run a capability, MCP tool, or Grapheme module. action is a typed name (capability.find, grapheme.invoke, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
@@ -1430,6 +1494,7 @@
         "properties": {
           "domain": {
             "enum": [
+              "calendar",
               "capability",
               "identity",
               "memory",
@@ -1452,6 +1517,12 @@
                 "artifacts.read",
                 "artifacts.search",
                 "artifacts.write",
+                "calendar.create",
+                "calendar.delete",
+                "calendar.export",
+                "calendar.import",
+                "calendar.list",
+                "calendar.update",
                 "capability.find",
                 "capability.invoke",
                 "code.read",
@@ -2102,186 +2173,24 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_calendar_create",
-      "description": "Create a calendar event in the vault .ics store. For all-day events set all_day=true and use UTC midnights for the calendar date.",
+      "name": "cognition_calendar_mutate",
+      "description": "Write personal calendar: create, update, delete, or import ICS. action is a typed name (calendar.create, calendar.update, calendar.delete, calendar.import). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "alarms": {
-            "description": "Display alerts before start",
-            "items": {
-              "properties": {
-                "action": {
-                  "description": "VALARM action (display)",
-                  "type": "string"
-                },
-                "trigger_minutes_before": {
-                  "description": "Minutes before dtstart",
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "trigger_minutes_before"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "all_day": {
-            "description": "True for DATE (calendar-day) events; use UTC midnights for dtstart/dtend.",
-            "type": "boolean"
-          },
-          "calendar_path": {
-            "description": "Alias for path",
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "dtend": {
-            "description": "RFC3339 end. All-day: exclusive next-day YYYY-MM-DDT00:00:00Z.",
-            "type": "string"
-          },
-          "dtstart": {
-            "description": "RFC3339 start. All-day: YYYY-MM-DDT00:00:00Z for that calendar date.",
-            "type": "string"
-          },
-          "location": {
-            "type": "string"
-          },
-          "note_path": {
-            "description": "Optional vault-relative markdown note linked to this event",
-            "type": "string"
-          },
-          "path": {
-            "description": "Vault-relative .ics path (default calendar/personal.ics)",
-            "type": "string"
-          },
-          "rrule": {
-            "description": "Optional RRULE body (without RRULE: prefix)",
-            "type": "string"
-          },
-          "summary": {
-            "description": "Event title",
+          "action": {
+            "enum": [
+              "calendar.create",
+              "calendar.delete",
+              "calendar.import",
+              "calendar.update"
+            ],
             "type": "string"
           }
         },
         "required": [
-          "dtstart",
-          "summary"
+          "action"
         ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:calendar",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:calendar"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_calendar_delete",
-      "description": "Delete a calendar event by uid from the vault .ics store.",
-      "input_schema": {
-        "properties": {
-          "path": {
-            "description": "Vault-relative .ics path (default calendar/personal.ics)",
-            "type": "string"
-          },
-          "uid": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "uid"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:calendar",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:calendar"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_calendar_export",
-      "description": "Export the vault calendar as raw ICS text.",
-      "input_schema": {
-        "properties": {
-          "path": {
-            "description": "Vault-relative .ics path (default calendar/personal.ics)",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:calendar",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:calendar"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_calendar_import",
-      "description": "Merge VEVENT components from raw ICS text into the vault calendar (UID upsert).",
-      "input_schema": {
-        "properties": {
-          "calendar_path": {
-            "description": "Alias for path",
-            "type": "string"
-          },
-          "ics": {
-            "description": "Raw RFC 5545 text",
-            "type": "string"
-          },
-          "path": {
-            "description": "Vault-relative .ics path (default calendar/personal.ics)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "ics"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:calendar",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:calendar"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_calendar_list",
-      "description": "List personal calendar events in a time range (RRULE expanded). Default store: calendar/personal.ics.",
-      "input_schema": {
-        "properties": {
-          "from": {
-            "description": "RFC3339 range start (inclusive)",
-            "type": "string"
-          },
-          "path": {
-            "description": "Vault-relative .ics path (default calendar/personal.ics)",
-            "type": "string"
-          },
-          "to": {
-            "description": "RFC3339 range end (exclusive)",
-            "type": "string"
-          }
-        },
         "type": "object"
       },
       "output_schema_present": true,
@@ -2290,92 +2199,43 @@
         "general:bootstrap",
         "general:domain:calendar",
         "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
         "workshop:authorized:research",
+        "workshop:bootstrap",
         "workshop:domain:calendar"
       ]
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_calendar_update",
-      "description": "Update an existing calendar event by uid (full replace of mutable fields).",
+      "name": "cognition_calendar_query",
+      "description": "Read personal calendar: list events or export ICS. action is a typed name (calendar.list, calendar.export). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "alarms": {
-            "description": "Display alerts before start",
-            "items": {
-              "properties": {
-                "action": {
-                  "description": "VALARM action (display)",
-                  "type": "string"
-                },
-                "trigger_minutes_before": {
-                  "description": "Minutes before dtstart",
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "trigger_minutes_before"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "all_day": {
-            "description": "True for DATE (calendar-day) events; use UTC midnights for dtstart/dtend.",
-            "type": "boolean"
-          },
-          "calendar_path": {
-            "description": "Alias for path",
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "dtend": {
-            "description": "RFC3339 end. All-day: exclusive next-day YYYY-MM-DDT00:00:00Z.",
-            "type": "string"
-          },
-          "dtstart": {
-            "description": "RFC3339 start. All-day: YYYY-MM-DDT00:00:00Z for that calendar date.",
-            "type": "string"
-          },
-          "location": {
-            "type": "string"
-          },
-          "note_path": {
-            "description": "Optional vault-relative markdown note linked to this event",
-            "type": "string"
-          },
-          "path": {
-            "description": "Vault-relative .ics path (default calendar/personal.ics)",
-            "type": "string"
-          },
-          "rrule": {
-            "description": "Optional RRULE body (without RRULE: prefix)",
-            "type": "string"
-          },
-          "summary": {
-            "description": "Event title",
-            "type": "string"
-          },
-          "uid": {
-            "description": "Event UID to update",
+          "action": {
+            "enum": [
+              "calendar.export",
+              "calendar.list"
+            ],
             "type": "string"
           }
         },
         "required": [
-          "dtstart",
-          "summary",
-          "uid"
+          "action"
         ],
         "type": "object"
       },
       "output_schema_present": true,
       "placements": [
         "general:authorized",
+        "general:bootstrap",
         "general:domain:calendar",
         "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
         "workshop:authorized:research",
+        "workshop:bootstrap",
         "workshop:domain:calendar"
       ]
     },
@@ -4110,6 +3970,7 @@
         "properties": {
           "domain": {
             "enum": [
+              "calendar",
               "capability",
               "identity",
               "memory",
@@ -4127,6 +3988,12 @@
                 "artifacts.read",
                 "artifacts.search",
                 "artifacts.write",
+                "calendar.create",
+                "calendar.delete",
+                "calendar.export",
+                "calendar.import",
+                "calendar.list",
+                "calendar.update",
                 "capability.find",
                 "capability.invoke",
                 "code.read",

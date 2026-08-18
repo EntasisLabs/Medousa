@@ -214,28 +214,12 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
         "Write, delete, or move vault, artifacts, code, or saved scripts",
     ),
     (
-        "cognition_calendar_list",
-        "List personal calendar events in a time range",
+        crate::public_api::COGNITION_CALENDAR_QUERY,
+        "Read personal calendar by typed action (calendar.list, calendar.export)",
     ),
     (
-        "cognition_calendar_create",
-        "Create a calendar event in vault .ics",
-    ),
-    (
-        "cognition_calendar_update",
-        "Update a calendar event by uid",
-    ),
-    (
-        "cognition_calendar_delete",
-        "Delete a calendar event by uid",
-    ),
-    (
-        "cognition_calendar_import",
-        "Import VEVENTs from raw ICS text",
-    ),
-    (
-        "cognition_calendar_export",
-        "Export the vault calendar as ICS",
+        crate::public_api::COGNITION_CALENDAR_MUTATE,
+        "Write personal calendar by typed action (calendar.create, calendar.update, calendar.delete, calendar.import)",
     ),
     (
         "cognition_web_search",
