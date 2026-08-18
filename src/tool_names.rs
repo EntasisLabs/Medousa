@@ -16,10 +16,7 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_calendar_update",
     "cognition_chat_history_read",
     "cognition_chat_history_search",
-    "cognition_capability_list",
-    "cognition_capability_invoke",
-    "cognition_capability_resolve",
-    "cognition_capability_search",
+    "cognition_capability",
     "cognition_code_definition",
     "cognition_code_diagnostics",
     "cognition_code_hover",
@@ -48,16 +45,9 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_environment_wiki",
     "cognition_feed_publish",
     "cognition_feed_subscribe",
-    "cognition_grapheme_cli_run",
-    "cognition_grapheme_examples",
-    "cognition_grapheme_modules",
-    "cognition_grapheme_modules_info",
-    "cognition_grapheme_modules_ops",
     "cognition_grapheme_promote_last_run_to_recurring",
     "cognition_grapheme_promote_to_job",
     "cognition_grapheme_promote_to_recurring",
-    "cognition_grapheme_run",
-    "cognition_grapheme_template_run",
     "cognition_identity_commit",
     "cognition_identity_context",
     "cognition_identity_propose",
@@ -72,10 +62,7 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_manuscript_overlay_list",
     "cognition_manuscript_overlay_propose",
     "cognition_manuscript_resolve",
-    "cognition_mcp_discover",
-    "cognition_mcp_invoke",
     "cognition_mcp_promote_to_job",
-    "cognition_mcp_servers",
     "cognition_memory_calibrate",
     "cognition_memory_context",
     "cognition_memory_evict",
@@ -146,16 +133,8 @@ pub fn registered_cognition_tools() -> impl Iterator<Item = &'static str> {
 }
 
 /// Grapheme first-class tools (templates + discovery + run) — worker execution surface.
-pub const WORKER_GRAPHEME_EXECUTION_TOOLS: &[&str] = &[
-    "cognition_web_search",
-    "cognition_grapheme_template_run",
-    "cognition_grapheme_modules",
-    "cognition_grapheme_modules_info",
-    "cognition_grapheme_modules_ops",
-    "cognition_grapheme_examples",
-    "cognition_grapheme_run",
-    "cognition_grapheme_cli_run",
-];
+pub const WORKER_GRAPHEME_EXECUTION_TOOLS: &[&str] =
+    &["cognition_web_search", "cognition_capability"];
 
 #[cfg(test)]
 mod tests {
@@ -188,17 +167,13 @@ mod tests {
                 "research allowlist missing {tool}"
             );
         }
-        assert!(tool_allowed("cognition_capability_invoke", &allow));
-        assert!(tool_allowed("cognition_mcp_discover", &allow));
+        assert!(tool_allowed("cognition_capability", &allow));
     }
 
     #[test]
     fn general_worker_sees_capability_and_template_shortcuts() {
         let allow = allowed_tool_names_for_intent(TurnWorkerIntent::General);
-        assert!(tool_allowed("cognition_capability_invoke", &allow));
-        assert!(tool_allowed("cognition_grapheme_template_run", &allow));
-        assert!(tool_allowed("cognition_grapheme_modules", &allow));
-        assert!(tool_allowed("cognition_grapheme_examples", &allow));
+        assert!(tool_allowed("cognition_capability", &allow));
     }
 
     #[test]
@@ -218,7 +193,7 @@ mod tests {
             "cognition_memory_store",
             "cognition_job_enqueue",
             "cognition_runtime_workflow_run",
-            "cognition_capability_search",
+            "cognition_capability",
             "cognition_spawn_turn_worker",
             "cognition_turn_begin_work",
             "cognition_turn_finish",
@@ -227,8 +202,7 @@ mod tests {
         }
         assert!(!tool_allowed("cognition_turn_prepare_final", &host));
         assert!(!tool_allowed("cognition_grapheme_run", &host));
-        assert!(!tool_allowed("cognition_capability_invoke", &host));
-        assert!(!tool_allowed("cognition_grapheme_template_run", &host));
+        assert!(tool_allowed("cognition_capability", &host));
         assert!(tool_allowed("cognition_identity_recall", &host));
         assert!(tool_allowed("cognition_identity_remember", &host));
         let research = allowed_tool_names_for_intent(TurnWorkerIntent::Research);

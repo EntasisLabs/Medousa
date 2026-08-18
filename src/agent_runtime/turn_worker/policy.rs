@@ -111,19 +111,8 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_memory_recall",
                     "cognition_memory_store",
                     "cognition_identity_recall",
-                    "cognition_capability_invoke",
-                    "cognition_capability_search",
-                    "cognition_capability_resolve",
-                    "cognition_mcp_invoke",
-                    "cognition_mcp_discover",
-                    "cognition_mcp_servers",
-                    "cognition_grapheme_template_run",
-                    "cognition_grapheme_modules",
-                    "cognition_grapheme_modules_info",
-                    "cognition_grapheme_modules_ops",
-                    "cognition_grapheme_examples",
-                    "cognition_grapheme_run",
-                    "cognition_grapheme_cli_run",
+                    "cognition_capability",
+                    "cognition_web_search",
                     "cognition_openshell_status",
                     "cognition_openshell_sandbox_run",
                     "cognition_shell_status",
@@ -141,7 +130,6 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_calendar_delete",
                     "cognition_calendar_import",
                     "cognition_calendar_export",
-                    "cognition_web_search",
                 ],
             );
             push(
@@ -167,15 +155,7 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_memory_store",
                     "cognition_identity_recall",
                     "cognition_web_search",
-                    "cognition_capability_invoke",
-                    "cognition_capability_search",
-                    "cognition_capability_resolve",
-                    "cognition_mcp_invoke",
-                    "cognition_mcp_discover",
-                    "cognition_grapheme_template_run",
-                    "cognition_grapheme_modules",
-                    "cognition_grapheme_examples",
-                    "cognition_grapheme_run",
+                    "cognition_capability",
                     "cognition_shell_status",
                     "cognition_shell_run",
                     "cognition_code_hover",
@@ -281,18 +261,6 @@ pub fn host_bus_tool_names() -> HashSet<String> {
     push(
         &mut names,
         &[
-            "cognition_capability_list",
-            "cognition.capability.list",
-            "cognition_capability_search",
-            "cognition.capability.search",
-            "cognition_capability_resolve",
-            "cognition.capability.resolve",
-        ],
-    );
-
-    push(
-        &mut names,
-        &[
             "cognition_job_enqueue",
             "cognition.job.enqueue",
             "cognition_runtime_jobs_list",
@@ -387,10 +355,7 @@ mod tests {
     fn research_intent_includes_grapheme_discovery_tools() {
         let names = allowed_tool_names_for_intent(TurnWorkerIntent::Research);
         assert!(names.contains("cognition_memory_context"));
-        assert!(names.contains("cognition_grapheme_modules"));
-        assert!(names.contains("cognition_grapheme_run"));
-        assert!(names.contains("cognition_grapheme_template_run"));
-        assert!(names.contains("cognition_capability_invoke"));
+        assert!(names.contains("cognition_capability"));
         assert!(names.contains("cognition_ui_build"));
         assert!(names.contains("cognition_ui_scene"));
         assert!(names.contains("cognition_ui_present"));
@@ -414,13 +379,13 @@ mod tests {
         let tools = vec![
             "cognition_identity_recall".to_string(),
             "cognition_memory_context".to_string(),
-            "cognition_capability_invoke".to_string(),
+            "cognition_capability".to_string(),
             "cognition_spawn_turn_worker".to_string(),
         ];
         let allow = worker_allowlist_for_intent_and_tools(TurnWorkerIntent::Research, &tools);
         assert!(allow.contains("cognition_identity_recall"));
         assert!(allow.contains("cognition_memory_context"));
-        assert!(allow.contains("cognition_capability_invoke"));
+        assert!(allow.contains("cognition_capability"));
         assert!(!allow.contains("cognition_spawn_turn_worker"));
         assert!(!allow.contains("cognition_grapheme_run"));
     }
@@ -434,7 +399,7 @@ mod tests {
         assert!(names.contains("cognition_identity_remember"));
         assert!(names.contains("cognition_job_enqueue"));
         assert!(names.contains("cognition_spawn_turn_worker"));
-        assert!(names.contains("cognition_capability_search"));
+        assert!(names.contains("cognition_capability"));
         assert!(names.contains("cognition_runtime_workflow_run"));
         assert!(names.contains("cognition_store_read"));
         assert!(names.contains("cognition_calendar_list"));

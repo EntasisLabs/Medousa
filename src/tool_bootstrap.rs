@@ -67,7 +67,7 @@ pub const ENVIRONMENT_DOMAIN_TOOLS: &[&str] = &[
 /// Always-visible host console tools (~12+).
 pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     COGNITION_TOOLS_DISCOVER,
-    "cognition_capability_search",
+    "cognition_capability",
     "cognition_tool_history_summary",
     "cognition_spawn_turn_worker",
     "cognition_memory_context",
@@ -95,11 +95,10 @@ pub const WORKER_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_turn_begin_work",
     "cognition_turn_update_user",
     "cognition_turn_finish",
-    "cognition_capability_invoke",
+    "cognition_capability",
     "cognition_web_search",
     "cognition_store_read",
     "cognition_store_write",
-    "cognition_grapheme_template_run",
     "cognition_memory_context",
     "cognition_memory_store",
     "cognition_ui_build",
@@ -160,8 +159,7 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 domain: "catalog",
                 summary: "Inspect capabilities, manuscripts, saved Grapheme scripts",
                 tools: &[
-                    "cognition_capability_list",
-                    "cognition_capability_resolve",
+                    "cognition_capability",
                     "cognition_manuscript_list",
                     "cognition_manuscript_resolve",
                     "cognition_store_read",
@@ -295,12 +293,8 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 domain: "execute",
                 summary: "Run resolved capabilities, Grapheme scripts, MCP invokes",
                 tools: &[
-                    "cognition_capability_invoke",
+                    "cognition_capability",
                     "cognition_web_search",
-                    "cognition_grapheme_run",
-                    "cognition_grapheme_cli_run",
-                    "cognition_mcp_invoke",
-                    "cognition_grapheme_template_run",
                     "cognition_shell_status",
                     "cognition_shell_run",
                     "cognition_code_hover",
@@ -312,16 +306,7 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             ToolDomainCatalogEntry {
                 domain: "discover",
                 summary: "Capability/Grapheme discovery when handoff lacks resolution",
-                tools: &[
-                    "cognition_capability_search",
-                    "cognition_capability_resolve",
-                    "cognition_grapheme_modules",
-                    "cognition_grapheme_modules_info",
-                    "cognition_grapheme_modules_ops",
-                    "cognition_grapheme_examples",
-                    "cognition_mcp_discover",
-                    "cognition_mcp_servers",
-                ],
+                tools: &["cognition_capability"],
             },
             ToolDomainCatalogEntry {
                 domain: "memory",
@@ -932,13 +917,13 @@ mod tests {
             allow.insert((*name).to_string());
         }
         allow.insert(COGNITION_TOOLS_DISCOVER.to_string());
-        allow.insert("cognition_mcp_discover".to_string());
+        allow.insert("cognition_capability".to_string());
 
         ensure_bound_workshop_session_tool_defaults(&session_id);
         let after = effective_tool_names(&session_id, ToolSurfaceLane::Worker, &allow);
         assert!(after.contains("cognition_environment_get"));
         assert!(after.contains("cognition_environment_propose"));
-        assert!(after.contains("cognition_mcp_discover"));
+        assert!(after.contains("cognition_capability"));
 
         let _ = delete_session_tool_surface(&session_id);
     }

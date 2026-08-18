@@ -14,11 +14,8 @@ spec:
       - cognition_identity_recall
       - cognition_memory_context
       - cognition_memory_recall
-      - cognition_capability_invoke
-      - cognition_capability_search
+      - cognition_capability
       - cognition_web_search
       - cognition_browser_fetch
-      - cognition_grapheme_modules
-      - cognition_grapheme_template_run
   identity:
     recall_hints: [research, evidence]

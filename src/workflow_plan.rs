@@ -300,10 +300,12 @@ pub fn plan_workflow_from_goal(request: &WorkflowPlanRequest) -> WorkflowPlanRes
         return WorkflowPlanResponse {
             goal: goal.to_string(),
             confidence: "high".to_string(),
-            execute_with: "cognition_capability_invoke".to_string(),
+            execute_with: "cognition_capability".to_string(),
             suggested_workflow: None,
             suggested_schedule: None,
             suggested_tool_input: Some(json!({
+                "op": "invoke",
+                "source": "auto",
                 "capability": "document_search",
                 "input": { "query": context_topic(context, goal) },
                 "try_fallbacks": true
@@ -328,10 +330,12 @@ pub fn plan_workflow_from_goal(request: &WorkflowPlanRequest) -> WorkflowPlanRes
         return WorkflowPlanResponse {
             goal: goal.to_string(),
             confidence: "high".to_string(),
-            execute_with: "cognition_grapheme_template_run".to_string(),
+            execute_with: "cognition_capability".to_string(),
             suggested_workflow: None,
             suggested_schedule: None,
             suggested_tool_input: Some(json!({
+                "op": "invoke",
+                "source": "grapheme",
                 "template": "research_report",
                 "params": { "topic": topic }
             })),
@@ -355,7 +359,7 @@ pub fn plan_workflow_from_goal(request: &WorkflowPlanRequest) -> WorkflowPlanRes
             execute_with: if mentions_schedule(&normalized) {
                 "cognition_runtime_workflow_schedule".to_string()
             } else {
-                "cognition_grapheme_template_run".to_string()
+                "cognition_capability".to_string()
             },
             suggested_workflow: None,
             suggested_schedule: infer_cron_expr(goal).map(|cron_expr| WorkflowScheduleSuggestion {
@@ -465,8 +469,7 @@ pub fn plan_workflow_from_goal(request: &WorkflowPlanRequest) -> WorkflowPlanRes
         suggested_tool_input: None,
         notes: vec![
             "No strong heuristic match — generic prompt step scaffold returned.".to_string(),
-            "Prefer cognition_capability_invoke or cognition_grapheme_template_run when intent is clearer."
-                .to_string(),
+            "Prefer cognition_capability when intent is clearer.".to_string(),
         ],
         assumptions: vec![
             "Replace or extend steps after reviewing goal with capability catalog.".to_string(),
@@ -484,7 +487,7 @@ mod tests {
             goal: "Search my Notion docs for Q1 roadmap".to_string(),
             context: None,
         });
-        assert_eq!(plan.execute_with, "cognition_capability_invoke");
+        assert_eq!(plan.execute_with, "cognition_capability");
         assert_eq!(plan.confidence, "high");
     }
 
@@ -507,6 +510,6 @@ mod tests {
             goal: "Research Rust async runtimes and summarize".to_string(),
             context: None,
         });
-        assert_eq!(plan.execute_with, "cognition_grapheme_template_run");
+        assert_eq!(plan.execute_with, "cognition_capability");
     }
 }

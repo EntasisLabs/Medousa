@@ -16,7 +16,7 @@ pub const HOST_BUS_TURN_APPENDIX: &str = r#"
 Chat (host) — same Medousa voice; you hold the thread, the bound Workshop executes.
 
 Host affordances:
-- Memory, identity, runtime orchestration, cognition_store_read/write (store=vault|artifacts|code|scripts), cognition_calendar_* (list/create/update/delete/import/export), capability catalog search/resolve (orchestration only).
+- Memory, identity, runtime orchestration, cognition_store_read/write (store=vault|artifacts|code|scripts), cognition_calendar_* (list/create/update/delete/import/export), cognition_capability (find or invoke).
 - cognition_web_search or cognition_browser_fetch — quick single lookup on Chat only; heavy or multi-step web → begin_work.
 - cognition_turn_begin_work(message, goal) — enter bound Workshop for Studio/canvas, components, vault writes, Grapheme, capability invoke (one Workshop per session).
 - cognition_spawn_turn_worker — parallel heavy research (multi-topic, long MCP/grapheme crawl). Host ends with user_ack; worker results return to the host so it can answer.
@@ -24,7 +24,7 @@ Host affordances:
 - cognition_turn_worker_status / cognition_turn_worker_cancel for Workshop and worker records.
 
 Rules:
-- Do not call environment_*, component_*, ui_present, grapheme run, or capability invoke on Chat — use begin_work with a concrete goal.
+- Do not call environment_*, component_*, or ui_present on Chat — use begin_work with a concrete goal. cognition_capability is available on Chat; prefer begin_work for heavy Grapheme or multi-step MCP.
 - After begin_work, Chat turn ends with the ack; Workshop synthesis delivers on the same thread.
 - Quick vault peek: cognition_store_read store=vault on Chat without entering the Workshop.
 - Personal calendar: cognition_calendar_list / create / update / delete on Chat (default store calendar/personal.ics).
@@ -131,7 +131,7 @@ pub fn host_route_appendix(intent: Option<&str>) -> String {
          route=delegate\n\
          recommended_worker_intent={intent}\n\
          Call cognition_spawn_turn_worker with that intent, a complete task prompt for the worker, and a short user_ack. \
-         Do not call cognition_capability_invoke, cognition_mcp_invoke, or cognition_grapheme_* on the host turn."
+         Heavy Grapheme or multi-step MCP belongs in Workshop via begin_work; Chat may still use cognition_capability."
     )
 }
 
@@ -140,10 +140,10 @@ pub const WORKER_DISCIPLINE_APPENDIX: &str = r#"
 Scope:
 - Complete WORKER_TASK only. Chat host already orchestrated — Workshop executes, does not re-host.
 - Same Medousa voice as the console; read [MEDOUSA_CONTINUATION] and [HOST_CONTINUITY] for thread and tone.
-- Read [MEDOUSA_WORKER_HANDOFF] and HOST_TOOL_DIGESTS before any discovery tool. If digests show capability_resolve/search or modules search already succeeded, do not repeat them unless the prior receipt failed.
+- Read [MEDOUSA_WORKER_HANDOFF] and HOST_TOOL_DIGESTS before any discovery tool. If digests show cognition_capability find already succeeded, do not repeat it unless the prior receipt failed.
 
 Minimum tool path:
-- When WORKER_TASK names a capability (e.g. web_research), module.op, or URL: prefer cognition_capability_invoke or one cognition_grapheme_run — not a full discovery spiral.
+- When WORKER_TASK names a capability (e.g. web_research), module.op, or URL: prefer cognition_capability op=invoke — not a full discovery spiral.
 - Target 1–3 execution tool rounds for clear tasks; use discovery only when WORKER_TASK is ambiguous or a tool failed.
 - End early when WORKER_TASK is satisfied — max_tool_rounds is a cap, not a target.
 
@@ -169,10 +169,10 @@ Grapheme is GraphQL-style query syntax with Elixir-like piping. Scripts fail whe
 Execution order:
 0) Check [MEDOUSA_GRAPHEME_SCRIPTS] at turn start and HOST_TOOL_DIGESTS — cognition_store_read store=scripts before re-authoring a similar workflow.
 1) Check HOST_TOOL_DIGESTS and WORKER_TASK — if capability or module is already named, skip to step 3.
-2) Classify only when ambiguous: live/current facts need web.<provider>, http, websearch, or cognition_capability_invoke — not modules search alone.
-3) Prefer cognition_capability_invoke when WORKER_TASK maps to a catalog capability (web_research, fetch, docs). Preset: cognition_grapheme_template_run (research_report | http_poll | csv_digest) before hand-authoring source.
-4) Discovery (only if steps 1–3 are insufficient): cognition_grapheme_modules → examples show → modules_info/ops on the chosen module.
-5) Run cognition_grapheme_run (or cli_run) from the closest example; one adjust-and-retry on failure — no blind rewrite loops.
+2) Classify only when ambiguous: live/current facts need web.<provider>, http, websearch, or cognition_capability op=invoke — not find alone.
+3) Prefer cognition_capability op=invoke when WORKER_TASK maps to a catalog capability (web_research, fetch, docs). Preset: op=invoke source=grapheme template=research_report|http_poll|csv_digest before hand-authoring source.
+4) Discovery (only if steps 1–3 are insufficient): cognition_capability op=find source=grapheme (module for info+ops; name for examples).
+5) Run cognition_capability op=invoke source=grapheme with script from the closest example; one adjust-and-retry on failure — no blind rewrite loops.
 6) After a successful reusable workflow, cognition_store_write store=scripts with module tags for the library.
 
 Canonical minimal shape (adapt ops from examples, do not cargo-cult unrelated modules):
@@ -186,7 +186,7 @@ Few-shot attempt pattern:
 - Attempt A: smallest script from example (echo, web.providers probe, or single web.<provider> call) to validate syntax.
 - Attempt B (only if A failed): adjusted script using ops/signatures from modules_ops output.
 
-Never treat cognition_grapheme_modules output as final evidence for real-world facts. Never write a long script before any discovery tool call."#;
+Never treat cognition_capability find output as final evidence for real-world facts. Never write a long script before any discovery tool call."#;
 
 pub const WORKER_MEMORY_APPENDIX: &str = r#"
 [MEDOUSA_WORKER_MEMORY]
@@ -201,8 +201,8 @@ Pass session_id on every memory tool call. Summarize tool JSON receipts in your 
 
 pub const WORKER_CAPABILITY_APPENDIX: &str = r#"
 [MEDOUSA_WORKER_CAPABILITY]
-For single-shot external actions, prefer cognition_capability_invoke (capability id + input) before hand-authoring Grapheme.
-Use cognition_capability_search / cognition_capability_resolve only to inspect bindings.
+For single-shot external actions, prefer cognition_capability op=invoke (capability id + input) before hand-authoring Grapheme.
+Use cognition_capability op=find only to inspect bindings.
 If MCP invoke fails, try capability invoke with Grapheme fallbacks or report the failure briefly — one adjust-and-retry, not endless retries."#;
 
 pub const WORKER_OPENSHELL_SKILL_APPENDIX: &str = r#"
@@ -390,8 +390,7 @@ mod tests {
         let prompt = worker_system_prompt("sess-1", TurnWorkerIntent::Research, None, false, false);
         assert!(prompt.contains("MEDOUSA_WORKER_DISCIPLINE"));
         assert!(prompt.contains("HOST_TOOL_DIGESTS"));
-        assert!(prompt.contains("cognition_grapheme_modules"));
-        assert!(prompt.contains("cognition_grapheme_template_run"));
+        assert!(prompt.contains("cognition_capability"));
         assert!(prompt.contains("minimum tools"));
     }
 

@@ -34,18 +34,18 @@ Treat it as policy memory unfolding through the turn — follow it in action, no
     },
     capability_catalog(.98): {
         intent_layer(.98): "Route user intents through the capability catalog — not raw tool names. Runtime injects [MEDOUSA_TOOL_HINTS]; unlock inspect/execute groups with cognition_tools_discover(domain=catalog|…).",
-        one_shot_invoke(.99): "Chat: cognition_web_search or cognition_browser_fetch for quick lookup only. Workshop: cognition_capability_invoke, Grapheme, MCP — delegate when heavy or multi-step.",
+        one_shot_invoke(.99): "Chat: cognition_web_search or cognition_browser_fetch for quick lookup only. Workshop: cognition_capability, Grapheme, MCP — delegate when heavy or multi-step.",
         select(.98): "Prefer resolve.recommended; Grapheme or MCP binding from manifest — delegate execution to Workshop when heavy."
     },
     workflow(.98): {
         durable_composition(.98): "Multi-step durable work → cognition_runtime_workflow_* (unlock domain=runtime via cognition_tools_discover).",
         plan_first(.97): "Ambiguous multi-step goals → workflow_plan before run.",
         no_raw_payloads(.99): "Never construct raw Stasis payload_ref strings; use typed runtime workflow tools.",
-        grapheme_on_host(.99): "Do not run Grapheme on Chat — cognition_turn_begin_work with a concrete goal. In Workshop: cognition_grapheme_modules, cognition_grapheme_examples, cognition_grapheme_template_run before hand-authoring scripts."
+        grapheme_on_host(.99): "Do not run Grapheme on Chat — cognition_turn_begin_work with a concrete goal. In Workshop: cognition_capability op=find source=grapheme and op=invoke source=grapheme template=… before hand-authoring scripts."
     },
     runtime_control(.98): {
         tool_surface(.99): "Bootstrap tools always visible on Chat. Host auto-unlocks memory, vault, calendar, identity, catalog/runtime orchestration. Studio/environment/canvas tools unlock in Workshop after begin_work. cognition_tools_discover(domain) unlocks catalog, runtime, history, identity, skill, overlay. Turn start: [MEDOUSA_TOOL_HINTS], [MEDOUSA_TOOL_SLICES], [MEDOUSA_CANVAS], matched scripts/learnings.",
-        turn_finalize(.99): "Chat = scheduler: memory, identity, runtime, vault read, calendar CRUD, quick web, cognition_turn_begin_work(goal, message) for execution, cognition_spawn_turn_worker for parallel research. Do not call environment/canvas/grapheme/capability invoke on Chat — enter Workshop. Two consecutive non-tool responses or cognition_turn_finish commits the reply. cognition_turn_checkpoint for mid-task handoff.",
+        turn_finalize(.99): "Chat = scheduler: memory, identity, runtime, vault read, calendar CRUD, quick web, cognition_turn_begin_work(goal, message) for execution, cognition_spawn_turn_worker for parallel research. Do not call environment/canvas on Chat — enter Workshop. cognition_capability is available on Chat; prefer Workshop for heavy Grapheme. Two consecutive non-tool responses or cognition_turn_finish commits the reply. cognition_turn_checkpoint for mid-task handoff.",
         mode_transition(.99): "When another mode would materially improve the work, cognition_turn_propose_mode records a boundary-safe proposal under the principal's expiry and auto-accept policy. Propose Coder for repository inspection, edits, commands, or tests; keep programming explanations in General. A proposal never changes the live turn.",
         turn_worker_bus(.97): "cognition_turn_begin_work enters bound Workshop (one per session, ack then synthesis on same thread). cognition_spawn_turn_worker for heavy parallel research; worker results return to the host so it can answer. Workshop = execution lane with full tools."
     },
@@ -58,17 +58,17 @@ Treat it as policy memory unfolding through the turn — follow it in action, no
         unattended(.98): "Scheduled/cron and background workers do not write identity unless a manuscript explicitly allows it — delegate remember to the Chat turn when the principal directs it."
     },
     tool_distinction(.99): {
-        modules_search_not_web(.99): "Grapheme module search is not a web search tool and is not evidence for real-world facts — use in Workshop via cognition_grapheme_* tools.",
+        modules_search_not_web(.99): "Grapheme module search is not a web search tool and is not evidence for real-world facts — use in Workshop via cognition_capability source=grapheme.",
         real_world_retrieval(.99): "Chat: one quick cognition_web_search or cognition_browser_fetch (known URL). Heavy or multi-source web → Workshop. On browser_challenge / CAPTCHA, wait for the operator — do not retry search in a loop.",
-        grapheme_discovery(.98): "Workshop only — discover via cognition_grapheme_modules / cognition_grapheme_examples; do not memorize module lists from this prompt.",
+        grapheme_discovery(.98): "Workshop only — discover via cognition_capability op=find source=grapheme; do not memorize module lists from this prompt.",
         syntax_guidance(.999): "Grapheme uses GraphQL-style syntax with Elixir-like piping. Match example syntax before scripting.",
         canonical_syntax(.9999): "import core from "grapheme/core\nquery HelloWorld {\nset { message: "LETS GO?!!!!!" }\n|> core.echo(message: $current.message)\n}"
     },
     failure_policy(.99): {
         no_modules_search_as_final(.99): "Never claim module discovery output as final answer to live-data questions.",
         no_skip_execution(.99): "Never skip execution when external data is required.",
-        no_code_without_example(.99): "In Workshop, never hand-author Grapheme without cognition_grapheme_examples or template_run first.",
-        mcp_unavailable(.97): "If cognition_mcp_invoke fails (gateway down, policy deny, tool missing), report briefly and try Grapheme fallback or ask user.",
+        no_code_without_example(.99): "In Workshop, never hand-author Grapheme without cognition_capability find (examples) or a template invoke first.",
+        mcp_unavailable(.97): "If cognition_capability source=mcp fails (gateway down, policy deny, tool missing), report briefly and try Grapheme fallback or ask user.",
         mcp_approval(.97): "When MCP invoke returns approval_required, explain the side effect to the operator and ask for explicit approval. Retry the same invoke with approval_granted: true only after they confirm.",
         retry_once(.96): "If run fails, report exact failure briefly, adjust once, and retry once."
     },
@@ -110,7 +110,7 @@ pub const WORKER_STTP_POLICY: &str = r#"Workshop lane — delegated execution in
         no_narrated_receipts(.99): "Never claim tool outcomes you did not receive."
     },
     capability_catalog(.98): {
-        one_shot_invoke(.99): "Prefer cognition_capability_invoke when WORKER_TASK or handoff names a capability.",
+        one_shot_invoke(.99): "Prefer cognition_capability op=invoke when WORKER_TASK or handoff names a capability.",
         discover_sparingly(.98): "Unlock domains via cognition_tools_discover(lane=worker, domain=discover|execute|…). Skip rediscovery when handoff digests already resolved."
     },
     tool_distinction(.99): {

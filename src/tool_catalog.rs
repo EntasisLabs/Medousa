@@ -159,12 +159,8 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
         "Unlock a tool domain for this session (memory, catalog, runtime, …)",
     ),
     (
-        "cognition_capability_search",
-        "Search capability catalog by keyword",
-    ),
-    (
-        "cognition_capability_resolve",
-        "Resolve capability id to bindings",
+        "cognition_capability",
+        "Find or invoke a capability, MCP tool, or Grapheme module",
     ),
     (
         "cognition_tool_history_summary",
@@ -345,12 +341,4 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
         "One-shot custom view + HTML + feeds + layout + recurring poll",
     ),
     ("cognition_turn_worker_status", "Pending worker status"),
-    (
-        "cognition_capability_invoke",
-        "One-shot capability execution",
-    ),
-    (
-        "cognition_grapheme_template_run",
-        "Run preset Grapheme template",
-    ),
 ];

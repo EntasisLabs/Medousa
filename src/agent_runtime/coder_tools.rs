@@ -142,21 +142,7 @@ const CODER_RESEARCH_TOOLS: &[&str] = &[
     "cognition_browser_act",
 ];
 
-const CODER_CAPABILITY_TOOLS: &[&str] = &[
-    "cognition_capability_search",
-    "cognition_capability_resolve",
-    "cognition_capability_invoke",
-    "cognition_mcp_discover",
-    "cognition_mcp_servers",
-    "cognition_mcp_invoke",
-    "cognition_grapheme_modules",
-    "cognition_grapheme_modules_info",
-    "cognition_grapheme_modules_ops",
-    "cognition_grapheme_examples",
-    "cognition_grapheme_run",
-    "cognition_grapheme_cli_run",
-    "cognition_grapheme_template_run",
-];
+const CODER_CAPABILITY_TOOLS: &[&str] = &["cognition_capability"];
 
 const CODER_WORKSPACE_TOOLS: &[&str] = &[
     crate::public_api::COGNITION_STORE_READ,
@@ -3126,8 +3112,7 @@ mod tests {
                 Tool::new("cognition_memory_recall"),
                 Tool::new("cognition_memory_store"),
                 Tool::new("cognition_web_search"),
-                Tool::new("cognition_mcp_discover"),
-                Tool::new("cognition_mcp_invoke"),
+                Tool::new("cognition_capability"),
                 Tool::new("cognition_runtime_jobs_cancel"),
                 Tool::new("cognition_spawn_turn_worker").with_description("Host spawn worker"),
                 Tool::new("cognition_turn_begin_work").with_description("Enter bound Workshop"),
@@ -3454,6 +3439,11 @@ mod tests {
                 .iter()
                 .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_STORE_READ)
         );
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_CAPABILITY)
+        );
         assert!(tools.iter().any(|tool| {
             tool.name.as_str() == crate::coding_tools::COGNITION_SHELL_SESSION_STATUS
         }));
@@ -3471,8 +3461,6 @@ mod tests {
             "cognition_memory_recall",
             "cognition_memory_store",
             "cognition_web_search",
-            "cognition_mcp_discover",
-            "cognition_mcp_invoke",
         ] {
             assert!(
                 tools.iter().all(|tool| tool.name.as_str() != hidden),

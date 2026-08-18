@@ -176,7 +176,24 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
                 StepExecutionClass::Mutating
             }
         }
-        "cognition_capability_invoke" => StepExecutionClass::Mutating,
+        "cognition_capability" => {
+            let op = input
+                .get("op")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            if op.eq_ignore_ascii_case("find") {
+                StepExecutionClass::ReadOnly
+            } else if input.get("source").and_then(|value| value.as_str()) == Some("mcp")
+                && input
+                    .get("effect_class")
+                    .and_then(|value| value.as_str())
+                    .is_some_and(|value| value.eq_ignore_ascii_case("external_read"))
+            {
+                StepExecutionClass::ReadOnly
+            } else {
+                StepExecutionClass::Mutating
+            }
+        }
         "cognition_memory_store"
         | "cognition_memory_calibrate"
         | "cognition_runtime_workflow_run"
@@ -199,10 +216,6 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         | "cognition_runtime_jobs_list"
         | "cognition_runtime_jobs_status"
         | "cognition_runtime_delivery_status"
-        | "cognition_mcp_discover"
-        | "cognition_capability_search"
-        | "cognition_grapheme_modules"
-        | "cognition_grapheme_template_run"
         | "cognition_web_search"
         | "cognition_spawn_turn_worker"
         | "cognition_turn_prepare_final"
@@ -309,8 +322,8 @@ mod tests {
     fn parallel_tool_batch_blocks_mutating_without_flag() {
         let calls = vec![
             (
-                "cognition_grapheme_run".to_string(),
-                json!({ "source": "query {}" }),
+                "cognition_capability".to_string(),
+                json!({ "op": "invoke", "source": "grapheme", "script": "query {}" }),
             ),
             (
                 "cognition_memory_recall".to_string(),
@@ -372,6 +385,31 @@ mod tests {
                 &settings
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn capability_find_is_parallel_safe_and_invoke_is_mutating() {
+        let find = json!({ "op": "find", "source": "grapheme", "module": "web" });
+        let invoke = json!({ "op": "invoke", "source": "auto", "capability": "web_research" });
+        let mcp_read = json!({
+            "op": "invoke",
+            "source": "mcp",
+            "server_id": "web",
+            "tool_name": "search",
+            "effect_class": "external_read"
+        });
+        assert_eq!(
+            classify_tool_call("cognition_capability", &find),
+            StepExecutionClass::ReadOnly
+        );
+        assert_eq!(
+            classify_tool_call("cognition_capability", &invoke),
+            StepExecutionClass::Mutating
+        );
+        assert_eq!(
+            classify_tool_call("cognition_capability", &mcp_read),
+            StepExecutionClass::ReadOnly
         );
     }
 }

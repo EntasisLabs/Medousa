@@ -1609,7 +1609,7 @@ spec:
             },
             spec: ManuscriptSpec {
                 tools: ManuscriptToolsSpec {
-                    allow: vec!["cognition_capability_invoke".to_string()],
+                    allow: vec!["cognition_capability".to_string()],
                 },
                 identity: ManuscriptIdentitySpec {
                     pins: ManuscriptIdentityPins {
@@ -1628,7 +1628,7 @@ spec:
             vec![
                 "cognition_memory_context".to_string(),
                 "cognition_identity_recall".to_string(),
-                "cognition_capability_invoke".to_string(),
+                "cognition_capability".to_string(),
             ]
         );
         assert_eq!(

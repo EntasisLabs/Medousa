@@ -499,7 +499,7 @@ const TOPICS: &[WikiTopic] = &[
     },
     personal_app_recipe(.97): {
         preferred(.98): "cognition_custom_view_compose { surface_id, component_id, html, feed_ids, recurring }",
-        step_1(.97): "cognition_grapheme_template_run template=http_poll url=<discovered>",
+        step_1(.97): "cognition_capability op=invoke source=grapheme template=http_poll url=<discovered>",
         step_2(.97): "cognition_ui_present + cognition_layout_apply dashboard HTML",
         step_3(.97): "cognition_feed_subscribe same feed_ids",
         step_4(.97): "cognition_runtime_recurring_register same feed_ids + 5m cron",
@@ -520,7 +520,7 @@ const TOPICS: &[WikiTopic] = &[
     cron(.98): "0 */5 * * * * * (every 5 minutes, 7-field cron, min interval 60s enforced separately)",
     recurring_register(.99): {
         job_type(.99): "workflow.grapheme.run",
-        source(.98): "http_poll grapheme from cognition_grapheme_template_run url=<train-status-url>",
+        source(.98): "http_poll grapheme from cognition_capability template=http_poll url=<train-status-url>",
         feeds(.99): "{ feed_ids: [trip.london.trains], payload_mode: parsed_poll }"
     },
     component(.98): {

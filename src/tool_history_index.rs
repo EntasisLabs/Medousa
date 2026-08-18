@@ -263,11 +263,76 @@ pub fn promote_run_to_step(
     let mut notes = Vec::new();
     let tool = entry.tool_name.as_str();
     let input = &entry.sanitized_input;
+    let capability_source = input
+        .get("source")
+        .and_then(Value::as_str)
+        .unwrap_or("auto");
 
-    if tool.contains("grapheme") {
-        let source = input
-            .get("source")
+    if tool == "cognition_capability"
+        && (capability_source.eq_ignore_ascii_case("mcp")
+            || (input
+                .get("server_id")
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.trim().is_empty())
+                && input
+                    .get("tool_name")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| !value.trim().is_empty())))
+    {
+        let server_id = input
+            .get("server_id")
             .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let tool_name = input
+            .get("tool_name")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let args = input.get("input").cloned().unwrap_or_else(|| json!({}));
+        if server_id.is_empty() || tool_name.is_empty() {
+            notes.push(
+                "MCP invoke args incomplete — edit server_id and tool_name before run.".to_string(),
+            );
+        }
+        return (
+            WorkflowStepSpec::Mcp {
+                id: step_id.to_string(),
+                server_id,
+                tool_name,
+                args,
+                effect_class: input
+                    .get("effect_class")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+            },
+            notes,
+        );
+    }
+
+    if tool.contains("grapheme")
+        || (tool == "cognition_capability"
+            && (capability_source.eq_ignore_ascii_case("grapheme")
+                || input
+                    .get("script")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| !value.trim().is_empty())
+                || input
+                    .get("template")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| !value.trim().is_empty())))
+    {
+        let source = input
+            .get("script")
+            .and_then(Value::as_str)
+            .or_else(|| {
+                input
+                    .get("source")
+                    .and_then(Value::as_str)
+                    .filter(|value| !matches!(*value, "auto" | "mcp" | "grapheme"))
+            })
             .or_else(|| input.get("summary").and_then(Value::as_str))
             .unwrap_or(entry.input_summary.as_str())
             .trim()

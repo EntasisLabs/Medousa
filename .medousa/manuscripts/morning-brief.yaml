@@ -28,7 +28,7 @@ spec:
     allow:
       - cognition_identity_recall
       - cognition_memory_context
-      - cognition_capability_invoke
+      - cognition_capability
   locus:
     session_id: locus-morning-brief
   delivery:

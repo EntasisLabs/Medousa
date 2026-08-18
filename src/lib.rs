@@ -68,6 +68,7 @@ pub mod artifact_html_lint;
 pub mod calendar;
 pub mod calendar_handlers;
 pub mod calendar_tools;
+pub mod capability_tools;
 pub mod chatgpt_oauth;
 pub mod code_intelligence_tools;
 pub mod coding_tools;

@@ -2789,6 +2789,24 @@ fn referenced_module_ops_for_tool_call(
             })?;
             Ok(extract_module_ops_from_source(source))
         }
+        "cognition_capability" => {
+            let op = input
+                .get("op")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            if !op.eq_ignore_ascii_case("invoke") {
+                return Ok(Vec::new());
+            }
+            if let Some(script) = input.get("script").and_then(|value| value.as_str()) {
+                return Ok(extract_module_ops_from_source(script));
+            }
+            if let Some(template) = input.get("template").and_then(|value| value.as_str()) {
+                let params = input.get("params").cloned().unwrap_or_else(|| json!({}));
+                let source = crate::bridge_tools::render_grapheme_template(template, &params)?;
+                return Ok(extract_module_ops_from_source(&source));
+            }
+            Ok(Vec::new())
+        }
         "cognition_grapheme_template_run" => {
             let template = input.get("template").and_then(|v| v.as_str()).ok_or_else(|| {
                 StasisError::PortFailure(
@@ -2972,6 +2990,20 @@ mod tests {
         });
 
         let ops = referenced_module_ops_for_tool_call("cognition_grapheme_run", &input)
+            .expect("ops should parse");
+
+        assert_eq!(ops, vec!["websearch.search"]);
+    }
+
+    #[test]
+    fn detects_module_ops_for_capability_invoke_script() {
+        let input = json!({
+            "op": "invoke",
+            "source": "grapheme",
+            "script": "query Run { websearch.search(query: \"x\") { ok } }"
+        });
+
+        let ops = referenced_module_ops_for_tool_call("cognition_capability", &input)
             .expect("ops should parse");
 
         assert_eq!(ops, vec!["websearch.search"]);

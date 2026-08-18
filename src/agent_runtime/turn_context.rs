@@ -558,7 +558,7 @@ pub fn tool_results_from_invocations(invocations: &[ToolInvocation]) -> Vec<(Str
 fn default_worker_constraints() -> Vec<String> {
     vec![
         "Complete WORKER_TASK only — host already orchestrated; do not redo its discovery".to_string(),
-        "Read HOST_TOOL_DIGESTS before capability_search, resolve, or grapheme modules search".to_string(),
+        "Read HOST_TOOL_DIGESTS before cognition_capability op=find".to_string(),
         "Use session_id on all cognition_memory_* tools".to_string(),
         "Ground final worker text in tool receipts; do not invent results".to_string(),
         "After tools: cognition_turn_finish commits the final reply — naked prose ends the turn with a stub. cognition_turn_update_user for mid-turn status; cognition_turn_begin_work before heavy work; cognition_turn_checkpoint for mid-task handoff; call tools for more work, never plan-only prose".to_string(),
@@ -588,12 +588,35 @@ pub fn compact_tool_receipt_hint(tool_name: &str, output: &Value) -> Option<Stri
 
     let normalized = tool_name.trim().to_ascii_lowercase();
     match normalized.as_str() {
-        "cognition_capability_resolve" | "cognition.capability.resolve" => output
-            .get("recommended")
-            .and_then(|value| value.get("reference"))
-            .and_then(|value| value.as_str())
-            .or_else(|| output.get("capability").and_then(|value| value.as_str()))
-            .map(|reference| format!("recommended={reference}")),
+        "cognition_capability_resolve"
+        | "cognition.capability.resolve"
+        | "cognition_capability" => {
+            if let Some(hint) = output
+                .get("recommended")
+                .and_then(|value| value.get("reference"))
+                .and_then(|value| value.as_str())
+                .or_else(|| output.get("capability").and_then(|value| value.as_str()))
+                .map(|reference| format!("recommended={reference}"))
+            {
+                Some(hint)
+            } else if let Some(hint) = output
+                .get("matches")
+                .and_then(|value| value.as_array())
+                .and_then(|matches| matches.first())
+                .and_then(|entry| entry.get("capability"))
+                .and_then(|value| value.as_str())
+                .map(|capability| format!("top={capability}"))
+            {
+                Some(hint)
+            } else {
+                output
+                    .get("binding")
+                    .and_then(|value| value.get("reference"))
+                    .and_then(|value| value.as_str())
+                    .or_else(|| output.get("capability").and_then(|value| value.as_str()))
+                    .map(|reference| format!("binding={reference}"))
+            }
+        }
         "cognition_capability_search" | "cognition.capability.search" => output
             .get("matches")
             .and_then(|value| value.as_array())
@@ -797,7 +820,7 @@ mod tests {
         let mut scratch = TurnScratchpad::default();
         scratch.on_tool_round_start(1);
         scratch.record_round_digest_from_invocations(&[ToolInvocation {
-            tool_name: "cognition_capability_resolve".to_string(),
+            tool_name: "cognition_capability".to_string(),
             tool_input: json!({}),
             tool_output: json!({
                 "capability": "web_research",

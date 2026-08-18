@@ -317,10 +317,7 @@ mod tests {
             error: None,
             result_excerpt: None,
             task_line: Some("Researching the latest OpenClaw trends give me a moment.".to_string()),
-            tool_names: Some(vec![
-                "cognition_capability_invoke".to_string(),
-                "cognition_grapheme_run".to_string(),
-            ]),
+            tool_names: Some(vec!["cognition_capability".to_string()]),
             associations: WorkCardAssociations::default(),
             live_tool_activity: Vec::new(),
             live_thinking: String::new(),

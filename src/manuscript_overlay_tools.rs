@@ -236,7 +236,7 @@ mod tests {
         let manuscript_id = format!("test-ms-{}", uuid::Uuid::new_v4().simple());
         let proposal = propose_overlay(
             &manuscript_id,
-            "Prefer cognition_capability_invoke for web_research.",
+            "Prefer cognition_capability for web_research.",
             "Repeated discovery on follow-ups",
             Some("sess-test".to_string()),
         )

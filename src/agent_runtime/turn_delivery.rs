@@ -37,7 +37,7 @@ fn is_heavy_tool_name(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     lower.starts_with("cognition_grapheme")
         || lower.starts_with("cognition_mcp")
-        || lower.starts_with("cognition_capability_invoke")
+        || lower.starts_with("cognition_capability")
         || lower.starts_with("cognition_spawn_turn_worker")
         || lower.starts_with("cognition_runtime_workflow")
 }
@@ -103,7 +103,7 @@ mod tests {
     fn substantive_answer_stays_final() {
         let kind = classify_agent_turn_delivery(
             "Based on tool output, the daemon binds 127.0.0.1:7419 and serves the dashboard at /dashboard.",
-            &["cognition_grapheme_run".to_string()],
+            &["cognition_capability".to_string()],
             AgentTurnDeliveryHint {
                 activation_reason: "tool_intent_detected",
             },

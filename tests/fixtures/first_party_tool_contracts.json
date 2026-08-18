@@ -132,127 +132,99 @@
     },
     {
       "registry": "coder_bound",
-      "name": "cognition_capability_invoke",
-      "description": "Resolve a capability intent and execute the best available binding in one call. Returns a policy receipt with binding_used, decision, result, and fallback_available.",
+      "name": "cognition_capability",
+      "description": "Find or run a capability, MCP tool, or Grapheme module. op=find|invoke. source=auto|mcp|grapheme. find with module returns info and ops (detail=full default). invoke uses capability/query, server_id+tool_name, template, or script.",
       "input_schema": {
         "properties": {
-          "binding": {
-            "properties": {
-              "reference": {
-                "type": "string"
-              },
-              "source": {
-                "enum": [
-                  "grapheme",
-                  "mcp"
-                ],
-                "type": "string"
-              }
-            },
-            "type": "object"
+          "approval_granted": {
+            "type": "boolean"
           },
           "capability": {
-            "description": "Capability id, e.g. document_search",
             "type": "string"
           },
-          "input": {
-            "description": "Arguments forwarded to MCP or used to build Grapheme source",
-            "type": "object"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "preferred_source": {
+          "detail": {
             "enum": [
-              "grapheme",
-              "mcp"
+              "full",
+              "summary"
             ],
             "type": "string"
           },
-          "query": {
-            "description": "Fuzzy resolve when capability id is unknown",
+          "effect_class": {
             "type": "string"
           },
-          "source": {
-            "description": "Optional explicit Grapheme source override",
-            "type": "string"
+          "input": {
+            "additionalProperties": true,
+            "type": "object"
           },
-          "try_fallbacks": {
-            "default": true,
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "intent"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:capabilities"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_capability_resolve",
-      "description": "Resolve a capability intent to Grapheme and MCP implementations.",
-      "input_schema": {
-        "properties": {
-          "capability": {
-            "description": "Capability id, e.g. document_search",
-            "type": "string"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "query": {
-            "description": "Optional fuzzy query when capability id is unknown",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:capabilities"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_capability_search",
-      "description": "Keyword search capability intents by query, alias, or keywords.",
-      "input_schema": {
-        "properties": {
           "intent": {
             "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
             "maxLength": 320,
             "type": "string"
           },
           "limit": {
-            "description": "Max matches (default 10)",
+            "minimum": 0,
             "type": "integer"
           },
+          "module": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "op": {
+            "enum": [
+              "find",
+              "invoke"
+            ],
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "prefix": {
+            "type": "string"
+          },
           "query": {
-            "description": "Search query",
+            "type": "string"
+          },
+          "script": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "auto",
+              "grapheme",
+              "mcp"
+            ],
+            "type": "string"
+          },
+          "template": {
+            "type": "string"
+          },
+          "tool_name": {
+            "type": "string"
+          },
+          "try_fallbacks": {
+            "type": "boolean"
+          },
+          "turn_token": {
             "type": "string"
           }
         },
         "required": [
           "intent",
-          "query"
+          "op"
         ],
         "type": "object"
       },
       "output_schema_present": true,
       "placements": [
-        "coder:domain:capabilities"
+        "coder:domain:capabilities",
+        "coder:initial"
       ]
     },
     {
@@ -1302,325 +1274,6 @@
       "output_schema_present": true,
       "placements": [
         "coder:initial"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_grapheme_cli_run",
-      "description": "Run grapheme code through Stasis runtime workflow execution (workflow.grapheme.run) using the same path as scheduled jobs.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "json": {
-            "default": true,
-            "description": "Deprecated compatibility flag; runtime mode always returns JSON",
-            "type": "boolean"
-          },
-          "native_modules": {
-            "default": false,
-            "description": "Deprecated compatibility flag; ignored in runtime mode",
-            "type": "boolean"
-          },
-          "source": {
-            "description": "Complete Grapheme script source",
-            "type": "string"
-          },
-          "stream_steps": {
-            "default": true,
-            "description": "Deprecated compatibility flag; ignored in runtime mode",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "intent",
-          "source"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:capabilities"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_grapheme_examples",
-      "description": "List or show Grapheme examples. action=list|show",
-      "input_schema": {
-        "properties": {
-          "action": {
-            "description": "list or show",
-            "enum": [
-              "list",
-              "show"
-            ],
-            "type": "string"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "name": {
-            "description": "Example name for action=show",
-            "type": "string"
-          }
-        },
-        "required": [
-          "action",
-          "intent"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:capabilities"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_grapheme_modules",
-      "description": "Search Grapheme modules by query. Mirrors: grapheme modules search <query> --yaml",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "query": {
-            "description": "Search query, e.g. web",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:capabilities"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_grapheme_modules_info",
-      "description": "Inspect Grapheme module metadata. Mirrors: grapheme modules info <module> --yaml",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "module": {
-            "description": "Module id, e.g. web",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "module"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:capabilities"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_grapheme_modules_ops",
-      "description": "Inspect Grapheme module operations. Mirrors: grapheme modules ops <query> --yaml",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "query": {
-            "description": "Module or op query, e.g. web",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:capabilities"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_grapheme_run",
-      "description": "Execute a Grapheme script synchronously and return the result. Grapheme is a typed workflow scripting language. Built-in modules in the 'grapheme/*' namespace are allowed by default (for example core, web). Scripts run sandboxed with guardrails enforced. Example source: import core from \"grapheme/core\"\nquery Run { core.echo(message: \"hello\") { state { current } } }",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "source": {
-            "description": "Complete Grapheme source code. Imports under 'grapheme/*' are allowed by default.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "source"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:capabilities"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_grapheme_template_run",
-      "description": "Run a preset Grapheme workflow template. Supported templates: research_report, http_poll, csv_digest.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "params": {
-            "description": "Template parameters (topic/query, url, etc.)",
-            "type": "object"
-          },
-          "template": {
-            "enum": [
-              "csv_digest",
-              "http_poll",
-              "research_report"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "params",
-          "template"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:capabilities"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_mcp_discover",
-      "description": "Search external MCP tools via the MCP Client gateway.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "limit": {
-            "description": "Max matches (default 20)",
-            "type": "integer"
-          },
-          "query": {
-            "description": "Search query",
-            "type": "string"
-          },
-          "server_id": {
-            "description": "Optional MCP server id filter",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:capabilities"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_mcp_invoke",
-      "description": "Invoke an external MCP tool via the MCP Client gateway.",
-      "input_schema": {
-        "properties": {
-          "approval_granted": {
-            "description": "Set true after the operator approves a prior approval_required response",
-            "type": "boolean"
-          },
-          "input": {
-            "type": "object"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "server_id": {
-            "type": "string"
-          },
-          "tool_name": {
-            "type": "string"
-          },
-          "turn_token": {
-            "description": "Optional pre-minted turn token",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "server_id",
-          "tool_name"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:capabilities"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_mcp_servers",
-      "description": "List MCP servers known to the MCP Client gateway.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:capabilities"
       ]
     },
     {
@@ -3074,129 +2727,86 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_capability_invoke",
-      "description": "Resolve a capability intent and execute the best available binding in one call. Returns a policy receipt with binding_used, decision, result, and fallback_available.",
+      "name": "cognition_capability",
+      "description": "Find or run a capability, MCP tool, or Grapheme module. op=find|invoke. source=auto|mcp|grapheme. find with module returns info and ops (detail=full default). invoke uses capability/query, server_id+tool_name, template, or script.",
       "input_schema": {
         "properties": {
-          "binding": {
-            "properties": {
-              "reference": {
-                "type": "string"
-              },
-              "source": {
-                "enum": [
-                  "grapheme",
-                  "mcp"
-                ],
-                "type": "string"
-              }
-            },
-            "type": "object"
+          "approval_granted": {
+            "type": "boolean"
           },
           "capability": {
-            "description": "Capability id, e.g. document_search",
+            "type": "string"
+          },
+          "detail": {
+            "enum": [
+              "full",
+              "summary"
+            ],
+            "type": "string"
+          },
+          "effect_class": {
             "type": "string"
           },
           "input": {
-            "description": "Arguments forwarded to MCP or used to build Grapheme source",
+            "additionalProperties": true,
             "type": "object"
           },
-          "preferred_source": {
+          "limit": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "module": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "op": {
             "enum": [
+              "find",
+              "invoke"
+            ],
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "script": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "auto",
               "grapheme",
               "mcp"
             ],
             "type": "string"
           },
-          "query": {
-            "description": "Fuzzy resolve when capability id is unknown",
+          "template": {
             "type": "string"
           },
-          "source": {
-            "description": "Optional explicit Grapheme source override",
+          "tool_name": {
             "type": "string"
           },
           "try_fallbacks": {
-            "default": true,
             "type": "boolean"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:bootstrap",
-        "workshop:domain:execute"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_capability_list",
-      "description": "List registered capability intents in the Medousa capability catalog.",
-      "input_schema": {
-        "properties": {
-          "limit": {
-            "description": "Max entries (default 50)",
-            "type": "integer"
           },
-          "prefix": {
-            "description": "Optional capability id prefix filter",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:catalog"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_capability_resolve",
-      "description": "Resolve a capability intent to Grapheme and MCP implementations.",
-      "input_schema": {
-        "properties": {
-          "capability": {
-            "description": "Capability id, e.g. document_search",
-            "type": "string"
-          },
-          "query": {
-            "description": "Optional fuzzy query when capability id is unknown",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:catalog",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:discover"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_capability_search",
-      "description": "Keyword search capability intents by query, alias, or keywords.",
-      "input_schema": {
-        "properties": {
-          "limit": {
-            "description": "Max matches (default 10)",
-            "type": "integer"
-          },
-          "query": {
-            "description": "Search query",
+          "turn_token": {
             "type": "string"
           }
         },
         "required": [
-          "query"
+          "op"
         ],
         "type": "object"
       },
@@ -3204,9 +2814,14 @@
       "placements": [
         "general:authorized",
         "general:bootstrap",
+        "general:domain:catalog",
         "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
         "workshop:authorized:research",
-        "workshop:domain:discover"
+        "workshop:bootstrap",
+        "workshop:domain:discover",
+        "workshop:domain:execute"
       ]
     },
     {
@@ -4375,141 +3990,6 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_grapheme_cli_run",
-      "description": "Run grapheme code through Stasis runtime workflow execution (workflow.grapheme.run) using the same path as scheduled jobs.",
-      "input_schema": {
-        "properties": {
-          "json": {
-            "default": true,
-            "description": "Deprecated compatibility flag; runtime mode always returns JSON",
-            "type": "boolean"
-          },
-          "native_modules": {
-            "default": false,
-            "description": "Deprecated compatibility flag; ignored in runtime mode",
-            "type": "boolean"
-          },
-          "source": {
-            "description": "Complete Grapheme script source",
-            "type": "string"
-          },
-          "stream_steps": {
-            "default": true,
-            "description": "Deprecated compatibility flag; ignored in runtime mode",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "source"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:research",
-        "workshop:domain:execute"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_examples",
-      "description": "List or show Grapheme examples. action=list|show",
-      "input_schema": {
-        "properties": {
-          "action": {
-            "description": "list or show",
-            "enum": [
-              "list",
-              "show"
-            ],
-            "type": "string"
-          },
-          "name": {
-            "description": "Example name for action=show",
-            "type": "string"
-          }
-        },
-        "required": [
-          "action"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:discover"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_modules",
-      "description": "Search Grapheme modules by query. Mirrors: grapheme modules search <query> --yaml",
-      "input_schema": {
-        "properties": {
-          "query": {
-            "description": "Search query, e.g. web",
-            "type": "string"
-          }
-        },
-        "required": [
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:discover"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_modules_info",
-      "description": "Inspect Grapheme module metadata. Mirrors: grapheme modules info <module> --yaml",
-      "input_schema": {
-        "properties": {
-          "module": {
-            "description": "Module id, e.g. web",
-            "type": "string"
-          }
-        },
-        "required": [
-          "module"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:research",
-        "workshop:domain:discover"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_modules_ops",
-      "description": "Inspect Grapheme module operations. Mirrors: grapheme modules ops <query> --yaml",
-      "input_schema": {
-        "properties": {
-          "query": {
-            "description": "Module or op query, e.g. web",
-            "type": "string"
-          }
-        },
-        "required": [
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:research",
-        "workshop:domain:discover"
-      ]
-    },
-    {
-      "registry": "general_runtime",
       "name": "cognition_grapheme_promote_last_run_to_recurring",
       "description": "Promote the last executed Grapheme source to recurring schedule. You can also provide source explicitly.",
       "input_schema": {
@@ -4792,62 +4272,6 @@
       },
       "output_schema_present": true,
       "placements": []
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_run",
-      "description": "Execute a Grapheme script synchronously and return the result. Grapheme is a typed workflow scripting language. Built-in modules in the 'grapheme/*' namespace are allowed by default (for example core, web). Scripts run sandboxed with guardrails enforced. Example source: import core from \"grapheme/core\"\nquery Run { core.echo(message: \"hello\") { state { current } } }",
-      "input_schema": {
-        "properties": {
-          "source": {
-            "description": "Complete Grapheme source code. Imports under 'grapheme/*' are allowed by default.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "source"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:execute"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_template_run",
-      "description": "Run a preset Grapheme workflow template. Supported templates: research_report, http_poll, csv_digest.",
-      "input_schema": {
-        "properties": {
-          "params": {
-            "description": "Template parameters (topic/query, url, etc.)",
-            "type": "object"
-          },
-          "template": {
-            "enum": [
-              "csv_digest",
-              "http_poll",
-              "research_report"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "params",
-          "template"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:bootstrap",
-        "workshop:domain:execute"
-      ]
     },
     {
       "registry": "general_runtime",
@@ -5373,74 +4797,6 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_mcp_discover",
-      "description": "Search external MCP tools via the MCP Client gateway.",
-      "input_schema": {
-        "properties": {
-          "limit": {
-            "description": "Max matches (default 20)",
-            "type": "integer"
-          },
-          "query": {
-            "description": "Search query",
-            "type": "string"
-          },
-          "server_id": {
-            "description": "Optional MCP server id filter",
-            "type": "string"
-          }
-        },
-        "required": [
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:discover"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_mcp_invoke",
-      "description": "Invoke an external MCP tool via the MCP Client gateway.",
-      "input_schema": {
-        "properties": {
-          "approval_granted": {
-            "description": "Set true after the operator approves a prior approval_required response",
-            "type": "boolean"
-          },
-          "input": {
-            "type": "object"
-          },
-          "server_id": {
-            "type": "string"
-          },
-          "tool_name": {
-            "type": "string"
-          },
-          "turn_token": {
-            "description": "Optional pre-minted turn token",
-            "type": "string"
-          }
-        },
-        "required": [
-          "server_id",
-          "tool_name"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:execute"
-      ]
-    },
-    {
-      "registry": "general_runtime",
       "name": "cognition_mcp_promote_to_job",
       "description": "Promote a successful MCP invoke into a durable sequential workflow job with one MCP step.",
       "input_schema": {
@@ -5474,20 +4830,6 @@
       },
       "output_schema_present": true,
       "placements": []
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_mcp_servers",
-      "description": "List MCP servers known to the MCP Client gateway.",
-      "input_schema": {
-        "properties": {},
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:research",
-        "workshop:domain:discover"
-      ]
     },
     {
       "registry": "general_runtime",
