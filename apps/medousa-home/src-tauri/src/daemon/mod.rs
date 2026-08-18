@@ -402,7 +402,7 @@ pub async fn interactive_turn_send(
     stage_routing: Option<StageRoutingMatrix>,
     channel_surface: Option<String>,
 ) -> Result<InteractiveTurnAccepted, String> {
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
+    let _base = state.daemon_url.lock().expect("daemon url lock").clone();
     let provider = provider
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())

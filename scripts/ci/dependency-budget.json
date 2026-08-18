@@ -1,0 +1,322 @@
+{
+  "schemaVersion": 1,
+  "notes": "P09 / DEP-001 regression ceilings. Lower on purpose; never raise without the performance-budget change protocol.",
+  "bannedRootDependencies": [
+    "teloxide",
+    "serenity",
+    "slack-morphism"
+  ],
+  "duplicateVersionLedger": [
+    {
+      "name": "reqwest",
+      "owner": "H11/daemon",
+      "reason": "genai vs engine HTTP client generations",
+      "revisit": "2026-11-01"
+    },
+    {
+      "name": "rustls",
+      "owner": "H11/daemon",
+      "reason": "rustls 0.22 vs 0.23 stacks (webpki advisories ignored in deny.toml)",
+      "revisit": "2026-11-01"
+    },
+    {
+      "name": "tungstenite",
+      "owner": "H11/daemon",
+      "reason": "tokio-tungstenite vs tungstenite-wasm / engine WS",
+      "revisit": "2026-11-01"
+    },
+    {
+      "name": "tonic",
+      "owner": "H11/surreal",
+      "reason": "Surreal gRPC vs other tonic consumers",
+      "revisit": "2026-11-01"
+    },
+    {
+      "name": "genai",
+      "owner": "H11/inference",
+      "reason": "stasis-rs vs direct genai",
+      "revisit": "2026-11-01"
+    },
+    {
+      "name": "schemars",
+      "owner": "H10/contracts",
+      "reason": "schema derive version split across types/engine",
+      "revisit": "2026-11-01"
+    },
+    {
+      "name": "sysinfo",
+      "owner": "H11/install-support",
+      "reason": "local-inference vs install-support hardware probes",
+      "revisit": "2026-11-01"
+    }
+  ],
+  "profiles": {
+    "medousa-default": {
+      "kind": "package",
+      "package": "medousa",
+      "features": [],
+      "forbidAdapterFrameworks": true,
+      "uniqueNameVersionPairs": 899,
+      "duplicateVersionNames": 90
+    },
+    "medousa-iroh-transport": {
+      "kind": "package",
+      "package": "medousa",
+      "features": ["iroh-transport"],
+      "forbidAdapterFrameworks": true,
+      "uniqueNameVersionPairs": 980,
+      "duplicateVersionNames": 96
+    },
+    "adapter-workspace": {
+      "kind": "packages",
+      "packages": [
+        "medousa-telegram",
+        "medousa-discord",
+        "medousa-slack"
+      ],
+      "forbidAdapterFrameworks": false,
+      "uniqueNameVersionPairs": 258,
+      "duplicateVersionNames": 22
+    },
+    "medousa-home-tauri": {
+      "kind": "manifest",
+      "manifestPath": "apps/medousa-home/src-tauri/Cargo.toml",
+      "forbidAdapterFrameworks": true,
+      "uniqueNameVersionPairs": 490,
+      "duplicateVersionNames": 33
+    }
+  },
+  "duplicateNames": [
+    "atoi_simd",
+    "axum-core",
+    "base64",
+    "bitflags",
+    "block-buffer",
+    "chacha20",
+    "compact_str",
+    "core-foundation",
+    "cpufeatures",
+    "crossterm",
+    "crypto-common",
+    "cssparser",
+    "darling",
+    "darling_core",
+    "darling_macro",
+    "dashmap",
+    "derive_more",
+    "digest",
+    "dirs",
+    "dirs-sys",
+    "foldhash",
+    "genai",
+    "getrandom",
+    "gimli",
+    "h2",
+    "hashbrown",
+    "heapless",
+    "heck",
+    "html5ever",
+    "http",
+    "http-body",
+    "hyper",
+    "hyper-rustls",
+    "indexmap",
+    "io-lifetimes",
+    "itertools",
+    "lru",
+    "lz4_flex",
+    "mach2",
+    "markup5ever",
+    "memmap2",
+    "nom",
+    "object",
+    "phf",
+    "phf_generator",
+    "phf_macros",
+    "phf_shared",
+    "prost",
+    "prost-derive",
+    "quick-xml",
+    "rand",
+    "rand_chacha",
+    "rand_core",
+    "reqwest",
+    "rustix",
+    "rustls",
+    "rustls-pemfile",
+    "rustls-webpki",
+    "schemars",
+    "schemars_derive",
+    "security-framework",
+    "serde_spanned",
+    "sha2",
+    "siphasher",
+    "socket2",
+    "string_cache",
+    "strum",
+    "strum_macros",
+    "syn",
+    "sync_wrapper",
+    "sysinfo",
+    "system-configuration",
+    "system-configuration-sys",
+    "tendril",
+    "thiserror",
+    "thiserror-impl",
+    "tokio-rustls",
+    "tokio-tungstenite",
+    "toml",
+    "toml_datetime",
+    "toml_edit",
+    "tonic",
+    "tower",
+    "tungstenite",
+    "untrusted",
+    "vte",
+    "wasm-encoder",
+    "webpki-roots",
+    "weezl",
+    "winnow"
+  ],
+  "packageComposition": {
+    "engine": {
+      "crates": [
+        "medousa"
+      ],
+      "features": [],
+      "binaries": [
+        "medousa",
+        "medousa_daemon",
+        "medousa_cli",
+        "medousa_tui"
+      ],
+      "inDefaultEngineLink": true
+    },
+    "desktop": {
+      "crates": [
+        "medousa-home"
+      ],
+      "features": [],
+      "binaries": [],
+      "inDefaultEngineLink": false
+    },
+    "local-brain": {
+      "crates": [
+        "medousa-local-inference"
+      ],
+      "features": [],
+      "binaries": [
+        "medousa_local"
+      ],
+      "inDefaultEngineLink": false
+    },
+    "mcp-gateway": {
+      "crates": [
+        "medousa-mcp-gateway"
+      ],
+      "features": [],
+      "binaries": [
+        "medousa_mcp_gateway"
+      ],
+      "inDefaultEngineLink": false
+    },
+    "adapter-telegram": {
+      "crates": [
+        "medousa-telegram"
+      ],
+      "features": [],
+      "binaries": [
+        "medousa_telegram"
+      ],
+      "inDefaultEngineLink": false
+    },
+    "adapter-discord": {
+      "crates": [
+        "medousa-discord"
+      ],
+      "features": [],
+      "binaries": [
+        "medousa_discord"
+      ],
+      "inDefaultEngineLink": false
+    },
+    "adapter-slack": {
+      "crates": [
+        "medousa-slack"
+      ],
+      "features": [],
+      "binaries": [
+        "medousa_slack"
+      ],
+      "inDefaultEngineLink": false
+    },
+    "adapter-whatsapp": {
+      "crates": [],
+      "features": [],
+      "binaries": [
+        "medousa_whatsapp"
+      ],
+      "inDefaultEngineLink": false
+    },
+    "coding-engine": {
+      "crates": [
+        "medousa-code"
+      ],
+      "features": [],
+      "binaries": [
+        "medousa-code"
+      ],
+      "inDefaultEngineLink": false
+    },
+    "langservers": {
+      "crates": [],
+      "features": [],
+      "binaries": [
+        "pyright-langserver",
+        "typescript-language-server",
+        "svelteserver"
+      ],
+      "inDefaultEngineLink": false
+    },
+    "shell-session": {
+      "crates": [
+        "medousa-session"
+      ],
+      "features": [],
+      "binaries": [
+        "medousa-session"
+      ],
+      "inDefaultEngineLink": false
+    },
+    "skill-hub": {
+      "crates": [],
+      "features": [],
+      "binaries": [],
+      "inDefaultEngineLink": false
+    },
+    "grapheme-module-starter": {
+      "crates": [],
+      "features": [],
+      "binaries": [],
+      "inDefaultEngineLink": false
+    },
+    "model-gemma-e2b": {
+      "crates": [],
+      "features": [],
+      "binaries": [],
+      "inDefaultEngineLink": false
+    },
+    "model-gemma-e4b": {
+      "crates": [],
+      "features": [],
+      "binaries": [],
+      "inDefaultEngineLink": false
+    },
+    "model-gemma-12b": {
+      "crates": [],
+      "features": [],
+      "binaries": [],
+      "inDefaultEngineLink": false
+    }
+  }
+}

@@ -921,7 +921,7 @@ fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
                 } = event
                 {
                     let app = tray.app_handle();
-                    show_main_window(&app);
+                    show_main_window(app);
                 }
             })
             .build(app)?;

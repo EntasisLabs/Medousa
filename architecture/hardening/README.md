@@ -92,8 +92,8 @@ and performance budgets must prevent the same classes of defect from returning.
 | H08 | [08-desktop-browser-isolation.md](08-desktop-browser-isolation.md) | Remote webview capabilities and request-correlated bridge | DESKTOP-001 | ADR-018, H05 | Implemented; packaged-platform release validation pending |
 | H09 | [09-home-runtime-boundaries.md](09-home-runtime-boundaries.md) | Feature loading, runtime cycles, store/component/CSS ownership | FRONT-001, ARCH-001, ARCH-002 | ADR-020, H03 | Implementing; 0 SCCs and empty `crossStoreEdges`; no owner above 2,000 lines; FRONT-001 startup-graph bytes remain |
 | H10 | [10-api-contract-generation.md](10-api-contract-generation.md) | Authoritative API definition and generated clients/tests | CONTRACT-001 | ADR-019, H01 | Implemented on unit/CI; CONTRACT-001 Mitigated on unit/CI; Validated pending packaged multi-client evidence |
-| H11 | `11-package-and-dependency-boundaries.md` | Optional workload features and dependency budgets | DEP-001 | ADR-020 | Proposed |
-| H12 | `12-quality-gates.md` | CI matrix, deterministic tests, benchmarks and budgets | CI-001, TEST-001, PERF-007 | All workstreams | Proposed |
+| H11 | [11-package-and-dependency-boundaries.md](11-package-and-dependency-boundaries.md) | Optional workload features and dependency budgets | DEP-001 | ADR-020 | Implementing; unused root adapter frameworks removed; P09/deny/machete required |
+| H12 | [12-quality-gates.md](12-quality-gates.md) | CI matrix, deterministic tests, benchmarks and budgets | CI-001, TEST-001, PERF-007 | All workstreams | Implementing; PR hermetic/docs/Home/Tauri Ubuntu gates required; nightly Tauri + P04–P06 |
 
 ## Planned durable decisions
 
@@ -156,10 +156,10 @@ one without retaining the history.
 | PERF-006 | High | H07 | C | Mitigated; P07 multi-OS Validated evidence pending | Large-vault tree/link; Home pages to completion and virtualizes recents at fixed height |
 | ARCH-002 | High | H09 | D | Mitigated on unit/CI | Lifecycle races are covered and no source owner is above 2,000 lines; Validated/Shipped still need P08 |
 | CONTRACT-001 | High | H10 | D | Mitigated on unit/CI | Regen-and-diff, exact-set equality, no-literal, and released-baseline `diff_contracts`; Validated/Shipped still need packaged multi-client evidence |
-| DEP-001 | High | H11 | D | Proposed | Feature/dependency graph and build/package budgets |
-| CI-001 | High | H12 | D | Proposed | Required green supported-platform matrix |
-| TEST-001 | High | H12 | D | Proposed | Hermetic repeated parallel suite |
-| PERF-007 | High | H12 | D | Proposed | Checked-in benchmark suite and retained baselines |
+| DEP-001 | High | H11 | D | Mitigated on unit/CI | Feature/dependency graph, cargo deny/machete, and P09 unique/duplicate ratchets |
+| CI-001 | High | H12 | D | Mitigated on unit/CI | Required PR matrix: hermetic lib, workspace lib, Home test/build, docs, deny, Tauri Ubuntu; nightly macos/windows Tauri |
+| TEST-001 | High | H12 | D | Mitigated on unit/CI | Credential injection, env RAII lock, repeated parallel `cargo test -p medousa --lib` |
+| PERF-007 | High | H12 | D | Mitigated on unit/CI | P01/P03 micro-CI ratchets; P08/P09 required; nightly P04–P06 |
 | DATA-001 | Medium | H02 | B | Validated in H02.4; ship pending | Fresh-process deletion inventory |
 
 ## Required plan template

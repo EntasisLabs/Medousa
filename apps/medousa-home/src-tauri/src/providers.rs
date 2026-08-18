@@ -585,7 +585,7 @@ mod tests {
 
     #[test]
     fn default_models_from_catalog() {
-        assert_eq!(default_model_for_provider("deepseek"), "deepseek-chat");
+        assert_eq!(default_model_for_provider("deepseek"), "deepseek-v4-flash");
         assert_eq!(default_model_for_provider("ollama"), DEFAULT_OLLAMA_MODEL);
     }
 

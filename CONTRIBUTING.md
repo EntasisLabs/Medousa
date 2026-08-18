@@ -38,14 +38,32 @@ Run these from the repo root (`Medousa/`) before opening a PR:
 # Rust — workspace clippy, warnings denied (medousa-sdk-iroh excluded until its SSE feature wiring is stable)
 cargo clippy --workspace --all-targets --exclude medousa-sdk-iroh -- -D warnings
 
-# Rust tests (same as CI rust job)
-cargo test -p medousa --lib
+# Rust tests (same as CI hermetic lib job — runs the suite twice)
+./scripts/ci/test-hermetic.sh
 
-# Desktop app — TypeScript + Svelte (must be 0 errors and 0 warnings)
-cd apps/medousa-home && npm ci && npm run check
+# Workspace lib tests
+cargo test --workspace --exclude medousa-sdk-iroh --lib
+
+# Home Tauri (Ubuntu PR job; leftover proxy helpers allowlisted — see H12)
+cargo clippy --manifest-path apps/medousa-home/src-tauri/Cargo.toml --all-targets -- \
+  -D warnings -A dead_code -A clippy::too_many_arguments -A clippy::large_enum_variant \
+  -A clippy::ptr_arg -A private_interfaces
+cargo test --manifest-path apps/medousa-home/src-tauri/Cargo.toml --lib
+
+# Dependencies (H11)
+cargo deny check
+./scripts/ci/check-unused-deps.sh
+./scripts/ci/check-dependency-budget.sh
+
+# Desktop app — TypeScript + Svelte (must be 0 errors and 0 warnings) plus unit tests
+cd apps/medousa-home && npm ci && npm run check && npm test && npm run build
+
+# Docs
+bash scripts/verify-docs.sh --strict
 ```
 
 Optional: `bash scripts/ci/validate-workflows.sh` after editing `.github/workflows/`.
+Optional micro-CI perf: `./scripts/ci/check-perf-budgets.sh`.
 
 ## Home runtime boundaries
 
@@ -61,6 +79,7 @@ From `apps/medousa-home`, CI already requires:
 
 ```bash
 npm run check              # includes check:runtime-graph (0 first-party SCCs)
+npm test                   # full Vitest suite
 npm run test:h09           # leak, overlay freeze, SCC direction, CSS inventory, contrast
 npm run build && npm run check:bundle-budget
 ```
@@ -85,9 +104,12 @@ asks for it — those surfaces are sensitive.
    [docs release checklist](docs/CONTRIBUTING-DOCS.md#per-release-checklist)).
 4. Run what you can locally:
    - `cargo clippy --workspace --all-targets --exclude medousa-sdk-iroh -- -D warnings` for Rust
-   - `cd apps/medousa-home && npm run check` for the desktop app (0 errors, 0 warnings)
+   - `./scripts/ci/test-hermetic.sh` for the required engine lib suite
+   - `cargo test --workspace --exclude medousa-sdk-iroh --lib` for workspace crates
+   - `cd apps/medousa-home && npm run check && npm test` for the desktop app (0 errors, 0 warnings)
+   - `cargo deny check` and `./scripts/ci/check-dependency-budget.sh` when touching Cargo.toml / lock
    - `cargo test` / targeted package tests for Rust changes
-   - `scripts/verify-docs.sh` when you edit `docs/`
+   - `scripts/verify-docs.sh --strict` when you edit `docs/`
    - App smoke for UI: open Settings → Packages, chat, vault as relevant
 5. Do **not** commit secrets, `.env` files, or signing keys.
 

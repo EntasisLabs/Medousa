@@ -1,0 +1,51 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TARGET_DIR: ${{ github.workspace }}/.cache/cargo-target
+
+jobs:
+  tauri-desktop:
+    name: Tauri clippy/test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            apps/medousa-home/src-tauri -> apps/medousa-home/src-tauri/target
+          cache-on-failure: true
+      - name: cargo clippy (Home Tauri)
+        run: cargo clippy --manifest-path apps/medousa-home/src-tauri/Cargo.toml --all-targets -- -D warnings -A dead_code -A clippy::too_many_arguments -A clippy::large_enum_variant -A clippy::ptr_arg -A private_interfaces
+      - name: cargo test (Home Tauri lib)
+        run: cargo test --manifest-path apps/medousa-home/src-tauri/Cargo.toml --lib
+
+  perf-nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> .cache/cargo-target
+          cache-workspace-crates: true
+          cache-on-failure: true
+      - name: P04 Forge store (CI-sized)
+        run: cargo run -p medousa-forge --release --example p04_forge_store
+      - name: P05 Coder observation (CI-sized)
+        run: cargo run -p medousa-forge --release --example p05_coder_observation
+      - name: P06 vault (CI-sized)
+        run: cargo run -p medousa --release --example p06_vault_backend

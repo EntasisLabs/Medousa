@@ -4,7 +4,9 @@
 standalone installer.
 
 Home already ships with the **engine** (daemon, CLI, and TUI). Packages is where
-you add more later — offline brain, messaging adapters, MCP gateway.
+you add more later — offline brain, messaging adapters, MCP gateway. Those
+optional binaries are separate programs; they are not compiled into
+`medousa_daemon`.
 
 From a terminal you can also use:
 
@@ -42,6 +44,8 @@ or **Installed**.
 - The **engine** — bundled with Home
 - **Model weights** — download from the private-brain / Models UI after Offline
   brain is installed
+- **Iroh** and **OpenTelemetry** — compile-time engine features
+  (`iroh-transport`, `otel-export`), not Settings → Packages binaries
 
 ---
 

@@ -249,7 +249,7 @@ pub(crate) fn local_brain_installed() -> bool {
 pub(crate) fn is_bind_reachable(bind: &str) -> bool {
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
-        return medousa_host::is_bind_reachable(bind);
+        medousa_host::is_bind_reachable(bind)
     }
     #[cfg(any(target_os = "ios", target_os = "android"))]
     {
@@ -306,7 +306,6 @@ fn detach_new_session(command: &mut Command) {
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
         medousa_host::detach_new_session(command);
-        return;
     }
     #[cfg(any(target_os = "ios", target_os = "android"))]
     {

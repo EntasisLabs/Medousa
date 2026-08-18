@@ -2,6 +2,7 @@
 name = "medousa-iroh-http"
 version = "0.9.1"
 edition = "2024"
+license = "MIT OR Apache-2.0"
 description = "HTTP/1.1 over Iroh QUIC — shared client for engine and mobile"
 
 [dependencies]

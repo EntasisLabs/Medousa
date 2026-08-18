@@ -109,6 +109,8 @@ impl DaemonCredentialStore {
     }
 
     fn entry() -> Result<keyring::Entry, keyring::Error> {
+        #[cfg(test)]
+        crate::test_env::refuse_host_keyring()?;
         keyring::Entry::new(CREDENTIAL_SERVICE, CREDENTIAL_ACCOUNT)
     }
 }
@@ -776,6 +778,8 @@ impl std::fmt::Display for OAuthError {
 impl std::error::Error for OAuthError {}
 
 fn broker() -> &'static ChatGptOAuthBroker {
+    #[cfg(test)]
+    crate::test_env::panic_if_hermetic_host("chatgpt_oauth::broker (keyring)");
     static BROKER: OnceLock<ChatGptOAuthBroker> = OnceLock::new();
     BROKER.get_or_init(|| {
         ChatGptOAuthBroker::new(OAuthConfig::from_env(), Arc::new(DaemonCredentialStore))
@@ -827,6 +831,21 @@ mod tests {
     use super::*;
     use axum::{Json, http::StatusCode};
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn hermetic_suite_refuses_the_live_oauth_broker() {
+        if !crate::test_env::hermetic() {
+            return;
+        }
+        let panicked = std::panic::catch_unwind(|| {
+            let _ = configured();
+        })
+        .is_err();
+        assert!(
+            panicked,
+            "live ChatGPT OAuth broker must not initialize during hermetic tests"
+        );
+    }
 
     #[derive(Default)]
     struct MemoryStore(RwLock<Option<CredentialEnvelope>>);

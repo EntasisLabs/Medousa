@@ -97,13 +97,13 @@ mod tests {
 
     #[test]
     fn user_preference_forces_master_switch_off_by_default() {
+        let _lock = crate::test_env::lock();
         let key = ENV_STASIS_OTEL_ENABLED;
         let prior = std::env::var(key).ok();
         apply_stasis_otel_user_preference(false);
         assert!(!stasis_otel_enabled());
         apply_stasis_otel_user_preference(true);
         assert!(stasis_otel_enabled());
-        // SAFETY: test-local env restore.
         unsafe {
             match prior {
                 Some(value) => std::env::set_var(key, value),

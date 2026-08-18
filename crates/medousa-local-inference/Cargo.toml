@@ -2,6 +2,7 @@
 name = "medousa-local-inference"
 version = "0.9.1"
 edition = "2024"
+license = "MIT OR Apache-2.0"
 description = "Local inference catalog/hardware/engine logic and the standalone medousa_local offline-brain binary (isolated from the medousa app crate)"
 
 [[bin]]

@@ -482,9 +482,7 @@ mod tests {
             .expect("cwd")
             .join("target")
             .join(format!("component-store-test-{}", uuid::Uuid::new_v4().simple()));
-        unsafe {
-            std::env::set_var("MEDOUSA_COMPONENT_STORE_ROOT", &root);
-        }
+        let _env = crate::test_env::set_var("MEDOUSA_COMPONENT_STORE_ROOT", &root);
         let service = ComponentStoreService { db: None };
         let profile = "default";
         let component = "braindump-capture";
@@ -512,8 +510,5 @@ mod tests {
             .expect("get after delete");
         assert!(empty.entries.is_empty());
         let _ = tokio::fs::remove_dir_all(root).await;
-        unsafe {
-            std::env::remove_var("MEDOUSA_COMPONENT_STORE_ROOT");
-        }
     }
 }

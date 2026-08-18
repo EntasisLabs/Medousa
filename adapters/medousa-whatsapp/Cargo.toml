@@ -2,6 +2,7 @@
 name = "medousa-whatsapp"
 version = "0.9.1"
 edition = "2024"
+license = "MIT OR Apache-2.0"
 
 [workspace]
 
@@ -22,3 +23,6 @@ whatsapp-rust-tokio-transport = "0.6"
 whatsapp-rust-ureq-http-client = "0.6"
 wacore = { version = "0.6", default-features = false }
 waproto = "0.6"
+
+[package.metadata.cargo-machete]
+ignored = ["serde_json"]

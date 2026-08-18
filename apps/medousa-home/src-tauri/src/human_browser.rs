@@ -1666,7 +1666,7 @@ fn macos_shell_viewport_origin_in_window(app: &AppHandle) -> Option<(f64, f64)> 
     let out = Arc::new(Mutex::new(None::<(f64, f64)>));
     let capture = Arc::clone(&out);
     let _ = shell.with_webview(move |w| unsafe {
-        use objc2_app_kit::{NSView, NSWindow};
+        use objc2_app_kit::NSView;
         let view: &NSView = &*w.inner().cast();
         let Some(window) = view.window() else {
             return;
@@ -1676,7 +1676,7 @@ fn macos_shell_viewport_origin_in_window(app: &AppHandle) -> Option<(f64, f64)> 
         };
         let layout = window.contentLayoutRect();
         let x_inset = layout.origin.x - content_view.bounds().origin.x;
-        let y_inset = macos_rect_top_left_in_view(layout, &*content_view);
+        let y_inset = macos_rect_top_left_in_view(layout, &content_view);
         if let Ok(mut slot) = capture.lock() {
             *slot = Some((x_inset.max(0.0), y_inset.max(0.0)));
         }
@@ -1729,7 +1729,7 @@ fn macos_webview_frame_in_window_content(webview: &tauri::Webview) -> Option<(f6
     let out = Arc::new(Mutex::new(None));
     let capture = Arc::clone(&out);
     let _ = webview.with_webview(move |w| unsafe {
-        use objc2_app_kit::{NSView, NSWindow};
+        use objc2_app_kit::NSView;
         let view: &NSView = &*w.inner().cast();
         let bounds = view.bounds();
         let Some(window) = view.window() else {
@@ -1739,7 +1739,7 @@ fn macos_webview_frame_in_window_content(webview: &tauri::Webview) -> Option<(f6
             return;
         };
         let converted = view.convertRect_toView(bounds, Some(&*content_view));
-        let y_top = macos_rect_top_left_in_view(converted, &*content_view);
+        let y_top = macos_rect_top_left_in_view(converted, &content_view);
         if let Ok(mut guard) = capture.lock() {
             *guard = Some((
                 converted.origin.x,
@@ -2000,15 +2000,14 @@ fn coordinate_frame_snapshot(
     let workshop = compute_embedded_bounds(&window, default_embed_layout())?;
 
     let content_tauri = embedded_content_webview(app)
-        .map(|content| {
+        .and_then(|content| {
             let rect = content.bounds().ok();
             rect.map(|rect| {
                 let pos = rect.position.to_logical::<f64>(scale);
                 let size = rect.size.to_logical::<f64>(scale);
                 bounds_json(pos.x, pos.y, size.width, size.height)
             })
-        })
-        .flatten();
+        });
 
     let main_native = app
         .get_webview(MAIN_WINDOW_LABEL)
@@ -2020,8 +2019,7 @@ fn coordinate_frame_snapshot(
         .map(|(x, y, w, h)| bounds_json(x, y, w, h));
 
     let dom_target = dom
-        .map(|d| dom_bounds_to_window_child_bounds(app, d).ok())
-        .flatten();
+        .and_then(|d| dom_bounds_to_window_child_bounds(app, d).ok());
 
     let dom_vs_content_native = match (dom_target, content_native.as_ref()) {
         (Some(target), Some(native)) => Some(serde_json::json!({
@@ -2074,7 +2072,7 @@ fn shell_webview_origin(app: &AppHandle) -> Result<(f64, f64), String> {
     Ok((origin.x, origin.y))
 }
 
-fn embed_freeform_dom_bounds(app: &AppHandle) -> Option<EmbedBounds> {
+fn embed_freeform_dom_bounds(_app: &AppHandle) -> Option<EmbedBounds> {
     LAST_EMBED_PLACEMENT
         .lock()
         .ok()
@@ -3423,7 +3421,7 @@ pub async fn human_browser_query_nav_state(
     let _guard = BrowserPendingGuard::new(&BROWSER_HOST_STATE, request_id.clone());
     let request_id = serde_json::to_string(&request_id).map_err(|err| err.to_string())?;
     content
-        .eval(&format!(
+        .eval(format!(
             r#"(function(){{try{{var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;i.invoke('plugin:browser-bridge|report',{{report:{{version:1,kind:'navQuery',requestId:{request_id},canGoBack:window.history.length>1,canGoForward:false}}}});}}catch(e){{}}}})();"#,
         ))
         .map_err(|err| err.to_string())?;
@@ -3448,7 +3446,7 @@ pub async fn human_browser_popout_query_nav_state(
     let _guard = BrowserPendingGuard::new(&BROWSER_HOST_STATE, request_id.clone());
     let request_id = serde_json::to_string(&request_id).map_err(|err| err.to_string())?;
     content
-        .eval(&format!(
+        .eval(format!(
             r#"(function(){{try{{var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;i.invoke('plugin:browser-bridge|report',{{report:{{version:1,kind:'navQuery',requestId:{request_id},canGoBack:window.history.length>1,canGoForward:false}}}});}}catch(e){{}}}})();"#,
         ))
         .map_err(|err| err.to_string())?;

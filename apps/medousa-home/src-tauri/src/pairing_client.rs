@@ -340,19 +340,7 @@ pub async fn send_pair_heartbeat(
         .map(str::to_string)
         .or_else(crate::push::current_apns_device_token);
 
-    let live_activity_token = match body.and_then(|body| body.live_activity_push_token.as_ref()) {
-        Some(value) => Some(value.trim().to_string()),
-        None => {
-            #[cfg(target_os = "ios")]
-            {
-                crate::live_activity::current_push_token()
-            }
-            #[cfg(not(target_os = "ios"))]
-            {
-                None
-            }
-        }
-    };
+    let live_activity_token = body.and_then(|body| body.live_activity_push_token.as_ref()).map(|value| value.trim().to_string());
 
     let mesh_lan = body
         .and_then(|body| body.mesh_lan_base_url.as_deref())

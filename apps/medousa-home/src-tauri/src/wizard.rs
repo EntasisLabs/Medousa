@@ -440,12 +440,11 @@ pub async fn wizard_apply_screen1(
 
     if request.start_core {
         let private_brain = request.path.eq_ignore_ascii_case("offline");
-        let start = daemon_start(Some(crate::daemon_service::DaemonStartRequest {
+        daemon_start(Some(crate::daemon_service::DaemonStartRequest {
             private_brain,
             public_bind: None,
         }))
         .await?;
-        core_message = start.message;
         let wait = daemon_wait_healthy(Some(DaemonWaitHealthRequest {
             timeout_seconds: 120,
             poll_ms: 2000,

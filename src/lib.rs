@@ -159,6 +159,8 @@ pub mod tool_names;
 mod tool_contract_baseline;
 pub mod adapter_heartbeat;
 pub mod paths;
+#[cfg(test)]
+pub(crate) mod test_env;
 pub mod product_config;
 pub mod ingest_stream;
 pub mod interactive_turn_runtime;

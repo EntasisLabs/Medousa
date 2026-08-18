@@ -485,6 +485,137 @@ pub fn phase_label(phase: &str) -> &'static str {
     }
 }
 
+/// H11: package catalog id → crates / Cargo features / binaries / default engine link.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PackageComposition {
+    pub package_id: &'static str,
+    pub workspace_crates: &'static [&'static str],
+    pub cargo_features: &'static [&'static str],
+    pub binaries: &'static [&'static str],
+    pub in_default_engine_link: bool,
+}
+
+pub fn package_composition() -> Vec<PackageComposition> {
+    vec![
+        PackageComposition {
+            package_id: "engine",
+            workspace_crates: &["medousa"],
+            cargo_features: &[],
+            binaries: &["medousa", "medousa_daemon", "medousa_cli", "medousa_tui"],
+            in_default_engine_link: true,
+        },
+        PackageComposition {
+            package_id: "desktop",
+            workspace_crates: &["medousa-home"],
+            cargo_features: &[],
+            binaries: &[],
+            in_default_engine_link: false,
+        },
+        PackageComposition {
+            package_id: "local-brain",
+            workspace_crates: &["medousa-local-inference"],
+            cargo_features: &[],
+            binaries: &["medousa_local"],
+            in_default_engine_link: false,
+        },
+        PackageComposition {
+            package_id: "mcp-gateway",
+            workspace_crates: &["medousa-mcp-gateway"],
+            cargo_features: &[],
+            binaries: &["medousa_mcp_gateway"],
+            in_default_engine_link: false,
+        },
+        PackageComposition {
+            package_id: "adapter-telegram",
+            workspace_crates: &["medousa-telegram"],
+            cargo_features: &[],
+            binaries: &["medousa_telegram"],
+            in_default_engine_link: false,
+        },
+        PackageComposition {
+            package_id: "adapter-discord",
+            workspace_crates: &["medousa-discord"],
+            cargo_features: &[],
+            binaries: &["medousa_discord"],
+            in_default_engine_link: false,
+        },
+        PackageComposition {
+            package_id: "adapter-slack",
+            workspace_crates: &["medousa-slack"],
+            cargo_features: &[],
+            binaries: &["medousa_slack"],
+            in_default_engine_link: false,
+        },
+        PackageComposition {
+            package_id: "adapter-whatsapp",
+            workspace_crates: &[],
+            cargo_features: &[],
+            binaries: &["medousa_whatsapp"],
+            in_default_engine_link: false,
+        },
+        PackageComposition {
+            package_id: "coding-engine",
+            workspace_crates: &["medousa-code"],
+            cargo_features: &[],
+            binaries: &["medousa-code"],
+            in_default_engine_link: false,
+        },
+        PackageComposition {
+            package_id: "langservers",
+            workspace_crates: &[],
+            cargo_features: &[],
+            binaries: &[
+                "pyright-langserver",
+                "typescript-language-server",
+                "svelteserver",
+            ],
+            in_default_engine_link: false,
+        },
+        PackageComposition {
+            package_id: "shell-session",
+            workspace_crates: &["medousa-session"],
+            cargo_features: &[],
+            binaries: &["medousa-session"],
+            in_default_engine_link: false,
+        },
+        PackageComposition {
+            package_id: "skill-hub",
+            workspace_crates: &[],
+            cargo_features: &[],
+            binaries: &[],
+            in_default_engine_link: false,
+        },
+        PackageComposition {
+            package_id: "grapheme-module-starter",
+            workspace_crates: &[],
+            cargo_features: &[],
+            binaries: &[],
+            in_default_engine_link: false,
+        },
+        PackageComposition {
+            package_id: "model-gemma-e2b",
+            workspace_crates: &[],
+            cargo_features: &[],
+            binaries: &[],
+            in_default_engine_link: false,
+        },
+        PackageComposition {
+            package_id: "model-gemma-e4b",
+            workspace_crates: &[],
+            cargo_features: &[],
+            binaries: &[],
+            in_default_engine_link: false,
+        },
+        PackageComposition {
+            package_id: "model-gemma-12b",
+            workspace_crates: &[],
+            cargo_features: &[],
+            binaries: &[],
+            in_default_engine_link: false,
+        },
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -518,5 +649,24 @@ mod tests {
     fn home_packages_excludes_cli() {
         assert!(!is_home_packages_package("cli"));
         assert!(is_home_packages_package("mcp-gateway"));
+    }
+
+    #[test]
+    fn composition_covers_catalog_and_keeps_optional_workloads_out_of_default_engine() {
+        let catalog: std::collections::HashSet<_> =
+            package_catalog().into_iter().map(|entry| entry.id).collect();
+        let composition = package_composition();
+        let composed: std::collections::HashSet<_> =
+            composition.iter().map(|row| row.package_id).collect();
+        assert_eq!(catalog, composed);
+        for row in composition {
+            let entry = catalog_entry(row.package_id).expect("catalog row");
+            assert_eq!(entry.binaries, row.binaries);
+            if row.package_id == "engine" {
+                assert!(row.in_default_engine_link);
+            } else {
+                assert!(!row.in_default_engine_link);
+            }
+        }
     }
 }

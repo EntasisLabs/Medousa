@@ -6,7 +6,7 @@ use crate::badge;
 pub fn tray_update_blocked_count(app: AppHandle, blocked_count: u32) -> Result<(), String> {
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
-        use tauri::Manager;
+        
 
         let tooltip = if blocked_count > 0 {
             format!("Medousa · {blocked_count} blocked")

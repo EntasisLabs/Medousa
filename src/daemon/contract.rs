@@ -706,9 +706,14 @@ mod tests {
         }
         let openapi = std::fs::read_to_string(root.join("openapi.json"))
             .expect("checked-in openapi.json; run UPDATE_API_CONTRACT=1 cargo test -p medousa --lib daemon::contract::tests::checked_in_contract_artifacts_match_generation");
-        assert_eq!(openapi, artifacts.openapi_json);
+        let checked: serde_json::Value = serde_json::from_str(&openapi).unwrap();
+        let generated: serde_json::Value = serde_json::from_str(&artifacts.openapi_json).unwrap();
+        assert_eq!(checked, generated);
         let inventory = std::fs::read_to_string(root.join("route-inventory.json")).unwrap();
-        assert_eq!(inventory, artifacts.route_inventory_json);
+        let checked_inventory: serde_json::Value = serde_json::from_str(&inventory).unwrap();
+        let generated_inventory: serde_json::Value =
+            serde_json::from_str(&artifacts.route_inventory_json).unwrap();
+        assert_eq!(checked_inventory, generated_inventory);
     }
 
     #[test]

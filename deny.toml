@@ -1,0 +1,63 @@
+# H11 / DEP-001 — workspace dependency policy.
+# Unique-pair / duplicate-name growth is enforced by
+# scripts/ci/check-dependency-budget.sh (cargo tree -p medousa).
+# cargo-deny's graph includes target-specific windows crates, so
+# multiple-versions is warn here rather than a second competing ratchet.
+
+[graph]
+all-features = false
+
+[advisories]
+yanked = "warn"
+unmaintained = "workspace"
+ignore = [
+    { id = "RUSTSEC-2023-0071", reason = "rsa Marvin; transitive via jsonwebtoken/surrealdb" },
+    { id = "RUSTSEC-2026-0049", reason = "rustls-webpki 0.102 CRL matching; pinned by rustls 0.22 stack" },
+    { id = "RUSTSEC-2026-0098", reason = "rustls-webpki 0.102 URI name constraints; rustls 0.22 stack" },
+    { id = "RUSTSEC-2026-0099", reason = "rustls-webpki 0.102 wildcard name constraints; rustls 0.22 stack" },
+    { id = "RUSTSEC-2026-0104", reason = "rustls-webpki 0.102 CRL panic; rustls 0.22 stack" },
+    { id = "RUSTSEC-2026-0194", reason = "quick-xml quadratic attributes; transitive document parse" },
+    { id = "RUSTSEC-2026-0195", reason = "quick-xml NsReader DoS; transitive document parse" },
+    { id = "RUSTSEC-2026-0233", reason = "bincode archive UAF; transitive unmaintained bincode" },
+    { id = "RUSTSEC-2026-0234", reason = "bincode OOB hash tables; transitive unmaintained bincode" },
+    { id = "RUSTSEC-2026-0235", reason = "bincode OOB Rc/Arc; transitive unmaintained bincode" },
+]
+
+[licenses]
+private = { ignore = true }
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "MPL-2.0",
+    "CC0-1.0",
+    "BSL-1.0",
+    "0BSD",
+    "Unlicense",
+    "CDLA-Permissive-2.0",
+    "BUSL-1.1",
+]
+confidence-threshold = 0.8
+exceptions = [
+    { crate = "tokio-tungstenite-wasm", allow = ["MIT"] },
+]
+
+[[licenses.clarify]]
+crate = "tokio-tungstenite-wasm"
+expression = "MIT OR Apache-2.0"
+license-files = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

@@ -2,6 +2,7 @@
 name = "medousa-local-engine"
 version = "0.9.1"
 edition = "2024"
+license = "MIT OR Apache-2.0"
 description = "Embedded mistralrs local inference runtime for medousa_local"
 
 [dependencies]
@@ -18,3 +19,6 @@ mistralrs-server-core = { version = "0.8.1", default-features = false }
 default = []
 metal = ["mistralrs-server-core/metal"]
 cuda = ["mistralrs-server-core/cuda"]
+
+[package.metadata.cargo-machete]
+ignored = ["anyhow"]

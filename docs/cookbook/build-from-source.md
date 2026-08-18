@@ -143,10 +143,17 @@ cd Medousa   # repo root with Cargo.toml
 cargo build -p medousa-local-inference --bin medousa_local --features embedded-inference-metal
 cargo run -p medousa-local-inference --bin medousa_local --features embedded-inference-metal -- --load-recommended
 
-# Daemon (no embedded inference)
+# Daemon (no embedded inference). Default features stay empty: Iroh and OTEL
+# are `--features iroh-transport` / `--features otel-export`. Channel adapters
+# are separate packages (`medousa_telegram`, …), not daemon features.
 cargo build -p medousa --bin medousa_daemon
 cargo run -p medousa --bin medousa_daemon
 ```
+
+Dependency policy (H11): `cargo deny check` and
+`./scripts/ci/check-dependency-budget.sh` from the repo root. Do not add
+`teloxide` / `serenity` / `slack-morphism` to the root crate — those belong in
+adapter packages.
 
 Start both from CLI:
 
