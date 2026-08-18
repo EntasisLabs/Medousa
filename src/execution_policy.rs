@@ -208,6 +208,7 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         | "cognition_memory_moods"
         | "cognition_store_read"
         | "cognition_runtime_query"
+        | "cognition_schema"
         | "cognition_web_search"
         | "cognition_spawn_turn_worker"
         | "cognition_turn_prepare_final"
@@ -407,10 +408,9 @@ mod tests {
 
     #[test]
     fn runtime_query_is_parallel_safe_and_mutate_is_mutating() {
-        let query = json!({ "resource": "job", "view": "list" });
+        let query = json!({ "action": "job.list" });
         let mutate = json!({
-            "resource": "job",
-            "action": "enqueue",
+            "action": "job.enqueue",
             "job_type": "workflow.grapheme.run",
             "payload_ref": "grapheme:inline:query {}"
         });
@@ -438,7 +438,7 @@ mod tests {
                 &[
                     (
                         "cognition_runtime_query".to_string(),
-                        json!({ "resource": "delivery" })
+                        json!({ "action": "delivery.status" })
                     ),
                     ("cognition_runtime_mutate".to_string(), mutate),
                 ],

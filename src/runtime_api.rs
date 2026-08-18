@@ -1,17 +1,21 @@
 //! Public runtime primitives: query or mutate jobs, recurring, workflows, delivery.
+//!
+//! The model-facing entry is a tagged action enum. Parameter schemas live on
+//! each variant type — `cognition_schema` reads those types, not a parallel catalog.
 
 use std::sync::Arc;
 
 use schemars::JsonSchema;
+use schemars::schema::Schema;
 use serde::Deserialize;
-use serde_json::{Map, Value, json};
-use stasis::application::orchestration::tool_registry::StasisTool;
-use stasis::prelude::{RuntimeComposition, StasisError};
+use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
-use crate::bridge_tools::CognitionMcpPromoteToJobTool;
+use crate::bridge_tools::{BridgeObject, CognitionMcpPromoteToJobTool, McpPromoteToJobInput};
 use crate::events::TuiEvent;
 use crate::public_api::{COGNITION_RUNTIME_MUTATE, COGNITION_RUNTIME_QUERY};
+use crate::recurring_delivery::RecurringDeliverySpec;
+use crate::recurring_feed::RecurringFeedSpec;
 use crate::runtime_tools::{
     CognitionRuntimeDeliveryStatusTool, CognitionRuntimeJobsCancelTool,
     CognitionRuntimeJobsListTool, CognitionRuntimeRecurringCancelTool,
@@ -19,49 +23,29 @@ use crate::runtime_tools::{
     CognitionRuntimeRecurringPauseTool, CognitionRuntimeRecurringRegisterTool,
     CognitionRuntimeWorkflowCancelTool, CognitionRuntimeWorkflowPlanTool,
     CognitionRuntimeWorkflowRunTool, CognitionRuntimeWorkflowScheduleTool,
-    CognitionRuntimeWorkflowStatusTool,
+    CognitionRuntimeWorkflowStatusTool, CompatibleWorkflowSteps, RuntimeDeliveryStatusInput,
+    RuntimeJobsCancelInput, RuntimeJobsListInput, RuntimeRecurringDoctorInput,
+    RuntimeRecurringListInput, RuntimeRecurringRegisterInput, RuntimeRecurringToggleInput,
+    RuntimeWorkflowCancelInput, RuntimeWorkflowPlanInput, RuntimeWorkflowRunInput,
+    RuntimeWorkflowScheduleInput, RuntimeWorkflowStatusInput, WorkflowFailureInput,
+    WorkflowPlanContext, WorkflowStrategyInput,
 };
+use crate::schema_api::{advertised_object_schema, string_enum_schema};
 use crate::tools::{
     CognitionGraphemePromoteLastRunToRecurringTool, CognitionGraphemePromoteToJobTool,
     CognitionGraphemePromoteToRecurringTool, CognitionJobEnqueueTool,
-    CognitionRuntimeJobStatusTool, CognitionRuntimeRecurringPreviewTool,
+    CognitionRuntimeJobStatusTool, CognitionRuntimeRecurringPreviewTool, GraphemePromoteLastRunInput,
+    GraphemePromoteToJobInput, GraphemePromoteToRecurringInput, JobEnqueueInput,
+    RuntimeJobStatusInput, RuntimeRecurringPreviewInput,
 };
-use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
+use crate::typed_tools::{
+    CompatOption, ExternalJson, ToolId, TypedTool, medousa_tool, serialize_output,
+};
 use crate::workflow::WorkflowRegistry;
+use stasis::prelude::RuntimeComposition;
 
 const QUERY_ID: ToolId = ToolId::new(COGNITION_RUNTIME_QUERY);
 const MUTATE_ID: ToolId = ToolId::new(COGNITION_RUNTIME_MUTATE);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-enum RuntimeResource {
-    Job,
-    Recurring,
-    Workflow,
-    Delivery,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-enum RuntimeView {
-    #[default]
-    List,
-    Status,
-    Doctor,
-    Preview,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-enum RuntimeAction {
-    Enqueue,
-    Cancel,
-    Register,
-    Pause,
-    Run,
-    Schedule,
-    Plan,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -71,142 +55,354 @@ enum RuntimeFrom {
     LastRun,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct RuntimeQueryInput {
-    resource: RuntimeResource,
+#[derive(Debug, Deserialize)]
+#[serde(tag = "action")]
+pub enum RuntimeQueryAction {
+    #[serde(rename = "job.list")]
+    JobList(JobList),
+    #[serde(rename = "job.status")]
+    JobStatus(JobStatus),
+    #[serde(rename = "recurring.list")]
+    RecurringList(RecurringList),
+    #[serde(rename = "recurring.doctor")]
+    RecurringDoctor(RecurringDoctor),
+    #[serde(rename = "recurring.preview")]
+    RecurringPreview(RecurringPreview),
+    #[serde(rename = "workflow.status")]
+    WorkflowStatus(WorkflowStatus),
+    #[serde(rename = "delivery.status")]
+    DeliveryStatus(DeliveryStatus),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "action")]
+pub enum RuntimeMutateAction {
+    #[serde(rename = "job.enqueue")]
+    JobEnqueue(JobEnqueue),
+    #[serde(rename = "job.cancel")]
+    JobCancel(JobCancel),
+    #[serde(rename = "recurring.register")]
+    RecurringRegister(RecurringRegister),
+    #[serde(rename = "recurring.pause")]
+    RecurringPause(RecurringPause),
+    #[serde(rename = "recurring.cancel")]
+    RecurringCancel(RecurringCancel),
+    #[serde(rename = "workflow.run")]
+    WorkflowRun(WorkflowRun),
+    #[serde(rename = "workflow.schedule")]
+    WorkflowSchedule(WorkflowSchedule),
+    #[serde(rename = "workflow.cancel")]
+    WorkflowCancel(WorkflowCancel),
+    #[serde(rename = "workflow.plan")]
+    WorkflowPlan(WorkflowPlan),
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct JobList {
+    /// Filter: enqueued, leased, running, succeeded, failed, dead_letter, canceled
     #[serde(default)]
-    view: RuntimeView,
-    #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    job_id: Option<String>,
-    #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    recurring_id: Option<String>,
-    #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    workflow_id: Option<String>,
-    #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    correlation_id: Option<String>,
-    #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     state: Option<String>,
+    /// Exact correlation id
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    cron_expr: Option<String>,
+    correlation_id: Option<String>,
+    /// Max jobs (1-100, default 20)
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    timezone: Option<String>,
-    #[serde(default)]
-    #[schemars(with = "usize", skip_serializing_if = "Option::is_none")]
     limit: Option<usize>,
-    #[serde(default)]
-    #[schemars(with = "usize", skip_serializing_if = "Option::is_none")]
-    count: Option<usize>,
-    #[serde(default)]
-    #[schemars(with = "usize", skip_serializing_if = "Option::is_none")]
-    pending_limit: Option<usize>,
-    #[serde(default)]
-    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
-    enabled_only: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct RuntimeMutateInput {
-    resource: RuntimeResource,
-    action: RuntimeAction,
+pub struct JobStatus {
+    /// Runtime job id
+    job_id: String,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct RecurringList {
+    /// Only enabled schedules
+    #[serde(default)]
+    enabled_only: Option<bool>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct RecurringDoctor {
+    /// Schedule id; omit for a summary
+    #[serde(default)]
+    recurring_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RecurringPreview {
+    /// 7-field cron
+    cron_expr: String,
+    /// IANA timezone (default UTC)
+    #[serde(default)]
+    timezone: Option<String>,
+    /// How many future runs (1-20, default 5)
+    #[serde(default)]
+    count: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct WorkflowStatus {
+    /// Workflow id
+    workflow_id: String,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct DeliveryStatus {
+    /// Pending outbox rows to preview (1-50)
+    #[serde(default)]
+    pending_limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct JobEnqueue {
+    /// Grapheme source (promote to a one-off job)
+    #[serde(default)]
+    script: Option<String>,
+    /// MCP server id
+    #[serde(default)]
+    server_id: Option<String>,
+    /// MCP tool name (with server_id)
+    #[serde(default)]
+    tool_name: Option<String>,
+    /// MCP tool arguments
+    #[serde(default)]
+    input: Option<Value>,
+    /// Handler id, e.g. workflow.grapheme.run
+    #[serde(default)]
+    job_type: Option<String>,
+    /// For grapheme: grapheme:inline:<source>
+    #[serde(default)]
+    payload_ref: Option<String>,
+    /// Human-readable intent
+    #[serde(default)]
+    note: Option<String>,
+    /// Runtime queue (default default)
+    #[serde(default)]
+    queue: Option<String>,
+    /// Retry cap for Grapheme promote
+    #[serde(default)]
+    max_attempts: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct JobCancel {
+    /// Runtime job id
+    job_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RecurringRegister {
+    /// auto (default) or last_run to reuse the last Grapheme source
     #[serde(default)]
     from: RuntimeFrom,
+    /// Grapheme source to schedule
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    job_id: Option<String>,
+    script: Option<String>,
+    /// 7-field cron
+    cron_expr: String,
+    /// IANA timezone (default UTC)
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
+    timezone: Option<String>,
+    /// Handler; default workflow.grapheme.run
+    #[serde(default)]
+    job_type: Option<String>,
+    /// payload_template_ref for non-grapheme jobs
+    #[serde(default)]
+    payload_ref: Option<String>,
+    /// Runtime queue
+    #[serde(default)]
+    queue: Option<String>,
+    /// Optional schedule id
+    #[serde(default)]
     recurring_id: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    workflow_id: Option<String>,
-    #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    job_type: Option<String>,
-    #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    payload_ref: Option<String>,
-    #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    script: Option<String>,
-    #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    cron_expr: Option<String>,
-    #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    timezone: Option<String>,
-    #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    queue: Option<String>,
-    #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    note: Option<String>,
-    #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    name: Option<String>,
-    #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    goal: Option<String>,
-    #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    server_id: Option<String>,
-    #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    tool_name: Option<String>,
-    #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    strategy: Option<String>,
-    #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    mode: Option<String>,
-    #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    on_failure: Option<String>,
-    #[serde(default)]
-    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
     jitter_seconds: Option<i64>,
     #[serde(default)]
-    #[schemars(with = "u64", skip_serializing_if = "Option::is_none")]
     max_attempts: Option<u64>,
     #[serde(default)]
-    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
     enabled: Option<bool>,
     #[serde(default)]
-    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
     start_immediately: Option<bool>,
+    /// Where to push each successful run
     #[serde(default)]
-    #[schemars(
-        with = "serde_json::Map<String, Value>",
-        skip_serializing_if = "Option::is_none"
-    )]
-    input: Option<Value>,
+    delivery: Option<RecurringDeliverySpec>,
+    /// feed_ids to publish each tick
     #[serde(default)]
-    #[schemars(
-        with = "serde_json::Map<String, Value>",
-        skip_serializing_if = "Option::is_none"
-    )]
+    feeds: Option<RecurringFeedSpec>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RecurringPause {
+    /// Schedule id
+    recurring_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RecurringCancel {
+    /// Schedule id
+    recurring_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct WorkflowRun {
+    /// Human-readable workflow name
+    #[serde(default)]
+    name: Option<String>,
+    /// Ordered grapheme/prompt/mcp steps
+    steps: CompatibleWorkflowSteps,
+    /// sequential (default), concurrent, or handoff
+    #[serde(default)]
+    strategy: Option<WorkflowStrategyInput>,
+    /// Workflow mode (default default)
+    #[serde(default)]
+    mode: Option<String>,
+    /// stop (default) or continue
+    #[serde(default)]
+    on_failure: Option<WorkflowFailureInput>,
+    #[serde(default)]
+    note: Option<String>,
+    #[serde(default)]
+    queue: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct WorkflowSchedule {
+    #[serde(default)]
+    name: Option<String>,
+    steps: CompatibleWorkflowSteps,
+    /// 7-field cron
+    cron_expr: String,
+    #[serde(default)]
+    timezone: Option<String>,
+    #[serde(default)]
+    strategy: Option<WorkflowStrategyInput>,
+    #[serde(default)]
+    mode: Option<String>,
+    #[serde(default)]
+    on_failure: Option<WorkflowFailureInput>,
+    #[serde(default)]
+    note: Option<String>,
+    #[serde(default)]
+    queue: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct WorkflowCancel {
+    /// Workflow id
+    workflow_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct WorkflowPlan {
+    /// What the workflow should accomplish
+    goal: String,
+    /// Optional urls, chat ids, extra constraints
+    #[serde(default)]
     context: Option<Value>,
-    #[serde(default)]
-    #[schemars(with = "Vec<Value>", skip_serializing_if = "Option::is_none")]
-    steps: Option<Value>,
-    #[serde(default)]
-    #[schemars(
-        with = "serde_json::Map<String, Value>",
-        skip_serializing_if = "Option::is_none"
-    )]
-    delivery: Option<Value>,
-    #[serde(default)]
-    #[schemars(
-        with = "serde_json::Map<String, Value>",
-        skip_serializing_if = "Option::is_none"
-    )]
-    feeds: Option<Value>,
+}
+
+impl JsonSchema for RuntimeQueryAction {
+    fn schema_name() -> String {
+        "RuntimeQueryAction".to_string()
+    }
+
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        advertised_object_schema(&[(
+            "action",
+            string_enum_schema(&[
+                "job.list",
+                "job.status",
+                "recurring.list",
+                "recurring.doctor",
+                "recurring.preview",
+                "workflow.status",
+                "delivery.status",
+            ]),
+            true,
+        )])
+    }
+}
+
+impl JsonSchema for RuntimeMutateAction {
+    fn schema_name() -> String {
+        "RuntimeMutateAction".to_string()
+    }
+
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        advertised_object_schema(&[(
+            "action",
+            string_enum_schema(&[
+                "job.enqueue",
+                "job.cancel",
+                "recurring.register",
+                "recurring.pause",
+                "recurring.cancel",
+                "workflow.run",
+                "workflow.schedule",
+                "workflow.cancel",
+                "workflow.plan",
+            ]),
+            true,
+        )])
+    }
+}
+
+pub struct RuntimeTypeSchema {
+    pub name: &'static str,
+    pub tool: ToolId,
+    pub summary: &'static str,
+    pub parameters: Value,
+}
+
+pub fn runtime_type_schemas() -> Vec<RuntimeTypeSchema> {
+    vec![
+        type_schema::<JobList>(QUERY_ID, "job.list", "List durable jobs"),
+        type_schema::<JobStatus>(QUERY_ID, "job.status", "Status for one job"),
+        type_schema::<RecurringList>(QUERY_ID, "recurring.list", "List recurring schedules"),
+        type_schema::<RecurringDoctor>(QUERY_ID, "recurring.doctor", "Diagnose a recurring schedule"),
+        type_schema::<RecurringPreview>(
+            QUERY_ID,
+            "recurring.preview",
+            "Preview upcoming cron fire times",
+        ),
+        type_schema::<WorkflowStatus>(QUERY_ID, "workflow.status", "Status for one workflow"),
+        type_schema::<DeliveryStatus>(
+            QUERY_ID,
+            "delivery.status",
+            "Queue, outbox, and recurring delivery counts",
+        ),
+        type_schema::<JobEnqueue>(
+            MUTATE_ID,
+            "job.enqueue",
+            "Enqueue a job: Grapheme script, MCP server_id+tool_name, or job_type+payload_ref",
+        ),
+        type_schema::<JobCancel>(MUTATE_ID, "job.cancel", "Cancel a durable job"),
+        type_schema::<RecurringRegister>(
+            MUTATE_ID,
+            "recurring.register",
+            "Register a cron schedule (script, last run, or job_type+payload_ref)",
+        ),
+        type_schema::<RecurringPause>(MUTATE_ID, "recurring.pause", "Pause a recurring schedule"),
+        type_schema::<RecurringCancel>(MUTATE_ID, "recurring.cancel", "Cancel a recurring schedule"),
+        type_schema::<WorkflowRun>(MUTATE_ID, "workflow.run", "Run a multi-step durable workflow now"),
+        type_schema::<WorkflowSchedule>(
+            MUTATE_ID,
+            "workflow.schedule",
+            "Schedule a multi-step workflow on cron",
+        ),
+        type_schema::<WorkflowCancel>(
+            MUTATE_ID,
+            "workflow.cancel",
+            "Cancel a running or scheduled workflow",
+        ),
+        type_schema::<WorkflowPlan>(
+            MUTATE_ID,
+            "workflow.plan",
+            "Draft a durable workflow from a natural-language goal",
+        ),
+    ]
 }
 
 pub struct CognitionRuntimeQueryTool {
@@ -245,406 +441,455 @@ pub fn register_runtime_api_tools(
 
 #[medousa_tool(id = QUERY_ID)]
 impl CognitionRuntimeQueryTool {
-    /// Inspect jobs, recurring schedules, workflows, or delivery. resource=job|recurring|workflow|delivery. view=list|status|doctor|preview. job with job_id defaults to status.
+    /// Inspect jobs, recurring, workflows, or delivery. action is a typed name (job.list, workflow.status, …). Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(
         &self,
-        input: RuntimeQueryInput,
+        action: RuntimeQueryAction,
     ) -> stasis::prelude::Result<ExternalJson> {
-        Ok(ExternalJson::new(dispatch_query(self, input).await?))
+        Ok(ExternalJson::new(dispatch_query(self, action).await?))
     }
 }
 
 #[medousa_tool(id = MUTATE_ID)]
 impl CognitionRuntimeMutateTool {
-    /// Enqueue, cancel, register, pause, run, schedule, or plan durable runtime work. resource=job|recurring|workflow. action=enqueue|cancel|register|pause|run|schedule|plan. script or server_id+tool_name select Grapheme/MCP promote.
+    /// Mutate durable runtime work. action is a typed name (job.enqueue, workflow.run, …). Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(
         &self,
-        input: RuntimeMutateInput,
+        action: RuntimeMutateAction,
     ) -> stasis::prelude::Result<ExternalJson> {
-        Ok(ExternalJson::new(dispatch_mutate(self, input).await?))
+        Ok(ExternalJson::new(dispatch_mutate(self, action).await?))
     }
 }
 
 async fn dispatch_query(
     tool: &CognitionRuntimeQueryTool,
-    input: RuntimeQueryInput,
+    action: RuntimeQueryAction,
 ) -> stasis::prelude::Result<Value> {
-    match input.resource {
-        RuntimeResource::Job => query_job(tool, input).await,
-        RuntimeResource::Recurring => query_recurring(tool, input).await,
-        RuntimeResource::Workflow => {
-            require(
-                input.workflow_id.as_deref(),
-                "cognition_runtime_query: workflow status needs workflow_id",
-            )?;
-            CognitionRuntimeWorkflowStatusTool::new(
-                tool.runtime.clone(),
-                tool.workflow_registry.clone(),
-            )
-            .invoke(json_obj([("workflow_id", opt_str(input.workflow_id))]))
-            .await
-        }
-        RuntimeResource::Delivery => {
-            CognitionRuntimeDeliveryStatusTool::new(tool.runtime.clone())
-                .invoke(json_obj([(
-                    "pending_limit",
-                    opt_usize(input.pending_limit),
-                )]))
-                .await
-        }
-    }
-}
-
-async fn query_job(
-    tool: &CognitionRuntimeQueryTool,
-    input: RuntimeQueryInput,
-) -> stasis::prelude::Result<Value> {
-    let has_id = input
-        .job_id
-        .as_deref()
-        .is_some_and(|value| !value.trim().is_empty());
-    if matches!(input.view, RuntimeView::Status)
-        || (has_id && !matches!(input.view, RuntimeView::List))
-    {
-        require(
-            input.job_id.as_deref(),
-            "cognition_runtime_query: job status needs job_id",
-        )?;
-        CognitionRuntimeJobStatusTool::new(tool.runtime.clone())
-            .invoke(json_obj([("job_id", opt_str(input.job_id))]))
-            .await
-    } else {
-        CognitionRuntimeJobsListTool::new(tool.runtime.clone())
-            .invoke(json_obj([
-                ("state", opt_str(input.state)),
-                ("correlation_id", opt_str(input.correlation_id)),
-                ("limit", opt_usize(input.limit)),
-            ]))
-            .await
-    }
-}
-
-async fn query_recurring(
-    tool: &CognitionRuntimeQueryTool,
-    input: RuntimeQueryInput,
-) -> stasis::prelude::Result<Value> {
-    match input.view {
-        RuntimeView::Doctor => {
-            CognitionRuntimeRecurringDoctorTool::new(tool.runtime.clone())
-                .invoke(json_obj([("recurring_id", opt_str(input.recurring_id))]))
-                .await
-        }
-        RuntimeView::Preview => {
-            require(
-                input.cron_expr.as_deref(),
-                "cognition_runtime_query: recurring preview needs cron_expr",
-            )?;
-            CognitionRuntimeRecurringPreviewTool::new(tool.event_tx.clone())
-                .invoke(json_obj([
-                    ("cron_expr", opt_str(input.cron_expr)),
-                    ("timezone", opt_str(input.timezone)),
-                    ("count", opt_usize(input.count)),
-                ]))
-                .await
-        }
-        RuntimeView::Status | RuntimeView::List => {
-            CognitionRuntimeRecurringListTool::new(tool.runtime.clone())
-                .invoke(json_obj([("enabled_only", opt_bool(input.enabled_only))]))
-                .await
-        }
+    match action {
+        RuntimeQueryAction::JobList(params) => params.execute(tool).await,
+        RuntimeQueryAction::JobStatus(params) => params.execute(tool).await,
+        RuntimeQueryAction::RecurringList(params) => params.execute(tool).await,
+        RuntimeQueryAction::RecurringDoctor(params) => params.execute(tool).await,
+        RuntimeQueryAction::RecurringPreview(params) => params.execute(tool).await,
+        RuntimeQueryAction::WorkflowStatus(params) => params.execute(tool).await,
+        RuntimeQueryAction::DeliveryStatus(params) => params.execute(tool).await,
     }
 }
 
 async fn dispatch_mutate(
     tool: &CognitionRuntimeMutateTool,
-    input: RuntimeMutateInput,
+    action: RuntimeMutateAction,
 ) -> stasis::prelude::Result<Value> {
-    match (input.resource, input.action) {
-        (RuntimeResource::Job, RuntimeAction::Enqueue) => enqueue_job(tool, input).await,
-        (RuntimeResource::Job, RuntimeAction::Cancel) => {
-            require(
-                input.job_id.as_deref(),
-                "cognition_runtime_mutate: job cancel needs job_id",
-            )?;
-            CognitionRuntimeJobsCancelTool::new(tool.runtime.clone(), tool.event_tx.clone())
-                .invoke(json_obj([("job_id", opt_str(input.job_id))]))
-                .await
-        }
-        (RuntimeResource::Recurring, RuntimeAction::Register) => {
-            register_recurring(tool, input).await
-        }
-        (RuntimeResource::Recurring, RuntimeAction::Pause) => {
-            require(
-                input.recurring_id.as_deref(),
-                "cognition_runtime_mutate: recurring pause needs recurring_id",
-            )?;
-            CognitionRuntimeRecurringPauseTool::new(tool.runtime.clone(), tool.event_tx.clone())
-                .invoke(json_obj([("recurring_id", opt_str(input.recurring_id))]))
-                .await
-        }
-        (RuntimeResource::Recurring, RuntimeAction::Cancel) => {
-            require(
-                input.recurring_id.as_deref(),
-                "cognition_runtime_mutate: recurring cancel needs recurring_id",
-            )?;
-            CognitionRuntimeRecurringCancelTool::new(tool.runtime.clone(), tool.event_tx.clone())
-                .invoke(json_obj([("recurring_id", opt_str(input.recurring_id))]))
-                .await
-        }
-        (RuntimeResource::Workflow, RuntimeAction::Run) => {
-            CognitionRuntimeWorkflowRunTool::new(
-                tool.runtime.clone(),
-                tool.workflow_registry.clone(),
-                tool.event_tx.clone(),
-                tool.turn_scope.clone(),
-            )
-            .invoke(workflow_payload(&input))
-            .await
-        }
-        (RuntimeResource::Workflow, RuntimeAction::Schedule) => {
-            CognitionRuntimeWorkflowScheduleTool::new(
-                tool.runtime.clone(),
-                tool.workflow_registry.clone(),
-                tool.event_tx.clone(),
-                tool.turn_scope.clone(),
-            )
-            .invoke(workflow_payload(&input))
-            .await
-        }
-        (RuntimeResource::Workflow, RuntimeAction::Cancel) => {
-            require(
-                input.workflow_id.as_deref(),
-                "cognition_runtime_mutate: workflow cancel needs workflow_id",
-            )?;
-            CognitionRuntimeWorkflowCancelTool::new(
-                tool.runtime.clone(),
-                tool.workflow_registry.clone(),
-                tool.event_tx.clone(),
-            )
-            .invoke(json_obj([("workflow_id", opt_str(input.workflow_id))]))
-            .await
-        }
-        (RuntimeResource::Workflow, RuntimeAction::Plan) => {
-            require(
-                input.goal.as_deref(),
-                "cognition_runtime_mutate: workflow plan needs goal",
-            )?;
-            CognitionRuntimeWorkflowPlanTool::new(tool.event_tx.clone())
-                .invoke(json_obj([
-                    ("goal", opt_str(input.goal)),
-                    ("context", input.context),
-                ]))
-                .await
-        }
-        (resource, action) => Err(StasisError::PortFailure(format!(
-            "cognition_runtime_mutate: resource={resource:?} action={action:?} is not valid"
-        ))),
+    match action {
+        RuntimeMutateAction::JobEnqueue(params) => params.execute(tool).await,
+        RuntimeMutateAction::JobCancel(params) => params.execute(tool).await,
+        RuntimeMutateAction::RecurringRegister(params) => params.execute(tool).await,
+        RuntimeMutateAction::RecurringPause(params) => params.execute(tool).await,
+        RuntimeMutateAction::RecurringCancel(params) => params.execute(tool).await,
+        RuntimeMutateAction::WorkflowRun(params) => params.execute(tool).await,
+        RuntimeMutateAction::WorkflowSchedule(params) => params.execute(tool).await,
+        RuntimeMutateAction::WorkflowCancel(params) => params.execute(tool).await,
+        RuntimeMutateAction::WorkflowPlan(params) => params.execute(tool).await,
     }
 }
 
-async fn enqueue_job(
-    tool: &CognitionRuntimeMutateTool,
-    input: RuntimeMutateInput,
-) -> stasis::prelude::Result<Value> {
-    if input
-        .server_id
-        .as_deref()
-        .is_some_and(|value| !value.trim().is_empty())
-    {
-        require(
-            input.tool_name.as_deref(),
-            "cognition_runtime_mutate: MCP job enqueue needs server_id and tool_name",
-        )?;
-        return CognitionMcpPromoteToJobTool::new(
+impl JobList {
+    async fn execute(self, tool: &CognitionRuntimeQueryTool) -> stasis::prelude::Result<Value> {
+        let output = CognitionRuntimeJobsListTool::new(tool.runtime.clone())
+            .invoke_typed(RuntimeJobsListInput {
+                state: CompatOption::from(self.state),
+                correlation_id: CompatOption::from(self.correlation_id),
+                limit: CompatOption::from(self.limit),
+            })
+            .await?;
+        serialize_output(CognitionRuntimeJobsListTool::tool_id(), output)
+    }
+}
+
+impl JobStatus {
+    async fn execute(self, tool: &CognitionRuntimeQueryTool) -> stasis::prelude::Result<Value> {
+        let output = CognitionRuntimeJobStatusTool::new(tool.runtime.clone())
+            .invoke_typed(RuntimeJobStatusInput {
+                job_id: Some(self.job_id),
+            })
+            .await?;
+        serialize_output(CognitionRuntimeJobStatusTool::tool_id(), output)
+    }
+}
+
+impl RecurringList {
+    async fn execute(self, tool: &CognitionRuntimeQueryTool) -> stasis::prelude::Result<Value> {
+        let output = CognitionRuntimeRecurringListTool::new(tool.runtime.clone())
+            .invoke_typed(RuntimeRecurringListInput {
+                enabled_only: self.enabled_only.unwrap_or(false),
+            })
+            .await?;
+        serialize_output(CognitionRuntimeRecurringListTool::tool_id(), output)
+    }
+}
+
+impl RecurringDoctor {
+    async fn execute(self, tool: &CognitionRuntimeQueryTool) -> stasis::prelude::Result<Value> {
+        let output = CognitionRuntimeRecurringDoctorTool::new(tool.runtime.clone())
+            .invoke_typed(RuntimeRecurringDoctorInput {
+                recurring_id: CompatOption::from(self.recurring_id),
+            })
+            .await?;
+        serialize_output(CognitionRuntimeRecurringDoctorTool::tool_id(), output)
+    }
+}
+
+impl RecurringPreview {
+    async fn execute(self, tool: &CognitionRuntimeQueryTool) -> stasis::prelude::Result<Value> {
+        let output = CognitionRuntimeRecurringPreviewTool::new(tool.event_tx.clone())
+            .invoke_typed(RuntimeRecurringPreviewInput {
+                cron_expr: Some(self.cron_expr),
+                timezone: self.timezone.unwrap_or_else(|| "UTC".to_string()),
+                count: self.count,
+                start_at: None,
+            })
+            .await?;
+        serialize_output(CognitionRuntimeRecurringPreviewTool::tool_id(), output)
+    }
+}
+
+impl WorkflowStatus {
+    async fn execute(self, tool: &CognitionRuntimeQueryTool) -> stasis::prelude::Result<Value> {
+        let output = CognitionRuntimeWorkflowStatusTool::new(
+            tool.runtime.clone(),
+            tool.workflow_registry.clone(),
+        )
+        .invoke_typed(RuntimeWorkflowStatusInput {
+            workflow_id: Some(self.workflow_id),
+        })
+        .await?;
+        serialize_output(CognitionRuntimeWorkflowStatusTool::tool_id(), output)
+    }
+}
+
+impl DeliveryStatus {
+    async fn execute(self, tool: &CognitionRuntimeQueryTool) -> stasis::prelude::Result<Value> {
+        let output = CognitionRuntimeDeliveryStatusTool::new(tool.runtime.clone())
+            .invoke_typed(RuntimeDeliveryStatusInput {
+                pending_limit: CompatOption::from(self.pending_limit),
+            })
+            .await?;
+        serialize_output(CognitionRuntimeDeliveryStatusTool::tool_id(), output)
+    }
+}
+
+impl JobEnqueue {
+    async fn execute(self, tool: &CognitionRuntimeMutateTool) -> stasis::prelude::Result<Value> {
+        if present(self.server_id.as_deref()) {
+            let output = CognitionMcpPromoteToJobTool::new(
+                tool.runtime.clone(),
+                tool.workflow_registry.clone(),
+                tool.event_tx.clone(),
+                tool.turn_scope.clone(),
+            )
+            .invoke_typed(McpPromoteToJobInput {
+                server_id: self.server_id,
+                tool_name: self.tool_name,
+                input: self.input.map(BridgeObject::from_value),
+                note: self.note,
+                queue: self.queue.unwrap_or_else(|| "default".to_string()),
+                step_id: "mcp_step".to_string(),
+            })
+            .await?;
+            return serialize_output(CognitionMcpPromoteToJobTool::tool_id(), output);
+        }
+        if present(self.script.as_deref()) && !present(self.payload_ref.as_deref()) {
+            let output = CognitionGraphemePromoteToJobTool::new(
+                tool.runtime.clone(),
+                tool.event_tx.clone(),
+                tool.turn_scope.clone(),
+            )
+            .invoke_typed(GraphemePromoteToJobInput {
+                source: self.script,
+                queue: self.queue.unwrap_or_else(|| "default".to_string()),
+                priority: 100,
+                max_attempts: self.max_attempts.unwrap_or(1),
+            })
+            .await?;
+            return serialize_output(CognitionGraphemePromoteToJobTool::tool_id(), output);
+        }
+        let output = CognitionJobEnqueueTool::new(
+            tool.runtime.clone(),
+            tool.event_tx.clone(),
+            tool.turn_scope.clone(),
+        )
+        .invoke_typed(JobEnqueueInput {
+            job_type: self.job_type,
+            payload_ref: self.payload_ref,
+            note: self.note,
+        })
+        .await?;
+        serialize_output(CognitionJobEnqueueTool::tool_id(), output)
+    }
+}
+
+impl JobCancel {
+    async fn execute(self, tool: &CognitionRuntimeMutateTool) -> stasis::prelude::Result<Value> {
+        let output = CognitionRuntimeJobsCancelTool::new(tool.runtime.clone(), tool.event_tx.clone())
+            .invoke_typed(RuntimeJobsCancelInput {
+                job_id: Some(self.job_id),
+            })
+            .await?;
+        serialize_output(CognitionRuntimeJobsCancelTool::tool_id(), output)
+    }
+}
+
+impl RecurringRegister {
+    async fn execute(self, tool: &CognitionRuntimeMutateTool) -> stasis::prelude::Result<Value> {
+        if matches!(self.from, RuntimeFrom::LastRun) {
+            let output = CognitionGraphemePromoteLastRunToRecurringTool::new(
+                tool.runtime.clone(),
+                tool.event_tx.clone(),
+                tool.turn_scope.clone(),
+            )
+            .invoke_typed(GraphemePromoteLastRunInput {
+                cron_expr: Some(self.cron_expr),
+                timezone: self.timezone.unwrap_or_else(|| "UTC".to_string()),
+                queue: self.queue.unwrap_or_else(|| "default".to_string()),
+                id: self.recurring_id,
+                jitter_seconds: self.jitter_seconds.unwrap_or(0),
+                max_attempts: self.max_attempts.unwrap_or(1),
+                enabled: self.enabled.unwrap_or(true),
+                start_immediately: self.start_immediately.unwrap_or(false),
+                source: None,
+                delivery: self.delivery,
+                feeds: self.feeds,
+            })
+            .await?;
+            return serialize_output(
+                CognitionGraphemePromoteLastRunToRecurringTool::tool_id(),
+                output,
+            );
+        }
+        if present(self.script.as_deref()) && !present(self.job_type.as_deref()) {
+            let output = CognitionGraphemePromoteToRecurringTool::new(
+                tool.runtime.clone(),
+                tool.event_tx.clone(),
+                tool.turn_scope.clone(),
+            )
+            .invoke_typed(GraphemePromoteToRecurringInput {
+                source: self.script,
+                cron_expr: Some(self.cron_expr),
+                timezone: self.timezone.unwrap_or_else(|| "UTC".to_string()),
+                queue: self.queue.unwrap_or_else(|| "default".to_string()),
+                id: self.recurring_id,
+                jitter_seconds: self.jitter_seconds.unwrap_or(0),
+                max_attempts: self.max_attempts.unwrap_or(1),
+                enabled: self.enabled.unwrap_or(true),
+                start_immediately: self.start_immediately.unwrap_or(false),
+                delivery: self.delivery,
+                feeds: self.feeds,
+            })
+            .await?;
+            return serialize_output(CognitionGraphemePromoteToRecurringTool::tool_id(), output);
+        }
+        let output = CognitionRuntimeRecurringRegisterTool::new(
+            tool.runtime.clone(),
+            tool.event_tx.clone(),
+            tool.turn_scope.clone(),
+        )
+        .invoke_typed(RuntimeRecurringRegisterInput {
+            source: self.script,
+            job_type: self.job_type,
+            payload_template_ref: self.payload_ref,
+            cron_expr: Some(self.cron_expr),
+            timezone: self.timezone,
+            queue: self.queue,
+            recurring_id: self.recurring_id,
+            jitter_seconds: self.jitter_seconds,
+            max_attempts: self.max_attempts,
+            enabled: self.enabled,
+            start_immediately: self.start_immediately,
+            delivery: self.delivery,
+            feeds: self.feeds,
+        })
+        .await?;
+        serialize_output(CognitionRuntimeRecurringRegisterTool::tool_id(), output)
+    }
+}
+
+impl RecurringPause {
+    async fn execute(self, tool: &CognitionRuntimeMutateTool) -> stasis::prelude::Result<Value> {
+        let output =
+            CognitionRuntimeRecurringPauseTool::new(tool.runtime.clone(), tool.event_tx.clone())
+                .invoke_typed(RuntimeRecurringToggleInput {
+                    recurring_id: Some(self.recurring_id),
+                })
+                .await?;
+        serialize_output(CognitionRuntimeRecurringPauseTool::tool_id(), output)
+    }
+}
+
+impl RecurringCancel {
+    async fn execute(self, tool: &CognitionRuntimeMutateTool) -> stasis::prelude::Result<Value> {
+        let output =
+            CognitionRuntimeRecurringCancelTool::new(tool.runtime.clone(), tool.event_tx.clone())
+                .invoke_typed(RuntimeRecurringToggleInput {
+                    recurring_id: Some(self.recurring_id),
+                })
+                .await?;
+        serialize_output(CognitionRuntimeRecurringCancelTool::tool_id(), output)
+    }
+}
+
+impl WorkflowRun {
+    async fn execute(self, tool: &CognitionRuntimeMutateTool) -> stasis::prelude::Result<Value> {
+        let output = CognitionRuntimeWorkflowRunTool::new(
             tool.runtime.clone(),
             tool.workflow_registry.clone(),
             tool.event_tx.clone(),
             tool.turn_scope.clone(),
         )
-        .invoke(json_obj([
-            ("server_id", opt_str(input.server_id)),
-            ("tool_name", opt_str(input.tool_name)),
-            ("input", input.input),
-            ("note", opt_str(input.note)),
-            ("queue", opt_str(input.queue)),
-        ]))
-        .await;
+        .invoke_typed(RuntimeWorkflowRunInput {
+            name: self.name,
+            strategy: self.strategy.unwrap_or_default(),
+            mode: self.mode.unwrap_or_else(|| "default".to_string()),
+            steps: self.steps,
+            on_failure: self.on_failure.unwrap_or_default(),
+            note: self.note,
+            queue: self.queue.unwrap_or_else(|| "default".to_string()),
+        })
+        .await?;
+        serialize_output(CognitionRuntimeWorkflowRunTool::tool_id(), output)
     }
-    if input
-        .script
-        .as_deref()
-        .is_some_and(|value| !value.trim().is_empty())
-        && input
-            .payload_ref
-            .as_deref()
-            .is_none_or(|value| value.trim().is_empty())
-    {
-        return CognitionGraphemePromoteToJobTool::new(
+}
+
+impl WorkflowSchedule {
+    async fn execute(self, tool: &CognitionRuntimeMutateTool) -> stasis::prelude::Result<Value> {
+        let output = CognitionRuntimeWorkflowScheduleTool::new(
             tool.runtime.clone(),
+            tool.workflow_registry.clone(),
             tool.event_tx.clone(),
             tool.turn_scope.clone(),
         )
-        .invoke(json_obj([
-            ("source", opt_str(input.script)),
-            ("queue", opt_str(input.queue)),
-            ("max_attempts", opt_u64(input.max_attempts)),
-        ]))
-        .await;
+        .invoke_typed(RuntimeWorkflowScheduleInput {
+            name: self.name,
+            strategy: self.strategy.unwrap_or_default(),
+            mode: self.mode.unwrap_or_else(|| "default".to_string()),
+            steps: self.steps,
+            on_failure: self.on_failure.unwrap_or_default(),
+            note: self.note,
+            queue: self.queue.unwrap_or_else(|| "default".to_string()),
+            cron_expr: Some(self.cron_expr),
+            timezone: self.timezone.unwrap_or_else(|| "UTC".to_string()),
+            recurring_id: None,
+            jitter_seconds: 0,
+            max_attempts: 1,
+            enabled: true,
+            start_immediately: false,
+            delivery: None,
+            feeds: None,
+        })
+        .await?;
+        serialize_output(CognitionRuntimeWorkflowScheduleTool::tool_id(), output)
     }
-    require(
-        input.job_type.as_deref(),
-        "cognition_runtime_mutate: job enqueue needs job_type and payload_ref, or script, or server_id+tool_name",
-    )?;
-    require(
-        input.payload_ref.as_deref(),
-        "cognition_runtime_mutate: job enqueue needs job_type and payload_ref, or script, or server_id+tool_name",
-    )?;
-    CognitionJobEnqueueTool::new(
-        tool.runtime.clone(),
-        tool.event_tx.clone(),
-        tool.turn_scope.clone(),
-    )
-    .invoke(json_obj([
-        ("job_type", opt_str(input.job_type)),
-        ("payload_ref", opt_str(input.payload_ref)),
-        ("note", opt_str(input.note)),
-    ]))
-    .await
 }
 
-async fn register_recurring(
-    tool: &CognitionRuntimeMutateTool,
-    input: RuntimeMutateInput,
-) -> stasis::prelude::Result<Value> {
-    if matches!(input.from, RuntimeFrom::LastRun) {
-        require(
-            input.cron_expr.as_deref(),
-            "cognition_runtime_mutate: last-run recurring register needs cron_expr",
-        )?;
-        return CognitionGraphemePromoteLastRunToRecurringTool::new(
+impl WorkflowCancel {
+    async fn execute(self, tool: &CognitionRuntimeMutateTool) -> stasis::prelude::Result<Value> {
+        let output = CognitionRuntimeWorkflowCancelTool::new(
             tool.runtime.clone(),
+            tool.workflow_registry.clone(),
             tool.event_tx.clone(),
-            tool.turn_scope.clone(),
         )
-        .invoke(json_obj([
-            ("cron_expr", opt_str(input.cron_expr)),
-            ("timezone", opt_str(input.timezone)),
-            ("queue", opt_str(input.queue)),
-            ("id", opt_str(input.recurring_id)),
-            ("jitter_seconds", opt_i64(input.jitter_seconds)),
-            ("max_attempts", opt_u64(input.max_attempts)),
-            ("enabled", opt_bool(input.enabled)),
-            ("start_immediately", opt_bool(input.start_immediately)),
-        ]))
-        .await;
-    }
-    if input
-        .script
-        .as_deref()
-        .is_some_and(|value| !value.trim().is_empty())
-        && input
-            .job_type
-            .as_deref()
-            .is_none_or(|value| value.trim().is_empty())
-    {
-        return CognitionGraphemePromoteToRecurringTool::new(
-            tool.runtime.clone(),
-            tool.event_tx.clone(),
-            tool.turn_scope.clone(),
-        )
-        .invoke(json_obj([
-            ("source", opt_str(input.script)),
-            ("cron_expr", opt_str(input.cron_expr)),
-            ("timezone", opt_str(input.timezone)),
-            ("queue", opt_str(input.queue)),
-            ("id", opt_str(input.recurring_id)),
-            ("jitter_seconds", opt_i64(input.jitter_seconds)),
-            ("max_attempts", opt_u64(input.max_attempts)),
-            ("enabled", opt_bool(input.enabled)),
-            ("start_immediately", opt_bool(input.start_immediately)),
-        ]))
-        .await;
-    }
-    CognitionRuntimeRecurringRegisterTool::new(
-        tool.runtime.clone(),
-        tool.event_tx.clone(),
-        tool.turn_scope.clone(),
-    )
-    .invoke(json_obj([
-        ("source", opt_str(input.script)),
-        ("job_type", opt_str(input.job_type)),
-        ("payload_template_ref", opt_str(input.payload_ref)),
-        ("cron_expr", opt_str(input.cron_expr)),
-        ("timezone", opt_str(input.timezone)),
-        ("queue", opt_str(input.queue)),
-        ("recurring_id", opt_str(input.recurring_id)),
-        ("jitter_seconds", opt_i64(input.jitter_seconds)),
-        ("max_attempts", opt_u64(input.max_attempts)),
-        ("enabled", opt_bool(input.enabled)),
-        ("start_immediately", opt_bool(input.start_immediately)),
-        ("delivery", input.delivery),
-        ("feeds", input.feeds),
-    ]))
-    .await
-}
-
-fn workflow_payload(input: &RuntimeMutateInput) -> Value {
-    json_obj([
-        ("name", opt_str(input.name.clone())),
-        ("strategy", opt_str(input.strategy.clone())),
-        ("mode", opt_str(input.mode.clone())),
-        ("steps", input.steps.clone()),
-        ("on_failure", opt_str(input.on_failure.clone())),
-        ("note", opt_str(input.note.clone())),
-        ("queue", opt_str(input.queue.clone())),
-        ("cron_expr", opt_str(input.cron_expr.clone())),
-        ("timezone", opt_str(input.timezone.clone())),
-    ])
-}
-
-fn require(value: Option<&str>, message: &str) -> stasis::prelude::Result<()> {
-    if value
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .is_some()
-    {
-        Ok(())
-    } else {
-        Err(StasisError::PortFailure(message.to_string()))
+        .invoke_typed(RuntimeWorkflowCancelInput {
+            workflow_id: Some(self.workflow_id),
+        })
+        .await?;
+        serialize_output(CognitionRuntimeWorkflowCancelTool::tool_id(), output)
     }
 }
 
-fn json_obj(fields: impl IntoIterator<Item = (&'static str, Option<Value>)>) -> Value {
-    let mut map = Map::new();
-    for (key, value) in fields {
-        if let Some(value) = value {
-            map.insert(key.to_string(), value);
+impl WorkflowPlan {
+    async fn execute(self, tool: &CognitionRuntimeMutateTool) -> stasis::prelude::Result<Value> {
+        let output = CognitionRuntimeWorkflowPlanTool::new(tool.event_tx.clone())
+            .invoke_typed(RuntimeWorkflowPlanInput {
+                goal: Some(self.goal),
+                context: self.context.map(WorkflowPlanContext::from_value),
+            })
+            .await?;
+        serialize_output(CognitionRuntimeWorkflowPlanTool::tool_id(), output)
+    }
+}
+
+fn present(value: Option<&str>) -> bool {
+    value.is_some_and(|value| !value.trim().is_empty())
+}
+
+fn type_schema<T: JsonSchema>(
+    tool: ToolId,
+    name: &'static str,
+    summary: &'static str,
+) -> RuntimeTypeSchema {
+    RuntimeTypeSchema {
+        name,
+        tool,
+        summary,
+        parameters: with_action_const(schema_object::<T>(), name),
+    }
+}
+
+fn schema_object<T: JsonSchema>() -> Value {
+    let mut root = serde_json::to_value(schemars::schema_for!(T)).expect("action schema");
+    if root.get("properties").is_some() {
+        return root;
+    }
+    let Some(reference) = root.get("$ref").and_then(Value::as_str).map(str::to_string) else {
+        return root;
+    };
+    let key = reference.trim_start_matches("#/definitions/").to_string();
+    let Some(mut definition) = root
+        .get("definitions")
+        .and_then(Value::as_object)
+        .and_then(|definitions| definitions.get(&key))
+        .cloned()
+    else {
+        return root;
+    };
+    if let Some(Value::Object(definitions)) = root.get_mut("definitions") {
+        definitions.remove(&key);
+        if !definitions.is_empty()
+            && let Some(object) = definition.as_object_mut()
+        {
+            object.insert("definitions".to_string(), Value::Object(definitions.clone()));
         }
     }
-    Value::Object(map)
+    definition
 }
 
-fn opt_str(value: Option<String>) -> Option<Value> {
-    value
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .map(Value::String)
-}
-
-fn opt_usize(value: Option<usize>) -> Option<Value> {
-    value.map(|value| json!(value))
-}
-
-fn opt_u64(value: Option<u64>) -> Option<Value> {
-    value.map(|value| json!(value))
-}
-
-fn opt_i64(value: Option<i64>) -> Option<Value> {
-    value.map(|value| json!(value))
-}
-
-fn opt_bool(value: Option<bool>) -> Option<Value> {
-    value.map(Value::Bool)
+fn with_action_const(mut schema: Value, action: &'static str) -> Value {
+    let properties = schema
+        .as_object_mut()
+        .map(|object| object.entry("properties").or_insert_with(|| json!({})));
+    if let Some(Value::Object(properties)) = properties {
+        properties.insert(
+            "action".to_string(),
+            json!({
+                "type": "string",
+                "const": action,
+                "description": format!("Pass {action}")
+            }),
+        );
+    }
+    match schema.get_mut("required") {
+        Some(Value::Array(required)) => {
+            if !required.iter().any(|value| value == "action") {
+                required.insert(0, json!("action"));
+            }
+        }
+        _ => {
+            schema
+                .as_object_mut()
+                .expect("object schema")
+                .insert("required".to_string(), json!(["action"]));
+        }
+    }
+    schema
 }
 
 #[cfg(test)]
@@ -652,22 +897,88 @@ mod tests {
     use super::*;
 
     #[test]
-    fn runtime_enums_are_snake_case() {
-        let query: RuntimeQueryInput = serde_json::from_value(json!({
-            "resource": "job",
-            "view": "status",
+    fn job_list_deserializes_from_action_only() {
+        let query: RuntimeQueryAction = serde_json::from_value(json!({ "action": "job.list" }))
+            .expect("job list");
+        match query {
+            RuntimeQueryAction::JobList(JobList {
+                state,
+                correlation_id,
+                limit,
+            }) => {
+                assert!(state.is_none());
+                assert!(correlation_id.is_none());
+                assert!(limit.is_none());
+            }
+            other => panic!("expected job.list, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn runtime_actions_carry_their_params() {
+        let query: RuntimeQueryAction = serde_json::from_value(json!({
+            "action": "job.status",
             "job_id": "j1"
         }))
         .expect("job status");
-        assert_eq!(query.resource, RuntimeResource::Job);
-        assert_eq!(query.view, RuntimeView::Status);
-        let mutate: RuntimeMutateInput = serde_json::from_value(json!({
-            "resource": "workflow",
-            "action": "plan",
+        match query {
+            RuntimeQueryAction::JobStatus(JobStatus { job_id }) => assert_eq!(job_id, "j1"),
+            other => panic!("expected job.status, got {other:?}"),
+        }
+        let mutate: RuntimeMutateAction = serde_json::from_value(json!({
+            "action": "workflow.plan",
             "goal": "digest csv"
         }))
         .expect("workflow plan");
-        assert_eq!(mutate.action, RuntimeAction::Plan);
-        assert_eq!(mutate.from, RuntimeFrom::Auto);
+        match mutate {
+            RuntimeMutateAction::WorkflowPlan(WorkflowPlan { goal, context }) => {
+                assert_eq!(goal, "digest csv");
+                assert!(context.is_none());
+            }
+            other => panic!("expected workflow.plan, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn advertised_schemas_are_action_enums_only() {
+        let query =
+            serde_json::to_value(schemars::schema_for!(RuntimeQueryAction)).expect("query");
+        let mutate =
+            serde_json::to_value(schemars::schema_for!(RuntimeMutateAction)).expect("mutate");
+        for schema in [&query, &mutate] {
+            let props = schema["properties"].as_object().expect("properties");
+            assert_eq!(props.len(), 1);
+            assert!(
+                props["action"]["enum"]
+                    .as_array()
+                    .is_some_and(|values| !values.is_empty())
+            );
+            assert_eq!(schema["additionalProperties"], true);
+        }
+        assert!(
+            query["properties"]["action"]["enum"]
+                .as_array()
+                .expect("query actions")
+                .iter()
+                .any(|value| value == "job.status")
+        );
+        assert!(
+            mutate["properties"]["action"]["enum"]
+                .as_array()
+                .expect("mutate actions")
+                .iter()
+                .any(|value| value == "job.enqueue")
+        );
+    }
+
+    #[test]
+    fn schema_catalog_comes_from_variant_types() {
+        let enqueue = runtime_type_schemas()
+            .into_iter()
+            .find(|entry| entry.name == "job.enqueue")
+            .expect("job.enqueue");
+        assert_eq!(enqueue.tool, MUTATE_ID);
+        assert!(enqueue.parameters["properties"]["script"].is_object());
+        assert_eq!(enqueue.parameters["properties"]["action"]["const"], "job.enqueue");
     }
 }

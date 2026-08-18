@@ -42,7 +42,8 @@ Source: `src/tool_bootstrap.rs`
 |--------|----------|
 | Store | `cognition_store_read` / `cognition_store_write` (`store=vault\|artifacts\|code\|scripts`) — [vault.md](vault.md), [artifacts.md](artifacts.md) |
 | Capability | `cognition_capability` (`op=find\|invoke`, `source=auto\|mcp\|grapheme`) — catalog, MCP, and Grapheme discover/run |
-| Runtime | `cognition_runtime_query` / `cognition_runtime_mutate` (`resource=job\|recurring\|workflow\|delivery`) |
+| Schema | `cognition_schema` (`domain` + `types=[...]`) — batched typed action parameter schemas |
+| Runtime | `cognition_runtime_query` / `cognition_runtime_mutate` (`action=job.list\|job.enqueue\|workflow.run\|…`) |
 | Calendar | `cognition_calendar_*` — [calendar.md](calendar.md) |
 | MCP | `cognition.mcp.*` — [mcp-gateway-setup.md](../mcp-gateway-setup.md) |
 | UI present | `cognition_ui_present` — emits `ui_artifact` on stream |

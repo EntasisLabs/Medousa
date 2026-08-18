@@ -260,7 +260,11 @@ pub fn host_bus_tool_names() -> HashSet<String> {
 
     push(
         &mut names,
-        &["cognition_runtime_query", "cognition_runtime_mutate"],
+        &[
+            "cognition_schema",
+            "cognition_runtime_query",
+            "cognition_runtime_mutate",
+        ],
     );
 
     push(
@@ -381,6 +385,7 @@ mod tests {
         assert!(names.contains("cognition_identity_remember"));
         assert!(names.contains("cognition_runtime_query"));
         assert!(names.contains("cognition_runtime_mutate"));
+        assert!(names.contains("cognition_schema"));
         assert!(names.contains("cognition_spawn_turn_worker"));
         assert!(names.contains("cognition_capability"));
         assert!(!names.contains("cognition_job_enqueue"));

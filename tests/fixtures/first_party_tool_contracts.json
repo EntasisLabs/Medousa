@@ -133,42 +133,13 @@
     {
       "registry": "coder_bound",
       "name": "cognition_capability",
-      "description": "Find or run a capability, MCP tool, or Grapheme module. op=find|invoke. source=auto|mcp|grapheme. find with module returns info and ops (detail=full default). invoke uses capability/query, server_id+tool_name, template, or script.",
+      "description": "Find or run a capability, MCP tool, or Grapheme module. op=find|invoke. source=auto|mcp|grapheme. Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "approval_granted": {
-            "type": "boolean"
-          },
-          "capability": {
-            "type": "string"
-          },
-          "detail": {
-            "enum": [
-              "full",
-              "summary"
-            ],
-            "type": "string"
-          },
-          "effect_class": {
-            "type": "string"
-          },
-          "input": {
-            "additionalProperties": true,
-            "type": "object"
-          },
           "intent": {
             "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
             "maxLength": 320,
-            "type": "string"
-          },
-          "limit": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "module": {
-            "type": "string"
-          },
-          "name": {
             "type": "string"
           },
           "op": {
@@ -178,40 +149,12 @@
             ],
             "type": "string"
           },
-          "params": {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          "prefix": {
-            "type": "string"
-          },
-          "query": {
-            "type": "string"
-          },
-          "script": {
-            "type": "string"
-          },
-          "server_id": {
-            "type": "string"
-          },
           "source": {
             "enum": [
               "auto",
               "grapheme",
               "mcp"
             ],
-            "type": "string"
-          },
-          "template": {
-            "type": "string"
-          },
-          "tool_name": {
-            "type": "string"
-          },
-          "try_fallbacks": {
-            "type": "boolean"
-          },
-          "turn_token": {
             "type": "string"
           }
         },
@@ -1561,131 +1504,33 @@
     {
       "registry": "coder_bound",
       "name": "cognition_runtime_mutate",
-      "description": "Enqueue, cancel, register, pause, run, schedule, or plan durable runtime work. resource=job|recurring|workflow. action=enqueue|cancel|register|pause|run|schedule|plan. script or server_id+tool_name select Grapheme/MCP promote.",
+      "description": "Mutate durable runtime work. action is a typed name (job.enqueue, workflow.run, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
           "action": {
             "enum": [
-              "cancel",
-              "enqueue",
-              "pause",
-              "plan",
-              "register",
-              "run",
-              "schedule"
+              "job.cancel",
+              "job.enqueue",
+              "recurring.cancel",
+              "recurring.pause",
+              "recurring.register",
+              "workflow.cancel",
+              "workflow.plan",
+              "workflow.run",
+              "workflow.schedule"
             ],
             "type": "string"
-          },
-          "context": {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          "cron_expr": {
-            "type": "string"
-          },
-          "delivery": {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "feeds": {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          "from": {
-            "enum": [
-              "auto",
-              "last_run"
-            ],
-            "type": "string"
-          },
-          "goal": {
-            "type": "string"
-          },
-          "input": {
-            "additionalProperties": true,
-            "type": "object"
           },
           "intent": {
             "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
             "maxLength": 320,
             "type": "string"
-          },
-          "jitter_seconds": {
-            "type": "integer"
-          },
-          "job_id": {
-            "type": "string"
-          },
-          "job_type": {
-            "type": "string"
-          },
-          "max_attempts": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "mode": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "note": {
-            "type": "string"
-          },
-          "on_failure": {
-            "type": "string"
-          },
-          "payload_ref": {
-            "type": "string"
-          },
-          "queue": {
-            "type": "string"
-          },
-          "recurring_id": {
-            "type": "string"
-          },
-          "resource": {
-            "enum": [
-              "delivery",
-              "job",
-              "recurring",
-              "workflow"
-            ],
-            "type": "string"
-          },
-          "script": {
-            "type": "string"
-          },
-          "server_id": {
-            "type": "string"
-          },
-          "start_immediately": {
-            "type": "boolean"
-          },
-          "steps": {
-            "items": true,
-            "type": "array"
-          },
-          "strategy": {
-            "type": "string"
-          },
-          "timezone": {
-            "type": "string"
-          },
-          "tool_name": {
-            "type": "string"
-          },
-          "workflow_id": {
-            "type": "string"
           }
         },
         "required": [
           "action",
-          "intent",
-          "resource"
+          "intent"
         ],
         "type": "object"
       },
@@ -1697,72 +1542,110 @@
     {
       "registry": "coder_bound",
       "name": "cognition_runtime_query",
-      "description": "Inspect jobs, recurring schedules, workflows, or delivery. resource=job|recurring|workflow|delivery. view=list|status|doctor|preview. job with job_id defaults to status.",
+      "description": "Inspect jobs, recurring, workflows, or delivery. action is a typed name (job.list, workflow.status, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "correlation_id": {
+          "action": {
+            "enum": [
+              "delivery.status",
+              "job.list",
+              "job.status",
+              "recurring.doctor",
+              "recurring.list",
+              "recurring.preview",
+              "workflow.status"
+            ],
             "type": "string"
           },
-          "count": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "cron_expr": {
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
             "type": "string"
-          },
-          "enabled_only": {
-            "type": "boolean"
+          }
+        },
+        "required": [
+          "action",
+          "intent"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:initial"
+      ]
+    },
+    {
+      "registry": "coder_bound",
+      "name": "cognition_schema",
+      "description": "Fetch typed action parameter schemas. `types` is a list — batch several actions in one call (read then execute). Omit `types` and set `domain` to list action names.",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "domain": {
+            "enum": [
+              "capability",
+              "runtime",
+              "store"
+            ],
+            "type": "string"
           },
           "intent": {
             "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
             "maxLength": 320,
             "type": "string"
           },
-          "job_id": {
-            "type": "string"
-          },
-          "limit": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "pending_limit": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "recurring_id": {
-            "type": "string"
-          },
-          "resource": {
-            "enum": [
-              "delivery",
-              "job",
-              "recurring",
-              "workflow"
-            ],
-            "type": "string"
-          },
-          "state": {
-            "type": "string"
-          },
-          "timezone": {
-            "type": "string"
-          },
-          "view": {
-            "enum": [
-              "doctor",
-              "list",
-              "preview",
-              "status"
-            ],
-            "type": "string"
-          },
-          "workflow_id": {
-            "type": "string"
+          "types": {
+            "items": {
+              "enum": [
+                "artifacts.delete",
+                "artifacts.list",
+                "artifacts.read",
+                "artifacts.search",
+                "artifacts.write",
+                "capability.find",
+                "capability.invoke",
+                "code.read",
+                "code.search",
+                "code.write",
+                "delivery.status",
+                "grapheme.find",
+                "grapheme.invoke",
+                "job.cancel",
+                "job.enqueue",
+                "job.list",
+                "job.status",
+                "mcp.find",
+                "mcp.invoke",
+                "recurring.cancel",
+                "recurring.doctor",
+                "recurring.list",
+                "recurring.pause",
+                "recurring.preview",
+                "recurring.register",
+                "scripts.list",
+                "scripts.read",
+                "scripts.search",
+                "scripts.write",
+                "vault.delete",
+                "vault.list",
+                "vault.move",
+                "vault.read",
+                "vault.search",
+                "vault.write",
+                "workflow.cancel",
+                "workflow.plan",
+                "workflow.run",
+                "workflow.schedule",
+                "workflow.status"
+              ],
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
-          "intent",
-          "resource"
+          "intent"
         ],
         "type": "object"
       },
@@ -1944,50 +1827,13 @@
     {
       "registry": "coder_bound",
       "name": "cognition_store_read",
-      "description": "Read or search vault notes, HTML artifacts, code, or saved Grapheme scripts. store=vault|artifacts|code|scripts. op=list|read|search. search with path = in-file match; without path = corpus search.",
+      "description": "Read or search vault notes, HTML artifacts, code, or saved Grapheme scripts. store=vault|artifacts|code|scripts. op=list|read|search. Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "byte_end": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "byte_start": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "context_lines": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "facet": {
-            "type": "string"
-          },
           "intent": {
             "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
             "maxLength": 320,
-            "type": "string"
-          },
-          "limit": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "line_end": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "line_start": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "max_chars": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "max_results": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "module": {
             "type": "string"
           },
           "op": {
@@ -1998,24 +1844,6 @@
             ],
             "type": "string"
           },
-          "path": {
-            "type": "string"
-          },
-          "prefix": {
-            "type": "string"
-          },
-          "query": {
-            "type": "string"
-          },
-          "root": {
-            "type": "string"
-          },
-          "semantic_tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "store": {
             "enum": [
               "artifacts",
@@ -2023,12 +1851,6 @@
               "scripts",
               "vault"
             ],
-            "type": "string"
-          },
-          "tag": {
-            "type": "string"
-          },
-          "tag_prefix": {
             "type": "string"
           }
         },
@@ -2048,49 +1870,13 @@
     {
       "registry": "coder_bound",
       "name": "cognition_store_write",
-      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. store=vault|artifacts|code|scripts. op=write|delete|move. Code write uses content or find/replace plus expected_sha256.",
+      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. store=vault|artifacts|code|scripts. op=write|delete|move. Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "artifact_id": {
-            "type": "string"
-          },
-          "auto_workshop_tags": {
-            "type": "boolean"
-          },
-          "content": {
-            "type": "string"
-          },
-          "expected_sha256": {
-            "type": "string"
-          },
-          "find": {
-            "type": "string"
-          },
-          "height": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "id": {
-            "type": "string"
-          },
-          "if_match": {
-            "type": "string"
-          },
-          "if_match_hash64": {
-            "type": "string"
-          },
           "intent": {
             "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
             "maxLength": 320,
-            "type": "string"
-          },
-          "modules": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "name": {
             "type": "string"
           },
           "op": {
@@ -2101,27 +1887,6 @@
             ],
             "type": "string"
           },
-          "path": {
-            "type": "string"
-          },
-          "presentation": {
-            "type": "string"
-          },
-          "replace": {
-            "type": "string"
-          },
-          "root": {
-            "type": "string"
-          },
-          "script_intent": {
-            "type": "string"
-          },
-          "semantic_tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "store": {
             "enum": [
               "artifacts",
@@ -2129,18 +1894,6 @@
               "scripts",
               "vault"
             ],
-            "type": "string"
-          },
-          "tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "title": {
-            "type": "string"
-          },
-          "to_path": {
             "type": "string"
           }
         },
@@ -2941,60 +2694,15 @@
     {
       "registry": "general_runtime",
       "name": "cognition_capability",
-      "description": "Find or run a capability, MCP tool, or Grapheme module. op=find|invoke. source=auto|mcp|grapheme. find with module returns info and ops (detail=full default). invoke uses capability/query, server_id+tool_name, template, or script.",
+      "description": "Find or run a capability, MCP tool, or Grapheme module. op=find|invoke. source=auto|mcp|grapheme. Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "approval_granted": {
-            "type": "boolean"
-          },
-          "capability": {
-            "type": "string"
-          },
-          "detail": {
-            "enum": [
-              "full",
-              "summary"
-            ],
-            "type": "string"
-          },
-          "effect_class": {
-            "type": "string"
-          },
-          "input": {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          "limit": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "module": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
           "op": {
             "enum": [
               "find",
               "invoke"
             ],
-            "type": "string"
-          },
-          "params": {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          "prefix": {
-            "type": "string"
-          },
-          "query": {
-            "type": "string"
-          },
-          "script": {
-            "type": "string"
-          },
-          "server_id": {
             "type": "string"
           },
           "source": {
@@ -3003,18 +2711,6 @@
               "grapheme",
               "mcp"
             ],
-            "type": "string"
-          },
-          "template": {
-            "type": "string"
-          },
-          "tool_name": {
-            "type": "string"
-          },
-          "try_fallbacks": {
-            "type": "boolean"
-          },
-          "turn_token": {
             "type": "string"
           }
         },
@@ -5176,125 +4872,27 @@
     {
       "registry": "general_runtime",
       "name": "cognition_runtime_mutate",
-      "description": "Enqueue, cancel, register, pause, run, schedule, or plan durable runtime work. resource=job|recurring|workflow. action=enqueue|cancel|register|pause|run|schedule|plan. script or server_id+tool_name select Grapheme/MCP promote.",
+      "description": "Mutate durable runtime work. action is a typed name (job.enqueue, workflow.run, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
           "action": {
             "enum": [
-              "cancel",
-              "enqueue",
-              "pause",
-              "plan",
-              "register",
-              "run",
-              "schedule"
+              "job.cancel",
+              "job.enqueue",
+              "recurring.cancel",
+              "recurring.pause",
+              "recurring.register",
+              "workflow.cancel",
+              "workflow.plan",
+              "workflow.run",
+              "workflow.schedule"
             ],
-            "type": "string"
-          },
-          "context": {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          "cron_expr": {
-            "type": "string"
-          },
-          "delivery": {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "feeds": {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          "from": {
-            "enum": [
-              "auto",
-              "last_run"
-            ],
-            "type": "string"
-          },
-          "goal": {
-            "type": "string"
-          },
-          "input": {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          "jitter_seconds": {
-            "type": "integer"
-          },
-          "job_id": {
-            "type": "string"
-          },
-          "job_type": {
-            "type": "string"
-          },
-          "max_attempts": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "mode": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "note": {
-            "type": "string"
-          },
-          "on_failure": {
-            "type": "string"
-          },
-          "payload_ref": {
-            "type": "string"
-          },
-          "queue": {
-            "type": "string"
-          },
-          "recurring_id": {
-            "type": "string"
-          },
-          "resource": {
-            "enum": [
-              "delivery",
-              "job",
-              "recurring",
-              "workflow"
-            ],
-            "type": "string"
-          },
-          "script": {
-            "type": "string"
-          },
-          "server_id": {
-            "type": "string"
-          },
-          "start_immediately": {
-            "type": "boolean"
-          },
-          "steps": {
-            "items": true,
-            "type": "array"
-          },
-          "strategy": {
-            "type": "string"
-          },
-          "timezone": {
-            "type": "string"
-          },
-          "tool_name": {
-            "type": "string"
-          },
-          "workflow_id": {
             "type": "string"
           }
         },
         "required": [
-          "action",
-          "resource"
+          "action"
         ],
         "type": "object"
       },
@@ -5314,66 +4912,25 @@
     {
       "registry": "general_runtime",
       "name": "cognition_runtime_query",
-      "description": "Inspect jobs, recurring schedules, workflows, or delivery. resource=job|recurring|workflow|delivery. view=list|status|doctor|preview. job with job_id defaults to status.",
+      "description": "Inspect jobs, recurring, workflows, or delivery. action is a typed name (job.list, workflow.status, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "correlation_id": {
-            "type": "string"
-          },
-          "count": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "cron_expr": {
-            "type": "string"
-          },
-          "enabled_only": {
-            "type": "boolean"
-          },
-          "job_id": {
-            "type": "string"
-          },
-          "limit": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "pending_limit": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "recurring_id": {
-            "type": "string"
-          },
-          "resource": {
+          "action": {
             "enum": [
-              "delivery",
-              "job",
-              "recurring",
-              "workflow"
+              "delivery.status",
+              "job.list",
+              "job.status",
+              "recurring.doctor",
+              "recurring.list",
+              "recurring.preview",
+              "workflow.status"
             ],
-            "type": "string"
-          },
-          "state": {
-            "type": "string"
-          },
-          "timezone": {
-            "type": "string"
-          },
-          "view": {
-            "enum": [
-              "doctor",
-              "list",
-              "preview",
-              "status"
-            ],
-            "type": "string"
-          },
-          "workflow_id": {
             "type": "string"
           }
         },
         "required": [
-          "resource"
+          "action"
         ],
         "type": "object"
       },
@@ -5387,6 +4944,88 @@
         "workshop:authorized:memory_context",
         "workshop:authorized:research",
         "workshop:bootstrap",
+        "workshop:domain:runtime"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_schema",
+      "description": "Fetch typed action parameter schemas. `types` is a list — batch several actions in one call (read then execute). Omit `types` and set `domain` to list action names.",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "domain": {
+            "enum": [
+              "capability",
+              "runtime",
+              "store"
+            ],
+            "type": "string"
+          },
+          "types": {
+            "items": {
+              "enum": [
+                "artifacts.delete",
+                "artifacts.list",
+                "artifacts.read",
+                "artifacts.search",
+                "artifacts.write",
+                "capability.find",
+                "capability.invoke",
+                "code.read",
+                "code.search",
+                "code.write",
+                "delivery.status",
+                "grapheme.find",
+                "grapheme.invoke",
+                "job.cancel",
+                "job.enqueue",
+                "job.list",
+                "job.status",
+                "mcp.find",
+                "mcp.invoke",
+                "recurring.cancel",
+                "recurring.doctor",
+                "recurring.list",
+                "recurring.pause",
+                "recurring.preview",
+                "recurring.register",
+                "scripts.list",
+                "scripts.read",
+                "scripts.search",
+                "scripts.write",
+                "vault.delete",
+                "vault.list",
+                "vault.move",
+                "vault.read",
+                "vault.search",
+                "vault.write",
+                "workflow.cancel",
+                "workflow.plan",
+                "workflow.run",
+                "workflow.schedule",
+                "workflow.status"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:bootstrap",
+        "general:domain:catalog",
+        "general:domain:runtime",
+        "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
+        "workshop:authorized:research",
+        "workshop:bootstrap",
+        "workshop:domain:discover",
+        "workshop:domain:execute",
         "workshop:domain:runtime"
       ]
     },
@@ -5701,47 +5340,10 @@
     {
       "registry": "general_runtime",
       "name": "cognition_store_read",
-      "description": "Read or search vault notes, HTML artifacts, code, or saved Grapheme scripts. store=vault|artifacts|code|scripts. op=list|read|search. search with path = in-file match; without path = corpus search.",
+      "description": "Read or search vault notes, HTML artifacts, code, or saved Grapheme scripts. store=vault|artifacts|code|scripts. op=list|read|search. Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "byte_end": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "byte_start": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "context_lines": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "facet": {
-            "type": "string"
-          },
-          "limit": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "line_end": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "line_start": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "max_chars": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "max_results": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "module": {
-            "type": "string"
-          },
           "op": {
             "enum": [
               "list",
@@ -5750,24 +5352,6 @@
             ],
             "type": "string"
           },
-          "path": {
-            "type": "string"
-          },
-          "prefix": {
-            "type": "string"
-          },
-          "query": {
-            "type": "string"
-          },
-          "root": {
-            "type": "string"
-          },
-          "semantic_tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "store": {
             "enum": [
               "artifacts",
@@ -5775,12 +5359,6 @@
               "scripts",
               "vault"
             ],
-            "type": "string"
-          },
-          "tag": {
-            "type": "string"
-          },
-          "tag_prefix": {
             "type": "string"
           }
         },
@@ -5811,46 +5389,10 @@
     {
       "registry": "general_runtime",
       "name": "cognition_store_write",
-      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. store=vault|artifacts|code|scripts. op=write|delete|move. Code write uses content or find/replace plus expected_sha256.",
+      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. store=vault|artifacts|code|scripts. op=write|delete|move. Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "artifact_id": {
-            "type": "string"
-          },
-          "auto_workshop_tags": {
-            "type": "boolean"
-          },
-          "content": {
-            "type": "string"
-          },
-          "expected_sha256": {
-            "type": "string"
-          },
-          "find": {
-            "type": "string"
-          },
-          "height": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "id": {
-            "type": "string"
-          },
-          "if_match": {
-            "type": "string"
-          },
-          "if_match_hash64": {
-            "type": "string"
-          },
-          "modules": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "name": {
-            "type": "string"
-          },
           "op": {
             "enum": [
               "delete",
@@ -5859,27 +5401,6 @@
             ],
             "type": "string"
           },
-          "path": {
-            "type": "string"
-          },
-          "presentation": {
-            "type": "string"
-          },
-          "replace": {
-            "type": "string"
-          },
-          "root": {
-            "type": "string"
-          },
-          "script_intent": {
-            "type": "string"
-          },
-          "semantic_tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "store": {
             "enum": [
               "artifacts",
@@ -5887,18 +5408,6 @@
               "scripts",
               "vault"
             ],
-            "type": "string"
-          },
-          "tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "title": {
-            "type": "string"
-          },
-          "to_path": {
             "type": "string"
           }
         },

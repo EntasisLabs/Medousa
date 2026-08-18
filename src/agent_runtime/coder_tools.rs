@@ -3109,6 +3109,7 @@ mod tests {
                 Tool::new("cognition_memory_store"),
                 Tool::new("cognition_web_search"),
                 Tool::new("cognition_capability"),
+                Tool::new("cognition_schema"),
                 Tool::new("cognition_runtime_query"),
                 Tool::new("cognition_runtime_mutate"),
                 Tool::new("cognition_runtime_jobs_cancel"),
@@ -3390,7 +3391,7 @@ mod tests {
         );
         let tools = registry.list_tools().await.expect("list");
         assert!(
-            registry.visible_tools.lock().expect("visible tools").len() <= 26,
+            registry.visible_tools.lock().expect("visible tools").len() <= 27,
             "Coder bootstrap schema must remain intentionally bounded"
         );
         for memory_tool in super::super::coder_memory::CODER_MEMORY_TOOL_NAMES {
@@ -3441,6 +3442,11 @@ mod tests {
             tools
                 .iter()
                 .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_CAPABILITY)
+        );
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_SCHEMA)
         );
         assert!(
             tools

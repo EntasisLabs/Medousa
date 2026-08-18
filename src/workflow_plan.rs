@@ -233,7 +233,7 @@ fn build_csv_digest_workflow(
             tool_name: "send_message".to_string(),
             args: json!({
                 "chat_id": context_telegram_chat(context),
-                "text": "CSV digest complete for {{workflow}} — see step output in cognition_runtime_query resource=workflow."
+                "text": "CSV digest complete for {{workflow}} — see step output in cognition_runtime_query action=workflow.status."
             }),
             effect_class: Some("external_side_effect".to_string()),
         });
@@ -371,7 +371,7 @@ pub fn plan_workflow_from_goal(request: &WorkflowPlanRequest) -> WorkflowPlanRes
                 "params": { "url": url }
             })),
             notes: vec![
-                "HTTP poll template suggested; cognition_runtime_mutate resource=workflow action=schedule if recurring monitoring is intended."
+                "HTTP poll template suggested; cognition_runtime_mutate action=workflow.schedule if recurring monitoring is intended."
                     .to_string(),
             ],
             assumptions: vec![format!("Poll URL placeholder set to '{url}'.")],
@@ -393,7 +393,7 @@ pub fn plan_workflow_from_goal(request: &WorkflowPlanRequest) -> WorkflowPlanRes
             suggested_tool_input: None,
             notes: vec![
                 "Multi-step CSV digest workflow with optional Telegram notify step.".to_string(),
-                "Call cognition_runtime_mutate resource=workflow action=run or action=schedule."
+                "Call cognition_runtime_mutate action=workflow.run or action=workflow.schedule."
                     .to_string(),
             ],
             assumptions,

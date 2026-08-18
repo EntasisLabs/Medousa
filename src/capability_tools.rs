@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use schemars::JsonSchema;
+use schemars::schema::Schema;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use stasis::application::orchestration::tool_registry::StasisTool;
@@ -15,6 +16,7 @@ use crate::events::TuiEvent;
 use crate::grapheme_sttp_compaction::GraphemeCompactionModelTarget;
 use crate::mcp_gateway_client::McpGatewayClient;
 use crate::public_api::COGNITION_CAPABILITY;
+use crate::schema_api::{advertised_object_schema, string_enum_schema};
 use crate::tools::{
     CognitionCapabilityListTool, CognitionCapabilityResolveTool, CognitionCapabilitySearchTool,
     CognitionGraphemeExamplesTool, CognitionGraphemeModulesInfoTool,
@@ -25,14 +27,14 @@ use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
 
 const CAPABILITY_ID: ToolId = ToolId::new(COGNITION_CAPABILITY);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum CapabilityOp {
     Find,
     Invoke,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum CapabilitySourceKind {
     #[default]
@@ -41,7 +43,7 @@ enum CapabilitySourceKind {
     Grapheme,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum CapabilityDetail {
     Summary,
@@ -49,7 +51,7 @@ enum CapabilityDetail {
     Full,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize)]
 pub struct CapabilityInput {
     op: CapabilityOp,
     #[serde(default)]
@@ -57,59 +59,54 @@ pub struct CapabilityInput {
     #[serde(default)]
     detail: CapabilityDetail,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     query: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     capability: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     module: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     template: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     server_id: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     tool_name: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     script: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     prefix: Option<String>,
     #[serde(default)]
-    #[schemars(with = "usize", skip_serializing_if = "Option::is_none")]
     limit: Option<usize>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     effect_class: Option<String>,
     #[serde(default)]
-    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
     try_fallbacks: Option<bool>,
     #[serde(default)]
-    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
     approval_granted: Option<bool>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     turn_token: Option<String>,
     #[serde(default)]
-    #[schemars(
-        with = "serde_json::Map<String, Value>",
-        skip_serializing_if = "Option::is_none"
-    )]
     input: Option<Value>,
     #[serde(default)]
-    #[schemars(
-        with = "serde_json::Map<String, Value>",
-        skip_serializing_if = "Option::is_none"
-    )]
     params: Option<Value>,
+}
+
+impl JsonSchema for CapabilityInput {
+    fn schema_name() -> String {
+        "CapabilityInput".to_string()
+    }
+
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        advertised_object_schema(&[
+            ("op", string_enum_schema(&["find", "invoke"]), true),
+            (
+                "source",
+                string_enum_schema(&["auto", "mcp", "grapheme"]),
+                false,
+            ),
+        ])
+    }
 }
 
 pub struct CognitionCapabilityTool {
@@ -147,7 +144,7 @@ pub fn register_capability_tools(
 
 #[medousa_tool(id = CAPABILITY_ID)]
 impl CognitionCapabilityTool {
-    /// Find or run a capability, MCP tool, or Grapheme module. op=find|invoke. source=auto|mcp|grapheme. find with module returns info and ops (detail=full default). invoke uses capability/query, server_id+tool_name, template, or script.
+    /// Find or run a capability, MCP tool, or Grapheme module. op=find|invoke. source=auto|mcp|grapheme. Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(&self, input: CapabilityInput) -> stasis::prelude::Result<ExternalJson> {
         let value = dispatch(self, input).await?;
         Ok(ExternalJson::new(value))
@@ -428,5 +425,15 @@ mod tests {
         .expect("mcp invoke");
         assert_eq!(invoke.op, CapabilityOp::Invoke);
         assert_eq!(invoke.source, CapabilitySourceKind::Mcp);
+    }
+
+    #[test]
+    fn advertised_schema_is_op_and_source_only() {
+        let schema = serde_json::to_value(schemars::schema_for!(CapabilityInput)).expect("schema");
+        let props = schema["properties"].as_object().expect("properties");
+        assert_eq!(props.len(), 2);
+        assert!(props.contains_key("op"));
+        assert!(props.contains_key("source"));
+        assert_eq!(schema["additionalProperties"], true);
     }
 }

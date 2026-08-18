@@ -40,6 +40,12 @@ const COGNITION_WEB_SEARCH_ID: ToolId = ToolId::new("cognition_web_search");
 #[serde(transparent)]
 pub struct BridgeObject(Value);
 
+impl BridgeObject {
+    pub(crate) fn from_value(value: Value) -> Self {
+        Self(value)
+    }
+}
+
 impl JsonSchema for BridgeObject {
     fn schema_name() -> String {
         "BridgeObject".to_string()
@@ -704,7 +710,7 @@ pub struct CapabilityInvokeOutput {
 #[medousa_tool(id = COGNITION_CAPABILITY_INVOKE_ID)]
 impl CognitionCapabilityInvokeTool {
     /// Resolve a capability intent and execute the best available binding in one call. Returns a policy receipt with binding_used, decision, result, and fallback_available.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: CapabilityInvokeInput,
     ) -> stasis::prelude::Result<CapabilityInvokeOutput> {
@@ -841,21 +847,21 @@ fn default_mcp_step_id() -> String {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct McpPromoteToJobInput {
     #[schemars(required, with = "String")]
-    server_id: Option<String>,
+    pub(crate) server_id: Option<String>,
     #[schemars(required, with = "String")]
-    tool_name: Option<String>,
+    pub(crate) tool_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "BridgeObject", skip_serializing_if = "Option::is_none")]
-    input: Option<BridgeObject>,
+    pub(crate) input: Option<BridgeObject>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    note: Option<String>,
+    pub(crate) note: Option<String>,
     #[serde(default = "default_bridge_queue")]
     #[schemars(default = "default_bridge_queue")]
-    queue: String,
+    pub(crate) queue: String,
     #[serde(default = "default_mcp_step_id")]
     #[schemars(default = "default_mcp_step_id")]
-    step_id: String,
+    pub(crate) step_id: String,
 }
 
 #[derive(Debug)]
@@ -918,7 +924,7 @@ pub struct McpPromoteToJobOutput {
 #[medousa_tool(id = COGNITION_MCP_PROMOTE_TO_JOB_ID)]
 impl CognitionMcpPromoteToJobTool {
     /// Promote a successful MCP invoke into a durable sequential workflow job with one MCP step.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: McpPromoteToJobInput,
     ) -> stasis::prelude::Result<McpPromoteToJobOutput> {
@@ -1091,7 +1097,7 @@ pub enum GraphemeTemplateRunOutput {
 #[medousa_tool(id = COGNITION_GRAPHEME_TEMPLATE_RUN_ID)]
 impl CognitionGraphemeTemplateRunTool {
     /// Run a preset Grapheme workflow template. Supported templates: research_report, http_poll, csv_digest.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: GraphemeTemplateRunInput,
     ) -> stasis::prelude::Result<GraphemeTemplateRunOutput> {
@@ -1290,7 +1296,7 @@ pub enum WebSearchOutput {
 #[medousa_tool(id = COGNITION_WEB_SEARCH_ID)]
 impl CognitionWebSearchTool {
     /// Search the public web with one call. Uses configured provider preference and binding fallbacks (web.<provider>, then websearch.search). For deep reports use mode=research_report.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: WebSearchInput,
     ) -> stasis::prelude::Result<WebSearchOutput> {

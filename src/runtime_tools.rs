@@ -271,14 +271,14 @@ pub struct RuntimeJobsListInput {
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    state: CompatOption<String>,
+    pub(crate) state: CompatOption<String>,
     /// Optional correlation_id filter (exact match)
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    correlation_id: CompatOption<String>,
+    pub(crate) correlation_id: CompatOption<String>,
     /// Max jobs to return (1-100, default 20)
     #[serde(default)]
     #[schemars(
@@ -286,7 +286,7 @@ pub struct RuntimeJobsListInput {
         range(min = 1, max = 100),
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    limit: CompatOption<usize>,
+    pub(crate) limit: CompatOption<usize>,
 }
 
 #[derive(Debug)]
@@ -333,7 +333,7 @@ pub struct RuntimeJobsListOutput {
 #[medousa_tool(id = COGNITION_RUNTIME_JOBS_LIST_ID)]
 impl CognitionRuntimeJobsListTool {
     /// List runtime jobs with optional state and correlation_id filters. Defaults to enqueued and running jobs.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: RuntimeJobsListInput,
     ) -> stasis::prelude::Result<RuntimeJobsListOutput> {
@@ -392,7 +392,7 @@ impl CognitionRuntimeJobsCancelTool {
 pub struct RuntimeJobsCancelInput {
     /// Runtime job identifier
     #[schemars(required, with = "String")]
-    job_id: Option<String>,
+    pub(crate) job_id: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for RuntimeJobsCancelInput {
@@ -434,7 +434,7 @@ pub enum RuntimeJobsCancelOutput {
 #[medousa_tool(id = COGNITION_RUNTIME_JOBS_CANCEL_ID)]
 impl CognitionRuntimeJobsCancelTool {
     /// Cancel a pending runtime job (enqueued or leased).
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: RuntimeJobsCancelInput,
     ) -> stasis::prelude::Result<RuntimeJobsCancelOutput> {
@@ -498,7 +498,7 @@ impl CognitionRuntimeRecurringListTool {
 pub struct RuntimeRecurringListInput {
     /// When true, return only enabled schedules
     #[schemars(default)]
-    enabled_only: bool,
+    pub(crate) enabled_only: bool,
 }
 
 impl<'de> Deserialize<'de> for RuntimeRecurringListInput {
@@ -528,7 +528,7 @@ pub struct RuntimeRecurringListOutput {
 #[medousa_tool(id = COGNITION_RUNTIME_RECURRING_LIST_ID)]
 impl CognitionRuntimeRecurringListTool {
     /// List registered recurring job definitions with optional channel delivery bindings.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: RuntimeRecurringListInput,
     ) -> stasis::prelude::Result<RuntimeRecurringListOutput> {
@@ -571,7 +571,7 @@ pub struct RuntimeRecurringDoctorInput {
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    recurring_id: CompatOption<String>,
+    pub(crate) recurring_id: CompatOption<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -623,7 +623,7 @@ pub struct RuntimeRecurringDoctorOutput {
 #[medousa_tool(id = COGNITION_RUNTIME_RECURRING_DOCTOR_ID)]
 impl CognitionRuntimeRecurringDoctorTool {
     /// Diagnose recurring schedules: cron, next run, enabled state, and channel delivery bindings.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: RuntimeRecurringDoctorInput,
     ) -> stasis::prelude::Result<RuntimeRecurringDoctorOutput> {
@@ -1144,7 +1144,7 @@ impl CognitionRuntimeRecurringPauseTool {
 pub struct RuntimeRecurringToggleInput {
     /// Recurring definition id
     #[schemars(required, with = "String")]
-    recurring_id: Option<String>,
+    pub(crate) recurring_id: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for RuntimeRecurringToggleInput {
@@ -1174,7 +1174,7 @@ pub struct RuntimeRecurringToggleOutput {
 #[medousa_tool(id = COGNITION_RUNTIME_RECURRING_PAUSE_ID)]
 impl CognitionRuntimeRecurringPauseTool {
     /// Pause a recurring schedule by setting enabled=false.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: RuntimeRecurringToggleInput,
     ) -> stasis::prelude::Result<RuntimeRecurringToggleOutput> {
@@ -1208,7 +1208,7 @@ impl CognitionRuntimeRecurringCancelTool {
 #[medousa_tool(id = COGNITION_RUNTIME_RECURRING_CANCEL_ID)]
 impl CognitionRuntimeRecurringCancelTool {
     /// Disable a recurring schedule (soft cancel). The definition remains in the registry with enabled=false.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: RuntimeRecurringToggleInput,
     ) -> stasis::prelude::Result<RuntimeRecurringToggleOutput> {
@@ -1308,7 +1308,7 @@ pub struct RuntimeDeliveryStatusInput {
         range(min = 1, max = 50),
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    pending_limit: CompatOption<usize>,
+    pub(crate) pending_limit: CompatOption<usize>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1331,7 +1331,7 @@ pub struct RuntimeDeliveryStatusOutput {
 #[medousa_tool(id = COGNITION_RUNTIME_DELIVERY_STATUS_ID)]
 impl CognitionRuntimeDeliveryStatusTool {
     /// Summarize runtime queue, outbox, and recurring workload counts. Includes pending outbox event previews when available.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: RuntimeDeliveryStatusInput,
     ) -> stasis::prelude::Result<RuntimeDeliveryStatusOutput> {
@@ -1517,24 +1517,24 @@ pub struct RuntimeWorkflowRunInput {
     /// Optional human-readable workflow name
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    name: Option<String>,
+    pub(crate) name: Option<String>,
     #[serde(default)]
     #[schemars(default)]
-    strategy: WorkflowStrategyInput,
+    pub(crate) strategy: WorkflowStrategyInput,
     #[serde(default = "default_workflow_mode")]
     #[schemars(default = "default_workflow_mode")]
-    mode: String,
+    pub(crate) mode: String,
     /// Ordered workflow steps (grapheme, prompt, or mcp)
-    steps: CompatibleWorkflowSteps,
+    pub(crate) steps: CompatibleWorkflowSteps,
     #[serde(default)]
     #[schemars(default)]
-    on_failure: WorkflowFailureInput,
+    pub(crate) on_failure: WorkflowFailureInput,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    note: Option<String>,
+    pub(crate) note: Option<String>,
     #[serde(default = "default_runtime_queue")]
     #[schemars(default = "default_runtime_queue")]
-    queue: String,
+    pub(crate) queue: String,
 }
 
 #[derive(Debug)]
@@ -1611,7 +1611,7 @@ pub enum RuntimeWorkflowRunOutput {
 #[medousa_tool(id = COGNITION_RUNTIME_WORKFLOW_RUN_ID)]
 impl CognitionRuntimeWorkflowRunTool {
     /// Execute a declarative multi-step workflow now. Strategies: sequential (default), concurrent (parallel read-only steps), handoff (sequential with $handoff.context).
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: RuntimeWorkflowRunInput,
     ) -> stasis::prelude::Result<RuntimeWorkflowRunOutput> {
@@ -1720,55 +1720,55 @@ impl CognitionRuntimeWorkflowScheduleTool {
 pub struct RuntimeWorkflowScheduleInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    name: Option<String>,
+    pub(crate) name: Option<String>,
     #[serde(default)]
     #[schemars(default)]
-    strategy: WorkflowStrategyInput,
+    pub(crate) strategy: WorkflowStrategyInput,
     #[serde(default = "default_workflow_mode")]
     #[schemars(default = "default_workflow_mode")]
-    mode: String,
-    steps: CompatibleWorkflowSteps,
+    pub(crate) mode: String,
+    pub(crate) steps: CompatibleWorkflowSteps,
     #[serde(default)]
     #[schemars(default)]
-    on_failure: WorkflowFailureInput,
+    pub(crate) on_failure: WorkflowFailureInput,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    note: Option<String>,
+    pub(crate) note: Option<String>,
     #[serde(default = "default_runtime_queue")]
     #[schemars(default = "default_runtime_queue")]
-    queue: String,
+    pub(crate) queue: String,
     /// 7-field cron: sec min hour day-of-month month day-of-week year (e.g. every 4h: 0 0 */4 * * * *)
     #[schemars(required, with = "String")]
-    cron_expr: Option<String>,
+    pub(crate) cron_expr: Option<String>,
     #[serde(default = "default_runtime_timezone")]
     #[schemars(default = "default_runtime_timezone")]
-    timezone: String,
+    pub(crate) timezone: String,
     #[serde(default, alias = "id", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    recurring_id: Option<String>,
+    pub(crate) recurring_id: Option<String>,
     #[serde(default)]
     #[schemars(default = "default_zero_i64")]
-    jitter_seconds: i64,
+    pub(crate) jitter_seconds: i64,
     #[serde(default = "default_one_u64")]
     #[schemars(with = "i64", default = "default_one_i64")]
-    max_attempts: u64,
+    pub(crate) max_attempts: u64,
     #[serde(default = "default_true")]
     #[schemars(default = "default_true")]
-    enabled: bool,
+    pub(crate) enabled: bool,
     #[serde(default)]
     #[schemars(default = "default_false")]
-    start_immediately: bool,
+    pub(crate) start_immediately: bool,
     /// Where to push each successful run (independent of current UI channel). 7-field cron required separately.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         with = "RecurringDeliverySpec",
         skip_serializing_if = "Option::is_none"
     )]
-    delivery: Option<RecurringDeliverySpec>,
+    pub(crate) delivery: Option<RecurringDeliverySpec>,
     /// Environment feed ids to publish each materialized run terminal event.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "RecurringFeedSpec", skip_serializing_if = "Option::is_none")]
-    feeds: Option<RecurringFeedSpec>,
+    pub(crate) feeds: Option<RecurringFeedSpec>,
 }
 
 #[derive(Debug)]
@@ -1873,7 +1873,7 @@ pub enum RuntimeWorkflowScheduleOutput {
 #[medousa_tool(id = COGNITION_RUNTIME_WORKFLOW_SCHEDULE_ID)]
 impl CognitionRuntimeWorkflowScheduleTool {
     /// Register a recurring schedule for a declarative workflow. Requires scheduled lane; grapheme steps are preflight-validated.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: RuntimeWorkflowScheduleInput,
     ) -> stasis::prelude::Result<RuntimeWorkflowScheduleOutput> {
@@ -2046,7 +2046,7 @@ impl CognitionRuntimeWorkflowStatusTool {
 pub struct RuntimeWorkflowStatusInput {
     /// Workflow identifier
     #[schemars(required, with = "String")]
-    workflow_id: Option<String>,
+    pub(crate) workflow_id: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for RuntimeWorkflowStatusInput {
@@ -2116,7 +2116,7 @@ pub enum RuntimeWorkflowStatusOutput {
 #[medousa_tool(id = COGNITION_RUNTIME_WORKFLOW_STATUS_ID)]
 impl CognitionRuntimeWorkflowStatusTool {
     /// Aggregate status for a workflow by workflow_id.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: RuntimeWorkflowStatusInput,
     ) -> stasis::prelude::Result<RuntimeWorkflowStatusOutput> {
@@ -2190,7 +2190,7 @@ impl CognitionRuntimeWorkflowCancelTool {
 pub struct RuntimeWorkflowCancelInput {
     /// Workflow identifier
     #[schemars(required, with = "String")]
-    workflow_id: Option<String>,
+    pub(crate) workflow_id: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for RuntimeWorkflowCancelInput {
@@ -2244,7 +2244,7 @@ pub enum RuntimeWorkflowCancelOutput {
 #[medousa_tool(id = COGNITION_RUNTIME_WORKFLOW_CANCEL_ID)]
 impl CognitionRuntimeWorkflowCancelTool {
     /// Cancel a workflow: disable scheduled recurring (if any) and cancel pending root job.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: RuntimeWorkflowCancelInput,
     ) -> stasis::prelude::Result<RuntimeWorkflowCancelOutput> {
@@ -2333,6 +2333,12 @@ impl CognitionRuntimeWorkflowPlanTool {
 #[serde(transparent)]
 pub struct WorkflowPlanContext(Value);
 
+impl WorkflowPlanContext {
+    pub(crate) fn from_value(value: Value) -> Self {
+        Self(value)
+    }
+}
+
 impl JsonSchema for WorkflowPlanContext {
     fn schema_name() -> String {
         "WorkflowPlanContext".to_string()
@@ -2354,11 +2360,11 @@ impl JsonSchema for WorkflowPlanContext {
 pub struct RuntimeWorkflowPlanInput {
     /// Natural-language description of desired durable work
     #[schemars(required, with = "String")]
-    goal: Option<String>,
+    pub(crate) goal: Option<String>,
     /// Optional hints: url, csv_url, topic, query, telegram_chat_id, timezone
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "WorkflowPlanContext", skip_serializing_if = "Option::is_none")]
-    context: Option<WorkflowPlanContext>,
+    pub(crate) context: Option<WorkflowPlanContext>,
 }
 
 impl<'de> Deserialize<'de> for RuntimeWorkflowPlanInput {
@@ -2380,7 +2386,7 @@ impl<'de> Deserialize<'de> for RuntimeWorkflowPlanInput {
 #[medousa_tool(id = COGNITION_RUNTIME_WORKFLOW_PLAN_ID)]
 impl CognitionRuntimeWorkflowPlanTool {
     /// Suggest a workflow JSON plan from a natural-language goal without executing it. Returns execute_with guidance (workflow_run, workflow_schedule, capability_invoke, etc.).
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: RuntimeWorkflowPlanInput,
     ) -> stasis::prelude::Result<crate::workflow_plan::WorkflowPlanResponse> {

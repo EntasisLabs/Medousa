@@ -68,6 +68,7 @@ pub const ENVIRONMENT_DOMAIN_TOOLS: &[&str] = &[
 pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     COGNITION_TOOLS_DISCOVER,
     "cognition_capability",
+    "cognition_schema",
     "cognition_runtime_query",
     "cognition_runtime_mutate",
     "cognition_tool_history_summary",
@@ -98,6 +99,7 @@ pub const WORKER_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_turn_update_user",
     "cognition_turn_finish",
     "cognition_capability",
+    "cognition_schema",
     "cognition_runtime_query",
     "cognition_runtime_mutate",
     "cognition_web_search",
@@ -164,6 +166,7 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 summary: "Inspect capabilities, manuscripts, saved Grapheme scripts",
                 tools: &[
                     "cognition_capability",
+                    "cognition_schema",
                     "cognition_manuscript_list",
                     "cognition_manuscript_resolve",
                     "cognition_store_read",
@@ -174,6 +177,7 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 domain: "runtime",
                 summary: "Durable jobs, workflows, recurring schedules, delivery",
                 tools: &[
+                    "cognition_schema",
                     "cognition_runtime_query",
                     "cognition_runtime_mutate",
                 ],
@@ -284,6 +288,7 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 summary: "Run resolved capabilities, Grapheme scripts, MCP invokes",
                 tools: &[
                     "cognition_capability",
+                    "cognition_schema",
                     "cognition_web_search",
                     "cognition_shell_status",
                     "cognition_shell_run",
@@ -296,7 +301,7 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             ToolDomainCatalogEntry {
                 domain: "discover",
                 summary: "Capability/Grapheme discovery when handoff lacks resolution",
-                tools: &["cognition_capability"],
+                tools: &["cognition_capability", "cognition_schema"],
             },
             ToolDomainCatalogEntry {
                 domain: "memory",
@@ -315,6 +320,7 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 domain: "runtime",
                 summary: "Durable jobs, workflows, recurring schedules, delivery",
                 tools: &[
+                    "cognition_schema",
                     "cognition_runtime_query",
                     "cognition_runtime_mutate",
                 ],

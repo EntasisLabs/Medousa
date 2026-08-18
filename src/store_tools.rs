@@ -1,6 +1,7 @@
 //! Public store primitives: one read tool and one write tool, store selected by enum.
 
 use schemars::JsonSchema;
+use schemars::schema::Schema;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use stasis::application::orchestration::tool_registry::StasisTool;
@@ -9,12 +10,13 @@ use tokio::sync::mpsc;
 
 use crate::events::TuiEvent;
 use crate::public_api::{COGNITION_STORE_READ, COGNITION_STORE_WRITE};
+use crate::schema_api::{advertised_object_schema, string_enum_schema};
 use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
 
 const STORE_READ_ID: ToolId = ToolId::new(COGNITION_STORE_READ);
 const STORE_WRITE_ID: ToolId = ToolId::new(COGNITION_STORE_WRITE);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum StoreKind {
     Vault,
@@ -23,7 +25,7 @@ enum StoreKind {
     Scripts,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum StoreReadOp {
     List,
@@ -31,7 +33,7 @@ enum StoreReadOp {
     Search,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum StoreWriteOp {
     Write,
@@ -39,127 +41,124 @@ enum StoreWriteOp {
     Move,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize)]
 pub struct StoreReadInput {
     store: StoreKind,
     op: StoreReadOp,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     path: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     query: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     prefix: Option<String>,
     #[serde(default)]
-    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
     semantic_tags: Option<Vec<String>>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     tag_prefix: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     facet: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     root: Option<String>,
     #[serde(default)]
-    #[schemars(with = "usize", skip_serializing_if = "Option::is_none")]
     limit: Option<usize>,
     #[serde(default)]
-    #[schemars(with = "usize", skip_serializing_if = "Option::is_none")]
     line_start: Option<usize>,
     #[serde(default)]
-    #[schemars(with = "usize", skip_serializing_if = "Option::is_none")]
     line_end: Option<usize>,
     #[serde(default)]
-    #[schemars(with = "usize", skip_serializing_if = "Option::is_none")]
     max_chars: Option<usize>,
     #[serde(default)]
-    #[schemars(with = "usize", skip_serializing_if = "Option::is_none")]
     context_lines: Option<usize>,
     #[serde(default)]
-    #[schemars(with = "u64", skip_serializing_if = "Option::is_none")]
     byte_start: Option<u64>,
     #[serde(default)]
-    #[schemars(with = "u64", skip_serializing_if = "Option::is_none")]
     byte_end: Option<u64>,
     #[serde(default)]
-    #[schemars(with = "u64", skip_serializing_if = "Option::is_none")]
     max_results: Option<u64>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     module: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     tag: Option<String>,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize)]
 pub struct StoreWriteInput {
     store: StoreKind,
     op: StoreWriteOp,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     path: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     to_path: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     content: Option<String>,
     #[serde(default)]
-    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
     semantic_tags: Option<Vec<String>>,
     #[serde(default)]
-    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
     auto_workshop_tags: Option<bool>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     if_match: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     title: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     presentation: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     artifact_id: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     if_match_hash64: Option<String>,
     #[serde(default)]
-    #[schemars(with = "u64", skip_serializing_if = "Option::is_none")]
     height: Option<u64>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     root: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     find: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     replace: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     expected_sha256: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(default)]
-    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
     modules: Option<Vec<String>>,
     #[serde(default)]
-    #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
     tags: Option<Vec<String>>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     script_intent: Option<String>,
     #[serde(default)]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     id: Option<String>,
+}
+
+impl JsonSchema for StoreReadInput {
+    fn schema_name() -> String {
+        "StoreReadInput".to_string()
+    }
+
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        advertised_object_schema(&[
+            (
+                "store",
+                string_enum_schema(&["vault", "artifacts", "code", "scripts"]),
+                true,
+            ),
+            ("op", string_enum_schema(&["list", "read", "search"]), true),
+        ])
+    }
+}
+
+impl JsonSchema for StoreWriteInput {
+    fn schema_name() -> String {
+        "StoreWriteInput".to_string()
+    }
+
+    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
+        advertised_object_schema(&[
+            (
+                "store",
+                string_enum_schema(&["vault", "artifacts", "code", "scripts"]),
+                true,
+            ),
+            ("op", string_enum_schema(&["write", "delete", "move"]), true),
+        ])
+    }
 }
 
 pub struct CognitionStoreReadTool {
@@ -193,7 +192,7 @@ pub fn register_store_tools(
 
 #[medousa_tool(id = STORE_READ_ID)]
 impl CognitionStoreReadTool {
-    /// Read or search vault notes, HTML artifacts, code, or saved Grapheme scripts. store=vault|artifacts|code|scripts. op=list|read|search. search with path = in-file match; without path = corpus search.
+    /// Read or search vault notes, HTML artifacts, code, or saved Grapheme scripts. store=vault|artifacts|code|scripts. op=list|read|search. Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(&self, input: StoreReadInput) -> stasis::prelude::Result<ExternalJson> {
         let value = dispatch_read(&self.event_tx, self.turn_scope.clone(), input).await?;
         Ok(ExternalJson::new(value))
@@ -202,7 +201,7 @@ impl CognitionStoreReadTool {
 
 #[medousa_tool(id = STORE_WRITE_ID)]
 impl CognitionStoreWriteTool {
-    /// Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. store=vault|artifacts|code|scripts. op=write|delete|move. Code write uses content or find/replace plus expected_sha256.
+    /// Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. store=vault|artifacts|code|scripts. op=write|delete|move. Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(&self, input: StoreWriteInput) -> stasis::prelude::Result<ExternalJson> {
         let value = dispatch_write(
             &self.event_tx,
@@ -540,5 +539,18 @@ mod tests {
         .expect("code write");
         assert_eq!(write.store, StoreKind::Code);
         assert_eq!(write.op, StoreWriteOp::Write);
+    }
+
+    #[test]
+    fn advertised_store_schemas_are_discriminators_only() {
+        let read = serde_json::to_value(schemars::schema_for!(StoreReadInput)).expect("read");
+        let write = serde_json::to_value(schemars::schema_for!(StoreWriteInput)).expect("write");
+        for schema in [&read, &write] {
+            let props = schema["properties"].as_object().expect("properties");
+            assert_eq!(props.len(), 2);
+            assert!(props.contains_key("store"));
+            assert!(props.contains_key("op"));
+            assert_eq!(schema["additionalProperties"], true);
+        }
     }
 }

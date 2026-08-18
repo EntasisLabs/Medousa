@@ -494,7 +494,7 @@ const TOPICS: &[WikiTopic] = &[
         api(.97): "MedousaFeed.on('trip.london.trains', handler) for custom DOM; MedousaFeed.fetchTail(id) on reconnect (parent proxies GET /v1/feeds/{id}/tail)"
     },
     register_recurring(.99): {
-        tool(.99): "cognition_runtime_mutate resource=recurring action=register with feeds.feed_ids + cron http_poll grapheme",
+        tool(.99): "cognition_runtime_mutate action=recurring.register with feeds.feed_ids + cron http_poll grapheme",
         fields(.98): "{ feeds: { feed_ids: [trip.london.trains], payload_mode: parsed_poll } }"
     },
     personal_app_recipe(.97): {
@@ -502,7 +502,7 @@ const TOPICS: &[WikiTopic] = &[
         step_1(.97): "cognition_capability op=invoke source=grapheme template=http_poll url=<discovered>",
         step_2(.97): "cognition_ui_present + cognition_layout_apply dashboard HTML",
         step_3(.97): "cognition_feed_subscribe same feed_ids",
-        step_4(.97): "cognition_runtime_mutate resource=recurring action=register same feed_ids + 5m cron",
+        step_4(.97): "cognition_runtime_mutate action=recurring.register same feed_ids + 5m cron",
         step_5(.96): "Turn ends — ticks keep UI live via component_patch SSE"
     }"#,
         related: &["tool_map", "example_trip_poll", "component_schema"],
@@ -669,7 +669,7 @@ const TOPICS: &[WikiTopic] = &[
         edit_html(.97): "cognition_store_write store=artifacts",
         stack_layout(.98): "cognition_layout_get / cognition_layout_apply / cognition_layout_reset",
         feed_subscribe(.96): "cognition_feed_subscribe",
-        recurring_feeds(.96): "cognition_runtime_mutate resource=recurring action=register feeds.feed_ids",
+        recurring_feeds(.96): "cognition_runtime_mutate action=recurring.register feeds.feed_ids",
         compose_custom_view(.97): "cognition_custom_view_compose — prefer for feed+poll dashboards",
         diagnose_custom_view(.96): "cognition_custom_view_doctor",
         environment_patch(.96): "cognition_environment_patch — incremental ops: add_custom_surface, update_surface (label/icon), set_environment_theme, add_component, set_component_feeds, rewrite_active_preset_surfaces (needs approval)",

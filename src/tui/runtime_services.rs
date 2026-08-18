@@ -140,6 +140,7 @@ pub(crate) async fn assemble_tui_runtime(
     let catalog_handle = ToolCatalogHandle::default();
     let mut tool_registry = ToolRegistrar::new(crate::tool_catalog::first_party_placement_index());
     let turn_scope = crate::agent_runtime::execution_context::TurnScopeAccess::default();
+    crate::schema_api::register_schema_tools(&mut tool_registry)?;
     let compaction_target = GraphemeCompactionModelTarget {
         provider: resolved_provider.clone(),
         model: resolved_model.clone(),

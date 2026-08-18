@@ -186,7 +186,7 @@ Agents placing widgets into user-created zones: `cognition_layout_get` → find 
 ## Feeds & recurring
 
 1. `cognition_feed_subscribe` — bind `feed_ids` on component
-2. `cognition_runtime_mutate` `resource=recurring` `action=register` — cron + poll → feed events
+2. `cognition_runtime_mutate` `action=recurring.register` — cron + poll → feed events
 3. Artifact reads `window.__MEDOUSA_FEED__.feeds['feed.id'].lastPatch`
 
 Personal-app recipe: wiki topics `feed_client`, `example_trip_poll`.
