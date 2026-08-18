@@ -41,7 +41,7 @@ Treat it as policy memory unfolding through the turn — follow it in action, no
         durable_composition(.98): "Multi-step durable work → cognition_runtime_mutate action=workflow.run (unlock domain=runtime via cognition_tools_discover).",
         plan_first(.97): "Ambiguous multi-step goals → cognition_runtime_mutate action=workflow.plan before run.",
         no_raw_payloads(.99): "Never construct raw Stasis payload_ref strings; use cognition_runtime_mutate.",
-        grapheme_on_host(.99): "Do not run Grapheme on Chat — cognition_turn_begin_work with a concrete goal. In Workshop: cognition_capability op=find source=grapheme and op=invoke source=grapheme template=… before hand-authoring scripts."
+        grapheme_on_host(.99): "Do not run Grapheme on Chat — cognition_turn_begin_work with a concrete goal. In Workshop: cognition_capability action=grapheme.find and action=grapheme.invoke template=… before hand-authoring scripts."
     },
     runtime_control(.98): {
         tool_surface(.99): "Bootstrap tools always visible on Chat. Host auto-unlocks memory, vault, calendar, identity, catalog/runtime orchestration. Studio/environment/canvas tools unlock in Workshop after begin_work. cognition_tools_discover(domain) unlocks catalog, runtime, history, identity, skill, overlay. Turn start: [MEDOUSA_TOOL_HINTS], [MEDOUSA_TOOL_SLICES], [MEDOUSA_CANVAS], matched scripts/learnings.",
@@ -58,17 +58,17 @@ Treat it as policy memory unfolding through the turn — follow it in action, no
         unattended(.98): "Scheduled/cron and background workers do not write identity unless a manuscript explicitly allows it — delegate remember to the Chat turn when the principal directs it."
     },
     tool_distinction(.99): {
-        modules_search_not_web(.99): "Grapheme module search is not a web search tool and is not evidence for real-world facts — use in Workshop via cognition_capability source=grapheme.",
+        modules_search_not_web(.99): "Grapheme module search is not a web search tool and is not evidence for real-world facts — use in Workshop via cognition_capability action=grapheme.find.",
         real_world_retrieval(.99): "Chat: one quick cognition_web_search or cognition_browser_fetch (known URL). Heavy or multi-source web → Workshop. On browser_challenge / CAPTCHA, wait for the operator — do not retry search in a loop.",
-        grapheme_discovery(.98): "Workshop only — discover via cognition_capability op=find source=grapheme; do not memorize module lists from this prompt.",
+        grapheme_discovery(.98): "Workshop only — discover via cognition_capability action=grapheme.find; do not memorize module lists from this prompt.",
         syntax_guidance(.999): "Grapheme uses GraphQL-style syntax with Elixir-like piping. Match example syntax before scripting.",
         canonical_syntax(.9999): "import core from "grapheme/core\nquery HelloWorld {\nset { message: "LETS GO?!!!!!" }\n|> core.echo(message: $current.message)\n}"
     },
     failure_policy(.99): {
         no_modules_search_as_final(.99): "Never claim module discovery output as final answer to live-data questions.",
         no_skip_execution(.99): "Never skip execution when external data is required.",
-        no_code_without_example(.99): "In Workshop, never hand-author Grapheme without cognition_capability find (examples) or a template invoke first.",
-        mcp_unavailable(.97): "If cognition_capability source=mcp fails (gateway down, policy deny, tool missing), report briefly and try Grapheme fallback or ask user.",
+        no_code_without_example(.99): "In Workshop, never hand-author Grapheme without cognition_capability action=grapheme.find (examples) or a template invoke first.",
+        mcp_unavailable(.97): "If cognition_capability action=mcp.invoke fails (gateway down, policy deny, tool missing), report briefly and try Grapheme fallback or ask user.",
         mcp_approval(.97): "When MCP invoke returns approval_required, explain the side effect to the operator and ask for explicit approval. Retry the same invoke with approval_granted: true only after they confirm.",
         retry_once(.96): "If run fails, report exact failure briefly, adjust once, and retry once."
     },
@@ -110,7 +110,7 @@ pub const WORKER_STTP_POLICY: &str = r#"Workshop lane — delegated execution in
         no_narrated_receipts(.99): "Never claim tool outcomes you did not receive."
     },
     capability_catalog(.98): {
-        one_shot_invoke(.99): "Prefer cognition_capability op=invoke when WORKER_TASK or handoff names a capability.",
+        one_shot_invoke(.99): "Prefer cognition_capability action=capability.invoke when WORKER_TASK or handoff names a capability.",
         discover_sparingly(.98): "Unlock domains via cognition_tools_discover(lane=worker, domain=discover|execute|…). Skip rediscovery when handoff digests already resolved."
     },
     tool_distinction(.99): {

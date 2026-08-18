@@ -71,27 +71,27 @@ pub struct GraphemeScriptSaveInput {
     /// Optional stable id (slug derived from name when omitted)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    id: Option<String>,
+    pub(crate) id: Option<String>,
     #[schemars(required, with = "String")]
-    name: Option<String>,
+    pub(crate) name: Option<String>,
     /// Full Grapheme script source
     #[schemars(required, with = "String")]
-    body: Option<String>,
+    pub(crate) body: Option<String>,
     /// Module tags e.g. web, http, core
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
-    modules: Option<Vec<String>>,
+    pub(crate) modules: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
-    tags: Option<Vec<String>>,
+    pub(crate) tags: Option<Vec<String>>,
     /// Short intent label for search/recall
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    intent: Option<String>,
+    pub(crate) intent: Option<String>,
     /// Optional source session for provenance
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    session_id: Option<String>,
+    pub(crate) session_id: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for GraphemeScriptSaveInput {
@@ -186,7 +186,7 @@ pub struct GraphemeScriptSaveOutput {
 #[medousa_tool(id = COGNITION_GRAPHEME_SCRIPT_SAVE_ID)]
 impl CognitionGraphemeScriptSaveTool {
     /// Save a reusable Grapheme script to the workshop library with module tags and intent metadata. Turn start may inject [MEDOUSA_GRAPHEME_SCRIPTS] matches — load full body with cognition_grapheme_script_load.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: GraphemeScriptSaveInput,
     ) -> stasis::prelude::Result<GraphemeScriptSaveOutput> {
@@ -248,20 +248,20 @@ pub struct GraphemeScriptListInput {
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    module: CompatOption<String>,
+    pub(crate) module: CompatOption<String>,
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    tag: CompatOption<String>,
+    pub(crate) tag: CompatOption<String>,
     #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 1, max = 200),
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    limit: CompatOption<usize>,
+    pub(crate) limit: CompatOption<usize>,
 }
 
 #[derive(Debug)]
@@ -297,7 +297,7 @@ pub struct GraphemeScriptListOutput {
 #[medousa_tool(id = COGNITION_GRAPHEME_SCRIPT_LIST_ID)]
 impl CognitionGraphemeScriptListTool {
     /// List saved Grapheme scripts by optional module or tag filter.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: GraphemeScriptListInput,
     ) -> stasis::prelude::Result<GraphemeScriptListOutput> {
@@ -333,20 +333,20 @@ impl CognitionGraphemeScriptSearchTool {
 #[derive(Debug, JsonSchema)]
 pub struct GraphemeScriptSearchInput {
     #[schemars(required, with = "String")]
-    q: Option<String>,
+    pub(crate) q: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    module: Option<String>,
+    pub(crate) module: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    tag: Option<String>,
+    pub(crate) tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         with = "usize",
         range(min = 1, max = 50),
         skip_serializing_if = "Option::is_none"
     )]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
 }
 
 impl<'de> Deserialize<'de> for GraphemeScriptSearchInput {
@@ -412,7 +412,7 @@ pub struct GraphemeScriptSearchOutput {
 #[medousa_tool(id = COGNITION_GRAPHEME_SCRIPT_SEARCH_ID)]
 impl CognitionGraphemeScriptSearchTool {
     /// Keyword search over saved Grapheme scripts (name, modules, tags, intent, body). Use before authoring when [MEDOUSA_GRAPHEME_SCRIPTS] suggests a match.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: GraphemeScriptSearchInput,
     ) -> stasis::prelude::Result<GraphemeScriptSearchOutput> {
@@ -449,7 +449,7 @@ impl CognitionGraphemeScriptLoadTool {
 #[derive(Debug, JsonSchema)]
 pub struct GraphemeScriptLoadInput {
     #[schemars(required, with = "String")]
-    id: Option<String>,
+    pub(crate) id: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for GraphemeScriptLoadInput {
@@ -503,7 +503,7 @@ pub struct GraphemeScriptLoadOutput {
 #[medousa_tool(id = COGNITION_GRAPHEME_SCRIPT_LOAD_ID)]
 impl CognitionGraphemeScriptLoadTool {
     /// Load a saved Grapheme script body and metadata by id for run or edit.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: GraphemeScriptLoadInput,
     ) -> stasis::prelude::Result<GraphemeScriptLoadOutput> {

@@ -101,7 +101,7 @@ pub async fn build_component_runtime_diagnostic(
                         code: "RUNTIME_LOG".to_string(),
                         severity: event.level.clone(),
                         message: event.message.clone(),
-                        fix_hint: "Read artifact source and patch the failing line via cognition_store_write store=artifacts.".to_string(),
+                        fix_hint: "Read artifact source and patch the failing line via cognition_store_write action=artifacts.write.".to_string(),
                     });
                 }
             }
@@ -208,7 +208,7 @@ fn push_issue_from_lint(
         "STATIC_STORE_SYNC_USAGE" => {
             "MedousaStore is async — use async functions and await get/set/delete; see wiki topic artifact_runtime.".to_string()
         }
-        _ => "Patch artifact HTML via cognition_store_write store=artifacts.".to_string(),
+        _ => "Patch artifact HTML via cognition_store_write action=artifacts.write.".to_string(),
     };
     issues.push(ComponentRuntimeIssue {
         code: finding.code.clone(),

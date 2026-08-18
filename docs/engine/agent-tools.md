@@ -40,8 +40,8 @@ Source: `src/tool_bootstrap.rs`
 
 | Family | Examples |
 |--------|----------|
-| Store | `cognition_store_read` / `cognition_store_write` (`store=vault\|artifacts\|code\|scripts`) — [vault.md](vault.md), [artifacts.md](artifacts.md) |
-| Capability | `cognition_capability` (`op=find\|invoke`, `source=auto\|mcp\|grapheme`) — catalog, MCP, and Grapheme discover/run |
+| Store | `cognition_store_read` / `cognition_store_write` (`action=vault.read\|artifacts.write\|…`) — [vault.md](vault.md), [artifacts.md](artifacts.md) |
+| Capability | `cognition_capability` (`action=capability.find\|grapheme.invoke\|mcp.invoke\|…`) — catalog, MCP, and Grapheme discover/run |
 | Schema | `cognition_schema` (`domain` + `types=[...]`) — batched typed action parameter schemas |
 | Runtime | `cognition_runtime_query` / `cognition_runtime_mutate` (`action=job.list\|job.enqueue\|workflow.run\|…`) |
 | Calendar | `cognition_calendar_*` — [calendar.md](calendar.md) |

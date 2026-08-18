@@ -304,8 +304,7 @@ pub fn plan_workflow_from_goal(request: &WorkflowPlanRequest) -> WorkflowPlanRes
             suggested_workflow: None,
             suggested_schedule: None,
             suggested_tool_input: Some(json!({
-                "op": "invoke",
-                "source": "auto",
+                "action": "capability.invoke",
                 "capability": "document_search",
                 "input": { "query": context_topic(context, goal) },
                 "try_fallbacks": true
@@ -334,8 +333,7 @@ pub fn plan_workflow_from_goal(request: &WorkflowPlanRequest) -> WorkflowPlanRes
             suggested_workflow: None,
             suggested_schedule: None,
             suggested_tool_input: Some(json!({
-                "op": "invoke",
-                "source": "grapheme",
+                "action": "grapheme.invoke",
                 "template": "research_report",
                 "params": { "topic": topic }
             })),
@@ -367,6 +365,7 @@ pub fn plan_workflow_from_goal(request: &WorkflowPlanRequest) -> WorkflowPlanRes
                 timezone: "UTC".to_string(),
             }),
             suggested_tool_input: Some(json!({
+                "action": "grapheme.invoke",
                 "template": "http_poll",
                 "params": { "url": url }
             })),

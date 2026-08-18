@@ -197,7 +197,7 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "documents",
-                summary: "Edit files: vault markdown or HTML presentations via cognition_store_read / cognition_store_write (store=vault|artifacts).",
+                summary: "Edit files: vault markdown or HTML presentations via cognition_store_read / cognition_store_write (action=vault.read|artifacts.write|…).",
                 tools: &[
                     "cognition_store_read",
                     "cognition_store_write",
@@ -206,7 +206,7 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "presentation",
-                summary: "Liquid chat embeds (markdown) first; cognition_ui_build for streaming scenes; HTML artifacts via cognition_store_read/write store=artifacts",
+                summary: "Liquid chat embeds (markdown) first; cognition_ui_build for streaming scenes; HTML artifacts via cognition_store_read/write action=artifacts.read|artifacts.write",
                 tools: &[
                     "cognition_ui_build",
                     "cognition_ui_scene",
@@ -280,7 +280,7 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "coding",
-                summary: "Workshop shared shell sessions (opt-in). Read/patch files with cognition_store_read/write store=code.",
+                summary: "Workshop shared shell sessions (opt-in). Read/patch files with cognition_store_read/write action=code.read|code.write.",
                 tools: crate::coding_tools::CODING_COGNITION_TOOLS,
             },
             ToolDomainCatalogEntry {
@@ -351,7 +351,7 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "scripts",
-                summary: "Save/load reusable Grapheme scripts via cognition_store_read/write store=scripts",
+                summary: "Save/load reusable Grapheme scripts via cognition_store_read/write action=scripts.read|scripts.write",
                 tools: &[
                     "cognition_store_read",
                     "cognition_store_write",
@@ -364,7 +364,7 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "presentation",
-                summary: "Liquid chat embeds (markdown) first; ui_build for streaming scenes; HTML artifacts via cognition_store_read/write store=artifacts",
+                summary: "Liquid chat embeds (markdown) first; ui_build for streaming scenes; HTML artifacts via cognition_store_read/write action=artifacts.read|artifacts.write",
                 tools: &[
                     "cognition_ui_build",
                     "cognition_ui_scene",

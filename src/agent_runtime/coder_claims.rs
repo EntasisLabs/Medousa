@@ -64,8 +64,7 @@ pub fn infer_tool_claims(
     }
     if tool_name == crate::coding_tools::COGNITION_CODE_SEARCH
         || (tool_name == crate::public_api::COGNITION_STORE_READ
-            && input.get("store").and_then(Value::as_str) == Some("code")
-            && input.get("op").and_then(Value::as_str) == Some("search"))
+            && input.get("action").and_then(Value::as_str) == Some("code.search"))
     {
         claims.push(CoderClaimScope {
             target: format!("tree://{}", lease.work_id),
@@ -123,7 +122,7 @@ fn tool_mode(tool_name: &str, input: &Value) -> CoderClaimMode {
         || tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_INTERRUPT
         || tool_name == super::coder_semantic_actions::COGNITION_CODER_CHANGE_SET_APPLY
         || (tool_name == crate::public_api::COGNITION_STORE_WRITE
-            && input.get("store").and_then(Value::as_str) == Some("code"))
+            && input.get("action").and_then(Value::as_str) == Some("code.write"))
     {
         CoderClaimMode::Write
     } else if tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_RUN
@@ -477,7 +476,7 @@ mod tests {
     fn infers_file_modes_and_hazardous_lockfile_resource() {
         let read = infer_tool_claims(
             crate::public_api::COGNITION_STORE_READ,
-            &serde_json::json!({ "store": "code", "op": "read", "path": "src/lib.rs" }),
+            &serde_json::json!({ "action": "code.read", "path": "src/lib.rs" }),
             &lease(),
             Path::new("/tmp/worktree"),
         );
@@ -486,7 +485,7 @@ mod tests {
 
         let write = infer_tool_claims(
             crate::public_api::COGNITION_STORE_WRITE,
-            &serde_json::json!({ "store": "code", "op": "write", "path": "Cargo.lock" }),
+            &serde_json::json!({ "action": "code.write", "path": "Cargo.lock" }),
             &lease(),
             Path::new("/tmp/worktree"),
         );

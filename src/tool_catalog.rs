@@ -162,7 +162,7 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
     ),
     (
         "cognition_capability",
-        "Find or invoke a capability, MCP tool, or Grapheme module",
+        "Find or invoke a capability, MCP tool, or Grapheme module by typed action name",
     ),
     (
         "cognition_schema",

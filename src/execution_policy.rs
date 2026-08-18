@@ -177,12 +177,12 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
             }
         }
         "cognition_capability" => {
-            let op = input
-                .get("op")
+            let action = input
+                .get("action")
                 .and_then(|value| value.as_str())
                 .unwrap_or("");
-            if op.eq_ignore_ascii_case("find")
-                || (input.get("source").and_then(|value| value.as_str()) == Some("mcp")
+            if action.ends_with(".find")
+                || (action == "mcp.invoke"
                     && input
                         .get("effect_class")
                         .and_then(|value| value.as_str())
@@ -316,7 +316,7 @@ mod tests {
         let calls = vec![
             (
                 "cognition_capability".to_string(),
-                json!({ "op": "invoke", "source": "grapheme", "script": "query {}" }),
+                json!({ "action": "grapheme.invoke", "script": "query {}" }),
             ),
             (
                 "cognition_memory_recall".to_string(),
@@ -348,8 +348,8 @@ mod tests {
 
     #[test]
     fn store_read_is_parallel_safe_and_store_write_is_mutating() {
-        let read = json!({ "store": "vault", "op": "search", "query": "notes" });
-        let write = json!({ "store": "vault", "op": "write", "path": "a.md", "content": "x" });
+        let read = json!({ "action": "vault.search", "query": "notes" });
+        let write = json!({ "action": "vault.write", "path": "a.md", "content": "x" });
         assert_eq!(
             classify_tool_call("cognition_store_read", &read),
             StepExecutionClass::ReadOnly
@@ -383,11 +383,10 @@ mod tests {
 
     #[test]
     fn capability_find_is_parallel_safe_and_invoke_is_mutating() {
-        let find = json!({ "op": "find", "source": "grapheme", "module": "web" });
-        let invoke = json!({ "op": "invoke", "source": "auto", "capability": "web_research" });
+        let find = json!({ "action": "grapheme.find", "module": "web" });
+        let invoke = json!({ "action": "capability.invoke", "capability": "web_research" });
         let mcp_read = json!({
-            "op": "invoke",
-            "source": "mcp",
+            "action": "mcp.invoke",
             "server_id": "web",
             "tool_name": "search",
             "effect_class": "external_read"

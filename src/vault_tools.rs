@@ -115,7 +115,7 @@ where
 #[medousa_tool(id = COGNITION_VAULT_LIST_ID)]
 impl CognitionVaultListTool {
     /// List vault notes (path + title + semantic tags). Optional tag filter (match-all).
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: VaultListInput,
     ) -> stasis::prelude::Result<VaultNotesListResponse> {
@@ -153,28 +153,28 @@ impl CognitionVaultReadTool {
 #[derive(Debug, JsonSchema)]
 pub struct VaultReadInput {
     #[schemars(required, with = "String")]
-    path: Option<String>,
+    pub(crate) path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         with = "usize",
         range(min = 256, max = 20000),
         skip_serializing_if = "Option::is_none"
     )]
-    max_chars: Option<usize>,
+    pub(crate) max_chars: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         with = "usize",
         range(min = 1),
         skip_serializing_if = "Option::is_none"
     )]
-    line_start: Option<usize>,
+    pub(crate) line_start: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         with = "usize",
         range(min = 1),
         skip_serializing_if = "Option::is_none"
     )]
-    line_end: Option<usize>,
+    pub(crate) line_end: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -252,7 +252,7 @@ pub enum VaultReadOutput {
 #[medousa_tool(id = COGNITION_VAULT_READ_ID)]
 impl CognitionVaultReadTool {
     /// Read a vault note body (budget-capped).
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: VaultReadInput,
     ) -> stasis::prelude::Result<VaultReadOutput> {
@@ -303,23 +303,23 @@ impl CognitionVaultGrepTool {
 #[derive(Debug, JsonSchema)]
 pub struct VaultGrepInput {
     #[schemars(required, with = "String")]
-    path: Option<String>,
+    pub(crate) path: Option<String>,
     #[schemars(required, with = "String")]
-    pattern: Option<String>,
+    pub(crate) pattern: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         with = "usize",
         range(min = 0, max = 10),
         skip_serializing_if = "Option::is_none"
     )]
-    context_lines: Option<usize>,
+    pub(crate) context_lines: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         with = "usize",
         range(min = 1, max = 200),
         skip_serializing_if = "Option::is_none"
     )]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -373,7 +373,7 @@ impl<'de> Deserialize<'de> for VaultGrepInput {
 #[medousa_tool(id = COGNITION_VAULT_GREP_ID)]
 impl CognitionVaultGrepTool {
     /// Search inside a vault note (literal case-insensitive match with line numbers). Use cognition_vault_search to discover notes; use grep for surgical edits.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: VaultGrepInput,
     ) -> stasis::prelude::Result<crate::line_grep::LineGrepResult> {
@@ -409,17 +409,17 @@ pub struct VaultSearchInput {
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    q: CompatOption<String>,
+    pub(crate) q: CompatOption<String>,
     #[serde(default, deserialize_with = "deserialize_compat_semantic_tags")]
     #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
-    semantic_tags: Option<Vec<String>>,
+    pub(crate) semantic_tags: Option<Vec<String>>,
     #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 1, max = 50),
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    limit: CompatOption<usize>,
+    pub(crate) limit: CompatOption<usize>,
 }
 
 #[derive(Debug)]
@@ -454,7 +454,7 @@ impl TryFrom<VaultSearchInput> for VaultSearchCommand {
 #[medousa_tool(id = COGNITION_VAULT_SEARCH_ID)]
 impl CognitionVaultSearchTool {
     /// Search vault notes by full text and/or semantic tags (match-all).
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: VaultSearchInput,
     ) -> stasis::prelude::Result<VaultSearchResponse> {
@@ -489,14 +489,14 @@ pub struct VaultTagsInput {
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    prefix: CompatOption<String>,
+    pub(crate) prefix: CompatOption<String>,
     #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 1, max = 500),
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    limit: CompatOption<usize>,
+    pub(crate) limit: CompatOption<usize>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -509,7 +509,7 @@ pub struct VaultTagsOutput {
 #[medousa_tool(id = COGNITION_VAULT_TAGS_ID)]
 impl CognitionVaultTagsTool {
     /// List semantic tags used across vault notes (shared vocabulary with Locus memory).
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: VaultTagsInput,
     ) -> stasis::prelude::Result<VaultTagsOutput> {
@@ -528,7 +528,7 @@ impl CognitionVaultTagsTool {
         Ok(VaultTagsOutput {
             tags: response.tags,
             count: response.count,
-            usage: "Use semantic_tags on cognition_store_read/write store=vault, or match Locus via cognition_memory_tags.".to_string(),
+            usage: "Use semantic_tags on cognition_store_read/write action=vault.read|vault.write, or match Locus via cognition_memory_tags.".to_string(),
         })
     }
 }
@@ -575,26 +575,26 @@ impl<'de> Deserialize<'de> for LenientStringPresence {
 #[derive(Debug, JsonSchema)]
 pub struct VaultWriteInput {
     #[schemars(required, with = "String")]
-    path: Option<String>,
+    pub(crate) path: Option<String>,
     #[schemars(required, with = "String")]
-    content: Option<String>,
+    pub(crate) content: Option<String>,
     /// Chat session for workshop linking tags (defaults to current turn session)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    session_id: Option<String>,
+    pub(crate) session_id: Option<String>,
     #[schemars(skip)]
-    session_id_provided: bool,
+    pub(crate) session_id_provided: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
-    semantic_tags: Option<Vec<String>>,
+    pub(crate) semantic_tags: Option<Vec<String>>,
     /// Merge medousa/vault/session/profile/chat defaults (default true)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
-    auto_workshop_tags: Option<bool>,
+    pub(crate) auto_workshop_tags: Option<bool>,
     /// Optional content_hash for optimistic concurrency
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    if_match: Option<String>,
+    pub(crate) if_match: Option<String>,
 }
 
 #[derive(Debug)]
@@ -678,7 +678,7 @@ impl<'de> Deserialize<'de> for VaultWriteInput {
 #[medousa_tool(id = COGNITION_VAULT_WRITE_ID)]
 impl CognitionVaultWriteTool {
     /// Create or update a vault markdown note. Merges Locus-aligned semantic tags into frontmatter.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: VaultWriteInput,
     ) -> stasis::prelude::Result<VaultWriteResponse> {
@@ -748,7 +748,7 @@ impl CognitionVaultDeleteTool {
 pub struct VaultDeleteInput {
     /// Relative vault note path to delete
     #[schemars(required, with = "String")]
-    path: Option<String>,
+    pub(crate) path: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for VaultDeleteInput {
@@ -771,7 +771,7 @@ impl<'de> Deserialize<'de> for VaultDeleteInput {
 #[medousa_tool(id = COGNITION_VAULT_DELETE_ID)]
 impl CognitionVaultDeleteTool {
     /// Soft-delete a vault markdown note (moves to .trash). Use after confirming the path with list/read.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: VaultDeleteInput,
     ) -> stasis::prelude::Result<VaultDeleteResponse> {
@@ -800,10 +800,10 @@ impl CognitionVaultMoveTool {
 pub struct VaultMoveInput {
     /// Existing note path
     #[schemars(required, with = "String")]
-    from_path: Option<String>,
+    pub(crate) from_path: Option<String>,
     /// Destination path
     #[schemars(required, with = "String")]
-    to_path: Option<String>,
+    pub(crate) to_path: Option<String>,
 }
 
 #[derive(Debug)]
@@ -854,7 +854,7 @@ impl<'de> Deserialize<'de> for VaultMoveInput {
 #[medousa_tool(id = COGNITION_VAULT_MOVE_ID)]
 impl CognitionVaultMoveTool {
     /// Move/rename a vault note to a new relative path. Creates parent folders as needed and removes the source note.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: VaultMoveInput,
     ) -> stasis::prelude::Result<VaultWriteResponse> {

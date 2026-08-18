@@ -478,7 +478,7 @@ impl CognitionGraphemeRunTool {
 pub struct GraphemeRunInput {
     /// Complete Grapheme source code. Imports under 'grapheme/*' are allowed by default.
     #[schemars(required, with = "String")]
-    source: Option<String>,
+    pub(crate) source: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for GraphemeRunInput {
@@ -707,7 +707,7 @@ impl CognitionGraphemeModulesSearchTool {
 pub struct GraphemeModulesSearchInput {
     /// Search query, e.g. web
     #[schemars(required, with = "String")]
-    query: Option<String>,
+    pub(crate) query: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for GraphemeModulesSearchInput {
@@ -771,7 +771,7 @@ impl CognitionGraphemeModulesInfoTool {
 pub struct GraphemeModulesInfoInput {
     /// Module id, e.g. web
     #[schemars(required, with = "String")]
-    module: Option<String>,
+    pub(crate) module: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for GraphemeModulesInfoInput {
@@ -837,7 +837,7 @@ impl CognitionGraphemeModulesOpsTool {
 pub struct GraphemeModulesOpsInput {
     /// Module or op query, e.g. web
     #[schemars(required, with = "String")]
-    query: Option<String>,
+    pub(crate) query: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for GraphemeModulesOpsInput {
@@ -918,11 +918,11 @@ impl GraphemeExamplesActionInput {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GraphemeExamplesInput {
     /// list or show
-    action: GraphemeExamplesActionInput,
+    pub(crate) action: GraphemeExamplesActionInput,
     /// Example name for action=show
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    name: Option<String>,
+    pub(crate) name: Option<String>,
 }
 
 #[medousa_tool(id = COGNITION_GRAPHEME_EXAMPLES_ID)]
@@ -2096,14 +2096,14 @@ pub struct CapabilityResolveInput {
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    capability: CompatOption<String>,
+    pub(crate) capability: CompatOption<String>,
     /// Optional fuzzy query when capability id is unknown
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    query: CompatOption<String>,
+    pub(crate) query: CompatOption<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -2202,14 +2202,14 @@ pub struct CapabilityListInput {
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    prefix: CompatOption<String>,
+    pub(crate) prefix: CompatOption<String>,
     /// Max entries (default 50)
     #[serde(default)]
     #[schemars(
         with = "i64",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    limit: CompatOption<usize>,
+    pub(crate) limit: CompatOption<usize>,
 }
 
 #[medousa_tool(id = COGNITION_CAPABILITY_LIST_ID)]
@@ -2259,11 +2259,11 @@ impl CognitionCapabilitySearchTool {
 pub struct CapabilitySearchInput {
     /// Search query
     #[schemars(required, with = "String")]
-    query: Option<String>,
+    pub(crate) query: Option<String>,
     /// Max matches (default 10)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
 }
 
 impl<'de> Deserialize<'de> for CapabilitySearchInput {
@@ -2340,15 +2340,15 @@ impl CognitionMcpDiscoverTool {
 pub struct McpDiscoverInput {
     /// Search query
     #[schemars(required, with = "String")]
-    query: Option<String>,
+    pub(crate) query: Option<String>,
     /// Optional MCP server id filter
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    server_id: Option<String>,
+    pub(crate) server_id: Option<String>,
     /// Max matches (default 20)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
 }
 
 impl<'de> Deserialize<'de> for McpDiscoverInput {
@@ -2456,6 +2456,12 @@ impl CognitionMcpInvokeTool {
 #[serde(transparent)]
 pub struct McpInvokeObject(Value);
 
+impl McpInvokeObject {
+    pub(crate) fn from_value(value: Value) -> Self {
+        Self(value)
+    }
+}
+
 impl JsonSchema for McpInvokeObject {
     fn schema_name() -> String {
         "McpInvokeObject".to_string()
@@ -2476,20 +2482,20 @@ impl JsonSchema for McpInvokeObject {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct McpInvokeInput {
     #[schemars(required, with = "String")]
-    server_id: Option<String>,
+    pub(crate) server_id: Option<String>,
     #[schemars(required, with = "String")]
-    tool_name: Option<String>,
+    pub(crate) tool_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "McpInvokeObject", skip_serializing_if = "Option::is_none")]
-    input: Option<McpInvokeObject>,
+    pub(crate) input: Option<McpInvokeObject>,
     /// Optional pre-minted turn token
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    turn_token: Option<String>,
+    pub(crate) turn_token: Option<String>,
     /// Set true after the operator approves a prior approval_required response
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
-    approval_granted: Option<bool>,
+    pub(crate) approval_granted: Option<bool>,
 }
 
 #[medousa_tool(id = COGNITION_MCP_INVOKE_ID)]
@@ -2823,11 +2829,11 @@ fn referenced_module_ops_for_tool_call(
             Ok(extract_module_ops_from_source(source))
         }
         "cognition_capability" => {
-            let op = input
-                .get("op")
+            let action = input
+                .get("action")
                 .and_then(|value| value.as_str())
                 .unwrap_or("");
-            if !op.eq_ignore_ascii_case("invoke") {
+            if action != "grapheme.invoke" && action != "capability.invoke" {
                 return Ok(Vec::new());
             }
             if let Some(script) = input.get("script").and_then(|value| value.as_str()) {
@@ -3031,8 +3037,7 @@ mod tests {
     #[test]
     fn detects_module_ops_for_capability_invoke_script() {
         let input = json!({
-            "op": "invoke",
-            "source": "grapheme",
+            "action": "grapheme.invoke",
             "script": "query Run { websearch.search(query: \"x\") { ok } }"
         });
 

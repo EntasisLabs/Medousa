@@ -8,7 +8,7 @@ use std::sync::Arc;
 use schemars::JsonSchema;
 use schemars::schema::Schema;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use tokio::sync::mpsc;
 
 use crate::bridge_tools::{BridgeObject, CognitionMcpPromoteToJobTool, McpPromoteToJobInput};
@@ -30,7 +30,9 @@ use crate::runtime_tools::{
     RuntimeWorkflowScheduleInput, RuntimeWorkflowStatusInput, WorkflowFailureInput,
     WorkflowPlanContext, WorkflowStrategyInput,
 };
-use crate::schema_api::{advertised_object_schema, string_enum_schema};
+use crate::schema_api::{
+    TypedActionSchema, advertised_object_schema, string_enum_schema, typed_action_schema,
+};
 use crate::tools::{
     CognitionGraphemePromoteLastRunToRecurringTool, CognitionGraphemePromoteToJobTool,
     CognitionGraphemePromoteToRecurringTool, CognitionJobEnqueueTool,
@@ -349,55 +351,60 @@ impl JsonSchema for RuntimeMutateAction {
     }
 }
 
-pub struct RuntimeTypeSchema {
-    pub name: &'static str,
-    pub tool: ToolId,
-    pub summary: &'static str,
-    pub parameters: Value,
-}
-
-pub fn runtime_type_schemas() -> Vec<RuntimeTypeSchema> {
+pub fn runtime_type_schemas() -> Vec<TypedActionSchema> {
     vec![
-        type_schema::<JobList>(QUERY_ID, "job.list", "List durable jobs"),
-        type_schema::<JobStatus>(QUERY_ID, "job.status", "Status for one job"),
-        type_schema::<RecurringList>(QUERY_ID, "recurring.list", "List recurring schedules"),
-        type_schema::<RecurringDoctor>(QUERY_ID, "recurring.doctor", "Diagnose a recurring schedule"),
-        type_schema::<RecurringPreview>(
+        typed_action_schema::<JobList>(QUERY_ID, "job.list", "List durable jobs"),
+        typed_action_schema::<JobStatus>(QUERY_ID, "job.status", "Status for one job"),
+        typed_action_schema::<RecurringList>(QUERY_ID, "recurring.list", "List recurring schedules"),
+        typed_action_schema::<RecurringDoctor>(
+            QUERY_ID,
+            "recurring.doctor",
+            "Diagnose a recurring schedule",
+        ),
+        typed_action_schema::<RecurringPreview>(
             QUERY_ID,
             "recurring.preview",
             "Preview upcoming cron fire times",
         ),
-        type_schema::<WorkflowStatus>(QUERY_ID, "workflow.status", "Status for one workflow"),
-        type_schema::<DeliveryStatus>(
+        typed_action_schema::<WorkflowStatus>(QUERY_ID, "workflow.status", "Status for one workflow"),
+        typed_action_schema::<DeliveryStatus>(
             QUERY_ID,
             "delivery.status",
             "Queue, outbox, and recurring delivery counts",
         ),
-        type_schema::<JobEnqueue>(
+        typed_action_schema::<JobEnqueue>(
             MUTATE_ID,
             "job.enqueue",
             "Enqueue a job: Grapheme script, MCP server_id+tool_name, or job_type+payload_ref",
         ),
-        type_schema::<JobCancel>(MUTATE_ID, "job.cancel", "Cancel a durable job"),
-        type_schema::<RecurringRegister>(
+        typed_action_schema::<JobCancel>(MUTATE_ID, "job.cancel", "Cancel a durable job"),
+        typed_action_schema::<RecurringRegister>(
             MUTATE_ID,
             "recurring.register",
             "Register a cron schedule (script, last run, or job_type+payload_ref)",
         ),
-        type_schema::<RecurringPause>(MUTATE_ID, "recurring.pause", "Pause a recurring schedule"),
-        type_schema::<RecurringCancel>(MUTATE_ID, "recurring.cancel", "Cancel a recurring schedule"),
-        type_schema::<WorkflowRun>(MUTATE_ID, "workflow.run", "Run a multi-step durable workflow now"),
-        type_schema::<WorkflowSchedule>(
+        typed_action_schema::<RecurringPause>(MUTATE_ID, "recurring.pause", "Pause a recurring schedule"),
+        typed_action_schema::<RecurringCancel>(
+            MUTATE_ID,
+            "recurring.cancel",
+            "Cancel a recurring schedule",
+        ),
+        typed_action_schema::<WorkflowRun>(
+            MUTATE_ID,
+            "workflow.run",
+            "Run a multi-step durable workflow now",
+        ),
+        typed_action_schema::<WorkflowSchedule>(
             MUTATE_ID,
             "workflow.schedule",
             "Schedule a multi-step workflow on cron",
         ),
-        type_schema::<WorkflowCancel>(
+        typed_action_schema::<WorkflowCancel>(
             MUTATE_ID,
             "workflow.cancel",
             "Cancel a running or scheduled workflow",
         ),
-        type_schema::<WorkflowPlan>(
+        typed_action_schema::<WorkflowPlan>(
             MUTATE_ID,
             "workflow.plan",
             "Draft a durable workflow from a natural-language goal",
@@ -821,80 +828,10 @@ fn present(value: Option<&str>) -> bool {
     value.is_some_and(|value| !value.trim().is_empty())
 }
 
-fn type_schema<T: JsonSchema>(
-    tool: ToolId,
-    name: &'static str,
-    summary: &'static str,
-) -> RuntimeTypeSchema {
-    RuntimeTypeSchema {
-        name,
-        tool,
-        summary,
-        parameters: with_action_const(schema_object::<T>(), name),
-    }
-}
-
-fn schema_object<T: JsonSchema>() -> Value {
-    let mut root = serde_json::to_value(schemars::schema_for!(T)).expect("action schema");
-    if root.get("properties").is_some() {
-        return root;
-    }
-    let Some(reference) = root.get("$ref").and_then(Value::as_str).map(str::to_string) else {
-        return root;
-    };
-    let key = reference.trim_start_matches("#/definitions/").to_string();
-    let Some(mut definition) = root
-        .get("definitions")
-        .and_then(Value::as_object)
-        .and_then(|definitions| definitions.get(&key))
-        .cloned()
-    else {
-        return root;
-    };
-    if let Some(Value::Object(definitions)) = root.get_mut("definitions") {
-        definitions.remove(&key);
-        if !definitions.is_empty()
-            && let Some(object) = definition.as_object_mut()
-        {
-            object.insert("definitions".to_string(), Value::Object(definitions.clone()));
-        }
-    }
-    definition
-}
-
-fn with_action_const(mut schema: Value, action: &'static str) -> Value {
-    let properties = schema
-        .as_object_mut()
-        .map(|object| object.entry("properties").or_insert_with(|| json!({})));
-    if let Some(Value::Object(properties)) = properties {
-        properties.insert(
-            "action".to_string(),
-            json!({
-                "type": "string",
-                "const": action,
-                "description": format!("Pass {action}")
-            }),
-        );
-    }
-    match schema.get_mut("required") {
-        Some(Value::Array(required)) => {
-            if !required.iter().any(|value| value == "action") {
-                required.insert(0, json!("action"));
-            }
-        }
-        _ => {
-            schema
-                .as_object_mut()
-                .expect("object schema")
-                .insert("required".to_string(), json!(["action"]));
-        }
-    }
-    schema
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn job_list_deserializes_from_action_only() {

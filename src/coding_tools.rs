@@ -15,7 +15,9 @@ use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 use stasis::prelude::{Result as StasisResult, StasisError};
 
-use crate::typed_tools::{CompatOption, ExternalJson, ToolId, medousa_tool};
+use crate::typed_tools::{
+    CompatOption, ExternalJson, ToolId, TypedTool, medousa_tool, serialize_output,
+};
 
 pub const COGNITION_CODE_READ: &str = "cognition_code_read";
 pub const COGNITION_CODE_SEARCH: &str = "cognition_code_search";
@@ -291,16 +293,16 @@ struct CognitionCoderShellRunTool;
 struct CognitionCoderShellStatusTool;
 
 #[derive(Debug, Deserialize, JsonSchema)]
-struct CodeReadInput {
+pub(crate) struct CodeReadInput {
     /// Absolute or root-relative file path
-    path: String,
+    pub(crate) path: String,
     /// Optional explicit root (default: scripts library)
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    root: CompatOption<String>,
+    pub(crate) root: CompatOption<String>,
     /// Optional 1-based inclusive line start
     #[serde(default)]
     #[schemars(
@@ -308,7 +310,7 @@ struct CodeReadInput {
         range(min = 1),
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    line_start: CompatOption<u64>,
+    pub(crate) line_start: CompatOption<u64>,
     /// Optional 1-based inclusive line end
     #[serde(default)]
     #[schemars(
@@ -316,14 +318,14 @@ struct CodeReadInput {
         range(min = 1),
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    line_end: CompatOption<u64>,
+    pub(crate) line_end: CompatOption<u64>,
     /// Optional 0-based byte start; cannot be combined with line ranges
     #[serde(default)]
     #[schemars(
         with = "u64",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    byte_start: CompatOption<u64>,
+    pub(crate) byte_start: CompatOption<u64>,
     /// Optional exclusive byte end; cannot be combined with line ranges
     #[serde(default)]
     #[schemars(
@@ -331,7 +333,7 @@ struct CodeReadInput {
         range(min = 1),
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    byte_end: CompatOption<u64>,
+    pub(crate) byte_end: CompatOption<u64>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
@@ -1045,20 +1047,20 @@ fn text_line_count(content: &str) -> usize {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
-struct CodeSearchInput {
-    query: String,
+pub(crate) struct CodeSearchInput {
+    pub(crate) query: String,
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    root: CompatOption<String>,
+    pub(crate) root: CompatOption<String>,
     #[serde(default)]
     #[schemars(
         with = "i64",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    max_results: CompatOption<u64>,
+    pub(crate) max_results: CompatOption<u64>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1161,37 +1163,37 @@ fn search_dir(
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
-struct CodeApplyPatchInput {
-    path: String,
+pub(crate) struct CodeApplyPatchInput {
+    pub(crate) path: String,
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    root: CompatOption<String>,
+    pub(crate) root: CompatOption<String>,
     /// Full file content (write)
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    content: CompatOption<String>,
+    pub(crate) content: CompatOption<String>,
     /// Exact snippet to replace
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    find: CompatOption<String>,
+    pub(crate) find: CompatOption<String>,
     /// Replacement for `find`
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    replace: CompatOption<String>,
+    pub(crate) replace: CompatOption<String>,
     /// Required current digest from code_read, or `missing` for a new file
-    expected_sha256: String,
+    pub(crate) expected_sha256: String,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
@@ -1917,25 +1919,27 @@ impl CognitionCoderShellRunTool {
     }
 }
 
-pub(crate) async fn invoke_code_read_json(
-    input: serde_json::Value,
-) -> StasisResult<serde_json::Value> {
-    use stasis::application::orchestration::tool_registry::StasisTool;
-    CognitionCodeReadTool.invoke(input).await
+pub(crate) async fn invoke_code_read(input: CodeReadInput) -> StasisResult<serde_json::Value> {
+    serialize_output(
+        CognitionCodeReadTool::tool_id(),
+        CognitionCodeReadTool.invoke_typed(input).await?,
+    )
 }
 
-pub(crate) async fn invoke_code_search_json(
-    input: serde_json::Value,
-) -> StasisResult<serde_json::Value> {
-    use stasis::application::orchestration::tool_registry::StasisTool;
-    CognitionCodeSearchTool.invoke(input).await
+pub(crate) async fn invoke_code_search(input: CodeSearchInput) -> StasisResult<serde_json::Value> {
+    serialize_output(
+        CognitionCodeSearchTool::tool_id(),
+        CognitionCodeSearchTool.invoke_typed(input).await?,
+    )
 }
 
-pub(crate) async fn invoke_code_apply_patch_json(
-    input: serde_json::Value,
+pub(crate) async fn invoke_code_apply_patch(
+    input: CodeApplyPatchInput,
 ) -> StasisResult<serde_json::Value> {
-    use stasis::application::orchestration::tool_registry::StasisTool;
-    CognitionCodeApplyPatchTool.invoke(input).await
+    serialize_output(
+        CognitionCodeApplyPatchTool::tool_id(),
+        CognitionCodeApplyPatchTool.invoke_typed(input).await?,
+    )
 }
 
 pub fn register_coding_tools(

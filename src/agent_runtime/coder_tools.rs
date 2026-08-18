@@ -1955,7 +1955,11 @@ impl CoderBoundToolRegistry {
             );
         }
         if crate::public_api::is_public_api_tool(tool_name) {
-            if map.get("store").and_then(Value::as_str) == Some("code") {
+            if map
+                .get("action")
+                .and_then(Value::as_str)
+                .is_some_and(|action| action.starts_with("code."))
+            {
                 reject_mismatched_string(
                     map.get("root"),
                     &self.entry.worktree.to_string_lossy(),
@@ -3343,8 +3347,7 @@ mod tests {
                 crate::public_api::COGNITION_STORE_WRITE,
                 json!({
                     "intent": "Regenerate the Rust dependency lockfile",
-                    "store": "code",
-                    "op": "write",
+                    "action": "code.write",
                     "path": "Cargo.lock",
                     "expected_sha256": "missing",
                     "content": "version = 4\n"
@@ -3357,8 +3360,7 @@ mod tests {
                 crate::public_api::COGNITION_STORE_WRITE,
                 json!({
                     "intent": "Update the same dependency lockfile",
-                    "store": "code",
-                    "op": "write",
+                    "action": "code.write",
                     "path": "Cargo.lock",
                     "expected_sha256": "missing",
                     "content": "version = 4\n"
@@ -3523,8 +3525,7 @@ mod tests {
                 crate::public_api::COGNITION_STORE_READ,
                 json!({
                     "intent": "Inspect the source before making a change",
-                    "store": "code",
-                    "op": "read",
+                    "action": "code.read",
                     "path": "src/lib.rs"
                 }),
             )
@@ -3988,8 +3989,7 @@ mod tests {
                 crate::public_api::COGNITION_STORE_WRITE,
                 json!({
                     "intent": "Update the demo implementation",
-                    "store": "code",
-                    "op": "write",
+                    "action": "code.write",
                     "path": "src/lib.rs",
                     "expected_sha256": "missing",
                     "content": "pub fn demo() { println!(\"updated\"); }\n"
@@ -4154,8 +4154,7 @@ mod tests {
                     crate::public_api::COGNITION_STORE_READ,
                     json!({
                         "intent": "Inspect source outside the claimed root",
-                        "store": "code",
-                        "op": "read",
+                        "action": "code.read",
                         "path": "src/lib.rs",
                         "root": "/tmp/other"
                     }),
@@ -4169,8 +4168,7 @@ mod tests {
                     crate::public_api::COGNITION_STORE_WRITE,
                     json!({
                         "intent": "Change a path outside the allowed policy",
-                        "store": "code",
-                        "op": "write",
+                        "action": "code.write",
                         "path": "README.md",
                         "expected_sha256": "missing",
                         "content": "x"
@@ -4363,8 +4361,7 @@ mod tests {
                 crate::public_api::COGNITION_STORE_READ,
                 json!({
                     "intent": "Inspect the implementation before changing it",
-                    "store": "code",
-                    "op": "read",
+                    "action": "code.read",
                     "path": "src/lib.rs"
                 }),
             )
@@ -4628,8 +4625,7 @@ mod tests {
                 crate::public_api::COGNITION_STORE_READ,
                 json!({
                     "intent": "Inspect the current implementation",
-                    "store": "code",
-                    "op": "read",
+                    "action": "code.read",
                     "path": "src/lib.rs"
                 }),
             )

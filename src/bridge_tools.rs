@@ -592,37 +592,37 @@ pub struct CapabilityInvokeInput {
     /// Capability id, e.g. document_search
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    capability: Option<String>,
+    pub(crate) capability: Option<String>,
     /// Fuzzy resolve when capability id is unknown
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    query: Option<String>,
+    pub(crate) query: Option<String>,
     /// Arguments forwarded to MCP or used to build Grapheme source
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "BridgeObject", skip_serializing_if = "Option::is_none")]
-    input: Option<BridgeObject>,
+    pub(crate) input: Option<BridgeObject>,
     /// Optional explicit Grapheme source override
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    source: Option<String>,
+    pub(crate) source: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         with = "CapabilityBindingInput",
         skip_serializing_if = "Option::is_none"
     )]
-    binding: Option<CapabilityBindingInput>,
+    pub(crate) binding: Option<CapabilityBindingInput>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         with = "CapabilitySourceInput",
         skip_serializing_if = "Option::is_none"
     )]
-    preferred_source: Option<CapabilitySourceInput>,
+    pub(crate) preferred_source: Option<CapabilitySourceInput>,
     #[serde(default = "default_bridge_fallbacks")]
     #[schemars(default = "default_bridge_fallbacks")]
-    try_fallbacks: bool,
+    pub(crate) try_fallbacks: bool,
     #[serde(flatten)]
     #[schemars(skip)]
-    extra: serde_json::Map<String, Value>,
+    pub(crate) extra: serde_json::Map<String, Value>,
 }
 
 impl CapabilityInvokeInput {
@@ -1053,10 +1053,10 @@ impl GraphemeTemplateInput {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GraphemeTemplateRunInput {
     #[schemars(required, with = "GraphemeTemplateInput")]
-    template: Option<GraphemeTemplateInput>,
+    pub(crate) template: Option<GraphemeTemplateInput>,
     /// Template parameters (topic/query, url, etc.)
     #[schemars(required, with = "BridgeObject")]
-    params: Option<BridgeObject>,
+    pub(crate) params: Option<BridgeObject>,
 }
 
 #[derive(Debug)]

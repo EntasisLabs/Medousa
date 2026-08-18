@@ -3,13 +3,13 @@
 use schemars::JsonSchema;
 use schemars::schema::{InstanceType, ObjectValidation, Schema, SchemaObject};
 use serde::Deserialize;
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use stasis::prelude::StasisError;
 
-use crate::public_api::{
-    COGNITION_CAPABILITY, COGNITION_SCHEMA, COGNITION_STORE_READ, COGNITION_STORE_WRITE,
-};
+use crate::capability_tools::capability_type_schemas;
+use crate::public_api::COGNITION_SCHEMA;
 use crate::runtime_api::runtime_type_schemas;
+use crate::store_tools::store_type_schemas;
 use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
 
 const SCHEMA_ID: ToolId = ToolId::new(COGNITION_SCHEMA);
@@ -147,14 +147,6 @@ fn full_entry(action: &CatalogItem) -> Value {
     })
 }
 
-fn discriminator_object(pairs: &[(&'static str, &'static str)]) -> Value {
-    let mut map = Map::new();
-    for (key, value) in pairs {
-        map.insert((*key).to_string(), Value::String((*value).to_string()));
-    }
-    Value::Object(map)
-}
-
 struct CatalogItem {
     name: &'static str,
     domain: SchemaDomain,
@@ -165,61 +157,105 @@ struct CatalogItem {
 }
 
 fn catalog() -> Vec<CatalogItem> {
-    let mut items: Vec<CatalogItem> = runtime_type_schemas()
-        .into_iter()
-        .map(|item| CatalogItem {
-            name: item.name,
-            domain: SchemaDomain::Runtime,
-            tool: item.tool.as_str(),
-            summary: item.summary,
-            call: json!({ "action": item.name }),
-            parameters: item.parameters,
-        })
-        .collect();
-    items.extend(STORE.iter().map(static_item));
-    items.extend(CAPABILITY.iter().map(static_item));
-    items
+    generated_items(SchemaDomain::Runtime, runtime_type_schemas())
+        .chain(generated_items(SchemaDomain::Store, store_type_schemas()))
+        .chain(generated_items(
+            SchemaDomain::Capability,
+            capability_type_schemas(),
+        ))
+        .collect()
 }
 
-fn static_item(action: &ActionType) -> CatalogItem {
-    let mut properties = Map::new();
-    let mut required = Vec::new();
-    for (key, value) in action.discriminators {
+fn generated_items(
+    domain: SchemaDomain,
+    items: Vec<TypedActionSchema>,
+) -> impl Iterator<Item = CatalogItem> {
+    items.into_iter().map(move |item| CatalogItem {
+        name: item.name,
+        domain,
+        tool: item.tool.as_str(),
+        summary: item.summary,
+        call: json!({ "action": item.name }),
+        parameters: item.parameters,
+    })
+}
+
+pub struct TypedActionSchema {
+    pub name: &'static str,
+    pub tool: ToolId,
+    pub summary: &'static str,
+    pub parameters: Value,
+}
+
+pub fn typed_action_schema<T: JsonSchema>(
+    tool: ToolId,
+    name: &'static str,
+    summary: &'static str,
+) -> TypedActionSchema {
+    TypedActionSchema {
+        name,
+        tool,
+        summary,
+        parameters: with_action_const(schema_object::<T>(), name),
+    }
+}
+
+fn schema_object<T: JsonSchema>() -> Value {
+    let mut root = serde_json::to_value(schemars::schema_for!(T)).expect("action schema");
+    if root.get("properties").is_some() {
+        return root;
+    }
+    let Some(reference) = root.get("$ref").and_then(Value::as_str).map(str::to_string) else {
+        return root;
+    };
+    let key = reference.trim_start_matches("#/definitions/").to_string();
+    let Some(mut definition) = root
+        .get("definitions")
+        .and_then(Value::as_object)
+        .and_then(|definitions| definitions.get(&key))
+        .cloned()
+    else {
+        return root;
+    };
+    if let Some(Value::Object(definitions)) = root.get_mut("definitions") {
+        definitions.remove(&key);
+        if !definitions.is_empty()
+            && let Some(object) = definition.as_object_mut()
+        {
+            object.insert("definitions".to_string(), Value::Object(definitions.clone()));
+        }
+    }
+    definition
+}
+
+fn with_action_const(mut schema: Value, action: &'static str) -> Value {
+    let properties = schema
+        .as_object_mut()
+        .map(|object| object.entry("properties").or_insert_with(|| json!({})));
+    if let Some(Value::Object(properties)) = properties {
         properties.insert(
-            (*key).to_string(),
+            "action".to_string(),
             json!({
                 "type": "string",
-                "const": value,
-                "description": format!("Pass {value}")
+                "const": action,
+                "description": format!("Pass {action}")
             }),
         );
-        required.push((*key).to_string());
     }
-    for field in action.fields {
-        let mut spec = json!({
-            "type": field.kind,
-            "description": field.description,
-        });
-        if !field.enum_values.is_empty() {
-            spec["enum"] = json!(field.enum_values);
+    match schema.get_mut("required") {
+        Some(Value::Array(required)) => {
+            if !required.iter().any(|value| value == "action") {
+                required.insert(0, json!("action"));
+            }
         }
-        properties.insert(field.name.to_string(), spec);
-        if field.required {
-            required.push(field.name.to_string());
+        _ => {
+            schema
+                .as_object_mut()
+                .expect("object schema")
+                .insert("required".to_string(), json!(["action"]));
         }
     }
-    CatalogItem {
-        name: action.name,
-        domain: action.domain,
-        tool: action.tool,
-        summary: action.summary,
-        call: discriminator_object(action.discriminators),
-        parameters: json!({
-            "type": "object",
-            "required": required,
-            "properties": properties,
-        }),
-    }
+    schema
 }
 
 pub fn advertised_object_schema(fields: &[(&str, Schema, bool)]) -> Schema {
@@ -269,389 +305,10 @@ fn type_name_array_schema() -> Schema {
     })
 }
 
-struct Field {
-    name: &'static str,
-    kind: &'static str,
-    required: bool,
-    description: &'static str,
-    enum_values: &'static [&'static str],
-}
-
-impl Field {
-    const fn req(name: &'static str, kind: &'static str, description: &'static str) -> Self {
-        Self {
-            name,
-            kind,
-            required: true,
-            description,
-            enum_values: &[],
-        }
-    }
-
-    const fn opt(name: &'static str, kind: &'static str, description: &'static str) -> Self {
-        Self {
-            name,
-            kind,
-            required: false,
-            description,
-            enum_values: &[],
-        }
-    }
-
-    const fn opt_enum(
-        name: &'static str,
-        description: &'static str,
-        enum_values: &'static [&'static str],
-    ) -> Self {
-        Self {
-            name,
-            kind: "string",
-            required: false,
-            description,
-            enum_values,
-        }
-    }
-}
-
-struct ActionType {
-    name: &'static str,
-    domain: SchemaDomain,
-    tool: &'static str,
-    summary: &'static str,
-    discriminators: &'static [(&'static str, &'static str)],
-    fields: &'static [Field],
-}
-
-const STORE: &[ActionType] = &[
-    ActionType {
-        name: "vault.list",
-        domain: SchemaDomain::Store,
-        tool: COGNITION_STORE_READ,
-        summary: "List vault notes",
-        discriminators: &[("store", "vault"), ("op", "list")],
-        fields: &[
-            Field::opt("prefix", "string", "Path prefix"),
-            Field::opt("semantic_tags", "array", "Tag filter"),
-            Field::opt("tag_prefix", "string", "Tag prefix; facet=tags lists tags"),
-            Field::opt("facet", "string", "Set tags to list tag names"),
-            Field::opt("limit", "integer", "Max rows"),
-        ],
-    },
-    ActionType {
-        name: "vault.read",
-        domain: SchemaDomain::Store,
-        tool: COGNITION_STORE_READ,
-        summary: "Read a vault note",
-        discriminators: &[("store", "vault"), ("op", "read")],
-        fields: &[
-            Field::req("path", "string", "Note path"),
-            Field::opt("max_chars", "integer", "Truncate body"),
-            Field::opt("line_start", "integer", "1-based start line"),
-            Field::opt("line_end", "integer", "1-based end line"),
-        ],
-    },
-    ActionType {
-        name: "vault.search",
-        domain: SchemaDomain::Store,
-        tool: COGNITION_STORE_READ,
-        summary: "Search vault notes; path set = in-file grep",
-        discriminators: &[("store", "vault"), ("op", "search")],
-        fields: &[
-            Field::req("query", "string", "Search text or grep pattern"),
-            Field::opt("path", "string", "If set, grep this file"),
-            Field::opt("semantic_tags", "array", "Tag filter for corpus search"),
-            Field::opt("context_lines", "integer", "Grep context"),
-            Field::opt("limit", "integer", "Max hits"),
-        ],
-    },
-    ActionType {
-        name: "vault.write",
-        domain: SchemaDomain::Store,
-        tool: COGNITION_STORE_WRITE,
-        summary: "Write a vault note",
-        discriminators: &[("store", "vault"), ("op", "write")],
-        fields: &[
-            Field::req("path", "string", "Note path"),
-            Field::req("content", "string", "Markdown body"),
-            Field::opt("semantic_tags", "array", "Tags"),
-            Field::opt("if_match", "string", "Optimistic concurrency token"),
-        ],
-    },
-    ActionType {
-        name: "vault.delete",
-        domain: SchemaDomain::Store,
-        tool: COGNITION_STORE_WRITE,
-        summary: "Delete a vault note",
-        discriminators: &[("store", "vault"), ("op", "delete")],
-        fields: &[Field::req("path", "string", "Note path")],
-    },
-    ActionType {
-        name: "vault.move",
-        domain: SchemaDomain::Store,
-        tool: COGNITION_STORE_WRITE,
-        summary: "Move a vault note",
-        discriminators: &[("store", "vault"), ("op", "move")],
-        fields: &[
-            Field::req("path", "string", "From path"),
-            Field::req("to_path", "string", "To path"),
-        ],
-    },
-    ActionType {
-        name: "artifacts.list",
-        domain: SchemaDomain::Store,
-        tool: COGNITION_STORE_READ,
-        summary: "List HTML artifacts",
-        discriminators: &[("store", "artifacts"), ("op", "list")],
-        fields: &[
-            Field::opt("query", "string", "Title/id substring"),
-            Field::opt("limit", "integer", "Max rows"),
-        ],
-    },
-    ActionType {
-        name: "artifacts.read",
-        domain: SchemaDomain::Store,
-        tool: COGNITION_STORE_READ,
-        summary: "Read an HTML artifact",
-        discriminators: &[("store", "artifacts"), ("op", "read")],
-        fields: &[
-            Field::req("path", "string", "Artifact id"),
-            Field::opt("max_chars", "integer", "Truncate body"),
-            Field::opt("line_start", "integer", "1-based start line"),
-            Field::opt("line_end", "integer", "1-based end line"),
-        ],
-    },
-    ActionType {
-        name: "artifacts.search",
-        domain: SchemaDomain::Store,
-        tool: COGNITION_STORE_READ,
-        summary: "Grep one HTML artifact",
-        discriminators: &[("store", "artifacts"), ("op", "search")],
-        fields: &[
-            Field::req("path", "string", "Artifact id"),
-            Field::req("query", "string", "Grep pattern"),
-            Field::opt("context_lines", "integer", "Grep context"),
-            Field::opt("limit", "integer", "Max hits"),
-        ],
-    },
-    ActionType {
-        name: "artifacts.write",
-        domain: SchemaDomain::Store,
-        tool: COGNITION_STORE_WRITE,
-        summary: "Create or revise an HTML artifact",
-        discriminators: &[("store", "artifacts"), ("op", "write")],
-        fields: &[
-            Field::req("content", "string", "HTML body"),
-            Field::opt("title", "string", "Artifact title"),
-            Field::opt("path", "string", "Existing artifact id to revise"),
-            Field::opt("presentation", "string", "inline, panel, or fullscreen"),
-            Field::opt("height", "integer", "Preferred height"),
-        ],
-    },
-    ActionType {
-        name: "artifacts.delete",
-        domain: SchemaDomain::Store,
-        tool: COGNITION_STORE_WRITE,
-        summary: "Delete an HTML artifact",
-        discriminators: &[("store", "artifacts"), ("op", "delete")],
-        fields: &[Field::req("path", "string", "Artifact id")],
-    },
-    ActionType {
-        name: "code.read",
-        domain: SchemaDomain::Store,
-        tool: COGNITION_STORE_READ,
-        summary: "Read a file in the bound worktree",
-        discriminators: &[("store", "code"), ("op", "read")],
-        fields: &[
-            Field::req("path", "string", "Path relative to root"),
-            Field::opt("root", "string", "Worktree root; Coder binds this"),
-            Field::opt("line_start", "integer", "1-based start line"),
-            Field::opt("line_end", "integer", "1-based end line"),
-        ],
-    },
-    ActionType {
-        name: "code.search",
-        domain: SchemaDomain::Store,
-        tool: COGNITION_STORE_READ,
-        summary: "Search the bound worktree",
-        discriminators: &[("store", "code"), ("op", "search")],
-        fields: &[
-            Field::req("query", "string", "Search text"),
-            Field::opt("root", "string", "Worktree root; Coder binds this"),
-            Field::opt("max_results", "integer", "Hit cap"),
-        ],
-    },
-    ActionType {
-        name: "code.write",
-        domain: SchemaDomain::Store,
-        tool: COGNITION_STORE_WRITE,
-        summary: "Write or patch a file in the bound worktree",
-        discriminators: &[("store", "code"), ("op", "write")],
-        fields: &[
-            Field::req("path", "string", "Path relative to root"),
-            Field::req(
-                "expected_sha256",
-                "string",
-                "Hash from read, or missing for a new file",
-            ),
-            Field::opt("content", "string", "Full file contents"),
-            Field::opt("find", "string", "Patch find text"),
-            Field::opt("replace", "string", "Patch replace text"),
-            Field::opt("root", "string", "Worktree root; Coder binds this"),
-        ],
-    },
-    ActionType {
-        name: "scripts.list",
-        domain: SchemaDomain::Store,
-        tool: COGNITION_STORE_READ,
-        summary: "List saved Grapheme scripts",
-        discriminators: &[("store", "scripts"), ("op", "list")],
-        fields: &[
-            Field::opt("module", "string", "Module filter"),
-            Field::opt("tag", "string", "Tag filter"),
-            Field::opt("limit", "integer", "Max rows"),
-        ],
-    },
-    ActionType {
-        name: "scripts.read",
-        domain: SchemaDomain::Store,
-        tool: COGNITION_STORE_READ,
-        summary: "Load a saved Grapheme script",
-        discriminators: &[("store", "scripts"), ("op", "read")],
-        fields: &[Field::req("path", "string", "Script id")],
-    },
-    ActionType {
-        name: "scripts.search",
-        domain: SchemaDomain::Store,
-        tool: COGNITION_STORE_READ,
-        summary: "Search saved Grapheme scripts",
-        discriminators: &[("store", "scripts"), ("op", "search")],
-        fields: &[
-            Field::opt("query", "string", "Search text"),
-            Field::opt("module", "string", "Module filter"),
-            Field::opt("tag", "string", "Tag filter"),
-            Field::opt("limit", "integer", "Max rows"),
-        ],
-    },
-    ActionType {
-        name: "scripts.write",
-        domain: SchemaDomain::Store,
-        tool: COGNITION_STORE_WRITE,
-        summary: "Save a Grapheme script",
-        discriminators: &[("store", "scripts"), ("op", "write")],
-        fields: &[
-            Field::req("content", "string", "Grapheme source"),
-            Field::opt("path", "string", "Script id"),
-            Field::opt("name", "string", "Display name"),
-            Field::opt("modules", "array", "Module names"),
-            Field::opt("tags", "array", "Tags"),
-            Field::opt("script_intent", "string", "Why this script exists"),
-        ],
-    },
-];
-
-const CAPABILITY: &[ActionType] = &[
-    ActionType {
-        name: "capability.find",
-        domain: SchemaDomain::Capability,
-        tool: COGNITION_CAPABILITY,
-        summary: "Search or resolve the capability catalog",
-        discriminators: &[("op", "find"), ("source", "auto")],
-        fields: &[
-            Field::opt("capability", "string", "Resolve this catalog id"),
-            Field::opt("query", "string", "Search text if capability is omitted"),
-            Field::opt("limit", "integer", "Search hit cap"),
-        ],
-    },
-    ActionType {
-        name: "mcp.find",
-        domain: SchemaDomain::Capability,
-        tool: COGNITION_CAPABILITY,
-        summary: "List MCP servers or discover tools",
-        discriminators: &[("op", "find"), ("source", "mcp")],
-        fields: &[
-            Field::opt("query", "string", "Tool search; omit to list servers"),
-            Field::opt("server_id", "string", "Limit discover to this server"),
-            Field::opt("limit", "integer", "Hit cap"),
-        ],
-    },
-    ActionType {
-        name: "grapheme.find",
-        domain: SchemaDomain::Capability,
-        tool: COGNITION_CAPABILITY,
-        summary: "Grapheme modules, ops, or examples",
-        discriminators: &[("op", "find"), ("source", "grapheme")],
-        fields: &[
-            Field::opt(
-                "module",
-                "string",
-                "Module id — returns info and ops when detail=full",
-            ),
-            Field::opt("name", "string", "Example name"),
-            Field::opt("query", "string", "Search modules"),
-            Field::opt_enum(
-                "detail",
-                "full (default) includes ops; summary is metadata only",
-                &["summary", "full"],
-            ),
-        ],
-    },
-    ActionType {
-        name: "capability.invoke",
-        domain: SchemaDomain::Capability,
-        tool: COGNITION_CAPABILITY,
-        summary: "Run a catalog capability (auto-picks Grapheme or MCP binding)",
-        discriminators: &[("op", "invoke"), ("source", "auto")],
-        fields: &[
-            Field::opt("capability", "string", "Catalog id"),
-            Field::opt("query", "string", "Resolve by search if capability omitted"),
-            Field::opt(
-                "script",
-                "string",
-                "Inline Grapheme if the binding is a script",
-            ),
-            Field::opt("params", "object", "Template params"),
-            Field::opt("input", "object", "MCP arguments when the binding is MCP"),
-        ],
-    },
-    ActionType {
-        name: "mcp.invoke",
-        domain: SchemaDomain::Capability,
-        tool: COGNITION_CAPABILITY,
-        summary: "Invoke one MCP tool",
-        discriminators: &[("op", "invoke"), ("source", "mcp")],
-        fields: &[
-            Field::req("server_id", "string", "MCP server id"),
-            Field::req("tool_name", "string", "MCP tool name"),
-            Field::opt("input", "object", "Tool arguments"),
-            Field::opt_enum(
-                "effect_class",
-                "external_read is parallel-safe",
-                &["external_read", "external_side_effect"],
-            ),
-        ],
-    },
-    ActionType {
-        name: "grapheme.invoke",
-        domain: SchemaDomain::Capability,
-        tool: COGNITION_CAPABILITY,
-        summary: "Run a Grapheme template or inline script",
-        discriminators: &[("op", "invoke"), ("source", "grapheme")],
-        fields: &[
-            Field::opt(
-                "template",
-                "string",
-                "Named template (e.g. http_poll, web_research)",
-            ),
-            Field::opt("params", "object", "Template params"),
-            Field::opt("script", "string", "Inline Grapheme source if no template"),
-        ],
-    },
-];
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::public_api::COGNITION_RUNTIME_MUTATE;
+    use crate::public_api::{COGNITION_RUNTIME_MUTATE, COGNITION_STORE_READ};
 
     #[test]
     fn lists_runtime_types_without_parameter_bodies() {
@@ -676,10 +333,12 @@ mod tests {
         let types = fetched["types"].as_array().expect("types");
         assert_eq!(types.len(), 2);
         assert_eq!(types[0]["tool"], COGNITION_STORE_READ);
-        assert_eq!(
-            types[0]["parameters"]["required"],
-            json!(["store", "op", "path"])
-        );
+        let required = types[0]["parameters"]["required"]
+            .as_array()
+            .expect("vault.read required");
+        assert!(required.iter().any(|value| value == "action"));
+        assert!(required.iter().any(|value| value == "path"));
+        assert!(types[0]["parameters"]["properties"]["path"].is_object());
         assert_eq!(types[1]["tool"], COGNITION_RUNTIME_MUTATE);
         assert!(types[1]["parameters"]["properties"]["script"].is_object());
     }

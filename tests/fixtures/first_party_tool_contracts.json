@@ -133,34 +133,30 @@
     {
       "registry": "coder_bound",
       "name": "cognition_capability",
-      "description": "Find or run a capability, MCP tool, or Grapheme module. op=find|invoke. source=auto|mcp|grapheme. Fetch fields with cognition_schema types=[...].",
+      "description": "Find or run a capability, MCP tool, or Grapheme module. action is a typed name (capability.find, grapheme.invoke, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
+          "action": {
+            "enum": [
+              "capability.find",
+              "capability.invoke",
+              "grapheme.find",
+              "grapheme.invoke",
+              "mcp.find",
+              "mcp.invoke"
+            ],
+            "type": "string"
+          },
           "intent": {
             "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
             "maxLength": 320,
             "type": "string"
-          },
-          "op": {
-            "enum": [
-              "find",
-              "invoke"
-            ],
-            "type": "string"
-          },
-          "source": {
-            "enum": [
-              "auto",
-              "grapheme",
-              "mcp"
-            ],
-            "type": "string"
           }
         },
         "required": [
-          "intent",
-          "op"
+          "action",
+          "intent"
         ],
         "type": "object"
       },
@@ -1827,37 +1823,35 @@
     {
       "registry": "coder_bound",
       "name": "cognition_store_read",
-      "description": "Read or search vault notes, HTML artifacts, code, or saved Grapheme scripts. store=vault|artifacts|code|scripts. op=list|read|search. Fetch fields with cognition_schema types=[...].",
+      "description": "Read or search vault notes, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.read, artifacts.search, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
+          "action": {
+            "enum": [
+              "artifacts.list",
+              "artifacts.read",
+              "artifacts.search",
+              "code.read",
+              "code.search",
+              "scripts.list",
+              "scripts.read",
+              "scripts.search",
+              "vault.list",
+              "vault.read",
+              "vault.search"
+            ],
+            "type": "string"
+          },
           "intent": {
             "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
             "maxLength": 320,
             "type": "string"
-          },
-          "op": {
-            "enum": [
-              "list",
-              "read",
-              "search"
-            ],
-            "type": "string"
-          },
-          "store": {
-            "enum": [
-              "artifacts",
-              "code",
-              "scripts",
-              "vault"
-            ],
-            "type": "string"
           }
         },
         "required": [
-          "intent",
-          "op",
-          "store"
+          "action",
+          "intent"
         ],
         "type": "object"
       },
@@ -1870,37 +1864,31 @@
     {
       "registry": "coder_bound",
       "name": "cognition_store_write",
-      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. store=vault|artifacts|code|scripts. op=write|delete|move. Fetch fields with cognition_schema types=[...].",
+      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.write, artifacts.write, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
+          "action": {
+            "enum": [
+              "artifacts.delete",
+              "artifacts.write",
+              "code.write",
+              "scripts.write",
+              "vault.delete",
+              "vault.move",
+              "vault.write"
+            ],
+            "type": "string"
+          },
           "intent": {
             "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
             "maxLength": 320,
             "type": "string"
-          },
-          "op": {
-            "enum": [
-              "delete",
-              "move",
-              "write"
-            ],
-            "type": "string"
-          },
-          "store": {
-            "enum": [
-              "artifacts",
-              "code",
-              "scripts",
-              "vault"
-            ],
-            "type": "string"
           }
         },
         "required": [
-          "intent",
-          "op",
-          "store"
+          "action",
+          "intent"
         ],
         "type": "object"
       },
@@ -2694,28 +2682,24 @@
     {
       "registry": "general_runtime",
       "name": "cognition_capability",
-      "description": "Find or run a capability, MCP tool, or Grapheme module. op=find|invoke. source=auto|mcp|grapheme. Fetch fields with cognition_schema types=[...].",
+      "description": "Find or run a capability, MCP tool, or Grapheme module. action is a typed name (capability.find, grapheme.invoke, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
-          "op": {
+          "action": {
             "enum": [
-              "find",
-              "invoke"
-            ],
-            "type": "string"
-          },
-          "source": {
-            "enum": [
-              "auto",
-              "grapheme",
-              "mcp"
+              "capability.find",
+              "capability.invoke",
+              "grapheme.find",
+              "grapheme.invoke",
+              "mcp.find",
+              "mcp.invoke"
             ],
             "type": "string"
           }
         },
         "required": [
-          "op"
+          "action"
         ],
         "type": "object"
       },
@@ -5340,31 +5324,29 @@
     {
       "registry": "general_runtime",
       "name": "cognition_store_read",
-      "description": "Read or search vault notes, HTML artifacts, code, or saved Grapheme scripts. store=vault|artifacts|code|scripts. op=list|read|search. Fetch fields with cognition_schema types=[...].",
+      "description": "Read or search vault notes, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.read, artifacts.search, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
-          "op": {
+          "action": {
             "enum": [
-              "list",
-              "read",
-              "search"
-            ],
-            "type": "string"
-          },
-          "store": {
-            "enum": [
-              "artifacts",
-              "code",
-              "scripts",
-              "vault"
+              "artifacts.list",
+              "artifacts.read",
+              "artifacts.search",
+              "code.read",
+              "code.search",
+              "scripts.list",
+              "scripts.read",
+              "scripts.search",
+              "vault.list",
+              "vault.read",
+              "vault.search"
             ],
             "type": "string"
           }
         },
         "required": [
-          "op",
-          "store"
+          "action"
         ],
         "type": "object"
       },
@@ -5389,31 +5371,25 @@
     {
       "registry": "general_runtime",
       "name": "cognition_store_write",
-      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. store=vault|artifacts|code|scripts. op=write|delete|move. Fetch fields with cognition_schema types=[...].",
+      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.write, artifacts.write, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
-          "op": {
+          "action": {
             "enum": [
-              "delete",
-              "move",
-              "write"
-            ],
-            "type": "string"
-          },
-          "store": {
-            "enum": [
-              "artifacts",
-              "code",
-              "scripts",
-              "vault"
+              "artifacts.delete",
+              "artifacts.write",
+              "code.write",
+              "scripts.write",
+              "vault.delete",
+              "vault.move",
+              "vault.write"
             ],
             "type": "string"
           }
         },
         "required": [
-          "op",
-          "store"
+          "action"
         ],
         "type": "object"
       },
@@ -5898,7 +5874,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_ui_present",
-      "description": "Present an HTML artifact in chat (inline card, side panel, or fullscreen) when the connected client advertises supports_ui_artifacts. Persist workflow: publish HTML here, then persist=true + surface_id (custom surface only) + component_id + slot to pin on the canvas. For first-time publish only — use cognition_store_write store=artifacts to revise an existing artifact. Canvas widgets: use MedousaStore (not localStorage); get/set/delete are async — await them in async handlers. inline: compact preview card. panel/fullscreen: use a transparent outer page background (no hard-coded #000 body); center content up to ~900px wide. Use height only for inline preview cap.",
+      "description": "Present an HTML artifact in chat (inline card, side panel, or fullscreen) when the connected client advertises supports_ui_artifacts. Persist workflow: publish HTML here, then persist=true + surface_id (custom surface only) + component_id + slot to pin on the canvas. For first-time publish only — use cognition_store_write action=artifacts.write to revise an existing artifact. Canvas widgets: use MedousaStore (not localStorage); get/set/delete are async — await them in async handlers. inline: compact preview card. panel/fullscreen: use a transparent outer page background (no hard-coded #000 body); center content up to ~900px wide. Use height only for inline preview cap.",
       "input_schema": {
         "properties": {
           "component_id": {

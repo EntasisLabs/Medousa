@@ -16,7 +16,7 @@ pub const HOST_BUS_TURN_APPENDIX: &str = r#"
 Chat (host) — same Medousa voice; you hold the thread, the bound Workshop executes.
 
 Host affordances:
-- Memory, identity, runtime orchestration, cognition_store_read/write (store=vault|artifacts|code|scripts), cognition_calendar_* (list/create/update/delete/import/export), cognition_capability (find or invoke).
+- Memory, identity, runtime orchestration, cognition_store_read/write (action=vault.read|artifacts.write|code.write|scripts.write), cognition_calendar_* (list/create/update/delete/import/export), cognition_capability (find or invoke).
 - cognition_web_search or cognition_browser_fetch — quick single lookup on Chat only; heavy or multi-step web → begin_work.
 - cognition_turn_begin_work(message, goal) — enter bound Workshop for Studio/canvas, components, vault writes, Grapheme, capability invoke (one Workshop per session).
 - cognition_spawn_turn_worker — parallel heavy research (multi-topic, long MCP/grapheme crawl). Host ends with user_ack; worker results return to the host so it can answer.
@@ -26,7 +26,7 @@ Host affordances:
 Rules:
 - Do not call environment_*, component_*, or ui_present on Chat — use begin_work with a concrete goal. cognition_capability is available on Chat; prefer begin_work for heavy Grapheme or multi-step MCP.
 - After begin_work, Chat turn ends with the ack; Workshop synthesis delivers on the same thread.
-- Quick vault peek: cognition_store_read store=vault on Chat without entering the Workshop.
+- Quick vault peek: cognition_store_read action=vault.read on Chat without entering the Workshop.
 - Personal calendar: cognition_calendar_list / create / update / delete on Chat (default store calendar/personal.ics).
 - Turn control: cognition_turn_finish for Chat answers; cognition_turn_checkpoint for mid-task handoff; cognition_turn_request_more_rounds when budget-tight."#;
 
@@ -111,7 +111,7 @@ Workflow:
 0) cognition_environment_wiki before guessing propose JSON.
 1) cognition_environment_get — surfaces + components.
 2) cognition_custom_view_compose for one-shot OR stepwise: cognition_environment_patch, cognition_ui_present(persist=true), cognition_feed_subscribe.
-3) cognition_store_write store=artifacts revises an existing artifact_id; cognition_ui_present is first-time publish only.
+3) cognition_store_write action=artifacts.write revises an existing artifact_id; cognition_ui_present is first-time publish only.
 4) Only kind=custom surfaces — never builtin home/chat/settings/runtime.
 5) Prefer ui_present(persist=true) over vault markdown when the deliverable is an interactive Studio widget.
 6) Interactive widgets: NEVER localStorage/sessionStorage (sandbox blocks it). Use window.MedousaStore — engine-backed KV; survives refresh.
@@ -122,7 +122,7 @@ Workflow:
 Broken widget troubleshoot:
 1) cognition_custom_view_doctor(surface_id, probe=true, include_runtime=true, include_static_lint=true)
 2) Read components[].runtime.issues[] — fix per wiki/doctor hints
-3) cognition_store_write store=artifacts minimal diff; re-run doctor until issues is empty"#;
+3) cognition_store_write action=artifacts.write minimal diff; re-run doctor until issues is empty"#;
 
 pub fn host_route_appendix(intent: Option<&str>) -> String {
     let intent = intent.unwrap_or("general");
@@ -143,7 +143,7 @@ Scope:
 - Read [MEDOUSA_WORKER_HANDOFF] and HOST_TOOL_DIGESTS before any discovery tool. If digests show cognition_capability find already succeeded, do not repeat it unless the prior receipt failed.
 
 Minimum tool path:
-- When WORKER_TASK names a capability (e.g. web_research), module.op, or URL: prefer cognition_capability op=invoke — not a full discovery spiral.
+- When WORKER_TASK names a capability (e.g. web_research), module.op, or URL: prefer cognition_capability action=capability.invoke — not a full discovery spiral.
 - Target 1–3 execution tool rounds for clear tasks; use discovery only when WORKER_TASK is ambiguous or a tool failed.
 - End early when WORKER_TASK is satisfied — max_tool_rounds is a cap, not a target.
 
@@ -167,13 +167,13 @@ pub const WORKER_GRAPHEME_APPENDIX: &str = r#"
 Grapheme is GraphQL-style query syntax with Elixir-like piping. Scripts fail when you invent syntax — always copy from discovered examples first.
 
 Execution order:
-0) Check [MEDOUSA_GRAPHEME_SCRIPTS] at turn start and HOST_TOOL_DIGESTS — cognition_store_read store=scripts before re-authoring a similar workflow.
+0) Check [MEDOUSA_GRAPHEME_SCRIPTS] at turn start and HOST_TOOL_DIGESTS — cognition_store_read action=scripts.read before re-authoring a similar workflow.
 1) Check HOST_TOOL_DIGESTS and WORKER_TASK — if capability or module is already named, skip to step 3.
-2) Classify only when ambiguous: live/current facts need web.<provider>, http, websearch, or cognition_capability op=invoke — not find alone.
-3) Prefer cognition_capability op=invoke when WORKER_TASK maps to a catalog capability (web_research, fetch, docs). Preset: op=invoke source=grapheme template=research_report|http_poll|csv_digest before hand-authoring source.
-4) Discovery (only if steps 1–3 are insufficient): cognition_capability op=find source=grapheme (module for info+ops; name for examples).
-5) Run cognition_capability op=invoke source=grapheme with script from the closest example; one adjust-and-retry on failure — no blind rewrite loops.
-6) After a successful reusable workflow, cognition_store_write store=scripts with module tags for the library.
+2) Classify only when ambiguous: live/current facts need web.<provider>, http, websearch, or cognition_capability action=capability.invoke — not find alone.
+3) Prefer cognition_capability action=capability.invoke when WORKER_TASK maps to a catalog capability (web_research, fetch, docs). Preset: action=grapheme.invoke template=research_report|http_poll|csv_digest before hand-authoring source.
+4) Discovery (only if steps 1–3 are insufficient): cognition_capability action=grapheme.find (module for info+ops; name for examples).
+5) Run cognition_capability action=grapheme.invoke with script from the closest example; one adjust-and-retry on failure — no blind rewrite loops.
+6) After a successful reusable workflow, cognition_store_write action=scripts.write with module tags for the library.
 
 Canonical minimal shape (adapt ops from examples, do not cargo-cult unrelated modules):
 import core from "grapheme/core"
@@ -201,8 +201,8 @@ Pass session_id on every memory tool call. Summarize tool JSON receipts in your 
 
 pub const WORKER_CAPABILITY_APPENDIX: &str = r#"
 [MEDOUSA_WORKER_CAPABILITY]
-For single-shot external actions, prefer cognition_capability op=invoke (capability id + input) before hand-authoring Grapheme.
-Use cognition_capability op=find only to inspect bindings.
+For single-shot external actions, prefer cognition_capability action=capability.invoke (capability id + input) before hand-authoring Grapheme.
+Use cognition_capability action=capability.find only to inspect bindings.
 If MCP invoke fails, try capability invoke with Grapheme fallbacks or report the failure briefly — one adjust-and-retry, not endless retries."#;
 
 pub const WORKER_OPENSHELL_SKILL_APPENDIX: &str = r#"
