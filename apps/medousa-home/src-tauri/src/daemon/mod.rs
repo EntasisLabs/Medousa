@@ -433,6 +433,11 @@ pub async fn interactive_turn_send(
             },
         )
     });
+    let stage_routing = if !provider.is_empty() && !model.is_empty() {
+        stage_routing.aligned_with_host(&provider, &model)
+    } else {
+        stage_routing
+    };
 
     let channel_surface = channel_surface
         .map(|value| value.trim().to_string())

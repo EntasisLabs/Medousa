@@ -562,6 +562,11 @@ pub async fn turn_create(
             },
         )
     });
+    let stage_routing = if !provider.is_empty() && !model.is_empty() {
+        stage_routing.aligned_with_host(&provider, &model)
+    } else {
+        stage_routing
+    };
     let channel_surface = channel_surface
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());

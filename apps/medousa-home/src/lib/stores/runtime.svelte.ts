@@ -22,6 +22,7 @@ import type {
 import type { InferenceProfiles } from "$lib/types/inferenceProfiles";
 import { normalizeReasoningEffort } from "$lib/types/reasoningEffort";
 import { pollAllSettled } from "$lib/utils/poll";
+import { alignStageRoutingWithHost, defaultStageRouting } from "$lib/utils/stageRouting";
 import { isTauriMobilePlatform } from "$lib/platform";
 import { isTauri } from "$lib/window";
 
@@ -93,13 +94,16 @@ export class RuntimeStore {
         model: summary.model?.trim() || DEFAULT_MODEL,
         response_depth_mode: summary.responseDepthMode ?? DEFAULT_DEPTH,
         reasoning_effort: summary.reasoningEffort ?? DEFAULT_REASONING,
-        stage_routing:
+        stage_routing: alignStageRoutingWithHost(
           summary.stageRouting?.orchestrator?.role
             ? summary.stageRouting
             : defaultStageRouting(
                 summary.provider?.trim() || DEFAULT_PROVIDER,
                 summary.model?.trim() || DEFAULT_MODEL,
               ),
+          summary.provider?.trim() || DEFAULT_PROVIDER,
+          summary.model?.trim() || DEFAULT_MODEL,
+        ),
       });
     } catch {
       // Local defaults are optional.
@@ -127,7 +131,7 @@ export class RuntimeStore {
       draft.reasoningEffort ?? DEFAULT_REASONING,
     );
     if (draft.stageRouting?.orchestrator?.role) {
-      this.stageRouting = JSON.parse(JSON.stringify(draft.stageRouting));
+      this.stageRouting = alignStageRoutingWithHost(draft.stageRouting, provider, model);
     } else {
       this.stageRouting = defaultStageRouting(provider, model);
     }
@@ -154,7 +158,7 @@ export class RuntimeStore {
       defaults.reasoning_effort ?? DEFAULT_REASONING,
     );
     if (defaults.stage_routing?.orchestrator?.role) {
-      this.stageRouting = defaults.stage_routing;
+      this.stageRouting = alignStageRoutingWithHost(defaults.stage_routing, provider, model);
     } else {
       this.stageRouting = defaultStageRouting(provider, model);
     }
@@ -366,30 +370,6 @@ export class RuntimeStore {
 function normalizeDepth(value: string): DepthMode {
   if (value === "concise" || value === "deep") return value;
   return "standard";
-}
-
-function defaultStageRouting(provider: string, model: string): StageRoutingMatrix {
-  const route = (
-    role: string,
-    policy: string,
-    fallback: string,
-  ): StageRoutingMatrix["orchestrator"] => ({
-    role,
-    provider,
-    model,
-    policy_profile: policy,
-    fallback_chain: [fallback, "safe-default"],
-  });
-
-  return {
-    orchestrator: route("orchestrator", "balanced", "orchestrator"),
-    chunker: route("chunker", "fast", "chunker"),
-    extractor: route("extractor", "analytical", "extractor"),
-    summarizer: route("summarizer", "balanced", "summarizer"),
-    verifier: route("verifier", "strict", "verifier"),
-    packer: route("packer", "balanced", "packer"),
-    final_response: route("final_response", "balanced", "final_response"),
-  };
 }
 
 export const runtime = new RuntimeStore();
