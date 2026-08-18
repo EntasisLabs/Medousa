@@ -181,12 +181,7 @@ pub struct ManuscriptContext {
 }
 
 const SCHEDULED_ESSENTIAL_TOOLS: &[&str] = &[
-    "cognition_turn_prepare_final",
-    "cognition.turn.prepare_final",
-    "cognition_turn_finish",
-    "cognition.turn.finish",
-    "cognition_turn_request_more_rounds",
-    "cognition.turn.request_more_rounds",
+    "cognition_turn",
     "cognition_utility_time_now",
     "cognition_utility_day_of_week",
     "cognition_utility_uuid",

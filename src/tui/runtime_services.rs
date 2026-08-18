@@ -33,11 +33,6 @@ use crate::tools::{
     CognitionUtilityDayOfWeekTool, CognitionUtilityTimeNowTool, CognitionUtilityUuidTool,
     PolicyAwareToolRegistry, TuiRuntime,
 };
-use crate::turn_control_tools::{
-    CognitionTurnBeginWorkTool, CognitionTurnCheckpointTool, CognitionTurnFinishTool,
-    CognitionTurnPrepareFinalTool, CognitionTurnProposeModeTool,
-    CognitionTurnRequestMoreRoundsTool, CognitionTurnUpdateUserTool,
-};
 use crate::typed_tools::{ToolCatalogHandle, ToolRegistrar, ToolRegistration};
 use crate::workflow;
 use tokio::sync::RwLock;
@@ -314,17 +309,12 @@ pub(crate) async fn assemble_tui_runtime(
         &mut tool_registry,
         worker_scheduler.clone(),
     )?;
-
-    tool_registry.register_typed_tool(CognitionTurnBeginWorkTool::new(worker_scheduler.clone()))?;
-    tool_registry.register_typed_tool(CognitionTurnUpdateUserTool)?;
-    tool_registry.register_typed_tool(CognitionTurnCheckpointTool)?;
-    tool_registry.register_typed_tool(CognitionTurnPrepareFinalTool)?;
-    tool_registry.register_typed_tool(CognitionTurnFinishTool)?;
-    tool_registry.register_typed_tool(CognitionTurnRequestMoreRoundsTool)?;
-    tool_registry.register_typed_tool(CognitionTurnProposeModeTool::new(
+    crate::turn_api::register_turn_tools(
+        &mut tool_registry,
+        worker_scheduler.clone(),
         session_id.to_string(),
         turn_scope.clone(),
-    ))?;
+    )?;
 
     let capability_registry = Arc::new(RwLock::new(CapabilityRegistry::with_loaded_manifest()));
     let mcp_gateway_client = Arc::new(McpGatewayClient::from_env());

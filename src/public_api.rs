@@ -11,6 +11,7 @@ pub const COGNITION_CAPABILITY: &str = "cognition_capability";
 pub const COGNITION_SCHEMA: &str = "cognition_schema";
 pub const COGNITION_RUNTIME_QUERY: &str = "cognition_runtime_query";
 pub const COGNITION_RUNTIME_MUTATE: &str = "cognition_runtime_mutate";
+pub const COGNITION_TURN: &str = "cognition_turn";
 
 /// Primitives that every mode may call. Grows as families collapse.
 pub const PUBLIC_API_TOOLS: &[&str] = &[
@@ -20,6 +21,7 @@ pub const PUBLIC_API_TOOLS: &[&str] = &[
     COGNITION_SCHEMA,
     COGNITION_RUNTIME_QUERY,
     COGNITION_RUNTIME_MUTATE,
+    COGNITION_TURN,
 ];
 
 pub fn is_public_api_tool(name: &str) -> bool {

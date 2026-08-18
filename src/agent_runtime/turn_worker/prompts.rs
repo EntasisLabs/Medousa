@@ -18,7 +18,7 @@ Chat (host) — same Medousa voice; you hold the thread, the bound Workshop exec
 Host affordances:
 - Memory, identity, runtime orchestration, cognition_store_read/write (action=vault.read|artifacts.write|code.write|scripts.write), cognition_calendar_* (list/create/update/delete/import/export), cognition_capability (find or invoke).
 - cognition_web_search or cognition_browser_fetch — quick single lookup on Chat only; heavy or multi-step web → begin_work.
-- cognition_turn_begin_work(message, goal) — enter bound Workshop for Studio/canvas, components, vault writes, Grapheme, capability invoke (one Workshop per session).
+- cognition_turn action=turn.begin_work(message, goal) — enter bound Workshop for Studio/canvas, components, vault writes, Grapheme, capability invoke (one Workshop per session).
 - cognition_spawn_turn_worker — parallel heavy research (multi-topic, long MCP/grapheme crawl). Host ends with user_ack; worker results return to the host so it can answer.
 - cognition_workshop_steer — forward principal guidance into the active bound Workshop.
 - cognition_turn_worker_status / cognition_turn_worker_cancel for Workshop and worker records.
@@ -28,14 +28,14 @@ Rules:
 - After begin_work, Chat turn ends with the ack; Workshop synthesis delivers on the same thread.
 - Quick vault peek: cognition_store_read action=vault.read on Chat without entering the Workshop.
 - Personal calendar: cognition_calendar_list / create / update / delete on Chat (default store calendar/personal.ics).
-- Turn control: cognition_turn_finish for Chat answers; cognition_turn_checkpoint for mid-task handoff; cognition_turn_request_more_rounds when budget-tight."#;
+- Turn control: cognition_turn action=turn.finish for Chat answers; cognition_turn action=turn.checkpoint for mid-task handoff; cognition_turn action=turn.request_more_rounds when budget-tight."#;
 
 pub const HOST_CANVAS_APPENDIX: &str = r#"
 [MEDOUSA_HOST_CANVAS]
 Studio layout (supports_ui_artifacts) — schedule via begin_work; do not execute on Chat.
 
 Routing:
-- cognition_turn_begin_work with a goal describing the Studio change (surface, widget, preset).
+- cognition_turn action=turn.begin_work with a goal describing the Studio change (surface, widget, preset).
 - Full recipes: cognition_environment_wiki(topic=recipe|merge_spec|artifact_runtime|…) — wiki before hand-building propose/apply JSON.
 - Workflow sketch: wiki → cognition_environment_get → propose/apply → ui_present(persist) or component_create.
 - Never target builtin surfaces (home, chat, settings, runtime) for agent-owned components — only kind=custom surfaces.
@@ -154,9 +154,9 @@ Memory:
 
 pub const WORKER_SYSTEM_APPENDIX: &str = r#"Rules:
 - Execute WORKER_TASK with the minimum tools needed; end early when done (see MEDOUSA_TOOL_POLICY and MEDOUSA_WORKER_DISCIPLINE).
-- After tools: call cognition_turn_finish with the complete principal-ready answer — naked prose ends the turn but is not committed as final.
-- Use cognition_turn_update_user for short principal-visible status mid-turn (same round as your next tool). Use cognition_turn_begin_work only before heavy/long-running work. Naked status chat prose fights the turn loop.
-- If the tool-round budget is too tight, call cognition_turn_request_more_rounds with a clear reason — the turn pauses until the principal approves.
+- After tools: call cognition_turn action=turn.finish with the complete principal-ready answer — naked prose ends the turn but is not committed as final.
+- Use cognition_turn action=turn.update_user for short principal-visible status mid-turn (same round as your next tool). Use cognition_turn action=turn.begin_work only before heavy/long-running work. Naked status chat prose fights the turn loop.
+- If the tool-round budget is too tight, call cognition_turn action=turn.request_more_rounds with a clear reason — the turn pauses until the principal approves.
 - Ground claims in tool receipts (e.g. cognition_memory_calibrate before claiming calibration).
 - Do not repeat the same status table without new tool output.
 - On every cognition_memory_* tool call, pass session_id as a non-empty string (see WORKER_CONTEXT). Never pass null."#;
@@ -411,7 +411,7 @@ mod tests {
     fn host_and_worker_prompts_share_collaborator_voice() {
         let worker = worker_system_prompt("sess-1", TurnWorkerIntent::General, None, false, false);
         assert!(worker.contains("[MEDOUSA_COLLABORATOR_VOICE]"));
-        assert!(worker.contains("cognition_turn_finish"));
+        assert!(worker.contains("cognition_turn action=turn.finish"));
         assert!(!worker.contains("background specialist"));
 
         let host = system_prompt_for_host_profile("base-sttp", true, false, false, None);

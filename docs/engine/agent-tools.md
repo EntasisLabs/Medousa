@@ -44,12 +44,13 @@ Source: `src/tool_bootstrap.rs`
 | Capability | `cognition_capability` (`action=capability.find\|grapheme.invoke\|mcp.invoke\|…`) — catalog, MCP, and Grapheme discover/run |
 | Schema | `cognition_schema` (`domain` + `types=[...]`) — batched typed action parameter schemas |
 | Runtime | `cognition_runtime_query` / `cognition_runtime_mutate` (`action=job.list\|job.enqueue\|workflow.run\|…`) |
+| Turn | `cognition_turn` (`action=turn.finish\|turn.checkpoint\|turn.begin_work\|…`) |
 | Calendar | `cognition_calendar_*` — [calendar.md](calendar.md) |
 | MCP | `cognition.mcp.*` — [mcp-gateway-setup.md](../mcp-gateway-setup.md) |
 | UI present | `cognition_ui_present` — emits `ui_artifact` on stream |
 | Web | `cognition_web_search` — all surfaces; BrowserHost → lite → Grapheme chain |
 | Browser fetch | `cognition_browser_fetch` — gated on `supports_browser_host` |
-| Finish | `cognition_finish` — ends tool loop |
+| Finish | `cognition_turn action=turn.finish` — ends tool loop |
 
 ---
 

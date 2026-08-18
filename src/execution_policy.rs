@@ -193,6 +193,19 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
                 StepExecutionClass::Mutating
             }
         }
+        "cognition_turn" => {
+            let action = input
+                .get("action")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            match action {
+                "turn.finish"
+                | "turn.checkpoint"
+                | "turn.prepare_final"
+                | "turn.request_more_rounds" => StepExecutionClass::ReadOnly,
+                _ => StepExecutionClass::Mutating,
+            }
+        }
         "cognition_memory_store"
         | "cognition_memory_calibrate"
         | "cognition_runtime_mutate"
@@ -210,15 +223,7 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         | "cognition_runtime_query"
         | "cognition_schema"
         | "cognition_web_search"
-        | "cognition_spawn_turn_worker"
-        | "cognition_turn_prepare_final"
-        | "cognition.turn.prepare_final"
-        | "cognition_turn_finish"
-        | "cognition.turn.finish"
-        | "cognition_turn_checkpoint"
-        | "cognition.turn.checkpoint"
-        | "cognition_turn_request_more_rounds"
-        | "cognition.turn.request_more_rounds" => StepExecutionClass::ReadOnly,
+        | "cognition_spawn_turn_worker" => StepExecutionClass::ReadOnly,
         _ if tool_name.contains("modules") || tool_name.contains("examples") => {
             StepExecutionClass::ReadOnly
         }
@@ -344,6 +349,24 @@ mod tests {
         ];
         let settings = ParallelExecutionSettings::default();
         assert!(parallel_tool_batch_allowed(&calls, &settings).is_ok());
+    }
+
+    #[test]
+    fn turn_finish_is_parallel_safe_and_begin_work_is_mutating() {
+        let finish = json!({ "action": "turn.finish", "message": "Done." });
+        let begin = json!({
+            "action": "turn.begin_work",
+            "message": "Starting",
+            "goal": "inspect"
+        });
+        assert_eq!(
+            classify_tool_call("cognition_turn", &finish),
+            StepExecutionClass::ReadOnly
+        );
+        assert_eq!(
+            classify_tool_call("cognition_turn", &begin),
+            StepExecutionClass::Mutating
+        );
     }
 
     #[test]

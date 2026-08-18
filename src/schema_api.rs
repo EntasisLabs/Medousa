@@ -10,6 +10,7 @@ use crate::capability_tools::capability_type_schemas;
 use crate::public_api::COGNITION_SCHEMA;
 use crate::runtime_api::runtime_type_schemas;
 use crate::store_tools::store_type_schemas;
+use crate::turn_api::turn_type_schemas;
 use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
 
 const SCHEMA_ID: ToolId = ToolId::new(COGNITION_SCHEMA);
@@ -20,6 +21,7 @@ enum SchemaDomain {
     Runtime,
     Store,
     Capability,
+    Turn,
 }
 
 impl SchemaDomain {
@@ -28,6 +30,7 @@ impl SchemaDomain {
             Self::Runtime => "runtime",
             Self::Store => "store",
             Self::Capability => "capability",
+            Self::Turn => "turn",
         }
     }
 }
@@ -66,7 +69,7 @@ impl JsonSchema for SchemaInput {
         advertised_object_schema(&[
             (
                 "domain",
-                string_enum_schema(&["runtime", "store", "capability"]),
+                string_enum_schema(&["runtime", "store", "capability", "turn"]),
                 false,
             ),
             ("types", type_name_array_schema(), false),
@@ -101,16 +104,19 @@ fn dispatch(input: SchemaInput) -> stasis::prelude::Result<Value> {
 
     let mut types = Vec::new();
     for name in &requested {
-        let action = catalog.iter().find(|action| action.name == name).ok_or_else(|| {
-            StasisError::PortFailure(format!(
-                "cognition_schema: unknown type '{name}'. valid types: {}",
-                catalog
-                    .iter()
-                    .map(|action| action.name)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ))
-        })?;
+        let action = catalog
+            .iter()
+            .find(|action| action.name == name)
+            .ok_or_else(|| {
+                StasisError::PortFailure(format!(
+                    "cognition_schema: unknown type '{name}'. valid types: {}",
+                    catalog
+                        .iter()
+                        .map(|action| action.name)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ))
+            })?;
         if let Some(domain) = input.domain
             && action.domain != domain
         {
@@ -163,6 +169,7 @@ fn catalog() -> Vec<CatalogItem> {
             SchemaDomain::Capability,
             capability_type_schemas(),
         ))
+        .chain(generated_items(SchemaDomain::Turn, turn_type_schemas()))
         .collect()
 }
 
@@ -222,7 +229,10 @@ fn schema_object<T: JsonSchema>() -> Value {
         if !definitions.is_empty()
             && let Some(object) = definition.as_object_mut()
         {
-            object.insert("definitions".to_string(), Value::Object(definitions.clone()));
+            object.insert(
+                "definitions".to_string(),
+                Value::Object(definitions.clone()),
+            );
         }
     }
     definition
@@ -362,5 +372,6 @@ mod tests {
         assert!(names.iter().any(|value| value == "vault.read"));
         assert!(names.iter().any(|value| value == "job.enqueue"));
         assert!(names.iter().any(|value| value == "grapheme.invoke"));
+        assert!(names.iter().any(|value| value == "turn.finish"));
     }
 }

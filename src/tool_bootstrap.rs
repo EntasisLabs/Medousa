@@ -81,11 +81,7 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_store_read",
     "cognition_store_write",
     "cognition_calendar_list",
-    "cognition_turn_begin_work",
-    "cognition_turn_update_user",
-    "cognition_turn_checkpoint",
-    "cognition_turn_finish",
-    "cognition_turn_propose_mode",
+    "cognition_turn",
     "cognition_turn_worker_status",
     "cognition_ui_present",
     "cognition_ui_build",
@@ -95,9 +91,7 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
 /// Always-visible worker workshop tools.
 pub const WORKER_BOOTSTRAP_TOOLS: &[&str] = &[
     COGNITION_TOOLS_DISCOVER,
-    "cognition_turn_begin_work",
-    "cognition_turn_update_user",
-    "cognition_turn_finish",
+    "cognition_turn",
     "cognition_capability",
     "cognition_schema",
     "cognition_runtime_query",
@@ -854,6 +848,7 @@ mod tests {
         assert!(HOST_BOOTSTRAP_TOOLS.len() >= 8);
         assert!(HOST_BOOTSTRAP_TOOLS.len() <= 24);
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&COGNITION_TOOLS_DISCOVER));
+        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_turn"));
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_remember"));
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_recall"));
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_calendar_list"));

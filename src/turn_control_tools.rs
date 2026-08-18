@@ -10,40 +10,27 @@ use stasis::application::orchestration::tool_registry::StasisTool;
 use crate::semantic_values::TrimmedText;
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
-/// Canonical registry name (snake_case).
+/// Canonical registry name (snake_case). Inner tools stay unregistered; the
+/// public wire is `cognition_turn` + `action`. These names remain termination
+/// reasons and inner ToolIds.
 pub const COGNITION_TURN_PREPARE_FINAL: &str = "cognition_turn_prepare_final";
-
-/// Dot alias accepted from models trained on dotted tool names.
-pub const COGNITION_TURN_PREPARE_FINAL_DOTTED: &str = "cognition.turn.prepare_final";
 
 /// Hard-stop: deliver final user-facing text in the tool call and end the loop immediately.
 pub const COGNITION_TURN_FINISH: &str = "cognition_turn_finish";
 
-pub const COGNITION_TURN_FINISH_DOTTED: &str = "cognition.turn.finish";
-
 /// Hand mid-task update to the principal and end this agent turn (conversation continues on their reply).
 pub const COGNITION_TURN_CHECKPOINT: &str = "cognition_turn_checkpoint";
 
-pub const COGNITION_TURN_CHECKPOINT_DOTTED: &str = "cognition.turn.checkpoint";
-
 pub const COGNITION_TURN_REQUEST_MORE_ROUNDS: &str = "cognition_turn_request_more_rounds";
-
-pub const COGNITION_TURN_REQUEST_MORE_ROUNDS_DOTTED: &str = "cognition.turn.request_more_rounds";
 
 /// Signal tool-loop entry with a principal-facing progress message (does not end the turn).
 pub const COGNITION_TURN_BEGIN_WORK: &str = "cognition_turn_begin_work";
 
-pub const COGNITION_TURN_BEGIN_WORK_DOTTED: &str = "cognition.turn.begin_work";
-
 /// Short principal-facing status while the turn continues (retries, course-corrections, light updates).
 pub const COGNITION_TURN_UPDATE_USER: &str = "cognition_turn_update_user";
 
-pub const COGNITION_TURN_UPDATE_USER_DOTTED: &str = "cognition.turn.update_user";
-
 /// Propose a mode transition for the current chat. Runtime policy decides whether it waits.
 pub const COGNITION_TURN_PROPOSE_MODE: &str = "cognition_turn_propose_mode";
-
-pub const COGNITION_TURN_PROPOSE_MODE_DOTTED: &str = "cognition.turn.propose_mode";
 
 const COGNITION_TURN_UPDATE_USER_ID: ToolId = ToolId::new(COGNITION_TURN_UPDATE_USER);
 const COGNITION_TURN_BEGIN_WORK_ID: ToolId = ToolId::new(COGNITION_TURN_BEGIN_WORK);
@@ -60,62 +47,53 @@ pub struct RequestMoreRoundsPayload {
     pub progress_summary: Option<String>,
 }
 
-pub fn is_prepare_final_tool_name(name: &str) -> bool {
-    let trimmed = name.trim();
-    trimmed == COGNITION_TURN_PREPARE_FINAL
-        || trimmed == COGNITION_TURN_PREPARE_FINAL_DOTTED
-        || crate::tool_aliases::sanitize_tool_advertised_name(trimmed)
-            == COGNITION_TURN_PREPARE_FINAL
+fn turn_action<'a>(tool_name: &str, input: &'a Value) -> Option<&'a str> {
+    if tool_name.trim() != crate::public_api::COGNITION_TURN {
+        return None;
+    }
+    input
+        .get("action")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
 }
 
-pub fn is_finish_turn_tool_name(name: &str) -> bool {
-    let trimmed = name.trim();
-    trimmed == COGNITION_TURN_FINISH
-        || trimmed == COGNITION_TURN_FINISH_DOTTED
-        || crate::tool_aliases::sanitize_tool_advertised_name(trimmed) == COGNITION_TURN_FINISH
+pub fn is_turn_control_call(tool_name: &str) -> bool {
+    tool_name.trim() == crate::public_api::COGNITION_TURN
 }
 
-pub fn is_checkpoint_turn_tool_name(name: &str) -> bool {
-    let trimmed = name.trim();
-    trimmed == COGNITION_TURN_CHECKPOINT
-        || trimmed == COGNITION_TURN_CHECKPOINT_DOTTED
-        || crate::tool_aliases::sanitize_tool_advertised_name(trimmed) == COGNITION_TURN_CHECKPOINT
+pub fn is_prepare_final_tool_name(tool_name: &str, input: &Value) -> bool {
+    turn_action(tool_name, input) == Some("turn.prepare_final")
 }
 
-pub fn is_request_more_rounds_tool_name(name: &str) -> bool {
-    let trimmed = name.trim();
-    trimmed == COGNITION_TURN_REQUEST_MORE_ROUNDS
-        || trimmed == COGNITION_TURN_REQUEST_MORE_ROUNDS_DOTTED
-        || crate::tool_aliases::sanitize_tool_advertised_name(trimmed)
-            == COGNITION_TURN_REQUEST_MORE_ROUNDS
+pub fn is_finish_turn_tool_name(tool_name: &str, input: &Value) -> bool {
+    turn_action(tool_name, input) == Some("turn.finish")
 }
 
-pub fn is_begin_work_tool_name(name: &str) -> bool {
-    let trimmed = name.trim();
-    trimmed == COGNITION_TURN_BEGIN_WORK
-        || trimmed == COGNITION_TURN_BEGIN_WORK_DOTTED
-        || crate::tool_aliases::sanitize_tool_advertised_name(trimmed) == COGNITION_TURN_BEGIN_WORK
+pub fn is_checkpoint_turn_tool_name(tool_name: &str, input: &Value) -> bool {
+    turn_action(tool_name, input) == Some("turn.checkpoint")
 }
 
-pub fn is_update_user_tool_name(name: &str) -> bool {
-    let trimmed = name.trim();
-    trimmed == COGNITION_TURN_UPDATE_USER
-        || trimmed == COGNITION_TURN_UPDATE_USER_DOTTED
-        || crate::tool_aliases::sanitize_tool_advertised_name(trimmed) == COGNITION_TURN_UPDATE_USER
+pub fn is_request_more_rounds_tool_name(tool_name: &str, input: &Value) -> bool {
+    turn_action(tool_name, input) == Some("turn.request_more_rounds")
 }
 
-pub fn is_propose_mode_tool_name(name: &str) -> bool {
-    let trimmed = name.trim();
-    trimmed == COGNITION_TURN_PROPOSE_MODE
-        || trimmed == COGNITION_TURN_PROPOSE_MODE_DOTTED
-        || crate::tool_aliases::sanitize_tool_advertised_name(trimmed)
-            == COGNITION_TURN_PROPOSE_MODE
+pub fn is_begin_work_tool_name(tool_name: &str, input: &Value) -> bool {
+    turn_action(tool_name, input) == Some("turn.begin_work")
+}
+
+pub fn is_update_user_tool_name(tool_name: &str, input: &Value) -> bool {
+    turn_action(tool_name, input) == Some("turn.update_user")
+}
+
+pub fn is_propose_mode_tool_name(tool_name: &str, input: &Value) -> bool {
+    turn_action(tool_name, input) == Some("turn.propose_mode")
 }
 
 /// Extract the latest successful user-update line from a tool batch.
 pub fn update_user_message_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
     for inv in invocations.iter().rev() {
-        if !is_update_user_tool_name(&inv.tool_name) {
+        if !is_update_user_tool_name(&inv.tool_name, &inv.tool_input) {
             continue;
         }
         if inv.tool_output.get("ok") == Some(&Value::Bool(false)) {
@@ -140,7 +118,7 @@ pub fn turn_progress_message_from_invocations(invocations: &[ToolInvocation]) ->
 /// Extract the latest successful begin-work progress message from a tool batch.
 pub fn begin_work_message_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
     for inv in invocations.iter().rev() {
-        if !is_begin_work_tool_name(&inv.tool_name) {
+        if !is_begin_work_tool_name(&inv.tool_name, &inv.tool_input) {
             continue;
         }
         if inv.tool_output.get("ok") == Some(&Value::Bool(false)) {
@@ -168,7 +146,7 @@ fn note_from_begin_work_payload(payload: &Value) -> Option<String> {
 /// Extract the latest successful begin-work sticky note from a tool batch.
 pub fn begin_work_note_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
     for inv in invocations.iter().rev() {
-        if !is_begin_work_tool_name(&inv.tool_name) {
+        if !is_begin_work_tool_name(&inv.tool_name, &inv.tool_input) {
             continue;
         }
         if inv.tool_output.get("ok") == Some(&Value::Bool(false)) {
@@ -196,7 +174,7 @@ fn message_from_begin_work_payload(payload: &Value) -> Option<String> {
 /// Extract the operator-facing final message from a tool batch, if `cognition_turn_finish` ran.
 pub fn finish_turn_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
     for inv in invocations.iter().rev() {
-        if !is_finish_turn_tool_name(&inv.tool_name) {
+        if !is_finish_turn_tool_name(&inv.tool_name, &inv.tool_input) {
             continue;
         }
         if inv.tool_output.get("ok") == Some(&Value::Bool(false)) {
@@ -222,7 +200,7 @@ pub fn request_more_rounds_from_invocations(
     invocations: &[ToolInvocation],
 ) -> Option<RequestMoreRoundsPayload> {
     for inv in invocations.iter().rev() {
-        if !is_request_more_rounds_tool_name(&inv.tool_name) {
+        if !is_request_more_rounds_tool_name(&inv.tool_name, &inv.tool_input) {
             continue;
         }
         if inv.tool_output.get("ok") == Some(&Value::Bool(false)) {
@@ -400,7 +378,7 @@ impl From<TurnRequestMoreRoundsInput> for TurnRequestMoreRoundsCommand {
 /// Extract the principal-facing checkpoint from a tool batch, if `cognition_turn_checkpoint` ran.
 pub fn checkpoint_turn_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
     for inv in invocations.iter().rev() {
-        if !is_checkpoint_turn_tool_name(&inv.tool_name) {
+        if !is_checkpoint_turn_tool_name(&inv.tool_name, &inv.tool_input) {
             continue;
         }
         if inv.tool_output.get("ok") == Some(&Value::Bool(false)) {
@@ -433,14 +411,14 @@ impl CognitionTurnBeginWorkTool {
 pub struct TurnBeginWorkInput {
     /// Short principal-facing ack before workshop execution
     #[schemars(required, with = "String")]
-    message: Option<String>,
+    pub(crate) message: Option<String>,
     /// Focused execution task for the bound workshop (tools, surfaces, constraints)
     #[schemars(required, with = "String")]
-    goal: Option<String>,
+    pub(crate) goal: Option<String>,
     /// Optional worker profile: general | research (default general)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    intent: Option<String>,
+    pub(crate) intent: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for TurnBeginWorkInput {
@@ -470,7 +448,7 @@ impl<'de> Deserialize<'de> for TurnBeginWorkInput {
 #[medousa_tool(id = COGNITION_TURN_BEGIN_WORK_ID)]
 impl CognitionTurnBeginWorkTool {
     /// Enter the bound workshop for multi-tool execution (environment/canvas, components, vault writes). Provide a short principal-facing message and a concrete goal for the workshop executor. Host turn ends with the ack; synthesis delivers on the same thread when the workshop finishes.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: TurnBeginWorkInput,
     ) -> stasis::prelude::Result<crate::agent_runtime::turn_worker::EnterBoundWorkshopOutput> {
@@ -504,7 +482,7 @@ pub fn workshop_entered_from_invocations(
     invocations: &[ToolInvocation],
 ) -> Option<(String, String)> {
     invocations.iter().rev().find_map(|inv| {
-        if !is_begin_work_tool_name(&inv.tool_name) {
+        if !is_begin_work_tool_name(&inv.tool_name, &inv.tool_input) {
             return None;
         }
         let entered = inv
@@ -534,7 +512,7 @@ pub struct CognitionTurnUpdateUserTool;
 pub struct TurnUpdateUserInput {
     /// Short principal-facing status line
     #[schemars(required, with = "String")]
-    message: Option<String>,
+    pub(crate) message: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for TurnUpdateUserInput {
@@ -573,7 +551,7 @@ pub enum TurnUpdateUserOutput {
 #[medousa_tool(id = COGNITION_TURN_UPDATE_USER_ID)]
 impl CognitionTurnUpdateUserTool {
     /// Tell the principal what you are doing right now — retries, quick course-corrections, "pulling schemas", "one sec". Call in the same model round as your next tool. Does not end the turn. Prefer this over naked chat prose (prose without tools fights the turn loop). For heavy/long-running work starting, use cognition_turn_begin_work instead.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: TurnUpdateUserInput,
     ) -> stasis::prelude::Result<TurnUpdateUserOutput> {
@@ -646,16 +624,16 @@ impl From<TurnModeScopeInput> for crate::daemon_api::AgentModeScope {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct TurnProposeModeInput {
-    mode: TurnModeInput,
+    pub(crate) mode: TurnModeInput,
     #[serde(default)]
     #[schemars(default)]
-    scope: TurnModeScopeInput,
+    pub(crate) scope: TurnModeScopeInput,
     /// Required for task scope; use the active undertaking/work id when relevant
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    task_id: Option<String>,
+    pub(crate) task_id: Option<String>,
     /// Short user-facing reason this mode better fits the work
-    reason: String,
+    pub(crate) reason: String,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -675,7 +653,7 @@ pub enum TurnProposeModeOutput {
 #[medousa_tool(id = COGNITION_TURN_PROPOSE_MODE_ID)]
 impl CognitionTurnProposeModeTool {
     /// Propose switching Medousa's mode for the current chat. Use Coder only when repository inspection, edits, commands, or tests would materially help; programming explanations stay in General. The runtime applies the user's auto-accept/expiry policy and never expands authority from this tool alone.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: TurnProposeModeInput,
     ) -> stasis::prelude::Result<TurnProposeModeOutput> {
@@ -725,7 +703,7 @@ pub struct TurnPrepareFinalInput {
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    reason: CompatOption<String>,
+    pub(crate) reason: CompatOption<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -740,7 +718,7 @@ pub struct TurnPrepareFinalOutput {
 #[medousa_tool(id = COGNITION_TURN_PREPARE_FINAL_ID)]
 impl CognitionTurnPrepareFinalTool {
     /// Deprecated — prefer cognition_turn_finish with the complete answer. Workshop workers may still call this; host turns should use cognition_turn_update_user for quick status, cognition_turn_begin_work before heavy work, and cognition_turn_finish to commit.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: TurnPrepareFinalInput,
     ) -> stasis::prelude::Result<TurnPrepareFinalOutput> {
@@ -749,7 +727,7 @@ impl CognitionTurnPrepareFinalTool {
             ok: true,
             prepare_final: true,
             deprecated: true,
-            message: "Deprecated — call cognition_turn_finish with the complete principal-facing reply. Workshop lane may still send one final prose round.".to_string(),
+            message: "Deprecated — call cognition_turn action=turn.finish with the complete principal-facing reply. Workshop lane may still send one final prose round.".to_string(),
             reason: command.reason.map(TrimmedText::into_string),
         })
     }
@@ -762,11 +740,11 @@ pub struct CognitionTurnFinishTool;
 pub struct TurnFinishInput {
     /// Complete principal-facing final answer for this turn
     #[schemars(required, with = "String")]
-    message: Option<String>,
+    pub(crate) message: Option<String>,
     /// Optional short note for logs (not shown to the user)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    reason: Option<String>,
+    pub(crate) reason: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for TurnFinishInput {
@@ -809,7 +787,7 @@ pub enum TurnFinishOutput {
 #[medousa_tool(id = COGNITION_TURN_FINISH_ID)]
 impl CognitionTurnFinishTool {
     /// Deliver the complete principal-facing final answer now and end this turn immediately. Use it as an explicit hard stop after tool work; synthesis-bound workers require it for direct pass-through, while principal-facing turns may also commit after two consecutive non-tool responses. Mid-task handoffs use cognition_turn_checkpoint.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: TurnFinishInput,
     ) -> stasis::prelude::Result<TurnFinishOutput> {
@@ -838,15 +816,15 @@ pub struct CognitionTurnCheckpointTool;
 pub struct TurnCheckpointInput {
     /// Principal-facing update: what you did, what you found, and what happens next or what you need from them
     #[schemars(required, with = "String")]
-    message: Option<String>,
+    pub(crate) message: Option<String>,
     /// Optional: what you need from the principal before more tool work (decision, confirmation, missing detail)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    awaiting: Option<String>,
+    pub(crate) awaiting: Option<String>,
     /// Optional short note for logs (not shown to the principal)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    reason: Option<String>,
+    pub(crate) reason: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for TurnCheckpointInput {
@@ -893,7 +871,7 @@ pub enum TurnCheckpointOutput {
 #[medousa_tool(id = COGNITION_TURN_CHECKPOINT_ID)]
 impl CognitionTurnCheckpointTool {
     /// Share a substantive mid-task update with the principal and hand the turn back to them. The conversation is not over — you may continue after they reply. Use when tool work produced real progress but you are not done (not a final answer). Prefer this over streaming long interim prose that the runtime may loop on.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: TurnCheckpointInput,
     ) -> stasis::prelude::Result<TurnCheckpointOutput> {
@@ -930,14 +908,14 @@ pub struct TurnRequestMoreRoundsInput {
             max = "crate::turn_budget_request::MAX_REQUESTED_ROUNDS_PER_ASK"
         )
     )]
-    requested_rounds: Option<usize>,
+    pub(crate) requested_rounds: Option<usize>,
     /// Why the current budget is insufficient
     #[schemars(required, with = "String")]
-    reason: Option<String>,
+    pub(crate) reason: Option<String>,
     /// What is done and what remains
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    progress_summary: Option<String>,
+    pub(crate) progress_summary: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for TurnRequestMoreRoundsInput {
@@ -985,7 +963,7 @@ pub enum TurnRequestMoreRoundsOutput {
 #[medousa_tool(id = COGNITION_TURN_REQUEST_MORE_ROUNDS_ID)]
 impl CognitionTurnRequestMoreRoundsTool {
     /// Request additional tool rounds when the current budget is too tight. Pauses until the principal approves or denies. Include reason and progress summary.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: TurnRequestMoreRoundsInput,
     ) -> stasis::prelude::Result<TurnRequestMoreRoundsOutput> {
@@ -1080,24 +1058,48 @@ mod tests {
     }
 
     #[test]
-    fn recognizes_update_user_names() {
-        assert!(is_update_user_tool_name("cognition_turn_update_user"));
-        assert!(is_update_user_tool_name("cognition.turn.update_user"));
-        assert!(!is_update_user_tool_name("cognition_turn_begin_work"));
-    }
-
-    #[test]
-    fn recognizes_propose_mode_names() {
-        assert!(is_propose_mode_tool_name("cognition_turn_propose_mode"));
-        assert!(is_propose_mode_tool_name("cognition.turn.propose_mode"));
-        assert!(!is_propose_mode_tool_name("cognition_turn_finish"));
+    fn recognizes_tagged_turn_actions() {
+        let turn = crate::public_api::COGNITION_TURN;
+        assert!(is_update_user_tool_name(
+            turn,
+            &json!({ "action": "turn.update_user" })
+        ));
+        assert!(!is_update_user_tool_name(
+            turn,
+            &json!({ "action": "turn.begin_work" })
+        ));
+        assert!(is_propose_mode_tool_name(
+            turn,
+            &json!({ "action": "turn.propose_mode" })
+        ));
+        assert!(is_begin_work_tool_name(
+            turn,
+            &json!({ "action": "turn.begin_work" })
+        ));
+        assert!(is_prepare_final_tool_name(
+            turn,
+            &json!({ "action": "turn.prepare_final" })
+        ));
+        assert!(is_finish_turn_tool_name(
+            turn,
+            &json!({ "action": "turn.finish" })
+        ));
+        assert!(is_checkpoint_turn_tool_name(
+            turn,
+            &json!({ "action": "turn.checkpoint" })
+        ));
+        assert!(!is_finish_turn_tool_name(
+            "cognition_turn_finish",
+            &json!({ "message": "x" })
+        ));
+        assert!(!is_finish_turn_tool_name(turn, &json!({})));
     }
 
     #[test]
     fn update_user_from_invocations_reads_latest_successful_call() {
         let invocations = vec![ToolInvocation {
-            tool_name: COGNITION_TURN_UPDATE_USER.to_string(),
-            tool_input: json!({ "message": "Retrying propose with custom surface." }),
+            tool_name: crate::public_api::COGNITION_TURN.to_string(),
+            tool_input: json!({ "action": "turn.update_user", "message": "Retrying propose with custom surface." }),
             tool_output: json!({ "ok": true, "update_user": true }),
         }];
         assert_eq!(
@@ -1110,13 +1112,13 @@ mod tests {
     fn turn_progress_prefers_update_user_over_begin_work() {
         let invocations = vec![
             ToolInvocation {
-                tool_name: COGNITION_TURN_BEGIN_WORK.to_string(),
-                tool_input: json!({ "message": "Starting research worker." }),
+                tool_name: crate::public_api::COGNITION_TURN.to_string(),
+                tool_input: json!({ "action": "turn.begin_work", "message": "Starting research worker." }),
                 tool_output: json!({ "ok": true, "begin_work": true }),
             },
             ToolInvocation {
-                tool_name: COGNITION_TURN_UPDATE_USER.to_string(),
-                tool_input: json!({ "message": "Grabbing wiki schemas." }),
+                tool_name: crate::public_api::COGNITION_TURN.to_string(),
+                tool_input: json!({ "action": "turn.update_user", "message": "Grabbing wiki schemas." }),
                 tool_output: json!({ "ok": true, "update_user": true }),
             },
         ];
@@ -1127,18 +1129,11 @@ mod tests {
     }
 
     #[test]
-    fn recognizes_begin_work_names() {
-        assert!(is_begin_work_tool_name("cognition_turn_begin_work"));
-        assert!(is_begin_work_tool_name("cognition.turn.begin_work"));
-        assert!(!is_begin_work_tool_name("cognition_turn_finish"));
-    }
-
-    #[test]
     fn begin_work_from_invocations_reads_latest_successful_call() {
         let invocations = vec![
             ToolInvocation {
-                tool_name: COGNITION_TURN_BEGIN_WORK.to_string(),
-                tool_input: json!({ "message": "Checking memory nodes." }),
+                tool_name: crate::public_api::COGNITION_TURN.to_string(),
+                tool_input: json!({ "action": "turn.begin_work", "message": "Checking memory nodes." }),
                 tool_output: json!({ "ok": true, "begin_work": true }),
             },
             ToolInvocation {
@@ -1154,20 +1149,6 @@ mod tests {
     }
 
     #[test]
-    fn recognizes_prepare_final_names() {
-        assert!(is_prepare_final_tool_name("cognition_turn_prepare_final"));
-        assert!(is_prepare_final_tool_name("cognition.turn.prepare_final"));
-        assert!(!is_prepare_final_tool_name("cognition_memory_store"));
-    }
-
-    #[test]
-    fn recognizes_finish_turn_names() {
-        assert!(is_finish_turn_tool_name("cognition_turn_finish"));
-        assert!(is_finish_turn_tool_name("cognition.turn.finish"));
-        assert!(!is_finish_turn_tool_name("cognition_turn_prepare_final"));
-    }
-
-    #[test]
     fn finish_turn_from_invocations_reads_latest_successful_call() {
         let invocations = vec![
             ToolInvocation {
@@ -1176,8 +1157,8 @@ mod tests {
                 tool_output: json!({"ok": true}),
             },
             ToolInvocation {
-                tool_name: COGNITION_TURN_FINISH.to_string(),
-                tool_input: json!({"message": "Here is the complete answer."}),
+                tool_name: crate::public_api::COGNITION_TURN.to_string(),
+                tool_input: json!({"action": "turn.finish", "message": "Here is the complete answer."}),
                 tool_output: json!({"ok": true, "finish_turn": true, "message": "Here is the complete answer."}),
             },
         ];
@@ -1190,8 +1171,8 @@ mod tests {
     #[test]
     fn finish_turn_from_invocations_skips_failed_tool_output() {
         let invocations = vec![ToolInvocation {
-            tool_name: COGNITION_TURN_FINISH.to_string(),
-            tool_input: json!({"message": ""}),
+            tool_name: crate::public_api::COGNITION_TURN.to_string(),
+            tool_input: json!({"action": "turn.finish", "message": ""}),
             tool_output: json!({"ok": false, "error": "message is required and must be non-empty"}),
         }];
         assert!(finish_turn_from_invocations(&invocations).is_none());
@@ -1233,17 +1214,10 @@ mod tests {
     }
 
     #[test]
-    fn recognizes_checkpoint_turn_names() {
-        assert!(is_checkpoint_turn_tool_name("cognition_turn_checkpoint"));
-        assert!(is_checkpoint_turn_tool_name("cognition.turn.checkpoint"));
-        assert!(!is_checkpoint_turn_tool_name("cognition_turn_finish"));
-    }
-
-    #[test]
     fn checkpoint_turn_from_invocations_reads_latest_successful_call() {
         let invocations = vec![ToolInvocation {
-            tool_name: COGNITION_TURN_CHECKPOINT.to_string(),
-            tool_input: json!({"message": "Found three blockers — need your pick on scope."}),
+            tool_name: crate::public_api::COGNITION_TURN.to_string(),
+            tool_input: json!({"action": "turn.checkpoint", "message": "Found three blockers — need your pick on scope."}),
             tool_output: json!({"ok": true, "checkpoint_turn": true}),
         }];
         assert_eq!(

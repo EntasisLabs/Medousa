@@ -32,14 +32,7 @@ use crate::typed_tools::{
     ToolPlacementIndex, ToolRegistrar,
 };
 
-const TURN_CONTROL_TOOLS: &[&str] = &[
-    "cognition_turn_begin_work",
-    "cognition_turn_update_user",
-    "cognition_turn_checkpoint",
-    "cognition_turn_finish",
-    "cognition_turn_request_more_rounds",
-    "cognition_turn_propose_mode",
-];
+const TURN_CONTROL_TOOLS: &[&str] = &[crate::public_api::COGNITION_TURN];
 
 pub const COGNITION_CODER_TOOLS_DISCOVER: &str = "cognition_coder_tools_discover";
 pub const COGNITION_ENGINEERING_POINTERS: &str = "cognition_engineering_pointers";
@@ -237,6 +230,7 @@ impl CoderMemoryBoundary {
 
 fn automatic_memory_boundary(
     tool_name: &str,
+    input: &Value,
     claims: &[CoderClaimScope],
 ) -> Option<CoderMemoryBoundary> {
     if tool_name == crate::public_api::COGNITION_STORE_WRITE
@@ -249,14 +243,14 @@ fn automatic_memory_boundary(
             .any(|claim| claim.mode == super::coder_claims::CoderClaimMode::Verify)
     {
         Some(CoderMemoryBoundary::Verification)
-    } else if crate::turn_control_tools::is_checkpoint_turn_tool_name(tool_name)
-        || crate::turn_control_tools::is_begin_work_tool_name(tool_name)
+    } else if crate::turn_control_tools::is_checkpoint_turn_tool_name(tool_name, input)
+        || crate::turn_control_tools::is_begin_work_tool_name(tool_name, input)
         || tool_name == crate::agent_runtime::turn_worker_tools::COGNITION_SPAWN_TURN_WORKER
     {
         Some(CoderMemoryBoundary::Handoff)
-    } else if crate::turn_control_tools::is_request_more_rounds_tool_name(tool_name) {
+    } else if crate::turn_control_tools::is_request_more_rounds_tool_name(tool_name, input) {
         Some(CoderMemoryBoundary::Budget)
-    } else if crate::turn_control_tools::is_finish_turn_tool_name(tool_name) {
+    } else if crate::turn_control_tools::is_finish_turn_tool_name(tool_name, input) {
         Some(CoderMemoryBoundary::Terminal)
     } else {
         None
@@ -2345,7 +2339,7 @@ impl ToolRegistry for CoderBoundToolRegistry {
             authority.lease(),
             &self.entry.worktree,
         );
-        let memory_boundary = automatic_memory_boundary(tool_name, &claims);
+        let memory_boundary = automatic_memory_boundary(tool_name, &input, &claims);
         let admission = match authority.begin_tool_activity(
             tool_name,
             intent.as_str(),
@@ -2476,7 +2470,7 @@ impl ToolRegistry for CoderBoundToolRegistry {
             .await
         } else if CODER_RUNTIME_TOOLS.contains(&tool_name) {
             self.invoke_runtime_tool(tool_name, &input)
-        } else if crate::turn_control_tools::is_begin_work_tool_name(tool_name) {
+        } else if crate::turn_control_tools::is_begin_work_tool_name(tool_name, &input) {
             match remap_begin_work_to_spawn_input(&input, spawn_intent_hint) {
                 Ok(spawn_input) => {
                     self.inner
@@ -2606,9 +2600,8 @@ fn coder_runtime_tool_definitions() -> Vec<Tool> {
 fn with_required_coder_intent(
     tool: Tool,
 ) -> std::result::Result<Tool, crate::typed_tools::ModeToolAdapterError> {
-    let replaces_base_intent = tool.name.as_str()
-        == crate::agent_runtime::turn_worker_tools::COGNITION_SPAWN_TURN_WORKER
-        || crate::turn_control_tools::is_begin_work_tool_name(tool.name.as_str());
+    let replaces_base_intent =
+        tool.name.as_str() == crate::agent_runtime::turn_worker_tools::COGNITION_SPAWN_TURN_WORKER;
     let base_has_intent = tool
         .schema
         .as_ref()
@@ -2627,9 +2620,6 @@ fn with_required_coder_intent(
 
 fn with_coder_tool_advertisement(tool: Tool) -> Tool {
     match tool.name.as_str() {
-        name if crate::turn_control_tools::is_begin_work_tool_name(name) => tool.with_description(
-            "Spawn a peer sub-agent for parallel work on this undertaking; does not leave Coder / does not enter Chat workshop.",
-        ),
         "cognition_spawn_turn_worker" => tool.with_description(
             "Spawn a peer sub-agent for parallel research or side tasks while Coder stays on the Forge lease.",
         ),
@@ -2799,7 +2789,7 @@ fn resolve_known_coder_tool_id(wire_name: &str) -> Option<ToolId> {
         .find(|id| id.as_str() == wire_name)
 }
 
-/// Map Coder `cognition_turn_begin_work` args onto `cognition_spawn_turn_worker`.
+/// Map Coder `cognition_turn action=turn.begin_work` args onto `cognition_spawn_turn_worker`.
 pub(crate) fn remap_begin_work_to_spawn_input(
     input: &Value,
     worker_intent_hint: Option<crate::agent_runtime::turn_worker::TurnWorkerIntent>,
@@ -2820,7 +2810,7 @@ pub(crate) fn remap_begin_work_to_spawn_input(
         (None, Some(message)) => (message.to_string(), message.to_string()),
         (None, None) => {
             return Err(StasisError::PortFailure(
-                "cognition_turn_begin_work: goal or message is required to spawn a peer sub-agent"
+                "cognition_turn action=turn.begin_work: goal or message is required to spawn a peer sub-agent"
                     .into(),
             ));
         }
@@ -3118,7 +3108,7 @@ mod tests {
                 Tool::new("cognition_runtime_mutate"),
                 Tool::new("cognition_runtime_jobs_cancel"),
                 Tool::new("cognition_spawn_turn_worker").with_description("Host spawn worker"),
-                Tool::new("cognition_turn_begin_work").with_description("Enter bound Workshop"),
+                Tool::new(crate::public_api::COGNITION_TURN),
                 Tool::new("cognition_turn_worker_status"),
                 Tool::new("cognition_shell_run"),
                 Tool::new("cognition_shell_status"),
@@ -3497,17 +3487,11 @@ mod tests {
                 .any(|tool| tool.name.as_str() == "cognition_spawn_turn_worker"),
             "peer spawn should be visible in Coder"
         );
-        let begin_work = tools
-            .iter()
-            .find(|tool| tool.name.as_str() == "cognition_turn_begin_work")
-            .expect("begin_work visible");
         assert!(
-            begin_work
-                .description
-                .as_deref()
-                .unwrap_or_default()
-                .contains("peer sub-agent"),
-            "Coder begin_work should advertise peer spawn"
+            tools
+                .iter()
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_TURN),
+            "turn control should be visible in Coder"
         );
         for tool in &tools {
             let schema = tool.schema.as_ref().expect("Coder schema");
@@ -4100,26 +4084,39 @@ mod tests {
             reason: "focused verification".into(),
         };
         assert_eq!(
-            automatic_memory_boundary(crate::coding_tools::COGNITION_SHELL_SESSION_RUN, &[verify]),
+            automatic_memory_boundary(
+                crate::coding_tools::COGNITION_SHELL_SESSION_RUN,
+                &json!({}),
+                &[verify]
+            ),
             Some(CoderMemoryBoundary::Verification)
         );
         assert_eq!(
-            automatic_memory_boundary(crate::turn_control_tools::COGNITION_TURN_CHECKPOINT, &[]),
+            automatic_memory_boundary(
+                crate::public_api::COGNITION_TURN,
+                &json!({ "action": "turn.checkpoint" }),
+                &[]
+            ),
             Some(CoderMemoryBoundary::Handoff)
         );
         assert_eq!(
             automatic_memory_boundary(
-                crate::turn_control_tools::COGNITION_TURN_REQUEST_MORE_ROUNDS,
+                crate::public_api::COGNITION_TURN,
+                &json!({ "action": "turn.request_more_rounds" }),
                 &[]
             ),
             Some(CoderMemoryBoundary::Budget)
         );
         assert_eq!(
-            automatic_memory_boundary(crate::turn_control_tools::COGNITION_TURN_FINISH, &[]),
+            automatic_memory_boundary(
+                crate::public_api::COGNITION_TURN,
+                &json!({ "action": "turn.finish" }),
+                &[]
+            ),
             Some(CoderMemoryBoundary::Terminal)
         );
         assert_eq!(
-            automatic_memory_boundary(crate::public_api::COGNITION_STORE_READ, &[]),
+            automatic_memory_boundary(crate::public_api::COGNITION_STORE_READ, &json!({}), &[]),
             None
         );
     }
@@ -4732,8 +4729,9 @@ mod tests {
         );
         let out = registry
             .invoke_tool(
-                "cognition_turn_begin_work",
+                crate::public_api::COGNITION_TURN,
                 json!({
+                    "action": "turn.begin_work",
                     "intent": "Delegate parallel research",
                     "goal": "Investigate failing CI flakes",
                     "message": "Spinning a research peer"

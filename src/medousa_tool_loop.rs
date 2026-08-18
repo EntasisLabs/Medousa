@@ -48,12 +48,11 @@ use crate::turn_budget_request::{
     BudgetResolution, CreateTurnBudgetRequest, turn_budget_request_store,
 };
 use crate::turn_control_tools::{
-    COGNITION_TURN_BEGIN_WORK, COGNITION_TURN_CHECKPOINT, COGNITION_TURN_FINISH,
     begin_work_note_from_invocations, checkpoint_turn_from_invocations,
-    finish_turn_from_invocations, is_begin_work_tool_name, is_checkpoint_turn_tool_name,
-    is_finish_turn_tool_name, is_prepare_final_tool_name, is_request_more_rounds_tool_name,
-    is_update_user_tool_name, request_more_rounds_from_invocations, terminal_text_for_fsm_end,
-    turn_progress_message_from_invocations, workshop_entered_from_invocations,
+    finish_turn_from_invocations, is_begin_work_tool_name, is_finish_turn_tool_name,
+    is_prepare_final_tool_name, is_turn_control_call, request_more_rounds_from_invocations,
+    terminal_text_for_fsm_end, turn_progress_message_from_invocations,
+    workshop_entered_from_invocations,
 };
 
 const DEFAULT_MAX_TOOL_ROUNDS: usize =
@@ -742,20 +741,15 @@ impl MedousaToolLoopPipeline {
 
                 let finish_requested = tool_calls
                     .iter()
-                    .any(|call| is_finish_turn_tool_name(&call.fn_name));
+                    .any(|call| is_finish_turn_tool_name(&call.fn_name, &call.fn_arguments));
                 if !tool_calls.is_empty() && !finish_requested {
                     pack_hold = None;
                 }
 
                 if pending_final_answer
-                    && tool_calls.iter().any(|call| {
-                        !is_prepare_final_tool_name(&call.fn_name)
-                            && !is_begin_work_tool_name(&call.fn_name)
-                            && !is_update_user_tool_name(&call.fn_name)
-                            && !is_checkpoint_turn_tool_name(&call.fn_name)
-                            && !is_finish_turn_tool_name(&call.fn_name)
-                            && !is_request_more_rounds_tool_name(&call.fn_name)
-                    })
+                    && tool_calls
+                        .iter()
+                        .any(|call| !is_turn_control_call(&call.fn_name))
                 {
                     pending_final_answer = false;
                 }
@@ -853,7 +847,7 @@ impl MedousaToolLoopPipeline {
                                 tool_output_text,
                             )));
                         completed_provider_call_ids.insert(call.call_id.clone());
-                        if is_prepare_final_tool_name(&call.fn_name) {
+                        if is_prepare_final_tool_name(&call.fn_name, &call.fn_arguments) {
                             prepare_final_in_batch = true;
                         }
                         invocations.push(ToolInvocation {
@@ -908,7 +902,7 @@ impl MedousaToolLoopPipeline {
                         .map_err(|error| turn_boundary_failure("tool invocation", error))?;
                         let tool_output = tool_output_from_invoke(output);
 
-                        if is_prepare_final_tool_name(&call.fn_name) {
+                        if is_prepare_final_tool_name(&call.fn_name, &call.fn_arguments) {
                             prepare_final_in_batch = true;
                         }
 
@@ -1228,7 +1222,7 @@ impl MedousaToolLoopPipeline {
                                         push_turn_control_message(
                                             &mut turn_ctx.tool_lane.messages,
                                             &format!(
-                                                "{TURN_CONTROL_PREFIX}\nOperator denied extra tool rounds. Wrap up with cognition_turn_finish, one clarifying question, or best-effort answer now."
+                                                "{TURN_CONTROL_PREFIX}\nOperator denied extra tool rounds. Wrap up with cognition_turn action=turn.finish, one clarifying question, or best-effort answer now."
                                             ),
                                         );
                                     }
@@ -1246,7 +1240,7 @@ impl MedousaToolLoopPipeline {
                                 push_turn_control_message(
                                     &mut turn_ctx.tool_lane.messages,
                                     &format!(
-                                        "{TURN_CONTROL_PREFIX}\nExtra rounds unavailable: {err}. Finish with cognition_turn_finish or best effort."
+                                        "{TURN_CONTROL_PREFIX}\nExtra rounds unavailable: {err}. Finish with cognition_turn action=turn.finish or best effort."
                                     ),
                                 );
                             }
@@ -1273,8 +1267,8 @@ impl MedousaToolLoopPipeline {
                         );
                     }
                     let last = invocations.last().cloned().unwrap_or(ToolInvocation {
-                        tool_name: COGNITION_TURN_FINISH.to_string(),
-                        tool_input: Value::Null,
+                        tool_name: crate::public_api::COGNITION_TURN.to_string(),
+                        tool_input: serde_json::json!({ "action": "turn.finish" }),
                         tool_output: Value::Null,
                     });
                     persist_checkpoint!(
@@ -1310,8 +1304,8 @@ impl MedousaToolLoopPipeline {
                         );
                     }
                     let last = invocations.last().cloned().unwrap_or(ToolInvocation {
-                        tool_name: COGNITION_TURN_CHECKPOINT.to_string(),
-                        tool_input: Value::Null,
+                        tool_name: crate::public_api::COGNITION_TURN.to_string(),
+                        tool_input: serde_json::json!({ "action": "turn.checkpoint" }),
                         tool_output: Value::Null,
                     });
                     persist_checkpoint!(
@@ -1338,7 +1332,7 @@ impl MedousaToolLoopPipeline {
                 if let Some((work_id, ack)) = workshop_entered_from_invocations(round_invocations) {
                     let intent = invocations
                         .iter()
-                        .find(|i| is_begin_work_tool_name(&i.tool_name))
+                        .find(|i| is_begin_work_tool_name(&i.tool_name, &i.tool_input))
                         .and_then(|i| i.tool_input.get("intent"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("general");
@@ -1365,8 +1359,8 @@ impl MedousaToolLoopPipeline {
                         );
                     }
                     let last = invocations.last().cloned().unwrap_or(ToolInvocation {
-                        tool_name: COGNITION_TURN_BEGIN_WORK.to_string(),
-                        tool_input: Value::Null,
+                        tool_name: crate::public_api::COGNITION_TURN.to_string(),
+                        tool_input: serde_json::json!({ "action": "turn.begin_work" }),
                         tool_output: Value::Null,
                     });
                     persist_checkpoint!(
@@ -2127,8 +2121,8 @@ mod tests {
     fn checkpoint_turn_from_invocations_is_detected_for_loop_exit() {
         use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
         let invocations = vec![ToolInvocation {
-            tool_name: "cognition_turn_checkpoint".to_string(),
-            tool_input: serde_json::json!({"message": "Here is progress so far."}),
+            tool_name: crate::public_api::COGNITION_TURN.to_string(),
+            tool_input: serde_json::json!({"action": "turn.checkpoint", "message": "Here is progress so far."}),
             tool_output: serde_json::json!({"ok": true, "checkpoint_turn": true}),
         }];
         assert_eq!(
@@ -2141,8 +2135,8 @@ mod tests {
     fn finish_turn_from_invocations_is_detected_for_loop_exit() {
         use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
         let invocations = vec![ToolInvocation {
-            tool_name: "cognition_turn_finish".to_string(),
-            tool_input: serde_json::json!({"message": "Final answer ready."}),
+            tool_name: crate::public_api::COGNITION_TURN.to_string(),
+            tool_input: serde_json::json!({"action": "turn.finish", "message": "Final answer ready."}),
             tool_output: serde_json::json!({"ok": true, "finish_turn": true}),
         }];
         assert_eq!(

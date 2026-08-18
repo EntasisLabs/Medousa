@@ -78,8 +78,8 @@ pub fn continue_control_message(reason: ContinueReason, _missing_tools: &[String
         ContinueReason::EmptyAfterTools => {
             "Turn continues: last model round had no tool calls and no assistant text. \
              Call the tools you still need in this round, then deliver the complete answer; \
-             cognition_turn_finish is the explicit hard stop and cognition_turn_checkpoint \
-             is for a mid-task handoff. Synthesis-bound workers must use cognition_turn_finish \
+             cognition_turn action=turn.finish is the explicit hard stop and cognition_turn action=turn.checkpoint \
+             is for a mid-task handoff. Synthesis-bound workers must use cognition_turn action=turn.finish \
              for direct pass-through."
                 .to_string()
         }
@@ -90,7 +90,7 @@ pub fn continue_control_message(reason: ContinueReason, _missing_tools: &[String
 }
 
 fn host_empty_after_tools_control_message() -> String {
-    "Turn continues: last round had no assistant text after tools. Call cognition_turn_begin_work for \
+    "Turn continues: last round had no assistant text after tools. Call cognition_turn action=turn.begin_work for \
      execution work or any host tools you still need, then deliver your answer in prose."
         .to_string()
 }

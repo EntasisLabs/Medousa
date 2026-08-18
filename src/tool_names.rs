@@ -89,13 +89,7 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_tool_history_detail",
     "cognition_tool_history_summary",
     "cognition_tools_discover",
-    "cognition_turn_checkpoint",
-    "cognition_turn_begin_work",
-    "cognition_turn_finish",
-    "cognition_turn_prepare_final",
-    "cognition_turn_propose_mode",
-    "cognition_turn_request_more_rounds",
-    "cognition_turn_update_user",
+    "cognition_turn",
     "cognition_turn_worker_cancel",
     "cognition_turn_worker_status",
     "cognition_ui_build",
@@ -179,8 +173,7 @@ mod tests {
             "cognition_schema",
             "cognition_capability",
             "cognition_spawn_turn_worker",
-            "cognition_turn_begin_work",
-            "cognition_turn_finish",
+            "cognition_turn",
         ] {
             assert!(tool_allowed(tool, &host), "host bus missing {tool}");
         }

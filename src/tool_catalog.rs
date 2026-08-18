@@ -253,20 +253,8 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
         "Click/type/scroll on the shared Web tab (agent control required)",
     ),
     (
-        "cognition_turn_begin_work",
-        "Signal heavy/long-running tool work starting (workers, big crawls)",
-    ),
-    (
-        "cognition_turn_update_user",
-        "Short status to the principal mid-turn (retries, course-corrections) — call with your next tool",
-    ),
-    (
-        "cognition_turn_checkpoint",
-        "Mid-task update; hand turn to principal",
-    ),
-    (
-        "cognition_turn_finish",
-        "Commit principal-ready answer (required after tool work)",
+        "cognition_turn",
+        "Turn control: begin work, update the principal, checkpoint, or finish (action=turn.finish / turn.checkpoint / …)",
     ),
     (
         "cognition_ui_build",

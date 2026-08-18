@@ -35,10 +35,10 @@ pub fn new_tool_run_id() -> String {
 }
 
 pub fn summarize_tool_input(tool_name: &str, tool_input: &serde_json::Value) -> String {
-    if crate::turn_control_tools::is_finish_turn_tool_name(tool_name) {
+    if crate::turn_control_tools::is_finish_turn_tool_name(tool_name, tool_input) {
         return "Final answer".to_string();
     }
-    if crate::turn_control_tools::is_checkpoint_turn_tool_name(tool_name) {
+    if crate::turn_control_tools::is_checkpoint_turn_tool_name(tool_name, tool_input) {
         return tool_input
             .get("message")
             .and_then(|value| value.as_str())
@@ -47,7 +47,7 @@ pub fn summarize_tool_input(tool_name: &str, tool_input: &serde_json::Value) -> 
             .map(|value| truncate_text_for_budget(value, SUMMARY_MAX_CHARS))
             .unwrap_or_else(|| "Checkpoint".to_string());
     }
-    if crate::turn_control_tools::is_begin_work_tool_name(tool_name) {
+    if crate::turn_control_tools::is_begin_work_tool_name(tool_name, tool_input) {
         return tool_input
             .get("message")
             .and_then(|value| value.as_str())
@@ -56,7 +56,7 @@ pub fn summarize_tool_input(tool_name: &str, tool_input: &serde_json::Value) -> 
             .map(|value| truncate_text_for_budget(value, SUMMARY_MAX_CHARS))
             .unwrap_or_else(|| "Starting work".to_string());
     }
-    if crate::turn_control_tools::is_update_user_tool_name(tool_name) {
+    if crate::turn_control_tools::is_update_user_tool_name(tool_name, tool_input) {
         return tool_input
             .get("message")
             .and_then(|value| value.as_str())
@@ -173,7 +173,12 @@ fn param_value_text(value: &serde_json::Value) -> Option<String> {
 }
 
 pub fn summarize_tool_output(tool_name: &str, tool_output: &serde_json::Value) -> Option<String> {
-    if crate::turn_control_tools::is_finish_turn_tool_name(tool_name) {
+    if matches!(
+        tool_output
+            .get("finish_turn")
+            .and_then(|value| value.as_bool()),
+        Some(true)
+    ) {
         return tool_output
             .get("reason")
             .and_then(|value| value.as_str())
@@ -182,13 +187,33 @@ pub fn summarize_tool_output(tool_name: &str, tool_output: &serde_json::Value) -
             .map(|value| truncate_text_for_budget(value, SUMMARY_MAX_CHARS))
             .or_else(|| Some("Committed final answer".to_string()));
     }
-    if crate::turn_control_tools::is_checkpoint_turn_tool_name(tool_name) {
+    if matches!(
+        tool_output
+            .get("checkpoint_turn")
+            .and_then(|value| value.as_bool()),
+        Some(true)
+    ) {
         return Some("Checkpoint sent".to_string());
     }
-    if crate::turn_control_tools::is_begin_work_tool_name(tool_name) {
+    if matches!(
+        tool_output
+            .get("workshop_entered")
+            .and_then(|value| value.as_bool()),
+        Some(true)
+    ) || matches!(
+        tool_output
+            .get("begin_work")
+            .and_then(|value| value.as_bool()),
+        Some(true)
+    ) {
         return Some("Progress noted".to_string());
     }
-    if crate::turn_control_tools::is_update_user_tool_name(tool_name) {
+    if matches!(
+        tool_output
+            .get("update_user")
+            .and_then(|value| value.as_bool()),
+        Some(true)
+    ) {
         return Some("Update sent".to_string());
     }
     if crate::ui_scene_tools::is_ui_scene_cognition_tool(tool_name) {
@@ -530,8 +555,8 @@ mod tests {
     #[test]
     fn summarize_turn_finish_input_avoids_raw_json() {
         let summary = summarize_tool_input(
-            "cognition_turn_finish",
-            &json!({"message": "Hello world", "reason": "done"}),
+            "cognition_turn",
+            &json!({"action": "turn.finish", "message": "Hello world", "reason": "done"}),
         );
         assert_eq!(summary, "Final answer");
     }

@@ -92,7 +92,7 @@ pub fn host_resume_prompt(records: &[TurnWorkRecord]) -> String {
         "[MEDOUSA_WORKER_RESULTS]\n\
          These are receipts from parallel sub-agents you spawned. They are not the user-facing answer.\n\
          You may call tools if a gap remains. Then answer with two consecutive non-tool responses, \
-         or cognition_turn_finish for an immediate commit. Prose wording is never classified.\n\n\
+         or cognition_turn action=turn.finish for an immediate commit. Prose wording is never classified.\n\n\
          ORIGINAL_USER_MESSAGE:\n{parent_prompt}\n\n\
          WORKERS:\n{}",
         blocks.join("\n\n")

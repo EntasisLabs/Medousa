@@ -103,8 +103,8 @@ const TOPICS: &[WikiTopic] = &[
         step_10_layout(.97): "cognition_layout_get then cognition_layout_apply for side-by-side or grid — main slot only; immediate live update"
     },
     turn_discipline(.98): {
-        progress(.97): "cognition_turn_update_user for quick status; cognition_turn_begin_work before heavy tools",
-        finalize(.99): "cognition_turn_finish after tool work — naked prose becomes stub"
+        progress(.97): "cognition_turn action=turn.update_user for quick status; cognition_turn action=turn.begin_work before heavy tools",
+        finalize(.99): "cognition_turn action=turn.finish after tool work — naked prose becomes stub"
     },
     stuck_routing(.96): {
         missing_field(.97): "common_errors topic",

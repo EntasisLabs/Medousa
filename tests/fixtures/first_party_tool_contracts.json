@@ -1582,7 +1582,8 @@
             "enum": [
               "capability",
               "runtime",
-              "store"
+              "store",
+              "turn"
             ],
             "type": "string"
           },
@@ -1623,6 +1624,13 @@
                 "scripts.read",
                 "scripts.search",
                 "scripts.write",
+                "turn.begin_work",
+                "turn.checkpoint",
+                "turn.finish",
+                "turn.prepare_final",
+                "turn.propose_mode",
+                "turn.request_more_rounds",
+                "turn.update_user",
                 "vault.delete",
                 "vault.list",
                 "vault.move",
@@ -1900,206 +1908,32 @@
     },
     {
       "registry": "coder_bound",
-      "name": "cognition_turn_begin_work",
-      "description": "Spawn a peer sub-agent for parallel work on this undertaking; does not leave Coder / does not enter Chat workshop.",
+      "name": "cognition_turn",
+      "description": "Control this turn: begin work, update the principal, checkpoint, finish, or request more rounds. action is a typed name (turn.finish, turn.checkpoint, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "goal": {
-            "description": "Focused execution task for the bound workshop (tools, surfaces, constraints)",
-            "type": "string"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "message": {
-            "description": "Short principal-facing ack before workshop execution",
-            "type": "string"
-          }
-        },
-        "required": [
-          "goal",
-          "intent",
-          "message"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_turn_checkpoint",
-      "description": "Share a substantive mid-task update with the principal and hand the turn back to them. The conversation is not over — you may continue after they reply. Use when tool work produced real progress but you are not done (not a final answer). Prefer this over streaming long interim prose that the runtime may loop on.",
-      "input_schema": {
-        "properties": {
-          "awaiting": {
-            "description": "Optional: what you need from the principal before more tool work (decision, confirmation, missing detail)",
-            "type": "string"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "message": {
-            "description": "Principal-facing update: what you did, what you found, and what happens next or what you need from them",
-            "type": "string"
-          },
-          "reason": {
-            "description": "Optional short note for logs (not shown to the principal)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "message"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_turn_finish",
-      "description": "Deliver the complete principal-facing final answer now and end this turn immediately. Use it as an explicit hard stop after tool work; synthesis-bound workers require it for direct pass-through, while principal-facing turns may also commit after two consecutive non-tool responses. Mid-task handoffs use cognition_turn_checkpoint.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "message": {
-            "description": "Complete principal-facing final answer for this turn",
-            "type": "string"
-          },
-          "reason": {
-            "description": "Optional short note for logs (not shown to the user)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "message"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_turn_propose_mode",
-      "description": "Propose switching Medousa's mode for the current chat. Use Coder only when repository inspection, edits, commands, or tests would materially help; programming explanations stay in General. The runtime applies the user's auto-accept/expiry policy and never expands authority from this tool alone.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "mode": {
+          "action": {
             "enum": [
-              "coder",
-              "general"
+              "turn.begin_work",
+              "turn.checkpoint",
+              "turn.finish",
+              "turn.prepare_final",
+              "turn.propose_mode",
+              "turn.request_more_rounds",
+              "turn.update_user"
             ],
             "type": "string"
           },
-          "reason": {
-            "description": "Short user-facing reason this mode better fits the work",
-            "type": "string"
-          },
-          "scope": {
-            "default": "session",
-            "enum": [
-              "session",
-              "task"
-            ],
-            "type": "string"
-          },
-          "task_id": {
-            "description": "Required for task scope; use the active undertaking/work id when relevant",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "mode",
-          "reason"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_turn_request_more_rounds",
-      "description": "Request additional tool rounds when the current budget is too tight. Pauses until the principal approves or denies. Include reason and progress summary.",
-      "input_schema": {
-        "properties": {
           "intent": {
             "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
             "maxLength": 320,
             "type": "string"
-          },
-          "progress_summary": {
-            "description": "What is done and what remains",
-            "type": "string"
-          },
-          "reason": {
-            "description": "Why the current budget is insufficient",
-            "type": "string"
-          },
-          "requested_rounds": {
-            "description": "How many additional model/tool rounds you need",
-            "maximum": 8,
-            "minimum": 1,
-            "type": "integer"
           }
         },
         "required": [
-          "intent",
-          "reason",
-          "requested_rounds"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_turn_update_user",
-      "description": "Tell the principal what you are doing right now — retries, quick course-corrections, \"pulling schemas\", \"one sec\". Call in the same model round as your next tool. Does not end the turn. Prefer this over naked chat prose (prose without tools fights the turn loop). For heavy/long-running work starting, use cognition_turn_begin_work instead.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "message": {
-            "description": "Short principal-facing status line",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "message"
+          "action",
+          "intent"
         ],
         "type": "object"
       },
@@ -4942,7 +4776,8 @@
             "enum": [
               "capability",
               "runtime",
-              "store"
+              "store",
+              "turn"
             ],
             "type": "string"
           },
@@ -4978,6 +4813,13 @@
                 "scripts.read",
                 "scripts.search",
                 "scripts.write",
+                "turn.begin_work",
+                "turn.checkpoint",
+                "turn.finish",
+                "turn.prepare_final",
+                "turn.propose_mode",
+                "turn.request_more_rounds",
+                "turn.update_user",
                 "vault.delete",
                 "vault.list",
                 "vault.move",
@@ -5525,217 +5367,26 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_turn_begin_work",
-      "description": "Enter the bound workshop for multi-tool execution (environment/canvas, components, vault writes). Provide a short principal-facing message and a concrete goal for the workshop executor. Host turn ends with the ack; synthesis delivers on the same thread when the workshop finishes.",
+      "name": "cognition_turn",
+      "description": "Control this turn: begin work, update the principal, checkpoint, finish, or request more rounds. action is a typed name (turn.finish, turn.checkpoint, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "goal": {
-            "description": "Focused execution task for the bound workshop (tools, surfaces, constraints)",
-            "type": "string"
-          },
-          "intent": {
-            "description": "Optional worker profile: general | research (default general)",
-            "type": "string"
-          },
-          "message": {
-            "description": "Short principal-facing ack before workshop execution",
-            "type": "string"
-          }
-        },
-        "required": [
-          "goal",
-          "message"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:bootstrap",
-        "workshop:bootstrap"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_turn_checkpoint",
-      "description": "Share a substantive mid-task update with the principal and hand the turn back to them. The conversation is not over — you may continue after they reply. Use when tool work produced real progress but you are not done (not a final answer). Prefer this over streaming long interim prose that the runtime may loop on.",
-      "input_schema": {
-        "properties": {
-          "awaiting": {
-            "description": "Optional: what you need from the principal before more tool work (decision, confirmation, missing detail)",
-            "type": "string"
-          },
-          "message": {
-            "description": "Principal-facing update: what you did, what you found, and what happens next or what you need from them",
-            "type": "string"
-          },
-          "reason": {
-            "description": "Optional short note for logs (not shown to the principal)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "message"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:bootstrap",
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:authorized:memory_context",
-        "workshop:authorized:research"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_turn_finish",
-      "description": "Deliver the complete principal-facing final answer now and end this turn immediately. Use it as an explicit hard stop after tool work; synthesis-bound workers require it for direct pass-through, while principal-facing turns may also commit after two consecutive non-tool responses. Mid-task handoffs use cognition_turn_checkpoint.",
-      "input_schema": {
-        "properties": {
-          "message": {
-            "description": "Complete principal-facing final answer for this turn",
-            "type": "string"
-          },
-          "reason": {
-            "description": "Optional short note for logs (not shown to the user)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "message"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:bootstrap",
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:authorized:memory_context",
-        "workshop:authorized:research",
-        "workshop:bootstrap"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_turn_prepare_final",
-      "description": "Deprecated — prefer cognition_turn_finish with the complete answer. Workshop workers may still call this; host turns should use cognition_turn_update_user for quick status, cognition_turn_begin_work before heavy work, and cognition_turn_finish to commit.",
-      "input_schema": {
-        "properties": {
-          "reason": {
-            "description": "Optional short note for logs (not shown to the user)",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:authorized:memory_context",
-        "workshop:authorized:research"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_turn_propose_mode",
-      "description": "Propose switching Medousa's mode for the current chat. Use Coder only when repository inspection, edits, commands, or tests would materially help; programming explanations stay in General. The runtime applies the user's auto-accept/expiry policy and never expands authority from this tool alone.",
-      "input_schema": {
-        "properties": {
-          "mode": {
+          "action": {
             "enum": [
-              "coder",
-              "general"
+              "turn.begin_work",
+              "turn.checkpoint",
+              "turn.finish",
+              "turn.prepare_final",
+              "turn.propose_mode",
+              "turn.request_more_rounds",
+              "turn.update_user"
             ],
             "type": "string"
-          },
-          "reason": {
-            "description": "Short user-facing reason this mode better fits the work",
-            "type": "string"
-          },
-          "scope": {
-            "default": "session",
-            "enum": [
-              "session",
-              "task"
-            ],
-            "type": "string"
-          },
-          "task_id": {
-            "description": "Required for task scope; use the active undertaking/work id when relevant",
-            "type": "string"
           }
         },
         "required": [
-          "mode",
-          "reason"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:bootstrap",
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:authorized:memory_context",
-        "workshop:authorized:research"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_turn_request_more_rounds",
-      "description": "Request additional tool rounds when the current budget is too tight. Pauses until the principal approves or denies. Include reason and progress summary.",
-      "input_schema": {
-        "properties": {
-          "progress_summary": {
-            "description": "What is done and what remains",
-            "type": "string"
-          },
-          "reason": {
-            "description": "Why the current budget is insufficient",
-            "type": "string"
-          },
-          "requested_rounds": {
-            "description": "How many additional model/tool rounds you need",
-            "maximum": 8,
-            "minimum": 1,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "reason",
-          "requested_rounds"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:authorized:memory_context",
-        "workshop:authorized:research"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_turn_update_user",
-      "description": "Tell the principal what you are doing right now — retries, quick course-corrections, \"pulling schemas\", \"one sec\". Call in the same model round as your next tool. Does not end the turn. Prefer this over naked chat prose (prose without tools fights the turn loop). For heavy/long-running work starting, use cognition_turn_begin_work instead.",
-      "input_schema": {
-        "properties": {
-          "message": {
-            "description": "Short principal-facing status line",
-            "type": "string"
-          }
-        },
-        "required": [
-          "message"
+          "action"
         ],
         "type": "object"
       },
