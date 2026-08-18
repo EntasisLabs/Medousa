@@ -1,6 +1,6 @@
 # Turn runtime, host/worker bus, and lanes
 
-> **Status:** Living document (2026-06) — describes **shipped** runtime behavior  
+> **Status:** Living document (2026-08) — describes **shipped** runtime behavior  
 > **Code version:** `AGENT_RUNTIME_VERSION = "centralized-v1"` (`src/agent_runtime/mod.rs`)  
 > **History:** [archive/turn-state-machine-plan.md](archive/turn-state-machine-plan.md), [archive/turn-worker-bus-plan.md](archive/turn-worker-bus-plan.md)
 
@@ -42,17 +42,20 @@ flowchart TB
         HOST[Host turn — orchestrator lane]
         SPAWN[cognition_spawn_turn_worker]
         WORKER[Worker turn — workshop lane]
-        SYN[Synthesis re-entry]
+        RESUME[Host resume with worker receipts]
+        BOUND[Bound workshop synthesis]
         LEDGER[turn_ledger JSONL]
     end
 
     adapters --> RT
     RT --> PREP --> ORCH
     ORCH --> HOST --> FSM
-    FSM -->|delegate| SPAWN
+    FSM -->|delegate parallel| SPAWN
     SPAWN --> WORKER
-    WORKER --> SYN
-    SYN --> adapters
+    WORKER -->|parallel cohort done| RESUME
+    RESUME --> adapters
+    FSM -->|begin_work| BOUND
+    BOUND --> adapters
     HOST --> LEDGER
     WORKER --> LEDGER
 ```
@@ -97,11 +100,15 @@ Host calls `cognition_spawn_turn_worker` with:
 - `task`, `user_ack`, `intent` (memory / research / general)
 - Optional `manuscript_id`, `stage_role`, `model_hint`
 
-Host turn ends with `user_ack`; worker runs asynchronously (in-process or durable Stasis job `workflow.medousa.turn_worker`).
+Host turn ends with `user_ack` (`worker_spawned`); composer unlocks. Multiple spawns in one model round enqueue concurrently (`cognition_spawn_turn_worker` is parallel-safe / ReadOnly in `classify_tool_call`). Workers run asynchronously (in-process or durable Stasis job `workflow.medousa.turn_worker`).
 
-### 4. Worker + synthesis
+`cognition_turn_begin_work` on Chat stays fire-and-forget: ack, then bound-workshop synthesis on the same thread.
 
-Worker gets handoff capsule + continuity bundle + manuscript context. On success, a **synthesis** pass publishes the final answer on the parent stream/session.
+### 4. Worker completion
+
+**Parallel spawn (`disposition: Parallel`):** workers that share `session_id` + `parent_stream_turn_id` are one cohort. When every sibling is Completed/Failed/Cancelled, the daemon starts **one host resume turn** (`persist_user_turn = false`) with a `[MEDOUSA_WORKER_RESULTS]` prompt (original user message plus each work_id / task / status / result or error). The host may tool if a gap remains, then answers with the same two-NL / `cognition_turn_finish` rule. Delivery reuses the existing synthesis plumbing (session append, parent SSE `worker_synthesis`, Telegram/ingest push). If a non-handoff interactive turn is already active, intake is left undelivered and retried from reconcile. Intake failure falls back to concatenating worker `result_text` / errors.
+
+**Bound workshop:** prompt-only synthesis (or finish pass-through) still writes the user-facing body on the parent thread.
 
 ---
 
@@ -118,28 +125,30 @@ stateDiagram-v2
     Running --> End: FSM EndTurn
     Running --> Delegated: cognition_spawn_turn_worker
     Delegated --> End: worker_ack
-    Running --> Continue: FSM ContinueLoop
-    Continue --> Running: next round
+    Running --> Continue: FSM ContinueLoop / PackHold
+    Continue --> Running: next round or tool
     Running --> End: max_rounds fuse
 ```
 
-**Rules (prose-terminates, shipped 2026-06):**
+**Rules (principal PackHold, shipped 2026-08):**
 
-| Situation | Outcome |
-|-----------|---------|
-| Zero tool calls + non-empty prose | **EndTurn** (`no_tools_prose` or `prose_terminates`) |
-| Zero tool calls + clarifying question | **EndTurn** (`clarifying_question`) |
-| After tools + non-empty prose (no tools this round) | **EndTurn** (`prose_requires_finish` — stub body unless clarifying question) |
-| After tools + empty prose (no tools this round) | **ContinueLoop** (`EmptyAfterTools` — control nudge only) |
-| `cognition_turn_finish` | **EndTurn** (terminal commit) |
-| `cognition_spawn_turn_worker` | **EndTurn** (delegated; host ends with ack) |
-| Max tool rounds | **EndTurn** (`max_rounds_fuse`) |
+General (`HostScheduler`) and Coder (`ForegroundPrincipal`) use the same event rules before and after tools. Wording is never classified. Workers (`WorkerSynthesis`) keep first-prose / explicit-finish.
 
-**Progress:** Use `cognition_turn_begin_work` (tool), not interim chat prose. Between tool rounds, streamed draft is archived to `TurnPart::Progress` before the next round.
+| Situation | Principal (General / Coder) | Worker synthesis |
+|-----------|-----------------------------|------------------|
+| Non-tool prose (no PackHold yet) | **ContinueLoop** (`PackHold`) | **EndTurn** (`no_tools_prose` before tools; `prose_requires_finish` after tools) |
+| Second consecutive non-tool reply | **EndTurn** (`content_pack_merged`) — both replies kept | n/a (already ended) |
+| Tool call | Continues work and **resets** the held fragment | Continues work |
+| `cognition_turn_finish` | **EndTurn** (immediate; appends onto one held fragment) | **EndTurn** |
+| `cognition_turn_checkpoint` | Mid-task handoff (not a terminal commit) | Same |
+| Empty after tools | Host cap / Coder continue + stuck fuse | Continue + stuck fuse |
+| Completely empty first round, no tools | Empty-response error | Empty-response error |
+| `cognition_spawn_turn_worker` | **EndTurn** (`worker_spawned` + `user_ack`); later host-resume | n/a |
+| Max tool rounds | **EndTurn** (`max_rounds_fuse`) | **EndTurn** (`max_rounds_fuse`) |
 
-**Single writer:** Terminal chat body from `cognition_turn_finish` after tools have run; plain prose before any tools or clarifying questions after tools may commit directly. Stream deltas alone are not final.
+**Progress:** Use `cognition_turn_update_user` in a tool round for visible interim status; announcements no longer end the turn. Between tool rounds, streamed draft is archived to `TurnPart::Progress` before the next round.
 
-See [turn-prose-terminates-plan.md](turn-prose-terminates-plan.md).
+**Single writer:** Terminal chat body is the merged pack (two consecutive non-tool replies) or `cognition_turn_finish`. Stream deltas alone are not final.
 
 History: [archive/turn-loop-single-writer-plan.md](archive/turn-loop-single-writer-plan.md), [archive/turn-state-machine-plan.md](archive/turn-state-machine-plan.md).
 
@@ -169,7 +178,7 @@ Home Settings maps this to **Host bus charter**: When needed / Always / Direct.
 
 | Tool | Role |
 |------|------|
-| `cognition_spawn_turn_worker` | Start background worker; host ends with `user_ack` |
+| `cognition_spawn_turn_worker` | Start background worker; host ends with `user_ack`; results return to a host resume turn |
 | `cognition_turn_worker_status` | List/fetch `TurnWorkRecord` |
 | `cognition_turn_worker_cancel` | Best-effort cancel |
 
@@ -273,6 +282,7 @@ Execution lane on the engine: `interactive`, `scheduled`, `worker`, …
 | Tool loop | `src/medousa_tool_loop.rs` |
 | Host bus routing | `src/agent_runtime/turn_worker/routing.rs` |
 | Worker run | `src/agent_runtime/turn_worker/run.rs` |
+| Host resume | `src/agent_runtime/turn_worker/host_resume.rs` |
 | Spawn tools | `src/agent_runtime/turn_worker_tools.rs` |
 | Durable jobs | `src/agent_runtime/turn_worker_job.rs` |
 | Ledger | `src/agent_runtime/turn_ledger.rs` |
@@ -290,7 +300,7 @@ Execution lane on the engine: `interactive`, `scheduled`, `worker`, …
 | Identity delegation graph edges at spawn | [worker-continuity-plan.md](worker-continuity-plan.md) Phase B |
 | Worker lite `prepare_turn_prompt` | Phase C |
 | Structured spawn task schema | Phase D |
-| Synthesis continuity framing | Phase E |
+| Synthesis continuity framing | Phase E — parallel spawn now resumes the host; bound workshop still synthesizes |
 | Context lanes Phase 3+ event loop | [context-lanes-and-scratchpad-plan.md](context-lanes-and-scratchpad-plan.md) |
 | Multi-role orchestrator catalogs | [durable-turn-worker-plan.md](durable-turn-worker-plan.md) Phase 4 |
 | External channel worker notify | [archive/channel-worker-notify-plan.md](archive/channel-worker-notify-plan.md) |

@@ -560,6 +560,11 @@ async fn main() -> Result<()> {
     medousa::turn_worker_notify::register_parent_turn_stream_registry(
         state.interactive_turn_streams.clone(),
     );
+    medousa::agent_runtime::turn_worker::register_host_resume_ports(
+        state.turn_tickets.clone(),
+        state.clone(),
+        state.backend.clone(),
+    );
 
     if let Err(error) = medousa::workspace::init_persist_writer() {
         tracing::error!(%error, "workspace persistence initialization failed");

@@ -19,7 +19,7 @@ Host affordances:
 - Memory, identity, runtime orchestration, cognition_vault_read/search, cognition_calendar_* (list/create/update/delete/import/export), capability catalog search/resolve (orchestration only).
 - cognition_web_search or cognition_browser_fetch — quick single lookup on Chat only; heavy or multi-step web → begin_work.
 - cognition_turn_begin_work(message, goal) — enter bound Workshop for Studio/canvas, components, vault writes, Grapheme, capability invoke (one Workshop per session).
-- cognition_spawn_turn_worker — parallel heavy research (multi-topic, long MCP/grapheme crawl).
+- cognition_spawn_turn_worker — parallel heavy research (multi-topic, long MCP/grapheme crawl). Host ends with user_ack; worker results return to the host so it can answer.
 - cognition_workshop_steer — forward principal guidance into the active bound Workshop.
 - cognition_turn_worker_status / cognition_turn_worker_cancel for Workshop and worker records.
 

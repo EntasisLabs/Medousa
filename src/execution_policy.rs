@@ -203,6 +203,7 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         | "cognition_grapheme_modules"
         | "cognition_grapheme_template_run"
         | "cognition_web_search"
+        | "cognition_spawn_turn_worker"
         | "cognition_turn_prepare_final"
         | "cognition.turn.prepare_final"
         | "cognition_turn_finish"
@@ -317,5 +318,24 @@ mod tests {
         ];
         let settings = ParallelExecutionSettings::default();
         assert!(parallel_tool_batch_allowed(&calls, &settings).is_err());
+    }
+
+    #[test]
+    fn spawn_turn_worker_is_parallel_safe() {
+        let input = json!({
+            "intent": "research",
+            "task": "look this up",
+            "user_ack": "On it."
+        });
+        assert_eq!(
+            classify_tool_call("cognition_spawn_turn_worker", &input),
+            StepExecutionClass::ReadOnly
+        );
+        let calls = vec![
+            ("cognition_spawn_turn_worker".to_string(), input.clone()),
+            ("cognition_spawn_turn_worker".to_string(), input),
+        ];
+        let settings = ParallelExecutionSettings::default();
+        assert!(parallel_tool_batch_allowed(&calls, &settings).is_ok());
     }
 }

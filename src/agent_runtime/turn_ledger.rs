@@ -27,7 +27,7 @@ pub const PACK_HOLD_PREFIX: &str = "[MEDOUSA_PACK_HOLD]";
 pub fn pack_hold_resolution_control_message() -> String {
     format!(
         "{PACK_HOLD_PREFIX}\n\
-         tools_used=true; consecutive_non_tool_responses=1.\n\
+         consecutive_non_tool_responses=1.\n\
          Next: a tool call continues work and resets the prose count; a non-tool response ends \
          the turn and preserves both responses; cognition_turn_finish ends immediately and appends \
          its message to the held response. If continuing, call the next tool now instead of \
@@ -62,9 +62,9 @@ pub const TURN_RUNTIME_BOUNDARY_APPENDIX: &str = r#"[MEDOUSA_TURN_RUNTIME]
 Runtime boundary (enforced by the daemon):
 - Chat (host): memory, identity, runtime, vault read, quick cognition_web_search/cognition_browser_fetch, cognition_turn_begin_work(message, goal) for multi-tool execution, cognition_spawn_turn_worker for parallel research.
 - cognition_turn_begin_work enters the bound Workshop (one per session) — Chat ends with ack; synthesis delivers on the same thread.
-- Completion is event-driven: before any tool call, a non-tool response ends the turn. After any tool call, tools continue/reset the prose count; two consecutive non-tool responses end the turn and both are preserved. cognition_turn_finish ends immediately and appends its message to one held response. Prose wording is never classified.
+- Completion is event-driven: tools continue/reset the prose count; two consecutive non-tool responses end the turn and both are preserved. cognition_turn_finish ends immediately and appends its message to one held response. Prose wording is never classified.
 - Continuing work requires a tool call in the current model response. If you say you will inspect, run, or fix something next, call that tool now. Use cognition_turn_update_user in a tool round for visible interim status that does not end execution.
-- Mid-task handoff: cognition_turn_checkpoint. Parallel delegate: cognition_spawn_turn_worker in a tool round.
+- Mid-task handoff: cognition_turn_checkpoint. Parallel delegate: cognition_spawn_turn_worker in a tool round. Worker results return to the host so it can answer.
 - UI stream draft may reset between rounds; [MEDOUSA_SCRATCH] engine notes persist across rounds and client disconnect."#;
 
 pub const TURN_SCRATCH_APPENDIX: &str = r#"[MEDOUSA_SCRATCH_POLICY]

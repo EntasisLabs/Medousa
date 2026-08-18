@@ -122,6 +122,17 @@ pub async fn reconcile_durable_turn_workers(
                 );
                 resume_pending_synthesis(agent.clone(), record).await;
             }
+            TurnWorkStatus::Failed | TurnWorkStatus::Cancelled
+                if !record.synthesis_delivered
+                    && record.disposition
+                        == crate::agent_runtime::turn_worker::TurnWorkDisposition::Parallel =>
+            {
+                eprintln!(
+                    "medousa-daemon: resume host intake for work_id={}",
+                    record.work_id
+                );
+                resume_pending_synthesis(agent.clone(), record).await;
+            }
             _ => {}
         }
     }
@@ -142,12 +153,28 @@ async fn job_needs_enqueue(composition: &RuntimeComposition, work_id: &str) -> b
 }
 
 pub async fn resume_pending_synthesis(agent: Arc<TuiRuntime>, record: TurnWorkRecord) {
-    if record.synthesis_delivered || record.status != TurnWorkStatus::Completed {
+    if record.synthesis_delivered {
+        return;
+    }
+    let terminal_parallel = record.disposition
+        == crate::agent_runtime::turn_worker::TurnWorkDisposition::Parallel
+        && matches!(
+            record.status,
+            TurnWorkStatus::Completed | TurnWorkStatus::Failed | TurnWorkStatus::Cancelled
+        );
+    if record.status != TurnWorkStatus::Completed && !terminal_parallel {
         return;
     }
     let ctx = WorkerRuntimeContext::from_tui_runtime(agent.as_ref());
     let sink = durable_worker_sink(&record);
-    resume_synthesis_if_needed(&ctx, &agent.execution_registry, record, sink).await;
+    resume_synthesis_if_needed(
+        &ctx,
+        &agent.execution_registry,
+        record,
+        sink,
+        Some(agent.as_ref()),
+    )
+    .await;
 }
 
 struct TurnWorkerJobHandler {
@@ -177,14 +204,7 @@ impl JobHandler for TurnWorkerJobHandler {
             )));
         };
 
-        if record.status == TurnWorkStatus::Cancelled {
-            return Ok(success_outcome(
-                &payload.work_id,
-                format!("work_id={} cancelled before execution", payload.work_id),
-            ));
-        }
-
-        if record.status == TurnWorkStatus::Completed && record.synthesis_delivered {
+        if record.synthesis_delivered {
             return Ok(success_outcome(
                 &payload.work_id,
                 format!("work_id={} already completed", payload.work_id),
@@ -194,8 +214,18 @@ impl JobHandler for TurnWorkerJobHandler {
         let ctx = WorkerRuntimeContext::from_tui_runtime(self.agent.as_ref());
         let sink = durable_worker_sink(&record);
 
-        if record.status == TurnWorkStatus::Completed && !record.synthesis_delivered {
-            resume_synthesis_if_needed(&ctx, &self.agent.execution_registry, record, sink).await;
+        if matches!(
+            record.status,
+            TurnWorkStatus::Completed | TurnWorkStatus::Failed | TurnWorkStatus::Cancelled
+        ) {
+            resume_synthesis_if_needed(
+                &ctx,
+                &self.agent.execution_registry,
+                record,
+                sink,
+                Some(self.agent.as_ref()),
+            )
+            .await;
             return Ok(success_outcome(
                 &payload.work_id,
                 format!("work_id={} synthesis resumed", payload.work_id),
@@ -213,6 +243,7 @@ impl JobHandler for TurnWorkerJobHandler {
             payload.work_id.clone(),
             sink,
             payload.stream_turn_id,
+            self.agent.clone(),
         )
         .await;
 
