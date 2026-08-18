@@ -45,11 +45,8 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_environment_wiki",
     "cognition_feed_publish",
     "cognition_feed_subscribe",
-    "cognition_identity_commit",
-    "cognition_identity_context",
-    "cognition_identity_propose",
-    "cognition_identity_recall",
-    "cognition_identity_remember",
+    "cognition_identity_mutate",
+    "cognition_identity_query",
     "cognition_intent_resolve",
     "cognition_layout_apply",
     "cognition_layout_get",
@@ -173,11 +170,11 @@ mod tests {
         assert!(!tool_allowed("cognition_turn_prepare_final", &host));
         assert!(!tool_allowed("cognition_grapheme_run", &host));
         assert!(tool_allowed("cognition_capability", &host));
-        assert!(tool_allowed("cognition_identity_recall", &host));
-        assert!(tool_allowed("cognition_identity_remember", &host));
+        assert!(tool_allowed("cognition_identity_query", &host));
+        assert!(tool_allowed("cognition_identity_mutate", &host));
         let research = allowed_tool_names_for_intent(TurnWorkerIntent::Research);
-        assert!(tool_allowed("cognition_identity_recall", &research));
-        assert!(!tool_allowed("cognition_identity_remember", &research));
+        assert!(tool_allowed("cognition_identity_query", &research));
+        assert!(tool_allowed("cognition_identity_mutate", &research));
     }
 
     #[test]

@@ -198,12 +198,12 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
         "Write Locus memory by typed action (memory.store, memory.calibrate, memory.evict)",
     ),
     (
-        "cognition_identity_recall",
-        "Look up preferences, people, and identity facts",
+        crate::public_api::COGNITION_IDENTITY_QUERY,
+        "Read identity by typed action (identity.recall, identity.context)",
     ),
     (
-        "cognition_identity_remember",
-        "Remember durable personal facts in identity memory",
+        crate::public_api::COGNITION_IDENTITY_MUTATE,
+        "Write identity by typed action (identity.remember, identity.propose, identity.commit)",
     ),
     (
         "cognition_store_read",

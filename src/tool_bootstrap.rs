@@ -75,8 +75,8 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_spawn_turn_worker",
     "cognition_memory_query",
     "cognition_memory_mutate",
-    "cognition_identity_recall",
-    "cognition_identity_remember",
+    "cognition_identity_query",
+    "cognition_identity_mutate",
     "cognition_web_search",
     "cognition_store_read",
     "cognition_store_write",
@@ -101,6 +101,8 @@ pub const WORKER_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_store_write",
     "cognition_memory_query",
     "cognition_memory_mutate",
+    "cognition_identity_query",
+    "cognition_identity_mutate",
     "cognition_ui_build",
     "cognition_ui_scene",
     "cognition_ui_present",
@@ -147,8 +149,6 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 tools: &[
                     "cognition_memory_query",
                     "cognition_memory_mutate",
-                    "cognition_identity_recall",
-                    "cognition_identity_remember",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -218,9 +218,8 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 domain: "identity",
                 summary: "Identity graph inspect and commit (operator-gated writes)",
                 tools: &[
-                    "cognition_identity_context",
-                    "cognition_identity_propose",
-                    "cognition_identity_commit",
+                    "cognition_identity_query",
+                    "cognition_identity_mutate",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -299,7 +298,14 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 tools: &[
                     "cognition_memory_query",
                     "cognition_memory_mutate",
-                    "cognition_identity_recall",
+                ],
+            },
+            ToolDomainCatalogEntry {
+                domain: "identity",
+                summary: "Identity graph inspect and remember",
+                tools: &[
+                    "cognition_identity_query",
+                    "cognition_identity_mutate",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -841,8 +847,8 @@ mod tests {
         assert!(HOST_BOOTSTRAP_TOOLS.len() <= 24);
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&COGNITION_TOOLS_DISCOVER));
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_turn"));
-        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_remember"));
-        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_recall"));
+        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_mutate"));
+        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_query"));
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_calendar_list"));
     }
 
@@ -948,8 +954,8 @@ mod tests {
         let before = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
         assert!(before.contains("cognition_memory_query"));
         assert!(before.contains("cognition_memory_mutate"));
-        assert!(before.contains("cognition_identity_remember"));
-        assert!(before.contains("cognition_identity_recall"));
+        assert!(before.contains("cognition_identity_mutate"));
+        assert!(before.contains("cognition_identity_query"));
         assert!(!before.contains("cognition_calendar_create"));
 
         unlock_session_domains(&session_id, ToolSurfaceLane::Host, &["calendar"]).expect("unlock");

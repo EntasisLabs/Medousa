@@ -20,10 +20,6 @@ use crate::grapheme_sttp_compaction::GraphemeCompactionModelTarget;
 use crate::identity_memory::{
     resolve_identity_channel_id, resolve_identity_persona_id, resolve_tool_identity_user_id,
 };
-use crate::identity_tools::{
-    CognitionIdentityCommitTool, CognitionIdentityContextTool, CognitionIdentityProposeTool,
-    CognitionIdentityRecallTool, CognitionIdentityRememberTool,
-};
 use crate::mcp_gateway_client::McpGatewayClient;
 use crate::runtime::stasis_wire::{LocalStasisWireConfig, build_local_stasis_composition};
 use crate::tools::{
@@ -150,36 +146,17 @@ pub(crate) async fn assemble_tui_runtime(
     let identity_user_id = resolve_tool_identity_user_id(session_id, workshop_operator_identity);
     let identity_persona_id = resolve_identity_persona_id();
     let identity_channel_id = resolve_identity_channel_id(Some("interactive"));
-    tool_registry.register_typed_tool(CognitionIdentityContextTool::new(
-        identity_service.clone(),
-        identity_user_id.clone(),
+    crate::identity_api::register_identity_tools(
+        &mut tool_registry,
+        identity_service,
+        identity_memory_store.clone(),
+        Some(memory_writer.clone()),
+        identity_user_id,
         identity_persona_id,
         identity_channel_id,
         workshop_operator_identity,
         event_tx.clone(),
-    ))?;
-    tool_registry.register_typed_tool(CognitionIdentityProposeTool::new(
-        identity_service.clone(),
-        event_tx.clone(),
-    ))?;
-    tool_registry.register_typed_tool(CognitionIdentityCommitTool::new(
-        identity_service,
-        Some(memory_writer.clone()),
-        event_tx.clone(),
-    ))?;
-    tool_registry.register_typed_tool(CognitionIdentityRecallTool::new(
-        identity_memory_store.clone(),
-        identity_user_id.clone(),
-        workshop_operator_identity,
-        event_tx.clone(),
-    ))?;
-    tool_registry.register_typed_tool(CognitionIdentityRememberTool::new(
-        identity_memory_store.clone(),
-        Some(memory_writer.clone()),
-        identity_user_id.clone(),
-        workshop_operator_identity,
-        event_tx.clone(),
-    ))?;
+    )?;
     crate::manuscript_tools::register_manuscript_tools(&mut tool_registry)?;
     crate::openshell_tools::register_openshell_tools(
         &mut tool_registry,

@@ -104,6 +104,7 @@ pub mod feed_handlers;
 pub mod feed_store;
 pub mod feed_tools;
 pub mod grapheme_sttp_compaction;
+pub mod identity_api;
 pub mod identity_manuscript;
 pub mod identity_markdown;
 pub mod identity_memory;

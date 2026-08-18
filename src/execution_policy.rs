@@ -208,12 +208,14 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         }
         "cognition_runtime_mutate"
         | "cognition_memory_mutate"
+        | "cognition_identity_mutate"
         | "cognition_openshell_sandbox_run" => StepExecutionClass::Mutating,
         "cognition_openshell_status" | "cognition_skill_discover" | "cognition_skill_propose" => {
             StepExecutionClass::ReadOnly
         }
         "cognition_skill_probe" => StepExecutionClass::Mutating,
         "cognition_memory_query"
+        | "cognition_identity_query"
         | "cognition_store_read"
         | "cognition_runtime_query"
         | "cognition_schema"
@@ -462,6 +464,25 @@ mod tests {
                 &settings
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn identity_query_is_parallel_safe_and_mutate_is_mutating() {
+        let query = json!({ "action": "identity.recall", "query": "Mario" });
+        let mutate = json!({
+            "action": "identity.remember",
+            "fact_kind": "preference",
+            "subject": "beverage",
+            "statement": "matcha"
+        });
+        assert_eq!(
+            classify_tool_call("cognition_identity_query", &query),
+            StepExecutionClass::ReadOnly
+        );
+        assert_eq!(
+            classify_tool_call("cognition_identity_mutate", &mutate),
+            StepExecutionClass::Mutating
         );
     }
 }

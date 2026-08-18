@@ -11,7 +11,7 @@ spec:
     max_tool_rounds: 10
   tools:
     allow:
-      - cognition_identity_recall
+      - cognition_identity_query
       - cognition_memory_query
       - cognition_capability
       - cognition_web_search

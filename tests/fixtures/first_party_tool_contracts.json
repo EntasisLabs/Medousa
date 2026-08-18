@@ -1217,6 +1217,69 @@
     },
     {
       "registry": "coder_bound",
+      "name": "cognition_identity_mutate",
+      "description": "Write identity: remember a fact, propose a patch, or commit. action is a typed name (identity.remember, identity.propose, identity.commit). Fetch fields with cognition_schema types=[...].",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "enum": [
+              "identity.commit",
+              "identity.propose",
+              "identity.remember"
+            ],
+            "type": "string"
+          },
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "intent"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:initial"
+      ]
+    },
+    {
+      "registry": "coder_bound",
+      "name": "cognition_identity_query",
+      "description": "Read identity: recall facts or load graph context. action is a typed name (identity.recall, identity.context). Fetch fields with cognition_schema types=[...].",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "enum": [
+              "identity.context",
+              "identity.recall"
+            ],
+            "type": "string"
+          },
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "intent"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:initial"
+      ]
+    },
+    {
+      "registry": "coder_bound",
       "name": "cognition_memory_mutate",
       "description": "Write Locus memory: store an STTP node, calibrate AVEC, or evict nodes. action is a typed name (memory.store, memory.calibrate, memory.evict). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
@@ -1368,6 +1431,7 @@
           "domain": {
             "enum": [
               "capability",
+              "identity",
               "memory",
               "runtime",
               "store",
@@ -1396,6 +1460,11 @@
                 "delivery.status",
                 "grapheme.find",
                 "grapheme.invoke",
+                "identity.commit",
+                "identity.context",
+                "identity.propose",
+                "identity.recall",
+                "identity.remember",
                 "job.cancel",
                 "job.enqueue",
                 "job.list",
@@ -3514,180 +3583,22 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_identity_commit",
-      "description": "Commit a proposed identity patch when tier and Medousa policy allow. Pass expected_version from context; set approver for approval_required tiers.",
+      "name": "cognition_identity_mutate",
+      "description": "Write identity: remember a fact, propose a patch, or commit. action is a typed name (identity.remember, identity.propose, identity.commit). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "approver": {
-            "type": "string"
-          },
-          "confidence": {
-            "type": "number"
-          },
-          "entity_id": {
-            "type": "string"
-          },
-          "entity_type": {
-            "type": "string"
-          },
-          "expected_version": {
-            "type": "integer"
-          },
-          "patch": {
-            "type": "object"
-          },
-          "proposal_id": {
-            "type": "string"
-          },
-          "source": {
-            "type": "string"
-          },
-          "tier": {
+          "action": {
             "enum": [
-              "approval_required",
-              "auto_commit",
-              "confirm_required"
+              "identity.commit",
+              "identity.propose",
+              "identity.remember"
             ],
             "type": "string"
           }
         },
         "required": [
-          "expected_version",
-          "proposal_id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:identity"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_identity_context",
-      "description": "Read identity graph context (persona, user, channels, relationships) for this turn.",
-      "input_schema": {
-        "properties": {
-          "channel_id": {
-            "description": "Override channel id",
-            "type": "string"
-          },
-          "mode": {
-            "description": "Identity context slice (default: cognitive)",
-            "enum": [
-              "cognitive",
-              "full",
-              "policy"
-            ],
-            "type": "string"
-          },
-          "persona_id": {
-            "description": "Override persona id",
-            "type": "string"
-          },
-          "relationship_limit": {
-            "maximum": 64,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "user_id": {
-            "description": "Override identity user id",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:identity"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_identity_propose",
-      "description": "Propose a durable identity patch (persona, user, relationship). Returns proposal_ids and tiers; use cognition_identity_commit when policy allows.",
-      "input_schema": {
-        "properties": {
-          "actor": {
-            "type": "string"
-          },
-          "confidence": {
-            "maximum": 1,
-            "minimum": 0,
-            "type": "number"
-          },
-          "entity_id": {
-            "type": "string"
-          },
-          "entity_type": {
-            "description": "persona | user | contact | relationship | channel | policy",
-            "type": "string"
-          },
-          "expires_at": {
-            "description": "RFC3339 UTC",
-            "type": "string"
-          },
-          "patch": {
-            "description": "Flat or nested JSON patch object",
-            "type": "object"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "source": {
-            "enum": [
-              "model_inferred",
-              "system_event",
-              "user_direct"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "entity_id",
-          "entity_type",
-          "patch"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:identity"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_identity_recall",
-      "description": "Search durable identity memory (preferences, people, notes) by keyword. Use when the turn-start digest lacks detail.",
-      "input_schema": {
-        "properties": {
-          "fact_kind": {
-            "description": "Optional filter; defaults to any",
-            "enum": [
-              "any",
-              "note",
-              "person",
-              "preference"
-            ],
-            "type": "string"
-          },
-          "limit": {
-            "maximum": 20,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "query": {
-            "type": "string"
-          },
-          "user_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "query"
+          "action"
         ],
         "type": "object"
       },
@@ -3695,74 +3606,32 @@
       "placements": [
         "general:authorized",
         "general:bootstrap",
-        "general:domain:memory",
+        "general:domain:identity",
         "workshop:authorized:general",
         "workshop:authorized:memory_avec_calibrate",
         "workshop:authorized:memory_context",
         "workshop:authorized:research",
-        "workshop:domain:memory"
+        "workshop:bootstrap",
+        "workshop:domain:identity"
       ]
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_identity_remember",
-      "description": "Remember a durable personal fact in identity memory (preferences, people, notes). Prefer over cognition_memory_mutate action=memory.store for operator world-model facts.",
+      "name": "cognition_identity_query",
+      "description": "Read identity: recall facts or load graph context. action is a typed name (identity.recall, identity.context). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "aliases": {
-            "description": "Optional contact aliases (person facts only)",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "attributes": {
-            "description": "Optional structured tags for people (role, employer, …) — rendered as policy_tags",
-            "type": "object"
-          },
-          "confidence": {
-            "maximum": 1,
-            "minimum": 0,
-            "type": "number"
-          },
-          "fact_kind": {
-            "description": "preference = user key/value; person = contact + relationship; note = preference key or freeform note",
+          "action": {
             "enum": [
-              "note",
-              "person",
-              "preference"
+              "identity.context",
+              "identity.recall"
             ],
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "source": {
-            "description": "Defaults to user_direct when operator stated the fact",
-            "enum": [
-              "model_inferred",
-              "system_event",
-              "user_direct"
-            ],
-            "type": "string"
-          },
-          "statement": {
-            "description": "Human-readable fact, e.g. User prefers matcha over coffee",
-            "type": "string"
-          },
-          "subject": {
-            "description": "Preference key (beverage), person display name (Mario), or note subject",
-            "type": "string"
-          },
-          "user_id": {
-            "description": "Override default identity user id",
             "type": "string"
           }
         },
         "required": [
-          "fact_kind",
-          "statement",
-          "subject"
+          "action"
         ],
         "type": "object"
       },
@@ -3770,7 +3639,13 @@
       "placements": [
         "general:authorized",
         "general:bootstrap",
-        "general:domain:memory"
+        "general:domain:identity",
+        "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
+        "workshop:authorized:research",
+        "workshop:bootstrap",
+        "workshop:domain:identity"
       ]
     },
     {
@@ -4236,6 +4111,7 @@
           "domain": {
             "enum": [
               "capability",
+              "identity",
               "memory",
               "runtime",
               "store",
@@ -4259,6 +4135,11 @@
                 "delivery.status",
                 "grapheme.find",
                 "grapheme.invoke",
+                "identity.commit",
+                "identity.context",
+                "identity.propose",
+                "identity.recall",
+                "identity.remember",
                 "job.cancel",
                 "job.enqueue",
                 "job.list",

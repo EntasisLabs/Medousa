@@ -408,7 +408,7 @@ mod tests {
             Some("gpt-4.1".to_string()),
             Some("morning-brief".to_string()),
             vec![
-                "cognition_identity_recall".to_string(),
+                "cognition_identity_query".to_string(),
                 "cognition_memory_query".to_string(),
             ],
             Some(8),

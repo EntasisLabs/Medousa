@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 use stasis::prelude::StasisError;
 
 use crate::capability_tools::capability_type_schemas;
+use crate::identity_api::identity_type_schemas;
 use crate::memory_api::memory_type_schemas;
 use crate::public_api::COGNITION_SCHEMA;
 use crate::runtime_api::runtime_type_schemas;
@@ -24,6 +25,7 @@ enum SchemaDomain {
     Capability,
     Turn,
     Memory,
+    Identity,
 }
 
 impl SchemaDomain {
@@ -34,6 +36,7 @@ impl SchemaDomain {
             Self::Capability => "capability",
             Self::Turn => "turn",
             Self::Memory => "memory",
+            Self::Identity => "identity",
         }
     }
 }
@@ -72,7 +75,14 @@ impl JsonSchema for SchemaInput {
         advertised_object_schema(&[
             (
                 "domain",
-                string_enum_schema(&["runtime", "store", "capability", "turn", "memory"]),
+                string_enum_schema(&[
+                    "runtime",
+                    "store",
+                    "capability",
+                    "turn",
+                    "memory",
+                    "identity",
+                ]),
                 false,
             ),
             ("types", type_name_array_schema(), false),
@@ -174,6 +184,10 @@ fn catalog() -> Vec<CatalogItem> {
         ))
         .chain(generated_items(SchemaDomain::Turn, turn_type_schemas()))
         .chain(generated_items(SchemaDomain::Memory, memory_type_schemas()))
+        .chain(generated_items(
+            SchemaDomain::Identity,
+            identity_type_schemas(),
+        ))
         .collect()
 }
 
@@ -378,5 +392,6 @@ mod tests {
         assert!(names.iter().any(|value| value == "grapheme.invoke"));
         assert!(names.iter().any(|value| value == "turn.finish"));
         assert!(names.iter().any(|value| value == "memory.store"));
+        assert!(names.iter().any(|value| value == "identity.remember"));
     }
 }

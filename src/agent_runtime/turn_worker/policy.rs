@@ -62,17 +62,13 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
     );
 
     match intent {
-        TurnWorkerIntent::MemoryAvecCalibrate => {
-            push(&mut names, &["cognition_identity_recall"]);
-        }
-        TurnWorkerIntent::MemoryContext => {
-            push(&mut names, &["cognition_identity_recall"]);
+        TurnWorkerIntent::MemoryAvecCalibrate | TurnWorkerIntent::MemoryContext => {
+            // Public identity primitives are injected via ensure_public_api.
         }
         TurnWorkerIntent::Research => {
             push(
                 &mut names,
                 &[
-                    "cognition_identity_recall",
                     "cognition_capability",
                     "cognition_web_search",
                     "cognition_openshell_status",
@@ -108,7 +104,6 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
             push(
                 &mut names,
                 &[
-                    "cognition_identity_recall",
                     "cognition_web_search",
                     "cognition_capability",
                     "cognition_shell_status",
@@ -168,11 +163,6 @@ pub fn host_bus_tool_names() -> HashSet<String> {
     push(
         &mut names,
         &[
-            "cognition_identity_context",
-            "cognition_identity_propose",
-            "cognition_identity_commit",
-            "cognition_identity_recall",
-            "cognition_identity_remember",
             "cognition_manuscript_list",
             "cognition_manuscript_resolve",
             "cognition_calendar_list",
@@ -283,7 +273,9 @@ mod tests {
         assert!(names.contains("cognition_store_write"));
         assert!(names.contains("cognition_environment_get"));
         assert!(!names.contains("cognition_memory_calibrate"));
-        assert!(names.contains("cognition_identity_recall"));
+        assert!(names.contains("cognition_identity_query"));
+        assert!(names.contains("cognition_identity_mutate"));
+        assert!(!names.contains("cognition_identity_recall"));
         assert!(!names.contains("cognition_identity_remember"));
         assert!(names.contains("cognition_openshell_status"));
         assert!(names.contains("cognition_openshell_sandbox_run"));
@@ -298,13 +290,14 @@ mod tests {
     #[test]
     fn manuscript_allowlist_intersects_intent_tools() {
         let tools = vec![
-            "cognition_identity_recall".to_string(),
+            crate::public_api::COGNITION_IDENTITY_QUERY.to_string(),
             crate::public_api::COGNITION_MEMORY_QUERY.to_string(),
             "cognition_capability".to_string(),
             "cognition_spawn_turn_worker".to_string(),
         ];
         let allow = worker_allowlist_for_intent_and_tools(TurnWorkerIntent::Research, &tools);
-        assert!(allow.contains("cognition_identity_recall"));
+        assert!(allow.contains("cognition_identity_query"));
+        assert!(allow.contains("cognition_identity_mutate"));
         assert!(allow.contains("cognition_memory_query"));
         assert!(allow.contains("cognition_capability"));
         assert!(!allow.contains("cognition_spawn_turn_worker"));
@@ -315,9 +308,11 @@ mod tests {
     fn host_scheduler_has_memory_runtime_and_catalog_not_execution() {
         let names = host_bus_tool_names();
         assert!(names.contains("cognition_memory_mutate"));
-        assert!(names.contains("cognition_identity_propose"));
-        assert!(names.contains("cognition_identity_recall"));
-        assert!(names.contains("cognition_identity_remember"));
+        assert!(names.contains("cognition_identity_query"));
+        assert!(names.contains("cognition_identity_mutate"));
+        assert!(!names.contains("cognition_identity_recall"));
+        assert!(!names.contains("cognition_identity_remember"));
+        assert!(!names.contains("cognition_identity_propose"));
         assert!(names.contains("cognition_runtime_query"));
         assert!(names.contains("cognition_runtime_mutate"));
         assert!(names.contains("cognition_schema"));

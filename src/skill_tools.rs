@@ -279,7 +279,7 @@ impl SkillProposeOutput {
             next_tools: SkillProposalNextTools {
                 observe: Vec::new(),
                 propose: vec![
-                    "cognition_identity_remember".to_string(),
+                    "cognition_identity_mutate".to_string(),
                     "medousa skill-import".to_string(),
                 ],
                 sandbox: vec![

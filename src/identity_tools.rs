@@ -48,15 +48,21 @@ const COGNITION_IDENTITY_COMMIT_ID: ToolId = ToolId::new("cognition_identity_com
 
 #[derive(Debug, Deserialize)]
 #[serde(transparent)]
-struct CompatibleObject(Value);
+pub(crate) struct CompatibleObject(Value);
 
 impl CompatibleObject {
     fn as_value(&self) -> &Value {
         &self.0
     }
 
-    fn into_value(self) -> Value {
+    pub(crate) fn into_value(self) -> Value {
         self.0
+    }
+}
+
+impl From<Value> for CompatibleObject {
+    fn from(value: Value) -> Self {
+        Self(value)
     }
 }
 
@@ -222,35 +228,35 @@ pub struct IdentityContextInput {
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    user_id: CompatOption<String>,
+    pub(crate) user_id: CompatOption<String>,
     /// Override persona id
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    persona_id: CompatOption<String>,
+    pub(crate) persona_id: CompatOption<String>,
     /// Override channel id
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    channel_id: CompatOption<String>,
+    pub(crate) channel_id: CompatOption<String>,
     #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 1, max = 64),
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    relationship_limit: CompatOption<usize>,
+    pub(crate) relationship_limit: CompatOption<usize>,
     /// Identity context slice (default: cognitive)
     #[serde(default)]
     #[schemars(
         with = "IdentityContextModeSchema",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    mode: CompatOption<String>,
+    pub(crate) mode: CompatOption<String>,
 }
 
 #[derive(Debug)]
@@ -585,7 +591,7 @@ impl From<GetIdentityContextResponse> for IdentityContextOutput {
 #[medousa_tool(id = COGNITION_IDENTITY_CONTEXT_ID)]
 impl CognitionIdentityContextTool {
     /// Read identity graph context (persona, user, channels, relationships) for this turn.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: IdentityContextInput,
     ) -> stasis::prelude::Result<IdentityContextOutput> {
@@ -644,35 +650,35 @@ impl CognitionIdentityProposeTool {
 pub struct IdentityProposeInput {
     /// persona | user | contact | relationship | channel | policy
     #[schemars(required, with = "String")]
-    entity_type: Option<String>,
+    pub(crate) entity_type: Option<String>,
     #[schemars(required, with = "String")]
-    entity_id: Option<String>,
+    pub(crate) entity_id: Option<String>,
     /// Flat or nested JSON patch object
     #[schemars(required, with = "CompatibleObject")]
-    patch: Option<CompatibleObject>,
+    pub(crate) patch: Option<CompatibleObject>,
     #[schemars(
         with = "IdentityUpdateSourceSchema",
         skip_serializing_if = "Option::is_none"
     )]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    source: Option<String>,
+    pub(crate) source: Option<String>,
     #[schemars(
         with = "f64",
         range(min = 0, max = 1),
         skip_serializing_if = "Option::is_none"
     )]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    confidence: Option<f64>,
+    pub(crate) confidence: Option<f64>,
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    reason: Option<String>,
+    pub(crate) reason: Option<String>,
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    actor: Option<String>,
+    pub(crate) actor: Option<String>,
     /// RFC3339 UTC
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    expires_at: Option<String>,
+    pub(crate) expires_at: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for IdentityProposeInput {
@@ -754,8 +760,8 @@ impl From<ProposeEntityUpdateResponse> for IdentityProposeOutput {
 
 #[medousa_tool(id = COGNITION_IDENTITY_PROPOSE_ID)]
 impl CognitionIdentityProposeTool {
-    /// Propose a durable identity patch (persona, user, relationship). Returns proposal_ids and tiers; use cognition_identity_commit when policy allows.
-    async fn invoke_typed(
+    /// Propose a durable identity patch (persona, user, relationship). Returns proposal_ids and tiers; use cognition_identity_mutate action=identity.commit when policy allows.
+    pub(crate) async fn invoke_typed(
         &self,
         input: IdentityProposeInput,
     ) -> stasis::prelude::Result<IdentityProposeOutput> {
@@ -849,24 +855,24 @@ impl CognitionIdentityRecallTool {
 #[derive(Debug, JsonSchema)]
 pub struct IdentityRecallInput {
     #[schemars(required, with = "String")]
-    query: Option<String>,
+    pub(crate) query: Option<String>,
     /// Optional filter; defaults to any
     #[schemars(
         with = "IdentityRecallFactKindSchema",
         skip_serializing_if = "Option::is_none"
     )]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    fact_kind: Option<String>,
+    pub(crate) fact_kind: Option<String>,
     #[schemars(
         with = "usize",
         range(min = 1, max = 20),
         skip_serializing_if = "Option::is_none"
     )]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    user_id: Option<String>,
+    pub(crate) user_id: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for IdentityRecallInput {
@@ -942,7 +948,7 @@ pub enum IdentityRecallOutput {
 #[medousa_tool(id = COGNITION_IDENTITY_RECALL_ID)]
 impl CognitionIdentityRecallTool {
     /// Search durable identity memory (preferences, people, notes) by keyword. Use when the turn-start digest lacks detail.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: IdentityRecallInput,
     ) -> stasis::prelude::Result<IdentityRecallOutput> {
@@ -1064,42 +1070,42 @@ fn parse_attributes_tags(value: Option<&Value>) -> Vec<String> {
 pub struct IdentityRememberInput {
     /// preference = user key/value; person = contact + relationship; note = preference key or freeform note
     #[schemars(required, with = "IdentityFactKindSchema")]
-    fact_kind: Option<String>,
+    pub(crate) fact_kind: Option<String>,
     /// Preference key (beverage), person display name (Mario), or note subject
     #[schemars(required, with = "String")]
-    subject: Option<String>,
+    pub(crate) subject: Option<String>,
     /// Human-readable fact, e.g. User prefers matcha over coffee
     #[schemars(required, with = "String")]
-    statement: Option<String>,
+    pub(crate) statement: Option<String>,
     /// Optional structured tags for people (role, employer, …) — rendered as policy_tags
     #[schemars(with = "CompatibleObject", skip_serializing_if = "Option::is_none")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    attributes: Option<CompatibleObject>,
+    pub(crate) attributes: Option<CompatibleObject>,
     /// Optional contact aliases (person facts only)
     #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    aliases: Option<Vec<String>>,
+    pub(crate) aliases: Option<Vec<String>>,
     /// Defaults to user_direct when operator stated the fact
     #[schemars(
         with = "IdentityUpdateSourceSchema",
         skip_serializing_if = "Option::is_none"
     )]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    source: Option<String>,
+    pub(crate) source: Option<String>,
     #[schemars(
         with = "f64",
         range(min = 0, max = 1),
         skip_serializing_if = "Option::is_none"
     )]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    confidence: Option<f64>,
+    pub(crate) confidence: Option<f64>,
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    reason: Option<String>,
+    pub(crate) reason: Option<String>,
     /// Override default identity user id
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    user_id: Option<String>,
+    pub(crate) user_id: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for IdentityRememberInput {
@@ -1220,7 +1226,7 @@ pub struct IdentityRememberOutput {
 #[medousa_tool(id = COGNITION_IDENTITY_REMEMBER_ID)]
 impl CognitionIdentityRememberTool {
     /// Remember a durable personal fact in identity memory (preferences, people, notes). Prefer over cognition_memory_mutate action=memory.store for operator world-model facts.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: IdentityRememberInput,
     ) -> stasis::prelude::Result<IdentityRememberOutput> {
@@ -1344,33 +1350,33 @@ impl CognitionIdentityCommitTool {
 #[derive(Debug, JsonSchema)]
 pub struct IdentityCommitInput {
     #[schemars(required, with = "String")]
-    proposal_id: Option<String>,
+    pub(crate) proposal_id: Option<String>,
     #[schemars(required, with = "i64")]
-    expected_version: Option<i64>,
+    pub(crate) expected_version: Option<i64>,
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    approver: Option<String>,
+    pub(crate) approver: Option<String>,
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    entity_type: Option<String>,
+    pub(crate) entity_type: Option<String>,
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    entity_id: Option<String>,
+    pub(crate) entity_id: Option<String>,
     #[schemars(with = "CompatibleObject", skip_serializing_if = "Option::is_none")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    patch: Option<CompatibleObject>,
+    pub(crate) patch: Option<CompatibleObject>,
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    source: Option<String>,
+    pub(crate) source: Option<String>,
     #[schemars(with = "f64", skip_serializing_if = "Option::is_none")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    confidence: Option<f64>,
+    pub(crate) confidence: Option<f64>,
     #[schemars(
         with = "IdentityUpdateTierSchema",
         skip_serializing_if = "Option::is_none"
     )]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    tier: Option<String>,
+    pub(crate) tier: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for IdentityCommitInput {
@@ -1507,7 +1513,7 @@ impl IdentityCommitOutput {
 #[medousa_tool(id = COGNITION_IDENTITY_COMMIT_ID)]
 impl CognitionIdentityCommitTool {
     /// Commit a proposed identity patch when tier and Medousa policy allow. Pass expected_version from context; set approver for approval_required tiers.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: IdentityCommitInput,
     ) -> stasis::prelude::Result<IdentityCommitOutput> {
