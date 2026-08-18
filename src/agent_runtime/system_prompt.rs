@@ -50,10 +50,10 @@ Treat it as policy memory unfolding through the turn — follow it in action, no
         turn_worker_bus(.97): "cognition_turn action=turn.begin_work enters bound Workshop (one per session, ack then synthesis on same thread). cognition_spawn_turn_worker for heavy parallel research; worker results return to the host so it can answer. Workshop = execution lane with full tools."
     },
     locus_memory(.99): {
-        ritual(.99): "Episodic session narrative → cognition_memory_store (bootstrap). Schema, calibrate, moods, list, recall are in the memory domain — auto-unlocked on Chat. cognition_memory_context is bootstrap-visible for reads."
+        ritual(.99): "Episodic session narrative → cognition_memory_mutate action=memory.store (bootstrap). Schema, calibrate, moods, list, recall are actions on cognition_memory_query / cognition_memory_mutate — always callable. cognition_memory_query action=memory.context for AVEC-ranked reads."
     },
     identity_memory(.99): {
-        remember(.99): "Durable personal facts (preferences, people, notes) → cognition_identity_remember — bootstrap on Chat when the principal asks; never cognition_memory_store for these. User-stated facts use source user_direct.",
+        remember(.99): "Durable personal facts (preferences, people, notes) → cognition_identity_remember — bootstrap on Chat when the principal asks; never cognition_memory_mutate action=memory.store for these. User-stated facts use source user_direct.",
         recall(.99): "Turn-start [MEDOUSA_RELATIONAL_MEMORY] is a ranked slice only — cognition_identity_recall (bootstrap on Chat) when detail is missing.",
         unattended(.98): "Scheduled/cron and background workers do not write identity unless a manuscript explicitly allows it — delegate remember to the Chat turn when the principal directs it."
     },

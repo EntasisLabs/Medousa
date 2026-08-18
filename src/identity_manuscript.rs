@@ -1579,7 +1579,7 @@ spec:
             spec: ManuscriptSpec {
                 tools: ManuscriptToolsSpec {
                     allow: vec![
-                        "cognition_memory_context".to_string(),
+                        "cognition_memory_query".to_string(),
                         "cognition_identity_recall".to_string(),
                     ],
                 },
@@ -1621,7 +1621,7 @@ spec:
         assert_eq!(
             merged.spec.tools.allow,
             vec![
-                "cognition_memory_context".to_string(),
+                "cognition_memory_query".to_string(),
                 "cognition_identity_recall".to_string(),
                 "cognition_capability".to_string(),
             ]
@@ -1714,7 +1714,7 @@ spec:
             max_tool_rounds: None,
             tools_allow: vec![
                 "cognition_identity_recall".to_string(),
-                "cognition_memory_context".to_string(),
+                "cognition_memory_query".to_string(),
                 "cognition_spawn_turn_worker".to_string(),
             ],
             locus_session_id: None,
@@ -1733,7 +1733,7 @@ spec:
         validate_manuscript_for_scheduled_lane(&manuscript).expect("valid allowlist");
         let allow = scheduled_tool_allowlist_for_manuscript(&manuscript);
         assert!(allow.contains("cognition_identity_recall"));
-        assert!(allow.contains("cognition_memory_context"));
+        assert!(allow.contains("cognition_memory_query"));
         assert!(!allow.contains("cognition_spawn_turn_worker"));
         assert!(!allow.contains("cognition_identity_remember"));
     }
@@ -1836,7 +1836,7 @@ spec:
             worker_stage_role: Some("summarizer".to_string()),
             worker_model_hint: Some("openai:gpt-4o-mini".to_string()),
             max_tool_rounds: Some(8),
-            tools_allow: vec!["cognition_memory_context".to_string()],
+            tools_allow: vec!["cognition_memory_query".to_string()],
             locus_session_id: None,
             delivery_mode: None,
             delivery_on_complete: None,

@@ -1137,8 +1137,8 @@ mod tests {
                 tool_output: json!({ "ok": true, "begin_work": true }),
             },
             ToolInvocation {
-                tool_name: "cognition_memory_list".to_string(),
-                tool_input: Value::Null,
+                tool_name: crate::public_api::COGNITION_MEMORY_QUERY.to_string(),
+                tool_input: json!({ "action": "memory.list" }),
                 tool_output: Value::Null,
             },
         ];
@@ -1152,8 +1152,8 @@ mod tests {
     fn finish_turn_from_invocations_reads_latest_successful_call() {
         let invocations = vec![
             ToolInvocation {
-                tool_name: "cognition_memory_recall".to_string(),
-                tool_input: json!({}),
+                tool_name: crate::public_api::COGNITION_MEMORY_QUERY.to_string(),
+                tool_input: json!({ "action": "memory.recall" }),
                 tool_output: json!({"ok": true}),
             },
             ToolInvocation {

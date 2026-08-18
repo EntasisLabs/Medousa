@@ -27,9 +27,6 @@ use crate::identity_tools::{
 use crate::mcp_gateway_client::McpGatewayClient;
 use crate::runtime::stasis_wire::{LocalStasisWireConfig, build_local_stasis_composition};
 use crate::tools::{
-    CognitionMemoryCalibrateTool, CognitionMemoryContextTool, CognitionMemoryEvictTool,
-    CognitionMemoryListTool, CognitionMemoryMoodsTool, CognitionMemoryRecallTool,
-    CognitionMemorySchemaTool, CognitionMemoryStoreTool, CognitionMemoryTagsTool,
     CognitionUtilityDayOfWeekTool, CognitionUtilityTimeNowTool, CognitionUtilityUuidTool,
     PolicyAwareToolRegistry, TuiRuntime,
 };
@@ -245,60 +242,18 @@ pub(crate) async fn assemble_tui_runtime(
         turn_scope.clone(),
     )?;
 
-    tool_registry.register_typed_tool(CognitionMemorySchemaTool::new())?;
-    tool_registry.register_typed_tool(CognitionMemoryMoodsTool::new(event_tx.clone()))?;
-    tool_registry.register_typed_tool(CognitionMemoryCalibrateTool::new(
+    crate::memory_api::register_memory_tools(
+        &mut tool_registry,
         locus_store.clone(),
-        session_id.to_string(),
-        workshop_operator_identity,
-        turn_scope.clone(),
-        event_tx.clone(),
-    ))?;
-    tool_registry.register_typed_tool(CognitionMemoryStoreTool::new(
+        memory_reader.clone(),
         memory_writer.clone(),
-        session_id.to_string(),
-        workshop_operator_identity,
-        turn_scope.clone(),
-        event_tx.clone(),
-    ))?;
-    tool_registry.register_typed_tool(CognitionMemoryContextTool::new(
-        locus_store.clone(),
-        memory_reader.clone(),
-        session_id.to_string(),
-        workshop_operator_identity,
-        turn_scope.clone(),
-        event_tx.clone(),
-    ))?;
-    tool_registry.register_typed_tool(CognitionMemoryListTool::new(
-        locus_store.clone(),
-        memory_reader.clone(),
-        session_id.to_string(),
-        workshop_operator_identity,
-        turn_scope.clone(),
-        event_tx.clone(),
-    ))?;
-    tool_registry.register_typed_tool(CognitionMemoryRecallTool::new(
-        locus_store.clone(),
-        memory_reader.clone(),
-        session_id.to_string(),
-        workshop_operator_identity,
-        turn_scope.clone(),
-        event_tx.clone(),
-    ))?;
-    tool_registry.register_typed_tool(CognitionMemoryEvictTool::new(
+        semantic_index.clone(),
         memory_operations.clone(),
         session_id.to_string(),
         workshop_operator_identity,
         turn_scope.clone(),
         event_tx.clone(),
-    ))?;
-    tool_registry.register_typed_tool(CognitionMemoryTagsTool::new(
-        semantic_index.clone(),
-        session_id.to_string(),
-        workshop_operator_identity,
-        turn_scope.clone(),
-        event_tx.clone(),
-    ))?;
+    )?;
     tool_registry.register_typed_tool(CognitionUtilityTimeNowTool)?;
     tool_registry.register_typed_tool(CognitionUtilityDayOfWeekTool)?;
     tool_registry.register_typed_tool(CognitionUtilityUuidTool)?;

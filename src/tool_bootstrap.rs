@@ -73,8 +73,8 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_runtime_mutate",
     "cognition_tool_history_summary",
     "cognition_spawn_turn_worker",
-    "cognition_memory_context",
-    "cognition_memory_store",
+    "cognition_memory_query",
+    "cognition_memory_mutate",
     "cognition_identity_recall",
     "cognition_identity_remember",
     "cognition_web_search",
@@ -99,8 +99,8 @@ pub const WORKER_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_web_search",
     "cognition_store_read",
     "cognition_store_write",
-    "cognition_memory_context",
-    "cognition_memory_store",
+    "cognition_memory_query",
+    "cognition_memory_mutate",
     "cognition_ui_build",
     "cognition_ui_scene",
     "cognition_ui_present",
@@ -145,12 +145,8 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 domain: "memory",
                 summary: "Locus session memory — schema, calibrate, moods, store, recall",
                 tools: &[
-                    "cognition_memory_schema",
-                    "cognition_memory_moods",
-                    "cognition_memory_calibrate",
-                    "cognition_memory_list",
-                    "cognition_memory_recall",
-                    "cognition_memory_store",
+                    "cognition_memory_query",
+                    "cognition_memory_mutate",
                     "cognition_identity_recall",
                     "cognition_identity_remember",
                 ],
@@ -301,12 +297,8 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 domain: "memory",
                 summary: "Workshop memory ritual tools",
                 tools: &[
-                    "cognition_memory_schema",
-                    "cognition_memory_moods",
-                    "cognition_memory_calibrate",
-                    "cognition_memory_list",
-                    "cognition_memory_recall",
-                    "cognition_memory_store",
+                    "cognition_memory_query",
+                    "cognition_memory_mutate",
                     "cognition_identity_recall",
                 ],
             },
@@ -935,13 +927,15 @@ mod tests {
         let before = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
         assert!(before.contains("cognition_store_read"));
         assert!(before.contains("cognition_store_write"));
-        assert!(!before.contains("cognition_memory_calibrate"));
+        assert!(!before.contains("cognition_calendar_create"));
 
         ensure_host_session_tool_defaults(&session_id);
         let after = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
         assert!(after.contains("cognition_store_read"));
         assert!(after.contains("cognition_store_write"));
-        assert!(after.contains("cognition_memory_calibrate"));
+        assert!(after.contains("cognition_memory_query"));
+        assert!(after.contains("cognition_memory_mutate"));
+        assert!(after.contains("cognition_calendar_create"));
 
         let _ = delete_session_tool_surface(&session_id);
     }
@@ -952,13 +946,15 @@ mod tests {
         let session_id = format!("sess-test-{}", uuid::Uuid::new_v4().simple());
         let allow = host_bus_tool_names();
         let before = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
-        assert!(!before.contains("cognition_memory_schema"));
+        assert!(before.contains("cognition_memory_query"));
+        assert!(before.contains("cognition_memory_mutate"));
         assert!(before.contains("cognition_identity_remember"));
         assert!(before.contains("cognition_identity_recall"));
+        assert!(!before.contains("cognition_calendar_create"));
 
-        unlock_session_domains(&session_id, ToolSurfaceLane::Host, &["memory"]).expect("unlock");
+        unlock_session_domains(&session_id, ToolSurfaceLane::Host, &["calendar"]).expect("unlock");
         let after = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
-        assert!(after.contains("cognition_memory_schema"));
+        assert!(after.contains("cognition_calendar_create"));
 
         let _ = delete_session_tool_surface(&session_id);
     }

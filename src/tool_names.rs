@@ -58,15 +58,8 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_manuscript_overlay_list",
     "cognition_manuscript_overlay_propose",
     "cognition_manuscript_resolve",
-    "cognition_memory_calibrate",
-    "cognition_memory_context",
-    "cognition_memory_evict",
-    "cognition_memory_list",
-    "cognition_memory_moods",
-    "cognition_memory_recall",
-    "cognition_memory_schema",
-    "cognition_memory_store",
-    "cognition_memory_tags",
+    "cognition_memory_mutate",
+    "cognition_memory_query",
     "cognition_openshell_sandbox_run",
     "cognition_project_bind",
     "cognition_project_create",
@@ -167,7 +160,7 @@ mod tests {
     fn host_bus_allowlist_matches_registered_runtime_and_memory_tools() {
         let host = host_bus_tool_names();
         for tool in [
-            "cognition_memory_store",
+            crate::public_api::COGNITION_MEMORY_MUTATE,
             "cognition_runtime_query",
             "cognition_runtime_mutate",
             "cognition_schema",

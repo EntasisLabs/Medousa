@@ -27,7 +27,7 @@ spec:
   tools:
     allow:
       - cognition_identity_recall
-      - cognition_memory_context
+      - cognition_memory_query
       - cognition_capability
   locus:
     session_id: locus-morning-brief

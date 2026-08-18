@@ -409,7 +409,7 @@ mod tests {
             Some("morning-brief".to_string()),
             vec![
                 "cognition_identity_recall".to_string(),
-                "cognition_memory_context".to_string(),
+                "cognition_memory_query".to_string(),
             ],
             Some(8),
         );

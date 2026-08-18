@@ -1217,190 +1217,55 @@
     },
     {
       "registry": "coder_bound",
-      "name": "cognition_memory_context",
-      "description": "Primary memory retrieval by AVEC resonance. Requires stability/friction/logic/autonomy. Optional context_keywords and semantic_tags (indexed, match-all). Use tag_prefix for prefix vocabulary search. Set session_id to null for global retrieval across sessions.",
+      "name": "cognition_memory_mutate",
+      "description": "Write Locus memory: store an STTP node, calibrate AVEC, or evict nodes. action is a typed name (memory.store, memory.calibrate, memory.evict). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "alpha": {
-            "type": "number"
-          },
-          "autonomy": {
-            "type": "number"
-          },
-          "beta": {
-            "type": "number"
-          },
-          "context_keywords": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "friction": {
-            "type": "number"
-          },
-          "from_utc": {
+          "action": {
+            "enum": [
+              "memory.calibrate",
+              "memory.evict",
+              "memory.store"
+            ],
             "type": "string"
           },
           "intent": {
             "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
             "maxLength": 320,
             "type": "string"
-          },
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "logic": {
-            "type": "number"
-          },
-          "semantic_tags": {
-            "description": "Indexed Locus tags (match-all). Example: [\"session\", \"profile:work\"]",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "stability": {
-            "type": "number"
-          },
-          "tag_prefix": {
-            "description": "Match nodes whose indexed tags share this prefix (e.g. profile:)",
-            "type": "string"
-          },
-          "tiers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "to_utc": {
-            "type": "string"
           }
         },
         "required": [
-          "autonomy",
-          "friction",
-          "intent",
-          "logic",
-          "stability"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:memory"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_memory_list",
-      "description": "Memory inventory, newest-first. Optional context_keywords filter on context_summary. Optional semantic_tags (indexed, match-all) or tag_prefix. Omit session_id or pass null for global listing.",
-      "input_schema": {
-        "properties": {
-          "context_keywords": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "semantic_tags": {
-            "description": "Indexed Locus tags (match-all)",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "tag_prefix": {
-            "description": "Match nodes whose indexed tags share this prefix",
-            "type": "string"
-          }
-        },
-        "required": [
+          "action",
           "intent"
         ],
         "type": "object"
       },
       "output_schema_present": true,
       "placements": [
-        "coder:domain:memory"
+        "coder:domain:memory",
+        "coder:initial"
       ]
     },
     {
       "registry": "coder_bound",
-      "name": "cognition_memory_recall",
-      "description": "Retrieve memory by natural-language keywords (legacy). Prefer cognition_memory_context with explicit AVEC when possible. Optional semantic_tags or tag_prefix for indexed filtering. Pass session_id to scope to one session, or null to search across all sessions.",
+      "name": "cognition_memory_query",
+      "description": "Read Locus memory: schema, AVEC context, list, recall, tags, or mood presets. action is a typed name (memory.context, memory.recall, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
+          "action": {
+            "enum": [
+              "memory.context",
+              "memory.list",
+              "memory.moods",
+              "memory.recall",
+              "memory.schema",
+              "memory.tags"
+            ],
             "type": "string"
           },
-          "limit": {
-            "maximum": 20,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "query": {
-            "type": "string"
-          },
-          "semantic_tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "tag_prefix": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:memory"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_memory_schema",
-      "description": "Advanced raw Locus schema diagnostic. Normal Coder memory does not require model-authored STTP; use cognition_coder_memory_commit.",
-      "input_schema": {
-        "properties": {
           "intent": {
             "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
             "maxLength": 320,
@@ -1408,93 +1273,15 @@
           }
         },
         "required": [
+          "action",
           "intent"
         ],
         "type": "object"
       },
       "output_schema_present": true,
       "placements": [
-        "coder:domain:memory"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_memory_store",
-      "description": "Advanced diagnostic-only raw STTP store. For normal Coder memory writes use cognition_coder_memory_commit; the runtime compiles strict STTP from simple structured fields.",
-      "input_schema": {
-        "properties": {
-          "content": {
-            "description": "Deprecated: use `node` with full STTP instead",
-            "type": "string"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "node": {
-            "description": "Full STTP node payload with ⊕ ⦿ ◈ ⍉ layers",
-            "type": "string"
-          },
-          "semantic_tags": {
-            "description": "Optional Locus semantic tags merged into the STTP prime block",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "description": "Locus session id (defaults to current turn session)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "node"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:memory"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_memory_tags",
-      "description": "List indexed Locus semantic tags for the active profile tenant. Optional prefix narrows vocabulary (e.g. profile:, chat:, medousa). Use before recall/list to pick tag filters.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "limit": {
-            "maximum": 500,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "prefix": {
-            "description": "Filter tags by prefix (case-insensitive)",
-            "type": "string"
-          },
-          "session_id": {
-            "description": "Optional session to derive tenant scope",
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "intent"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:memory"
+        "coder:domain:memory",
+        "coder:initial"
       ]
     },
     {
@@ -1581,6 +1368,7 @@
           "domain": {
             "enum": [
               "capability",
+              "memory",
               "runtime",
               "store",
               "turn"
@@ -1614,6 +1402,15 @@
                 "job.status",
                 "mcp.find",
                 "mcp.invoke",
+                "memory.calibrate",
+                "memory.context",
+                "memory.evict",
+                "memory.list",
+                "memory.moods",
+                "memory.recall",
+                "memory.schema",
+                "memory.store",
+                "memory.tags",
                 "recurring.cancel",
                 "recurring.doctor",
                 "recurring.list",
@@ -3909,7 +3706,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_identity_remember",
-      "description": "Remember a durable personal fact in identity memory (preferences, people, notes). Prefer over cognition_memory_store for operator world-model facts.",
+      "description": "Remember a durable personal fact in identity memory (preferences, people, notes). Prefer over cognition_memory_mutate action=memory.store for operator world-model facts.",
       "input_schema": {
         "properties": {
           "aliases": {
@@ -4208,367 +4005,22 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_memory_calibrate",
-      "description": "Measure AVEC drift for a session. Call at session start and after heavy reasoning before store/retrieve.",
+      "name": "cognition_memory_mutate",
+      "description": "Write Locus memory: store an STTP node, calibrate AVEC, or evict nodes. action is a typed name (memory.store, memory.calibrate, memory.evict). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "autonomy": {
-            "type": "number"
-          },
-          "friction": {
-            "type": "number"
-          },
-          "logic": {
-            "type": "number"
-          },
-          "session_id": {
-            "type": "string"
-          },
-          "stability": {
-            "type": "number"
-          },
-          "trigger": {
-            "description": "e.g. manual, session_start",
-            "type": "string"
-          }
-        },
-        "required": [
-          "autonomy",
-          "friction",
-          "logic",
-          "stability",
-          "trigger"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:memory",
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:domain:memory"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_memory_context",
-      "description": "Primary memory retrieval by AVEC resonance. Requires stability/friction/logic/autonomy. Optional context_keywords and semantic_tags (indexed, match-all). Use tag_prefix for prefix vocabulary search. Set session_id to null for global retrieval across sessions.",
-      "input_schema": {
-        "properties": {
-          "alpha": {
-            "type": "number"
-          },
-          "autonomy": {
-            "type": "number"
-          },
-          "beta": {
-            "type": "number"
-          },
-          "context_keywords": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "friction": {
-            "type": "number"
-          },
-          "from_utc": {
-            "type": "string"
-          },
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "logic": {
-            "type": "number"
-          },
-          "semantic_tags": {
-            "description": "Indexed Locus tags (match-all). Example: [\"session\", \"profile:work\"]",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "stability": {
-            "type": "number"
-          },
-          "tag_prefix": {
-            "description": "Match nodes whose indexed tags share this prefix (e.g. profile:)",
-            "type": "string"
-          },
-          "tiers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "to_utc": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "autonomy",
-          "friction",
-          "logic",
-          "stability"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:bootstrap",
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:authorized:memory_context",
-        "workshop:authorized:research",
-        "workshop:bootstrap"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_memory_evict",
-      "description": "Evict Locus memory nodes (dry-run by default). Supports by_filter, purge_session, by_node_ids, and by_sync_keys modes.",
-      "input_schema": {
-        "properties": {
-          "dry_run": {
-            "description": "Preview deletions without applying (default: true)",
-            "type": "boolean"
-          },
-          "force": {
-            "description": "Bypass inbound-reference blocks (default: false)",
-            "type": "boolean"
-          },
-          "max_nodes": {
-            "description": "Safety cap on nodes touched (default: 5000)",
-            "type": "integer"
-          },
-          "mode": {
-            "description": "Eviction strategy (default: by_filter)",
+          "action": {
             "enum": [
-              "by_filter",
-              "by_node_ids",
-              "by_sync_keys",
-              "purge_session"
+              "memory.calibrate",
+              "memory.evict",
+              "memory.store"
             ],
             "type": "string"
-          },
-          "node_ids": {
-            "description": "Node ids for by_node_ids mode",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "description": "Locus session scope (defaults to current turn session)",
-            "type": "string"
-          },
-          "sync_keys": {
-            "description": "Sync keys for by_sync_keys mode",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "tiers": {
-            "description": "Filter tiers for by_filter mode",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": []
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_memory_list",
-      "description": "Memory inventory, newest-first. Optional context_keywords filter on context_summary. Optional semantic_tags (indexed, match-all) or tag_prefix. Omit session_id or pass null for global listing.",
-      "input_schema": {
-        "properties": {
-          "context_keywords": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "semantic_tags": {
-            "description": "Indexed Locus tags (match-all)",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "tag_prefix": {
-            "description": "Match nodes whose indexed tags share this prefix",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:memory",
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:authorized:memory_context",
-        "workshop:domain:memory"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_memory_moods",
-      "description": "AVEC mood presets and blend preview. Use before store/retrieve when reasoning posture is unset.",
-      "input_schema": {
-        "properties": {
-          "blend": {
-            "type": "number"
-          },
-          "current_autonomy": {
-            "type": "number"
-          },
-          "current_friction": {
-            "type": "number"
-          },
-          "current_logic": {
-            "type": "number"
-          },
-          "current_stability": {
-            "type": "number"
-          },
-          "target_mood": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:memory",
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:authorized:memory_context",
-        "workshop:domain:memory"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_memory_recall",
-      "description": "Retrieve memory by natural-language keywords (legacy). Prefer cognition_memory_context with explicit AVEC when possible. Optional semantic_tags or tag_prefix for indexed filtering. Pass session_id to scope to one session, or null to search across all sessions.",
-      "input_schema": {
-        "properties": {
-          "limit": {
-            "maximum": 20,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "query": {
-            "type": "string"
-          },
-          "semantic_tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "tag_prefix": {
-            "type": "string"
           }
         },
         "required": [
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:memory",
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:authorized:memory_context",
-        "workshop:authorized:research",
-        "workshop:domain:memory"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_memory_schema",
-      "description": "Return a canonical STTP node example and the active ingest profile before storing memory.",
-      "input_schema": {
-        "properties": {},
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:memory",
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:authorized:memory_context",
-        "workshop:domain:memory"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_memory_store",
-      "description": "Store a complete STTP node in Locus memory. Requires `node` (full STTP string). Optional `session_id` defaults to the current turn session.",
-      "input_schema": {
-        "properties": {
-          "content": {
-            "description": "Deprecated: use `node` with full STTP instead",
-            "type": "string"
-          },
-          "node": {
-            "description": "Full STTP node payload with ⊕ ⦿ ◈ ⍉ layers",
-            "type": "string"
-          },
-          "semantic_tags": {
-            "description": "Optional Locus semantic tags merged into the STTP prime block",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "description": "Locus session id (defaults to current turn session)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "node"
+          "action"
         ],
         "type": "object"
       },
@@ -4587,31 +4039,40 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_memory_tags",
-      "description": "List indexed Locus semantic tags for the active profile tenant. Optional prefix narrows vocabulary (e.g. profile:, chat:, medousa). Use before recall/list to pick tag filters.",
+      "name": "cognition_memory_query",
+      "description": "Read Locus memory: schema, AVEC context, list, recall, tags, or mood presets. action is a typed name (memory.context, memory.recall, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "limit": {
-            "maximum": 500,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "prefix": {
-            "description": "Filter tags by prefix (case-insensitive)",
+          "action": {
+            "enum": [
+              "memory.context",
+              "memory.list",
+              "memory.moods",
+              "memory.recall",
+              "memory.schema",
+              "memory.tags"
+            ],
             "type": "string"
-          },
-          "session_id": {
-            "description": "Optional session to derive tenant scope",
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
+        "required": [
+          "action"
+        ],
         "type": "object"
       },
       "output_schema_present": true,
-      "placements": []
+      "placements": [
+        "general:authorized",
+        "general:bootstrap",
+        "general:domain:memory",
+        "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
+        "workshop:authorized:research",
+        "workshop:bootstrap",
+        "workshop:domain:memory"
+      ]
     },
     {
       "registry": "general_runtime",
@@ -4775,6 +4236,7 @@
           "domain": {
             "enum": [
               "capability",
+              "memory",
               "runtime",
               "store",
               "turn"
@@ -4803,6 +4265,15 @@
                 "job.status",
                 "mcp.find",
                 "mcp.invoke",
+                "memory.calibrate",
+                "memory.context",
+                "memory.evict",
+                "memory.list",
+                "memory.moods",
+                "memory.recall",
+                "memory.schema",
+                "memory.store",
+                "memory.tags",
                 "recurring.cancel",
                 "recurring.doctor",
                 "recurring.list",

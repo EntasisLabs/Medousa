@@ -2065,13 +2065,13 @@ mod tests {
                           once the full calibration summary is ready for you to read.";
         let invocations = vec![
             ToolInvocation {
-                tool_name: "cognition_memory_moods".to_string(),
-                tool_input: serde_json::json!(null),
+                tool_name: crate::public_api::COGNITION_MEMORY_QUERY.to_string(),
+                tool_input: serde_json::json!({ "action": "memory.moods" }),
                 tool_output: serde_json::json!(null),
             },
             ToolInvocation {
-                tool_name: "cognition_memory_calibrate".to_string(),
-                tool_input: serde_json::json!(null),
+                tool_name: crate::public_api::COGNITION_MEMORY_MUTATE.to_string(),
+                tool_input: serde_json::json!({ "action": "memory.calibrate" }),
                 tool_output: serde_json::json!(null),
             },
         ];

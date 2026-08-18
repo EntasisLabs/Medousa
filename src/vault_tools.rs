@@ -528,7 +528,7 @@ impl CognitionVaultTagsTool {
         Ok(VaultTagsOutput {
             tags: response.tags,
             count: response.count,
-            usage: "Use semantic_tags on cognition_store_read/write action=vault.read|vault.write, or match Locus via cognition_memory_tags.".to_string(),
+            usage: "Use semantic_tags on cognition_store_read/write action=vault.read|vault.write, or match Locus via cognition_memory_query action=memory.tags.".to_string(),
         })
     }
 }

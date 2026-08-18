@@ -149,7 +149,7 @@ Minimum tool path:
 
 Memory:
 - session_id + [MEDOUSA_CONTINUATION] / handoff fields anchor the session (recent principal thread when present).
-- For research/web tasks: optional single cognition_memory_context when the task references prior session facts; skip calibrate/schema unless intent is memory.*.
+- For research/web tasks: optional single cognition_memory_query action=memory.context when the task references prior session facts; skip calibrate/schema unless intent is memory.*.
 - For memory.* intents: follow [MEDOUSA_WORKER_MEMORY] ritual order."#;
 
 pub const WORKER_SYSTEM_APPENDIX: &str = r#"Rules:
@@ -157,9 +157,9 @@ pub const WORKER_SYSTEM_APPENDIX: &str = r#"Rules:
 - After tools: call cognition_turn action=turn.finish with the complete principal-ready answer — naked prose ends the turn but is not committed as final.
 - Use cognition_turn action=turn.update_user for short principal-visible status mid-turn (same round as your next tool). Use cognition_turn action=turn.begin_work only before heavy/long-running work. Naked status chat prose fights the turn loop.
 - If the tool-round budget is too tight, call cognition_turn action=turn.request_more_rounds with a clear reason — the turn pauses until the principal approves.
-- Ground claims in tool receipts (e.g. cognition_memory_calibrate before claiming calibration).
+- Ground claims in tool receipts (e.g. cognition_memory_mutate action=memory.calibrate before claiming calibration).
 - Do not repeat the same status table without new tool output.
-- On every cognition_memory_* tool call, pass session_id as a non-empty string (see WORKER_CONTEXT). Never pass null."#;
+- On every cognition_memory_query / cognition_memory_mutate call, pass session_id as a non-empty string (see WORKER_CONTEXT). Never pass null."#;
 
 /// Grapheme scripting playbook (condensed from the main Medousa system prompt).
 pub const WORKER_GRAPHEME_APPENDIX: &str = r#"
@@ -191,11 +191,11 @@ Never treat cognition_capability find output as final evidence for real-world fa
 pub const WORKER_MEMORY_APPENDIX: &str = r#"
 [MEDOUSA_WORKER_MEMORY]
 Locus memory ritual (follow in order when calibrating or loading context):
-1) cognition_memory_schema if the session may be new or schema unknown
-2) cognition_memory_moods and/or cognition_memory_calibrate when AVEC posture is needed (calibrate before claiming calibration receipts)
-3) cognition_memory_context with session_id and optional context_keywords for the task
-4) cognition_memory_recall / cognition_memory_list when inventory or keyword lookup is required
-5) cognition_memory_store only with a full STTP node string when persisting
+1) cognition_memory_query action=memory.schema if the session may be new or schema unknown
+2) cognition_memory_query action=memory.moods and/or cognition_memory_mutate action=memory.calibrate when AVEC posture is needed (calibrate before claiming calibration receipts)
+3) cognition_memory_query action=memory.context with session_id and optional context_keywords for the task
+4) cognition_memory_query action=memory.recall / action=memory.list when inventory or keyword lookup is required
+5) cognition_memory_mutate action=memory.store only with a full STTP node string when persisting
 
 Pass session_id on every memory tool call. Summarize tool JSON receipts in your final worker message — do not invent AVEC numbers."#;
 
@@ -257,8 +257,8 @@ pub fn worker_system_prompt(
          session_id={session_id}\n\
          worker_intent={}\n\
          Read [MEDOUSA_CONTINUATION] and [HOST_CONTINUITY] in the user prompt when present.\n\
-         Always include \"session_id\": \"{session_id}\" on cognition_memory_calibrate, \
-         cognition_memory_moods, cognition_memory_context, cognition_memory_store, and related tools.",
+         Always include \"session_id\": \"{session_id}\" on cognition_memory_query and \
+         cognition_memory_mutate.",
         worker_intent_appendix(intent),
         intent.as_str(),
         session_id = session_id,
@@ -403,7 +403,7 @@ mod tests {
             false,
             false,
         );
-        assert!(prompt.contains("cognition_memory_calibrate"));
+        assert!(prompt.contains("cognition_memory_mutate action=memory.calibrate"));
         assert!(!prompt.contains("[MEDOUSA_WORKER_GRAPHEME]"));
     }
 

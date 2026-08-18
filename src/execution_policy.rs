@@ -206,19 +206,14 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
                 _ => StepExecutionClass::Mutating,
             }
         }
-        "cognition_memory_store"
-        | "cognition_memory_calibrate"
-        | "cognition_runtime_mutate"
+        "cognition_runtime_mutate"
+        | "cognition_memory_mutate"
         | "cognition_openshell_sandbox_run" => StepExecutionClass::Mutating,
         "cognition_openshell_status" | "cognition_skill_discover" | "cognition_skill_propose" => {
             StepExecutionClass::ReadOnly
         }
         "cognition_skill_probe" => StepExecutionClass::Mutating,
-        "cognition_memory_recall"
-        | "cognition_memory_context"
-        | "cognition_memory_list"
-        | "cognition_memory_schema"
-        | "cognition_memory_moods"
+        "cognition_memory_query"
         | "cognition_store_read"
         | "cognition_runtime_query"
         | "cognition_schema"
@@ -324,8 +319,8 @@ mod tests {
                 json!({ "action": "grapheme.invoke", "script": "query {}" }),
             ),
             (
-                "cognition_memory_recall".to_string(),
-                json!({ "query": "x" }),
+                "cognition_memory_query".to_string(),
+                json!({ "action": "memory.recall", "query": "x" }),
             ),
         ];
         let settings = ParallelExecutionSettings::default();

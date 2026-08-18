@@ -1219,7 +1219,7 @@ pub struct IdentityRememberOutput {
 
 #[medousa_tool(id = COGNITION_IDENTITY_REMEMBER_ID)]
 impl CognitionIdentityRememberTool {
-    /// Remember a durable personal fact in identity memory (preferences, people, notes). Prefer over cognition_memory_store for operator world-model facts.
+    /// Remember a durable personal fact in identity memory (preferences, people, notes). Prefer over cognition_memory_mutate action=memory.store for operator world-model facts.
     async fn invoke_typed(
         &self,
         input: IdentityRememberInput,

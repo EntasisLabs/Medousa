@@ -12,8 +12,7 @@ spec:
   tools:
     allow:
       - cognition_identity_recall
-      - cognition_memory_context
-      - cognition_memory_recall
+      - cognition_memory_query
       - cognition_capability
       - cognition_web_search
       - cognition_browser_fetch

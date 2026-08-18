@@ -178,6 +178,7 @@ pub mod lan_handlers;
 pub mod local_inference_cli;
 pub mod local_inference_handlers;
 pub mod locus_semantic_tags;
+pub mod memory_api;
 pub mod memory_tools;
 pub mod mesh;
 pub mod pairing;

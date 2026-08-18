@@ -411,7 +411,7 @@ mod tests {
         let record = record_tool_round(
             1,
             1,
-            &["cognition_memory_recall".to_string()],
+            &["cognition_memory_query".to_string()],
             &TurnScratchpad::default(),
         );
         assert!(record.active_profile_id.is_none());

@@ -109,7 +109,7 @@ pub async fn resolve_memory_tool_session_id_typed(
     }
 }
 
-pub const CANONICAL_STTP_SCHEMA_EXAMPLE: &str = r#"Canonical STTP node example (call cognition_memory_schema for this text):
+pub const CANONICAL_STTP_SCHEMA_EXAMPLE: &str = r#"Canonical STTP node example (call cognition_memory_query action=memory.schema for this text):
 
 ⊕⟨ ⏣0{ trigger: manual, response_format: temporal_node, origin_session: "session-abc", compression_depth: 1, parent_node: null, semantic_links: [{ rel: "related_to", target: "concept:memory-schema", confidence: 0.88 }], prime: { attractor_config: { stability: 0.90, friction: 0.20, logic: 0.98, autonomy: 0.85 }, context_summary: "parser hardening session", relevant_tier: raw, retrieval_budget: 8, semantic_tags: ["medousa", "session", "grammar-update"] } } ⟩
 ⦿⟨ ⏣0{ timestamp: "2026-04-25T00:00:00Z", tier: raw, session_id: "session-abc", schema_version: "sttp-1.0", user_avec: { stability: 0.90, friction: 0.20, logic: 0.98, autonomy: 0.85, psi: 2.93 }, model_avec: { stability: 0.90, friction: 0.20, logic: 0.98, autonomy: 0.85, psi: 2.93 } } ⟩
@@ -145,8 +145,8 @@ pub fn typed_semantic_index_schema_guidance() -> SemanticIndexSchemaGuidance {
             sttp_location: "provenance.prime.semantic_tags".to_string(),
             format: "array<string> — lowercase strings, deduped at index time".to_string(),
             omit_when_absent: "omit the field or use an empty array; do not use null (locus-core 0.4.2+ treats null as absent)".to_string(),
-            medousa_store_tool: "cognition_memory_store.semantic_tags merges workshop defaults + extras into prime when the node string omits semantic_tags".to_string(),
-            recall: "cognition_memory_context / cognition_memory_list / cognition_memory_recall with semantic_tags (match-all) or cognition_memory_tags for vocabulary browse".to_string(),
+            medousa_store_tool: "cognition_memory_mutate action=memory.store semantic_tags merges workshop defaults + extras into prime when the node string omits semantic_tags".to_string(),
+            recall: "cognition_memory_query action=memory.context|memory.list|memory.recall with semantic_tags (match-all) or action=memory.tags for vocabulary browse".to_string(),
         },
         semantic_links: SemanticLinksSchemaGuidance {
             sttp_location: "provenance.semantic_links".to_string(),
@@ -282,11 +282,11 @@ fn is_persistence_failure(message: &str) -> bool {
 pub fn persistence_failure_guidance(summary: &str) -> Value {
     json!({
         "summary": summary,
-        "recommended_first_tool": "cognition_memory_schema",
+        "recommended_first_tool": "cognition_memory_query",
         "recommended_next_steps": [
             "read the SurrealDB error in validation_error — it is the root cause, not a decode wrapper",
             "if the error mentions a missing or mismatched field, restart with MEDOUSA_FORCE_LOCUS_INIT_ON_DAEMON=1 so temporal_node schema is upgraded",
-            "if schema is current, fix the STTP payload and retry cognition_memory_store",
+            "if schema is current, fix the STTP payload and retry cognition_memory_mutate action=memory.store",
             "check daemon logs for [sttp_ingest_trace] stage=store reason=store_failure for retry/cooldown state"
         ],
         "operator_hints": [
@@ -307,9 +307,9 @@ pub struct SchemaFirstGuidance {
 pub fn typed_schema_first_guidance(summary: &str, profile_name: &str) -> SchemaFirstGuidance {
     SchemaFirstGuidance {
         summary: summary.to_string(),
-        recommended_first_tool: "cognition_memory_schema".to_string(),
+        recommended_first_tool: "cognition_memory_query".to_string(),
         recommended_next_steps: vec![
-            "call cognition_memory_schema".to_string(),
+            "call cognition_memory_query action=memory.schema".to_string(),
             "verify payload layers provenance->envelope->content->metrics".to_string(),
             "ensure STTP symbols and AVEC blocks are present before retry".to_string(),
         ],
@@ -324,11 +324,11 @@ pub fn schema_first_guidance(summary: &str, profile_name: &str) -> Value {
 pub fn store_failure_guidance(message: &str, profile_name: &str) -> Value {
     if is_persistence_failure(message) {
         persistence_failure_guidance(
-            "Locus parsed the node but SurrealDB rejected persistence. Fix the DB/schema issue before retrying cognition_memory_store.",
+            "Locus parsed the node but SurrealDB rejected persistence. Fix the DB/schema issue before retrying cognition_memory_mutate action=memory.store.",
         )
     } else {
         schema_first_guidance(
-            "Inspect schema and ingest policy before retrying cognition_memory_store.",
+            "Inspect schema and ingest policy before retrying cognition_memory_mutate action=memory.store.",
             profile_name,
         )
     }
@@ -450,7 +450,7 @@ pub fn validate_limit(limit: usize, field: &str) -> Result<usize, String> {
     }
 }
 
-/// `session_id` for `cognition_memory_recall`: JSON `null` or omitted → global (no default session).
+/// `session_id` for `cognition_memory_query` recall/list/context: JSON `null` or omitted → global (no default session).
 /// A non-empty string scopes to that session.
 pub fn recall_session_id_for_context(input: &serde_json::Value) -> serde_json::Value {
     match input.get("session_id") {
@@ -601,7 +601,7 @@ mod tests {
             guidance
                 .get("recommended_first_tool")
                 .and_then(|v| v.as_str()),
-            Some("cognition_memory_schema")
+            Some("cognition_memory_query")
         );
     }
 
@@ -620,7 +620,7 @@ mod tests {
                 .get("medousa_store_tool")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
-                .contains("cognition_memory_store")
+                .contains("cognition_memory_mutate")
         );
     }
 }

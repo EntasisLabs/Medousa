@@ -119,10 +119,11 @@ fn add_effects_and_capabilities(index: &mut ToolPlacementIndex) {
         "cognition_utility_day_of_week",
         "cognition_utility_time_now",
         "cognition_utility_uuid",
-        "cognition_store_read",
+        crate::public_api::COGNITION_STORE_READ,
         crate::agent_runtime::coder_tools::COGNITION_ENGINEERING_POINTERS,
-        "cognition_runtime_query",
+        crate::public_api::COGNITION_RUNTIME_QUERY,
         crate::public_api::COGNITION_SCHEMA,
+        crate::public_api::COGNITION_MEMORY_QUERY,
     ] {
         index.set_effect(ToolId::new(name), ToolEffect::Observe);
     }
@@ -189,12 +190,12 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
         "Delegate execution to workshop lane",
     ),
     (
-        "cognition_memory_context",
-        "Load Locus AVEC + session memory context",
+        crate::public_api::COGNITION_MEMORY_QUERY,
+        "Read Locus memory by typed action (memory.context, memory.recall, memory.schema, …)",
     ),
     (
-        "cognition_memory_store",
-        "Store episodic STTP node in Locus memory",
+        crate::public_api::COGNITION_MEMORY_MUTATE,
+        "Write Locus memory by typed action (memory.store, memory.calibrate, memory.evict)",
     ),
     (
         "cognition_identity_recall",

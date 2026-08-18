@@ -105,20 +105,13 @@ const CODER_PEER_SPAWN_TOOLS: &[&str] = &[
 ];
 
 const CODER_ADVANCED_MEMORY_TOOLS: &[&str] = &[
-    "cognition_memory_schema",
-    "cognition_memory_context",
-    "cognition_memory_list",
-    "cognition_memory_recall",
-    "cognition_memory_store",
-    "cognition_memory_tags",
+    crate::public_api::COGNITION_MEMORY_QUERY,
+    crate::public_api::COGNITION_MEMORY_MUTATE,
 ];
 
 const CODER_SCOPED_MEMORY_TOOLS: &[&str] = &[
-    "cognition_memory_context",
-    "cognition_memory_list",
-    "cognition_memory_recall",
-    "cognition_memory_store",
-    "cognition_memory_tags",
+    crate::public_api::COGNITION_MEMORY_QUERY,
+    crate::public_api::COGNITION_MEMORY_MUTATE,
 ];
 
 const CODER_RESEARCH_TOOLS: &[&str] = &[
@@ -323,8 +316,9 @@ async fn try_store_memory_commit_with_registry(
 ) -> Result<Value> {
     let existing = invoke_locus_registry_tool(
         registry,
-        "cognition_memory_list",
+        crate::public_api::COGNITION_MEMORY_QUERY,
         json!({
+            "action": "memory.list",
             "session_id": scope.session_id,
             "semantic_tags": [commit.dedupe_tag],
             "limit": 1,
@@ -345,8 +339,9 @@ async fn try_store_memory_commit_with_registry(
 
     let stored = invoke_locus_registry_tool(
         registry,
-        "cognition_memory_store",
+        crate::public_api::COGNITION_MEMORY_MUTATE,
         json!({
+            "action": "memory.store",
             "session_id": scope.session_id,
             "node": commit.raw_node,
             "semantic_tags": commit.semantic_tags,
@@ -457,8 +452,9 @@ async fn promote_memory_task(
     let (decisions, verifications) = tokio::join!(
         invoke_locus_registry_tool(
             registry,
-            "cognition_memory_list",
+            crate::public_api::COGNITION_MEMORY_QUERY,
             json!({
+                "action": "memory.list",
                 "session_id": source_scope.session_id,
                 "semantic_tags": ["kind:decision", accepted_head_tag.clone()],
                 "limit": MAX_ACCEPTED_PROMOTIONS_PER_KIND,
@@ -466,8 +462,9 @@ async fn promote_memory_task(
         ),
         invoke_locus_registry_tool(
             registry,
-            "cognition_memory_list",
+            crate::public_api::COGNITION_MEMORY_QUERY,
             json!({
+                "action": "memory.list",
                 "session_id": source_scope.session_id,
                 "semantic_tags": ["kind:verification", accepted_head_tag],
                 "limit": MAX_ACCEPTED_PROMOTIONS_PER_KIND,
@@ -1595,8 +1592,9 @@ impl CoderBoundToolRegistry {
         let lineage_limit = limit.saturating_mul(2).clamp(1, 40);
         let (current, parent, undertaking, repository) = tokio::join!(
             self.invoke_locus_tool(
-                "cognition_memory_list",
+                crate::public_api::COGNITION_MEMORY_QUERY,
                 json!({
+                    "action": "memory.list",
                     "session_id": self.memory_scope.session_id,
                     "limit": lineage_limit,
                 }),
@@ -1605,8 +1603,9 @@ impl CoderBoundToolRegistry {
                 match parent_scope.as_ref() {
                     Some(scope) => Some(
                         self.invoke_locus_tool(
-                            "cognition_memory_list",
+                            crate::public_api::COGNITION_MEMORY_QUERY,
                             json!({
+                                "action": "memory.list",
                                 "session_id": scope.session_id,
                                 "limit": lineage_limit,
                             }),
@@ -1617,15 +1616,17 @@ impl CoderBoundToolRegistry {
                 }
             },
             self.invoke_locus_tool(
-                "cognition_memory_list",
+                crate::public_api::COGNITION_MEMORY_QUERY,
                 json!({
+                    "action": "memory.list",
                     "session_id": undertaking_scope.session_id,
                     "limit": lineage_limit,
                 }),
             ),
             self.invoke_locus_tool(
-                "cognition_memory_list",
+                crate::public_api::COGNITION_MEMORY_QUERY,
                 json!({
+                    "action": "memory.list",
                     "session_id": repository_scope.session_id,
                     "limit": lineage_limit,
                 }),
@@ -1735,6 +1736,7 @@ impl CoderBoundToolRegistry {
                 );
                 let recall_input = |session_id: &str| {
                     let mut input = json!({
+                        "action": "memory.recall",
                         "session_id": session_id,
                         "query": query.query,
                         "limit": query.limit.saturating_mul(2).clamp(1, 24),
@@ -1746,14 +1748,14 @@ impl CoderBoundToolRegistry {
                 };
                 let (current, parent, undertaking, repository) = tokio::join!(
                     self.invoke_locus_tool(
-                        "cognition_memory_recall",
+                        crate::public_api::COGNITION_MEMORY_QUERY,
                         recall_input(&self.memory_scope.session_id),
                     ),
                     async {
                         match parent_scope.as_ref() {
                             Some(scope) => Some(
                                 self.invoke_locus_tool(
-                                    "cognition_memory_recall",
+                                    crate::public_api::COGNITION_MEMORY_QUERY,
                                     recall_input(&scope.session_id),
                                 )
                                 .await,
@@ -1762,11 +1764,11 @@ impl CoderBoundToolRegistry {
                         }
                     },
                     self.invoke_locus_tool(
-                        "cognition_memory_recall",
+                        crate::public_api::COGNITION_MEMORY_QUERY,
                         recall_input(&undertaking_scope.session_id),
                     ),
                     self.invoke_locus_tool(
-                        "cognition_memory_recall",
+                        crate::public_api::COGNITION_MEMORY_QUERY,
                         recall_input(&repository_scope.session_id),
                     ),
                 );
@@ -1932,7 +1934,8 @@ impl CoderBoundToolRegistry {
             StasisError::PortFailure("Coder tools require an object input".into())
         })?;
         if CODER_SCOPED_MEMORY_TOOLS.contains(&tool_name) {
-            if tool_name == "cognition_memory_store"
+            if tool_name == crate::public_api::COGNITION_MEMORY_MUTATE
+                && map.get("action").and_then(Value::as_str) == Some("memory.store")
                 && let Some(raw_node) = map
                     .get("node")
                     .or_else(|| map.get("content"))
@@ -2629,12 +2632,6 @@ fn with_coder_tool_advertisement(tool: Tool) -> Tool {
         "cognition_turn_worker_cancel" => {
             tool.with_description("Cancel a peer sub-agent spawned from this Coder turn.")
         }
-        "cognition_memory_schema" => tool.with_description(
-            "Advanced raw Locus schema diagnostic. Normal Coder memory does not require model-authored STTP; use cognition_coder_memory_commit.",
-        ),
-        "cognition_memory_store" => tool.with_description(
-            "Advanced diagnostic-only raw STTP store. For normal Coder memory writes use cognition_coder_memory_commit; the runtime compiles strict STTP from simple structured fields.",
-        ),
         _ => tool,
     }
 }
@@ -3098,9 +3095,8 @@ mod tests {
                 Tool::new(crate::code_intelligence_tools::COGNITION_CODE_DIAGNOSTICS),
                 Tool::new(crate::detamu_tools::COGNITION_DETAMU_STATUS),
                 Tool::new(crate::public_api::COGNITION_STORE_WRITE),
-                Tool::new("cognition_memory_list"),
-                Tool::new("cognition_memory_recall"),
-                Tool::new("cognition_memory_store"),
+                Tool::new(crate::public_api::COGNITION_MEMORY_QUERY),
+                Tool::new(crate::public_api::COGNITION_MEMORY_MUTATE),
                 Tool::new("cognition_web_search"),
                 Tool::new("cognition_capability"),
                 Tool::new("cognition_schema"),
@@ -3132,7 +3128,18 @@ mod tests {
                     "simulated Locus outage".to_string(),
                 ));
             }
-            if tool_name == "cognition_memory_list" || tool_name == "cognition_memory_recall" {
+            let action = input.get("action").and_then(Value::as_str).unwrap_or("");
+            if tool_name == crate::public_api::COGNITION_MEMORY_QUERY
+                && matches!(
+                    action,
+                    "memory.list"
+                        | "memory.recall"
+                        | "memory.context"
+                        | "memory.schema"
+                        | "memory.tags"
+                        | "memory.moods"
+                )
+            {
                 let session_id = input.get("session_id").and_then(Value::as_str);
                 let required_tags = input
                     .get("semantic_tags")
@@ -3162,7 +3169,9 @@ mod tests {
                     .cloned()
                     .collect::<Vec<_>>();
                 Ok(json!({ "retrieved": nodes.len(), "nodes": nodes }))
-            } else if tool_name == "cognition_memory_store" {
+            } else if tool_name == crate::public_api::COGNITION_MEMORY_MUTATE
+                && action == "memory.store"
+            {
                 let session_id = input
                     .get("session_id")
                     .and_then(Value::as_str)
@@ -3367,7 +3376,11 @@ mod tests {
             invoked.first().map(String::as_str),
             Some(crate::public_api::COGNITION_STORE_WRITE)
         );
-        assert!(invoked.iter().any(|tool| tool == "cognition_memory_store"));
+        assert!(
+            invoked
+                .iter()
+                .any(|tool| tool == crate::public_api::COGNITION_MEMORY_MUTATE)
+        );
     }
 
     #[tokio::test]
@@ -3463,11 +3476,17 @@ mod tests {
                 .iter()
                 .any(|tool| tool.name.as_str() == COGNITION_CODER_EVIDENCE_READ)
         );
-        for hidden in [
-            "cognition_memory_recall",
-            "cognition_memory_store",
-            "cognition_web_search",
-        ] {
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_MEMORY_QUERY)
+        );
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_MEMORY_MUTATE)
+        );
+        for hidden in ["cognition_web_search"] {
             assert!(
                 tools.iter().all(|tool| tool.name.as_str() != hidden),
                 "unselected tool leaked into the Coder bootstrap: {hidden}"
@@ -3527,67 +3546,18 @@ mod tests {
         );
         assert!(input.get("intent").is_none());
 
-        let hidden_memory = registry
+        registry
             .invoke_tool(
-                "cognition_memory_recall",
+                crate::public_api::COGNITION_MEMORY_QUERY,
                 json!({
                     "intent": "Recall the user's established implementation preferences",
+                    "action": "memory.recall",
                     "session_id": "attacker-controlled-session",
                     "query": "implementation preferences"
                 }),
             )
             .await
-            .expect_err("undiscovered memory tool denied");
-        assert!(hidden_memory.to_string().contains("not visible"));
-
-        registry
-            .invoke_tool(
-                COGNITION_CODER_TOOLS_DISCOVER,
-                json!({
-                    "intent": "Reveal bounded Locus tools for explicit memory recall",
-                    "domain": "memory"
-                }),
-            )
-            .await
-            .expect("discover memory");
-        let after_memory = registry.list_tools().await.expect("list after memory");
-        for memory_tool in ["cognition_memory_recall", "cognition_memory_store"] {
-            assert!(
-                after_memory
-                    .iter()
-                    .any(|tool| tool.name.as_str() == memory_tool),
-                "discovered memory tool missing: {memory_tool}"
-            );
-        }
-        let raw_store = after_memory
-            .iter()
-            .find(|tool| tool.name.as_str() == "cognition_memory_store")
-            .expect("advanced raw store visible");
-        assert!(
-            raw_store
-                .description
-                .as_deref()
-                .is_some_and(|description| description.contains("cognition_coder_memory_commit")),
-            "advanced raw store must direct Coder back to the typed facade"
-        );
-        assert!(
-            after_memory
-                .iter()
-                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_STORE_WRITE),
-            "store write stays on the public library after memory discover"
-        );
-
-        registry
-            .invoke_tool(
-                "cognition_memory_recall",
-                json!({
-                    "intent": "Recall the user's established implementation preferences",
-                    "session_id": "attacker-controlled-session",
-                    "query": "implementation preferences"
-                }),
-            )
-            .await
-            .expect("discovered memory tool");
+            .expect("public memory query is callable without discover");
         let input = inner
             .last_input
             .lock()
@@ -3745,7 +3715,10 @@ mod tests {
             .expect("stored STTP")
             .replace(&pinned_session, "another-locus-session");
         let scope_error = registry
-            .bind_input("cognition_memory_store", json!({ "node": mismatched_raw }))
+            .bind_input(
+                crate::public_api::COGNITION_MEMORY_MUTATE,
+                json!({ "action": "memory.store", "node": mismatched_raw }),
+            )
             .expect_err("raw STTP cannot escape the environment scope");
         assert!(
             scope_error
@@ -3769,7 +3742,7 @@ mod tests {
                 .lock()
                 .expect("invoked tools")
                 .iter()
-                .filter(|tool| tool.as_str() == "cognition_memory_store")
+                .filter(|tool| tool.as_str() == crate::public_api::COGNITION_MEMORY_MUTATE)
                 .count(),
             1
         );
@@ -3810,7 +3783,7 @@ mod tests {
             .iter()
             .rev()
             .find(|(tool, input)| {
-                tool == "cognition_memory_recall"
+                tool == crate::public_api::COGNITION_MEMORY_QUERY
                     && input.get("session_id").and_then(Value::as_str)
                         == Some(pinned_session.as_str())
             })
@@ -4008,7 +3981,7 @@ mod tests {
                 .lock()
                 .expect("invoked tools")
                 .iter()
-                .filter(|tool| tool.as_str() == "cognition_memory_store")
+                .filter(|tool| tool.as_str() == crate::public_api::COGNITION_MEMORY_MUTATE)
                 .count(),
             1
         );
@@ -4463,7 +4436,7 @@ mod tests {
         assert!(
             after
                 .iter()
-                .all(|tool| tool.name.as_str() != "cognition_memory_recall")
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_MEMORY_QUERY)
         );
         assert!(
             after
@@ -4745,7 +4718,11 @@ mod tests {
             invoked.first().map(String::as_str),
             Some("cognition_spawn_turn_worker")
         );
-        assert!(invoked.iter().any(|tool| tool == "cognition_memory_store"));
+        assert!(
+            invoked
+                .iter()
+                .any(|tool| tool == crate::public_api::COGNITION_MEMORY_MUTATE)
+        );
         drop(invoked);
         let input = &out["input"];
         assert_eq!(input["task"], "Investigate failing CI flakes");
