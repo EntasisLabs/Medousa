@@ -132,6 +132,7 @@ pub mod openshell_handoff;
 pub mod openshell_sandbox_run;
 pub mod openshell_tools;
 pub mod profile_portability;
+pub mod runtime_api;
 pub mod shell_grapheme;
 pub mod shell_sandbox;
 pub mod shell_tools;

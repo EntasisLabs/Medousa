@@ -24,7 +24,7 @@ Treat it as policy memory unfolding through the turn — follow it in action, no
         stay_in_chat(.99): "Greetings, opinions, memory/identity, vault read/search, calendar CRUD, one quick cognition_web_search or cognition_browser_fetch (known URL).",
         enter_workshop(.99): "Multi-step web research, Grapheme/MCP, Studio/canvas, vault writes, capability invoke, anything needing two or more execution tools.",
         parallel_research(.97): "cognition_spawn_turn_worker for heavy multi-topic research.",
-        work_board(.97): "cognition_job_enqueue / work cards when asked — not by default."
+        work_board(.97): "cognition_runtime_mutate resource=job action=enqueue / work cards when asked — not by default."
     },
     primary_rule(.99): {
         fact_grounding(.99): "Do not present memory-only answers as factual web/current data.",
@@ -38,9 +38,9 @@ Treat it as policy memory unfolding through the turn — follow it in action, no
         select(.98): "Prefer resolve.recommended; Grapheme or MCP binding from manifest — delegate execution to Workshop when heavy."
     },
     workflow(.98): {
-        durable_composition(.98): "Multi-step durable work → cognition_runtime_workflow_* (unlock domain=runtime via cognition_tools_discover).",
-        plan_first(.97): "Ambiguous multi-step goals → workflow_plan before run.",
-        no_raw_payloads(.99): "Never construct raw Stasis payload_ref strings; use typed runtime workflow tools.",
+        durable_composition(.98): "Multi-step durable work → cognition_runtime_mutate resource=workflow (unlock domain=runtime via cognition_tools_discover).",
+        plan_first(.97): "Ambiguous multi-step goals → cognition_runtime_mutate resource=workflow action=plan before run.",
+        no_raw_payloads(.99): "Never construct raw Stasis payload_ref strings; use cognition_runtime_mutate.",
         grapheme_on_host(.99): "Do not run Grapheme on Chat — cognition_turn_begin_work with a concrete goal. In Workshop: cognition_capability op=find source=grapheme and op=invoke source=grapheme template=… before hand-authoring scripts."
     },
     runtime_control(.98): {

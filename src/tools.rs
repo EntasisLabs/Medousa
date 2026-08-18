@@ -2710,18 +2710,27 @@ impl ToolRegistry for PolicyAwareToolRegistry {
 
 fn lane_safety_action_for_tool_call(
     tool_name: &str,
-    _input: &Value,
+    input: &Value,
 ) -> Option<LaneSafetyActionClass> {
     match tool_name {
-        "cognition_job_enqueue"
-        | "cognition_grapheme_promote_to_job"
-        | "cognition_runtime_workflow_run"
-        | "cognition_mcp_promote_to_job" => Some(LaneSafetyActionClass::InteractiveIngress),
-        "cognition_grapheme_promote_to_recurring"
-        | "cognition_grapheme_promote_last_run_to_recurring"
-        | "cognition_runtime_recurring_register"
-        | "cognition_runtime_workflow_schedule" => {
-            Some(LaneSafetyActionClass::RecurringRegistration)
+        "cognition_runtime_mutate" => {
+            let resource = input
+                .get("resource")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let action = input
+                .get("action")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            match (resource, action) {
+                ("job", "enqueue") | ("workflow", "run") => {
+                    Some(LaneSafetyActionClass::InteractiveIngress)
+                }
+                ("recurring", "register") | ("workflow", "schedule") => {
+                    Some(LaneSafetyActionClass::RecurringRegistration)
+                }
+                _ => None,
+            }
         }
         _ => None,
     }
@@ -2736,6 +2745,36 @@ fn referenced_module_ops_for_tool_call(
     input: &Value,
 ) -> stasis::prelude::Result<Vec<String>> {
     match tool_name {
+        "cognition_runtime_mutate" => {
+            if let Some(script) = input.get("script").and_then(|value| value.as_str())
+                && !script.trim().is_empty()
+            {
+                return Ok(extract_module_ops_from_source(script));
+            }
+            let job_type = input
+                .get("job_type")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default();
+            if job_type != "workflow.grapheme.run" {
+                return Ok(Vec::new());
+            }
+            let payload_ref = input
+                .get("payload_ref")
+                .and_then(|value| value.as_str())
+                .ok_or_else(|| {
+                    StasisError::PortFailure(
+                        "policy violation: payload_ref is required for workflow.grapheme.run"
+                            .to_string(),
+                    )
+                })?;
+            let source = grapheme_inline_payload_source(payload_ref).ok_or_else(|| {
+                StasisError::PortFailure(
+                    "policy violation: workflow.grapheme.run payload_ref must use grapheme:inline:<source>"
+                        .to_string(),
+                )
+            })?;
+            Ok(extract_module_ops_from_source(source))
+        }
         "cognition_grapheme_run"
         | "cognition_grapheme_cli_run"
         | "cognition_grapheme_promote_to_job"
@@ -3010,6 +3049,20 @@ mod tests {
     }
 
     #[test]
+    fn detects_module_ops_for_runtime_mutate_script() {
+        let input = json!({
+            "resource": "job",
+            "action": "enqueue",
+            "script": "query Run { websearch.search(query: \"x\") { ok } }"
+        });
+
+        let ops = referenced_module_ops_for_tool_call("cognition_runtime_mutate", &input)
+            .expect("ops should parse");
+
+        assert_eq!(ops, vec!["websearch.search"]);
+    }
+
+    #[test]
     fn requires_source_for_promote_last_run_when_policy_active() {
         let input = json!({
             "cron_expr": "*/5 * * * *"
@@ -3030,9 +3083,11 @@ mod tests {
 
         let result = registry
             .invoke_tool(
-                "cognition_grapheme_promote_to_recurring",
+                "cognition_runtime_mutate",
                 json!({
-                    "source": "query Run { websearch.search(query: \"rust\") { ok } }",
+                    "resource": "recurring",
+                    "action": "register",
+                    "script": "query Run { websearch.search(query: \"rust\") { ok } }",
                     "cron_expr": "*/5 * * * *"
                 }),
             )
@@ -3050,9 +3105,11 @@ mod tests {
 
         let result = registry
             .invoke_tool(
-                "cognition_grapheme_promote_to_recurring",
+                "cognition_runtime_mutate",
                 json!({
-                    "source": "query Run { websearch.search(query: \"rust\") { ok } }",
+                    "resource": "recurring",
+                    "action": "register",
+                    "script": "query Run { websearch.search(query: \"rust\") { ok } }",
                     "cron_expr": "*/5 * * * *"
                 }),
             )

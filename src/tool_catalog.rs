@@ -121,6 +121,7 @@ fn add_effects_and_capabilities(index: &mut ToolPlacementIndex) {
         "cognition_utility_uuid",
         "cognition_store_read",
         crate::agent_runtime::coder_tools::COGNITION_ENGINEERING_POINTERS,
+        "cognition_runtime_query",
     ] {
         index.set_effect(ToolId::new(name), ToolEffect::Observe);
     }
@@ -161,6 +162,14 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
     (
         "cognition_capability",
         "Find or invoke a capability, MCP tool, or Grapheme module",
+    ),
+    (
+        "cognition_runtime_query",
+        "Inspect jobs, recurring schedules, workflows, or delivery",
+    ),
+    (
+        "cognition_runtime_mutate",
+        "Enqueue, cancel, register, pause, run, schedule, or plan durable runtime work",
     ),
     (
         "cognition_tool_history_summary",

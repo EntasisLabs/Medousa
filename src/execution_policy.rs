@@ -181,13 +181,12 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
                 .get("op")
                 .and_then(|value| value.as_str())
                 .unwrap_or("");
-            if op.eq_ignore_ascii_case("find") {
-                StepExecutionClass::ReadOnly
-            } else if input.get("source").and_then(|value| value.as_str()) == Some("mcp")
-                && input
-                    .get("effect_class")
-                    .and_then(|value| value.as_str())
-                    .is_some_and(|value| value.eq_ignore_ascii_case("external_read"))
+            if op.eq_ignore_ascii_case("find")
+                || (input.get("source").and_then(|value| value.as_str()) == Some("mcp")
+                    && input
+                        .get("effect_class")
+                        .and_then(|value| value.as_str())
+                        .is_some_and(|value| value.eq_ignore_ascii_case("external_read")))
             {
                 StepExecutionClass::ReadOnly
             } else {
@@ -196,12 +195,7 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         }
         "cognition_memory_store"
         | "cognition_memory_calibrate"
-        | "cognition_runtime_workflow_run"
-        | "cognition_runtime_workflow_schedule"
-        | "cognition_runtime_recurring_register"
-        | "cognition_mcp_promote_to_job"
-        | "cognition_grapheme_promote_to_job"
-        | "cognition_job_enqueue"
+        | "cognition_runtime_mutate"
         | "cognition_openshell_sandbox_run" => StepExecutionClass::Mutating,
         "cognition_openshell_status" | "cognition_skill_discover" | "cognition_skill_propose" => {
             StepExecutionClass::ReadOnly
@@ -213,9 +207,7 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         | "cognition_memory_schema"
         | "cognition_memory_moods"
         | "cognition_store_read"
-        | "cognition_runtime_jobs_list"
-        | "cognition_runtime_jobs_status"
-        | "cognition_runtime_delivery_status"
+        | "cognition_runtime_query"
         | "cognition_web_search"
         | "cognition_spawn_turn_worker"
         | "cognition_turn_prepare_final"
@@ -410,6 +402,49 @@ mod tests {
         assert_eq!(
             classify_tool_call("cognition_capability", &mcp_read),
             StepExecutionClass::ReadOnly
+        );
+    }
+
+    #[test]
+    fn runtime_query_is_parallel_safe_and_mutate_is_mutating() {
+        let query = json!({ "resource": "job", "view": "list" });
+        let mutate = json!({
+            "resource": "job",
+            "action": "enqueue",
+            "job_type": "workflow.grapheme.run",
+            "payload_ref": "grapheme:inline:query {}"
+        });
+        assert_eq!(
+            classify_tool_call("cognition_runtime_query", &query),
+            StepExecutionClass::ReadOnly
+        );
+        assert_eq!(
+            classify_tool_call("cognition_runtime_mutate", &mutate),
+            StepExecutionClass::Mutating
+        );
+        let settings = ParallelExecutionSettings::default();
+        assert!(
+            parallel_tool_batch_allowed(
+                &[
+                    ("cognition_runtime_query".to_string(), query.clone()),
+                    ("cognition_runtime_query".to_string(), query),
+                ],
+                &settings
+            )
+            .is_ok()
+        );
+        assert!(
+            parallel_tool_batch_allowed(
+                &[
+                    (
+                        "cognition_runtime_query".to_string(),
+                        json!({ "resource": "delivery" })
+                    ),
+                    ("cognition_runtime_mutate".to_string(), mutate),
+                ],
+                &settings
+            )
+            .is_err()
         );
     }
 }

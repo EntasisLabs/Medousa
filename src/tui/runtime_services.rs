@@ -11,7 +11,7 @@ use stasis::prelude::RuntimeBackend;
 use stasis::prelude_ext::{MemoryContextReader, MemoryContextWriter};
 use tokio::sync::mpsc;
 
-use crate::bridge_tools::{CognitionMcpPromoteToJobTool, CognitionWebSearchTool};
+use crate::bridge_tools::CognitionWebSearchTool;
 use crate::capability_catalog::CapabilityRegistry;
 use crate::client_tools::{ClientRegistry, ClientToolRegistry};
 use crate::engine_context::EngineExecutionLane;
@@ -26,23 +26,12 @@ use crate::identity_tools::{
 };
 use crate::mcp_gateway_client::McpGatewayClient;
 use crate::runtime::stasis_wire::{LocalStasisWireConfig, build_local_stasis_composition};
-use crate::runtime_tools::{
-    CognitionRuntimeDeliveryStatusTool, CognitionRuntimeJobsCancelTool,
-    CognitionRuntimeJobsListTool, CognitionRuntimeRecurringCancelTool,
-    CognitionRuntimeRecurringDoctorTool, CognitionRuntimeRecurringListTool,
-    CognitionRuntimeRecurringPauseTool, CognitionRuntimeRecurringRegisterTool,
-    CognitionRuntimeWorkflowCancelTool, CognitionRuntimeWorkflowPlanTool,
-    CognitionRuntimeWorkflowRunTool, CognitionRuntimeWorkflowScheduleTool,
-    CognitionRuntimeWorkflowStatusTool,
-};
 use crate::tools::{
-    CognitionGraphemePromoteLastRunToRecurringTool, CognitionGraphemePromoteToJobTool,
-    CognitionGraphemePromoteToRecurringTool, CognitionJobEnqueueTool, CognitionMemoryCalibrateTool,
-    CognitionMemoryContextTool, CognitionMemoryEvictTool, CognitionMemoryListTool,
-    CognitionMemoryMoodsTool, CognitionMemoryRecallTool, CognitionMemorySchemaTool,
-    CognitionMemoryStoreTool, CognitionMemoryTagsTool, CognitionRuntimeJobStatusTool,
-    CognitionRuntimeRecurringPreviewTool, CognitionUtilityDayOfWeekTool,
-    CognitionUtilityTimeNowTool, CognitionUtilityUuidTool, PolicyAwareToolRegistry, TuiRuntime,
+    CognitionMemoryCalibrateTool, CognitionMemoryContextTool, CognitionMemoryEvictTool,
+    CognitionMemoryListTool, CognitionMemoryMoodsTool, CognitionMemoryRecallTool,
+    CognitionMemorySchemaTool, CognitionMemoryStoreTool, CognitionMemoryTagsTool,
+    CognitionUtilityDayOfWeekTool, CognitionUtilityTimeNowTool, CognitionUtilityUuidTool,
+    PolicyAwareToolRegistry, TuiRuntime,
 };
 use crate::turn_control_tools::{
     CognitionTurnBeginWorkTool, CognitionTurnCheckpointTool, CognitionTurnFinishTool,
@@ -156,11 +145,13 @@ pub(crate) async fn assemble_tui_runtime(
         model: resolved_model.clone(),
         base_url: resolved_base_url.clone(),
     };
-    tool_registry.register_typed_tool(CognitionJobEnqueueTool::new(
+    crate::runtime_api::register_runtime_api_tools(
+        &mut tool_registry,
         runtime.clone(),
         event_tx.clone(),
         turn_scope.clone(),
-    ))?;
+        workflow_registry.clone(),
+    )?;
     let identity_service = Arc::new(IdentityMemoryService::new(identity_memory_store.clone()
         as Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>));
     let identity_user_id = resolve_tool_identity_user_id(session_id, workshop_operator_identity);
@@ -312,21 +303,6 @@ pub(crate) async fn assemble_tui_runtime(
         turn_scope.clone(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_typed_tool(CognitionGraphemePromoteToJobTool::new(
-        runtime.clone(),
-        event_tx.clone(),
-        turn_scope.clone(),
-    ))?;
-    tool_registry.register_typed_tool(CognitionGraphemePromoteToRecurringTool::new(
-        runtime.clone(),
-        event_tx.clone(),
-        turn_scope.clone(),
-    ))?;
-    tool_registry.register_typed_tool(CognitionGraphemePromoteLastRunToRecurringTool::new(
-        runtime.clone(),
-        event_tx.clone(),
-        turn_scope.clone(),
-    ))?;
     tool_registry.register_typed_tool(CognitionUtilityTimeNowTool)?;
     tool_registry.register_typed_tool(CognitionUtilityDayOfWeekTool)?;
     tool_registry.register_typed_tool(CognitionUtilityUuidTool)?;
@@ -348,52 +324,6 @@ pub(crate) async fn assemble_tui_runtime(
         session_id.to_string(),
         turn_scope.clone(),
     ))?;
-    tool_registry
-        .register_typed_tool(CognitionRuntimeRecurringPreviewTool::new(event_tx.clone()))?;
-    tool_registry.register_typed_tool(CognitionRuntimeJobStatusTool::new(runtime.clone()))?;
-    tool_registry.register_typed_tool(CognitionRuntimeJobsListTool::new(runtime.clone()))?;
-    tool_registry.register_typed_tool(CognitionRuntimeJobsCancelTool::new(
-        runtime.clone(),
-        event_tx.clone(),
-    ))?;
-    tool_registry.register_typed_tool(CognitionRuntimeRecurringListTool::new(runtime.clone()))?;
-    tool_registry.register_typed_tool(CognitionRuntimeRecurringDoctorTool::new(runtime.clone()))?;
-    tool_registry.register_typed_tool(CognitionRuntimeRecurringRegisterTool::new(
-        runtime.clone(),
-        event_tx.clone(),
-        turn_scope.clone(),
-    ))?;
-    tool_registry.register_typed_tool(CognitionRuntimeRecurringPauseTool::new(
-        runtime.clone(),
-        event_tx.clone(),
-    ))?;
-    tool_registry.register_typed_tool(CognitionRuntimeRecurringCancelTool::new(
-        runtime.clone(),
-        event_tx.clone(),
-    ))?;
-    tool_registry.register_typed_tool(CognitionRuntimeDeliveryStatusTool::new(runtime.clone()))?;
-    tool_registry.register_typed_tool(CognitionRuntimeWorkflowRunTool::new(
-        runtime.clone(),
-        workflow_registry.clone(),
-        event_tx.clone(),
-        turn_scope.clone(),
-    ))?;
-    tool_registry.register_typed_tool(CognitionRuntimeWorkflowScheduleTool::new(
-        runtime.clone(),
-        workflow_registry.clone(),
-        event_tx.clone(),
-        turn_scope.clone(),
-    ))?;
-    tool_registry.register_typed_tool(CognitionRuntimeWorkflowStatusTool::new(
-        runtime.clone(),
-        workflow_registry.clone(),
-    ))?;
-    tool_registry.register_typed_tool(CognitionRuntimeWorkflowCancelTool::new(
-        runtime.clone(),
-        workflow_registry.clone(),
-        event_tx.clone(),
-    ))?;
-    tool_registry.register_typed_tool(CognitionRuntimeWorkflowPlanTool::new(event_tx.clone()))?;
 
     let capability_registry = Arc::new(RwLock::new(CapabilityRegistry::with_loaded_manifest()));
     let mcp_gateway_client = Arc::new(McpGatewayClient::from_env());
@@ -413,12 +343,6 @@ pub(crate) async fn assemble_tui_runtime(
         turn_scope.clone(),
     )?;
     crate::layout_tools::register_layout_tools(&mut tool_registry)?;
-    tool_registry.register_typed_tool(CognitionMcpPromoteToJobTool::new(
-        runtime.clone(),
-        workflow_registry.clone(),
-        event_tx.clone(),
-        turn_scope.clone(),
-    ))?;
     tool_registry.register_typed_tool(CognitionWebSearchTool::new(
         capability_registry.clone(),
         runtime.clone(),

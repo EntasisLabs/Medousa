@@ -1449,7 +1449,7 @@ fn run_doctor(args: &[String]) -> Result<()> {
         }
     );
     println!(
-        "recurring_delivery=Phase 2: use cognition_runtime_recurring_doctor or cognition_runtime_recurring_list in TUI/agent; delivery modes: explicit | current_channel | linked_channel | product_default"
+        "recurring_delivery=Phase 2: use cognition_runtime_query resource=recurring view=doctor or view=list in TUI/agent; delivery modes: explicit | current_channel | linked_channel | product_default"
     );
 
     let mcp_gateway_url = medousa::resolve_mcp_gateway_url(None);

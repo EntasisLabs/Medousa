@@ -233,7 +233,7 @@ fn build_csv_digest_workflow(
             tool_name: "send_message".to_string(),
             args: json!({
                 "chat_id": context_telegram_chat(context),
-                "text": "CSV digest complete for {{workflow}} — see step output in cognition_runtime_workflow_status."
+                "text": "CSV digest complete for {{workflow}} — see step output in cognition_runtime_query resource=workflow."
             }),
             effect_class: Some("external_side_effect".to_string()),
         });
@@ -357,7 +357,7 @@ pub fn plan_workflow_from_goal(request: &WorkflowPlanRequest) -> WorkflowPlanRes
                 "medium".to_string()
             },
             execute_with: if mentions_schedule(&normalized) {
-                "cognition_runtime_workflow_schedule".to_string()
+                "cognition_runtime_mutate".to_string()
             } else {
                 "cognition_capability".to_string()
             },
@@ -371,7 +371,7 @@ pub fn plan_workflow_from_goal(request: &WorkflowPlanRequest) -> WorkflowPlanRes
                 "params": { "url": url }
             })),
             notes: vec![
-                "HTTP poll template suggested; promote to workflow_schedule if recurring monitoring is intended."
+                "HTTP poll template suggested; cognition_runtime_mutate resource=workflow action=schedule if recurring monitoring is intended."
                     .to_string(),
             ],
             assumptions: vec![format!("Poll URL placeholder set to '{url}'.")],
@@ -387,17 +387,13 @@ pub fn plan_workflow_from_goal(request: &WorkflowPlanRequest) -> WorkflowPlanRes
         return WorkflowPlanResponse {
             goal: goal.to_string(),
             confidence,
-            execute_with: if scheduled {
-                "cognition_runtime_workflow_schedule".to_string()
-            } else {
-                "cognition_runtime_workflow_run".to_string()
-            },
+            execute_with: "cognition_runtime_mutate".to_string(),
             suggested_workflow: Some(workflow),
             suggested_schedule: if scheduled { Some(schedule) } else { None },
             suggested_tool_input: None,
             notes: vec![
                 "Multi-step CSV digest workflow with optional Telegram notify step.".to_string(),
-                "Review grapheme sources and MCP args before calling execute_with tool."
+                "Call cognition_runtime_mutate resource=workflow action=run or action=schedule."
                     .to_string(),
             ],
             assumptions,
@@ -427,11 +423,7 @@ pub fn plan_workflow_from_goal(request: &WorkflowPlanRequest) -> WorkflowPlanRes
         return WorkflowPlanResponse {
             goal: goal.to_string(),
             confidence: "medium".to_string(),
-            execute_with: if mentions_schedule(&normalized) {
-                "cognition_runtime_workflow_schedule".to_string()
-            } else {
-                "cognition_runtime_workflow_run".to_string()
-            },
+            execute_with: "cognition_runtime_mutate".to_string(),
             suggested_workflow: Some(workflow),
             suggested_schedule: infer_cron_expr(goal).map(|cron_expr| WorkflowScheduleSuggestion {
                 cron_expr,
@@ -497,7 +489,7 @@ mod tests {
             goal: "Every weekday 8:30 run CSV anomaly digest and ping Telegram".to_string(),
             context: Some(json!({ "url": "https://example.com/metrics.csv" })),
         });
-        assert_eq!(plan.execute_with, "cognition_runtime_workflow_schedule");
+        assert_eq!(plan.execute_with, "cognition_runtime_mutate");
         assert!(plan.suggested_workflow.is_some());
         assert!(plan.suggested_schedule.is_some());
         let workflow = plan.suggested_workflow.unwrap();

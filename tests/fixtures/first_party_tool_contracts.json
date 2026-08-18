@@ -1560,6 +1560,219 @@
     },
     {
       "registry": "coder_bound",
+      "name": "cognition_runtime_mutate",
+      "description": "Enqueue, cancel, register, pause, run, schedule, or plan durable runtime work. resource=job|recurring|workflow. action=enqueue|cancel|register|pause|run|schedule|plan. script or server_id+tool_name select Grapheme/MCP promote.",
+      "input_schema": {
+        "properties": {
+          "action": {
+            "enum": [
+              "cancel",
+              "enqueue",
+              "pause",
+              "plan",
+              "register",
+              "run",
+              "schedule"
+            ],
+            "type": "string"
+          },
+          "context": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "cron_expr": {
+            "type": "string"
+          },
+          "delivery": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "feeds": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "from": {
+            "enum": [
+              "auto",
+              "last_run"
+            ],
+            "type": "string"
+          },
+          "goal": {
+            "type": "string"
+          },
+          "input": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
+            "type": "string"
+          },
+          "jitter_seconds": {
+            "type": "integer"
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "job_type": {
+            "type": "string"
+          },
+          "max_attempts": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "on_failure": {
+            "type": "string"
+          },
+          "payload_ref": {
+            "type": "string"
+          },
+          "queue": {
+            "type": "string"
+          },
+          "recurring_id": {
+            "type": "string"
+          },
+          "resource": {
+            "enum": [
+              "delivery",
+              "job",
+              "recurring",
+              "workflow"
+            ],
+            "type": "string"
+          },
+          "script": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "start_immediately": {
+            "type": "boolean"
+          },
+          "steps": {
+            "items": true,
+            "type": "array"
+          },
+          "strategy": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "tool_name": {
+            "type": "string"
+          },
+          "workflow_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "intent",
+          "resource"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:initial"
+      ]
+    },
+    {
+      "registry": "coder_bound",
+      "name": "cognition_runtime_query",
+      "description": "Inspect jobs, recurring schedules, workflows, or delivery. resource=job|recurring|workflow|delivery. view=list|status|doctor|preview. job with job_id defaults to status.",
+      "input_schema": {
+        "properties": {
+          "correlation_id": {
+            "type": "string"
+          },
+          "count": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cron_expr": {
+            "type": "string"
+          },
+          "enabled_only": {
+            "type": "boolean"
+          },
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
+            "type": "string"
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "limit": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pending_limit": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recurring_id": {
+            "type": "string"
+          },
+          "resource": {
+            "enum": [
+              "delivery",
+              "job",
+              "recurring",
+              "workflow"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "view": {
+            "enum": [
+              "doctor",
+              "list",
+              "preview",
+              "status"
+            ],
+            "type": "string"
+          },
+          "workflow_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "intent",
+          "resource"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:initial"
+      ]
+    },
+    {
+      "registry": "coder_bound",
       "name": "cognition_shell_session_interrupt",
       "description": "Send SIGINT to a workshop shell session. Coding domain only.",
       "input_schema": {
@@ -3990,291 +4203,6 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_grapheme_promote_last_run_to_recurring",
-      "description": "Promote the last executed Grapheme source to recurring schedule. You can also provide source explicitly.",
-      "input_schema": {
-        "properties": {
-          "cron_expr": {
-            "description": "7-field cron: sec min hour day-of-month month day-of-week year (e.g. 0 0 */4 * * * *)",
-            "type": "string"
-          },
-          "delivery": {
-            "description": "Where to push each successful run (independent of current UI channel). 7-field cron required separately.",
-            "properties": {
-              "channel": {
-                "description": "telegram | discord | slack | whatsapp | cli",
-                "type": "string"
-              },
-              "channel_id": {
-                "description": "Canonical id, e.g. telegram:chat:123",
-                "type": "string"
-              },
-              "discord_channel_id": {
-                "type": "string"
-              },
-              "mode": {
-                "default": "explicit",
-                "enum": [
-                  "current_channel",
-                  "explicit",
-                  "linked_channel",
-                  "product_default"
-                ],
-                "type": "string"
-              },
-              "session_id": {
-                "description": "Medousa session for job context",
-                "type": "string"
-              },
-              "slack_channel_id": {
-                "type": "string"
-              },
-              "telegram_chat_id": {
-                "type": "string"
-              },
-              "user_id": {
-                "type": "string"
-              },
-              "whatsapp_chat_jid": {
-                "type": "string"
-              }
-            },
-            "type": "object"
-          },
-          "enabled": {
-            "default": true,
-            "description": "Enabled schedule",
-            "type": "boolean"
-          },
-          "feeds": {
-            "description": "Environment feed ids to publish each materialized run terminal event.",
-            "properties": {
-              "feed_ids": {
-                "description": "Bounded feed bus ids, e.g. trip.london.trains",
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "payload_mode": {
-                "default": "parsed_poll",
-                "enum": [
-                  "parsed_poll",
-                  "raw_excerpt",
-                  "summary"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "feed_ids"
-            ],
-            "type": "object"
-          },
-          "id": {
-            "description": "Optional recurring id",
-            "type": "string"
-          },
-          "jitter_seconds": {
-            "default": 0,
-            "description": "Jitter seconds",
-            "type": "integer"
-          },
-          "max_attempts": {
-            "default": 1,
-            "description": "Max attempts per materialized job",
-            "type": "integer"
-          },
-          "queue": {
-            "default": "default",
-            "description": "Runtime queue",
-            "type": "string"
-          },
-          "source": {
-            "description": "Optional source override; if omitted, uses last remembered source",
-            "type": "string"
-          },
-          "start_immediately": {
-            "default": false,
-            "description": "Set next_run_at=now",
-            "type": "boolean"
-          },
-          "timezone": {
-            "default": "UTC",
-            "description": "IANA timezone",
-            "type": "string"
-          }
-        },
-        "required": [
-          "cron_expr"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": []
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_promote_to_job",
-      "description": "Promote Grapheme source to a durable one-off runtime job (workflow.grapheme.run).",
-      "input_schema": {
-        "properties": {
-          "max_attempts": {
-            "default": 1,
-            "description": "Max job attempts",
-            "type": "integer"
-          },
-          "priority": {
-            "default": 100,
-            "description": "Job priority",
-            "type": "integer"
-          },
-          "queue": {
-            "default": "default",
-            "description": "Runtime queue",
-            "type": "string"
-          },
-          "source": {
-            "description": "Complete Grapheme source",
-            "type": "string"
-          }
-        },
-        "required": [
-          "source"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": []
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_promote_to_recurring",
-      "description": "Promote Grapheme source to a durable recurring schedule (register_recurring).",
-      "input_schema": {
-        "properties": {
-          "cron_expr": {
-            "description": "7-field cron: sec min hour day-of-month month day-of-week year (e.g. 0 0 */4 * * * *)",
-            "type": "string"
-          },
-          "delivery": {
-            "description": "Where to push each successful run (independent of current UI channel). 7-field cron required separately.",
-            "properties": {
-              "channel": {
-                "description": "telegram | discord | slack | whatsapp | cli",
-                "type": "string"
-              },
-              "channel_id": {
-                "description": "Canonical id, e.g. telegram:chat:123",
-                "type": "string"
-              },
-              "discord_channel_id": {
-                "type": "string"
-              },
-              "mode": {
-                "default": "explicit",
-                "enum": [
-                  "current_channel",
-                  "explicit",
-                  "linked_channel",
-                  "product_default"
-                ],
-                "type": "string"
-              },
-              "session_id": {
-                "description": "Medousa session for job context",
-                "type": "string"
-              },
-              "slack_channel_id": {
-                "type": "string"
-              },
-              "telegram_chat_id": {
-                "type": "string"
-              },
-              "user_id": {
-                "type": "string"
-              },
-              "whatsapp_chat_jid": {
-                "type": "string"
-              }
-            },
-            "type": "object"
-          },
-          "enabled": {
-            "default": true,
-            "description": "Enabled schedule",
-            "type": "boolean"
-          },
-          "feeds": {
-            "description": "Environment feed ids to publish each materialized run terminal event.",
-            "properties": {
-              "feed_ids": {
-                "description": "Bounded feed bus ids, e.g. trip.london.trains",
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "payload_mode": {
-                "default": "parsed_poll",
-                "enum": [
-                  "parsed_poll",
-                  "raw_excerpt",
-                  "summary"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "feed_ids"
-            ],
-            "type": "object"
-          },
-          "id": {
-            "description": "Optional recurring id",
-            "type": "string"
-          },
-          "jitter_seconds": {
-            "default": 0,
-            "description": "Jitter seconds",
-            "type": "integer"
-          },
-          "max_attempts": {
-            "default": 1,
-            "description": "Max attempts per materialized job",
-            "type": "integer"
-          },
-          "queue": {
-            "default": "default",
-            "description": "Runtime queue",
-            "type": "string"
-          },
-          "source": {
-            "description": "Complete Grapheme source",
-            "type": "string"
-          },
-          "start_immediately": {
-            "default": false,
-            "description": "Set next_run_at=now",
-            "type": "boolean"
-          },
-          "timezone": {
-            "default": "UTC",
-            "description": "IANA timezone",
-            "type": "string"
-          }
-        },
-        "required": [
-          "cron_expr",
-          "source"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": []
-    },
-    {
-      "registry": "general_runtime",
       "name": "cognition_identity_commit",
       "description": "Commit a proposed identity patch when tier and Medousa policy allow. Pass expected_version from context; set approver for approval_required tiers.",
       "input_schema": {
@@ -4561,37 +4489,6 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_job_enqueue",
-      "description": "Persist a job into the Stasis runtime for durable background execution. Use this to schedule work: grapheme scripts, orchestration patterns, memory operations, or any registered workflow handler. Valid job_type values: workflow.grapheme.run, workflow.grapheme.echo, workflow.stasis.orchestration.sequential, workflow.stasis.orchestration.concurrent, workflow.stasis.orchestration.handoff, workflow.stasis.agent_session, workflow.stasis.prompt, openshell.sandbox.run.",
-      "input_schema": {
-        "properties": {
-          "job_type": {
-            "description": "The job handler identifier, e.g. 'workflow.grapheme.run'",
-            "type": "string"
-          },
-          "note": {
-            "description": "Optional human-readable note about the intent of this job",
-            "type": "string"
-          },
-          "payload_ref": {
-            "description": "Serialized job payload. For grapheme: 'grapheme:inline:<source>'. For JSON payloads: serialized JSON string.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "job_type",
-          "payload_ref"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
       "name": "cognition_layout_apply",
       "description": "Apply a stack layout tree (vstack/hstack/grid/component) to a custom surface main body. Changes go live immediately.",
       "input_schema": {
@@ -4794,42 +4691,6 @@
         "general:authorized",
         "general:domain:catalog"
       ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_mcp_promote_to_job",
-      "description": "Promote a successful MCP invoke into a durable sequential workflow job with one MCP step.",
-      "input_schema": {
-        "properties": {
-          "input": {
-            "type": "object"
-          },
-          "note": {
-            "type": "string"
-          },
-          "queue": {
-            "default": "default",
-            "type": "string"
-          },
-          "server_id": {
-            "type": "string"
-          },
-          "step_id": {
-            "default": "mcp_step",
-            "type": "string"
-          },
-          "tool_name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "server_id",
-          "tool_name"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": []
     },
     {
       "registry": "general_runtime",
@@ -5314,627 +5175,219 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_runtime_delivery_status",
-      "description": "Summarize runtime queue, outbox, and recurring workload counts. Includes pending outbox event previews when available.",
+      "name": "cognition_runtime_mutate",
+      "description": "Enqueue, cancel, register, pause, run, schedule, or plan durable runtime work. resource=job|recurring|workflow. action=enqueue|cancel|register|pause|run|schedule|plan. script or server_id+tool_name select Grapheme/MCP promote.",
       "input_schema": {
         "properties": {
-          "pending_limit": {
-            "description": "Max pending outbox rows to preview (1-50, default 10)",
-            "maximum": 50,
-            "minimum": 1,
+          "action": {
+            "enum": [
+              "cancel",
+              "enqueue",
+              "pause",
+              "plan",
+              "register",
+              "run",
+              "schedule"
+            ],
+            "type": "string"
+          },
+          "context": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "cron_expr": {
+            "type": "string"
+          },
+          "delivery": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "feeds": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "from": {
+            "enum": [
+              "auto",
+              "last_run"
+            ],
+            "type": "string"
+          },
+          "goal": {
+            "type": "string"
+          },
+          "input": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "jitter_seconds": {
             "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_jobs_cancel",
-      "description": "Cancel a pending runtime job (enqueued or leased).",
-      "input_schema": {
-        "properties": {
+          },
           "job_id": {
-            "description": "Runtime job identifier",
+            "type": "string"
+          },
+          "job_type": {
+            "type": "string"
+          },
+          "max_attempts": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "on_failure": {
+            "type": "string"
+          },
+          "payload_ref": {
+            "type": "string"
+          },
+          "queue": {
+            "type": "string"
+          },
+          "recurring_id": {
+            "type": "string"
+          },
+          "resource": {
+            "enum": [
+              "delivery",
+              "job",
+              "recurring",
+              "workflow"
+            ],
+            "type": "string"
+          },
+          "script": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "start_immediately": {
+            "type": "boolean"
+          },
+          "steps": {
+            "items": true,
+            "type": "array"
+          },
+          "strategy": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "tool_name": {
+            "type": "string"
+          },
+          "workflow_id": {
             "type": "string"
           }
         },
         "required": [
-          "job_id"
+          "action",
+          "resource"
         ],
         "type": "object"
       },
       "output_schema_present": true,
       "placements": [
         "general:authorized",
-        "general:domain:runtime"
+        "general:bootstrap",
+        "general:domain:runtime",
+        "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
+        "workshop:authorized:research",
+        "workshop:bootstrap",
+        "workshop:domain:runtime"
       ]
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_runtime_jobs_list",
-      "description": "List runtime jobs with optional state and correlation_id filters. Defaults to enqueued and running jobs.",
+      "name": "cognition_runtime_query",
+      "description": "Inspect jobs, recurring schedules, workflows, or delivery. resource=job|recurring|workflow|delivery. view=list|status|doctor|preview. job with job_id defaults to status.",
       "input_schema": {
         "properties": {
           "correlation_id": {
-            "description": "Optional correlation_id filter (exact match)",
+            "type": "string"
+          },
+          "count": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cron_expr": {
+            "type": "string"
+          },
+          "enabled_only": {
+            "type": "boolean"
+          },
+          "job_id": {
             "type": "string"
           },
           "limit": {
-            "description": "Max jobs to return (1-100, default 20)",
-            "maximum": 100,
-            "minimum": 1,
+            "minimum": 0,
             "type": "integer"
+          },
+          "pending_limit": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recurring_id": {
+            "type": "string"
+          },
+          "resource": {
+            "enum": [
+              "delivery",
+              "job",
+              "recurring",
+              "workflow"
+            ],
+            "type": "string"
           },
           "state": {
-            "description": "Optional filter: enqueued, leased, running, succeeded, failed, dead_letter, canceled",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_jobs_status",
-      "description": "Inspect job attempts and latest execution status for a given job_id.",
-      "input_schema": {
-        "properties": {
-          "job_id": {
-            "description": "Runtime job identifier",
-            "type": "string"
-          }
-        },
-        "required": [
-          "job_id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_recurring_cancel",
-      "description": "Disable a recurring schedule (soft cancel). The definition remains in the registry with enabled=false.",
-      "input_schema": {
-        "properties": {
-          "recurring_id": {
-            "description": "Recurring definition id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "recurring_id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_recurring_doctor",
-      "description": "Diagnose recurring schedules: cron, next run, enabled state, and channel delivery bindings.",
-      "input_schema": {
-        "properties": {
-          "recurring_id": {
-            "description": "Optional single recurring id; omit to inspect all",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_recurring_list",
-      "description": "List registered recurring job definitions with optional channel delivery bindings.",
-      "input_schema": {
-        "properties": {
-          "enabled_only": {
-            "default": false,
-            "description": "When true, return only enabled schedules",
-            "type": "boolean"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_recurring_pause",
-      "description": "Pause a recurring schedule by setting enabled=false.",
-      "input_schema": {
-        "properties": {
-          "recurring_id": {
-            "description": "Recurring definition id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "recurring_id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_recurring_preview",
-      "description": "Validate cron/timezone configuration and preview upcoming recurring run times.",
-      "input_schema": {
-        "properties": {
-          "count": {
-            "description": "How many future runs to preview (1-20, default 5)",
-            "maximum": 20,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "cron_expr": {
-            "description": "Cron expression to validate",
-            "type": "string"
-          },
-          "start_at": {
-            "description": "Optional RFC3339 UTC start timestamp",
             "type": "string"
           },
           "timezone": {
-            "default": "UTC",
-            "description": "IANA timezone",
-            "type": "string"
-          }
-        },
-        "required": [
-          "cron_expr"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_recurring_register",
-      "description": "Register a durable recurring schedule for Grapheme or other runtime job types. Grapheme sources are preflight-validated before registration.",
-      "input_schema": {
-        "properties": {
-          "cron_expr": {
-            "description": "7-field cron: sec min hour day-of-month month day-of-week year (e.g. every 4h: 0 0 */4 * * * *)",
             "type": "string"
           },
-          "delivery": {
-            "description": "Where to push each successful run (independent of current UI channel). 7-field cron required separately.",
-            "properties": {
-              "channel": {
-                "description": "telegram | discord | slack | whatsapp | cli",
-                "type": "string"
-              },
-              "channel_id": {
-                "description": "Canonical id, e.g. telegram:chat:123",
-                "type": "string"
-              },
-              "discord_channel_id": {
-                "type": "string"
-              },
-              "mode": {
-                "default": "explicit",
-                "enum": [
-                  "current_channel",
-                  "explicit",
-                  "linked_channel",
-                  "product_default"
-                ],
-                "type": "string"
-              },
-              "session_id": {
-                "description": "Medousa session for job context",
-                "type": "string"
-              },
-              "slack_channel_id": {
-                "type": "string"
-              },
-              "telegram_chat_id": {
-                "type": "string"
-              },
-              "user_id": {
-                "type": "string"
-              },
-              "whatsapp_chat_jid": {
-                "type": "string"
-              }
-            },
-            "type": "object"
-          },
-          "enabled": {
-            "default": true,
-            "type": "boolean"
-          },
-          "feeds": {
-            "description": "Environment feed ids to publish each materialized run terminal event.",
-            "properties": {
-              "feed_ids": {
-                "description": "Bounded feed bus ids, e.g. trip.london.trains",
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "payload_mode": {
-                "default": "parsed_poll",
-                "enum": [
-                  "parsed_poll",
-                  "raw_excerpt",
-                  "summary"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "feed_ids"
+          "view": {
+            "enum": [
+              "doctor",
+              "list",
+              "preview",
+              "status"
             ],
-            "type": "object"
-          },
-          "jitter_seconds": {
-            "default": 0,
-            "type": "integer"
-          },
-          "job_type": {
-            "default": "workflow.grapheme.run",
-            "description": "Runtime job handler",
             "type": "string"
           },
-          "max_attempts": {
-            "default": 1,
-            "type": "integer"
-          },
-          "payload_template_ref": {
-            "description": "Optional explicit payload template (overrides source)",
-            "type": "string"
-          },
-          "queue": {
-            "default": "default",
-            "description": "Runtime queue",
-            "type": "string"
-          },
-          "recurring_id": {
-            "description": "Optional recurring id",
-            "type": "string"
-          },
-          "source": {
-            "description": "Grapheme source (required when job_type is workflow.grapheme.run)",
-            "type": "string"
-          },
-          "start_immediately": {
-            "default": false,
-            "type": "boolean"
-          },
-          "timezone": {
-            "default": "UTC",
-            "description": "IANA timezone",
-            "type": "string"
-          }
-        },
-        "required": [
-          "cron_expr"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_workflow_cancel",
-      "description": "Cancel a workflow: disable scheduled recurring (if any) and cancel pending root job.",
-      "input_schema": {
-        "properties": {
           "workflow_id": {
-            "description": "Workflow identifier",
             "type": "string"
           }
         },
         "required": [
-          "workflow_id"
+          "resource"
         ],
         "type": "object"
       },
       "output_schema_present": true,
       "placements": [
         "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_workflow_plan",
-      "description": "Suggest a workflow JSON plan from a natural-language goal without executing it. Returns execute_with guidance (workflow_run, workflow_schedule, capability_invoke, etc.).",
-      "input_schema": {
-        "properties": {
-          "context": {
-            "description": "Optional hints: url, csv_url, topic, query, telegram_chat_id, timezone",
-            "type": "object"
-          },
-          "goal": {
-            "description": "Natural-language description of desired durable work",
-            "type": "string"
-          }
-        },
-        "required": [
-          "goal"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_workflow_run",
-      "description": "Execute a declarative multi-step workflow now. Strategies: sequential (default), concurrent (parallel read-only steps), handoff (sequential with $handoff.context).",
-      "input_schema": {
-        "properties": {
-          "mode": {
-            "default": "default",
-            "type": "string"
-          },
-          "name": {
-            "description": "Optional human-readable workflow name",
-            "type": "string"
-          },
-          "note": {
-            "type": "string"
-          },
-          "on_failure": {
-            "default": "stop",
-            "enum": [
-              "continue",
-              "stop"
-            ],
-            "type": "string"
-          },
-          "queue": {
-            "default": "default",
-            "type": "string"
-          },
-          "steps": {
-            "description": "Ordered workflow steps (grapheme, prompt, or mcp)",
-            "items": {
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "strategy": {
-            "default": "sequential",
-            "enum": [
-              "concurrent",
-              "handoff",
-              "sequential"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "steps"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_workflow_schedule",
-      "description": "Register a recurring schedule for a declarative workflow. Requires scheduled lane; grapheme steps are preflight-validated.",
-      "input_schema": {
-        "properties": {
-          "cron_expr": {
-            "description": "7-field cron: sec min hour day-of-month month day-of-week year (e.g. every 4h: 0 0 */4 * * * *)",
-            "type": "string"
-          },
-          "delivery": {
-            "description": "Where to push each successful run (independent of current UI channel). 7-field cron required separately.",
-            "properties": {
-              "channel": {
-                "description": "telegram | discord | slack | whatsapp | cli",
-                "type": "string"
-              },
-              "channel_id": {
-                "description": "Canonical id, e.g. telegram:chat:123",
-                "type": "string"
-              },
-              "discord_channel_id": {
-                "type": "string"
-              },
-              "mode": {
-                "default": "explicit",
-                "enum": [
-                  "current_channel",
-                  "explicit",
-                  "linked_channel",
-                  "product_default"
-                ],
-                "type": "string"
-              },
-              "session_id": {
-                "description": "Medousa session for job context",
-                "type": "string"
-              },
-              "slack_channel_id": {
-                "type": "string"
-              },
-              "telegram_chat_id": {
-                "type": "string"
-              },
-              "user_id": {
-                "type": "string"
-              },
-              "whatsapp_chat_jid": {
-                "type": "string"
-              }
-            },
-            "type": "object"
-          },
-          "enabled": {
-            "default": true,
-            "type": "boolean"
-          },
-          "feeds": {
-            "description": "Environment feed ids to publish each materialized run terminal event.",
-            "properties": {
-              "feed_ids": {
-                "description": "Bounded feed bus ids, e.g. trip.london.trains",
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "payload_mode": {
-                "default": "parsed_poll",
-                "enum": [
-                  "parsed_poll",
-                  "raw_excerpt",
-                  "summary"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "feed_ids"
-            ],
-            "type": "object"
-          },
-          "jitter_seconds": {
-            "default": 0,
-            "type": "integer"
-          },
-          "max_attempts": {
-            "default": 1,
-            "type": "integer"
-          },
-          "mode": {
-            "default": "default",
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "note": {
-            "type": "string"
-          },
-          "on_failure": {
-            "default": "stop",
-            "enum": [
-              "continue",
-              "stop"
-            ],
-            "type": "string"
-          },
-          "queue": {
-            "default": "default",
-            "type": "string"
-          },
-          "recurring_id": {
-            "type": "string"
-          },
-          "start_immediately": {
-            "default": false,
-            "type": "boolean"
-          },
-          "steps": {
-            "items": {
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "strategy": {
-            "default": "sequential",
-            "enum": [
-              "concurrent",
-              "handoff",
-              "sequential"
-            ],
-            "type": "string"
-          },
-          "timezone": {
-            "default": "UTC",
-            "type": "string"
-          }
-        },
-        "required": [
-          "cron_expr",
-          "steps"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_workflow_status",
-      "description": "Aggregate status for a workflow by workflow_id.",
-      "input_schema": {
-        "properties": {
-          "workflow_id": {
-            "description": "Workflow identifier",
-            "type": "string"
-          }
-        },
-        "required": [
-          "workflow_id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
+        "general:bootstrap",
+        "general:domain:runtime",
+        "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
+        "workshop:authorized:research",
+        "workshop:bootstrap",
+        "workshop:domain:runtime"
       ]
     },
     {

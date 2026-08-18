@@ -260,25 +260,7 @@ pub fn host_bus_tool_names() -> HashSet<String> {
 
     push(
         &mut names,
-        &[
-            "cognition_job_enqueue",
-            "cognition.job.enqueue",
-            "cognition_runtime_jobs_list",
-            "cognition_runtime_jobs_status",
-            "cognition_runtime_jobs_cancel",
-            "cognition_runtime_delivery_status",
-            "cognition_runtime_recurring_list",
-            "cognition_runtime_recurring_register",
-            "cognition_runtime_recurring_pause",
-            "cognition_runtime_recurring_cancel",
-            "cognition_runtime_recurring_doctor",
-            "cognition_runtime_recurring_preview",
-            "cognition_runtime_workflow_run",
-            "cognition_runtime_workflow_schedule",
-            "cognition_runtime_workflow_status",
-            "cognition_runtime_workflow_cancel",
-            "cognition_runtime_workflow_plan",
-        ],
+        &["cognition_runtime_query", "cognition_runtime_mutate"],
     );
 
     push(
@@ -397,10 +379,12 @@ mod tests {
         assert!(names.contains("cognition_identity_propose"));
         assert!(names.contains("cognition_identity_recall"));
         assert!(names.contains("cognition_identity_remember"));
-        assert!(names.contains("cognition_job_enqueue"));
+        assert!(names.contains("cognition_runtime_query"));
+        assert!(names.contains("cognition_runtime_mutate"));
         assert!(names.contains("cognition_spawn_turn_worker"));
         assert!(names.contains("cognition_capability"));
-        assert!(names.contains("cognition_runtime_workflow_run"));
+        assert!(!names.contains("cognition_job_enqueue"));
+        assert!(!names.contains("cognition_runtime_workflow_run"));
         assert!(names.contains("cognition_store_read"));
         assert!(names.contains("cognition_calendar_list"));
         assert!(names.contains("cognition_calendar_create"));

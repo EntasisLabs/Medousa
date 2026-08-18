@@ -103,14 +103,7 @@ struct EngineeringPointersOutput {
     pointers: Vec<super::coder_pointers::CoderEngineeringPointer>,
 }
 
-const GENERAL_MODE_RUNTIME_TOOLS: &[&str] = &[
-    "cognition_job_enqueue",
-    "cognition_grapheme_promote_to_job",
-    "cognition_grapheme_promote_to_recurring",
-    "cognition_grapheme_promote_last_run_to_recurring",
-    "cognition_mcp_promote_to_job",
-    "cognition_workshop_steer",
-];
+const GENERAL_MODE_RUNTIME_TOOLS: &[&str] = &["cognition_workshop_steer"];
 
 const CODER_PEER_SPAWN_TOOLS: &[&str] = &[
     "cognition_spawn_turn_worker",
@@ -272,6 +265,9 @@ fn automatic_memory_boundary(
 
 fn coder_tool_allowed(tool_id: ToolId, policy: &WorkPolicy) -> bool {
     let tool_name = tool_id.as_str();
+    if crate::public_api::is_public_api_tool(tool_name) {
+        return true;
+    }
     let os_shell = matches!(
         tool_name,
         crate::shell_tools::COGNITION_SHELL_RUN | crate::shell_tools::COGNITION_SHELL_STATUS
@@ -3113,6 +3109,8 @@ mod tests {
                 Tool::new("cognition_memory_store"),
                 Tool::new("cognition_web_search"),
                 Tool::new("cognition_capability"),
+                Tool::new("cognition_runtime_query"),
+                Tool::new("cognition_runtime_mutate"),
                 Tool::new("cognition_runtime_jobs_cancel"),
                 Tool::new("cognition_spawn_turn_worker").with_description("Host spawn worker"),
                 Tool::new("cognition_turn_begin_work").with_description("Enter bound Workshop"),
@@ -3392,7 +3390,7 @@ mod tests {
         );
         let tools = registry.list_tools().await.expect("list");
         assert!(
-            registry.visible_tools.lock().expect("visible tools").len() <= 24,
+            registry.visible_tools.lock().expect("visible tools").len() <= 26,
             "Coder bootstrap schema must remain intentionally bounded"
         );
         for memory_tool in super::super::coder_memory::CODER_MEMORY_TOOL_NAMES {
@@ -3443,6 +3441,16 @@ mod tests {
             tools
                 .iter()
                 .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_CAPABILITY)
+        );
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_RUNTIME_QUERY)
+        );
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_RUNTIME_MUTATE)
         );
         assert!(tools.iter().any(|tool| {
             tool.name.as_str() == crate::coding_tools::COGNITION_SHELL_SESSION_STATUS
@@ -3608,11 +3616,11 @@ mod tests {
                 json!({ "intent": "Cancel a durable runtime job", "job_id": "job-1" }),
             )
             .await
-            .expect_err("runtime control denied");
+            .expect_err("ghost runtime tool denied");
         assert!(
             denied
                 .to_string()
-                .contains("outside the Coder mode contract")
+                .contains("absent from the assembled Coder catalog")
         );
 
         registry

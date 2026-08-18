@@ -39,6 +39,7 @@ fn is_heavy_tool_name(name: &str) -> bool {
         || lower.starts_with("cognition_mcp")
         || lower.starts_with("cognition_capability")
         || lower.starts_with("cognition_spawn_turn_worker")
+        || lower.starts_with("cognition_runtime_mutate")
         || lower.starts_with("cognition_runtime_workflow")
 }
 
