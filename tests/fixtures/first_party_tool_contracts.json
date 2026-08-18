@@ -3,169 +3,6 @@
   "contracts": [
     {
       "registry": "coder_bound",
-      "name": "cognition_artifact_grep",
-      "description": "Search inside an HTML artifact source (literal case-insensitive match with line numbers). Use before cognition_artifact_write to locate CSS/HTML snippets.",
-      "input_schema": {
-        "properties": {
-          "artifact_id": {
-            "type": "string"
-          },
-          "context_lines": {
-            "maximum": 10,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "pattern": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "artifact_id",
-          "intent",
-          "pattern"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:workspace"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_artifact_list",
-      "description": "List HTML presentation artifacts for the current chat session (newest first). Workflow: list → grep/read → cognition_artifact_write to revise.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "limit": {
-            "maximum": 100,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "query": {
-            "description": "Optional filter on title or artifact_id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:workspace"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_artifact_read",
-      "description": "Read HTML source for a presentation artifact (budget-capped). Optional line_start/line_end for surgical edits.",
-      "input_schema": {
-        "properties": {
-          "artifact_id": {
-            "type": "string"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "line_end": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "line_start": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "max_chars": {
-            "maximum": 20000,
-            "minimum": 256,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "artifact_id",
-          "intent"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:workspace"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_artifact_write",
-      "description": "Create or revise an HTML presentation artifact. Pass artifact_id to publish a new revision (content-addressed). Use if_match_hash64 for optimistic concurrency. First-time publish: use cognition_ui_present. Canvas widgets using MedousaStore: get/set/delete return Promises — use async/await (wiki topic artifact_runtime).",
-      "input_schema": {
-        "properties": {
-          "artifact_id": {
-            "description": "When set, supersedes this artifact revision",
-            "type": "string"
-          },
-          "height": {
-            "maximum": 1200,
-            "minimum": 120,
-            "type": "integer"
-          },
-          "html": {
-            "description": "HTML fragment or document. MedousaStore get/set/delete are async — await in async init and handlers (cognition_environment_wiki topic=artifact_runtime).",
-            "type": "string"
-          },
-          "if_match_hash64": {
-            "description": "Optional hash64 of the artifact being revised",
-            "type": "string"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "presentation": {
-            "enum": [
-              "fullscreen",
-              "inline",
-              "panel"
-            ],
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "html",
-          "intent",
-          "presentation",
-          "title"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:workspace"
-      ]
-    },
-    {
-      "registry": "coder_bound",
       "name": "cognition_browser_act",
       "description": "Act on the shared human Web tab (click, type, press, scroll, select, wait). Requires a browser-capable client (Home desktop/iOS) and agent control of the tab. Use cognition_browser_snapshot first to discover selectors.",
       "input_schema": {
@@ -497,52 +334,6 @@
     },
     {
       "registry": "coder_bound",
-      "name": "cognition_code_apply_patch",
-      "description": "Write full content or replace an exact snippet in a file under the session root / Forge worktree. Coding domain only.",
-      "input_schema": {
-        "properties": {
-          "content": {
-            "description": "Full file content (write)",
-            "type": "string"
-          },
-          "expected_sha256": {
-            "description": "Required current digest from code_read, or `missing` for a new file",
-            "type": "string"
-          },
-          "find": {
-            "description": "Exact snippet to replace",
-            "type": "string"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
-          },
-          "replace": {
-            "description": "Replacement for `find`",
-            "type": "string"
-          },
-          "root": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "expected_sha256",
-          "intent",
-          "path"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
-      ]
-    },
-    {
-      "registry": "coder_bound",
       "name": "cognition_code_definition",
       "description": "Go-to-definition via the coding engine Orchestrator.",
       "input_schema": {
@@ -647,89 +438,6 @@
       "placements": [
         "coder:domain:intelligence",
         "coder:editor_context"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_code_read",
-      "description": "Read a whole text file when it fits, or a bounded line/byte range. Oversized whole-file requests return actionable range orientation instead of an opaque failure. Coding domain only.",
-      "input_schema": {
-        "properties": {
-          "byte_end": {
-            "description": "Optional exclusive byte end; cannot be combined with line ranges",
-            "minimum": 1,
-            "type": "integer"
-          },
-          "byte_start": {
-            "description": "Optional 0-based byte start; cannot be combined with line ranges",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "line_end": {
-            "description": "Optional 1-based inclusive line end",
-            "minimum": 1,
-            "type": "integer"
-          },
-          "line_start": {
-            "description": "Optional 1-based inclusive line start",
-            "minimum": 1,
-            "type": "integer"
-          },
-          "path": {
-            "description": "Absolute or root-relative file path",
-            "type": "string"
-          },
-          "root": {
-            "description": "Optional explicit root (default: scripts library)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "path"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_code_search",
-      "description": "Search for a substring under the scripts root or a Forge worktree. Coding domain only.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "max_results": {
-            "type": "integer"
-          },
-          "query": {
-            "type": "string"
-          },
-          "root": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
       ]
     },
     {
@@ -2369,6 +2077,222 @@
     },
     {
       "registry": "coder_bound",
+      "name": "cognition_store_read",
+      "description": "Read or search vault notes, HTML artifacts, code, or saved Grapheme scripts. store=vault|artifacts|code|scripts. op=list|read|search. search with path = in-file match; without path = corpus search.",
+      "input_schema": {
+        "properties": {
+          "byte_end": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "byte_start": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "context_lines": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "facet": {
+            "type": "string"
+          },
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
+            "type": "string"
+          },
+          "limit": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "line_end": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "line_start": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_chars": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_results": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "module": {
+            "type": "string"
+          },
+          "op": {
+            "enum": [
+              "list",
+              "read",
+              "search"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "root": {
+            "type": "string"
+          },
+          "semantic_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "store": {
+            "enum": [
+              "artifacts",
+              "code",
+              "scripts",
+              "vault"
+            ],
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          },
+          "tag_prefix": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "intent",
+          "op",
+          "store"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:domain:workspace",
+        "coder:initial"
+      ]
+    },
+    {
+      "registry": "coder_bound",
+      "name": "cognition_store_write",
+      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. store=vault|artifacts|code|scripts. op=write|delete|move. Code write uses content or find/replace plus expected_sha256.",
+      "input_schema": {
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "auto_workshop_tags": {
+            "type": "boolean"
+          },
+          "content": {
+            "type": "string"
+          },
+          "expected_sha256": {
+            "type": "string"
+          },
+          "find": {
+            "type": "string"
+          },
+          "height": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "if_match": {
+            "type": "string"
+          },
+          "if_match_hash64": {
+            "type": "string"
+          },
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
+            "type": "string"
+          },
+          "modules": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "op": {
+            "enum": [
+              "delete",
+              "move",
+              "write"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "presentation": {
+            "type": "string"
+          },
+          "replace": {
+            "type": "string"
+          },
+          "root": {
+            "type": "string"
+          },
+          "script_intent": {
+            "type": "string"
+          },
+          "semantic_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "store": {
+            "enum": [
+              "artifacts",
+              "code",
+              "scripts",
+              "vault"
+            ],
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          },
+          "to_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "intent",
+          "op",
+          "store"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:domain:workspace",
+        "coder:initial"
+      ]
+    },
+    {
+      "registry": "coder_bound",
       "name": "cognition_turn_begin_work",
       "description": "Spawn a peer sub-agent for parallel work on this undertaking; does not leave Coder / does not enter Chat workshop.",
       "input_schema": {
@@ -2633,212 +2557,6 @@
     },
     {
       "registry": "coder_bound",
-      "name": "cognition_vault_grep",
-      "description": "Search inside a vault note (literal case-insensitive match with line numbers). Use cognition_vault_search to discover notes; use grep for surgical edits.",
-      "input_schema": {
-        "properties": {
-          "context_lines": {
-            "maximum": 10,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "path": {
-            "type": "string"
-          },
-          "pattern": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "path",
-          "pattern"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:workspace"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_vault_list",
-      "description": "List vault notes (path + title + semantic tags). Optional tag filter (match-all).",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "prefix": {
-            "description": "Optional path prefix filter",
-            "type": "string"
-          },
-          "semantic_tags": {
-            "description": "Indexed-style tag filter (match-all), aligned with Locus tags",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "tag_prefix": {
-            "description": "Filter notes with tags sharing this prefix",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:workspace"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_vault_read",
-      "description": "Read a vault note body (budget-capped).",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "line_end": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "line_start": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "max_chars": {
-            "maximum": 20000,
-            "minimum": 256,
-            "type": "integer"
-          },
-          "path": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "path"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:workspace"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_vault_search",
-      "description": "Search vault notes by full text and/or semantic tags (match-all).",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "limit": {
-            "maximum": 50,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "q": {
-            "description": "Full-text query (optional if semantic_tags set)",
-            "type": "string"
-          },
-          "semantic_tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "intent"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:workspace"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_vault_write",
-      "description": "Create or update a vault markdown note. Merges Locus-aligned semantic tags into frontmatter.",
-      "input_schema": {
-        "properties": {
-          "auto_workshop_tags": {
-            "description": "Merge medousa/vault/session/profile/chat defaults (default true)",
-            "type": "boolean"
-          },
-          "content": {
-            "type": "string"
-          },
-          "if_match": {
-            "description": "Optional content_hash for optimistic concurrency",
-            "type": "string"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
-          },
-          "semantic_tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "description": "Chat session for workshop linking tags (defaults to current turn session)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "content",
-          "intent",
-          "path"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:workspace"
-      ]
-    },
-    {
-      "registry": "coder_bound",
       "name": "cognition_web_search",
       "description": "Search the public web with one call. Uses configured provider preference and binding fallbacks (web.<provider>, then websearch.search). For deep reports use mode=research_report.",
       "input_schema": {
@@ -2956,186 +2674,6 @@
       "output_schema_present": true,
       "placements": [
         "coder:unbound"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_artifact_delete",
-      "description": "Delete an HTML presentation artifact and its revision chain from the session store. Use cognition_artifact_list to discover artifact_id values first.",
-      "input_schema": {
-        "properties": {
-          "artifact_id": {
-            "description": "Presentation artifact id or alias to delete",
-            "type": "string"
-          }
-        },
-        "required": [
-          "artifact_id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:documents",
-        "general:domain:presentation",
-        "workshop:authorized:general",
-        "workshop:authorized:research"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_artifact_grep",
-      "description": "Search inside an HTML artifact source (literal case-insensitive match with line numbers). Use before cognition_artifact_write to locate CSS/HTML snippets.",
-      "input_schema": {
-        "properties": {
-          "artifact_id": {
-            "type": "string"
-          },
-          "context_lines": {
-            "maximum": 10,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "pattern": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "artifact_id",
-          "pattern"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:bootstrap",
-        "general:domain:documents",
-        "general:domain:presentation",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:presentation"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_artifact_list",
-      "description": "List HTML presentation artifacts for the current chat session (newest first). Workflow: list → grep/read → cognition_artifact_write to revise.",
-      "input_schema": {
-        "properties": {
-          "limit": {
-            "maximum": 100,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "query": {
-            "description": "Optional filter on title or artifact_id",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:bootstrap",
-        "general:domain:documents",
-        "general:domain:presentation",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:presentation"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_artifact_read",
-      "description": "Read HTML source for a presentation artifact (budget-capped). Optional line_start/line_end for surgical edits.",
-      "input_schema": {
-        "properties": {
-          "artifact_id": {
-            "type": "string"
-          },
-          "line_end": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "line_start": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "max_chars": {
-            "maximum": 20000,
-            "minimum": 256,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "artifact_id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:bootstrap",
-        "general:domain:documents",
-        "general:domain:presentation",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:presentation"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_artifact_write",
-      "description": "Create or revise an HTML presentation artifact. Pass artifact_id to publish a new revision (content-addressed). Use if_match_hash64 for optimistic concurrency. First-time publish: use cognition_ui_present. Canvas widgets using MedousaStore: get/set/delete return Promises — use async/await (wiki topic artifact_runtime).",
-      "input_schema": {
-        "properties": {
-          "artifact_id": {
-            "description": "When set, supersedes this artifact revision",
-            "type": "string"
-          },
-          "height": {
-            "maximum": 1200,
-            "minimum": 120,
-            "type": "integer"
-          },
-          "html": {
-            "description": "HTML fragment or document. MedousaStore get/set/delete are async — await in async init and handlers (cognition_environment_wiki topic=artifact_runtime).",
-            "type": "string"
-          },
-          "if_match_hash64": {
-            "description": "Optional hash64 of the artifact being revised",
-            "type": "string"
-          },
-          "presentation": {
-            "enum": [
-              "fullscreen",
-              "inline",
-              "panel"
-            ],
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "html",
-          "presentation",
-          "title"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:documents",
-        "general:domain:presentation",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:presentation"
       ]
     },
     {
@@ -3738,46 +3276,6 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_code_apply_patch",
-      "description": "Write full content or replace an exact snippet in a file under the session root / Forge worktree. Coding domain only.",
-      "input_schema": {
-        "properties": {
-          "content": {
-            "description": "Full file content (write)",
-            "type": "string"
-          },
-          "expected_sha256": {
-            "description": "Required current digest from code_read, or `missing` for a new file",
-            "type": "string"
-          },
-          "find": {
-            "description": "Exact snippet to replace",
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
-          },
-          "replace": {
-            "description": "Replacement for `find`",
-            "type": "string"
-          },
-          "root": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "expected_sha256",
-          "path"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:domain:coding"
-      ]
-    },
-    {
-      "registry": "general_runtime",
       "name": "cognition_code_definition",
       "description": "Go-to-definition via the coding engine Orchestrator.",
       "input_schema": {
@@ -3867,77 +3365,6 @@
         "workshop:authorized:general",
         "workshop:authorized:research",
         "workshop:domain:execute"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_code_read",
-      "description": "Read a whole text file when it fits, or a bounded line/byte range. Oversized whole-file requests return actionable range orientation instead of an opaque failure. Coding domain only.",
-      "input_schema": {
-        "properties": {
-          "byte_end": {
-            "description": "Optional exclusive byte end; cannot be combined with line ranges",
-            "minimum": 1,
-            "type": "integer"
-          },
-          "byte_start": {
-            "description": "Optional 0-based byte start; cannot be combined with line ranges",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "line_end": {
-            "description": "Optional 1-based inclusive line end",
-            "minimum": 1,
-            "type": "integer"
-          },
-          "line_start": {
-            "description": "Optional 1-based inclusive line start",
-            "minimum": 1,
-            "type": "integer"
-          },
-          "path": {
-            "description": "Absolute or root-relative file path",
-            "type": "string"
-          },
-          "root": {
-            "description": "Optional explicit root (default: scripts library)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "path"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:domain:coding"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_code_search",
-      "description": "Search for a substring under the scripts root or a Forge worktree. Coding domain only.",
-      "input_schema": {
-        "properties": {
-          "max_results": {
-            "type": "integer"
-          },
-          "query": {
-            "type": "string"
-          },
-          "root": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:domain:coding"
       ]
     },
     {
@@ -5387,144 +4814,6 @@
         "workshop:authorized:general",
         "workshop:authorized:research",
         "workshop:domain:execute"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_script_list",
-      "description": "List saved Grapheme scripts by optional module or tag filter.",
-      "input_schema": {
-        "properties": {
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "module": {
-            "type": "string"
-          },
-          "tag": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:catalog",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:scripts"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_script_load",
-      "description": "Load a saved Grapheme script body and metadata by id for run or edit.",
-      "input_schema": {
-        "properties": {
-          "id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:catalog",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:bootstrap"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_script_save",
-      "description": "Save a reusable Grapheme script to the workshop library with module tags and intent metadata. Turn start may inject [MEDOUSA_GRAPHEME_SCRIPTS] matches — load full body with cognition_grapheme_script_load.",
-      "input_schema": {
-        "properties": {
-          "body": {
-            "description": "Full Grapheme script source",
-            "type": "string"
-          },
-          "id": {
-            "description": "Optional stable id (slug derived from name when omitted)",
-            "type": "string"
-          },
-          "intent": {
-            "description": "Short intent label for search/recall",
-            "type": "string"
-          },
-          "modules": {
-            "description": "Module tags e.g. web, http, core",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "name": {
-            "type": "string"
-          },
-          "session_id": {
-            "description": "Optional source session for provenance",
-            "type": "string"
-          },
-          "tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "body",
-          "name"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:catalog",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:scripts"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_script_search",
-      "description": "Keyword search over saved Grapheme scripts (name, modules, tags, intent, body). Use before authoring when [MEDOUSA_GRAPHEME_SCRIPTS] suggests a match.",
-      "input_schema": {
-        "properties": {
-          "limit": {
-            "maximum": 50,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "module": {
-            "type": "string"
-          },
-          "q": {
-            "type": "string"
-          },
-          "tag": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "q"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:catalog",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:scripts"
       ]
     },
     {
@@ -7574,7 +6863,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_spawn_turn_worker",
-      "description": "Delegate heavy work to a background turn worker (web/Grapheme execution, memory rituals). Returns immediately; the worker runs tools with a focused policy, then a synthesis pass delivers the final user-facing answer. Intents: memory.avec_calibrate | memory.context | research | general. Optional manuscript_id loads a YAML specialty (voice, tool allowlist, identity pins, OpenShell/skill tools). Manuscript spec.worker.stage_role selects a StageRoutingMatrix route (extractor, verifier, …); spec.worker.model_hint overrides provider/model. Spawn-time stage_role/model_hint win over manuscript defaults. Prefer omitting model_hint (or set model_hint=auto) so workshop StageRoutingMatrix / host preferences choose provider+model. Only pass provider:model when the user explicitly asked for that combo. Bare model ids infer the provider when unambiguous; otherwise they inherit the host turn provider — never the process default. Use manuscript_id=echo-skill or openshell-researcher for sandbox script execution. Put resolved capability/module/op and any host evidence into task — workers do not see parent chat.",
+      "description": "Delegate heavy work to a background turn worker (web/Grapheme execution, memory rituals). Returns immediately with user_ack; the worker runs tools with a focused policy, then results return to the host so it can answer. Intents: memory.avec_calibrate | memory.context | research | general. Optional manuscript_id loads a YAML specialty (voice, tool allowlist, identity pins, OpenShell/skill tools). Manuscript spec.worker.stage_role selects a StageRoutingMatrix route (extractor, verifier, …); spec.worker.model_hint overrides provider/model. Spawn-time stage_role/model_hint win over manuscript defaults. Prefer omitting model_hint (or set model_hint=auto) so workshop StageRoutingMatrix / host preferences choose provider+model. Only pass provider:model when the user explicitly asked for that combo. Bare model ids infer the provider when unambiguous; otherwise they inherit the host turn provider — never the process default. Use manuscript_id=echo-skill or openshell-researcher for sandbox script execution. Put resolved capability/module/op and any host evidence into task — workers do not see parent chat.",
       "input_schema": {
         "properties": {
           "intent": {
@@ -7612,6 +6901,234 @@
       "placements": [
         "general:authorized",
         "general:bootstrap"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_store_read",
+      "description": "Read or search vault notes, HTML artifacts, code, or saved Grapheme scripts. store=vault|artifacts|code|scripts. op=list|read|search. search with path = in-file match; without path = corpus search.",
+      "input_schema": {
+        "properties": {
+          "byte_end": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "byte_start": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "context_lines": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "facet": {
+            "type": "string"
+          },
+          "limit": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "line_end": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "line_start": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_chars": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_results": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "module": {
+            "type": "string"
+          },
+          "op": {
+            "enum": [
+              "list",
+              "read",
+              "search"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "root": {
+            "type": "string"
+          },
+          "semantic_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "store": {
+            "enum": [
+              "artifacts",
+              "code",
+              "scripts",
+              "vault"
+            ],
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          },
+          "tag_prefix": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "op",
+          "store"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:bootstrap",
+        "general:domain:catalog",
+        "general:domain:documents",
+        "general:domain:presentation",
+        "general:domain:vault",
+        "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
+        "workshop:authorized:research",
+        "workshop:bootstrap",
+        "workshop:domain:presentation",
+        "workshop:domain:scripts",
+        "workshop:domain:vault"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_store_write",
+      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. store=vault|artifacts|code|scripts. op=write|delete|move. Code write uses content or find/replace plus expected_sha256.",
+      "input_schema": {
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "auto_workshop_tags": {
+            "type": "boolean"
+          },
+          "content": {
+            "type": "string"
+          },
+          "expected_sha256": {
+            "type": "string"
+          },
+          "find": {
+            "type": "string"
+          },
+          "height": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "if_match": {
+            "type": "string"
+          },
+          "if_match_hash64": {
+            "type": "string"
+          },
+          "modules": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "op": {
+            "enum": [
+              "delete",
+              "move",
+              "write"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "presentation": {
+            "type": "string"
+          },
+          "replace": {
+            "type": "string"
+          },
+          "root": {
+            "type": "string"
+          },
+          "script_intent": {
+            "type": "string"
+          },
+          "semantic_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "store": {
+            "enum": [
+              "artifacts",
+              "code",
+              "scripts",
+              "vault"
+            ],
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          },
+          "to_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "op",
+          "store"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:bootstrap",
+        "general:domain:catalog",
+        "general:domain:documents",
+        "general:domain:presentation",
+        "general:domain:vault",
+        "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
+        "workshop:authorized:research",
+        "workshop:bootstrap",
+        "workshop:domain:presentation",
+        "workshop:domain:scripts",
+        "workshop:domain:vault"
       ]
     },
     {
@@ -8077,7 +7594,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_ui_present",
-      "description": "Present an HTML artifact in chat (inline card, side panel, or fullscreen) when the connected client advertises supports_ui_artifacts. Persist workflow: publish HTML here, then persist=true + surface_id (custom surface only) + component_id + slot to pin on the canvas. For first-time publish only — use cognition_artifact_write to revise an existing artifact. Canvas widgets: use MedousaStore (not localStorage); get/set/delete are async — await them in async handlers. inline: compact preview card. panel/fullscreen: use a transparent outer page background (no hard-coded #000 body); center content up to ~900px wide. Use height only for inline preview cap.",
+      "description": "Present an HTML artifact in chat (inline card, side panel, or fullscreen) when the connected client advertises supports_ui_artifacts. Persist workflow: publish HTML here, then persist=true + surface_id (custom surface only) + component_id + slot to pin on the canvas. For first-time publish only — use cognition_store_write store=artifacts to revise an existing artifact. Canvas widgets: use MedousaStore (not localStorage); get/set/delete are async — await them in async handlers. inline: compact preview card. panel/fullscreen: use a transparent outer page background (no hard-coded #000 body); center content up to ~900px wide. Use height only for inline preview cap.",
       "input_schema": {
         "properties": {
           "component_id": {
@@ -8234,273 +7751,6 @@
         "workshop:authorized:memory_avec_calibrate",
         "workshop:authorized:memory_context",
         "workshop:authorized:research"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_vault_delete",
-      "description": "Soft-delete a vault markdown note (moves to .trash). Use after confirming the path with list/read.",
-      "input_schema": {
-        "properties": {
-          "path": {
-            "description": "Relative vault note path to delete",
-            "type": "string"
-          }
-        },
-        "required": [
-          "path"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:documents",
-        "general:domain:vault",
-        "workshop:domain:vault"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_vault_grep",
-      "description": "Search inside a vault note (literal case-insensitive match with line numbers). Use cognition_vault_search to discover notes; use grep for surgical edits.",
-      "input_schema": {
-        "properties": {
-          "context_lines": {
-            "maximum": 10,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "path": {
-            "type": "string"
-          },
-          "pattern": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "path",
-          "pattern"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:bootstrap",
-        "general:domain:documents",
-        "general:domain:vault",
-        "workshop:domain:vault"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_vault_list",
-      "description": "List vault notes (path + title + semantic tags). Optional tag filter (match-all).",
-      "input_schema": {
-        "properties": {
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "prefix": {
-            "description": "Optional path prefix filter",
-            "type": "string"
-          },
-          "semantic_tags": {
-            "description": "Indexed-style tag filter (match-all), aligned with Locus tags",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "tag_prefix": {
-            "description": "Filter notes with tags sharing this prefix",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:documents",
-        "general:domain:vault",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:vault"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_vault_move",
-      "description": "Move/rename a vault note to a new relative path. Creates parent folders as needed and removes the source note.",
-      "input_schema": {
-        "properties": {
-          "from_path": {
-            "description": "Existing note path",
-            "type": "string"
-          },
-          "to_path": {
-            "description": "Destination path",
-            "type": "string"
-          }
-        },
-        "required": [
-          "from_path",
-          "to_path"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:documents",
-        "general:domain:vault",
-        "workshop:domain:vault"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_vault_read",
-      "description": "Read a vault note body (budget-capped).",
-      "input_schema": {
-        "properties": {
-          "line_end": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "line_start": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "max_chars": {
-            "maximum": 20000,
-            "minimum": 256,
-            "type": "integer"
-          },
-          "path": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "path"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:documents",
-        "general:domain:vault",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:vault"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_vault_search",
-      "description": "Search vault notes by full text and/or semantic tags (match-all).",
-      "input_schema": {
-        "properties": {
-          "limit": {
-            "maximum": 50,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "q": {
-            "description": "Full-text query (optional if semantic_tags set)",
-            "type": "string"
-          },
-          "semantic_tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:bootstrap",
-        "general:domain:documents",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:vault"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_vault_tags",
-      "description": "List semantic tags used across vault notes (shared vocabulary with Locus memory).",
-      "input_schema": {
-        "properties": {
-          "limit": {
-            "maximum": 500,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "prefix": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:vault",
-        "workshop:domain:vault"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_vault_write",
-      "description": "Create or update a vault markdown note. Merges Locus-aligned semantic tags into frontmatter.",
-      "input_schema": {
-        "properties": {
-          "auto_workshop_tags": {
-            "description": "Merge medousa/vault/session/profile/chat defaults (default true)",
-            "type": "boolean"
-          },
-          "content": {
-            "type": "string"
-          },
-          "if_match": {
-            "description": "Optional content_hash for optimistic concurrency",
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
-          },
-          "semantic_tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "description": "Chat session for workshop linking tags (defaults to current turn session)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "content",
-          "path"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:documents",
-        "general:domain:vault",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:vault"
       ]
     },
     {

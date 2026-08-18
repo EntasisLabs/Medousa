@@ -271,7 +271,7 @@ const TOPICS: &[WikiTopic] = &[
         client(.98): "supports_ui_artifacts must be true",
         surface_exists(.99): "custom surface must be applied before persist"
     },
-    revise(.97): "cognition_artifact_write with existing artifact_id — not repeat ui_present for same content",
+    revise(.97): "cognition_store_write store=artifacts with existing artifact_id — not repeat ui_present for same content",
     html_discipline(.95): {
         inline(.95): "compact card; optional height px cap",
         panel_fullscreen(.94): "transparent outer background; ~900px content — avoid full-page #000 body"
@@ -576,7 +576,7 @@ const TOPICS: &[WikiTopic] = &[
         future_controls(.95): "media_embed config.hidden reserved — future MedousaWidget.invoke(componentId, action) sibling to MedousaStore",
         probe(.95): "probe=true runs MedousaStore.ready + round-trip when Home client online"
     },
-    fix_hints(.96): "issues[].fix_hint + suggested_actions[] — patch via cognition_artifact_write, re-run doctor",
+    fix_hints(.96): "issues[].fix_hint + suggested_actions[] — patch via cognition_store_write store=artifacts, re-run doctor",
     http(.96): "GET /v1/environment/status?include_runtime=true mirrors lightweight runtime for Settings Canvas"#,
         related: &[
             "custom_view_compose",
@@ -587,7 +587,7 @@ const TOPICS: &[WikiTopic] = &[
         call_next: &[
             "cognition_custom_view_doctor",
             "cognition_environment_patch",
-            "cognition_artifact_write",
+            "cognition_store_write",
         ],
     },
     WikiTopic {
@@ -629,7 +629,7 @@ const TOPICS: &[WikiTopic] = &[
             "component_schema",
             "environment_theme",
         ],
-        call_next: &["cognition_custom_view_doctor", "cognition_artifact_write"],
+        call_next: &["cognition_custom_view_doctor", "cognition_store_write"],
     },
     WikiTopic {
         id: "environment_theme",
@@ -672,7 +672,7 @@ const TOPICS: &[WikiTopic] = &[
         render_native_scene(.98): "enriched markdown embeds (```card``` / ```carousel``` / ```actions``` / ```callout``` / ```section``` / ```chips``` / ```media``` / ```cite``` / ```compare``` / ```plan``` / ```timeline``` / ```shortlist``` / ```decision``` / ```brief``` / ```dashboard``` / ```chart``` / ```mermaid```) for chat; cognition_ui_build for streaming scenes",
         persist_scene(.98): "cognition_component_create type:scene, config.scene:{ops:[…]} — durable Liquid scene pinned to a custom surface",
         publish_html(.98): "cognition_ui_present",
-        edit_html(.97): "cognition_artifact_write",
+        edit_html(.97): "cognition_store_write store=artifacts",
         stack_layout(.98): "cognition_layout_get / cognition_layout_apply / cognition_layout_reset",
         feed_subscribe(.96): "cognition_feed_subscribe",
         recurring_feeds(.96): "cognition_runtime_recurring_register feeds.feed_ids",

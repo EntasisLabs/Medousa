@@ -37,9 +37,6 @@ const COGNITION_CODER_SHELL_RUN_ID: ToolId = ToolId::new(COGNITION_CODER_SHELL_R
 const COGNITION_CODER_SHELL_STATUS_ID: ToolId = ToolId::new(COGNITION_CODER_SHELL_STATUS);
 
 pub const CODING_COGNITION_TOOLS: &[&str] = &[
-    COGNITION_CODE_READ,
-    COGNITION_CODE_SEARCH,
-    COGNITION_CODE_APPLY_PATCH,
     COGNITION_SHELL_SESSION_STATUS,
     COGNITION_SHELL_SESSION_RUN,
     COGNITION_SHELL_SESSION_INTERRUPT,
@@ -1920,12 +1917,30 @@ impl CognitionCoderShellRunTool {
     }
 }
 
+pub(crate) async fn invoke_code_read_json(
+    input: serde_json::Value,
+) -> StasisResult<serde_json::Value> {
+    use stasis::application::orchestration::tool_registry::StasisTool;
+    CognitionCodeReadTool.invoke(input).await
+}
+
+pub(crate) async fn invoke_code_search_json(
+    input: serde_json::Value,
+) -> StasisResult<serde_json::Value> {
+    use stasis::application::orchestration::tool_registry::StasisTool;
+    CognitionCodeSearchTool.invoke(input).await
+}
+
+pub(crate) async fn invoke_code_apply_patch_json(
+    input: serde_json::Value,
+) -> StasisResult<serde_json::Value> {
+    use stasis::application::orchestration::tool_registry::StasisTool;
+    CognitionCodeApplyPatchTool.invoke(input).await
+}
+
 pub fn register_coding_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
 ) -> stasis::prelude::Result<()> {
-    registry.register_typed_tool(CognitionCodeReadTool)?;
-    registry.register_typed_tool(CognitionCodeSearchTool)?;
-    registry.register_typed_tool(CognitionCodeApplyPatchTool)?;
     registry.register_typed_tool(CognitionShellSessionStatusTool)?;
     registry.register_typed_tool(CognitionShellSessionRunTool)?;
     registry.register_typed_tool(CognitionShellSessionInterruptTool)?;

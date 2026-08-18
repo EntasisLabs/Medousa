@@ -139,7 +139,7 @@ Paths must be relative vault paths (no `..` or leading `/`).
 |------|------|
 | One-shot surface + HTML + feeds + recurring | `cognition_custom_view_compose` |
 | First HTML publish | `cognition_ui_present` (`persist=true` + `surface_id` + `component_id` + `slot`) |
-| Revise HTML | `cognition_artifact_write` (`artifact_id`) |
+| Revise HTML | `cognition_store_write` (`store=artifacts`, `artifact_id`) |
 | Incremental spec edits | `cognition_environment_patch` (agent tool only — SDK uses `environment().put_spec`) |
 | Layout tree only | `cognition_layout_apply` (immediate, no approval) |
 | Full spec replace | `cognition_environment_propose` → operator **Apply** in Settings → Canvas |
@@ -282,7 +282,7 @@ Common issue codes: `STATIC_LOCALSTORAGE`, `STATIC_STORE_SYNC_USAGE`, `STATIC_SL
 1. `cognition_environment_wiki(topic=example_writing_studio)`
 2. `cognition_custom_view_compose` with `surface_id`, `component_id`, `html`, optional `layout_root`
 3. Operator approves if preset rewrite pending
-4. Open surface from nav; revise HTML with `cognition_artifact_write`
+4. Open surface from nav; revise HTML with `cognition_store_write` (`store=artifacts`)
 5. `cognition_custom_view_doctor` until `issues` empty
 
 ---
@@ -295,7 +295,7 @@ Common issue codes: `STATIC_LOCALSTORAGE`, `STATIC_STORE_SYNC_USAGE`, `STATIC_SL
 | Policy / schema | `cognition_environment_wiki` |
 | Incremental edit | `cognition_environment_patch` |
 | Diagnose | `cognition_custom_view_doctor` |
-| HTML revise | `cognition_artifact_write` |
+| HTML revise | `cognition_store_write` (`store=artifacts`) |
 
 ---
 

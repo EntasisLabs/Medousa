@@ -30,18 +30,6 @@ const EXTERNAL_OR_CONDITIONAL_POLICY_REFERENCES: &[(&str, &str)] = &[];
 
 const HOST_BOOTSTRAP_AUTHORIZATION_EXCEPTIONS: &[(&str, &str)] = &[
     (
-        "cognition_artifact_grep",
-        "advertised for handoff, but execution remains Workshop-scoped",
-    ),
-    (
-        "cognition_artifact_list",
-        "advertised for handoff, but execution remains Workshop-scoped",
-    ),
-    (
-        "cognition_artifact_read",
-        "advertised for handoff, but execution remains Workshop-scoped",
-    ),
-    (
         "cognition_ui_build",
         "advertised for handoff, but execution remains Workshop-scoped",
     ),
@@ -51,10 +39,6 @@ const HOST_BOOTSTRAP_AUTHORIZATION_EXCEPTIONS: &[(&str, &str)] = &[
     ),
     (
         "cognition_ui_scene",
-        "advertised for handoff, but execution remains Workshop-scoped",
-    ),
-    (
-        "cognition_vault_grep",
         "advertised for handoff, but execution remains Workshop-scoped",
     ),
 ];

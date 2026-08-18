@@ -195,6 +195,7 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         | "cognition_memory_list"
         | "cognition_memory_schema"
         | "cognition_memory_moods"
+        | "cognition_store_read"
         | "cognition_runtime_jobs_list"
         | "cognition_runtime_jobs_status"
         | "cognition_runtime_delivery_status"
@@ -337,5 +338,40 @@ mod tests {
         ];
         let settings = ParallelExecutionSettings::default();
         assert!(parallel_tool_batch_allowed(&calls, &settings).is_ok());
+    }
+
+    #[test]
+    fn store_read_is_parallel_safe_and_store_write_is_mutating() {
+        let read = json!({ "store": "vault", "op": "search", "query": "notes" });
+        let write = json!({ "store": "vault", "op": "write", "path": "a.md", "content": "x" });
+        assert_eq!(
+            classify_tool_call("cognition_store_read", &read),
+            StepExecutionClass::ReadOnly
+        );
+        assert_eq!(
+            classify_tool_call("cognition_store_write", &write),
+            StepExecutionClass::Mutating
+        );
+        let settings = ParallelExecutionSettings::default();
+        assert!(
+            parallel_tool_batch_allowed(
+                &[
+                    ("cognition_store_read".to_string(), read.clone()),
+                    ("cognition_store_read".to_string(), read),
+                ],
+                &settings
+            )
+            .is_ok()
+        );
+        assert!(
+            parallel_tool_batch_allowed(
+                &[
+                    ("cognition_store_read".to_string(), json!({})),
+                    ("cognition_store_write".to_string(), write),
+                ],
+                &settings
+            )
+            .is_err()
+        );
     }
 }

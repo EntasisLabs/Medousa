@@ -389,6 +389,7 @@ pub fn persist_and_enrich_artifact_refs(
 pub fn tool_payload_is_requeryable(tool_name: &str) -> bool {
     crate::code_intelligence_tools::is_code_cognition_tool(tool_name)
         || crate::detamu_tools::is_detamu_cognition_tool(tool_name)
+        || tool_name == crate::public_api::COGNITION_STORE_READ
         || tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_STATUS
         || tool_name == super::coder_tools::COGNITION_CODER_EVIDENCE_READ
 }
@@ -638,7 +639,9 @@ mod tests {
 
     #[test]
     fn code_and_detamu_payloads_are_requeried_instead_of_persisted() {
-        assert!(tool_payload_is_requeryable("cognition_code_read"));
+        assert!(tool_payload_is_requeryable(
+            crate::public_api::COGNITION_STORE_READ
+        ));
         assert!(tool_payload_is_requeryable("cognition_code_diagnostics"));
         assert!(tool_payload_is_requeryable("cognition_detamu_impact"));
         assert!(tool_payload_is_requeryable(

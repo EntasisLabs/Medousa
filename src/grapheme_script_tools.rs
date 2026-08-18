@@ -23,19 +23,9 @@ const COGNITION_GRAPHEME_SCRIPT_LOAD_ID: ToolId = ToolId::new(COGNITION_GRAPHEME
 const COGNITION_GRAPHEME_SCRIPT_SAVE_ID: ToolId = ToolId::new(COGNITION_GRAPHEME_SCRIPT_SAVE);
 
 pub fn register_grapheme_script_tools(
-    registry: &mut impl crate::typed_tools::ToolRegistration,
-    event_tx: mpsc::Sender<TuiEvent>,
+    _registry: &mut impl crate::typed_tools::ToolRegistration,
+    _event_tx: mpsc::Sender<TuiEvent>,
 ) -> StasisResult<()> {
-    registry.register_typed_tool(CognitionGraphemeScriptSaveTool {
-        event_tx: event_tx.clone(),
-    })?;
-    registry.register_typed_tool(CognitionGraphemeScriptListTool {
-        event_tx: event_tx.clone(),
-    })?;
-    registry.register_typed_tool(CognitionGraphemeScriptSearchTool {
-        event_tx: event_tx.clone(),
-    })?;
-    registry.register_typed_tool(CognitionGraphemeScriptLoadTool { event_tx })?;
     Ok(())
 }
 
@@ -68,6 +58,12 @@ where
 
 pub struct CognitionGraphemeScriptSaveTool {
     event_tx: mpsc::Sender<TuiEvent>,
+}
+
+impl CognitionGraphemeScriptSaveTool {
+    pub(crate) fn new(event_tx: mpsc::Sender<TuiEvent>) -> Self {
+        Self { event_tx }
+    }
 }
 
 #[derive(Debug, JsonSchema)]
@@ -239,6 +235,12 @@ pub struct CognitionGraphemeScriptListTool {
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
+impl CognitionGraphemeScriptListTool {
+    pub(crate) fn new(event_tx: mpsc::Sender<TuiEvent>) -> Self {
+        Self { event_tx }
+    }
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GraphemeScriptListInput {
     #[serde(default)]
@@ -320,6 +322,12 @@ impl CognitionGraphemeScriptListTool {
 
 pub struct CognitionGraphemeScriptSearchTool {
     event_tx: mpsc::Sender<TuiEvent>,
+}
+
+impl CognitionGraphemeScriptSearchTool {
+    pub(crate) fn new(event_tx: mpsc::Sender<TuiEvent>) -> Self {
+        Self { event_tx }
+    }
 }
 
 #[derive(Debug, JsonSchema)]
@@ -430,6 +438,12 @@ impl CognitionGraphemeScriptSearchTool {
 
 pub struct CognitionGraphemeScriptLoadTool {
     event_tx: mpsc::Sender<TuiEvent>,
+}
+
+impl CognitionGraphemeScriptLoadTool {
+    pub(crate) fn new(event_tx: mpsc::Sender<TuiEvent>) -> Self {
+        Self { event_tx }
+    }
 }
 
 #[derive(Debug, JsonSchema)]

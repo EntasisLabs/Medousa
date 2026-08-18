@@ -318,7 +318,16 @@ pub fn promote_run_to_step(
         );
     }
 
-    if tool.contains("prompt") || tool == "cognition_vault_search" {
+    if tool.contains("prompt")
+        || tool == "cognition_vault_search"
+        || (tool == crate::public_api::COGNITION_STORE_READ
+            && input.get("store").and_then(Value::as_str) == Some("vault")
+            && input.get("op").and_then(Value::as_str) == Some("search")
+            && input
+                .get("path")
+                .and_then(Value::as_str)
+                .is_none_or(|path| path.trim().is_empty()))
+    {
         let prompt = input
             .get("query")
             .and_then(Value::as_str)

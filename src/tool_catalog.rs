@@ -119,7 +119,7 @@ fn add_effects_and_capabilities(index: &mut ToolPlacementIndex) {
         "cognition_utility_day_of_week",
         "cognition_utility_time_now",
         "cognition_utility_uuid",
-        "cognition_vault_list",
+        "cognition_store_read",
         crate::agent_runtime::coder_tools::COGNITION_ENGINEERING_POINTERS,
     ] {
         index.set_effect(ToolId::new(name), ToolEffect::Observe);
@@ -194,11 +194,13 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
         "cognition_identity_remember",
         "Remember durable personal facts in identity memory",
     ),
-    ("cognition_vault_search", "Search vault notes"),
-    ("cognition_vault_grep", "Grep inside a vault note by line"),
     (
-        "cognition_vault_tags",
-        "List semantic tags across vault notes (shared with Locus)",
+        "cognition_store_read",
+        "Read or search vault, artifacts, code, or saved scripts",
+    ),
+    (
+        "cognition_store_write",
+        "Write, delete, or move vault, artifacts, code, or saved scripts",
     ),
     (
         "cognition_calendar_list",
@@ -268,31 +270,6 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
         "cognition_ui_present",
         "Publish a new HTML artifact in chat (inline, panel, or fullscreen)",
     ),
-    (
-        "cognition_artifact_list",
-        "List HTML presentation artifacts in this session",
-    ),
-    (
-        "cognition_artifact_read",
-        "Read HTML artifact source (line range or budget)",
-    ),
-    (
-        "cognition_artifact_grep",
-        "Grep inside an HTML artifact by line",
-    ),
-    (
-        "cognition_artifact_write",
-        "Revise or create an HTML artifact revision",
-    ),
-    (
-        "cognition_artifact_delete",
-        "Delete an HTML presentation artifact revision chain",
-    ),
-    (
-        "cognition_vault_delete",
-        "Soft-delete a vault note (moves to .trash)",
-    ),
-    ("cognition_vault_move", "Move or rename a vault note path"),
     (
         "cognition_environment_wiki",
         "Canvas SDK STTP nodes — schemas, merge_spec, recipes; call before guessing propose JSON",
@@ -371,10 +348,6 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
     (
         "cognition_capability_invoke",
         "One-shot capability execution",
-    ),
-    (
-        "cognition_grapheme_script_load",
-        "Load saved Grapheme script body",
     ),
     (
         "cognition_grapheme_template_run",

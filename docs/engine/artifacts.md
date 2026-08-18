@@ -10,21 +10,19 @@ HTML UI artifacts are versioned documents the agent can present inline, in a sid
 
 | Layer | When to use |
 |-------|-------------|
-| **Agent tools** (`cognition_artifact_*`) | Agent reads/writes HTML during a turn |
+| **Agent tools** (`cognition_store_read` / `cognition_store_write`, `store=artifacts`) | Agent reads/writes HTML during a turn |
 | **HTTP** (`/v1/runtime/artifact/*`) | Clients fetch bodies, list catalog, TUI slash commands |
 
 ### Agent tools
 
 | Tool | Purpose |
 |------|---------|
-| `cognition_artifact_list` | List artifacts in session |
-| `cognition_artifact_read` | Read excerpt (optional line range) |
-| `cognition_artifact_grep` | Literal case-insensitive grep with context |
-| `cognition_artifact_write` | New revision (`if_match_hash64`, `supersedes`) |
+| `cognition_store_read` | `store=artifacts`, `op=list\|read\|search` (`search` needs artifact id in `path`) |
+| `cognition_store_write` | `store=artifacts`, `op=write\|delete` |
 
-Registered in `src/artifact_tools.rs`. Requires `supports_ui_artifacts=true` on the turn surface.
+Registered via `src/store_tools.rs` (backends in `src/artifact_tools.rs`). Requires `supports_ui_artifacts=true` on the turn surface for artifact ops; vault/code still work without it.
 
-Vault parity: `cognition_vault_grep`, line-range `cognition_vault_read` — see [vault.md](vault.md).
+Vault uses the same primitives with `store=vault` — see [vault.md](vault.md).
 
 ### HTTP routes
 

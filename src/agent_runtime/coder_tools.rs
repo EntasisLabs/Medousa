@@ -159,15 +159,8 @@ const CODER_CAPABILITY_TOOLS: &[&str] = &[
 ];
 
 const CODER_WORKSPACE_TOOLS: &[&str] = &[
-    "cognition_vault_list",
-    "cognition_vault_read",
-    "cognition_vault_grep",
-    "cognition_vault_search",
-    "cognition_vault_write",
-    "cognition_artifact_list",
-    "cognition_artifact_read",
-    "cognition_artifact_grep",
-    "cognition_artifact_write",
+    crate::public_api::COGNITION_STORE_READ,
+    crate::public_api::COGNITION_STORE_WRITE,
 ];
 
 const CODER_DISCOVERABLE_DOMAINS: &[&str] = &[
@@ -267,7 +260,7 @@ fn automatic_memory_boundary(
     tool_name: &str,
     claims: &[CoderClaimScope],
 ) -> Option<CoderMemoryBoundary> {
-    if tool_name == crate::coding_tools::COGNITION_CODE_APPLY_PATCH
+    if tool_name == crate::public_api::COGNITION_STORE_WRITE
         || tool_name == super::coder_semantic_actions::COGNITION_CODER_CHANGE_SET_APPLY
     {
         Some(CoderMemoryBoundary::Change)
@@ -1979,24 +1972,23 @@ impl CoderBoundToolRegistry {
                 Value::String(self.memory_scope.session_id.clone()),
             );
         }
-        if crate::coding_tools::is_coding_cognition_tool(tool_name) {
-            match tool_name {
-                crate::coding_tools::COGNITION_CODE_READ
-                | crate::coding_tools::COGNITION_CODE_SEARCH
-                | crate::coding_tools::COGNITION_CODE_APPLY_PATCH => {
-                    reject_mismatched_string(
-                        map.get("root"),
-                        &self.entry.worktree.to_string_lossy(),
-                        "root",
-                    )?;
-                    map.insert(
-                        "root".into(),
-                        Value::String(self.entry.worktree.to_string_lossy().into_owned()),
-                    );
-                    if tool_name == crate::coding_tools::COGNITION_CODE_APPLY_PATCH {
-                        self.validate_mutation_path(map.get("path"))?;
-                    }
+        if crate::public_api::is_public_api_tool(tool_name) {
+            if map.get("store").and_then(Value::as_str) == Some("code") {
+                reject_mismatched_string(
+                    map.get("root"),
+                    &self.entry.worktree.to_string_lossy(),
+                    "root",
+                )?;
+                map.insert(
+                    "root".into(),
+                    Value::String(self.entry.worktree.to_string_lossy().into_owned()),
+                );
+                if tool_name == crate::public_api::COGNITION_STORE_WRITE {
+                    self.validate_mutation_path(map.get("path"))?;
                 }
+            }
+        } else if crate::coding_tools::is_coding_cognition_tool(tool_name) {
+            match tool_name {
                 crate::coding_tools::COGNITION_SHELL_SESSION_STATUS => {
                     if map.get("create").and_then(Value::as_bool) != Some(true) {
                         return Err(StasisError::PortFailure(
@@ -2392,7 +2384,7 @@ impl ToolRegistry for CoderBoundToolRegistry {
         };
         let call_id = admission.call_id;
         let _claim_heartbeat = ClaimHeartbeatGuard::start(&authority, &call_id);
-        if !visible {
+        if !visible && !crate::public_api::is_public_api_tool(tool_name) {
             let err = StasisError::PortFailure(format!(
                 "Coder tool is authorized but not visible; unlock its domain with {COGNITION_CODER_TOOLS_DISCOVER}: {tool_name}"
             ));
@@ -2772,8 +2764,9 @@ pub(crate) fn contract_placement_labels(catalog: &ToolCatalog, tool_name: &str) 
 }
 
 fn coder_initial_tool_ids() -> HashSet<ToolId> {
-    crate::coding_tools::CODING_COGNITION_TOOLS
+    crate::public_api::PUBLIC_API_TOOLS
         .iter()
+        .chain(crate::coding_tools::CODING_COGNITION_TOOLS.iter())
         .chain(TURN_CONTROL_TOOLS.iter())
         .chain(CODER_PEER_SPAWN_TOOLS.iter())
         .chain(super::coder_memory::CODER_MEMORY_TOOL_NAMES.iter())
@@ -3122,13 +3115,13 @@ mod tests {
     impl ToolRegistry for RecordingRegistry {
         async fn list_tools(&self) -> Result<Vec<Tool>> {
             Ok(vec![
-                Tool::new(crate::coding_tools::COGNITION_CODE_READ),
+                Tool::new(crate::public_api::COGNITION_STORE_READ),
                 Tool::new(crate::coding_tools::COGNITION_SHELL_SESSION_STATUS),
                 Tool::new(crate::coding_tools::COGNITION_CODER_SHELL_RUN),
                 Tool::new(crate::coding_tools::COGNITION_CODER_SHELL_STATUS),
                 Tool::new(crate::code_intelligence_tools::COGNITION_CODE_DIAGNOSTICS),
                 Tool::new(crate::detamu_tools::COGNITION_DETAMU_STATUS),
-                Tool::new("cognition_vault_write"),
+                Tool::new(crate::public_api::COGNITION_STORE_WRITE),
                 Tool::new("cognition_memory_list"),
                 Tool::new("cognition_memory_recall"),
                 Tool::new("cognition_memory_store"),
@@ -3363,9 +3356,11 @@ mod tests {
 
         registry_a
             .invoke_tool(
-                crate::coding_tools::COGNITION_CODE_APPLY_PATCH,
+                crate::public_api::COGNITION_STORE_WRITE,
                 json!({
                     "intent": "Regenerate the Rust dependency lockfile",
+                    "store": "code",
+                    "op": "write",
                     "path": "Cargo.lock",
                     "expected_sha256": "missing",
                     "content": "version = 4\n"
@@ -3375,9 +3370,11 @@ mod tests {
             .expect("first lockfile claim");
         let conflict = registry_b
             .invoke_tool(
-                crate::coding_tools::COGNITION_CODE_APPLY_PATCH,
+                crate::public_api::COGNITION_STORE_WRITE,
                 json!({
                     "intent": "Update the same dependency lockfile",
+                    "store": "code",
+                    "op": "write",
                     "path": "Cargo.lock",
                     "expected_sha256": "missing",
                     "content": "version = 4\n"
@@ -3392,7 +3389,7 @@ mod tests {
         let invoked = inner_a.invoked_tools.lock().expect("tools lock");
         assert_eq!(
             invoked.first().map(String::as_str),
-            Some(crate::coding_tools::COGNITION_CODE_APPLY_PATCH)
+            Some(crate::public_api::COGNITION_STORE_WRITE)
         );
         assert!(invoked.iter().any(|tool| tool == "cognition_memory_store"));
     }
@@ -3455,7 +3452,7 @@ mod tests {
         assert!(
             tools
                 .iter()
-                .any(|tool| tool.name.as_str() == crate::coding_tools::COGNITION_CODE_READ)
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_STORE_READ)
         );
         assert!(tools.iter().any(|tool| {
             tool.name.as_str() == crate::coding_tools::COGNITION_SHELL_SESSION_STATUS
@@ -3471,7 +3468,6 @@ mod tests {
                 .any(|tool| tool.name.as_str() == COGNITION_CODER_EVIDENCE_READ)
         );
         for hidden in [
-            "cognition_vault_write",
             "cognition_memory_recall",
             "cognition_memory_store",
             "cognition_web_search",
@@ -3522,9 +3518,11 @@ mod tests {
 
         registry
             .invoke_tool(
-                crate::coding_tools::COGNITION_CODE_READ,
+                crate::public_api::COGNITION_STORE_READ,
                 json!({
                     "intent": "Inspect the source before making a change",
+                    "store": "code",
+                    "op": "read",
                     "path": "src/lib.rs"
                 }),
             )
@@ -3588,8 +3586,8 @@ mod tests {
         assert!(
             after_memory
                 .iter()
-                .all(|tool| tool.name.as_str() != "cognition_vault_write"),
-            "discovering memory must not reveal the workspace pack"
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_STORE_WRITE),
+            "store write stays on the public library after memory discover"
         );
 
         registry
@@ -3675,7 +3673,7 @@ mod tests {
         registry
             .restore_checkpoint_surface(
                 &[
-                    crate::coding_tools::COGNITION_CODE_READ.to_string(),
+                    crate::public_api::COGNITION_STORE_READ.to_string(),
                     "cognition_runtime_jobs_cancel".to_string(),
                 ],
                 Some("node-42"),
@@ -3684,7 +3682,7 @@ mod tests {
 
         assert_eq!(
             registry.checkpoint_visible_tools().unwrap(),
-            vec![crate::coding_tools::COGNITION_CODE_READ.to_string()]
+            vec![crate::public_api::COGNITION_STORE_READ.to_string()]
         );
         assert_eq!(
             registry.checkpoint_memory_cursor().unwrap().as_deref(),
@@ -3694,7 +3692,7 @@ mod tests {
         assert_eq!(tools.len(), 1);
         assert_eq!(
             tools[0].name.as_str(),
-            crate::coding_tools::COGNITION_CODE_READ
+            crate::public_api::COGNITION_STORE_READ
         );
     }
 
@@ -3985,9 +3983,11 @@ mod tests {
 
         let patch_result = registry
             .invoke_tool(
-                crate::coding_tools::COGNITION_CODE_APPLY_PATCH,
+                crate::public_api::COGNITION_STORE_WRITE,
                 json!({
                     "intent": "Update the demo implementation",
+                    "store": "code",
+                    "op": "write",
                     "path": "src/lib.rs",
                     "expected_sha256": "missing",
                     "content": "pub fn demo() { println!(\"updated\"); }\n"
@@ -4117,7 +4117,7 @@ mod tests {
             Some(CoderMemoryBoundary::Terminal)
         );
         assert_eq!(
-            automatic_memory_boundary(crate::coding_tools::COGNITION_CODE_READ, &[]),
+            automatic_memory_boundary(crate::public_api::COGNITION_STORE_READ, &[]),
             None
         );
     }
@@ -4149,9 +4149,11 @@ mod tests {
         assert!(
             registry
                 .invoke_tool(
-                    crate::coding_tools::COGNITION_CODE_READ,
+                    crate::public_api::COGNITION_STORE_READ,
                     json!({
                         "intent": "Inspect source outside the claimed root",
+                        "store": "code",
+                        "op": "read",
                         "path": "src/lib.rs",
                         "root": "/tmp/other"
                     }),
@@ -4162,9 +4164,11 @@ mod tests {
         assert!(
             registry
                 .invoke_tool(
-                    crate::coding_tools::COGNITION_CODE_APPLY_PATCH,
+                    crate::public_api::COGNITION_STORE_WRITE,
                     json!({
                         "intent": "Change a path outside the allowed policy",
+                        "store": "code",
+                        "op": "write",
                         "path": "README.md",
                         "expected_sha256": "missing",
                         "content": "x"
@@ -4194,7 +4198,7 @@ mod tests {
         assert!(
             registry
                 .invoke_tool(
-                    crate::coding_tools::COGNITION_CODE_READ,
+                    crate::public_api::COGNITION_STORE_READ,
                     json!({ "path": "src/lib.rs" }),
                 )
                 .await
@@ -4216,7 +4220,7 @@ mod tests {
 
         let error = registry
             .invoke_tool(
-                crate::coding_tools::COGNITION_CODE_READ,
+                crate::public_api::COGNITION_STORE_READ,
                 json!({ "path": "src/lib.rs" }),
             )
             .await
@@ -4354,9 +4358,11 @@ mod tests {
 
         registry
             .invoke_tool(
-                crate::coding_tools::COGNITION_CODE_READ,
+                crate::public_api::COGNITION_STORE_READ,
                 json!({
                     "intent": "Inspect the implementation before changing it",
+                    "store": "code",
+                    "op": "read",
                     "path": "src/lib.rs"
                 }),
             )
@@ -4617,9 +4623,11 @@ mod tests {
         );
         registry
             .invoke_tool(
-                crate::coding_tools::COGNITION_CODE_READ,
+                crate::public_api::COGNITION_STORE_READ,
                 json!({
                     "intent": "Inspect the current implementation",
+                    "store": "code",
+                    "op": "read",
                     "path": "src/lib.rs"
                 }),
             )
@@ -4640,7 +4648,7 @@ mod tests {
                 COGNITION_ENGINEERING_HISTORY,
                 json!({
                     "intent": "Review the latest read lifecycle without replaying the transcript",
-                    "tool": "code_read",
+                    "tool": "store_read",
                     "limit": 2
                 }),
             )
@@ -4650,7 +4658,7 @@ mod tests {
         assert!(history["events"].as_array().is_some_and(|events| {
             events
                 .iter()
-                .all(|event| event["tool"] == crate::coding_tools::COGNITION_CODE_READ)
+                .all(|event| event["tool"] == crate::public_api::COGNITION_STORE_READ)
         }));
     }
 

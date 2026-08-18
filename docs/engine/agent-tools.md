@@ -40,9 +40,8 @@ Source: `src/tool_bootstrap.rs`
 
 | Family | Examples |
 |--------|----------|
-| Vault | `cognition_vault_*` — [vault.md](vault.md) |
+| Store | `cognition_store_read` / `cognition_store_write` (`store=vault\|artifacts\|code\|scripts`) — [vault.md](vault.md), [artifacts.md](artifacts.md) |
 | Calendar | `cognition_calendar_*` — [calendar.md](calendar.md) |
-| Artifacts | `cognition_artifact_*` — [artifacts.md](artifacts.md) |
 | MCP | `cognition.mcp.*` — [mcp-gateway-setup.md](../mcp-gateway-setup.md) |
 | UI present | `cognition_ui_present` — emits `ui_artifact` on stream |
 | Web | `cognition_web_search` — all surfaces; BrowserHost → lite → Grapheme chain |

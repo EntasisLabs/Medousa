@@ -135,10 +135,6 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_skill_discover",
                     "cognition_skill_propose",
                     "cognition_skill_probe",
-                    "cognition_vault_list",
-                    "cognition_vault_read",
-                    "cognition_vault_search",
-                    "cognition_vault_write",
                     "cognition_calendar_list",
                     "cognition_calendar_create",
                     "cognition_calendar_update",
@@ -146,10 +142,6 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_calendar_import",
                     "cognition_calendar_export",
                     "cognition_web_search",
-                    "cognition_grapheme_script_save",
-                    "cognition_grapheme_script_list",
-                    "cognition_grapheme_script_search",
-                    "cognition_grapheme_script_load",
                 ],
             );
             push(
@@ -160,7 +152,6 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_ui_present",
                 ],
             );
-            push(&mut names, crate::artifact_tools::ARTIFACT_COGNITION_TOOLS);
             push(&mut names, crate::tool_bootstrap::ENVIRONMENT_DOMAIN_TOOLS);
         }
         TurnWorkerIntent::General => {
@@ -185,20 +176,12 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_grapheme_modules",
                     "cognition_grapheme_examples",
                     "cognition_grapheme_run",
-                    "cognition_grapheme_script_save",
-                    "cognition_grapheme_script_list",
-                    "cognition_grapheme_script_search",
-                    "cognition_grapheme_script_load",
                     "cognition_shell_status",
                     "cognition_shell_run",
                     "cognition_code_hover",
                     "cognition_code_definition",
                     "cognition_code_diagnostics",
                     "cognition_code_symbols",
-                    "cognition_vault_list",
-                    "cognition_vault_read",
-                    "cognition_vault_search",
-                    "cognition_vault_write",
                     "cognition_calendar_list",
                     "cognition_calendar_create",
                     "cognition_calendar_update",
@@ -210,11 +193,11 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_ui_present",
                 ],
             );
-            push(&mut names, crate::artifact_tools::ARTIFACT_COGNITION_TOOLS);
             push(&mut names, crate::tool_bootstrap::ENVIRONMENT_DOMAIN_TOOLS);
         }
     }
 
+    crate::public_api::ensure_public_api(&mut names);
     names
 }
 
@@ -269,8 +252,6 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition_identity_remember",
             "cognition_manuscript_list",
             "cognition_manuscript_resolve",
-            "cognition_vault_read",
-            "cognition_vault_search",
             "cognition_calendar_list",
             "cognition_calendar_create",
             "cognition_calendar_update",
@@ -351,6 +332,7 @@ pub fn host_bus_tool_names() -> HashSet<String> {
         ],
     );
 
+    crate::public_api::ensure_public_api(&mut names);
     names
 }
 
@@ -366,11 +348,13 @@ pub fn worker_allowlist_for_intent_and_tools(
     if manuscript_tools.is_empty() {
         return intent_allow;
     }
-    manuscript_tools
+    let mut names: HashSet<String> = manuscript_tools
         .iter()
         .filter(|tool| tool_allowed(tool, &intent_allow))
         .map(|tool| tool.to_string())
-        .collect()
+        .collect();
+    crate::public_api::ensure_public_api(&mut names);
+    names
 }
 
 #[cfg(test)]
@@ -410,7 +394,7 @@ mod tests {
         assert!(names.contains("cognition_ui_build"));
         assert!(names.contains("cognition_ui_scene"));
         assert!(names.contains("cognition_ui_present"));
-        assert!(names.contains("cognition_artifact_write"));
+        assert!(names.contains("cognition_store_write"));
         assert!(names.contains("cognition_environment_get"));
         assert!(!names.contains("cognition_memory_calibrate"));
         assert!(names.contains("cognition_identity_recall"));
@@ -419,7 +403,7 @@ mod tests {
         assert!(names.contains("cognition_openshell_sandbox_run"));
         assert!(names.contains("cognition_skill_discover"));
         assert!(names.contains("cognition_skill_probe"));
-        assert!(names.contains("cognition_vault_write"));
+        assert!(names.contains("cognition_store_write"));
         assert!(names.contains("cognition_calendar_list"));
         assert!(names.contains("cognition_calendar_create"));
         assert!(names.contains("cognition_memory_store"));
@@ -452,7 +436,7 @@ mod tests {
         assert!(names.contains("cognition_spawn_turn_worker"));
         assert!(names.contains("cognition_capability_search"));
         assert!(names.contains("cognition_runtime_workflow_run"));
-        assert!(names.contains("cognition_vault_read"));
+        assert!(names.contains("cognition_store_read"));
         assert!(names.contains("cognition_calendar_list"));
         assert!(names.contains("cognition_calendar_create"));
         assert!(names.contains("cognition_workshop_steer"));

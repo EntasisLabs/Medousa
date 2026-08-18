@@ -27,23 +27,11 @@ const COGNITION_VAULT_DELETE_ID: ToolId = ToolId::new("cognition_vault_delete");
 const COGNITION_VAULT_MOVE_ID: ToolId = ToolId::new("cognition_vault_move");
 
 pub fn register_vault_tools(
-    registry: &mut impl crate::typed_tools::ToolRegistration,
-    event_tx: mpsc::Sender<TuiEvent>,
-    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
-    fallback_chat_session_id: String,
+    _registry: &mut impl crate::typed_tools::ToolRegistration,
+    _event_tx: mpsc::Sender<TuiEvent>,
+    _turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
+    _fallback_chat_session_id: String,
 ) -> StasisResult<()> {
-    registry.register_typed_tool(CognitionVaultListTool::new(event_tx.clone()))?;
-    registry.register_typed_tool(CognitionVaultReadTool::new(event_tx.clone()))?;
-    registry.register_typed_tool(CognitionVaultGrepTool::new(event_tx.clone()))?;
-    registry.register_typed_tool(CognitionVaultSearchTool::new(event_tx.clone()))?;
-    registry.register_typed_tool(CognitionVaultTagsTool::new(event_tx.clone()))?;
-    registry.register_typed_tool(CognitionVaultWriteTool::new(
-        event_tx.clone(),
-        turn_scope.clone(),
-        fallback_chat_session_id.clone(),
-    ))?;
-    registry.register_typed_tool(CognitionVaultDeleteTool::new(event_tx.clone()))?;
-    registry.register_typed_tool(CognitionVaultMoveTool::new(event_tx))?;
     Ok(())
 }
 
@@ -540,7 +528,7 @@ impl CognitionVaultTagsTool {
         Ok(VaultTagsOutput {
             tags: response.tags,
             count: response.count,
-            usage: "Use semantic_tags on cognition_vault_list/search/write or match Locus via cognition_memory_tags.".to_string(),
+            usage: "Use semantic_tags on cognition_store_read/write store=vault, or match Locus via cognition_memory_tags.".to_string(),
         })
     }
 }
@@ -722,7 +710,7 @@ impl CognitionVaultWriteTool {
             &request,
             command.if_match.as_deref(),
             crate::daemon_api::WorkspaceEventActor::Agent,
-            Some("cognition_vault_write"),
+            Some("cognition_store_write"),
         )
         .map_err(|err| StasisError::PortFailure(err.to_string()))
     }

@@ -1660,7 +1660,7 @@ mod tests {
             },
             activity_cursor: 7,
             locus_cursor: Some("node-7".into()),
-            visible_tools: vec!["cognition_code_read".into()],
+            visible_tools: vec![crate::public_api::COGNITION_STORE_READ.into()],
             outstanding_boundary: None,
             last_completed_tool_boundary: None,
             termination_reason: None,

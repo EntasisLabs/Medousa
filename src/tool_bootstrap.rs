@@ -75,12 +75,9 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_identity_recall",
     "cognition_identity_remember",
     "cognition_web_search",
-    "cognition_vault_search",
-    "cognition_vault_grep",
+    "cognition_store_read",
+    "cognition_store_write",
     "cognition_calendar_list",
-    "cognition_artifact_list",
-    "cognition_artifact_read",
-    "cognition_artifact_grep",
     "cognition_turn_begin_work",
     "cognition_turn_update_user",
     "cognition_turn_checkpoint",
@@ -100,7 +97,8 @@ pub const WORKER_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_turn_finish",
     "cognition_capability_invoke",
     "cognition_web_search",
-    "cognition_grapheme_script_load",
+    "cognition_store_read",
+    "cognition_store_write",
     "cognition_grapheme_template_run",
     "cognition_memory_context",
     "cognition_memory_store",
@@ -166,10 +164,8 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_capability_resolve",
                     "cognition_manuscript_list",
                     "cognition_manuscript_resolve",
-                    "cognition_grapheme_script_list",
-                    "cognition_grapheme_script_search",
-                    "cognition_grapheme_script_load",
-                    "cognition_grapheme_script_save",
+                    "cognition_store_read",
+                    "cognition_store_write",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -198,13 +194,8 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 domain: "vault",
                 summary: "Vault notes — list, read, write (tag runtime-learning for recall)",
                 tools: &[
-                    "cognition_vault_list",
-                    "cognition_vault_read",
-                    "cognition_vault_grep",
-                    "cognition_vault_write",
-                    "cognition_vault_delete",
-                    "cognition_vault_move",
-                    "cognition_vault_tags",
+                    "cognition_store_read",
+                    "cognition_store_write",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -214,35 +205,22 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "documents",
-                summary: "Edit files: vault markdown (cognition_vault_*) or HTML presentations (cognition_artifact_*). Workflow: list/search → grep → read → write.",
+                summary: "Edit files: vault markdown or HTML presentations via cognition_store_read / cognition_store_write (store=vault|artifacts).",
                 tools: &[
-                    "cognition_vault_list",
-                    "cognition_vault_read",
-                    "cognition_vault_grep",
-                    "cognition_vault_search",
-                    "cognition_vault_write",
-                    "cognition_vault_delete",
-                    "cognition_vault_move",
-                    "cognition_artifact_list",
-                    "cognition_artifact_read",
-                    "cognition_artifact_grep",
-                    "cognition_artifact_write",
-                    "cognition_artifact_delete",
+                    "cognition_store_read",
+                    "cognition_store_write",
                     "cognition_ui_present",
                 ],
             },
             ToolDomainCatalogEntry {
                 domain: "presentation",
-                summary: "Liquid chat embeds (markdown) first; cognition_ui_build for streaming scenes; legacy ui_scene + HTML artifacts",
+                summary: "Liquid chat embeds (markdown) first; cognition_ui_build for streaming scenes; HTML artifacts via cognition_store_read/write store=artifacts",
                 tools: &[
                     "cognition_ui_build",
                     "cognition_ui_scene",
                     "cognition_ui_present",
-                    "cognition_artifact_list",
-                    "cognition_artifact_read",
-                    "cognition_artifact_grep",
-                    "cognition_artifact_write",
-                    "cognition_artifact_delete",
+                    "cognition_store_read",
+                    "cognition_store_write",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -310,7 +288,7 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "coding",
-                summary: "Workshop coding toolkit — read/patch under scripts/Forge roots, shared shell sessions (opt-in)",
+                summary: "Workshop shared shell sessions (opt-in). Read/patch files with cognition_store_read/write store=code.",
                 tools: crate::coding_tools::CODING_COGNITION_TOOLS,
             },
             ToolDomainCatalogEntry {
@@ -362,14 +340,8 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 domain: "vault",
                 summary: "Vault read/search/write for workshop notes and journal articles",
                 tools: &[
-                    "cognition_vault_list",
-                    "cognition_vault_read",
-                    "cognition_vault_grep",
-                    "cognition_vault_search",
-                    "cognition_vault_write",
-                    "cognition_vault_delete",
-                    "cognition_vault_move",
-                    "cognition_vault_tags",
+                    "cognition_store_read",
+                    "cognition_store_write",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -390,11 +362,10 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "scripts",
-                summary: "Save/load reusable Grapheme scripts",
+                summary: "Save/load reusable Grapheme scripts via cognition_store_read/write store=scripts",
                 tools: &[
-                    "cognition_grapheme_script_save",
-                    "cognition_grapheme_script_list",
-                    "cognition_grapheme_script_search",
+                    "cognition_store_read",
+                    "cognition_store_write",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -404,15 +375,13 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "presentation",
-                summary: "Liquid chat embeds (markdown) first; ui_build for streaming scenes; legacy ui_scene + HTML artifacts",
+                summary: "Liquid chat embeds (markdown) first; ui_build for streaming scenes; HTML artifacts via cognition_store_read/write store=artifacts",
                 tools: &[
                     "cognition_ui_build",
                     "cognition_ui_scene",
                     "cognition_ui_present",
-                    "cognition_artifact_list",
-                    "cognition_artifact_read",
-                    "cognition_artifact_grep",
-                    "cognition_artifact_write",
+                    "cognition_store_read",
+                    "cognition_store_write",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -678,7 +647,7 @@ pub fn build_tool_hints_block(
     let full_allow = host_bus_tool_names();
     let surface = load_session_tool_surface(session_id);
     let mut lines = vec![
-        "Bootstrap tools are always available. Chat auto-unlocks memory, vault read, identity, and catalog/runtime orchestration. Studio/canvas tools unlock in Workshop after begin_work.".to_string(),
+        "Bootstrap tools are always available. Store, memory, identity, and catalog/runtime orchestration are on the public library; Studio/canvas tools still unlock in Workshop after begin_work.".to_string(),
         format!(
             "Unlocked domains: {}",
             if surface.unlocked_domains.is_empty() {
@@ -980,13 +949,14 @@ mod tests {
         let session_id = format!("sess-defaults-{}", uuid::Uuid::new_v4().simple());
         let allow = host_bus_tool_names();
         let before = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
-        assert!(!before.contains("cognition_vault_write"));
+        assert!(before.contains("cognition_store_read"));
+        assert!(before.contains("cognition_store_write"));
         assert!(!before.contains("cognition_memory_calibrate"));
 
         ensure_host_session_tool_defaults(&session_id);
         let after = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
-        assert!(after.contains("cognition_vault_read"));
-        assert!(!after.contains("cognition_vault_write"));
+        assert!(after.contains("cognition_store_read"));
+        assert!(after.contains("cognition_store_write"));
         assert!(after.contains("cognition_memory_calibrate"));
 
         let _ = delete_session_tool_surface(&session_id);

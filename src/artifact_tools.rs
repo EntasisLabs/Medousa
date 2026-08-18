@@ -45,27 +45,10 @@ pub fn is_artifact_cognition_tool(name: &str) -> bool {
 }
 
 pub fn register_artifact_tools(
-    registry: &mut impl crate::typed_tools::ToolRegistration,
-    event_tx: mpsc::Sender<TuiEvent>,
-    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
+    _registry: &mut impl crate::typed_tools::ToolRegistration,
+    _event_tx: mpsc::Sender<TuiEvent>,
+    _turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 ) -> StasisResult<()> {
-    registry.register_typed_tool(CognitionArtifactListTool::new(
-        event_tx.clone(),
-        turn_scope.clone(),
-    ))?;
-    registry.register_typed_tool(CognitionArtifactReadTool::new(
-        event_tx.clone(),
-        turn_scope.clone(),
-    ))?;
-    registry.register_typed_tool(CognitionArtifactGrepTool::new(
-        event_tx.clone(),
-        turn_scope.clone(),
-    ))?;
-    registry.register_typed_tool(CognitionArtifactWriteTool::new(
-        event_tx.clone(),
-        turn_scope.clone(),
-    ))?;
-    registry.register_typed_tool(CognitionArtifactDeleteTool::new(event_tx, turn_scope))?;
     Ok(())
 }
 

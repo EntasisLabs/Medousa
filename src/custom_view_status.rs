@@ -298,7 +298,7 @@ fn build_hints(
     }
     if diagnostics.is_some_and(|opts| opts.include_runtime || opts.include_static_lint) {
         hints.push(
-            "Widget runtime issues appear under components[].runtime — presentation fixes via cognition_artifact_write; media_embed has no artifact lint."
+            "Widget runtime issues appear under components[].runtime — presentation fixes via cognition_store_write store=artifacts; media_embed has no artifact lint."
                 .to_string(),
         );
     }
