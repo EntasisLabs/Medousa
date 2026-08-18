@@ -225,7 +225,7 @@ impl TurnScratchpad {
     }
 }
 
-/// Host → worker context passed at `cognition_spawn_turn_worker` (Phase 3).
+/// Host → worker context passed at `cognition_workshop_mutate action=workshop.spawn` (Phase 3).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerHandoffCapsule {
     pub session_id: String,
@@ -514,7 +514,7 @@ pub fn tool_output_ok(output: &Value) -> bool {
 }
 
 #[allow(clippy::too_many_arguments)]
-/// Snapshot host scratch for the next `cognition_spawn_turn_worker` (updated each tool round).
+/// Snapshot host scratch for the next `cognition_workshop_mutate action=workshop.spawn` (updated each tool round).
 pub async fn publish_host_handoff_snapshot(
     session_id: Option<&str>,
     stream_turn_id: u64,
@@ -641,7 +641,7 @@ pub fn compact_tool_receipt_hint(tool_name: &str, output: &Value) -> Option<Stri
             .and_then(|value| value.as_str())
             .or_else(|| output.get("capability").and_then(|value| value.as_str()))
             .map(|reference| format!("binding={reference}")),
-        "cognition_spawn_turn_worker" => output
+        "cognition_workshop_mutate" => output
             .get("intent")
             .and_then(|value| value.as_str())
             .map(|intent| format!("intent={intent}")),

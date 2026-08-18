@@ -346,7 +346,7 @@ impl TurnWorkerScheduler {
     ) -> stasis::prelude::Result<SpawnTurnWorkerOutput> {
         let parent = self.active_parent().map_err(|error| {
             stasis::domain::errors::StasisError::PortFailure(format!(
-                "cognition_spawn_turn_worker: {error}"
+                "cognition_workshop_mutate: {error}"
             ))
         })?;
         let bus = &parent.bus;
@@ -539,7 +539,7 @@ impl TurnWorkerScheduler {
 
         let runtime = self.runtime.read().await.clone().ok_or_else(|| {
             stasis::domain::errors::StasisError::PortFailure(
-                "cognition_spawn_turn_worker: stasis runtime not ready".to_string(),
+                "cognition_workshop_mutate: stasis runtime not ready".to_string(),
             )
         })?;
         crate::agent_runtime::turn_worker_job::enqueue_turn_worker_job(

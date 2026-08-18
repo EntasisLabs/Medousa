@@ -12,6 +12,7 @@ use std::sync::OnceLock;
 /// Tools that must never be registered on this server.
 pub const DENIED_TOOL_PREFIXES: &[&str] = &[
     "cognition_spawn",
+    "cognition_workshop",
     "cognition_turn",
     "interactive_turn",
     "host_orchestrat",
@@ -158,7 +159,8 @@ pub fn call_tool(name: &str, arguments: &Value) -> Result<Value, String> {
         "vault_list" => {
             let prefix = arguments.get("prefix").and_then(|v| v.as_str());
             let payload = daemon()?.vault_list(prefix)?;
-            let text = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string());
+            let text =
+                serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string());
             Ok(tool_text(text, false))
         }
         "vault_read" => {
@@ -186,14 +188,16 @@ pub fn call_tool(name: &str, arguments: &Value) -> Result<Value, String> {
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| "query is required".to_string())?;
             let payload = daemon()?.vault_search(query)?;
-            let text = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string());
+            let text =
+                serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string());
             Ok(tool_text(text, false))
         }
         "calendar_list" => {
             let from = arguments.get("from").and_then(|v| v.as_str());
             let to = arguments.get("to").and_then(|v| v.as_str());
             let payload = daemon()?.calendar_list(from, to)?;
-            let text = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string());
+            let text =
+                serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string());
             Ok(tool_text(text, false))
         }
         "artifacts_list" => {
@@ -204,7 +208,8 @@ pub fn call_tool(name: &str, arguments: &Value) -> Result<Value, String> {
                 .and_then(|v| v.as_u64())
                 .map(|n| n as usize);
             let payload = daemon()?.artifacts_list(session_id, limit, query)?;
-            let text = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string());
+            let text =
+                serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string());
             Ok(tool_text(text, false))
         }
         "artifacts_fetch" => {
@@ -257,10 +262,7 @@ pub fn handle_jsonrpc(request: &Value) -> Option<Value> {
         })),
         "tools/call" => {
             let params = request.get("params").cloned().unwrap_or(json!({}));
-            let name = params
-                .get("name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
             let args = params.get("arguments").cloned().unwrap_or(json!({}));
             match call_tool(name, &args) {
                 Ok(result) => Some(json!({
@@ -310,8 +312,10 @@ mod tests {
         assert!(!names.contains(&"vault_write"));
         assert!(!names.iter().any(|n| n.contains("spawn")));
         assert!(is_denied_tool("cognition_spawn_turn_worker"));
+        assert!(is_denied_tool("cognition_workshop_mutate"));
         assert!(is_denied_tool("vault_write"));
         assert!(call_tool("cognition_spawn_turn_worker", &json!({})).is_err());
+        assert!(call_tool("cognition_workshop_mutate", &json!({})).is_err());
         assert!(call_tool("vault_write", &json!({"path":"x","content":"y"})).is_err());
     }
 

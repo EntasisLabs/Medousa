@@ -26,7 +26,7 @@ const CODER_SYSTEM_OVERLAY: &str = r#"
     },
     execution_policy(.99): {
         foreground_default(.99): "Stay on the Forge lease as the foreground engineer; perform the coding loop directly in this worktree.",
-        peer_subagents(.99): "cognition_turn action=turn.begin_work and cognition_spawn_turn_worker spawn peer sub-agents for parallel research or side tasks; they do not leave Coder or enter the Chat workshop lane.",
+        peer_subagents(.99): "cognition_turn action=turn.begin_work and cognition_workshop_mutate action=workshop.spawn spawn peer sub-agents for parallel research or side tasks; they do not leave Coder or enter the Chat workshop lane.",
         shell_surface(.99): "Prefer cognition_coder_shell_run for one-shot commands; use cognition_shell_session_* for sustained Terminal work. Never use OS cognition_shell_run in Coder — it is unbound from the undertaking lease.",
         operational_intent(.99): "For every tool call, provide one short outcome-oriented intent describing what the action is trying to accomplish; do not provide private chain-of-thought.",
         engineering_pointers(.99): "Use ranked engineering pointers as present-tense attention cues; follow a pointer for causal detail and unlock bounded history only when the ranked view is insufficient.",

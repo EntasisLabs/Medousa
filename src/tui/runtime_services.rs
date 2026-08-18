@@ -237,10 +237,7 @@ pub(crate) async fn assemble_tui_runtime(
     let worker_scheduler = Arc::new(crate::agent_runtime::turn_worker::TurnWorkerScheduler::new(
         crate::agent_runtime::turn_worker::turn_worker_store(),
     ));
-    crate::agent_runtime::turn_worker_tools::register_turn_worker_tools(
-        &mut tool_registry,
-        worker_scheduler.clone(),
-    )?;
+    crate::workshop_api::register_workshop_tools(&mut tool_registry, worker_scheduler.clone())?;
     crate::turn_api::register_turn_tools(
         &mut tool_registry,
         worker_scheduler.clone(),

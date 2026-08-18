@@ -63,7 +63,7 @@ pub async fn enqueue_turn_worker_job(
         crate::daemon::worker_host::AGENT_QUEUE,
         TURN_WORKER_JOB_TYPE,
         payload_ref,
-        "cognition_spawn_turn_worker",
+        crate::public_api::COGNITION_WORKSHOP_MUTATE,
         "sttp:in:medousa:turn_worker",
         now,
     )

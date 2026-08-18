@@ -60,11 +60,11 @@ pub fn push_pack_hold_message(messages: &mut Vec<ChatMessage>) {
 /// Injected on host/worker tool turns and echoed in STTP — strict runtime boundary for prose vs tools.
 pub const TURN_RUNTIME_BOUNDARY_APPENDIX: &str = r#"[MEDOUSA_TURN_RUNTIME]
 Runtime boundary (enforced by the daemon):
-- Chat (host): memory, identity, runtime, vault read, quick cognition_web_search/cognition_browser_fetch, cognition_turn action=turn.begin_work (message, goal) for multi-tool execution, cognition_spawn_turn_worker for parallel research.
+- Chat (host): memory, identity, runtime, vault read, quick cognition_web_search/cognition_browser_fetch, cognition_turn action=turn.begin_work (message, goal) for multi-tool execution, cognition_workshop_mutate action=workshop.spawn for parallel research.
 - cognition_turn action=turn.begin_work enters the bound Workshop (one per session) — Chat ends with ack; synthesis delivers on the same thread.
 - Completion is event-driven: tools continue/reset the prose count; two consecutive non-tool responses end the turn and both are preserved. cognition_turn action=turn.finish ends immediately and appends its message to one held response. Prose wording is never classified.
 - Continuing work requires a tool call in the current model response. If you say you will inspect, run, or fix something next, call that tool now. Use cognition_turn action=turn.update_user in a tool round for visible interim status that does not end execution.
-- Mid-task handoff: cognition_turn action=turn.checkpoint. Parallel delegate: cognition_spawn_turn_worker in a tool round. Worker results return to the host so it can answer.
+- Mid-task handoff: cognition_turn action=turn.checkpoint. Parallel delegate: cognition_workshop_mutate action=workshop.spawn in a tool round. Worker results return to the host so it can answer.
 - UI stream draft may reset between rounds; [MEDOUSA_SCRATCH] engine notes persist across rounds and client disconnect."#;
 
 pub const TURN_SCRATCH_APPENDIX: &str = r#"[MEDOUSA_SCRATCH_POLICY]
@@ -473,7 +473,7 @@ mod tests {
         assert!(p.contains("cognition_tool_history_detail"));
         assert!(p.contains("cognition_tools_discover"));
         assert!(p.contains("[MEDOUSA_TOOL_HINTS]"));
-        assert!(p.contains("cognition_spawn_turn_worker"));
+        assert!(p.contains("cognition_workshop_mutate action=workshop.spawn"));
         assert!(p.contains("[MEDOUSA_TURN_RUNTIME]"));
         assert!(p.contains("[MEDOUSA_SCRATCH_POLICY]"));
         assert!(p.contains("cognition_turn action=turn.finish"));

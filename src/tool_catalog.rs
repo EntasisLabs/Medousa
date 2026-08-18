@@ -186,8 +186,12 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
         "Full tool receipt for slice_id=turn:N",
     ),
     (
-        "cognition_spawn_turn_worker",
-        "Delegate execution to workshop lane",
+        crate::public_api::COGNITION_WORKSHOP_QUERY,
+        "Read workshop/worker status by typed action (workshop.status)",
+    ),
+    (
+        crate::public_api::COGNITION_WORKSHOP_MUTATE,
+        "Spawn, cancel, or steer workshop/workers by typed action (workshop.spawn, workshop.cancel, workshop.steer)",
     ),
     (
         crate::public_api::COGNITION_MEMORY_QUERY,
@@ -327,5 +331,4 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
         "cognition_custom_view_compose",
         "One-shot custom view + HTML + feeds + layout + recurring poll",
     ),
-    ("cognition_turn_worker_status", "Pending worker status"),
 ];

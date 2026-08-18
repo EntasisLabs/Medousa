@@ -96,14 +96,6 @@ struct EngineeringPointersOutput {
     pointers: Vec<super::coder_pointers::CoderEngineeringPointer>,
 }
 
-const GENERAL_MODE_RUNTIME_TOOLS: &[&str] = &["cognition_workshop_steer"];
-
-const CODER_PEER_SPAWN_TOOLS: &[&str] = &[
-    "cognition_spawn_turn_worker",
-    "cognition_turn_worker_status",
-    "cognition_turn_worker_cancel",
-];
-
 const CODER_ADVANCED_MEMORY_TOOLS: &[&str] = &[
     crate::public_api::COGNITION_MEMORY_QUERY,
     crate::public_api::COGNITION_MEMORY_MUTATE,
@@ -238,7 +230,7 @@ fn automatic_memory_boundary(
         Some(CoderMemoryBoundary::Verification)
     } else if crate::turn_control_tools::is_checkpoint_turn_tool_name(tool_name, input)
         || crate::turn_control_tools::is_begin_work_tool_name(tool_name, input)
-        || tool_name == crate::agent_runtime::turn_worker_tools::COGNITION_SPAWN_TURN_WORKER
+        || crate::agent_runtime::turn_worker_tools::is_workshop_spawn_call(tool_name, input)
     {
         Some(CoderMemoryBoundary::Handoff)
     } else if crate::turn_control_tools::is_request_more_rounds_tool_name(tool_name, input) {
@@ -268,10 +260,7 @@ fn coder_tool_allowed(tool_id: ToolId, policy: &WorkPolicy) -> bool {
                 | crate::coding_tools::COGNITION_CODER_SHELL_RUN
                 | crate::coding_tools::COGNITION_CODER_SHELL_STATUS
         );
-    !os_shell
-        && !restricted_shell
-        && !tool_name.starts_with("cognition_runtime_")
-        && !GENERAL_MODE_RUNTIME_TOOLS.contains(&tool_name)
+    !os_shell && !restricted_shell && !tool_name.starts_with("cognition_runtime_")
 }
 
 fn shared_memory_retry_queue(
@@ -2477,15 +2466,12 @@ impl ToolRegistry for CoderBoundToolRegistry {
             match remap_begin_work_to_spawn_input(&input, spawn_intent_hint) {
                 Ok(spawn_input) => {
                     self.inner
-                        .invoke_tool(
-                            crate::agent_runtime::turn_worker_tools::COGNITION_SPAWN_TURN_WORKER,
-                            spawn_input,
-                        )
+                        .invoke_tool(crate::public_api::COGNITION_WORKSHOP_MUTATE, spawn_input)
                         .await
                 }
                 Err(err) => Err(err),
             }
-        } else if tool_name == crate::agent_runtime::turn_worker_tools::COGNITION_SPAWN_TURN_WORKER
+        } else if crate::agent_runtime::turn_worker_tools::is_workshop_spawn_call(tool_name, &input)
         {
             let mut spawn_input = input.clone();
             ensure_spawn_worker_intent(&mut spawn_input, spawn_intent_hint);
@@ -2603,34 +2589,16 @@ fn coder_runtime_tool_definitions() -> Vec<Tool> {
 fn with_required_coder_intent(
     tool: Tool,
 ) -> std::result::Result<Tool, crate::typed_tools::ModeToolAdapterError> {
-    let replaces_base_intent =
-        tool.name.as_str() == crate::agent_runtime::turn_worker_tools::COGNITION_SPAWN_TURN_WORKER;
-    let base_has_intent = tool
-        .schema
-        .as_ref()
-        .and_then(|schema| schema.get("properties"))
-        .and_then(Value::as_object)
-        .is_some_and(|properties| properties.contains_key("intent"));
-    if replaces_base_intent && base_has_intent {
-        CODER_MODE_ADAPTER.compose_tool_with_projection(
-            tool,
-            &crate::typed_tools::ModeInputProjection::replacing(["intent"]),
-        )
-    } else {
-        CODER_MODE_ADAPTER.compose_tool(tool)
-    }
+    CODER_MODE_ADAPTER.compose_tool(tool)
 }
 
 fn with_coder_tool_advertisement(tool: Tool) -> Tool {
     match tool.name.as_str() {
-        "cognition_spawn_turn_worker" => tool.with_description(
-            "Spawn a peer sub-agent for parallel research or side tasks while Coder stays on the Forge lease.",
+        crate::public_api::COGNITION_WORKSHOP_MUTATE => tool.with_description(
+            "Spawn, cancel, or steer a peer sub-agent. action=workshop.spawn for parallel research while Coder stays on the Forge lease.",
         ),
-        "cognition_turn_worker_status" => {
+        crate::public_api::COGNITION_WORKSHOP_QUERY => {
             tool.with_description("Check status of peer sub-agents spawned from this Coder turn.")
-        }
-        "cognition_turn_worker_cancel" => {
-            tool.with_description("Cancel a peer sub-agent spawned from this Coder turn.")
         }
         _ => tool,
     }
@@ -2710,11 +2678,6 @@ pub(crate) fn contract_policy_references() -> HashSet<String> {
         .into_iter()
         .map(|id| id.as_str().to_string())
         .collect::<HashSet<_>>();
-    names.extend(
-        GENERAL_MODE_RUNTIME_TOOLS
-            .iter()
-            .map(|name| (*name).to_string()),
-    );
     names.insert(crate::shell_tools::COGNITION_SHELL_RUN.to_string());
     names.insert(crate::shell_tools::COGNITION_SHELL_STATUS.to_string());
     names
@@ -2741,7 +2704,6 @@ fn coder_initial_tool_ids() -> HashSet<ToolId> {
         .iter()
         .chain(crate::coding_tools::CODING_COGNITION_TOOLS.iter())
         .chain(TURN_CONTROL_TOOLS.iter())
-        .chain(CODER_PEER_SPAWN_TOOLS.iter())
         .chain(super::coder_memory::CODER_MEMORY_TOOL_NAMES.iter())
         .chain(
             [
@@ -2774,7 +2736,6 @@ fn resolve_known_coder_tool_id(wire_name: &str) -> Option<ToolId> {
     crate::tool_names::registered_cognition_tools()
         .map(ToolId::new)
         .chain(coder_visible_tool_ids())
-        .chain(GENERAL_MODE_RUNTIME_TOOLS.iter().copied().map(ToolId::new))
         .chain(
             [
                 crate::shell_tools::COGNITION_SHELL_RUN,
@@ -2786,7 +2747,7 @@ fn resolve_known_coder_tool_id(wire_name: &str) -> Option<ToolId> {
         .find(|id| id.as_str() == wire_name)
 }
 
-/// Map Coder `cognition_turn action=turn.begin_work` args onto `cognition_spawn_turn_worker`.
+/// Map Coder `cognition_turn action=turn.begin_work` args onto `cognition_workshop_mutate action=workshop.spawn`.
 pub(crate) fn remap_begin_work_to_spawn_input(
     input: &Value,
     worker_intent_hint: Option<crate::agent_runtime::turn_worker::TurnWorkerIntent>,
@@ -2816,6 +2777,7 @@ pub(crate) fn remap_begin_work_to_spawn_input(
         .map(|value| value.as_str().to_string())
         .unwrap_or_else(|| default_peer_spawn_intent(&task, &user_ack));
     let mut out = json!({
+        "action": "workshop.spawn",
         "task": task,
         "user_ack": user_ack,
         "intent": intent,
@@ -3103,9 +3065,10 @@ mod tests {
                 Tool::new("cognition_runtime_query"),
                 Tool::new("cognition_runtime_mutate"),
                 Tool::new("cognition_runtime_jobs_cancel"),
-                Tool::new("cognition_spawn_turn_worker").with_description("Host spawn worker"),
+                Tool::new(crate::public_api::COGNITION_WORKSHOP_MUTATE)
+                    .with_description("Host spawn worker"),
                 Tool::new(crate::public_api::COGNITION_TURN),
-                Tool::new("cognition_turn_worker_status"),
+                Tool::new(crate::public_api::COGNITION_WORKSHOP_QUERY),
                 Tool::new("cognition_shell_run"),
                 Tool::new("cognition_shell_status"),
             ])
@@ -3211,7 +3174,9 @@ mod tests {
                     "next_sequence": 17,
                     "input": input
                 }))
-            } else if tool_name == "cognition_spawn_turn_worker" {
+            } else if crate::agent_runtime::turn_worker_tools::is_workshop_spawn_call(
+                tool_name, &input,
+            ) {
                 Ok(json!({
                     "ok": true,
                     "worker_spawned": true,
@@ -3503,7 +3468,7 @@ mod tests {
         assert!(
             tools
                 .iter()
-                .any(|tool| tool.name.as_str() == "cognition_spawn_turn_worker"),
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_WORKSHOP_MUTATE),
             "peer spawn should be visible in Coder"
         );
         assert!(
@@ -4650,11 +4615,11 @@ mod tests {
             &policy
         ));
         assert!(coder_tool_allowed(
-            ToolId::new("cognition_spawn_turn_worker"),
+            ToolId::new(crate::public_api::COGNITION_WORKSHOP_MUTATE),
             &policy
         ));
-        assert!(!coder_tool_allowed(
-            ToolId::new("cognition_workshop_steer"),
+        assert!(coder_tool_allowed(
+            ToolId::new(crate::public_api::COGNITION_WORKSHOP_QUERY),
             &policy
         ));
     }
@@ -4672,6 +4637,7 @@ mod tests {
         assert_eq!(mapped["task"], "Survey related crates for the bug");
         assert_eq!(mapped["user_ack"], "Researching dependency graph");
         assert_eq!(mapped["intent"], "research");
+        assert_eq!(mapped["action"], "workshop.spawn");
 
         let goal_only =
             remap_begin_work_to_spawn_input(&json!({ "goal": "Write a focused unit test" }), None)
@@ -4716,7 +4682,7 @@ mod tests {
         let invoked = inner.invoked_tools.lock().expect("tools");
         assert_eq!(
             invoked.first().map(String::as_str),
-            Some("cognition_spawn_turn_worker")
+            Some(crate::public_api::COGNITION_WORKSHOP_MUTATE)
         );
         assert!(
             invoked
@@ -4728,6 +4694,7 @@ mod tests {
         assert_eq!(input["task"], "Investigate failing CI flakes");
         assert_eq!(input["user_ack"], "Spinning a research peer");
         assert_eq!(input["intent"], "research");
+        assert_eq!(input["action"], "workshop.spawn");
     }
 
     #[tokio::test]

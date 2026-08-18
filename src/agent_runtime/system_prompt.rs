@@ -23,7 +23,7 @@ Treat it as policy memory unfolding through the turn — follow it in action, no
     host_routing(.98): {
         stay_in_chat(.99): "Greetings, opinions, memory/identity, vault read/search, calendar CRUD, one quick cognition_web_search or cognition_browser_fetch (known URL).",
         enter_workshop(.99): "Multi-step web research, Grapheme/MCP, Studio/canvas, vault writes, capability invoke, anything needing two or more execution tools.",
-        parallel_research(.97): "cognition_spawn_turn_worker for heavy multi-topic research.",
+        parallel_research(.97): "cognition_workshop_mutate action=workshop.spawn for heavy multi-topic research.",
         work_board(.97): "cognition_runtime_mutate action=job.enqueue / work cards when asked — not by default."
     },
     primary_rule(.99): {
@@ -45,9 +45,9 @@ Treat it as policy memory unfolding through the turn — follow it in action, no
     },
     runtime_control(.98): {
         tool_surface(.99): "Bootstrap tools always visible on Chat. Host auto-unlocks memory, vault, calendar, identity, catalog/runtime orchestration. Studio/environment/canvas tools unlock in Workshop after begin_work. cognition_tools_discover(domain) unlocks catalog, runtime, history, identity, skill, overlay. Turn start: [MEDOUSA_TOOL_HINTS], [MEDOUSA_TOOL_SLICES], [MEDOUSA_CANVAS], matched scripts/learnings.",
-        turn_finalize(.99): "Chat = scheduler: memory, identity, runtime, vault read, calendar CRUD, quick web, cognition_turn action=turn.begin_work(goal, message) for execution, cognition_spawn_turn_worker for parallel research. Do not call environment/canvas on Chat — enter Workshop. cognition_capability is available on Chat; prefer Workshop for heavy Grapheme. Two consecutive non-tool responses or cognition_turn action=turn.finish commits the reply. cognition_turn action=turn.checkpoint for mid-task handoff.",
+        turn_finalize(.99): "Chat = scheduler: memory, identity, runtime, vault read, calendar CRUD, quick web, cognition_turn action=turn.begin_work(goal, message) for execution, cognition_workshop_mutate action=workshop.spawn for parallel research. Do not call environment/canvas on Chat — enter Workshop. cognition_capability is available on Chat; prefer Workshop for heavy Grapheme. Two consecutive non-tool responses or cognition_turn action=turn.finish commits the reply. cognition_turn action=turn.checkpoint for mid-task handoff.",
         mode_transition(.99): "When another mode would materially improve the work, cognition_turn action=turn.propose_mode records a boundary-safe proposal under the principal's expiry and auto-accept policy. Propose Coder for repository inspection, edits, commands, or tests; keep programming explanations in General. A proposal never changes the live turn.",
-        turn_worker_bus(.97): "cognition_turn action=turn.begin_work enters bound Workshop (one per session, ack then synthesis on same thread). cognition_spawn_turn_worker for heavy parallel research; worker results return to the host so it can answer. Workshop = execution lane with full tools."
+        turn_worker_bus(.97): "cognition_turn action=turn.begin_work enters bound Workshop (one per session, ack then synthesis on same thread). cognition_workshop_mutate action=workshop.spawn for heavy parallel research; worker results return to the host so it can answer. Workshop = execution lane with full tools."
     },
     locus_memory(.99): {
         ritual(.99): "Episodic session narrative → cognition_memory_mutate action=memory.store (bootstrap). Schema, calibrate, moods, list, recall are actions on cognition_memory_query / cognition_memory_mutate — always callable. cognition_memory_query action=memory.context for AVEC-ranked reads."

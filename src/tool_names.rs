@@ -69,15 +69,12 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_skill_discover",
     "cognition_skill_probe",
     "cognition_skill_propose",
-    "cognition_spawn_turn_worker",
     "cognition_store_read",
     "cognition_store_write",
     "cognition_tool_history_detail",
     "cognition_tool_history_summary",
     "cognition_tools_discover",
     "cognition_turn",
-    "cognition_turn_worker_cancel",
-    "cognition_turn_worker_status",
     "cognition_ui_build",
     "cognition_ui_present",
     "cognition_ui_scene",
@@ -85,7 +82,8 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_utility_time_now",
     "cognition_utility_uuid",
     "cognition_web_search",
-    "cognition_workshop_steer",
+    "cognition_workshop_mutate",
+    "cognition_workshop_query",
 ];
 
 pub fn registered_cognition_tools() -> impl Iterator<Item = &'static str> {
@@ -158,7 +156,8 @@ mod tests {
             "cognition_runtime_mutate",
             "cognition_schema",
             "cognition_capability",
-            "cognition_spawn_turn_worker",
+            crate::public_api::COGNITION_WORKSHOP_QUERY,
+            crate::public_api::COGNITION_WORKSHOP_MUTATE,
             "cognition_turn",
         ] {
             assert!(tool_allowed(tool, &host), "host bus missing {tool}");

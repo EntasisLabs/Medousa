@@ -141,16 +141,6 @@ pub fn host_bus_tool_names() -> HashSet<String> {
     push(
         &mut names,
         &[
-            "cognition_spawn_turn_worker",
-            "cognition_turn_worker_status",
-            "cognition_turn_worker_cancel",
-            "cognition_workshop_steer",
-        ],
-    );
-
-    push(
-        &mut names,
-        &[
             "cognition_manuscript_list",
             "cognition_manuscript_resolve",
             "cognition_tool_history_summary",
@@ -285,6 +275,7 @@ mod tests {
         assert!(allow.contains("cognition_memory_query"));
         assert!(allow.contains("cognition_capability"));
         assert!(!allow.contains("cognition_spawn_turn_worker"));
+        assert!(!allow.contains("cognition_workshop_steer"));
         assert!(!allow.contains("cognition_grapheme_run"));
     }
 
@@ -300,7 +291,11 @@ mod tests {
         assert!(names.contains("cognition_runtime_query"));
         assert!(names.contains("cognition_runtime_mutate"));
         assert!(names.contains("cognition_schema"));
-        assert!(names.contains("cognition_spawn_turn_worker"));
+        assert!(names.contains("cognition_workshop_query"));
+        assert!(names.contains("cognition_workshop_mutate"));
+        assert!(!names.contains("cognition_spawn_turn_worker"));
+        assert!(!names.contains("cognition_turn_worker_status"));
+        assert!(!names.contains("cognition_turn_worker_cancel"));
         assert!(names.contains("cognition_capability"));
         assert!(!names.contains("cognition_job_enqueue"));
         assert!(!names.contains("cognition_runtime_workflow_run"));
@@ -309,7 +304,7 @@ mod tests {
         assert!(names.contains("cognition_calendar_mutate"));
         assert!(!names.contains("cognition_calendar_list"));
         assert!(!names.contains("cognition_calendar_create"));
-        assert!(names.contains("cognition_workshop_steer"));
+        assert!(!names.contains("cognition_workshop_steer"));
         assert!(!names.contains("cognition_grapheme_run"));
         assert!(!names.contains("cognition_capability_invoke"));
         assert!(!names.contains("cognition_mcp_invoke"));

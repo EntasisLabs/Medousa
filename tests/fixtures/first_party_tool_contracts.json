@@ -1500,7 +1500,8 @@
               "memory",
               "runtime",
               "store",
-              "turn"
+              "turn",
+              "workshop"
             ],
             "type": "string"
           },
@@ -1578,7 +1579,11 @@
                 "workflow.plan",
                 "workflow.run",
                 "workflow.schedule",
-                "workflow.status"
+                "workflow.status",
+                "workshop.cancel",
+                "workshop.spawn",
+                "workshop.status",
+                "workshop.steer"
               ],
               "type": "string"
             },
@@ -1723,50 +1728,6 @@
     },
     {
       "registry": "coder_bound",
-      "name": "cognition_spawn_turn_worker",
-      "description": "Spawn a peer sub-agent for parallel research or side tasks while Coder stays on the Forge lease.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "manuscript_id": {
-            "description": "Optional YAML specialty (voice, tools, worker intent, spec.worker.stage_role, spec.worker.model_hint).",
-            "type": "string"
-          },
-          "model_hint": {
-            "description": "Optional. Prefer omit or 'auto' to use user stage-routing / host prefs. Only set provider:model when explicitly requested (e.g. deepseek:deepseek-v4-flash).",
-            "type": "string"
-          },
-          "stage_role": {
-            "description": "Optional StageRoutingMatrix role (extractor, verifier, chunker, …)",
-            "type": "string"
-          },
-          "task": {
-            "description": "Focused task for the worker: capability id, module.op, URLs, and constraints. Include what the host already resolved so the worker does not rediscover.",
-            "type": "string"
-          },
-          "user_ack": {
-            "description": "Short message for the user while the worker runs",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "task",
-          "user_ack"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
-      ]
-    },
-    {
-      "registry": "coder_bound",
       "name": "cognition_store_read",
       "description": "Read or search vault notes, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.read, artifacts.search, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
@@ -1881,60 +1842,6 @@
     },
     {
       "registry": "coder_bound",
-      "name": "cognition_turn_worker_cancel",
-      "description": "Cancel a peer sub-agent spawned from this Coder turn.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "work_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "work_id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_turn_worker_status",
-      "description": "Check status of peer sub-agents spawned from this Coder turn.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "session_id": {
-            "type": "string"
-          },
-          "work_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
-      ]
-    },
-    {
-      "registry": "coder_bound",
       "name": "cognition_web_search",
       "description": "Search the public web with one call. Uses configured provider preference and binding fallbacks (web.<provider>, then websearch.search). For deep reports use mode=research_report.",
       "input_schema": {
@@ -1977,6 +1884,68 @@
       "output_schema_present": true,
       "placements": [
         "coder:domain:research"
+      ]
+    },
+    {
+      "registry": "coder_bound",
+      "name": "cognition_workshop_mutate",
+      "description": "Spawn, cancel, or steer a peer sub-agent. action=workshop.spawn for parallel research while Coder stays on the Forge lease.",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "enum": [
+              "workshop.cancel",
+              "workshop.spawn",
+              "workshop.steer"
+            ],
+            "type": "string"
+          },
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "intent"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:initial"
+      ]
+    },
+    {
+      "registry": "coder_bound",
+      "name": "cognition_workshop_query",
+      "description": "Check status of peer sub-agents spawned from this Coder turn.",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "enum": [
+              "workshop.status"
+            ],
+            "type": "string"
+          },
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "intent"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:initial"
       ]
     },
     {
@@ -3976,7 +3945,8 @@
               "memory",
               "runtime",
               "store",
-              "turn"
+              "turn",
+              "workshop"
             ],
             "type": "string"
           },
@@ -4049,7 +4019,11 @@
                 "workflow.plan",
                 "workflow.run",
                 "workflow.schedule",
-                "workflow.status"
+                "workflow.status",
+                "workshop.cancel",
+                "workshop.spawn",
+                "workshop.status",
+                "workshop.steer"
               ],
               "type": "string"
             },
@@ -4341,49 +4315,6 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_spawn_turn_worker",
-      "description": "Delegate heavy work to a background turn worker (web/Grapheme execution, memory rituals). Returns immediately with user_ack; the worker runs tools with a focused policy, then results return to the host so it can answer. Intents: memory.avec_calibrate | memory.context | research | general. Optional manuscript_id loads a YAML specialty (voice, tool allowlist, identity pins, OpenShell/skill tools). Manuscript spec.worker.stage_role selects a StageRoutingMatrix route (extractor, verifier, …); spec.worker.model_hint overrides provider/model. Spawn-time stage_role/model_hint win over manuscript defaults. Prefer omitting model_hint (or set model_hint=auto) so workshop StageRoutingMatrix / host preferences choose provider+model. Only pass provider:model when the user explicitly asked for that combo. Bare model ids infer the provider when unambiguous; otherwise they inherit the host turn provider — never the process default. Use manuscript_id=echo-skill or openshell-researcher for sandbox script execution. Put resolved capability/module/op and any host evidence into task — workers do not see parent chat.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "Worker profile: memory.avec_calibrate | memory.context | research | general",
-            "type": "string"
-          },
-          "manuscript_id": {
-            "description": "Optional YAML specialty (voice, tools, worker intent, spec.worker.stage_role, spec.worker.model_hint).",
-            "type": "string"
-          },
-          "model_hint": {
-            "description": "Optional. Prefer omit or 'auto' to use user stage-routing / host prefs. Only set provider:model when explicitly requested (e.g. deepseek:deepseek-v4-flash).",
-            "type": "string"
-          },
-          "stage_role": {
-            "description": "Optional StageRoutingMatrix role (extractor, verifier, chunker, …)",
-            "type": "string"
-          },
-          "task": {
-            "description": "Focused task for the worker: capability id, module.op, URLs, and constraints. Include what the host already resolved so the worker does not rediscover.",
-            "type": "string"
-          },
-          "user_ack": {
-            "description": "Short message for the user while the worker runs",
-            "type": "string"
-          }
-        },
-        "required": [
-          "task",
-          "user_ack"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:bootstrap"
-      ]
-    },
-    {
-      "registry": "general_runtime",
       "name": "cognition_store_read",
       "description": "Read or search vault notes, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.read, artifacts.search, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
@@ -4618,47 +4549,6 @@
         "workshop:authorized:memory_context",
         "workshop:authorized:research",
         "workshop:bootstrap"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_turn_worker_cancel",
-      "description": "Cancel an exact worker generation owned by the active host session (best-effort; in-flight worker may still finish).",
-      "input_schema": {
-        "properties": {
-          "work_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "work_id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_turn_worker_status",
-      "description": "List or fetch status of background turn workers. On an active host turn, omit session_id to use the current session.",
-      "input_schema": {
-        "properties": {
-          "session_id": {
-            "type": "string"
-          },
-          "work_id": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:bootstrap"
       ]
     },
     {
@@ -4950,28 +4840,64 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_workshop_steer",
-      "description": "Forward a principal steer message into the active bound workshop for this session. Use when the operator adds guidance while workshop execution is in flight.",
+      "name": "cognition_workshop_mutate",
+      "description": "Write workshop/worker control: spawn, cancel, or steer. action is a typed name (workshop.spawn, workshop.cancel, workshop.steer). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "message": {
-            "description": "Steer text for the bound workshop",
-            "type": "string"
-          },
-          "work_id": {
-            "description": "Exact bound-workshop generation returned by begin-work.",
+          "action": {
+            "enum": [
+              "workshop.cancel",
+              "workshop.spawn",
+              "workshop.steer"
+            ],
             "type": "string"
           }
         },
         "required": [
-          "message",
-          "work_id"
+          "action"
         ],
         "type": "object"
       },
       "output_schema_present": true,
       "placements": [
-        "general:authorized"
+        "general:authorized",
+        "general:bootstrap",
+        "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
+        "workshop:authorized:research",
+        "workshop:bootstrap"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_workshop_query",
+      "description": "Read workshop/worker status. action is a typed name (workshop.status). Fetch fields with cognition_schema types=[...].",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "enum": [
+              "workshop.status"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:bootstrap",
+        "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
+        "workshop:authorized:research",
+        "workshop:bootstrap"
       ]
     },
     {

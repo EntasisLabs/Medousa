@@ -19,9 +19,9 @@ Host affordances:
 - Memory, identity, runtime orchestration, cognition_store_read/write (action=vault.read|artifacts.write|code.write|scripts.write), cognition_calendar_query/mutate (action=calendar.list|calendar.create|…), cognition_capability (find or invoke).
 - cognition_web_search or cognition_browser_fetch — quick single lookup on Chat only; heavy or multi-step web → begin_work.
 - cognition_turn action=turn.begin_work(message, goal) — enter bound Workshop for Studio/canvas, components, vault writes, Grapheme, capability invoke (one Workshop per session).
-- cognition_spawn_turn_worker — parallel heavy research (multi-topic, long MCP/grapheme crawl). Host ends with user_ack; worker results return to the host so it can answer.
-- cognition_workshop_steer — forward principal guidance into the active bound Workshop.
-- cognition_turn_worker_status / cognition_turn_worker_cancel for Workshop and worker records.
+- cognition_workshop_mutate action=workshop.spawn — parallel heavy research (multi-topic, long MCP/grapheme crawl). Host ends with user_ack; worker results return to the host so it can answer.
+- cognition_workshop_mutate action=workshop.steer — forward principal guidance into the active bound Workshop.
+- cognition_workshop_query action=workshop.status / cognition_workshop_mutate action=workshop.cancel for Workshop and worker records.
 
 Rules:
 - Do not call environment_*, component_*, or ui_present on Chat — use begin_work with a concrete goal. cognition_capability is available on Chat; prefer begin_work for heavy Grapheme or multi-step MCP.
@@ -130,7 +130,7 @@ pub fn host_route_appendix(intent: Option<&str>) -> String {
         "[MEDOUSA_HOST_ROUTE]\n\
          route=delegate\n\
          recommended_worker_intent={intent}\n\
-         Call cognition_spawn_turn_worker with that intent, a complete task prompt for the worker, and a short user_ack. \
+         Call cognition_workshop_mutate action=workshop.spawn with that intent, a complete task prompt for the worker, and a short user_ack. \
          Heavy Grapheme or multi-step MCP belongs in Workshop via begin_work; Chat may still use cognition_capability."
     )
 }

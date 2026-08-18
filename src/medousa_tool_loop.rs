@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::future::Future;
 use std::sync::Arc;
 
-use genai::chat::{ChatMessage, ChatRequest, ToolResponse};
+use genai::chat::{ChatMessage, ChatRequest, ToolCall, ToolResponse};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
@@ -514,6 +514,7 @@ impl MedousaToolLoopPipeline {
                     .first_text()
                     .map(|value| value.trim().to_string())
                     .filter(|value| !value.is_empty());
+                let reasoning_content = response.reasoning_content.clone();
                 let tool_calls = response.into_tool_calls();
 
                 if tool_calls.is_empty() {
@@ -757,7 +758,10 @@ impl MedousaToolLoopPipeline {
                 turn_ctx
                     .tool_lane
                     .messages
-                    .push(ChatMessage::from(tool_calls.clone()));
+                    .push(assistant_tool_round_message(
+                        tool_calls.clone(),
+                        reasoning_content,
+                    ));
 
                 let invocations_before = invocations.len();
                 let batch: Vec<(String, Value)> = tool_calls
@@ -1389,7 +1393,12 @@ impl MedousaToolLoopPipeline {
                 {
                     let intent = invocations
                         .iter()
-                        .find(|i| i.tool_name == "cognition_spawn_turn_worker")
+                        .find(|i| {
+                            crate::agent_runtime::turn_worker_tools::is_workshop_spawn_call(
+                                &i.tool_name,
+                                &i.tool_input,
+                            )
+                        })
                         .and_then(|i| i.tool_input.get("intent"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("general");
@@ -1416,7 +1425,7 @@ impl MedousaToolLoopPipeline {
                         );
                     }
                     let last = invocations.last().cloned().unwrap_or(ToolInvocation {
-                        tool_name: "cognition_spawn_turn_worker".to_string(),
+                        tool_name: crate::public_api::COGNITION_WORKSHOP_MUTATE.to_string(),
                         tool_input: Value::Null,
                         tool_output: Value::Null,
                     });
@@ -1890,7 +1899,7 @@ fn recoverable_tool_error_value(message: &str) -> Value {
         "ok": false,
         "error": message,
         "recoverable": true,
-        "hint": "Read the error, fix arguments or choose another allowed tool, retry once if policy allows; delegate via cognition_spawn_turn_worker when the host profile blocks direct execution."
+        "hint": "Read the error, fix arguments or choose another allowed tool, retry once if policy allows; delegate via cognition_workshop_mutate action=workshop.spawn when the host profile blocks direct execution."
     })
 }
 
@@ -1918,6 +1927,18 @@ fn build_fallback_synthesis_prompt(
 
 fn is_serde_json_completion_error(err: &StasisError) -> bool {
     err.to_string().contains("Serde JSON error")
+}
+
+/// Replay an assistant tool-call turn, including thinking-mode `reasoning_content`.
+///
+/// DeepSeek V4 (and Kimi) require that field on later requests once the original
+/// turn used tools. `ChatMessage::from(tool_calls)` alone drops it.
+fn assistant_tool_round_message(
+    tool_calls: Vec<ToolCall>,
+    reasoning_content: Option<String>,
+) -> ChatMessage {
+    ChatMessage::from(tool_calls)
+        .with_reasoning_content(Some(reasoning_content.unwrap_or_default()))
 }
 
 /// Outcome of a chat completion that may have hit malformed provider tool-call JSON.
@@ -2006,11 +2027,13 @@ fn sanitize_tool_name_for_model(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        MALFORMED_TOOL_JSON_GUIDANCE, is_serde_json_completion_error, recoverable_tool_error_value,
-        tool_output_from_invoke, tool_round_budget_exhausted_message,
+        MALFORMED_TOOL_JSON_GUIDANCE, assistant_tool_round_message, is_serde_json_completion_error,
+        recoverable_tool_error_value, tool_output_from_invoke, tool_round_budget_exhausted_message,
     };
     use crate::agent_runtime::turn_completion_fsm::TurnCompletionProfile;
     use crate::turn_control_tools::finish_turn_from_invocations;
+    use genai::chat::{ContentPart, ToolCall};
+    use serde_json::json;
     use stasis::domain::errors::StasisError;
 
     #[test]
@@ -2029,6 +2052,31 @@ mod tests {
         assert!(MALFORMED_TOOL_JSON_GUIDANCE.contains("Self-correct"));
         assert!(MALFORMED_TOOL_JSON_GUIDANCE.contains("cognition_ui_build"));
         assert!(MALFORMED_TOOL_JSON_GUIDANCE.contains("do NOT ask them to retry"));
+    }
+
+    #[test]
+    fn assistant_tool_round_replays_reasoning_content() {
+        let message = assistant_tool_round_message(
+            vec![ToolCall {
+                call_id: "call-1".into(),
+                fn_name: "cognition_workshop_query".into(),
+                fn_arguments: json!({ "action": "workshop.status" }),
+                thought_signatures: None,
+            }],
+            Some("I should check worker status first.".into()),
+        );
+        assert!(message.content.contains_tool_call());
+        assert_eq!(
+            message.content.joined_reasoning_content().as_deref(),
+            Some("I should check worker status first.")
+        );
+        assert!(
+            message
+                .content
+                .parts()
+                .iter()
+                .any(|part| matches!(part, ContentPart::ReasoningContent(_)))
+        );
     }
 
     #[test]

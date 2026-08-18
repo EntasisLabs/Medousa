@@ -15,6 +15,7 @@ use crate::runtime_api::runtime_type_schemas;
 use crate::store_tools::store_type_schemas;
 use crate::turn_api::turn_type_schemas;
 use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
+use crate::workshop_api::workshop_type_schemas;
 
 const SCHEMA_ID: ToolId = ToolId::new(COGNITION_SCHEMA);
 
@@ -28,6 +29,7 @@ enum SchemaDomain {
     Memory,
     Identity,
     Calendar,
+    Workshop,
 }
 
 impl SchemaDomain {
@@ -40,6 +42,7 @@ impl SchemaDomain {
             Self::Memory => "memory",
             Self::Identity => "identity",
             Self::Calendar => "calendar",
+            Self::Workshop => "workshop",
         }
     }
 }
@@ -86,6 +89,7 @@ impl JsonSchema for SchemaInput {
                     "memory",
                     "identity",
                     "calendar",
+                    "workshop",
                 ]),
                 false,
             ),
@@ -195,6 +199,10 @@ fn catalog() -> Vec<CatalogItem> {
         .chain(generated_items(
             SchemaDomain::Calendar,
             calendar_type_schemas(),
+        ))
+        .chain(generated_items(
+            SchemaDomain::Workshop,
+            workshop_type_schemas(),
         ))
         .collect()
 }
@@ -402,5 +410,6 @@ mod tests {
         assert!(names.iter().any(|value| value == "memory.store"));
         assert!(names.iter().any(|value| value == "identity.remember"));
         assert!(names.iter().any(|value| value == "calendar.create"));
+        assert!(names.iter().any(|value| value == "workshop.spawn"));
     }
 }

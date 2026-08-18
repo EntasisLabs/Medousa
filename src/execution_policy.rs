@@ -206,6 +206,17 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
                 _ => StepExecutionClass::Mutating,
             }
         }
+        "cognition_workshop_mutate" => {
+            let action = input
+                .get("action")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            if action == "workshop.spawn" {
+                StepExecutionClass::ReadOnly
+            } else {
+                StepExecutionClass::Mutating
+            }
+        }
         "cognition_runtime_mutate"
         | "cognition_memory_mutate"
         | "cognition_identity_mutate"
@@ -218,11 +229,11 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         "cognition_memory_query"
         | "cognition_identity_query"
         | "cognition_calendar_query"
+        | "cognition_workshop_query"
         | "cognition_store_read"
         | "cognition_runtime_query"
         | "cognition_schema"
-        | "cognition_web_search"
-        | "cognition_spawn_turn_worker" => StepExecutionClass::ReadOnly,
+        | "cognition_web_search" => StepExecutionClass::ReadOnly,
         _ if tool_name.contains("modules") || tool_name.contains("examples") => {
             StepExecutionClass::ReadOnly
         }
@@ -334,20 +345,26 @@ mod tests {
     #[test]
     fn spawn_turn_worker_is_parallel_safe() {
         let input = json!({
+            "action": "workshop.spawn",
             "intent": "research",
             "task": "look this up",
             "user_ack": "On it."
         });
         assert_eq!(
-            classify_tool_call("cognition_spawn_turn_worker", &input),
+            classify_tool_call("cognition_workshop_mutate", &input),
             StepExecutionClass::ReadOnly
         );
         let calls = vec![
-            ("cognition_spawn_turn_worker".to_string(), input.clone()),
-            ("cognition_spawn_turn_worker".to_string(), input),
+            ("cognition_workshop_mutate".to_string(), input.clone()),
+            ("cognition_workshop_mutate".to_string(), input),
         ];
         let settings = ParallelExecutionSettings::default();
         assert!(parallel_tool_batch_allowed(&calls, &settings).is_ok());
+        let cancel = json!({ "action": "workshop.cancel", "work_id": "work-1" });
+        assert_eq!(
+            classify_tool_call("cognition_workshop_mutate", &cancel),
+            StepExecutionClass::Mutating
+        );
     }
 
     #[test]

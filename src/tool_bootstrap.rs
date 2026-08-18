@@ -66,7 +66,8 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_runtime_query",
     "cognition_runtime_mutate",
     "cognition_tool_history_summary",
-    "cognition_spawn_turn_worker",
+    "cognition_workshop_query",
+    "cognition_workshop_mutate",
     "cognition_memory_query",
     "cognition_memory_mutate",
     "cognition_identity_query",
@@ -77,7 +78,6 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_calendar_query",
     "cognition_calendar_mutate",
     "cognition_turn",
-    "cognition_turn_worker_status",
     "cognition_ui_present",
     "cognition_ui_build",
     "cognition_ui_scene",
@@ -100,6 +100,8 @@ pub const WORKER_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_identity_mutate",
     "cognition_calendar_query",
     "cognition_calendar_mutate",
+    "cognition_workshop_query",
+    "cognition_workshop_mutate",
     "cognition_ui_build",
     "cognition_ui_scene",
     "cognition_ui_present",
@@ -848,6 +850,10 @@ mod tests {
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_query"));
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_calendar_query"));
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_calendar_mutate"));
+        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_workshop_query"));
+        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_workshop_mutate"));
+        assert!(!HOST_BOOTSTRAP_TOOLS.contains(&"cognition_spawn_turn_worker"));
+        assert!(!HOST_BOOTSTRAP_TOOLS.contains(&"cognition_turn_worker_status"));
     }
 
     #[test]

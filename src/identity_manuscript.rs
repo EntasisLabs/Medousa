@@ -197,6 +197,7 @@ pub fn scheduled_lane_tool_universe() -> HashSet<String> {
     universe.remove("cognition_identity_mutate");
     universe.remove("cognition_identity_remember");
     universe.remove("cognition_spawn_turn_worker");
+    universe.remove("cognition_workshop_mutate");
     // OS-native shell stays interactive-only for now (no scheduled allow flag yet).
     universe.retain(|tool| !is_shell_cognition_tool(tool));
     universe
@@ -1716,7 +1717,7 @@ spec:
             tools_allow: vec![
                 "cognition_identity_query".to_string(),
                 "cognition_memory_query".to_string(),
-                "cognition_spawn_turn_worker".to_string(),
+                "cognition_workshop_mutate".to_string(),
             ],
             locus_session_id: None,
             delivery_mode: None,
@@ -1736,6 +1737,7 @@ spec:
         assert!(allow.contains("cognition_identity_query"));
         assert!(allow.contains("cognition_memory_query"));
         assert!(!allow.contains("cognition_spawn_turn_worker"));
+        assert!(!allow.contains("cognition_workshop_mutate"));
         assert!(!allow.contains("cognition_identity_remember"));
         assert!(!allow.contains("cognition_identity_mutate"));
     }

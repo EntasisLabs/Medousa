@@ -236,6 +236,7 @@ pub mod verifier;
 pub mod workflow;
 pub mod workflow_handlers;
 pub mod workflow_plan;
+pub mod workshop_api;
 pub mod workshop_env;
 
 use std::path::PathBuf;

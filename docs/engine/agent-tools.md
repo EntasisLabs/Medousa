@@ -48,6 +48,7 @@ Source: `src/tool_bootstrap.rs`
 | Memory | `cognition_memory_query` / `cognition_memory_mutate` (`action=memory.context\|memory.store\|…`) |
 | Identity | `cognition_identity_query` / `cognition_identity_mutate` (`action=identity.recall\|identity.remember\|…`) |
 | Calendar | `cognition_calendar_query` / `cognition_calendar_mutate` (`action=calendar.list\|calendar.create\|…`) — [calendar.md](calendar.md) |
+| Workshop | `cognition_workshop_query` / `cognition_workshop_mutate` (`action=workshop.status\|workshop.spawn\|workshop.cancel\|workshop.steer`) |
 | MCP | `cognition.mcp.*` — [mcp-gateway-setup.md](../mcp-gateway-setup.md) |
 | UI present | `cognition_ui_present` — emits `ui_artifact` on stream |
 | Web | `cognition_web_search` — all surfaces; BrowserHost → lite → Grapheme chain |
