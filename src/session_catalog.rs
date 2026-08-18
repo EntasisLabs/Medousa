@@ -472,8 +472,14 @@ impl SessionCatalogStore for FileSessionCatalogStore {
     }
 
     fn delete_row(&self, session_id: &SessionId) -> Result<(), String> {
-        self.files.remove(session_id).map_err(|error| error.to_string())?;
-        if self.files.contains(session_id).map_err(|error| error.to_string())? {
+        self.files
+            .remove(session_id)
+            .map_err(|error| error.to_string())?;
+        if self
+            .files
+            .contains(session_id)
+            .map_err(|error| error.to_string())?
+        {
             return Err("session catalog row remains after deletion".to_string());
         }
         Ok(())

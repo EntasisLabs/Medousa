@@ -1074,10 +1074,9 @@ impl CognitionRuntimeRecurringRegisterTool {
         .start_immediately(start_immediately)
         .build(Utc::now())?;
 
-        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
-            &self.turn_scope,
-        )
-        .await;
+        let scope =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await;
         let ambient = ambient_from_turn_scope(scope.as_ref());
         let fallback_session_id = scope
             .as_ref()
@@ -1627,10 +1626,9 @@ impl CognitionRuntimeWorkflowRunTool {
 
         let workflow_id = new_workflow_id();
         let payload = build_workflow_payload(&workflow_id, &request, "interactive");
-        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
-            &self.turn_scope,
-        )
-        .await;
+        let scope =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await;
         let continuation = scope
             .as_ref()
             .map(|turn_scope| WorkflowEnqueueContinuation {
@@ -1913,10 +1911,9 @@ impl CognitionRuntimeWorkflowScheduleTool {
         .start_immediately(command.start_immediately)
         .build(now)?;
 
-        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
-            &self.turn_scope,
-        )
-        .await;
+        let scope =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await;
         let ambient = ambient_from_turn_scope(scope.as_ref());
         let fallback_session_id = scope
             .as_ref()
@@ -2000,10 +1997,9 @@ impl CognitionRuntimeWorkflowScheduleTool {
             })
             .await;
 
-        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
-            &self.turn_scope,
-        )
-        .await;
+        let scope =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await;
         let continuation = materialized_job_id.as_ref().and_then(|job_id| {
             scope.as_ref().map(|turn_scope| {
                 ExternalJson::new(continuation_tool_metadata(

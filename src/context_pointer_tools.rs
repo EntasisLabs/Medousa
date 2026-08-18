@@ -1,8 +1,7 @@
 //! Context pointer follow tool.
 
-
-use medousa_types::environment::POINTER_KIND_SESSION;
 use medousa_types::environment::ContextPointerDigest;
+use medousa_types::environment::POINTER_KIND_SESSION;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use stasis::prelude::{Result as StasisResult, StasisError};
@@ -15,10 +14,8 @@ use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_CONTEXT_FOLLOW_POINTER: &str = "cognition_context_follow_pointer";
 pub const COGNITION_CONTEXT_LIST_POINTERS: &str = "cognition_context_list_pointers";
-const COGNITION_CONTEXT_FOLLOW_POINTER_ID: ToolId =
-    ToolId::new(COGNITION_CONTEXT_FOLLOW_POINTER);
-const COGNITION_CONTEXT_LIST_POINTERS_ID: ToolId =
-    ToolId::new(COGNITION_CONTEXT_LIST_POINTERS);
+const COGNITION_CONTEXT_FOLLOW_POINTER_ID: ToolId = ToolId::new(COGNITION_CONTEXT_FOLLOW_POINTER);
+const COGNITION_CONTEXT_LIST_POINTERS_ID: ToolId = ToolId::new(COGNITION_CONTEXT_LIST_POINTERS);
 
 pub fn register_context_pointer_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
@@ -133,19 +130,15 @@ impl CognitionContextFollowPointerTool {
         let pointer_id = command.pointer_id.into_string();
         let scope = command.scope.as_string();
 
-        let active_session =
-            crate::runtime_session::require_active_chat_session_id_async(
-                &self.turn_scope,
-                crate::runtime_session::runtime_bootstrap_session_id(),
-                COGNITION_CONTEXT_FOLLOW_POINTER,
-            )
-            .await?;
+        let active_session = crate::runtime_session::require_active_chat_session_id_async(
+            &self.turn_scope,
+            crate::runtime_session::runtime_bootstrap_session_id(),
+            COGNITION_CONTEXT_FOLLOW_POINTER,
+        )
+        .await?;
 
         let sessions = crate::session_catalog::list_sessions(20);
-        let env = environment_hub()
-            .get(&resolve_profile_id(None))
-            .await
-            .ok();
+        let env = environment_hub().get(&resolve_profile_id(None)).await.ok();
         let digest = crate::context_pointer_index::build_pointer_digest(
             &active_session,
             &sessions,
@@ -166,8 +159,7 @@ impl CognitionContextFollowPointerTool {
         } else {
             None
         };
-        let (content, truncated) =
-            resolve_pointer_slice(&pointer, &scope, history.as_deref());
+        let (content, truncated) = resolve_pointer_slice(&pointer, &scope, history.as_deref());
 
         Ok(ContextFollowPointerOutput {
             ok: true,
@@ -201,18 +193,14 @@ impl CognitionContextListPointersTool {
         &self,
         _input: ContextListPointersInput,
     ) -> stasis::prelude::Result<ContextListPointersOutput> {
-        let active_session =
-            crate::runtime_session::require_active_chat_session_id_async(
-                &self.turn_scope,
-                crate::runtime_session::runtime_bootstrap_session_id(),
-                COGNITION_CONTEXT_LIST_POINTERS,
-            )
-            .await?;
+        let active_session = crate::runtime_session::require_active_chat_session_id_async(
+            &self.turn_scope,
+            crate::runtime_session::runtime_bootstrap_session_id(),
+            COGNITION_CONTEXT_LIST_POINTERS,
+        )
+        .await?;
         let sessions = crate::session_catalog::list_sessions(20);
-        let env = environment_hub()
-            .get(&resolve_profile_id(None))
-            .await
-            .ok();
+        let env = environment_hub().get(&resolve_profile_id(None)).await.ok();
         let digest = crate::context_pointer_index::build_pointer_digest(
             &active_session,
             &sessions,

@@ -1,14 +1,14 @@
 //! HTTP handlers for vault Versions (`/v1/vault/git/*`).
 
+use axum::Json;
 use axum::extract::Query;
 use axum::http::StatusCode;
-use axum::Json;
 use serde::{Deserialize, Serialize};
 
 use crate::session::{load_tui_defaults, save_tui_defaults};
 use crate::vault_git::{
-    commit_version, detect_git, diff_note, git_log, git_status, init_repo, install_portable_git,
-    restore_note, GitCommitRequest, GitDiffQuery, GitLogQuery,
+    GitCommitRequest, GitDiffQuery, GitLogQuery, commit_version, detect_git, diff_note, git_log,
+    git_status, init_repo, install_portable_git, restore_note,
 };
 
 fn map_err(err: anyhow::Error) -> (StatusCode, String) {
@@ -28,8 +28,8 @@ pub async fn vault_git_detect() -> Json<crate::vault_git::service::GitDetectResp
     Json(detect_git())
 }
 
-pub async fn vault_git_status(
-) -> Result<Json<crate::vault_git::service::GitStatusResponse>, (StatusCode, String)> {
+pub async fn vault_git_status()
+-> Result<Json<crate::vault_git::service::GitStatusResponse>, (StatusCode, String)> {
     git_status().map(Json).map_err(map_err)
 }
 
@@ -72,13 +72,13 @@ pub async fn vault_git_enable(
     }))
 }
 
-pub async fn vault_git_init(
-) -> Result<Json<crate::vault_git::service::GitStatusResponse>, (StatusCode, String)> {
+pub async fn vault_git_init()
+-> Result<Json<crate::vault_git::service::GitStatusResponse>, (StatusCode, String)> {
     init_repo().map(Json).map_err(map_err)
 }
 
-pub async fn vault_git_install(
-) -> Result<Json<crate::vault_git::service::GitDetectResponse>, (StatusCode, String)> {
+pub async fn vault_git_install()
+-> Result<Json<crate::vault_git::service::GitDetectResponse>, (StatusCode, String)> {
     install_portable_git(|_| {}).await.map_err(map_err)?;
     Ok(Json(detect_git()))
 }
@@ -129,8 +129,7 @@ pub struct WorktreeEntry {
     pub branch: Option<String>,
 }
 
-pub async fn vault_git_worktrees_list(
-) -> Result<Json<Vec<WorktreeEntry>>, (StatusCode, String)> {
+pub async fn vault_git_worktrees_list() -> Result<Json<Vec<WorktreeEntry>>, (StatusCode, String)> {
     crate::vault_git::ensure_enabled().map_err(map_err)?;
     let git = crate::vault_git::service::resolve_git_binary()
         .ok_or_else(|| map_err(anyhow::anyhow!("Git is not installed")))?;

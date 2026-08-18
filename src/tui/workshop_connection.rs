@@ -379,14 +379,12 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let _data_dir = crate::paths::scoped_test_data_dir(dir.path());
 
-        remember_daemon("http://10.0.0.2:7419", Some("Lab"), Some("paired-lab"))
-            .expect("remember");
+        remember_daemon("http://10.0.0.2:7419", Some("Lab"), Some("paired-lab")).expect("remember");
         let recent = load_recent_daemons();
         assert_eq!(recent.len(), 1);
         assert_eq!(recent[0].label.as_deref(), Some("Lab"));
         let active = load_active_connection().expect("active");
         assert_eq!(active.url, "http://10.0.0.2:7419");
         assert_eq!(active.workshop_id.as_deref(), Some("paired-lab"));
-
     }
 }

@@ -7,8 +7,8 @@ use stasis::ports::outbound::memory::identity_memory_models::IdentityContextMode
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 
 use crate::cognitive_identity::{
-    CognitiveIdentitySnapshot, DigestCompileOptions, compile_relational_memory_digest_with_options,
-    DEFAULT_RELATIONAL_DIGEST_BUDGET,
+    CognitiveIdentitySnapshot, DEFAULT_RELATIONAL_DIGEST_BUDGET, DigestCompileOptions,
+    compile_relational_memory_digest_with_options,
 };
 
 pub fn identity_markdown_export_dir() -> PathBuf {
@@ -36,15 +36,13 @@ pub async fn export_identity_markdown(
         .unwrap_or_else(|| crate::identity_memory::resolve_identity_user_id(None));
 
     let context = store
-        .get_identity_context(
-            &crate::identity_memory::build_identity_context_request(
-                user_id.clone(),
-                crate::identity_memory::resolve_identity_persona_id(),
-                crate::identity_memory::resolve_identity_channel_id(None),
-                32,
-                IdentityContextMode::Cognitive,
-            ),
-        )
+        .get_identity_context(&crate::identity_memory::build_identity_context_request(
+            user_id.clone(),
+            crate::identity_memory::resolve_identity_persona_id(),
+            crate::identity_memory::resolve_identity_channel_id(None),
+            32,
+            IdentityContextMode::Cognitive,
+        ))
         .await
         .context("load identity context for markdown export")?;
 
@@ -157,15 +155,13 @@ pub async fn compile_identity_digest_preview(
         .unwrap_or_else(|| crate::identity_memory::resolve_identity_user_id(None));
 
     let context = store
-        .get_identity_context(
-            &crate::identity_memory::build_identity_context_request(
-                user_id.clone(),
-                crate::identity_memory::resolve_identity_persona_id(),
-                crate::identity_memory::resolve_identity_channel_id(None),
-                32,
-                IdentityContextMode::Cognitive,
-            ),
-        )
+        .get_identity_context(&crate::identity_memory::build_identity_context_request(
+            user_id.clone(),
+            crate::identity_memory::resolve_identity_persona_id(),
+            crate::identity_memory::resolve_identity_channel_id(None),
+            32,
+            IdentityContextMode::Cognitive,
+        ))
         .await
         .context("load identity context for digest preview")?;
 

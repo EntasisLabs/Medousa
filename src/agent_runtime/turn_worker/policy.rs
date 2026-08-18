@@ -433,8 +433,7 @@ mod tests {
             "cognition_capability_invoke".to_string(),
             "cognition_spawn_turn_worker".to_string(),
         ];
-        let allow =
-            worker_allowlist_for_intent_and_tools(TurnWorkerIntent::Research, &tools);
+        let allow = worker_allowlist_for_intent_and_tools(TurnWorkerIntent::Research, &tools);
         assert!(allow.contains("cognition_identity_recall"));
         assert!(allow.contains("cognition_memory_context"));
         assert!(allow.contains("cognition_capability_invoke"));

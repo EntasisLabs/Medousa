@@ -59,10 +59,7 @@ use crate::turn_control_tools::{
 const DEFAULT_MAX_TOOL_ROUNDS: usize =
     crate::agent_runtime::turn_loop_settings::DEFAULT_GENERAL_MAX_TOOL_ROUNDS;
 
-fn turn_boundary_failure(
-    operation: &str,
-    error: TurnExecutionBoundaryError,
-) -> StasisError {
+fn turn_boundary_failure(operation: &str, error: TurnExecutionBoundaryError) -> StasisError {
     StasisError::PortFailure(format!("{error} during {operation}"))
 }
 
@@ -803,26 +800,21 @@ impl MedousaToolLoopPipeline {
                             .await;
                         }
                         let registry = self.tool_registry.clone();
-                        let execution_context = active_turn_execution_context().ok_or_else(|| {
-                            turn_boundary_failure(
-                                "parallel tool invocation",
-                                TurnExecutionBoundaryError::MissingContext,
-                            )
-                        })?;
+                        let execution_context =
+                            active_turn_execution_context().ok_or_else(|| {
+                                turn_boundary_failure(
+                                    "parallel tool invocation",
+                                    TurnExecutionBoundaryError::MissingContext,
+                                )
+                            })?;
                         let run_id_spawn = run_id.clone();
                         join_set.spawn(async move {
-                            let output = with_turn_execution_context(
-                                execution_context,
-                                async {
-                                    await_turn_boundary(
-                                        registry.invoke_tool(
-                                            &call.fn_name,
-                                            call.fn_arguments.clone(),
-                                        ),
-                                    )
-                                    .await
-                                },
-                            )
+                            let output = with_turn_execution_context(execution_context, async {
+                                await_turn_boundary(
+                                    registry.invoke_tool(&call.fn_name, call.fn_arguments.clone()),
+                                )
+                                .await
+                            })
                             .await;
                             (call, output, run_id_spawn)
                         });
@@ -1509,12 +1501,10 @@ impl MedousaToolLoopPipeline {
             .await?
             .text
         };
-        let tool_result = await_turn_boundary(
-            self.tool_registry.invoke_tool(
-                shared_inputs.selected_tool_name(),
-                (*shared_inputs.tool_input).clone(),
-            ),
-        )
+        let tool_result = await_turn_boundary(self.tool_registry.invoke_tool(
+            shared_inputs.selected_tool_name(),
+            (*shared_inputs.tool_input).clone(),
+        ))
         .await
         .map_err(|error| turn_boundary_failure("fallback tool invocation", error))?;
         let tool_output = tool_output_from_invoke(tool_result);

@@ -149,7 +149,10 @@ mod tests {
 
     #[test]
     fn excerpt_respects_line_range_and_char_cap() {
-        let body = (1..=20).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
+        let body = (1..=20)
+            .map(|n| format!("line {n}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let excerpt = excerpt_lines(&body, Some(3), Some(5), 50);
         assert_eq!(excerpt.line_start, 3);
         assert_eq!(excerpt.line_end, 5);

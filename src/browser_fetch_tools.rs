@@ -1,6 +1,5 @@
 //! `cognition_browser_fetch` — gated on `supports_browser_host`.
 
-
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
@@ -34,10 +33,9 @@ impl CognitionBrowserFetchTool {
     }
 
     async fn browser_enabled(&self) -> bool {
-        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
-            &self.turn_scope,
-        )
-        .await;
+        let scope =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await;
         surface_supports_browser_host(surface_from_scope(scope.as_ref()).as_ref())
     }
 }
@@ -130,7 +128,9 @@ impl CognitionBrowserFetchTool {
             .await;
 
         if browser_host_healthy().await {
-            let fetched = browser_host_fetch(&url, max_chars).await.map_err(StasisError::PortFailure)?;
+            let fetched = browser_host_fetch(&url, max_chars)
+                .await
+                .map_err(StasisError::PortFailure)?;
             return Ok(BrowserFetchOutput {
                 url: fetched.url,
                 title: fetched.title,

@@ -176,16 +176,41 @@ fn missing_credential_reason(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CredentialAvailability {
+    pub api_key_configured: bool,
+    pub chatgpt_oauth_configured: bool,
+}
+
+pub fn live_credential_availability(provider: &str) -> CredentialAvailability {
+    CredentialAvailability {
+        api_key_configured: provider_api_key_configured(provider),
+        chatgpt_oauth_configured: crate::session::chatgpt_oauth_configured(),
+    }
+}
+
 pub fn target_ineligibility_reason(
     target: &InferenceTarget,
     required: CapabilityRequirement,
+) -> Option<&'static str> {
+    target_ineligibility_with_credentials(
+        target,
+        required,
+        live_credential_availability(&target.provider),
+    )
+}
+
+pub fn target_ineligibility_with_credentials(
+    target: &InferenceTarget,
+    required: CapabilityRequirement,
+    credentials: CredentialAvailability,
 ) -> Option<&'static str> {
     match provider_credential_requirement(&target.provider) {
         ProviderCredentialRequirement::None => {}
         ProviderCredentialRequirement::ApiKey => {
             if let Some(reason) = missing_credential_reason(
                 ProviderCredentialRequirement::ApiKey,
-                provider_api_key_configured(&target.provider),
+                credentials.api_key_configured,
             ) {
                 return Some(reason);
             }
@@ -193,7 +218,7 @@ pub fn target_ineligibility_reason(
         ProviderCredentialRequirement::ChatGptOAuth => {
             if let Some(reason) = missing_credential_reason(
                 ProviderCredentialRequirement::ChatGptOAuth,
-                crate::session::chatgpt_oauth_configured(),
+                credentials.chatgpt_oauth_configured,
             ) {
                 return Some(reason);
             }
@@ -385,6 +410,33 @@ mod tests {
         );
         assert_eq!(
             missing_credential_reason(ProviderCredentialRequirement::ChatGptOAuth, true),
+            None
+        );
+        let target = InferenceTarget {
+            provider: OPENAI_CODEX_PROVIDER_ID.to_string(),
+            model: "gpt-5.4".to_string(),
+            base_url: None,
+        };
+        assert_eq!(
+            target_ineligibility_with_credentials(
+                &target,
+                CapabilityRequirement::None,
+                CredentialAvailability {
+                    api_key_configured: false,
+                    chatgpt_oauth_configured: false,
+                },
+            ),
+            Some("missing_chatgpt_oauth")
+        );
+        assert_eq!(
+            target_ineligibility_with_credentials(
+                &target,
+                CapabilityRequirement::None,
+                CredentialAvailability {
+                    api_key_configured: false,
+                    chatgpt_oauth_configured: true,
+                },
+            ),
             None
         );
     }

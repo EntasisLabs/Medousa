@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use anyhow::{Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use locus_core_rs::storage::surrealdb::client::{QueryParams, SurrealDbClient};
 use serde_json::Value;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 
 /// Bridges Stasis's shared `Surreal<Any>` handle to locus-core-rs `SurrealDbClient`.
 #[derive(Clone)]
@@ -42,9 +42,9 @@ impl SurrealDbClient for StasisSurrealDbClient {
             anyhow::anyhow!("surreal query transport failed for `{label}`: {err}")
         })?;
 
-        response = response.check().map_err(|err| {
-            anyhow::anyhow!("surreal query rejected for `{label}`: {err}")
-        })?;
+        response = response
+            .check()
+            .map_err(|err| anyhow::anyhow!("surreal query rejected for `{label}`: {err}"))?;
 
         response.take(0).map_err(|err| {
             anyhow::anyhow!("surreal query result decode failed for `{label}`: {err}")

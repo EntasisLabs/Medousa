@@ -50,8 +50,10 @@ From repo root:
 
 ```bash
 cargo clippy --workspace --all-targets --exclude medousa-sdk-iroh -- -D warnings
-cargo test -p medousa --lib
-cd apps/medousa-home && npm ci && npm run check   # 0 errors, 0 warnings required
+./scripts/ci/test-hermetic.sh
+cargo test --workspace --exclude medousa-sdk-iroh --lib
+cd apps/medousa-home && npm ci && npm run check && npm test   # 0 errors, 0 warnings required
+bash scripts/verify-docs.sh --strict
 ```
 
 `medousa-sdk-iroh` is excluded from clippy until its feature matrix is reconciled with the main workspace.

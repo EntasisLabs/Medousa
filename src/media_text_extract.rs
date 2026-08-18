@@ -3,7 +3,7 @@
 use std::io::Cursor;
 use std::process::{Command, Stdio};
 
-use calamine::{open_workbook_auto_from_rs, Data, Reader};
+use calamine::{Data, Reader, open_workbook_auto_from_rs};
 
 pub const MAX_MEDIA_EXTRACT_CHARS: usize = 8_000;
 const MAX_SPREADSHEET_ROWS: usize = 200;
@@ -17,11 +17,13 @@ pub struct MediaTextExtract {
     pub method: String,
 }
 
-pub fn extract_media_text(bytes: &[u8], mime: &str, label: Option<&str>) -> Option<MediaTextExtract> {
+pub fn extract_media_text(
+    bytes: &[u8],
+    mime: &str,
+    label: Option<&str>,
+) -> Option<MediaTextExtract> {
     let mime = resolve_extract_mime(mime, bytes, label);
-    let hint = label
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
+    let hint = label.map(str::trim).filter(|value| !value.is_empty());
 
     let result = match mime.as_str() {
         "text/plain" | "text/markdown" => extract_plain_text(bytes),
@@ -66,8 +68,7 @@ fn resolve_extract_mime(mime: &str, bytes: &[u8], label: Option<&str>) -> String
             return "text/plain".to_string();
         }
         if lower.ends_with(".xlsx") {
-            return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                .to_string();
+            return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".to_string();
         }
         if lower.ends_with(".xls") {
             return "application/vnd.ms-excel".to_string();
@@ -134,9 +135,10 @@ fn extract_spreadsheet(bytes: &[u8], label: Option<&str>) -> Option<MediaTextExt
 
 fn extract_pdf(bytes: &[u8], label: Option<&str>) -> Option<MediaTextExtract> {
     if let Some(extract) = extract_pdf_rust(bytes)
-        && !extract.text.trim().is_empty() {
-            return Some(extract);
-        }
+        && !extract.text.trim().is_empty()
+    {
+        return Some(extract);
+    }
     extract_pdf_pdftotext(bytes, label)
 }
 
@@ -162,10 +164,8 @@ fn extract_pdf_rust(bytes: &[u8]) -> Option<MediaTextExtract> {
 }
 
 fn extract_pdf_pdftotext(bytes: &[u8], label: Option<&str>) -> Option<MediaTextExtract> {
-    let temp_dir = std::env::temp_dir().join(format!(
-        "medousa-pdf-{}",
-        uuid::Uuid::new_v4().simple()
-    ));
+    let temp_dir =
+        std::env::temp_dir().join(format!("medousa-pdf-{}", uuid::Uuid::new_v4().simple()));
     std::fs::create_dir_all(&temp_dir).ok()?;
     let pdf_path = temp_dir.join(label.unwrap_or("attachment.pdf"));
     let txt_path = temp_dir.join("out.txt");
@@ -200,7 +200,10 @@ fn extract_pdf_pdftotext(bytes: &[u8], label: Option<&str>) -> Option<MediaTextE
     result
 }
 
-fn rows_to_markdown_table(mut rows: Vec<Vec<String>>, sheet_label: &str) -> Option<MediaTextExtract> {
+fn rows_to_markdown_table(
+    mut rows: Vec<Vec<String>>,
+    sheet_label: &str,
+) -> Option<MediaTextExtract> {
     if rows.is_empty() {
         return None;
     }
@@ -263,7 +266,11 @@ fn rows_to_markdown_table(mut rows: Vec<Vec<String>>, sheet_label: &str) -> Opti
 }
 
 fn sanitize_table_cell(value: &str) -> String {
-    value.replace('|', "\\|").replace('\n', " ").trim().to_string()
+    value
+        .replace('|', "\\|")
+        .replace('\n', " ")
+        .trim()
+        .to_string()
 }
 
 fn cell_to_string(cell: &Data) -> String {

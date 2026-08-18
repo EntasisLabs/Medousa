@@ -55,14 +55,8 @@ pub async fn evaluate_mcp_policy_with_identity(
         return deny(format!("identity deny list blocks '{action}'"));
     }
 
-    if merged
-        .approval_required
-        .iter()
-        .any(|entry| entry == action)
-    {
-        return approval_required(format!(
-            "identity approval_required includes '{action}'"
-        ));
+    if merged.approval_required.iter().any(|entry| entry == action) {
+        return approval_required(format!("identity approval_required includes '{action}'"));
     }
 
     if merged.allow.is_empty() || merged.allow.iter().any(|entry| entry == action) {
@@ -73,9 +67,7 @@ pub async fn evaluate_mcp_policy_with_identity(
 }
 
 fn operator_approval_granted(request: &McpPolicyEvaluateRequest) -> bool {
-    request
-        .operator_approval_granted
-        .unwrap_or(false)
+    request.operator_approval_granted.unwrap_or(false)
         && request.turn_context.lane == McpTurnLane::Interactive
 }
 
@@ -91,27 +83,27 @@ fn evaluate_interactive(request: &McpPolicyEvaluateRequest) -> McpPolicyEvaluate
     match request.effect_class {
         McpEffectClass::ExternalRead => allow("interactive lane permits external_read"),
         McpEffectClass::ExternalWrite => allow("interactive lane permits external_write"),
-        McpEffectClass::ExternalSideEffect => approval_required(
-            "interactive lane requires approval for external_side_effect",
-        ),
+        McpEffectClass::ExternalSideEffect => {
+            approval_required("interactive lane requires approval for external_side_effect")
+        }
     }
 }
 
 fn evaluate_scheduled(request: &McpPolicyEvaluateRequest) -> McpPolicyEvaluateResponse {
     match request.effect_class {
         McpEffectClass::ExternalRead => allow("scheduled lane permits external_read"),
-        McpEffectClass::ExternalWrite | McpEffectClass::ExternalSideEffect => deny(
-            "scheduled lane denies external_write and external_side_effect",
-        ),
+        McpEffectClass::ExternalWrite | McpEffectClass::ExternalSideEffect => {
+            deny("scheduled lane denies external_write and external_side_effect")
+        }
     }
 }
 
 fn evaluate_heartbeat(request: &McpPolicyEvaluateRequest) -> McpPolicyEvaluateResponse {
     match request.effect_class {
         McpEffectClass::ExternalRead => allow("heartbeat lane permits read-only MCP"),
-        McpEffectClass::ExternalWrite | McpEffectClass::ExternalSideEffect => deny(
-            "heartbeat lane denies mutating MCP actions",
-        ),
+        McpEffectClass::ExternalWrite | McpEffectClass::ExternalSideEffect => {
+            deny("heartbeat lane denies mutating MCP actions")
+        }
     }
 }
 
@@ -239,10 +231,8 @@ mod tests {
 
     #[test]
     fn operator_approval_granted_bypasses_side_effect_gate() {
-        let mut request = sample_request(
-            McpTurnLane::Interactive,
-            McpEffectClass::ExternalSideEffect,
-        );
+        let mut request =
+            sample_request(McpTurnLane::Interactive, McpEffectClass::ExternalSideEffect);
         request.operator_approval_granted = Some(true);
         let response = evaluate_mcp_policy(&request);
         assert!(response.allowed);
@@ -251,10 +241,7 @@ mod tests {
 
     #[test]
     fn operator_approval_granted_does_not_bypass_scheduled_write_deny() {
-        let mut request = sample_request(
-            McpTurnLane::Scheduled,
-            McpEffectClass::ExternalWrite,
-        );
+        let mut request = sample_request(McpTurnLane::Scheduled, McpEffectClass::ExternalWrite);
         request.operator_approval_granted = Some(true);
         let response = evaluate_mcp_policy(&request);
         assert!(!response.allowed);

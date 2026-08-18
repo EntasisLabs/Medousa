@@ -79,7 +79,10 @@ fn empty_endpoints() -> MeshPeerEndpoints {
     MeshPeerEndpoints::default()
 }
 
-fn merge_endpoints(base: MeshPeerEndpoints, overlay: Option<MeshPeerEndpoints>) -> MeshPeerEndpoints {
+fn merge_endpoints(
+    base: MeshPeerEndpoints,
+    overlay: Option<MeshPeerEndpoints>,
+) -> MeshPeerEndpoints {
     let Some(overlay) = overlay else {
         return base;
     };

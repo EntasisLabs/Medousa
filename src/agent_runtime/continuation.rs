@@ -82,7 +82,10 @@ pub fn build_continuation_prompt(
     Some(truncate_text_for_budget(&prompt, MAX_REQUEST_PROMPT_CHARS))
 }
 
-pub fn build_continuation_prior_messages(original_prompt: &str, draft_text: &str) -> Vec<ChatMessage> {
+pub fn build_continuation_prior_messages(
+    original_prompt: &str,
+    draft_text: &str,
+) -> Vec<ChatMessage> {
     vec![
         ChatMessage::user(truncate_text_for_budget(original_prompt, 2000)),
         ChatMessage::assistant(truncate_text_for_budget(draft_text, 4000)),

@@ -8,8 +8,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::mesh::envelope::{
-    DEFAULT_ENVELOPE_TTL_SECS, MeshCapability, MeshEnvelope, MeshEnvelopedRequest, payload_hash_hex,
-    sign_envelope,
+    DEFAULT_ENVELOPE_TTL_SECS, MeshCapability, MeshEnvelope, MeshEnvelopedRequest,
+    payload_hash_hex, sign_envelope,
 };
 use crate::mesh::receipts::MeshReceipt;
 use crate::mesh::registry;
@@ -160,15 +160,14 @@ pub fn mark_failed(id: &str, error: &str) -> Result<MeshOutboxItem> {
 pub fn find_by_peer_seq(peer_device_id: &str, seq: u64) -> Result<Option<MeshOutboxItem>> {
     let _guard = MESH_IO_LOCK.lock().expect("mesh io lock");
     let file: MeshOutboxFile = read_json_default(&outbox_path())?;
-    Ok(file.items.into_iter().rev().find(|item| {
-        item.peer_device_id == peer_device_id.trim() && item.seq == seq
-    }))
+    Ok(file
+        .items
+        .into_iter()
+        .rev()
+        .find(|item| item.peer_device_id == peer_device_id.trim() && item.seq == seq))
 }
 
-fn update_item(
-    id: &str,
-    mutate: impl FnOnce(&mut MeshOutboxItem),
-) -> Result<MeshOutboxItem> {
+fn update_item(id: &str, mutate: impl FnOnce(&mut MeshOutboxItem)) -> Result<MeshOutboxItem> {
     let _guard = MESH_IO_LOCK.lock().expect("mesh io lock");
     let path = outbox_path();
     let mut file: MeshOutboxFile = read_json_default(&path)?;

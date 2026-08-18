@@ -130,7 +130,11 @@ pub fn build_ambient_context(input: AmbientContextInput<'_>) -> AmbientContextBl
         if let Some(proactive_allowed) = policy.proactive_allowed {
             lines.push(format!(
                 "proactive_messages={}",
-                if proactive_allowed { "allowed" } else { "denied" }
+                if proactive_allowed {
+                    "allowed"
+                } else {
+                    "denied"
+                }
             ));
             if proactive_allowed {
                 lines.push(
@@ -180,7 +184,14 @@ pub async fn build_environment_ambient_extras(session_id: &str) -> String {
             .spec
             .components
             .iter()
-            .map(|c| format!("{}:{}@{}", c.id, format!("{:?}", c.component_type).to_ascii_lowercase(), c.surface_id))
+            .map(|c| {
+                format!(
+                    "{}:{}@{}",
+                    c.id,
+                    format!("{:?}", c.component_type).to_ascii_lowercase(),
+                    c.surface_id
+                )
+            })
             .collect();
         blocks.push(format!(
             "[MEDOUSA_CANVAS]\nstudio_layout=true\npreset={}\ncomponents={}\nsurfaces={}\nsurface_ids={}\ncustom_surface_ids={}\ncomponent_summary={}\nrecipe=cognition_environment_wiki(topic=recipe) → get → merge full spec → propose/apply → ui_present(persist) OR component_create(presentation)\nactions=cognition_environment_wiki · cognition_environment_get · cognition_environment_propose/apply · cognition_component_* · cognition_ui_present(persist=true) · cognition_context_follow_pointer",
@@ -216,7 +227,11 @@ mod tests {
         });
         assert!(block.appendix.contains("[MEDOUSA_AMBIENT]"));
         assert!(block.appendix.contains("channel_surface=telegram"));
-        assert!(block.appendix.contains("channel_tone=concise_mobile_friendly"));
+        assert!(
+            block
+                .appendix
+                .contains("channel_tone=concise_mobile_friendly")
+        );
         assert!(block.appendix.contains("timezone="));
         assert!(block.appendix.contains("proactive_messages=allowed"));
     }

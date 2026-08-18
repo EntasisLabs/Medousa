@@ -458,16 +458,9 @@ mod tests {
     #[test]
     fn remote_requires_envelope_wrapper() {
         let body = MeshInboundBody::Bare(json!({"body": "x"}));
-        let err = require_remote_envelope_json(
-            body,
-            true,
-            "pk",
-            "a",
-            "b",
-            MeshCapability::Message,
-            true,
-        )
-        .expect_err("remote bare");
+        let err =
+            require_remote_envelope_json(body, true, "pk", "a", "b", MeshCapability::Message, true)
+                .expect_err("remote bare");
         assert!(matches!(err, MeshEnvelopeError::MissingEnvelope));
     }
 

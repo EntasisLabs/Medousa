@@ -23,9 +23,7 @@ use crate::mcp_gateway_client::McpGatewayClient;
 use crate::mcp_turn_token::mint_mcp_turn_token;
 use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::tools::{run_grapheme_via_runtime, validate_grapheme_source_for_schedule};
-use crate::turn_continuation::{
-    ContinuationAwaitMode, continuation_tool_metadata,
-};
+use crate::turn_continuation::{ContinuationAwaitMode, continuation_tool_metadata};
 use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
 use crate::workflow::{
     MedousaWorkflowPayload, WORKFLOW_SEQUENTIAL_JOB_TYPE, WorkflowEnqueueContinuation,
@@ -948,10 +946,9 @@ impl CognitionMcpPromoteToJobTool {
             }],
         };
 
-        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
-            &self.turn_scope,
-        )
-        .await;
+        let scope =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await;
         let continuation = scope
             .as_ref()
             .map(|turn_scope| WorkflowEnqueueContinuation {
@@ -1323,12 +1320,11 @@ impl CognitionWebSearchTool {
             &self.session_id,
         )
         .await?;
-        let turn_correlation_id = crate::agent_runtime::execution_context::turn_continuation_scope(
-            &self.turn_scope,
-        )
-            .await
-            .map(|scope| scope.turn_correlation_id.clone())
-            .unwrap_or_else(|| chat_session_id.clone());
+        let turn_correlation_id =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await
+                .map(|scope| scope.turn_correlation_id.clone())
+                .unwrap_or_else(|| chat_session_id.clone());
 
         if mode.eq_ignore_ascii_case("search") {
             match crate::browser_search::run_browser_backed_search(

@@ -46,9 +46,11 @@ pub fn lane_allows_action(lane: EngineExecutionLane, action: LaneSafetyActionCla
     match action {
         LaneSafetyActionClass::InteractiveIngress => lane == EngineExecutionLane::Interactive,
         LaneSafetyActionClass::RecurringRegistration => {
-            matches!(lane, EngineExecutionLane::Scheduled | EngineExecutionLane::Interactive)
-                && !(lane == EngineExecutionLane::Interactive
-                    && block_recurring_registration_on_interactive_lane())
+            matches!(
+                lane,
+                EngineExecutionLane::Scheduled | EngineExecutionLane::Interactive
+            ) && !(lane == EngineExecutionLane::Interactive
+                && block_recurring_registration_on_interactive_lane())
         }
         LaneSafetyActionClass::HeartbeatNotificationDispatch => {
             lane == EngineExecutionLane::Scheduled || lane == EngineExecutionLane::Heartbeat
@@ -229,22 +231,18 @@ pub fn evaluate_heartbeat_significance(
     let dead_letter_score = (signals.dead_letter_jobs as f32 / 3.0).clamp(0.0, 1.0);
     let failed_score = (signals.failed_jobs as f32 / 8.0).clamp(0.0, 1.0);
     let outbox_score = (signals.pending_outbox_events as f32 / 200.0).clamp(0.0, 1.0);
-    let activity_score = if signals.materialized_jobs > 0
-        || signals.processed_job
-        || signals.published_events > 0
-    {
-        1.0
-    } else {
-        0.0
-    };
+    let activity_score =
+        if signals.materialized_jobs > 0 || signals.processed_job || signals.published_events > 0 {
+            1.0
+        } else {
+            0.0
+        };
 
-    let significance = (
-        dead_letter_score * policy.dead_letter_weight
-            + failed_score * policy.failed_weight
-            + outbox_score * policy.outbox_weight
-            + activity_score * policy.activity_weight
-    )
-    .clamp(0.0, 1.0);
+    let significance = (dead_letter_score * policy.dead_letter_weight
+        + failed_score * policy.failed_weight
+        + outbox_score * policy.outbox_weight
+        + activity_score * policy.activity_weight)
+        .clamp(0.0, 1.0);
 
     if signals.dead_letter_jobs > 0 {
         let increased = prior_dead_letter_jobs
@@ -344,7 +342,10 @@ pub fn compile_context_prompt(input: ContextCompilerInput<'_>) -> ContextCompile
         prompt.push_str(&format!("provider={}\n", route.provider));
         prompt.push_str(&format!("model={}\n", route.model));
         prompt.push_str(&format!("policy_profile={}\n", route.policy_profile));
-        prompt.push_str(&format!("fallback_chain={}\n", route.fallback_chain.join(",")));
+        prompt.push_str(&format!(
+            "fallback_chain={}\n",
+            route.fallback_chain.join(",")
+        ));
     }
 
     let compiler_summary = format!(
@@ -395,7 +396,11 @@ mod tests {
             recall_readiness: RecallReadiness::Missing,
         });
 
-        assert!(output.compiled_prompt.contains("[MEDOUSA_CONTEXT_COMPILER]"));
+        assert!(
+            output
+                .compiled_prompt
+                .contains("[MEDOUSA_CONTEXT_COMPILER]")
+        );
         assert!(output.compiled_prompt.contains("lane=interactive"));
         assert!(output.compiled_prompt.contains("[MEDOUSA_RESPONSE_DEPTH]"));
         assert!(!output.allow_no_tools_fallback);
@@ -509,19 +514,16 @@ mod tests {
             EngineExecutionLane::Interactive,
             "scheduled"
         ));
-        assert!(validate_lane_policy_profile(
-            EngineExecutionLane::Interactive,
-            Some("scheduled")
-        )
-        .is_err());
+        assert!(
+            validate_lane_policy_profile(EngineExecutionLane::Interactive, Some("scheduled"))
+                .is_err()
+        );
     }
 
     #[test]
     fn lane_policy_profile_validation_accepts_matching_profile() {
-        assert!(validate_lane_policy_profile(
-            EngineExecutionLane::Scheduled,
-            Some("scheduled")
-        )
-        .is_ok());
+        assert!(
+            validate_lane_policy_profile(EngineExecutionLane::Scheduled, Some("scheduled")).is_ok()
+        );
     }
 }

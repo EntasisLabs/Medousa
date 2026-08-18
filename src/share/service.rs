@@ -3,11 +3,14 @@ use base64::Engine;
 use chrono::Utc;
 use medousa_types::environment::{ComponentDef, EnvironmentSpec, SurfaceDef, SurfaceKind};
 
-use crate::artifact_store::{fetch_artifact_at_id, list_ui_artifacts, persist_ui_artifact, FetchedArtifact};
+use crate::artifact_store::{
+    FetchedArtifact, fetch_artifact_at_id, list_ui_artifacts, persist_ui_artifact,
+};
 use crate::environment_store::{EnvironmentHub, resolve_profile_id};
 use crate::share::bundle::{
-    ShareArtifactEntry, ShareBundle, ShareConflictStrategy, ShareExportRequest, ShareImportRequest,
-    ShareImportResult, ShareSourceWorkshop, ShareVaultNoteEntry, SHARE_BUNDLE_VERSION,
+    SHARE_BUNDLE_VERSION, ShareArtifactEntry, ShareBundle, ShareConflictStrategy,
+    ShareExportRequest, ShareImportRequest, ShareImportResult, ShareSourceWorkshop,
+    ShareVaultNoteEntry,
 };
 use crate::vault::store::vault_store;
 
@@ -18,14 +21,16 @@ fn resolve_artifact_for_export(artifact_id: &str) -> Option<FetchedArtifact> {
     if id.is_empty() {
         return None;
     }
-    if let Some(fetched) = fetch_artifact_at_id(SHARE_IMPORT_SESSION, id)
-        .or_else(|| fetch_artifact_at_id("", id))
+    if let Some(fetched) =
+        fetch_artifact_at_id(SHARE_IMPORT_SESSION, id).or_else(|| fetch_artifact_at_id("", id))
     {
         return Some(fetched);
     }
     let records = list_ui_artifacts(None, 500, Some(id));
     let record = records.into_iter().find(|entry| {
-        entry.artifact_id == id || entry.artifact_id.starts_with(id) || id.starts_with(&entry.artifact_id)
+        entry.artifact_id == id
+            || entry.artifact_id.starts_with(id)
+            || id.starts_with(&entry.artifact_id)
     })?;
     fetch_artifact_at_id(&record.session_id, &record.artifact_id)
 }
@@ -221,7 +226,9 @@ pub async fn import_bundle(
                 }
             }
             Ok(None) => result.artifacts_skipped += 1,
-            Err(err) => result.warnings.push(format!("artifact {}: {err:#}", artifact.id)),
+            Err(err) => result
+                .warnings
+                .push(format!("artifact {}: {err:#}", artifact.id)),
         }
     }
 
@@ -229,7 +236,9 @@ pub async fn import_bundle(
         match import_vault_note(note, request.conflict_strategy, store) {
             Ok(true) => result.vault_notes_imported += 1,
             Ok(false) => result.vault_notes_skipped += 1,
-            Err(err) => result.warnings.push(format!("vault {}: {err:#}", note.path)),
+            Err(err) => result
+                .warnings
+                .push(format!("vault {}: {err:#}", note.path)),
         }
     }
 
@@ -272,10 +281,7 @@ fn import_artifact(
     }
 
     let label = artifact.title.clone();
-    let presentation = artifact
-        .presentation
-        .as_deref()
-        .unwrap_or("inline");
+    let presentation = artifact.presentation.as_deref().unwrap_or("inline");
     let record = persist_ui_artifact(
         SHARE_IMPORT_SESSION,
         &body,
@@ -321,8 +327,11 @@ fn merge_environment(
     result: &mut ShareImportResult,
 ) -> Result<EnvironmentSpec> {
     let mut spec = existing.clone();
-    let existing_surface_ids: std::collections::HashSet<String> =
-        spec.surfaces.iter().map(|surface| surface.id.clone()).collect();
+    let existing_surface_ids: std::collections::HashSet<String> = spec
+        .surfaces
+        .iter()
+        .map(|surface| surface.id.clone())
+        .collect();
     let existing_component_ids: std::collections::HashSet<String> = spec
         .components
         .iter()
@@ -441,8 +450,8 @@ mod tests {
     use chrono::Utc;
 
     use super::{
-        export_single_artifact, export_single_vault_note, ShareBundle, ShareSourceWorkshop,
-        SHARE_BUNDLE_VERSION,
+        SHARE_BUNDLE_VERSION, ShareBundle, ShareSourceWorkshop, export_single_artifact,
+        export_single_vault_note,
     };
 
     fn sample_source() -> ShareSourceWorkshop {
@@ -463,7 +472,11 @@ mod tests {
             environment: None,
         };
         let errors = bundle.validate();
-        assert!(errors.iter().any(|err| err.contains("unsupported share bundle version")));
+        assert!(
+            errors
+                .iter()
+                .any(|err| err.contains("unsupported share bundle version"))
+        );
     }
 
     #[test]

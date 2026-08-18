@@ -1,8 +1,8 @@
 //! HTTP handlers for turn tool-round budget approval requests.
 
+use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::Json;
 
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
@@ -11,7 +11,7 @@ use crate::daemon_api::{
     TurnBudgetApproveRequest, TurnBudgetDenyRequest, TurnBudgetRequestListQuery,
     TurnBudgetRequestListResponse, TurnBudgetRequestRecord, TurnBudgetRequestResponse,
 };
-use crate::turn_budget_request::{turn_budget_request_store, TurnBudgetRequestStatus};
+use crate::turn_budget_request::{TurnBudgetRequestStatus, turn_budget_request_store};
 
 #[derive(Clone, Default)]
 pub struct TurnBudgetHandlerState;
@@ -99,7 +99,10 @@ pub async fn list_turn_budget_requests(
     };
 
     Ok(Json(TurnBudgetRequestListResponse {
-        requests: rows.into_iter().map(TurnBudgetRequestRecord::from).collect(),
+        requests: rows
+            .into_iter()
+            .map(TurnBudgetRequestRecord::from)
+            .collect(),
     }))
 }
 

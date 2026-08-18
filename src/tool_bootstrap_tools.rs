@@ -47,10 +47,7 @@ pub struct ToolsDiscoverInput {
     domain: Option<String>,
     /// Surface lane (default auto from active turn scope)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(
-        with = "DiscoverLaneInput",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[schemars(with = "DiscoverLaneInput", skip_serializing_if = "Option::is_none")]
     lane: Option<DiscoverLaneInput>,
     /// Session id (defaults to active turn session)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -80,14 +77,15 @@ impl<'de> Deserialize<'de> for ToolsDiscoverInput {
         }
 
         let input = WireInput::deserialize(deserializer)?;
-        let lane = input
-            .lane
-            .into_option()
-            .map(|lane| match lane.trim().to_ascii_lowercase().as_str() {
-                "worker" => DiscoverLaneInput::Worker,
-                "host" => DiscoverLaneInput::Host,
-                _ => DiscoverLaneInput::Auto,
-            });
+        let lane =
+            input
+                .lane
+                .into_option()
+                .map(|lane| match lane.trim().to_ascii_lowercase().as_str() {
+                    "worker" => DiscoverLaneInput::Worker,
+                    "host" => DiscoverLaneInput::Host,
+                    _ => DiscoverLaneInput::Auto,
+                });
         Ok(Self {
             domain: input.domain.into_option(),
             lane,
@@ -198,13 +196,12 @@ impl CognitionToolsDiscoverTool {
         &self,
         input: ToolsDiscoverInput,
     ) -> stasis::prelude::Result<ToolsDiscoverOutput> {
-        let session_id =
-            crate::runtime_session::require_active_chat_session_id(
-                input.session_id.as_deref(),
-                &self.turn_scope,
-                "cognition_tools_discover",
-            )
-            .await?;
+        let session_id = crate::runtime_session::require_active_chat_session_id(
+            input.session_id.as_deref(),
+            &self.turn_scope,
+            "cognition_tools_discover",
+        )
+        .await?;
         let lane = resolve_lane(&self.turn_scope, input.lane);
         let list_only = input.list_only.unwrap_or(false);
 
@@ -216,11 +213,7 @@ impl CognitionToolsDiscoverTool {
             return Ok(list_domains_catalog(&session_id, lane));
         }
 
-        let domain = input
-            .domain
-            .as_deref()
-            .map(str::trim)
-            .unwrap_or_default();
+        let domain = input.domain.as_deref().map(str::trim).unwrap_or_default();
 
         if list_only {
             return Ok(domain_detail(
@@ -242,10 +235,8 @@ impl CognitionToolsDiscoverTool {
             }
         };
 
-        let (surface, tools) =
-            discover_session_domain(&session_id, lane, domain, &allowlist).map_err(|err| {
-                StasisError::PortFailure(err)
-            })?;
+        let (surface, tools) = discover_session_domain(&session_id, lane, domain, &allowlist)
+            .map_err(|err| StasisError::PortFailure(err))?;
 
         let catalog = domain_catalog(lane)
             .iter()
@@ -284,7 +275,10 @@ fn list_domains_catalog(session_id: &str, lane: ToolSurfaceLane) -> ToolsDiscove
         .map(|entry| DomainCatalogSummary {
             domain: entry.domain.to_string(),
             summary: entry.summary.to_string(),
-            unlocked: surface.unlocked_domains.iter().any(|domain| domain == entry.domain),
+            unlocked: surface
+                .unlocked_domains
+                .iter()
+                .any(|domain| domain == entry.domain),
             tool_count: entry.tools.len(),
         })
         .collect();

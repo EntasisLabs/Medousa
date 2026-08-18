@@ -80,8 +80,12 @@ pub async fn enforce_dead_letter_cap(
 
 async fn list_dead_letter_jobs(composition: &RuntimeComposition) -> anyhow::Result<Vec<Job>> {
     match composition {
-        RuntimeComposition::InMemory(rt) => Ok(rt.job_store.list_by_state(JobState::DeadLetter).await?),
-        RuntimeComposition::Surreal(rt) => Ok(rt.job_store.list_by_state(JobState::DeadLetter).await?),
+        RuntimeComposition::InMemory(rt) => {
+            Ok(rt.job_store.list_by_state(JobState::DeadLetter).await?)
+        }
+        RuntimeComposition::Surreal(rt) => {
+            Ok(rt.job_store.list_by_state(JobState::DeadLetter).await?)
+        }
     }
 }
 
@@ -90,9 +94,7 @@ async fn prune_terminal_before(
     cutoff: DateTime<Utc>,
 ) -> anyhow::Result<usize> {
     match composition {
-        RuntimeComposition::InMemory(rt) => {
-            Ok(rt.job_store.prune_terminal_before(cutoff).await?)
-        }
+        RuntimeComposition::InMemory(rt) => Ok(rt.job_store.prune_terminal_before(cutoff).await?),
         RuntimeComposition::Surreal(rt) => Ok(rt.job_store.prune_terminal_before(cutoff).await?),
     }
 }

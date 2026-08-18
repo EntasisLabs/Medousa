@@ -2,8 +2,8 @@
 
 use medousa_types::component_runtime::{
     ComponentRuntimeDiagnostic, ComponentRuntimeEmbedStatus, ComponentRuntimeIssue,
-    ComponentRuntimeProbeBlock, ComponentStaticLintFinding,
-    ComponentStoreKeyStatus, ComponentSuggestedAction,
+    ComponentRuntimeProbeBlock, ComponentStaticLintFinding, ComponentStoreKeyStatus,
+    ComponentSuggestedAction,
 };
 use medousa_types::environment::ComponentDef;
 use serde_json::Value;
@@ -43,18 +43,19 @@ pub async fn build_component_runtime_diagnostic(
 
     if options.include_static_lint
         && let Some(artifact_id) = artifact_id.as_deref()
-            && let Ok(body) = fetch_artifact_html(options.session_id.as_deref(), artifact_id) {
-                diagnostic.static_lint = lint_artifact_html(&body);
-                diagnostic.embed = Some(ComponentRuntimeEmbedStatus {
-                    store_bootstrap_injected: true,
-                    metrics_injected: true,
-                    runtime_bridge_injected: true,
-                    store_client_injected: true,
-                });
-                for finding in &diagnostic.static_lint {
-                    push_issue_from_lint(&mut diagnostic.issues, finding);
-                }
-            }
+        && let Ok(body) = fetch_artifact_html(options.session_id.as_deref(), artifact_id)
+    {
+        diagnostic.static_lint = lint_artifact_html(&body);
+        diagnostic.embed = Some(ComponentRuntimeEmbedStatus {
+            store_bootstrap_injected: true,
+            metrics_injected: true,
+            runtime_bridge_injected: true,
+            store_client_injected: true,
+        });
+        for finding in &diagnostic.static_lint {
+            push_issue_from_lint(&mut diagnostic.issues, finding);
+        }
+    }
 
     if options.include_runtime {
         if let Ok(store) = component_store_service()
@@ -145,18 +146,20 @@ pub async fn build_component_runtime_diagnostic(
         }
     }
 
-    if diagnostic.issues.iter().any(|i| i.code.starts_with("STATIC_")) {
+    if diagnostic
+        .issues
+        .iter()
+        .any(|i| i.code.starts_with("STATIC_"))
+    {
         diagnostic.suggested_actions.push(ComponentSuggestedAction {
             tool: "cognition_artifact_write".to_string(),
             reason: "Fix static anti-patterns in HTML (localStorage, store guards)".to_string(),
         });
     }
-    diagnostic
-        .suggested_actions
-        .push(ComponentSuggestedAction {
-            tool: "cognition_custom_view_doctor".to_string(),
-            reason: "Re-run doctor after fixes until issues is empty".to_string(),
-        });
+    diagnostic.suggested_actions.push(ComponentSuggestedAction {
+        tool: "cognition_custom_view_doctor".to_string(),
+        reason: "Re-run doctor after fixes until issues is empty".to_string(),
+    });
 
     diagnostic
 }
@@ -173,9 +176,10 @@ fn presentation_artifact_id(config: &Value) -> Option<String> {
 
 fn fetch_artifact_html(session_id: Option<&str>, artifact_id: &str) -> Result<String, String> {
     if let Some(session_id) = session_id
-        && let Some(fetched) = crate::artifact_store::fetch_artifact(session_id, artifact_id) {
-            return Ok(fetched.body);
-        }
+        && let Some(fetched) = crate::artifact_store::fetch_artifact(session_id, artifact_id)
+    {
+        return Ok(fetched.body);
+    }
     let records = crate::artifact_store::list_ui_artifacts(None, 100, Some(artifact_id));
     for record in records {
         if let Some(fetched) =
@@ -187,7 +191,10 @@ fn fetch_artifact_html(session_id: Option<&str>, artifact_id: &str) -> Result<St
     Err(format!("artifact not found: {artifact_id}"))
 }
 
-fn push_issue_from_lint(issues: &mut Vec<ComponentRuntimeIssue>, finding: &ComponentStaticLintFinding) {
+fn push_issue_from_lint(
+    issues: &mut Vec<ComponentRuntimeIssue>,
+    finding: &ComponentStaticLintFinding,
+) {
     let fix_hint = match finding.code.as_str() {
         "STATIC_LOCALSTORAGE" | "STATIC_SESSIONSTORAGE" => {
             "Replace with MedousaStore.get/set/delete.".to_string()

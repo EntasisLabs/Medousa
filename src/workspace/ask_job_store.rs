@@ -83,7 +83,11 @@ impl AskJobStore {
     }
 
     fn path() -> PathBuf {
-        session::medousa_data_dir().join(ASK_JOBS_FILE.strip_prefix("workspace/").unwrap_or(ASK_JOBS_FILE))
+        session::medousa_data_dir().join(
+            ASK_JOBS_FILE
+                .strip_prefix("workspace/")
+                .unwrap_or(ASK_JOBS_FILE),
+        )
     }
 
     fn reload_from_disk(&self) {
@@ -263,10 +267,7 @@ impl AskJobStore {
         let now = Utc::now();
         let mut guard = self.records.lock().expect("ask job records");
         let record = guard.get_mut(job_id)?;
-        if !matches!(
-            record.status,
-            AskJobStatus::Failed | AskJobStatus::Canceled
-        ) {
+        if !matches!(record.status, AskJobStatus::Failed | AskJobStatus::Canceled) {
             return None;
         }
         record.status = AskJobStatus::Pending;

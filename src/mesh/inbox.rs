@@ -58,9 +58,11 @@ pub fn accept(
     let _guard = MESH_IO_LOCK.lock().expect("mesh io lock");
     let path = inbox_path();
     let mut file: MeshInboxFile = read_json_default(&path)?;
-    if let Some(existing) = file.items.iter().find(|item| {
-        item.sender_device_id == sender_device_id.trim() && item.seq == seq
-    }) {
+    if let Some(existing) = file
+        .items
+        .iter()
+        .find(|item| item.sender_device_id == sender_device_id.trim() && item.seq == seq)
+    {
         let mut item = existing.clone();
         item.status = MeshInboxStatus::Duplicate;
         return Ok(MeshInboxAccept {

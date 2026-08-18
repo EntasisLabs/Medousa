@@ -663,7 +663,7 @@ fn iroh_header_refs(headers: &reqwest::header::HeaderMap) -> Vec<(String, String
         .collect()
 }
 
-fn iroh_header_slice<'a>(pairs: &'a [(String, String)]) -> Vec<(&'a str, &'a str)> {
+fn iroh_header_slice(pairs: &[(String, String)]) -> Vec<(&str, &str)> {
     pairs
         .iter()
         .map(|(name, value)| (name.as_str(), value.as_str()))

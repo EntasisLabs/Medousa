@@ -78,7 +78,13 @@ pub fn browse_workshops(timeout: Duration) -> Result<Vec<DiscoveredWorkshop>> {
             Ok(event) => match event {
                 ServiceEvent::ServiceResolved(info) => {
                     if let Some(workshop) = workshop_from_service_info(&info) {
-                        by_key.insert(workshop.device_id.clone().unwrap_or_else(|| workshop.instance_name.clone()), workshop);
+                        by_key.insert(
+                            workshop
+                                .device_id
+                                .clone()
+                                .unwrap_or_else(|| workshop.instance_name.clone()),
+                            workshop,
+                        );
                     }
                 }
                 ServiceEvent::ServiceRemoved(name, _) => {
@@ -115,9 +121,7 @@ fn workshop_from_service_info(info: &ServiceInfo) -> Option<DiscoveredWorkshop> 
     let peer_name = info.get_property_val_str("pn").map(str::to_string);
     let protocol_version = info.get_property_val_str("pv").map(str::to_string);
     let capability_flags = info.get_property_val_str("pf").map(str::to_string);
-    let auth_required = info
-        .get_property_val_str("ar")
-        .map(|value| value == "1");
+    let auth_required = info.get_property_val_str("ar").map(|value| value == "1");
     let model_descriptor = info.get_property_val_str("md").map(str::to_string);
     let daemon_url = format!("http://{host}:{port}");
 

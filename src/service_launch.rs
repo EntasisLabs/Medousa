@@ -20,12 +20,8 @@ impl BackgroundLog {
 
     pub fn ensure_parent(&self) -> Result<()> {
         if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent).with_context(|| {
-                format!(
-                    "failed to create log directory {}",
-                    parent.display()
-                )
-            })?;
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create log directory {}", parent.display()))?;
         }
         Ok(())
     }

@@ -243,8 +243,7 @@ mod tests {
         let phone_id = format!("peer-{suffix}");
         let tmp = std::env::temp_dir().join(format!("medousa-mesh-reg-{suffix}"));
         std::fs::create_dir_all(&tmp).unwrap();
-        let prev = std::env::var_os("XDG_DATA_HOME");
-        unsafe { std::env::set_var("XDG_DATA_HOME", &tmp) };
+        let _env = crate::test_env::set_var("XDG_DATA_HOME", &tmp);
 
         let peer = upsert_from_pairing(&sample_pairing(&phone_id)).expect("upsert");
         assert!(peer.mesh_enabled);
@@ -252,10 +251,5 @@ mod tests {
         assert_eq!(allocate_outbound_seq(&phone_id).unwrap(), 2);
 
         let _ = std::fs::remove_dir_all(&tmp);
-        if let Some(value) = prev {
-            unsafe { std::env::set_var("XDG_DATA_HOME", value) };
-        } else {
-            unsafe { std::env::remove_var("XDG_DATA_HOME") };
-        }
     }
 }

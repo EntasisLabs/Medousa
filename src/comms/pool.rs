@@ -55,7 +55,10 @@ impl ConnectionPool {
             .pool_idle_timeout(config.pool_idle_timeout)
             .build()
             .map_err(|err| {
-                TransportError::new(TransportErrorKind::Other, format!("build pool client: {err}"))
+                TransportError::new(
+                    TransportErrorKind::Other,
+                    format!("build pool client: {err}"),
+                )
             })?;
         // Streaming client: a long overall cap (the adapter enforces the real
         // per-chunk idle timeout) and a small idle pool so long-lived SSE

@@ -1,19 +1,20 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::Json;
 use serde::Deserialize;
 use stasis::prelude::RuntimeComposition;
 
-use crate::daemon_api::{
-    GraphemeModuleDetailResponse, GraphemeModuleSummary, GraphemeModulesListResponse,
-    GraphemeModuleOpsResponse, GraphemeRunRequest, GraphemeRunResponse, GraphemeScriptDetailResponse,
-    GraphemeScriptEntryDto, GraphemeScriptsListQuery, GraphemeScriptsListResponse,
-};
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
+use crate::daemon_api::{
+    GraphemeModuleDetailResponse, GraphemeModuleOpsResponse, GraphemeModuleSummary,
+    GraphemeModulesListResponse, GraphemeRunRequest, GraphemeRunResponse,
+    GraphemeScriptDetailResponse, GraphemeScriptEntryDto, GraphemeScriptsListQuery,
+    GraphemeScriptsListResponse,
 };
 use crate::grapheme_host_catalog::{
     discover_modules_with_host, examples_for_module, modules_info_with_host, modules_ops_with_host,
@@ -21,12 +22,12 @@ use crate::grapheme_host_catalog::{
 use crate::grapheme_lsp_bridge::{get_lsp_workspace, grapheme_lsp_ws};
 use crate::grapheme_script::service::GraphemeScriptService;
 use crate::grapheme_workshop::{
-    compile_source, delete_script, enforce_grapheme_allowlist, get_allowlist, lifecycle_events,
-    load_wasm_module, rename_script, save_script, update_allowlist, GraphemeAllowlistResponse,
-    GraphemeAllowlistUpdateRequest, GraphemeCompileRequest, GraphemeCompileResponse,
-    GraphemeLifecycleResponse, GraphemeModuleLoadRequest, GraphemeModuleLoadResponse,
-    GraphemeScriptDeleteResponse, GraphemeScriptRenameRequest, GraphemeScriptSaveRequest,
-    GraphemeScriptSaveResponse,
+    GraphemeAllowlistResponse, GraphemeAllowlistUpdateRequest, GraphemeCompileRequest,
+    GraphemeCompileResponse, GraphemeLifecycleResponse, GraphemeModuleLoadRequest,
+    GraphemeModuleLoadResponse, GraphemeScriptDeleteResponse, GraphemeScriptRenameRequest,
+    GraphemeScriptSaveRequest, GraphemeScriptSaveResponse, compile_source, delete_script,
+    enforce_grapheme_allowlist, get_allowlist, lifecycle_events, load_wasm_module, rename_script,
+    save_script, update_allowlist,
 };
 use crate::tools::run_grapheme_via_runtime;
 
@@ -176,12 +177,8 @@ pub async fn get_grapheme_script(
         return Err((StatusCode::BAD_REQUEST, "script_id is required".to_string()));
     }
 
-    let (entry, body) = GraphemeScriptService::load(script_id).map_err(|err| {
-        (
-            StatusCode::NOT_FOUND,
-            err.to_string(),
-        )
-    })?;
+    let (entry, body) = GraphemeScriptService::load(script_id)
+        .map_err(|err| (StatusCode::NOT_FOUND, err.to_string()))?;
 
     let body_preview = truncate_body(&body, 4000);
     Ok(Json(GraphemeScriptDetailResponse {
@@ -208,7 +205,9 @@ pub async fn run_grapheme_source(
     Ok(Json(GraphemeRunResponse { result }))
 }
 
-pub fn script_entry_dto(entry: crate::grapheme_script::entry::GraphemeScriptEntry) -> GraphemeScriptEntryDto {
+pub fn script_entry_dto(
+    entry: crate::grapheme_script::entry::GraphemeScriptEntry,
+) -> GraphemeScriptEntryDto {
     GraphemeScriptEntryDto {
         id: entry.id,
         name: entry.name,
@@ -313,8 +312,8 @@ pub async fn get_grapheme_lifecycle() -> Json<GraphemeLifecycleResponse> {
 }
 
 pub fn grapheme_surface() -> DeclaredRouter<GraphemeApiState> {
-    use axum::routing::{delete, get, post, put};
     use crate::request_principal::Capability;
+    use axum::routing::{delete, get, post, put};
 
     DeclaredRouter::default()
         .route(

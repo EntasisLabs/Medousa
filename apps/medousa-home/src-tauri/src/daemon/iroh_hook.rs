@@ -3,7 +3,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use futures_util::{Stream, StreamExt, TryStreamExt};
+use futures_util::{Stream, TryStreamExt};
 use medousa_sdk::SdkError;
 use medousa_sdk_iroh::IrohHttpHook;
 

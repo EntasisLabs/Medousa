@@ -155,8 +155,7 @@ impl UserProfileRegistry {
                 document: UserProfilesDocument::default(),
             });
         }
-        let raw = fs::read_to_string(&path)
-            .with_context(|| format!("read {}", path.display()))?;
+        let raw = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
         let document: UserProfilesDocument =
             serde_json::from_str(&raw).context("parse user_profiles.json")?;
         Ok(Self { document })
@@ -181,9 +180,10 @@ impl UserProfileRegistry {
         {
             self.document.profiles.insert(0, default_profile_record());
         }
-        if !self.active_profiles().any(|profile| {
-            profile.profile_id == self.document.active_profile_id
-        }) {
+        if !self
+            .active_profiles()
+            .any(|profile| profile.profile_id == self.document.active_profile_id)
+        {
             self.document.active_profile_id = DEFAULT_USER_ID.to_string();
         }
     }
@@ -202,14 +202,9 @@ impl UserProfileRegistry {
 
     /// Active profile's identity user id (ignores env override — use [`resolve_workshop_identity_user_id`]).
     pub fn active_identity_user_id(&self) -> String {
-        if self
-            .document
-            .profiles
-            .iter()
-            .any(|profile| {
-                profile.profile_id == self.document.active_profile_id && !profile.archived
-            })
-        {
+        if self.document.profiles.iter().any(|profile| {
+            profile.profile_id == self.document.active_profile_id && !profile.archived
+        }) {
             self.document.active_profile_id.clone()
         } else {
             DEFAULT_USER_ID.to_string()
@@ -227,9 +222,12 @@ impl UserProfileRegistry {
         if is_reserved_profile_slug(&slug) {
             bail!("profile slug '{slug}' is reserved");
         }
-        if self.document.profiles.iter().any(|profile| {
-            profile.profile_id == profile_id && !profile.archived
-        }) {
+        if self
+            .document
+            .profiles
+            .iter()
+            .any(|profile| profile.profile_id == profile_id && !profile.archived)
+        {
             bail!("profile already exists: {profile_id}");
         }
 
@@ -251,9 +249,12 @@ impl UserProfileRegistry {
         if profile_id.is_empty() {
             bail!("profile_id must not be empty");
         }
-        if !self.document.profiles.iter().any(|profile| {
-            profile.profile_id == profile_id && !profile.archived
-        }) {
+        if !self
+            .document
+            .profiles
+            .iter()
+            .any(|profile| profile.profile_id == profile_id && !profile.archived)
+        {
             bail!("profile not found: {profile_id}");
         }
         self.document.active_profile_id = profile_id.to_string();
@@ -278,7 +279,10 @@ fn default_profile_record() -> ProfileRecord {
 
 impl UserProfileRegistry {
     fn active_profiles(&self) -> impl Iterator<Item = &ProfileRecord> {
-        self.document.profiles.iter().filter(|profile| !profile.archived)
+        self.document
+            .profiles
+            .iter()
+            .filter(|profile| !profile.archived)
     }
 }
 
@@ -308,7 +312,9 @@ pub fn format_profile_id(slug: &str) -> String {
 }
 
 pub fn profile_slug_from_id(profile_id: &str) -> Option<&str> {
-    profile_id.strip_prefix("user:").filter(|slug| !slug.is_empty())
+    profile_id
+        .strip_prefix("user:")
+        .filter(|slug| !slug.is_empty())
 }
 
 pub fn is_reserved_profile_slug(slug: &str) -> bool {

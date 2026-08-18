@@ -10,7 +10,7 @@ use crate::daemon_api::{
     WorkCardDetail, WorkspaceCardsQuery, WorkspaceCardsResponse, WorkspaceFeedQuery,
     WorkspaceFeedResponse, WorkspaceRebuildResponse, WorkspaceSnapshot, WorkspaceSnapshotQuery,
 };
-use crate::workspace::card::{parse_column_filter, project_workspace_items, ProjectedWorkItem};
+use crate::workspace::card::{ProjectedWorkItem, parse_column_filter, project_workspace_items};
 use crate::workspace::domain_event::notify_workspace_invalidate;
 use crate::workspace::event::filter_events_by_card;
 use crate::workspace::projector::{apply_projection_to_store, workspace_hub};
@@ -103,11 +103,7 @@ impl WorkspaceService {
         let limit = query.limit.unwrap_or(50).clamp(1, 200);
         let store = workspace_store();
 
-        let mut events = store.list_feed(
-            query.since_id.as_deref(),
-            query.since_revision,
-            limit,
-        );
+        let mut events = store.list_feed(query.since_id.as_deref(), query.since_revision, limit);
 
         if let Some(card_id) = query.card_id.as_deref() {
             events = filter_events_by_card(&events, card_id)
@@ -151,7 +147,10 @@ impl WorkspaceService {
         }
 
         let items = legacy_sync_and_project(runtime.as_ref(), true).await?;
-        let cards = items.iter().map(|item| item.card.clone()).collect::<Vec<_>>();
+        let cards = items
+            .iter()
+            .map(|item| item.card.clone())
+            .collect::<Vec<_>>();
 
         Ok(WorkspaceSnapshot {
             workspace_revision: revision,
@@ -188,7 +187,11 @@ fn apply_card_filters(
 ) -> Vec<ProjectedWorkItem> {
     let mut filtered = items;
 
-    if let Some(session_id) = query.session_id.as_deref().map(str::trim).filter(|v| !v.is_empty())
+    if let Some(session_id) = query
+        .session_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
     {
         filtered.retain(|item| {
             item.detail
@@ -199,9 +202,10 @@ fn apply_card_filters(
     }
 
     if let Some(column_raw) = query.column.as_deref()
-        && let Some(column) = parse_column_filter(column_raw) {
-            filtered.retain(|item| item.card.column == column);
-        }
+        && let Some(column) = parse_column_filter(column_raw)
+    {
+        filtered.retain(|item| item.card.column == column);
+    }
 
     filtered
 }

@@ -5548,9 +5548,7 @@ async fn get_review(
         },
     )
     .await?;
-    if let Some(host) = state.detamu.as_ref() {
-        review.world = Some(host.binding_status_json(review.work_id.as_str()).await);
-    }
+    review.world = Some(state.detamu.binding_status_json(review.work_id.as_str()));
     Ok(Json(review))
 }
 

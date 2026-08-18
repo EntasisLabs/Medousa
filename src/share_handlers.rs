@@ -16,8 +16,8 @@ use crate::mesh::delivery::{
     accept_inbound_delivery, bind_delivery_local_ref, receipt_header_value,
 };
 use crate::mesh::{
-    MeshCapability, MeshEnvelope, MeshInboundBody, MeshReceipt, record_has_capability,
-    require_remote_envelope, CAP_MESH_BUNDLE_PUSH,
+    CAP_MESH_BUNDLE_PUSH, MeshCapability, MeshEnvelope, MeshInboundBody, MeshReceipt,
+    record_has_capability, require_remote_envelope,
 };
 use crate::pairing::{PairedDeviceRecord, PairingService};
 use crate::request_principal::{Capability, RequestPrincipal, TransportClass};
@@ -87,12 +87,9 @@ async fn share_export(
         device_id: state.local_device_id.clone(),
         name: state.local_peer_name.clone(),
     };
-    export_bundle(body, source).map(Json).map_err(|err| {
-        (
-            StatusCode::BAD_REQUEST,
-            err.to_string(),
-        )
-    })
+    export_bundle(body, source)
+        .map(Json)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))
 }
 
 async fn share_import(
@@ -124,10 +121,7 @@ async fn share_push(
 
     // Duplicate mesh delivery — ack without re-importing.
     if let Some(existing) = receipt.as_ref()
-        && matches!(
-            existing.status,
-            crate::mesh::MeshReceiptStatus::Duplicate
-        )
+        && matches!(existing.status, crate::mesh::MeshReceiptStatus::Duplicate)
     {
         return Ok(with_mesh_receipt(
             ShareImportResult::default(),
@@ -242,8 +236,14 @@ fn authorize_remote_share_record(
 fn mesh_status(err: crate::mesh::MeshEnvelopeError) -> (StatusCode, String) {
     use crate::mesh::MeshEnvelopeError::*;
     let status = match &err {
-        MissingEnvelope | BadSignature(_) | BadPublicKey(_) | Expired | NotYetValid
-        | PayloadHashMismatch | SenderMismatch | UnsupportedVersion(_) => StatusCode::UNAUTHORIZED,
+        MissingEnvelope
+        | BadSignature(_)
+        | BadPublicKey(_)
+        | Expired
+        | NotYetValid
+        | PayloadHashMismatch
+        | SenderMismatch
+        | UnsupportedVersion(_) => StatusCode::UNAUTHORIZED,
         CapabilityNotGranted(_) | UnknownCapability | RecipientMismatch => StatusCode::FORBIDDEN,
         Serialize(_) => StatusCode::BAD_REQUEST,
     };

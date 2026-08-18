@@ -32,7 +32,11 @@ pub fn sign_message(signing_key: &SigningKey, message: &str) -> String {
     base64url_encode(signature.to_bytes().as_slice())
 }
 
-pub fn verify_message(verifying_key: &VerifyingKey, message: &str, signature_b64: &str) -> Result<()> {
+pub fn verify_message(
+    verifying_key: &VerifyingKey,
+    message: &str,
+    signature_b64: &str,
+) -> Result<()> {
     let bytes = base64url_decode(signature_b64)?;
     let signature = Signature::from_slice(&bytes).context("invalid ed25519 signature length")?;
     verifying_key

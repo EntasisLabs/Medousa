@@ -2,29 +2,29 @@
 
 use std::sync::Arc;
 
+use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
-use axum::Json;
 use chrono::Utc;
 use stasis::application::runtime::runtime_factory::RuntimeComposition;
 use stasis::domain::runtime::job::{Job, JobState};
 use uuid::Uuid;
 
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::daemon_api::{
     RecurringRunEntry, WorkflowDetailResponse, WorkflowListEntry, WorkflowPlanRequest,
     WorkflowPlanResponse, WorkflowRunRequest, WorkflowRunResponse, WorkflowRunsQuery,
-    WorkflowRunsResponse, WorkflowScheduleRequest, WorkflowScheduleResponse,
-    WorkflowStepResultDto, WorkflowsListQuery, WorkflowsListResponse,
-};
-use crate::daemon::route_policy::{
-    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+    WorkflowRunsResponse, WorkflowScheduleRequest, WorkflowScheduleResponse, WorkflowStepResultDto,
+    WorkflowsListQuery, WorkflowsListResponse,
 };
 use crate::recurring_delivery::{DeliveryResolveContext, bind_recurring_delivery_for_registration};
 use crate::recurring_schedule::RecurringScheduleSpec;
 use crate::runtime_composition_ext::RuntimeCompositionExt;
 use crate::workflow::{
-    MedousaWorkflowPayload, WorkflowRecord, WorkflowStatus, WORKFLOW_SEQUENTIAL_JOB_TYPE,
+    MedousaWorkflowPayload, WORKFLOW_SEQUENTIAL_JOB_TYPE, WorkflowRecord, WorkflowStatus,
     decode_workflow_payload, encode_workflow_payload, enqueue_workflow_job, new_workflow_id,
     preflight_grapheme_steps, shared_workflow_registry, validate_workflow_request,
     workflow_job_type_for_strategy,
@@ -164,7 +164,9 @@ pub async fn list_workflows(
             strategy: record.strategy.clone(),
             mode: record.mode.clone(),
             root_job_id: record.root_job_id.clone(),
-            root_job_state: root_job.as_ref().map(|job| job_state_label(&job.state).to_string()),
+            root_job_state: root_job
+                .as_ref()
+                .map(|job| job_state_label(&job.state).to_string()),
             scheduled_recurring_id: record.scheduled_recurring_id.clone(),
             created_at_utc: record.created_at,
             step_count: payload
@@ -184,7 +186,10 @@ pub async fn get_workflow_detail(
 ) -> Result<Json<WorkflowDetailResponse>, (StatusCode, String)> {
     let workflow_id = workflow_id.trim();
     if workflow_id.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "workflow_id is required".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "workflow_id is required".to_string(),
+        ));
     }
 
     let registry = shared_workflow_registry();
@@ -213,7 +218,9 @@ pub async fn get_workflow_detail(
         on_failure: record.on_failure,
         note: record.note,
         root_job_id: record.root_job_id,
-        root_job_state: root_job.as_ref().map(|job| job_state_label(&job.state).to_string()),
+        root_job_state: root_job
+            .as_ref()
+            .map(|job| job_state_label(&job.state).to_string()),
         scheduled_recurring_id: record.scheduled_recurring_id,
         created_at_utc: record.created_at,
         steps: payload.map(|value| value.steps).unwrap_or_default(),
@@ -235,8 +242,8 @@ pub async fn run_workflow(
     let job_id = enqueue_workflow_job(state.composition.as_ref(), &payload, queue, None)
         .await
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
-    let job_type = workflow_job_type_for_strategy(&request.strategy)
-        .unwrap_or(WORKFLOW_SEQUENTIAL_JOB_TYPE);
+    let job_type =
+        workflow_job_type_for_strategy(&request.strategy).unwrap_or(WORKFLOW_SEQUENTIAL_JOB_TYPE);
 
     let record = WorkflowRecord {
         workflow_id: workflow_id.clone(),
@@ -263,9 +270,7 @@ pub async fn run_workflow(
     }))
 }
 
-pub async fn plan_workflow(
-    Json(request): Json<WorkflowPlanRequest>,
-) -> Json<WorkflowPlanResponse> {
+pub async fn plan_workflow(Json(request): Json<WorkflowPlanRequest>) -> Json<WorkflowPlanResponse> {
     Json(plan_workflow_from_goal(&request))
 }
 
@@ -375,7 +380,10 @@ pub async fn list_workflow_runs(
 ) -> Result<Json<WorkflowRunsResponse>, (StatusCode, String)> {
     let workflow_id = workflow_id.trim();
     if workflow_id.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "workflow_id is required".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "workflow_id is required".to_string(),
+        ));
     }
 
     let limit = query.limit.unwrap_or(20).clamp(1, 100);
@@ -453,10 +461,7 @@ pub fn workflow_surface() -> DeclaredRouter<WorkflowApiState> {
 
     DeclaredRouter::default()
         .methods([
-            (
-                workflow_read_policy("/v1/workflows"),
-                get(list_workflows),
-            ),
+            (workflow_read_policy("/v1/workflows"), get(list_workflows)),
             (
                 workflow_policy(
                     axum::http::Method::POST,

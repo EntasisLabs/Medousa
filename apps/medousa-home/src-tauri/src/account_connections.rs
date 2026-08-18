@@ -724,7 +724,7 @@ fn open_terminal_with_login(command: &str, args: &[String]) -> Result<(), String
             .args(["-e", &script])
             .spawn()
             .map_err(|err| format!("couldn't open Terminal: {err}"))?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(target_os = "windows")]
     {

@@ -19,7 +19,6 @@ use stasis::application::orchestration::tool_registry::ToolRegistry;
 use stasis::domain::errors::StasisError;
 use tokio::sync::{Notify, oneshot};
 
-
 const MAX_CLIENT_TOOLS: usize = 32;
 const MAX_TOOL_NAME_CHARS: usize = 64;
 const MAX_DESCRIPTION_CHARS: usize = 2000;
@@ -358,10 +357,9 @@ impl ClientToolRegistry {
     }
 
     async fn turn_surface(&self) -> (Option<String>, String) {
-        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
-            &self.turn_scope,
-        )
-        .await;
+        let scope =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await;
         let surface = scope
             .as_ref()
             .and_then(|scope| scope.channel_surface.clone());
@@ -597,20 +595,22 @@ mod tests {
     async fn dynamic_registry_lists_tools_for_active_surface() {
         let clients = ClientRegistry::new();
         registration(&clients);
-        let scope = crate::agent_runtime::execution_context::TurnScopeAccess::for_test(crate::turn_continuation::TurnContinuationScope {
-            turn_correlation_id: "turn-one".to_string(),
-            session_id: "session-one".to_string(),
-            identity_user_id: None,
-            original_prompt: "read the page".to_string(),
-            delivery_target: None,
-            provider: "test".to_string(),
-            model: "test".to_string(),
-            response_depth_mode: "balanced".to_string(),
-            supports_ui_artifacts: false,
-            supports_liquid_markdown: false,
-            supports_browser_host: false,
-            channel_surface: Some("browser".to_string()),
-        });
+        let scope = crate::agent_runtime::execution_context::TurnScopeAccess::for_test(
+            crate::turn_continuation::TurnContinuationScope {
+                turn_correlation_id: "turn-one".to_string(),
+                session_id: "session-one".to_string(),
+                identity_user_id: None,
+                original_prompt: "read the page".to_string(),
+                delivery_target: None,
+                provider: "test".to_string(),
+                model: "test".to_string(),
+                response_depth_mode: "balanced".to_string(),
+                supports_ui_artifacts: false,
+                supports_liquid_markdown: false,
+                supports_browser_host: false,
+                channel_surface: Some("browser".to_string()),
+            },
+        );
         let inner: Arc<dyn ToolRegistry> = Arc::new(
             stasis::application::orchestration::tool_registry::InMemoryToolRegistry::default(),
         );

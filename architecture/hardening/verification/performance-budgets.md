@@ -113,6 +113,10 @@ times out upstream” does not satisfy the safety budget.
 
 **Findings:** PERF-001, MEM-002, DUR-001, TYPE-001
 
+**Harness:** `cargo run -p medousa-engine --release --example p01_turn_stream`.
+H12 micro-CI uses `MEDOUSA_P01_CI=1` (256 fragments, 32-byte, 0 transcript, 1
+subscriber) against [`scripts/ci/perf-budget.json`](../../../scripts/ci/perf-budget.json).
+
 | Dataset | Dimensions |
 | --- | --- |
 | Synthetic prose stream | 10,000 fragments at 1, 8, 32, and 256 bytes |
@@ -216,9 +220,11 @@ work needs an explicit rich-embed admission or virtualization budget.
 
 **H04 implementation state:** the hot paths now append delta records, coalesce
 typed workspace mutations before serialization, and enforce bounded admission.
-Focused tests cover ordering, recovery, and thresholds. A retained benchmark
-artifact across the full matrix below is still pending; no latency/RSS closure
-is inferred from unit tests.
+Focused tests cover ordering, recovery, and thresholds. H12 gates a small
+fixture via `cargo run -p medousa --release --example p03_feed_workspace`
+against [`scripts/ci/perf-budget.json`](../../../scripts/ci/perf-budget.json).
+A retained benchmark artifact across the full matrix below is still pending;
+no latency/RSS closure is inferred from unit tests.
 
 | Dimension | Values |
 | --- | --- |
@@ -405,11 +411,13 @@ Record unique packages, duplicate-version names, enabled features, clean/warm
 check/build/link time, peak build/link memory, artifact size, packaged app size,
 and advisory/license/source exceptions.
 
-Initial binding regression ceilings are 932 unique normal name/version pairs
-and 93 duplicate-version names for the main daemon. H11 must lower them after
-removing unused direct dependencies and define per-feature budgets. A new
-dependency requires an owner, feature justification, size/build delta, and
-duplicate-version explanation.
+Initial binding regression ceilings are recorded in
+[`scripts/ci/dependency-budget.json`](../../../scripts/ci/dependency-budget.json)
+(H11 inventory: 944 unique pairs / 94 duplicate names before unused-root-dep
+removal; **899 / 90** after dropping unused root adapter frameworks and
+dead `hmac`/`cap-std`/`portable-pty` deps). H11 lowers them after removing unused direct dependencies and defines
+per-package composition. A new dependency requires an owner, feature
+justification, size/build delta, and duplicate-version explanation.
 
 ### P10 — Retention soak
 

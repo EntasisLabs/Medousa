@@ -4,21 +4,18 @@ use stasis::application::runtime::runtime_factory::RuntimeComposition;
 use stasis::domain::runtime::job::Job;
 use stasis::ports::outbound::runtime::job_store::JobStore;
 
-use crate::agent_runtime::turn_worker::{turn_worker_store, TurnWorkRecord};
+use crate::agent_runtime::turn_worker::{TurnWorkRecord, turn_worker_store};
 use crate::daemon_api::WorkCardKind;
 use crate::turn_budget_request::turn_budget_request_store;
 use crate::workspace::ask_job_store::ask_job_store;
 use crate::workspace::card::{
-    project_ask_job, project_job, project_turn_budget_request, project_turn_worker,
-    ProjectedWorkItem,
+    ProjectedWorkItem, project_ask_job, project_job, project_turn_budget_request,
+    project_turn_worker,
 };
 use crate::workspace::domain_event::WorkspaceDomainEvent;
 use crate::workspace::retention::WorkspaceRetentionConfig;
 
-pub async fn get_stasis_job(
-    runtime: &RuntimeComposition,
-    job_id: &str,
-) -> Option<Job> {
+pub async fn get_stasis_job(runtime: &RuntimeComposition, job_id: &str) -> Option<Job> {
     match runtime {
         RuntimeComposition::InMemory(rt) => rt.job_store.get(job_id).await.ok().flatten(),
         RuntimeComposition::Surreal(rt) => rt.job_store.get(job_id).await.ok().flatten(),
@@ -72,11 +69,11 @@ pub fn domain_event_for_kind(card_id: &str, kind: WorkCardKind) -> WorkspaceDoma
         WorkCardKind::TurnBudgetRequest => WorkspaceDomainEvent::BudgetRequestChanged {
             request_id: card_id.to_string(),
         },
-        WorkCardKind::StasisJob
-        | WorkCardKind::InteractiveTurn
-        | WorkCardKind::RecurringTick => WorkspaceDomainEvent::StasisJobChanged {
-            job_id: card_id.to_string(),
-        },
+        WorkCardKind::StasisJob | WorkCardKind::InteractiveTurn | WorkCardKind::RecurringTick => {
+            WorkspaceDomainEvent::StasisJobChanged {
+                job_id: card_id.to_string(),
+            }
+        }
     }
 }
 

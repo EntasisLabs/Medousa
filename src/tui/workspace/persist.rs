@@ -134,7 +134,6 @@ mod tests {
 
         clear_workspace_session_for("personal").expect("clear");
         assert!(load_workspace_session_for("personal").is_none());
-
     }
 
     #[test]
@@ -151,6 +150,5 @@ mod tests {
         assert!(workspace_session_path_for("personal").unwrap().exists());
         // Rename should have moved the legacy file away.
         assert!(!legacy_workspace_session_path().exists());
-
     }
 }

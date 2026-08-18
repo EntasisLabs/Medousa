@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "notes": "Micro-CI ceilings for P01/P03. Generous hosted-runner noise allowance; lower with evidence, never raise without the budget protocol.",
+  "probes": {
+    "p01": {
+      "elapsedMs": 8000,
+      "allocations": 5000000
+    },
+    "p03": {
+      "appendMs": 8000
+    }
+  }
+}

@@ -60,12 +60,18 @@ fn slack_app_token_secret_path() -> PathBuf {
     medousa_data_dir().join("secrets").join("slack_app_token")
 }
 
+fn keyring_entry(service: &str, account: &str) -> Result<keyring::Entry, keyring::Error> {
+    #[cfg(test)]
+    crate::test_env::refuse_host_keyring()?;
+    keyring::Entry::new(service, account)
+}
+
 fn api_key_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
-    keyring::Entry::new(API_KEY_SERVICE, API_KEY_ACCOUNT)
+    keyring_entry(API_KEY_SERVICE, API_KEY_ACCOUNT)
 }
 
 fn provider_api_key_keyring_entry(provider: &ProviderId) -> Result<keyring::Entry, keyring::Error> {
-    keyring::Entry::new("medousa.providers", provider.storage_key().as_str())
+    keyring_entry("medousa.providers", provider.storage_key().as_str())
 }
 
 fn provider_api_key_secret_path(provider: &ProviderId) -> PathBuf {
@@ -92,19 +98,19 @@ fn file_provider_api_key(provider: &ProviderId) -> Option<String> {
 }
 
 fn discord_bot_token_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
-    keyring::Entry::new(DISCORD_BOT_TOKEN_SERVICE, DISCORD_BOT_TOKEN_ACCOUNT)
+    keyring_entry(DISCORD_BOT_TOKEN_SERVICE, DISCORD_BOT_TOKEN_ACCOUNT)
 }
 
 fn telegram_bot_token_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
-    keyring::Entry::new(TELEGRAM_BOT_TOKEN_SERVICE, TELEGRAM_BOT_TOKEN_ACCOUNT)
+    keyring_entry(TELEGRAM_BOT_TOKEN_SERVICE, TELEGRAM_BOT_TOKEN_ACCOUNT)
 }
 
 fn slack_bot_token_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
-    keyring::Entry::new(SLACK_BOT_TOKEN_SERVICE, SLACK_BOT_TOKEN_ACCOUNT)
+    keyring_entry(SLACK_BOT_TOKEN_SERVICE, SLACK_BOT_TOKEN_ACCOUNT)
 }
 
 fn slack_app_token_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
-    keyring::Entry::new(SLACK_APP_TOKEN_SERVICE, SLACK_APP_TOKEN_ACCOUNT)
+    keyring_entry(SLACK_APP_TOKEN_SERVICE, SLACK_APP_TOKEN_ACCOUNT)
 }
 
 fn file_api_key() -> Option<String> {
@@ -228,7 +234,7 @@ fn surreal_password_secret_path() -> PathBuf {
 }
 
 fn surreal_password_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
-    keyring::Entry::new(SURREAL_PASSWORD_SERVICE, SURREAL_PASSWORD_ACCOUNT)
+    keyring_entry(SURREAL_PASSWORD_SERVICE, SURREAL_PASSWORD_ACCOUNT)
 }
 
 fn file_surreal_password() -> Option<String> {
@@ -349,7 +355,7 @@ pub fn load_provider_api_key(provider: &str) -> Option<String> {
             return Some(trimmed.to_string());
         }
     }
-    if let Ok(entry) = keyring::Entry::new("medousa.providers", provider.as_str())
+    if let Ok(entry) = keyring_entry("medousa.providers", provider.as_str())
         && let Ok(value) = entry.get_password()
     {
         let trimmed = value.trim();
@@ -399,7 +405,7 @@ pub fn save_provider_api_key(provider: &str, api_key: Option<&str>) {
                         .join("secrets")
                         .join(format!("api_key_{}", provider.as_str())),
                 );
-                if let Ok(entry) = keyring::Entry::new("medousa.providers", provider.as_str()) {
+                if let Ok(entry) = keyring_entry("medousa.providers", provider.as_str()) {
                     let _ = entry.delete_password();
                 }
             } else {
@@ -410,7 +416,7 @@ pub fn save_provider_api_key(provider: &str, api_key: Option<&str>) {
             if let Ok(entry) = provider_api_key_keyring_entry(&provider) {
                 let _ = entry.delete_password();
             }
-            if let Ok(entry) = keyring::Entry::new("medousa.providers", provider.as_str()) {
+            if let Ok(entry) = keyring_entry("medousa.providers", provider.as_str()) {
                 let _ = entry.delete_password();
             }
             let _ = std::fs::remove_file(path);

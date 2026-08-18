@@ -1238,11 +1238,16 @@ jobs:
           path: dist/integrations/*
           if-no-files-found: error
 
+  quality-gates:
+    name: H12 PR-required quality gates
+    uses: ./.github/workflows/ci.yml
+
   release:
     name: publish (GitHub + R2)
     needs:
       [
         prepare,
+        quality-gates,
         build-engine,
         build-adapters,
         build-mcp,
@@ -1256,6 +1261,7 @@ jobs:
     if: |
       always() && !cancelled() &&
       needs.prepare.result == 'success' &&
+      needs.quality-gates.result == 'success' &&
       (needs.build-engine.result == 'success' || needs.build-engine.result == 'skipped') &&
       (needs.build-adapters.result == 'success' || needs.build-adapters.result == 'skipped') &&
       (needs.build-mcp.result == 'success' || needs.build-mcp.result == 'skipped') &&

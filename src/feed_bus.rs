@@ -2,14 +2,14 @@
 
 use std::collections::{HashMap, HashSet};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use chrono::Utc;
 use medousa_types::environment::EnvironmentStreamEvent;
 use medousa_types::feed::{
-    ComponentFeedPatch, FeedEvent, FeedRef, FeedSource, DEFAULT_FEED_PAYLOAD_MAX_BYTES,
+    ComponentFeedPatch, DEFAULT_FEED_PAYLOAD_MAX_BYTES, FeedEvent, FeedRef, FeedSource,
     WORKSHOP_PULSE_FEED_ID,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::sync::broadcast;
 
 use crate::environment_store::{environment_hub, resolve_profile_id};
@@ -65,10 +65,7 @@ impl FeedHub {
         self.tx.subscribe()
     }
 
-    pub async fn subscribers_for_feed(
-        profile_id: &str,
-        feed_id: &str,
-    ) -> Vec<(String, Value)> {
+    pub async fn subscribers_for_feed(profile_id: &str, feed_id: &str) -> Vec<(String, Value)> {
         let env = environment_hub().get(profile_id).await.ok();
         let Some(record) = env else {
             return Vec::new();
@@ -167,9 +164,10 @@ pub async fn publish(request: FeedPublishRequest) -> Result<FeedEvent> {
 
     let subscribers = FeedHub::subscribers_for_feed(&profile_id, &feed_id).await;
     let hub = feed_hub();
-    let patch_seq_start = hub
-        .patch_seq
-        .fetch_add(subscribers.len().max(1) as u64, std::sync::atomic::Ordering::SeqCst);
+    let patch_seq_start = hub.patch_seq.fetch_add(
+        subscribers.len().max(1) as u64,
+        std::sync::atomic::Ordering::SeqCst,
+    );
 
     let slice = event.payload.clone().unwrap_or_else(|| {
         json!({
@@ -181,9 +179,7 @@ pub async fn publish(request: FeedPublishRequest) -> Result<FeedEvent> {
 
     let mut patches = Vec::new();
     for (index, (component_id, _config)) in subscribers.iter().enumerate() {
-        let prior = hub
-            .component_runtime_state(&profile_id, component_id)
-            .await;
+        let prior = hub.component_runtime_state(&profile_id, component_id).await;
         let merged = FeedHub::merge_component_patch(&prior, &feed_id, &slice);
         hub.set_component_runtime_state(&profile_id, component_id, merged.clone())
             .await;

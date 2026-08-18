@@ -4,11 +4,11 @@ use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::Arc;
 
+use a2::request::payload::PayloadLike;
 use a2::{
     Client, ClientConfig, DefaultNotificationBuilder, Endpoint, NotificationBuilder,
     NotificationOptions, Priority, PushType,
 };
-use a2::request::payload::PayloadLike;
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use tokio::sync::Mutex;
@@ -105,10 +105,7 @@ impl ApnsClient {
                 .with_context(|| format!("add custom data key {key}"))?;
         }
 
-        self.inner
-            .send(payload)
-            .await
-            .context("APNs send failed")?;
+        self.inner.send(payload).await.context("APNs send failed")?;
         Ok(())
     }
 
@@ -288,9 +285,7 @@ pub type SharedApnsClient = Arc<Mutex<Option<ApnsClient>>>;
 
 pub fn shared_apns_client() -> SharedApnsClient {
     static CLIENT: once_cell::sync::OnceCell<SharedApnsClient> = once_cell::sync::OnceCell::new();
-    CLIENT
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone()
+    CLIENT.get_or_init(|| Arc::new(Mutex::new(None))).clone()
 }
 
 pub async fn ensure_apns_client(config: &ApnsConfig) -> Result<()> {

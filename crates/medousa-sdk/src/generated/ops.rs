@@ -2669,6 +2669,13 @@ pub const WORLD_INDEX_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const WORLD_RESET_STORE_POST: Operation = Operation {
+    id: "world.reset_store.post",
+    method: "POST",
+    path: "/v1/world/reset-store",
+    streaming: false,
+};
+
 pub const WORLD_STATUS_GET: Operation = Operation {
     id: "world.status.get",
     method: "GET",
@@ -3057,6 +3064,7 @@ pub static ALL: &[Operation] = &[
     WORLD_GET,
     WORLD_IMPACT_GET,
     WORLD_INDEX_POST,
+    WORLD_RESET_STORE_POST,
     WORLD_STATUS_GET,
 ];
 

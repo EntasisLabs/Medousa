@@ -4,7 +4,7 @@
 //! as `[MEDOUSA_TOOL_SLICES]` and used to seed the next turn's scratchpad.
 
 use crate::agent_runtime::prompt_prep::truncate_text_for_budget;
-use crate::agent_runtime::turn_context::{TurnScratchpad, TurnScratchPhase};
+use crate::agent_runtime::turn_context::{TurnScratchPhase, TurnScratchpad};
 use crate::session::ConversationTurn;
 use crate::turn_parts::{TurnPart, compose_turn_markdown};
 pub use medousa_types::turn::TurnSliceSummary;
@@ -84,16 +84,19 @@ fn merge_scratch_into_summary(summary: &mut TurnSliceSummary, scratch: &TurnScra
 
 fn infer_goal(turn: &ConversationTurn, scratch: Option<&TurnScratchpad>) -> String {
     if let Some(scratch) = scratch
-        && !scratch.goal.trim().is_empty() {
-            return truncate_text_for_budget(scratch.goal.trim(), 160);
-        }
+        && !scratch.goal.trim().is_empty()
+    {
+        return truncate_text_for_budget(scratch.goal.trim(), 160);
+    }
     if !turn.content.trim().is_empty() {
         return truncate_text_for_budget(turn.content.trim(), 160);
     }
     String::new()
 }
 
-fn extract_tool_facts(parts: Option<&[TurnPart]>) -> (usize, Vec<String>, Vec<String>, Vec<String>) {
+fn extract_tool_facts(
+    parts: Option<&[TurnPart]>,
+) -> (usize, Vec<String>, Vec<String>, Vec<String>) {
     let Some(parts) = parts else {
         return (0, Vec::new(), Vec::new(), Vec::new());
     };
@@ -247,7 +250,10 @@ pub fn build_tool_slices_block(
     )
 }
 
-pub fn format_cold_history_line(turn: &ConversationTurn, content_line_chars: usize) -> Option<String> {
+pub fn format_cold_history_line(
+    turn: &ConversationTurn,
+    content_line_chars: usize,
+) -> Option<String> {
     let role = if turn.role == "agent" {
         "assistant"
     } else {
@@ -345,7 +351,10 @@ fn turn_session_index(all_turns: &[ConversationTurn], turn: &ConversationTurn) -
 }
 
 /// 1-based turn index in session history (matches `[MEDOUSA_TOOL_SLICES]` lines).
-pub fn session_turn_index(all_turns: &[ConversationTurn], turn: &ConversationTurn) -> Option<usize> {
+pub fn session_turn_index(
+    all_turns: &[ConversationTurn],
+    turn: &ConversationTurn,
+) -> Option<usize> {
     turn_session_index(all_turns, turn)
 }
 
@@ -359,10 +368,7 @@ pub fn parse_turn_index_from_slice_id(slice_id: &str) -> Option<usize> {
         return rest.parse().ok().filter(|index| *index > 0);
     }
     if let Some(pos) = trimmed.rfind(":turn:") {
-        return trimmed[pos + 6..]
-            .parse()
-            .ok()
-            .filter(|index| *index > 0);
+        return trimmed[pos + 6..].parse().ok().filter(|index| *index > 0);
     }
     trimmed.parse().ok().filter(|index| *index > 0)
 }
@@ -399,14 +405,17 @@ pub fn tool_history_summary_rows(
             let turn_index = session_turn_index(turns, turn)?;
             let summary = resolve_slice_summary(turn);
             if let Some(ref tool) = tool_filter
-                && !summary.tools.iter().any(|name| name.to_ascii_lowercase().contains(tool))
-                    && !turn
-                        .tool_names
-                        .iter()
-                        .any(|name| name.to_ascii_lowercase().contains(tool))
-                {
-                    return None;
-                }
+                && !summary
+                    .tools
+                    .iter()
+                    .any(|name| name.to_ascii_lowercase().contains(tool))
+                && !turn
+                    .tool_names
+                    .iter()
+                    .any(|name| name.to_ascii_lowercase().contains(tool))
+            {
+                return None;
+            }
             let line = format_slice_line(turn_index, turn, &summary, DEFAULT_SLICE_HOT_LINE_CHARS);
             if let Some(ref kw) = keyword {
                 let haystack = format!(
@@ -439,7 +448,10 @@ pub fn tool_history_detail_markdown(
     let turn_index = parse_turn_index_from_slice_id(slice_id)
         .ok_or_else(|| format!("invalid slice_id '{slice_id}' (expected turn:N)"))?;
     let turn = turns.get(turn_index.saturating_sub(1)).ok_or_else(|| {
-        format!("turn index {turn_index} out of range (session has {} turns)", turns.len())
+        format!(
+            "turn index {turn_index} out of range (session has {} turns)",
+            turns.len()
+        )
     })?;
 
     let body = if let Some(round) = tool_round {
@@ -474,7 +486,9 @@ fn detail_for_tool_round(turn: &ConversationTurn, tool_round: usize) -> Result<S
         if round.unwrap_or(0) != tool_round {
             continue;
         }
-        out.push_str(&format!("Tool: {tool_name} ({status})\nInput: {input_summary}\n"));
+        out.push_str(&format!(
+            "Tool: {tool_name} ({status})\nInput: {input_summary}\n"
+        ));
         if let Some(summary) = output_summary.as_deref().filter(|s| !s.is_empty()) {
             out.push_str(&format!("Output: {summary}\n"));
         }
@@ -486,9 +500,13 @@ fn detail_for_tool_round(turn: &ConversationTurn, tool_round: usize) -> Result<S
 }
 
 /// Attach compact slice index to worker handoff (Phase 8C).
-pub fn enrich_handoff_tool_history(capsule: &mut crate::agent_runtime::turn_context::WorkerHandoffCapsule, turns: &[ConversationTurn]) {
+pub fn enrich_handoff_tool_history(
+    capsule: &mut crate::agent_runtime::turn_context::WorkerHandoffCapsule,
+    turns: &[ConversationTurn],
+) {
     const HANDOFF_SLICE_WINDOW: usize = 8;
-    let hot_newest_first: Vec<&ConversationTurn> = turns.iter().rev().take(HANDOFF_SLICE_WINDOW).collect();
+    let hot_newest_first: Vec<&ConversationTurn> =
+        turns.iter().rev().take(HANDOFF_SLICE_WINDOW).collect();
     capsule.relevant_slice_ids = hot_newest_first
         .iter()
         .rev()
@@ -584,10 +602,12 @@ mod tests {
         let summary = compute_slice_summary(&turn, None);
         assert_eq!(summary.tool_rounds, 2);
         assert_eq!(summary.tools.len(), 2);
-        assert!(summary
-            .outcomes
-            .iter()
-            .any(|o| o.contains("manuscript_resolve")));
+        assert!(
+            summary
+                .outcomes
+                .iter()
+                .any(|o| o.contains("manuscript_resolve"))
+        );
     }
 
     #[test]

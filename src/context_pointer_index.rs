@@ -91,8 +91,13 @@ pub fn build_pointer_digest(
             .last_verification_confidence
             .map(|value| value.clamp(0.6, 1.0))
             .unwrap_or(0.85);
-        let confidence =
-            score_pointer(last, SESSION_HALF_LIFE_HOURS, 1.0, activity_boost, relevance);
+        let confidence = score_pointer(
+            last,
+            SESSION_HALF_LIFE_HOURS,
+            1.0,
+            activity_boost,
+            relevance,
+        );
         let staleness = staleness_band(&last, now);
         pointers.push(ContextPointer {
             id: summary.session_id.clone(),
@@ -142,9 +147,7 @@ pub fn build_pointer_digest(
             .is_some_and(|session_id| session_id == active_session_id)
             && matches!(
                 hint.column,
-                WorkBoardColumn::InFlight
-                    | WorkBoardColumn::WrappingUp
-                    | WorkBoardColumn::Blocked
+                WorkBoardColumn::InFlight | WorkBoardColumn::WrappingUp | WorkBoardColumn::Blocked
             )
         {
             activity_boost += 0.20;
@@ -179,9 +182,7 @@ pub fn build_pointer_digest(
             .partial_cmp(&a.confidence)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    pointers.retain(|p| {
-        p.staleness != STALENESS_ARCHIVED && p.confidence >= DIGEST_MIN_CONFIDENCE
-    });
+    pointers.retain(|p| p.staleness != STALENESS_ARCHIVED && p.confidence >= DIGEST_MIN_CONFIDENCE);
     pointers.truncate(DIGEST_MAX_POINTERS);
 
     let session_gap_human = sessions
@@ -324,9 +325,10 @@ fn topic_from_preview(preview: &str) -> Option<String> {
 fn parse_turn_scope(scope: &str) -> Option<usize> {
     let scope = scope.trim().to_ascii_lowercase();
     if let Some(rest) = scope.strip_prefix("last_")
-        && let Some(num) = rest.strip_suffix("_turns") {
-            return num.parse().ok();
-        }
+        && let Some(num) = rest.strip_suffix("_turns")
+    {
+        return num.parse().ok();
+    }
     None
 }
 

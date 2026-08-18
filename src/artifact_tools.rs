@@ -1,6 +1,5 @@
 //! Agent tools for listing, reading, grepping, and revising HTML UI artifacts.
 
-
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -87,11 +86,10 @@ impl ArtifactToolContext {
     }
 
     async fn require_ui_artifacts(&self) -> StasisResult<()> {
-        let supported = crate::agent_runtime::execution_context::turn_continuation_scope(
-            &self.turn_scope,
-        )
-            .await
-            .is_some_and(|scope| scope.supports_ui_artifacts);
+        let supported =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await
+                .is_some_and(|scope| scope.supports_ui_artifacts);
         if supported {
             Ok(())
         } else {

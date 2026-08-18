@@ -59,7 +59,19 @@ fn percentile(values: &mut [u128], percentile: usize) -> f64 {
     values[index] as f64 / 1_000.0
 }
 
+fn ci_mode() -> bool {
+    std::env::var("MEDOUSA_P01_CI").ok().as_deref() == Some("1")
+}
+
+fn fragment_count() -> usize {
+    std::env::var("MEDOUSA_P01_FRAGMENTS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(if ci_mode() { 256 } else { 10_000 })
+}
+
 fn run(fragment_bytes: usize, transcript_messages: usize, subscribers: usize) -> Sample {
+    let fragments = fragment_count();
     let root = std::env::temp_dir().join(format!("medousa-p01-{}", uuid::Uuid::new_v4().simple()));
     let envelope = TurnEnvelope::new(
         format!("turn-{}", uuid::Uuid::new_v4().simple()),
@@ -73,13 +85,13 @@ fn run(fragment_bytes: usize, transcript_messages: usize, subscribers: usize) ->
     }
 
     let delta = "x".repeat(fragment_bytes);
-    let mut latencies = Vec::with_capacity(10_000);
+    let mut latencies = Vec::with_capacity(fragments);
     ALLOCATIONS.store(0, Ordering::Relaxed);
     ALLOCATED_BYTES.store(0, Ordering::Relaxed);
     let started = Instant::now();
     let mut first_delta_us = 0.0;
     let mut subscriber_seq = vec![transcript_messages as u64; subscribers];
-    for index in 0..10_000 {
+    for index in 0..fragments {
         let before = Instant::now();
         let event = log.append(TurnEvent::ContentDelta {
             delta: delta.clone(),
@@ -112,7 +124,7 @@ fn run(fragment_bytes: usize, transcript_messages: usize, subscribers: usize) ->
 
     Sample {
         fixture: "P01-turn-stream-spine-v1",
-        fragments: 10_000,
+        fragments,
         fragment_bytes,
         transcript_messages,
         subscribers,
@@ -133,13 +145,28 @@ fn run(fragment_bytes: usize, transcript_messages: usize, subscribers: usize) ->
 }
 
 fn main() {
-    for fragment_bytes in [1, 8, 32, 256] {
-        for transcript_messages in [0, 100, 1_000] {
-            for subscribers in [0, 1, 4] {
+    let fragment_bytes = if ci_mode() {
+        vec![32]
+    } else {
+        vec![1, 8, 32, 256]
+    };
+    let transcripts = if ci_mode() {
+        vec![0]
+    } else {
+        vec![0, 100, 1_000]
+    };
+    let subscribers = if ci_mode() { vec![1] } else { vec![0, 1, 4] };
+    for fragment_bytes in fragment_bytes {
+        for transcript_messages in &transcripts {
+            for subscriber_count in &subscribers {
                 println!(
                     "{}",
-                    serde_json::to_string(&run(fragment_bytes, transcript_messages, subscribers))
-                        .expect("serialize benchmark sample")
+                    serde_json::to_string(&run(
+                        fragment_bytes,
+                        *transcript_messages,
+                        *subscriber_count
+                    ))
+                    .expect("serialize benchmark sample")
                 );
             }
         }

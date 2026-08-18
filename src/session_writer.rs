@@ -170,9 +170,7 @@ fn estimated_job_bytes(turn: &ConversationTurn, scratch: Option<&TurnScratchpad>
     let scratch_bytes = scratch
         .and_then(|value| serde_json::to_vec(value).ok())
         .map_or(0, |bytes| bytes.len());
-    turn_bytes
-        .saturating_add(scratch_bytes)
-        .max(1)
+    turn_bytes.saturating_add(scratch_bytes).max(1)
 }
 
 fn record_queue_admission(bytes: usize) {

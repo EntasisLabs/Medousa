@@ -9,20 +9,20 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use medousa_types::authority_id::{
-    component_store_record_key, ComponentId, ComponentStoreKey, EnvironmentProfileId,
+    ComponentId, ComponentStoreKey, EnvironmentProfileId, component_store_record_key,
 };
 use medousa_types::component_store::{
-    is_valid_component_store_key, is_valid_component_store_scope,
     ComponentStoreDeleteResponse, ComponentStoreGetResponse, ComponentStoreListResponse,
     ComponentStoreSetResponse, DEFAULT_COMPONENT_STORE_MAX_KEYS,
-    DEFAULT_COMPONENT_STORE_MAX_VALUE_BYTES,
+    DEFAULT_COMPONENT_STORE_MAX_VALUE_BYTES, is_valid_component_store_key,
+    is_valid_component_store_scope,
 };
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use stasis::prelude::RuntimeComposition;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 use surrealdb_types::SurrealValue;
 
 use crate::store_root::{StorePath, StoreRoot};
@@ -181,7 +181,8 @@ impl ComponentStoreService {
         validate_key(key)?;
 
         let deleted = if let Some(db) = &self.db {
-            self.surreal_delete(db, profile_id, component_id, key).await?
+            self.surreal_delete(db, profile_id, component_id, key)
+                .await?
         } else {
             self.file_delete(profile_id, component_id, key).await?
         };
@@ -251,9 +252,7 @@ impl ComponentStoreService {
         value: &Value,
         updated_at: chrono::DateTime<Utc>,
     ) -> Result<(), String> {
-        let existing = self
-            .surreal_get(db, profile_id, component_id, None)
-            .await?;
+        let existing = self.surreal_get(db, profile_id, component_id, None).await?;
         if !existing.contains_key(key) && existing.len() >= DEFAULT_COMPONENT_STORE_MAX_KEYS {
             return Err(format!(
                 "component store key limit reached ({DEFAULT_COMPONENT_STORE_MAX_KEYS})"
@@ -371,7 +370,9 @@ impl ComponentStoreService {
         let store = file_store()?;
         let path = file_doc_path(profile_id, component_id)?;
         let raw = serde_json::to_string_pretty(doc).map_err(|err| err.to_string())?;
-        store.atomic_write(&path, raw.as_bytes()).map_err(|err| err.to_string())
+        store
+            .atomic_write(&path, raw.as_bytes())
+            .map_err(|err| err.to_string())
     }
 }
 
@@ -481,10 +482,11 @@ mod tests {
         let root = std::env::current_dir()
             .expect("cwd")
             .join("target")
-            .join(format!("component-store-test-{}", uuid::Uuid::new_v4().simple()));
-        unsafe {
-            std::env::set_var("MEDOUSA_COMPONENT_STORE_ROOT", &root);
-        }
+            .join(format!(
+                "component-store-test-{}",
+                uuid::Uuid::new_v4().simple()
+            ));
+        let _env = crate::test_env::set_var("MEDOUSA_COMPONENT_STORE_ROOT", &root);
         let service = ComponentStoreService { db: None };
         let profile = "default";
         let component = "braindump-capture";
@@ -512,8 +514,5 @@ mod tests {
             .expect("get after delete");
         assert!(empty.entries.is_empty());
         let _ = tokio::fs::remove_dir_all(root).await;
-        unsafe {
-            std::env::remove_var("MEDOUSA_COMPONENT_STORE_ROOT");
-        }
     }
 }

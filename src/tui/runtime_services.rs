@@ -244,10 +244,7 @@ pub(crate) async fn assemble_tui_runtime(
     )?;
     crate::calendar_tools::register_calendar_tools(&mut tool_registry, event_tx.clone())?;
     crate::tool_history_tools::register_tool_history_tools(&mut tool_registry, turn_scope.clone())?;
-    crate::chat_history_tools::register_chat_history_tools(
-        &mut tool_registry,
-        turn_scope.clone(),
-    )?;
+    crate::chat_history_tools::register_chat_history_tools(&mut tool_registry, turn_scope.clone())?;
     crate::grapheme_script_tools::register_grapheme_script_tools(
         &mut tool_registry,
         event_tx.clone(),
@@ -529,7 +526,8 @@ pub(crate) async fn assemble_tui_runtime(
         memory_writer,
         memory_operations,
         client_registry,
-        execution_registry: crate::agent_runtime::execution_context::TurnExecutionRegistry::default(),
+        execution_registry: crate::agent_runtime::execution_context::TurnExecutionRegistry::default(
+        ),
         worker_scheduler,
     })
 }

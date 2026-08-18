@@ -91,7 +91,11 @@ impl TurnScratchpad {
             if trimmed.is_empty() {
                 continue;
             }
-            if !self.tools_this_turn.iter().any(|existing| existing == trimmed) {
+            if !self
+                .tools_this_turn
+                .iter()
+                .any(|existing| existing == trimmed)
+            {
                 self.tools_this_turn.push(trimmed.to_string());
             }
         }
@@ -153,11 +157,7 @@ impl TurnScratchpad {
         } else {
             self.last_error = None;
         }
-        let digest = format!(
-            "round={} tools=[{}]",
-            self.step,
-            digest_entries.join(", ")
-        );
+        let digest = format!("round={} tools=[{}]", self.step, digest_entries.join(", "));
         self.round_digests.push(digest);
         const MAX_DIGESTS: usize = 12;
         if self.round_digests.len() > MAX_DIGESTS {
@@ -173,11 +173,20 @@ impl TurnScratchpad {
             TurnScratchPhase::Finalize => "finalize",
         };
         let mut lines = vec![
-            format!("goal={}", truncate_field(&self.goal, GOAL_DISPLAY_MAX_CHARS)),
-            format!("phase={phase} step={} rounds_remaining={tool_rounds_remaining}", self.step),
+            format!(
+                "goal={}",
+                truncate_field(&self.goal, GOAL_DISPLAY_MAX_CHARS)
+            ),
+            format!(
+                "phase={phase} step={} rounds_remaining={tool_rounds_remaining}",
+                self.step
+            ),
         ];
         if !self.tools_this_turn.is_empty() {
-            lines.push(format!("tools_this_turn={}", self.tools_this_turn.join(", ")));
+            lines.push(format!(
+                "tools_this_turn={}",
+                self.tools_this_turn.join(", ")
+            ));
         } else if !self.last_tools.is_empty() {
             lines.push(format!("last_tools={}", self.last_tools.join(", ")));
         }
@@ -197,7 +206,10 @@ impl TurnScratchpad {
             ));
         }
         if !self.round_digests.is_empty() {
-            let start = self.round_digests.len().saturating_sub(DIGESTS_RECENT_SHOWN);
+            let start = self
+                .round_digests
+                .len()
+                .saturating_sub(DIGESTS_RECENT_SHOWN);
             let recent: Vec<_> = self.round_digests[start..].to_vec();
             lines.push(format!("digests_recent={}", recent.join(" · ")));
         }
@@ -356,10 +368,7 @@ impl WorkerHandoffCapsule {
             .parent_turn_correlation_id
             .as_deref()
             .unwrap_or("(none)");
-        let vibe = self
-            .vibe_signature
-            .as_deref()
-            .unwrap_or("(none)");
+        let vibe = self.vibe_signature.as_deref().unwrap_or("(none)");
         let avec_line = self
             .model_avec
             .as_ref()
@@ -437,10 +446,7 @@ pub struct HostTurnContext {
 }
 
 impl HostTurnContext {
-    pub fn new(
-        prior_messages: Vec<ChatMessage>,
-        user_prompt: String,
-    ) -> Self {
+    pub fn new(prior_messages: Vec<ChatMessage>, user_prompt: String) -> Self {
         Self::new_with_user_message(prior_messages, ChatMessage::user(user_prompt))
     }
 
@@ -448,11 +454,7 @@ impl HostTurnContext {
         prior_messages: Vec<ChatMessage>,
         user_message: ChatMessage,
     ) -> Self {
-        let scratch_source = user_message
-            .content
-            .first_text()
-            .unwrap_or("")
-            .to_string();
+        let scratch_source = user_message.content.first_text().unwrap_or("").to_string();
         let scratchpad = TurnScratchpad::from_user_prompt(&scratch_source);
         let mut user_lane_prefix = prior_messages;
         user_lane_prefix.push(user_message);
@@ -464,9 +466,8 @@ impl HostTurnContext {
     }
 
     pub fn build_model_messages(&self, system_prompt: Option<&str>) -> Vec<ChatMessage> {
-        let mut messages = Vec::with_capacity(
-            self.user_lane_prefix.len() + self.tool_lane.messages.len() + 1,
-        );
+        let mut messages =
+            Vec::with_capacity(self.user_lane_prefix.len() + self.tool_lane.messages.len() + 1);
         if let Some(system) = system_prompt.filter(|s| !s.trim().is_empty()) {
             messages.push(ChatMessage::system(system.to_string()));
         }
@@ -505,9 +506,7 @@ fn push_scratch_body(messages: &mut Vec<ChatMessage>, body: &str) {
     if trimmed.is_empty() {
         return;
     }
-    messages.push(ChatMessage::system(format!(
-        "{SCRATCH_PREFIX}\n{trimmed}"
-    )));
+    messages.push(ChatMessage::system(format!("{SCRATCH_PREFIX}\n{trimmed}")));
 }
 
 pub fn tool_output_ok(output: &Value) -> bool {
@@ -576,7 +575,10 @@ fn format_tool_digest_entry(name: &str, ok: bool, hint: Option<&str>) -> String 
 
 /// One-line receipt hint for host→worker handoff digests.
 pub fn compact_tool_receipt_hint(tool_name: &str, output: &Value) -> Option<String> {
-    if matches!(output.get("ok").and_then(|value| value.as_bool()), Some(false)) {
+    if matches!(
+        output.get("ok").and_then(|value| value.as_bool()),
+        Some(false)
+    ) {
         return output
             .get("error")
             .or_else(|| output.get("message"))
@@ -737,13 +739,13 @@ mod tests {
 
     #[test]
     fn host_context_splits_lanes() {
-        let mut ctx = HostTurnContext::new(
-            vec![ChatMessage::user("prior")],
-            "current ask".to_string(),
-        );
+        let mut ctx =
+            HostTurnContext::new(vec![ChatMessage::user("prior")], "current ask".to_string());
         let mut model = ctx.build_model_messages(Some("sys"));
         assert_eq!(model.len(), 3);
-        ctx.tool_lane.messages.push(ChatMessage::system("tool-only"));
+        ctx.tool_lane
+            .messages
+            .push(ChatMessage::system("tool-only"));
         model = ctx.build_model_messages(Some("sys"));
         assert_eq!(model.len(), 4);
         assert_eq!(ctx.user_lane_prefix.len(), 2);
@@ -766,12 +768,19 @@ mod tests {
             None,
             None,
         );
-        cap.apply_spawn("memory.avec_calibrate", "run full calibrate ritual", "work-1");
+        cap.apply_spawn(
+            "memory.avec_calibrate",
+            "run full calibrate ritual",
+            "work-1",
+        );
         let worker = cap.initial_worker_scratch();
         assert_eq!(worker.goal, "run full calibrate ritual");
         assert!(worker.delegate.is_none());
         assert_eq!(worker.open_gaps.len(), 1);
-        assert!(cap.worker_tier_user_prompt("[POLICY]").contains(WORKER_HANDOFF_PREFIX));
+        assert!(
+            cap.worker_tier_user_prompt("[POLICY]")
+                .contains(WORKER_HANDOFF_PREFIX)
+        );
     }
 
     #[test]
@@ -816,9 +825,11 @@ mod tests {
             })
             .count();
         assert_eq!(scratch_count, 1);
-        assert!(messages
-            .iter()
-            .any(|m| m.content.first_text().is_some_and(|t| t.contains("digests_recent="))));
+        assert!(messages.iter().any(|m| {
+            m.content
+                .first_text()
+                .is_some_and(|t| t.contains("digests_recent="))
+        }));
     }
 
     #[test]

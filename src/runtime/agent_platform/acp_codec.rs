@@ -1,13 +1,13 @@
 //! ACP JSON ↔ Stasis `AgentEnvelope` codec (Medousa-owned; no vendor adapters in Stasis).
 
 use chrono::Utc;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use stasis::domain::agent::envelope::{
-    AgentEnvelope, AgentEnvelopeKind, EncodedAgentMessage, AGENT_ENVELOPE_SCHEMA_VERSION_V1,
+    AGENT_ENVELOPE_SCHEMA_VERSION_V1, AgentEnvelope, AgentEnvelopeKind, EncodedAgentMessage,
 };
 use stasis::domain::errors::{Result, StasisError};
 use stasis::infrastructure::agent::{
-    JsonAgentMessageCodec, JSON_AGENT_CONTENT_TYPE, JSON_AGENT_SCHEMA_NAME,
+    JSON_AGENT_CONTENT_TYPE, JSON_AGENT_SCHEMA_NAME, JsonAgentMessageCodec,
 };
 use stasis::ports::outbound::agent::AgentMessageCodec;
 use uuid::Uuid;
@@ -60,10 +60,8 @@ impl AcpAgentMessageCodec {
             if !message.is_empty() {
                 obj.insert("message".into(), json!(message));
             }
-            if matches!(
-                kind,
-                AcpTerminalKind::Failed | AcpTerminalKind::Cancelled
-            ) && !obj.contains_key("error")
+            if matches!(kind, AcpTerminalKind::Failed | AcpTerminalKind::Cancelled)
+                && !obj.contains_key("error")
             {
                 obj.insert(
                     "error".into(),
@@ -82,9 +80,9 @@ impl AcpAgentMessageCodec {
             envelope_id: format!("acp-{}", Uuid::new_v4()),
             session_id: session_id.to_string(),
             thread_id: None,
-            turn_id: turn_id.map(|s| s.to_string()).or_else(|| {
-                Some(agent_session_id.to_string())
-            }),
+            turn_id: turn_id
+                .map(|s| s.to_string())
+                .or_else(|| Some(agent_session_id.to_string())),
             job_id: None,
             correlation_id: agent_session_id.to_string(),
             causation_id: format!("acp:{runtime}"),

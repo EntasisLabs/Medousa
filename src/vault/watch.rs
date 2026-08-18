@@ -114,6 +114,7 @@ mod tests {
 
     #[test]
     fn external_change_marks_projection_stale() {
+        let _lock = crate::vault::service::vault_integration_test_lock();
         PROJECTION.clear_stale();
         assert!(!PROJECTION.is_stale());
         note_external_change();
@@ -123,6 +124,7 @@ mod tests {
 
     #[test]
     fn warm_skip_disabled_until_reconcile_certified() {
+        let _lock = crate::vault::service::vault_integration_test_lock();
         PROJECTION.mark_stale_reconciling();
         assert!(PROJECTION.needs_reconcile());
         let epoch = PROJECTION.reconcile_epoch();

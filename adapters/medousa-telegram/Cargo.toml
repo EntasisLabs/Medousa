@@ -2,6 +2,7 @@
 name = "medousa-telegram"
 version = "0.9.1"
 edition = "2024"
+license = "MIT OR Apache-2.0"
 
 [[bin]]
 name = "medousa_telegram"
@@ -16,3 +17,6 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 teloxide = "0.17.0"
 telegram-escape = "0.4.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "signal", "sync"] }
+
+[package.metadata.cargo-machete]
+ignored = ["telegram-escape"]

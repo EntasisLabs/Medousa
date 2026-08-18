@@ -8,12 +8,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use grapheme_runtime::{EffectKind, ExportedOp, ModuleAbi, ModuleManifest, ResourceLimits};
-use grapheme_sdk::{
-    CompactModuleOp, EffectGroup, ModuleInfoPayload, ModuleOpRow, ModuleOpSummary,
-};
+use grapheme_sdk::{CompactModuleOp, EffectGroup, ModuleInfoPayload, ModuleOpRow, ModuleOpSummary};
 use serde_json::json;
 
-use crate::shell_grapheme::{shell_host_module_manifest, SHELL_MODULE};
+use crate::shell_grapheme::{SHELL_MODULE, shell_host_module_manifest};
 
 pub const MEDOUSA_MODULE: &str = "medousa";
 
@@ -316,6 +314,11 @@ mod tests {
     #[test]
     fn ops_search_finds_shell_run() {
         let payload = modules_ops_with_host("shell.run");
-        assert!(payload.matches.iter().any(|row| row.module_id == "shell" && row.op == "run"));
+        assert!(
+            payload
+                .matches
+                .iter()
+                .any(|row| row.module_id == "shell" && row.op == "run")
+        );
     }
 }

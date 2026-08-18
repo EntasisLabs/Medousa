@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use reqwest::multipart;
 
-use crate::inference_profiles::InferenceTarget;
 use crate::inference_profiles::InferenceProfileKind;
+use crate::inference_profiles::InferenceTarget;
 use crate::inference_router::ProviderCredentialRequirement;
 use crate::inference_router::{self, CapabilityRequirement};
 use crate::session::load_provider_api_key;
@@ -67,7 +67,10 @@ pub fn stt_status() -> SttStatusResponse {
     }
 }
 
-pub async fn transcribe_audio(audio_bytes: &[u8], mime_type: &str) -> Result<SttTranscribeResponse, TurnFailure> {
+pub async fn transcribe_audio(
+    audio_bytes: &[u8],
+    mime_type: &str,
+) -> Result<SttTranscribeResponse, TurnFailure> {
     if audio_bytes.is_empty() {
         return Err(TurnFailure::validation(
             "Recording was empty — try again.",
@@ -125,9 +128,7 @@ async fn transcribe_with_target(
         );
 
     let client = stt_client()?;
-    let mut req = client
-        .post(transcription_url(&base_url))
-        .multipart(form);
+    let mut req = client.post(transcription_url(&base_url)).multipart(form);
 
     match inference_router::provider_credential_requirement(&target.provider) {
         ProviderCredentialRequirement::None => {}
@@ -179,10 +180,7 @@ async fn transcribe_with_target(
 }
 
 fn resolve_stt_base_url(target: &InferenceTarget) -> Option<String> {
-    crate::resolve_llm_base_url(
-        Some(target.provider.as_str()),
-        target.base_url.as_deref(),
-    )
+    crate::resolve_llm_base_url(Some(target.provider.as_str()), target.base_url.as_deref())
 }
 
 fn missing_target_reason(target: &InferenceTarget) -> String {

@@ -54,8 +54,8 @@ fn pending_store() -> Result<StoreRoot, String> {
 }
 
 fn proposal_path(proposal_id: &str) -> Result<StorePath, String> {
-    let proposal_id = ManuscriptOverlayProposalId::parse(proposal_id)
-        .map_err(|error| error.to_string())?;
+    let proposal_id =
+        ManuscriptOverlayProposalId::parse(proposal_id).map_err(|error| error.to_string())?;
     StorePath::parse(&format!("{}.yaml", proposal_id.storage_key().as_str()))
         .map_err(|error| error.to_string())
 }
@@ -65,10 +65,9 @@ fn proposal_ambient_path(proposal_id: &str) -> Result<PathBuf, String> {
 }
 
 fn legacy_proposal_path(proposal_id: &str) -> Result<StorePath, String> {
-    let proposal_id = ManuscriptOverlayProposalId::parse(proposal_id)
-        .map_err(|error| error.to_string())?;
-    StorePath::parse(&format!("{}.yaml", proposal_id.as_str()))
-        .map_err(|error| error.to_string())
+    let proposal_id =
+        ManuscriptOverlayProposalId::parse(proposal_id).map_err(|error| error.to_string())?;
+    StorePath::parse(&format!("{}.yaml", proposal_id.as_str())).map_err(|error| error.to_string())
 }
 
 pub fn list_pending_proposals(limit: usize) -> Result<Vec<ManuscriptOverlayProposal>, String> {
@@ -83,8 +82,7 @@ pub fn list_pending_proposals(limit: usize) -> Result<Vec<ManuscriptOverlayPropo
             .map_err(|error| error.to_string())?;
         if let Ok(proposal) = serde_yaml::from_slice::<ManuscriptOverlayProposal>(&raw)
             && (proposal_path(&proposal.proposal_id).is_ok_and(|path| path == entry.path)
-                || legacy_proposal_path(&proposal.proposal_id)
-                    .is_ok_and(|path| path == entry.path))
+                || legacy_proposal_path(&proposal.proposal_id).is_ok_and(|path| path == entry.path))
         {
             proposals.push(proposal);
         }
@@ -100,8 +98,7 @@ pub fn propose_overlay(
     reason: &str,
     session_id: Option<String>,
 ) -> Result<ManuscriptOverlayProposal, String> {
-    let manuscript_id = ManuscriptId::parse(manuscript_id)
-        .map_err(|error| error.to_string())?;
+    let manuscript_id = ManuscriptId::parse(manuscript_id).map_err(|error| error.to_string())?;
     let appendix = appendix.trim();
     let reason = reason.trim();
     if appendix.is_empty() {

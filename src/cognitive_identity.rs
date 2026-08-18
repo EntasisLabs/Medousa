@@ -11,9 +11,7 @@ use stasis::ports::outbound::memory::identity_memory_models::{
 };
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 
-use crate::identity_memory::{
-    resolve_identity_channel_id, resolve_identity_persona_id,
-};
+use crate::identity_memory::{resolve_identity_channel_id, resolve_identity_persona_id};
 use crate::identity_write_policy::load_identity_product_config;
 
 pub const DEFAULT_RELATIONAL_DIGEST_BUDGET: usize = 800;
@@ -174,7 +172,11 @@ pub fn compile_relational_memory_digest(
     snapshot: &CognitiveIdentitySnapshot,
     budget: usize,
 ) -> String {
-    compile_relational_memory_digest_with_options(snapshot, DigestCompileOptions::from_product_config(budget)).text
+    compile_relational_memory_digest_with_options(
+        snapshot,
+        DigestCompileOptions::from_product_config(budget),
+    )
+    .text
 }
 
 pub fn compile_relational_memory_digest_with_options(
@@ -291,36 +293,42 @@ pub fn recall_identity_facts(
     let query_tokens = tokenize_query(Some(query));
     let mut hits = Vec::new();
 
-    if normalized_kind.as_deref().is_none_or(|kind| kind == "preference" || kind == "note")
-        && let Some(user) = snapshot.user.as_ref() {
-            for (key, value) in &user.preferences {
-                let is_note = key.starts_with("note_");
-                if normalized_kind.as_deref() == Some("preference") && is_note {
-                    continue;
-                }
-                if normalized_kind.as_deref() == Some("note") && !is_note {
-                    continue;
-                }
-                let value_plain = value_to_plain(value);
-                let searchable = format!("{key} {value_plain}");
-                let score = score_query_match(&query_tokens, &searchable);
-                if score <= 0.0 && !query_tokens.is_empty() {
-                    continue;
-                }
-                let fact = if is_note { "note" } else { "preference" };
-                hits.push(IdentityRecallHit {
-                    fact_kind: fact.to_string(),
-                    subject: key.clone(),
-                    statement: value_plain,
-                    tags: Vec::new(),
-                    score: score.max(0.01),
-                    entity_type: "UserEntity".to_string(),
-                    entity_id: user.user_id.clone(),
-                });
+    if normalized_kind
+        .as_deref()
+        .is_none_or(|kind| kind == "preference" || kind == "note")
+        && let Some(user) = snapshot.user.as_ref()
+    {
+        for (key, value) in &user.preferences {
+            let is_note = key.starts_with("note_");
+            if normalized_kind.as_deref() == Some("preference") && is_note {
+                continue;
             }
+            if normalized_kind.as_deref() == Some("note") && !is_note {
+                continue;
+            }
+            let value_plain = value_to_plain(value);
+            let searchable = format!("{key} {value_plain}");
+            let score = score_query_match(&query_tokens, &searchable);
+            if score <= 0.0 && !query_tokens.is_empty() {
+                continue;
+            }
+            let fact = if is_note { "note" } else { "preference" };
+            hits.push(IdentityRecallHit {
+                fact_kind: fact.to_string(),
+                subject: key.clone(),
+                statement: value_plain,
+                tags: Vec::new(),
+                score: score.max(0.01),
+                entity_type: "UserEntity".to_string(),
+                entity_id: user.user_id.clone(),
+            });
         }
+    }
 
-    if normalized_kind.as_deref().is_none_or(|kind| kind == "person") {
+    if normalized_kind
+        .as_deref()
+        .is_none_or(|kind| kind == "person")
+    {
         let contact_names = snapshot
             .contacts
             .iter()
@@ -354,10 +362,7 @@ pub fn recall_identity_facts(
                 statement: detail,
                 tags: relationship.policy_tags.clone(),
                 score,
-                entity_type: relationship
-                    .target_entity_ref
-                    .entity_type
-                    .clone(),
+                entity_type: relationship.target_entity_ref.entity_type.clone(),
                 entity_id: relationship.target_entity_ref.entity_id.clone(),
             });
         }
@@ -460,10 +465,7 @@ fn collect_scored_digest_lines(
         .iter()
         .filter_map(|relationship| {
             let contact_id = contact_id_for_relationship(relationship)?;
-            let display_name = contact_names
-                .get(contact_id)
-                .copied()
-                .unwrap_or(contact_id);
+            let display_name = contact_names.get(contact_id).copied().unwrap_or(contact_id);
             let kind = relationship.relationship_kind.as_str();
             let detail = relationship_social_detail(relationship);
 
@@ -477,7 +479,10 @@ fn collect_scored_digest_lines(
             }
             score += score_query_match(
                 query_tokens,
-                &format!("{display_name} {} {detail}", relationship.policy_tags.join(" ")),
+                &format!(
+                    "{display_name} {} {detail}",
+                    relationship.policy_tags.join(" ")
+                ),
             );
 
             Some((
@@ -589,7 +594,10 @@ fn format_policy_tag(tag: &str) -> Option<String> {
 }
 
 fn policy_tags_detail(tags: &[String]) -> Option<String> {
-    let parts: Vec<String> = tags.iter().filter_map(|tag| format_policy_tag(tag)).collect();
+    let parts: Vec<String> = tags
+        .iter()
+        .filter_map(|tag| format_policy_tag(tag))
+        .collect();
     if parts.is_empty() {
         None
     } else {
@@ -607,9 +615,7 @@ fn relationship_kind_label(kind: &str) -> String {
             let mut chars = segment.chars();
             match chars.next() {
                 None => String::new(),
-                Some(first) => {
-                    first.to_ascii_uppercase().to_string() + chars.as_str()
-                }
+                Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
             }
         })
         .collect::<Vec<_>>()
@@ -694,10 +700,7 @@ mod tests {
                 approval_profile_id: None,
                 interruption_policy: Default::default(),
                 escalation_policy: Default::default(),
-                policy_tags: vec![
-                    "role:engineer".to_string(),
-                    "employer:google".to_string(),
-                ],
+                policy_tags: vec!["role:engineer".to_string(), "employer:google".to_string()],
                 provenance: UpdateSource::UserDirect,
                 parent_relationship_id: None,
                 governing_relationship_ids: vec![],
@@ -848,7 +851,10 @@ mod tests {
     fn recall_finds_person_and_preference_hits() {
         let snapshot = sample_snapshot();
         let mario = recall_identity_facts(&snapshot, "Mario engineer", None, 5);
-        assert_eq!(mario.hits.first().map(|hit| hit.subject.as_str()), Some("Mario"));
+        assert_eq!(
+            mario.hits.first().map(|hit| hit.subject.as_str()),
+            Some("Mario")
+        );
 
         let matcha = recall_identity_facts(&snapshot, "matcha", Some("preference"), 5);
         assert!(

@@ -29,14 +29,12 @@ pub fn format_active_workers_block(session_id: &str) -> Option<String> {
         "[MEDOUSA_ACTIVE_WORKERS]".to_string(),
         format!("session_id={session_id}"),
         format!("count={}", active.len()),
-        "Use cognition_turn_worker_status (session_id optional on host turn) for drill-down.".to_string(),
+        "Use cognition_turn_worker_status (session_id optional on host turn) for drill-down."
+            .to_string(),
     ];
 
     for record in active.iter().take(8) {
-        let stage = record
-            .stage_role
-            .as_deref()
-            .unwrap_or("-");
+        let stage = record.stage_role.as_deref().unwrap_or("-");
         lines.push(format!(
             "- work_id={} status={:?} intent={} stage_role={stage} task={}",
             record.work_id,

@@ -8,11 +8,7 @@ use ratatui::{
 };
 
 pub fn highlight_source(path: &str, source: &str) -> Vec<Line<'static>> {
-    let ext = path
-        .rsplit('.')
-        .next()
-        .unwrap_or("")
-        .to_ascii_lowercase();
+    let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
     match ext.as_str() {
         "rs" => highlight_c_like(source, RUST_KEYWORDS, "//"),
         "ts" | "tsx" | "js" | "jsx" => highlight_c_like(source, TS_KEYWORDS, "//"),
@@ -29,18 +25,59 @@ pub fn highlight_source(path: &str, source: &str) -> Vec<Line<'static>> {
 }
 
 const RUST_KEYWORDS: &[&str] = &[
-    "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum",
-    "extern", "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move",
-    "mut", "pub", "ref", "return", "self", "Self", "static", "struct", "super", "trait", "true",
-    "type", "unsafe", "use", "where", "while",
+    "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern",
+    "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub",
+    "ref", "return", "self", "Self", "static", "struct", "super", "trait", "true", "type",
+    "unsafe", "use", "where", "while",
 ];
 
 const TS_KEYWORDS: &[&str] = &[
-    "as", "async", "await", "break", "case", "catch", "class", "const", "continue", "debugger",
-    "default", "delete", "do", "else", "enum", "export", "extends", "false", "finally", "for",
-    "from", "function", "if", "import", "in", "instanceof", "interface", "let", "new", "null",
-    "return", "static", "super", "switch", "this", "throw", "true", "try", "typeof", "var",
-    "void", "while", "with", "yield", "type", "of",
+    "as",
+    "async",
+    "await",
+    "break",
+    "case",
+    "catch",
+    "class",
+    "const",
+    "continue",
+    "debugger",
+    "default",
+    "delete",
+    "do",
+    "else",
+    "enum",
+    "export",
+    "extends",
+    "false",
+    "finally",
+    "for",
+    "from",
+    "function",
+    "if",
+    "import",
+    "in",
+    "instanceof",
+    "interface",
+    "let",
+    "new",
+    "null",
+    "return",
+    "static",
+    "super",
+    "switch",
+    "this",
+    "throw",
+    "true",
+    "try",
+    "typeof",
+    "var",
+    "void",
+    "while",
+    "with",
+    "yield",
+    "type",
+    "of",
 ];
 
 const PYTHON_KEYWORDS: &[&str] = &[
@@ -149,10 +186,7 @@ fn highlight_json(source: &str) -> Vec<Line<'static>> {
             while !rest.is_empty() {
                 if let Some(start) = rest.find('"') {
                     if start > 0 {
-                        spans.push(Span::styled(
-                            rest[..start].to_string(),
-                            style_plain(),
-                        ));
+                        spans.push(Span::styled(rest[..start].to_string(), style_plain()));
                     }
                     let after = &rest[start + 1..];
                     if let Some(end) = after.find('"') {

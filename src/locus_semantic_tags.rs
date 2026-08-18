@@ -27,11 +27,7 @@ pub fn parse_semantic_tags_from_value(value: Option<&Value>) -> Option<Vec<Strin
     } else {
         Vec::new()
     };
-    if tags.is_empty() {
-        None
-    } else {
-        Some(tags)
-    }
+    if tags.is_empty() { None } else { Some(tags) }
 }
 
 /// Parse optional `tag_prefix` for vocabulary / prefix-scoped retrieval.
@@ -92,15 +88,16 @@ pub fn inject_semantic_tags(raw_node: &str, tags: &[String]) -> String {
         .join(", ");
 
     if let Some(prime_idx) = raw_node.find("prime:")
-        && let Some(open) = raw_node[prime_idx..].find('{') {
-            let insert_at = prime_idx + open + 1;
-            let injection = format!(" semantic_tags: [{tags_json}],");
-            let mut out = String::with_capacity(raw_node.len() + injection.len());
-            out.push_str(&raw_node[..insert_at]);
-            out.push_str(&injection);
-            out.push_str(&raw_node[insert_at..]);
-            return out;
-        }
+        && let Some(open) = raw_node[prime_idx..].find('{')
+    {
+        let insert_at = prime_idx + open + 1;
+        let injection = format!(" semantic_tags: [{tags_json}],");
+        let mut out = String::with_capacity(raw_node.len() + injection.len());
+        out.push_str(&raw_node[..insert_at]);
+        out.push_str(&injection);
+        out.push_str(&raw_node[insert_at..]);
+        return out;
+    }
 
     raw_node.to_string()
 }
@@ -110,9 +107,10 @@ pub fn default_workshop_semantic_tags(chat_session_id: &str) -> Vec<String> {
     let mut tags = vec!["medousa".to_string(), "session".to_string()];
     let profile_id = crate::user_profiles::resolve_workshop_identity_user_id();
     if let Some(slug) = crate::user_profiles::profile_slug_from_id(&profile_id)
-        && slug != crate::locus_memory::LOCUS_DEFAULT_TENANT {
-            tags.push(format!("profile:{slug}"));
-        }
+        && slug != crate::locus_memory::LOCUS_DEFAULT_TENANT
+    {
+        tags.push(format!("profile:{slug}"));
+    }
     let short = chat_session_id.chars().take(8).collect::<String>();
     if !short.is_empty() {
         tags.push(format!("chat:{short}"));
@@ -127,7 +125,8 @@ mod tests {
 
     #[test]
     fn injects_semantic_tags_into_prime() {
-        let raw = r#"⊕⟨ ⏣0{ trigger: manual, prime: { context_summary: "test", relevant_tier: raw } } ⟩"#;
+        let raw =
+            r#"⊕⟨ ⏣0{ trigger: manual, prime: { context_summary: "test", relevant_tier: raw } } ⟩"#;
         let out = inject_semantic_tags(raw, &["Medousa".into(), "session".into()]);
         assert!(out.contains("semantic_tags:"));
         assert!(out.contains("medousa"));

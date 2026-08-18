@@ -8,6 +8,6 @@ mod ports;
 
 pub use acp_codec::AcpAgentMessageCodec;
 pub use ports::{
-    mcp_export_allowlist, publish_acp_terminal, shared_agent_platform_ports, AgentPlatformPorts,
-    AcpTerminalKind,
+    AcpTerminalKind, AgentPlatformPorts, mcp_export_allowlist, publish_acp_terminal,
+    shared_agent_platform_ports,
 };

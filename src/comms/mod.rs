@@ -34,10 +34,10 @@ pub use medousa_engine::ports::{
 pub use backoff::{
     BackoffPolicy, CircuitBreaker, CircuitBreakerConfig, CircuitState, OverlapGuard, OverlapPermit,
 };
-pub use fd_limits::{raise_nofile_limit, NofileLimits, DEFAULT_TARGET_NOFILE};
+pub use fd_limits::{DEFAULT_TARGET_NOFILE, NofileLimits, raise_nofile_limit};
 pub use pool::{ConnectionPool, PoolConfig};
-pub use reconnect::{Reconnector, ReconnectError};
-pub use route::{first_available, RoutePolicy, RouteSelector};
+pub use reconnect::{ReconnectError, Reconnector};
+pub use route::{RoutePolicy, RouteSelector, first_available};
 pub use service::{CommsCommand, CommsConfig, CommsHandle, CommsService};
 pub use transport::{
     HttpMethod, ResponseBody, Transport, TransportError, TransportErrorKind, TransportKind,
@@ -47,4 +47,3 @@ pub use transport::{
 pub use adapters::HttpAdapter;
 #[cfg(feature = "iroh-transport")]
 pub use adapters::IrohAdapter;
-

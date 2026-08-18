@@ -9,8 +9,8 @@ use chrono::Utc;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use stasis::prelude::RuntimeComposition;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 use surrealdb_types::SurrealValue;
 use tokio::runtime::Handle;
 
@@ -63,12 +63,11 @@ pub fn normalize_session_display_name(raw: &str) -> Option<String> {
     if trimmed.is_empty() {
         return None;
     }
-    let out: String = trimmed.chars().take(MAX_SESSION_DISPLAY_NAME_CHARS).collect();
-    if out.is_empty() {
-        None
-    } else {
-        Some(out)
-    }
+    let out: String = trimmed
+        .chars()
+        .take(MAX_SESSION_DISPLAY_NAME_CHARS)
+        .collect();
+    if out.is_empty() { None } else { Some(out) }
 }
 
 trait SessionMetaStore: Send + Sync {
@@ -168,7 +167,8 @@ impl SessionMetaStore for SurrealSessionMetaStore {
     }
 
     fn get_display_name(&self, session_id: &str) -> Option<String> {
-        let sql = "SELECT display_name FROM type::table($table) WHERE session_id = $session_id LIMIT 1";
+        let sql =
+            "SELECT display_name FROM type::table($table) WHERE session_id = $session_id LIMIT 1";
         let mut response = block_on(
             self.db
                 .query(sql)
@@ -385,8 +385,7 @@ impl SessionMetaStore for FileSessionMetaStore {
 }
 
 pub fn set_session_display_name(session_id: &str, display_name: &str) -> Result<(), String> {
-    let (_session_id, _mutation) =
-        crate::session_deletion::acquire_mutation_for_str(session_id)?;
+    let (_session_id, _mutation) = crate::session_deletion::acquire_mutation_for_str(session_id)?;
     let Some(normalized) = normalize_session_display_name(display_name) else {
         return Err("display name must not be empty".to_string());
     };

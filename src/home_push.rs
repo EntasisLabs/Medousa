@@ -9,7 +9,7 @@ use once_cell::sync::OnceCell;
 
 use crate::channel_delivery::work_deep_link_url;
 use crate::daemon_api::{WorkBoardColumn, WorkCardDetail, WorkCardKind};
-use crate::pairing::apns::{ensure_apns_client, shared_apns_client, ApnsConfig};
+use crate::pairing::apns::{ApnsConfig, ensure_apns_client, shared_apns_client};
 use crate::pairing::{ApnsConfigSource, PairingService};
 
 static HOME_PUSH: OnceCell<Arc<HomePushService>> = OnceCell::new();
@@ -100,12 +100,7 @@ impl HomePushService {
         }
     }
 
-    pub async fn dispatch_budget_approval(
-        &self,
-        request_id: &str,
-        title: &str,
-        detail: &str,
-    ) {
+    pub async fn dispatch_budget_approval(&self, request_id: &str, title: &str, detail: &str) {
         let card_id = request_id.trim();
         if card_id.is_empty() {
             return;

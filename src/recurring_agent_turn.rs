@@ -48,7 +48,9 @@ pub struct RecurringAgentTurnJobPayload {
 impl RecurringAgentTurnJobPayload {
     pub fn to_payload_ref(&self) -> StasisResult<String> {
         serde_json::to_string(self).map_err(|err| {
-            StasisError::PortFailure(format!("failed to encode recurring agent-turn payload: {err}"))
+            StasisError::PortFailure(format!(
+                "failed to encode recurring agent-turn payload: {err}"
+            ))
         })
     }
 }
@@ -157,8 +159,8 @@ impl JobHandler for RecurringAgentTurnJobHandler {
     }
 
     async fn execute(&self, job: &Job) -> StasisResult<JobExecutionOutcome> {
-        let payload: RecurringAgentTurnJobPayload =
-            serde_json::from_str(&job.payload_ref).map_err(|err| {
+        let payload: RecurringAgentTurnJobPayload = serde_json::from_str(&job.payload_ref)
+            .map_err(|err| {
                 StasisError::PortFailure(format!(
                     "invalid recurring agent-turn payload for job {}: {err}",
                     job.id
@@ -243,19 +245,28 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             supports_browser_host: false,
             channel_surface: Some("scheduled".to_string()),
         };
-        let execution = match crate::agent_runtime::execution_context::TurnExecutionContext::from_scope(
-            job.id.clone(),
-            crate::request_principal::RequestPrincipal::continuation(identity_user_id),
-            tokio_util::sync::CancellationToken::new(),
-            std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
-            scope,
-        ) {
-            Ok(execution) => execution,
-            Err(error) => return Ok(fatal_outcome(&format!("invalid recurring turn session: {error}"))),
-        };
-        let execution_lease = self.agent.execution_registry.admit(execution).map_err(|error| {
-            StasisError::PortFailure(format!("recurring turn admission failed: {error}"))
-        })?;
+        let execution =
+            match crate::agent_runtime::execution_context::TurnExecutionContext::from_scope(
+                job.id.clone(),
+                crate::request_principal::RequestPrincipal::continuation(identity_user_id),
+                tokio_util::sync::CancellationToken::new(),
+                std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
+                scope,
+            ) {
+                Ok(execution) => execution,
+                Err(error) => {
+                    return Ok(fatal_outcome(&format!(
+                        "invalid recurring turn session: {error}"
+                    )));
+                }
+            };
+        let execution_lease = self
+            .agent
+            .execution_registry
+            .admit(execution)
+            .map_err(|error| {
+                StasisError::PortFailure(format!("recurring turn admission failed: {error}"))
+            })?;
         let execution_context = execution_lease.context().clone();
 
         let output = Arc::new(Mutex::new(None));
@@ -277,21 +288,19 @@ impl JobHandler for RecurringAgentTurnJobHandler {
         .await;
         drop(execution_lease);
 
-        let text = output.lock().await.clone().unwrap_or_else(|| {
-            "recurring agent turn completed without assistant text".to_string()
-        });
+        let text =
+            output.lock().await.clone().unwrap_or_else(|| {
+                "recurring agent turn completed without assistant text".to_string()
+            });
 
         if let Some(manuscript_id) = manuscript_id.as_deref()
             && let Ok(manuscript) = build_manuscript_context(manuscript_id)
-                && manuscript_wants_locus_store_on_complete(&manuscript)
-                    && let Err(err) =
-                        store_manuscript_brief_to_locus(self.agent.as_ref(), &manuscript, &text)
-                            .await
-                    {
-                        eprintln!(
-                            "medousa recurring_locus_store manuscript={manuscript_id} error={err}"
-                        );
-                    }
+            && manuscript_wants_locus_store_on_complete(&manuscript)
+            && let Err(err) =
+                store_manuscript_brief_to_locus(self.agent.as_ref(), &manuscript, &text).await
+        {
+            eprintln!("medousa recurring_locus_store manuscript={manuscript_id} error={err}");
+        }
 
         let diagnostics = json!({
             "provider": "medousa-agent-runtime",
@@ -405,8 +414,7 @@ mod tests {
             Some(8),
         );
         let encoded = payload.to_payload_ref().expect("encode");
-        let decoded: RecurringAgentTurnJobPayload =
-            serde_json::from_str(&encoded).expect("decode");
+        let decoded: RecurringAgentTurnJobPayload = serde_json::from_str(&encoded).expect("decode");
         assert_eq!(decoded.manuscript_id.as_deref(), Some("morning-brief"));
         assert_eq!(decoded.scheduled_tool_allowlist.len(), 2);
         assert_eq!(
@@ -418,10 +426,12 @@ mod tests {
 
     #[test]
     fn manuscript_id_extractor_ignores_other_job_types() {
-        assert!(manuscript_id_from_recurring_payload(
-            "workflow.stasis.prompt",
-            r#"{"manuscript_id":"x"}"#
-        )
-        .is_none());
+        assert!(
+            manuscript_id_from_recurring_payload(
+                "workflow.stasis.prompt",
+                r#"{"manuscript_id":"x"}"#
+            )
+            .is_none()
+        );
     }
 }

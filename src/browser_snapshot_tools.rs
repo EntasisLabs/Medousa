@@ -1,6 +1,5 @@
 //! `cognition_browser_snapshot` — markdown snapshot of a URL via Agent Browser.
 
-
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
@@ -34,10 +33,9 @@ impl CognitionBrowserSnapshotTool {
     }
 
     async fn browser_enabled(&self) -> bool {
-        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
-            &self.turn_scope,
-        )
-        .await;
+        let scope =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await;
         surface_supports_browser_host(surface_from_scope(scope.as_ref()).as_ref())
     }
 }

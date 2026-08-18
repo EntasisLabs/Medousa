@@ -3,8 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::split_tree::{
-    SplitNode, collect_group_ids, count_leaves, leaf_order, merge_target_for_leaf, neighbor_in_direction,
-    remove_leaf, split_leaf, split_leaf_at_edge,
+    SplitNode, collect_group_ids, count_leaves, leaf_order, merge_target_for_leaf,
+    neighbor_in_direction, remove_leaf, split_leaf, split_leaf_at_edge,
 };
 
 /// Soft cap on leaf panes per virtual desktop (aligned with Home).
@@ -428,8 +428,7 @@ impl WorkspaceShell {
 
     pub fn focus_neighbor(&mut self, dir: FocusDir) -> bool {
         let layout = self.layout();
-        let Some(next) =
-            neighbor_in_direction(&layout.split_root, &layout.active_group_id, dir)
+        let Some(next) = neighbor_in_direction(&layout.split_root, &layout.active_group_id, dir)
         else {
             return false;
         };
@@ -500,12 +499,7 @@ impl WorkspaceShell {
         true
     }
 
-    pub fn open_code_tab_in_active(
-        &mut self,
-        work_id: &str,
-        path: &str,
-        title: &str,
-    ) -> bool {
+    pub fn open_code_tab_in_active(&mut self, work_id: &str, path: &str, title: &str) -> bool {
         let layout = self.layout_mut();
         if layout.tabs.len() >= MAX_TABS {
             return false;
@@ -714,7 +708,9 @@ impl WorkspaceShell {
                     tab_ids: vec![tab_id.clone()],
                     active_tab_id: Some(tab_id),
                 }],
-                split_root: SplitNode::Group { id: group_id.clone() },
+                split_root: SplitNode::Group {
+                    id: group_id.clone(),
+                },
                 active_group_id: group_id,
                 zoomed_group_id: None,
             },

@@ -39,13 +39,7 @@ impl GraphemeScriptEntry {
 pub fn slugify_script_id(raw: &str) -> String {
     raw.to_ascii_lowercase()
         .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() {
-                c
-            } else {
-                '-'
-            }
-        })
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect::<String>()
         .split('-')
         .filter(|segment| !segment.is_empty())

@@ -20,7 +20,10 @@ pub fn normalize_recurring_cron_expr(cron_expr: &str) -> String {
     }
     let parts: Vec<&str> = trimmed.split_whitespace().collect();
     match parts.len() {
-        5 => format!("0 {} {} {} {} {} *", parts[0], parts[1], parts[2], parts[3], parts[4]),
+        5 => format!(
+            "0 {} {} {} {} {} *",
+            parts[0], parts[1], parts[2], parts[3], parts[4]
+        ),
         6 => format!(
             "{} {} {} {} {} {} *",
             parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]

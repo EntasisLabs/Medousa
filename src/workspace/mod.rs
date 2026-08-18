@@ -16,8 +16,9 @@ pub mod store;
 
 pub use actions::replay_runtime_job;
 pub use domain_event::{
-    notify_workspace_event, notify_workspace_invalidate, rebuild_workspace_full, WorkspaceDomainEvent,
+    WorkspaceDomainEvent, notify_workspace_event, notify_workspace_invalidate,
+    rebuild_workspace_full,
 };
 pub use persist::{flush_persist_writer, init_persist_writer};
-pub use projector::{init_workspace_hub, workspace_hub, WorkspaceHub, WorkspaceReadSnapshot};
+pub use projector::{WorkspaceHub, WorkspaceReadSnapshot, init_workspace_hub, workspace_hub};
 pub use service::WorkspaceService;

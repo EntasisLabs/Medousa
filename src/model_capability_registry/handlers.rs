@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     extract::Query,
     routing::{get, post},
-    Json,
 };
 
 use crate::daemon::route_policy::{
@@ -21,11 +21,7 @@ pub fn surface() -> DeclaredRouter {
             get(list_catalog),
         )
         .route(
-            model_catalog_policy(
-                axum::http::Method::GET,
-                "/v1/models/capabilities",
-                1024,
-            ),
+            model_catalog_policy(axum::http::Method::GET, "/v1/models/capabilities", 1024),
             get(lookup_capabilities),
         )
         .route(

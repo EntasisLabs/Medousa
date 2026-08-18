@@ -9,11 +9,10 @@ use stasis::application::runtime::runtime_factory::RuntimeComposition;
 use tokio::sync::mpsc;
 
 use crate::daemon_api::{
-    WorkCard, WorkspaceSnapshot, WorkspaceSnapshotQuery, WorkspaceStreamEvent,
-    WorkspaceStreamQuery,
+    WorkCard, WorkspaceSnapshot, WorkspaceSnapshotQuery, WorkspaceStreamEvent, WorkspaceStreamQuery,
 };
 use crate::workspace::card::counts_by_column;
-use crate::workspace::projector::{init_workspace_hub, workspace_hub, WorkspaceReadSnapshot};
+use crate::workspace::projector::{WorkspaceReadSnapshot, init_workspace_hub, workspace_hub};
 use crate::workspace::service::WorkspaceService;
 use crate::workspace::store::workspace_store;
 
@@ -44,10 +43,10 @@ pub fn spawn_workspace_stream(
         let mut snapshot_rx = hub.subscribe();
         let mut last_revision = workspace_store().revision();
         let mut last_feed_index = workspace_store().feed_len();
-        let mut last_cards = card_map_from_snapshot(&snapshot_rx.borrow(), query.session_id.as_deref());
+        let mut last_cards =
+            card_map_from_snapshot(&snapshot_rx.borrow(), query.session_id.as_deref());
 
-        let mut heartbeat =
-            tokio::time::interval(Duration::from_secs(HEARTBEAT_SECS));
+        let mut heartbeat = tokio::time::interval(Duration::from_secs(HEARTBEAT_SECS));
         heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let _ = heartbeat.tick().await;
 
@@ -166,10 +165,11 @@ fn card_map_from_snapshot(
             && item
                 .detail
                 .session_id
-                .as_deref().is_none_or(|id| id != session_id)
-            {
-                continue;
-            }
+                .as_deref()
+                .is_none_or(|id| id != session_id)
+        {
+            continue;
+        }
         map.insert(item.card.id.0.clone(), item.card.clone());
     }
     map

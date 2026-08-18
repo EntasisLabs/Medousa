@@ -280,22 +280,14 @@ mod tests {
 
     #[test]
     fn cross_provider_base_url_does_not_inherit_host_endpoint() {
-        let url = resolve_route_base_url(
-            "deepseek",
-            "openai",
-            Some("https://api.openai.com/v1"),
-        );
+        let url = resolve_route_base_url("deepseek", "openai", Some("https://api.openai.com/v1"));
         // DeepSeek should resolve its own endpoint (or None/env), never OpenAI's.
         assert_ne!(url.as_deref(), Some("https://api.openai.com/v1"));
     }
 
     #[test]
     fn same_provider_keeps_host_base_url() {
-        let url = resolve_route_base_url(
-            "openai",
-            "openai",
-            Some("https://proxy.example/v1"),
-        );
+        let url = resolve_route_base_url("openai", "openai", Some("https://proxy.example/v1"));
         assert_eq!(url.as_deref(), Some("https://proxy.example/v1"));
     }
 }

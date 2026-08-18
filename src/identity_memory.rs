@@ -5,20 +5,21 @@ use std::time::Instant;
 use anyhow::{Result, anyhow};
 use chrono::Utc;
 use serde::Deserialize;
-use surrealdb::Surreal;
-use surrealdb::engine::any::Any;
-use surrealdb_types::SurrealValue;
 use stasis::domain::errors::Result as StasisResult;
 use stasis::infrastructure::memory::identity_context_filter::collect_contact_ids;
 use stasis::infrastructure::memory::in_memory_identity_memory_store::InMemoryIdentityMemoryStore;
 use stasis::infrastructure::memory::surreal_identity_memory_store::SurrealIdentityMemoryStore;
 use stasis::ports::outbound::memory::identity_memory_models::{
     AutonomyScope, ChannelProfileEntity, EntityRef, EscalationPolicy, GetIdentityContextRequest,
-    GetIdentityContextResponse, IdentityContextMode, InterruptionPolicy, PersonaEntity, PolicyProfileEntity,
-    RelationshipEntity, RelationshipKind, RelationshipStatus, UpdateSource, UserEntity,
+    GetIdentityContextResponse, IdentityContextMode, InterruptionPolicy, PersonaEntity,
+    PolicyProfileEntity, RelationshipEntity, RelationshipKind, RelationshipStatus, UpdateSource,
+    UserEntity,
 };
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 use stasis::prelude::{RuntimeBackend, RuntimeComposition, StasisError};
+use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
+use surrealdb_types::SurrealValue;
 
 use crate::engine_context::{EngineExecutionLane, default_policy_profile_for_lane};
 use crate::identity_store_ext::{wrap_in_memory, wrap_surreal};
@@ -149,7 +150,8 @@ pub fn profile_channel_id_for_user_id(user_id: &str) -> String {
     }
 }
 
-pub fn build_seeded_medousa_identity_store() -> Result<Arc<crate::identity_store_ext::MedousaIdentityMemoryStore>> {
+pub fn build_seeded_medousa_identity_store()
+-> Result<Arc<crate::identity_store_ext::MedousaIdentityMemoryStore>> {
     let store = Arc::new(InMemoryIdentityMemoryStore::default());
     seed_baseline_identity_store(store.as_ref())?;
     Ok(wrap_in_memory(store))
@@ -258,15 +260,16 @@ pub async fn ensure_surreal_identity_user_preferences_flexible(db: &Surreal<Any>
         return Ok(());
     }
 
-    timed_step("identity user preferences schema (flexible object)", || async {
-        db.query(
-            "DEFINE FIELD OVERWRITE preferences ON TABLE identity_user TYPE object FLEXIBLE",
-        )
-        .await
-        .map_err(|err| {
-            anyhow::anyhow!("identity user preferences flexible schema: {err}")
-        })
-    })
+    timed_step(
+        "identity user preferences schema (flexible object)",
+        || async {
+            db.query(
+                "DEFINE FIELD OVERWRITE preferences ON TABLE identity_user TYPE object FLEXIBLE",
+            )
+            .await
+            .map_err(|err| anyhow::anyhow!("identity user preferences flexible schema: {err}"))
+        },
+    )
     .await?;
 
     Ok(())
@@ -306,9 +309,7 @@ pub async fn repair_surreal_identity_user_preferences_for_id(
             .bind(("table", "identity_user"))
             .bind(("id", user_id.to_string()))
             .await
-            .map_err(|err| {
-                anyhow::anyhow!("identity user preferences repair for {user_id}: {err}")
-            })
+            .map_err(|err| anyhow::anyhow!("identity user preferences repair for {user_id}: {err}"))
     })
     .await?;
 
@@ -381,17 +382,20 @@ async fn seed_baseline_surreal_identity_store(
     let heartbeat_channel_id = resolve_identity_channel_id(Some(heartbeat_policy));
     let default_channel_id = resolve_identity_channel_id(None);
 
-    timed_identity_upsert("persona", || store.upsert_persona(PersonaEntity {
+    timed_identity_upsert("persona", || {
+        store.upsert_persona(PersonaEntity {
             persona_id: persona_id.clone(),
             display_name: resolve_non_empty_env("MEDOUSA_IDENTITY_PERSONA_NAME")
                 .unwrap_or_else(|| DEFAULT_PERSONA_DISPLAY_NAME.to_string()),
             status: "active".to_string(),
             version: 1,
             updated_at: now,
-        }))
+        })
+    })
     .await?;
 
-    timed_identity_upsert("user", || store.upsert_user(UserEntity {
+    timed_identity_upsert("user", || {
+        store.upsert_user(UserEntity {
             user_id: user_id.clone(),
             timezone: resolve_identity_timezone(),
             language_variant: resolve_non_empty_env("MEDOUSA_IDENTITY_USER_LANGUAGE"),
@@ -399,7 +403,8 @@ async fn seed_baseline_surreal_identity_store(
             status: "active".to_string(),
             version: 1,
             updated_at: now,
-        }))
+        })
+    })
     .await?;
 
     timed_identity_upsert("policy:interactive", || {
@@ -434,7 +439,11 @@ async fn seed_baseline_surreal_identity_store(
 
     timed_identity_upsert("relationship:persona_user", || {
         store.upsert_relationship(default_relationship(
-            &format!("rel:{}:{}", stable_id_segment(&persona_id), stable_id_segment(&user_id)),
+            &format!(
+                "rel:{}:{}",
+                stable_id_segment(&persona_id),
+                stable_id_segment(&user_id)
+            ),
             entity_ref("PersonaEntity", &persona_id),
             entity_ref("UserEntity", &user_id),
             RelationshipKind::AssistantUser,
@@ -495,7 +504,10 @@ async fn seed_baseline_surreal_identity_store(
             RelationshipKind::UserChannel,
             Some(scheduled_policy.to_string()),
             AutonomyScope {
-                allow: vec!["scheduled_report".to_string(), "scheduled_monitor".to_string()],
+                allow: vec![
+                    "scheduled_report".to_string(),
+                    "scheduled_monitor".to_string(),
+                ],
                 deny: vec!["interactive_interrupt".to_string()],
                 approval_required: vec!["external_side_effect".to_string()],
             },
@@ -528,7 +540,9 @@ async fn seed_baseline_surreal_identity_store(
     Ok(())
 }
 
-fn seed_baseline_identity_store(store: &InMemoryIdentityMemoryStore) -> std::result::Result<(), StasisError> {
+fn seed_baseline_identity_store(
+    store: &InMemoryIdentityMemoryStore,
+) -> std::result::Result<(), StasisError> {
     let now = Utc::now();
     let persona_id = resolve_identity_persona_id();
     let user_id = resolve_identity_user_id(None);
@@ -571,7 +585,11 @@ fn seed_baseline_identity_store(store: &InMemoryIdentityMemoryStore) -> std::res
     store.upsert_channel(default_channel(&heartbeat_channel_id, "api", true, now))?;
 
     store.upsert_relationship(default_relationship(
-        &format!("rel:{}:{}", stable_id_segment(&persona_id), stable_id_segment(&user_id)),
+        &format!(
+            "rel:{}:{}",
+            stable_id_segment(&persona_id),
+            stable_id_segment(&user_id)
+        ),
         entity_ref("PersonaEntity", &persona_id),
         entity_ref("UserEntity", &user_id),
         RelationshipKind::AssistantUser,
@@ -626,7 +644,10 @@ fn seed_baseline_identity_store(store: &InMemoryIdentityMemoryStore) -> std::res
         RelationshipKind::UserChannel,
         Some(scheduled_policy.to_string()),
         AutonomyScope {
-            allow: vec!["scheduled_report".to_string(), "scheduled_monitor".to_string()],
+            allow: vec![
+                "scheduled_report".to_string(),
+                "scheduled_monitor".to_string(),
+            ],
             deny: vec!["interactive_interrupt".to_string()],
             approval_required: vec!["external_side_effect".to_string()],
         },
@@ -675,12 +696,7 @@ pub async fn seed_workshop_profile_user(
 
     if interactive_channel_id != "channel:interactive" {
         store
-            .upsert_channel_entity(default_channel(
-                &interactive_channel_id,
-                "home",
-                true,
-                now,
-            ))
+            .upsert_channel_entity(default_channel(&interactive_channel_id, "home", true, now))
             .await
             .map_err(|err| anyhow!("seed profile channel {interactive_channel_id}: {err}"))?;
     }
@@ -923,9 +939,9 @@ pub fn apply_medousa_cognitive_context_filter(
     mut response: GetIdentityContextResponse,
     user_id: &str,
 ) -> GetIdentityContextResponse {
-    response
-        .relationships
-        .retain(|relationship| relationship_kind_visible_in_cognitive_context(relationship, user_id));
+    response.relationships.retain(|relationship| {
+        relationship_kind_visible_in_cognitive_context(relationship, user_id)
+    });
     response.policy_profiles.clear();
     response.flattened_claims.clear();
 
@@ -945,7 +961,10 @@ pub async fn get_medousa_cognitive_identity_context(
     let mut full_request = request.clone();
     full_request.mode = IdentityContextMode::Full;
     let response = store.get_identity_context(&full_request).await?;
-    Ok(apply_medousa_cognitive_context_filter(response, &request.user_id))
+    Ok(apply_medousa_cognitive_context_filter(
+        response,
+        &request.user_id,
+    ))
 }
 
 pub async fn get_medousa_cognitive_identity_context_in_memory(
@@ -958,10 +977,9 @@ pub async fn get_medousa_cognitive_identity_context_in_memory(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_seeded_identity_memory_store, full_identity_context_request,
+        DEFAULT_USER_ID, build_seeded_identity_memory_store, full_identity_context_request,
         is_identity_user_preferences_decode_error, resolve_identity_channel_id,
         resolve_identity_persona_id, resolve_identity_user_id, resolve_tool_identity_user_id,
-        DEFAULT_USER_ID,
     };
     use stasis::prelude::StasisError;
 

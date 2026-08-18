@@ -1,25 +1,23 @@
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
-use axum::Json;
 use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
 
 use crate::capability_catalog::{
-    capabilities_manifest_path, load_capability_manifest, CapabilityListResponse,
-    CapabilityReindexResponse, CapabilityRegistry, CapabilityResolveResponse,
+    CapabilityListResponse, CapabilityRegistry, CapabilityReindexResponse,
+    CapabilityResolveResponse, capabilities_manifest_path, load_capability_manifest,
 };
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
 use crate::mcp_gateway_api::{
-    resolve_mcp_gateway_url, McpGatewayHealthResponse, McpPolicyEvaluateRequest,
-    McpPolicyEvaluateResponse, McpServerSummary, McpServersResponse,
+    McpGatewayHealthResponse, McpPolicyEvaluateRequest, McpPolicyEvaluateResponse,
+    McpServerSummary, McpServersResponse, resolve_mcp_gateway_url,
 };
 use crate::mcp_policy::evaluate_mcp_policy_with_identity;
 use crate::tools::TuiRuntime;
-use medousa_types::{
-    McpGatewayHealthSnapshot, McpGatewayServerRuntime, McpGatewayStatusResponse,
-};
+use medousa_types::{McpGatewayHealthSnapshot, McpGatewayServerRuntime, McpGatewayStatusResponse};
 
 #[derive(Clone)]
 pub struct CapabilityApiState {
@@ -141,19 +139,19 @@ pub async fn get_capability(
 ) -> Result<Json<CapabilityResolveResponse>, (StatusCode, String)> {
     let capability_id = capability_id.trim();
     if capability_id.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "capability_id is required".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "capability_id is required".to_string(),
+        ));
     }
 
     let registry = state.agent_runtime.capability_registry.read().await;
-    registry
-        .resolve(capability_id)
-        .map(Json)
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                format!("unknown capability '{capability_id}'"),
-            )
-        })
+    registry.resolve(capability_id).map(Json).ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            format!("unknown capability '{capability_id}'"),
+        )
+    })
 }
 
 pub async fn list_capability_intents(
@@ -168,17 +166,13 @@ pub async fn reindex_capabilities(
 ) -> Json<CapabilityReindexResponse> {
     let (manifest, manifest_loaded_from_file) = load_capability_manifest();
     let mut registry = CapabilityRegistry::from_manifest(&manifest);
-    let gateway_synced = if let Ok(catalog) = state
-        .agent_runtime
-        .mcp_gateway_client
-        .fetch_catalog()
-        .await
-    {
-        registry.apply_mcp_catalog_sync(&catalog);
-        true
-    } else {
-        false
-    };
+    let gateway_synced =
+        if let Ok(catalog) = state.agent_runtime.mcp_gateway_client.fetch_catalog().await {
+            registry.apply_mcp_catalog_sync(&catalog);
+            true
+        } else {
+            false
+        };
 
     let capability_count = registry.list().capabilities.len();
     let binding_count = registry.binding_count();
@@ -224,7 +218,13 @@ fn build_mcp_gateway_status_response(
     match health_result {
         Ok(health) => {
             let servers = servers_result
-                .map(|response| response.servers.into_iter().map(map_server_runtime).collect())
+                .map(|response| {
+                    response
+                        .servers
+                        .into_iter()
+                        .map(map_server_runtime)
+                        .collect()
+                })
                 .unwrap_or_default();
             McpGatewayStatusResponse {
                 gateway_url,
@@ -237,9 +237,7 @@ fn build_mcp_gateway_status_response(
         Err(err) => McpGatewayStatusResponse {
             gateway_url,
             reachable: false,
-            message: format!(
-                "MCP gateway is not running on the workshop host ({err:#})"
-            ),
+            message: format!("MCP gateway is not running on the workshop host ({err:#})"),
             health: None,
             servers: Vec::new(),
         },
@@ -307,7 +305,10 @@ mod tests {
         assert!(response.reachable);
         assert_eq!(response.servers.len(), 1);
         assert_eq!(
-            response.health.as_ref().map(|health| health.catalog_entries),
+            response
+                .health
+                .as_ref()
+                .map(|health| health.catalog_entries),
             Some(4)
         );
     }

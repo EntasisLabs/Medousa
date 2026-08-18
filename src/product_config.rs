@@ -156,23 +156,23 @@ impl RuntimeWorkerConfig {
 }
 
 fn default_worker_max_in_flight() -> usize {
-    25
+    8
 }
 
 fn default_agent_workers() -> usize {
-    8
+    2
 }
 
 fn default_scheduled_workers() -> usize {
-    8
+    2
 }
 
 fn default_delivery_workers() -> usize {
-    5
+    1
 }
 
 fn default_maintenance_workers() -> usize {
-    4
+    1
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -707,18 +707,18 @@ mod tests {
     #[test]
     fn runtime_worker_defaults_are_the_capacity_contract() {
         let workers = RuntimeWorkerConfig::default();
-        assert_eq!(workers.max_in_flight, 25);
-        assert_eq!(workers.agents, 8);
-        assert_eq!(workers.scheduled, 8);
-        assert_eq!(workers.delivery, 5);
-        assert_eq!(workers.maintenance, 4);
+        assert_eq!(workers.max_in_flight, 8);
+        assert_eq!(workers.agents, 2);
+        assert_eq!(workers.scheduled, 2);
+        assert_eq!(workers.delivery, 1);
+        assert_eq!(workers.maintenance, 1);
         assert!(workers.validate().is_ok());
     }
 
     #[test]
     fn runtime_worker_shares_cannot_exceed_global_capacity() {
         let workers = RuntimeWorkerConfig {
-            max_in_flight: 24,
+            max_in_flight: 5,
             ..Default::default()
         };
         assert!(workers.validate().is_err());

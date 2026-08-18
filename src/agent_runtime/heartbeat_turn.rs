@@ -76,11 +76,13 @@ pub fn build_heartbeat_turn_prompt(snapshot: &HeartbeatRuntimeSnapshot) -> Strin
         supports_liquid_markdown: false,
         supports_browser_host: false,
     };
-    let ambient = super::ambient_context::build_ambient_context(super::ambient_context::AmbientContextInput {
-        session_id: "heartbeat",
-        surface: Some(&heartbeat_surface),
-        channel_policy: None,
-    });
+    let ambient = super::ambient_context::build_ambient_context(
+        super::ambient_context::AmbientContextInput {
+            session_id: "heartbeat",
+            surface: Some(&heartbeat_surface),
+            channel_policy: None,
+        },
+    );
 
     format!(
         "You are running a scheduled heartbeat check for the Medousa operator.\n\n\

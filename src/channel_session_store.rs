@@ -7,8 +7,8 @@ use chrono::Utc;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use stasis::prelude::RuntimeComposition;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 use surrealdb_types::SurrealValue;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock as AsyncRwLock;
@@ -80,7 +80,8 @@ pub trait ChannelSessionStore: Send + Sync {
     /// Distinct session ids known to channel mappings (active + history).
     async fn list_distinct_session_ids(&self, limit: usize) -> Vec<String>;
     /// Most recently updated mapping for `channel` whose session id matches (e.g. TUI session linked via prior Telegram ingest).
-    async fn find_mapping_key_for_session(&self, channel: &str, session_id: &str) -> Option<String>;
+    async fn find_mapping_key_for_session(&self, channel: &str, session_id: &str)
+    -> Option<String>;
     async fn purge_session_references(&self, session_id: &str) -> Result<(), String>;
 }
 
@@ -150,7 +151,11 @@ impl ChannelSessionStore for InMemoryChannelSessionStore {
         out
     }
 
-    async fn find_mapping_key_for_session(&self, channel: &str, session_id: &str) -> Option<String> {
+    async fn find_mapping_key_for_session(
+        &self,
+        channel: &str,
+        session_id: &str,
+    ) -> Option<String> {
         let prefix = format!("{channel}:");
         self.mappings
             .read()
@@ -168,7 +173,9 @@ impl ChannelSessionStore for InMemoryChannelSessionStore {
             entries.retain(|sid| sid != session_id);
         }
         if mappings.values().any(|sid| sid == session_id)
-            || history.values().any(|entries| entries.iter().any(|sid| sid == session_id))
+            || history
+                .values()
+                .any(|entries| entries.iter().any(|sid| sid == session_id))
         {
             return Err("channel session references remain after deletion".to_string());
         }
@@ -219,7 +226,8 @@ struct ChannelSessionHistoryRecord {
 #[async_trait]
 impl ChannelSessionStore for SurrealChannelSessionStore {
     async fn get_session_id(&self, mapping_key: &str) -> Option<String> {
-        let sql = "SELECT session_id FROM type::table($table) WHERE mapping_key = $mapping_key LIMIT 1";
+        let sql =
+            "SELECT session_id FROM type::table($table) WHERE mapping_key = $mapping_key LIMIT 1";
         let mut response = self
             .db
             .query(sql)
@@ -233,7 +241,12 @@ impl ChannelSessionStore for SurrealChannelSessionStore {
             session_id: String,
         }
 
-        response.take::<Vec<Row>>(0).ok()?.into_iter().next().map(|row| row.session_id)
+        response
+            .take::<Vec<Row>>(0)
+            .ok()?
+            .into_iter()
+            .next()
+            .map(|row| row.session_id)
     }
 
     async fn set_session_id(&self, mapping_key: &str, session_id: String) {
@@ -365,7 +378,11 @@ impl ChannelSessionStore for SurrealChannelSessionStore {
         out
     }
 
-    async fn find_mapping_key_for_session(&self, channel: &str, session_id: &str) -> Option<String> {
+    async fn find_mapping_key_for_session(
+        &self,
+        channel: &str,
+        session_id: &str,
+    ) -> Option<String> {
         let prefix = format!("{channel}:");
         let sql = "SELECT mapping_key FROM type::table($table) \
                    WHERE session_id = $session_id \

@@ -170,7 +170,11 @@ impl GraphemeScriptStore {
     }
 
     pub fn get(&self, id: &str) -> Option<GraphemeScriptEntry> {
-        self.index.read().expect("grapheme script index").get(id).cloned()
+        self.index
+            .read()
+            .expect("grapheme script index")
+            .get(id)
+            .cloned()
     }
 
     pub fn read_body(&self, entry: &GraphemeScriptEntry) -> Result<String> {
@@ -220,10 +224,7 @@ impl GraphemeScriptStore {
         let root = StoreRoot::open_or_create_nofollow(&Self::root_dir())?;
         let relative = Self::body_path_for(&typed_id)?;
         root.atomic_write(&relative, body.as_bytes())?;
-        let body_path = format!(
-            "{SCRIPTS_DIR}/{}.grapheme",
-            typed_id.storage_key().as_str()
-        );
+        let body_path = format!("{SCRIPTS_DIR}/{}.grapheme", typed_id.storage_key().as_str());
 
         let body_hash = content_hash(body);
         let now = Utc::now();
@@ -241,7 +242,9 @@ impl GraphemeScriptStore {
             name: name.to_string(),
             modules: normalize_tokens(modules),
             tags: normalize_tokens(tags),
-            intent: intent.map(|value| value.trim().to_string()).filter(|v| !v.is_empty()),
+            intent: intent
+                .map(|value| value.trim().to_string())
+                .filter(|v| !v.is_empty()),
             version,
             body_path,
             body_hash,

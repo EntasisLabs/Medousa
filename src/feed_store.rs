@@ -92,7 +92,7 @@ impl FeedStore {
         Self::new_in(Self::store_root())
     }
 
-    fn new_in(root_path: PathBuf) -> Self {
+    pub fn new_in(root_path: PathBuf) -> Self {
         Self {
             root_path,
             owners: Arc::new(AsyncRwLock::new(HashMap::new())),

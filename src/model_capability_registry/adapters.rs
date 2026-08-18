@@ -35,7 +35,9 @@ pub async fn fetch_provider_catalog(
         "google" | "gemini" | "google-gemini" => fetch_google(client, api_key).await,
         "mistral" => fetch_mistral(client, api_key).await,
         "ollama" | "local" => fetch_ollama(client).await,
-        other => fetch_openai_compatible(client, other, api_key, base_url, openrouter_overlay).await,
+        other => {
+            fetch_openai_compatible(client, other, api_key, base_url, openrouter_overlay).await
+        }
     };
 
     match result {
@@ -102,15 +104,12 @@ fn parse_openrouter_model(entry: &Value) -> Option<ModelCapabilityRecord> {
     );
     let supports_vision = input_modalities.contains(&Modality::Image)
         || infer_supports_vision("openrouter", &model_id);
-    let max_input_tokens = entry
-        .get("context_length")
-        .and_then(json_u64)
-        .or_else(|| {
-            entry
-                .get("top_provider")
-                .and_then(|top| top.get("context_length"))
-                .and_then(json_u64)
-        });
+    let max_input_tokens = entry.get("context_length").and_then(json_u64).or_else(|| {
+        entry
+            .get("top_provider")
+            .and_then(|top| top.get("context_length"))
+            .and_then(json_u64)
+    });
     let max_output_tokens = entry
         .get("top_provider")
         .and_then(|top| top.get("max_completion_tokens"))
@@ -233,7 +232,11 @@ async fn fetch_google(
         "https://generativelanguage.googleapis.com/v1beta/models?key={}",
         urlencoding::encode(api_key)
     );
-    let response = client.get(url).send().await.map_err(|err| err.to_string())?;
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
     if !response.status().is_success() {
         return Err(format!("Google returned HTTP {}", response.status()));
     }
@@ -267,7 +270,10 @@ fn parse_google_model(entry: &Value) -> Option<ModelCapabilityRecord> {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    if !methods.iter().any(|method| method.contains("generateContent")) {
+    if !methods
+        .iter()
+        .any(|method| method.contains("generateContent"))
+    {
         return None;
     }
     let supports_vision = model_id.to_ascii_lowercase().contains("gemini");
@@ -418,7 +424,9 @@ async fn fetch_openai_compatible(
         .map(str::to_string)
         .or_else(|| default_openai_compatible_base(provider));
     let Some(base) = base else {
-        return Err(format!("No API base URL configured for provider '{provider}'"));
+        return Err(format!(
+            "No API base URL configured for provider '{provider}'"
+        ));
     };
     let url = models_url(&base);
     let mut request = client.get(url);
@@ -460,9 +468,9 @@ fn parse_openai_compatible_model(
                 || record.model_id.ends_with(&format!("/{model_id}"))
         })
     });
-    let supports_vision = overlay.map(|record| record.supports_vision).unwrap_or_else(|| {
-        infer_supports_vision(provider, &model_id)
-    });
+    let supports_vision = overlay
+        .map(|record| record.supports_vision)
+        .unwrap_or_else(|| infer_supports_vision(provider, &model_id));
     Some(ModelCapabilityRecord {
         provider: provider.to_string(),
         model_id: model_id.clone(),
@@ -536,7 +544,12 @@ fn parse_modalities(value: Option<&Value>) -> Vec<Modality> {
 fn json_u64(value: &Value) -> Option<u64> {
     value
         .as_u64()
-        .or_else(|| value.as_i64().filter(|value| *value >= 0).map(|value| value as u64))
+        .or_else(|| {
+            value
+                .as_i64()
+                .filter(|value| *value >= 0)
+                .map(|value| value as u64)
+        })
         .or_else(|| value.as_f64().map(|value| value as u64))
 }
 

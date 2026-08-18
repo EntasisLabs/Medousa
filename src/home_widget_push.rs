@@ -9,8 +9,8 @@ use once_cell::sync::OnceCell;
 use serde::Serialize;
 
 use crate::home_live_activity::compose_live_activity_state;
-use crate::pairing::apns::{ensure_apns_client, shared_apns_client, ApnsConfig};
 use crate::pairing::PairingService;
+use crate::pairing::apns::{ApnsConfig, ensure_apns_client, shared_apns_client};
 use crate::workspace::projector::WorkspaceReadSnapshot;
 
 static HOME_WIDGET_PUSH: OnceCell<Arc<HomeWidgetPushService>> = OnceCell::new();

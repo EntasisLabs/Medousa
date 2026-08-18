@@ -236,9 +236,7 @@ pub async fn import_profile_bundle(
         for session in &bundle.locus.sessions {
             let target_scoped = scoped_locus_session(slug, &session.chat_session_id);
             for node in &session.nodes {
-                let result = store_service
-                    .store_async(&node.raw, &target_scoped)
-                    .await;
+                let result = store_service.store_async(&node.raw, &target_scoped).await;
                 if let Some(err) = result.validation_error {
                     bail!(
                         "import locus node sync_key={} session={target_scoped}: {err}",

@@ -49,7 +49,9 @@ where
         Ok(Err(err)) => {
             let elapsed_ms = started.elapsed().as_millis();
             tracing::error!(step = label, elapsed_ms, error = %err, "startup step failed");
-            eprintln!("medousa-daemon: step failed label={label} elapsed_ms={elapsed_ms} error={err}");
+            eprintln!(
+                "medousa-daemon: step failed label={label} elapsed_ms={elapsed_ms} error={err}"
+            );
             Err(anyhow::anyhow!(
                 "startup step `{label}` failed after {elapsed_ms}ms: {err}"
             ))
@@ -107,19 +109,13 @@ mod tests {
 
     #[tokio::test]
     async fn timed_step_timeout_message_is_factual() {
-        unsafe {
-            std::env::set_var("MEDOUSA_SURREAL_STEP_TIMEOUT_SECS", "1");
-        }
+        let _env = crate::test_env::set_var("MEDOUSA_SURREAL_STEP_TIMEOUT_SECS", "1");
         let err = timed_step("slow write", || async {
             tokio::time::sleep(Duration::from_secs(3)).await;
             Ok::<(), _>(())
         })
         .await
         .expect_err("step should time out");
-
-        unsafe {
-            std::env::remove_var("MEDOUSA_SURREAL_STEP_TIMEOUT_SECS");
-        }
         let message = format!("{err:#}");
         assert!(message.contains("slow write"));
         assert!(message.contains("timed out"));

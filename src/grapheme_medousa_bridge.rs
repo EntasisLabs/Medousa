@@ -32,11 +32,15 @@ use medousa_types::authority_id::GraphemeRefId;
 
 use crate::channel_delivery::{self, ChannelDeliveryTarget, normalize_channel_surface};
 use crate::cognitive_identity::{
-    DEFAULT_RELATIONAL_DIGEST_BUDGET, DigestCompileOptions, compile_relational_memory_digest_with_options,
-    load_cognitive_identity_snapshot,
+    DEFAULT_RELATIONAL_DIGEST_BUDGET, DigestCompileOptions,
+    compile_relational_memory_digest_with_options, load_cognitive_identity_snapshot,
 };
-use crate::daemon_api::{WorkspaceEvent, WorkspaceEventActor, WorkspaceEventKind, WorkspaceEventRef};
-use crate::engine_context::{ContextCompilerInput, EngineExecutionLane, RecallReadiness, compile_context_prompt};
+use crate::daemon_api::{
+    WorkspaceEvent, WorkspaceEventActor, WorkspaceEventKind, WorkspaceEventRef,
+};
+use crate::engine_context::{
+    ContextCompilerInput, EngineExecutionLane, RecallReadiness, compile_context_prompt,
+};
 use crate::identity_manuscript::{
     build_manuscript_context, digest_options_for_manuscript, format_manuscript_prompt_block,
 };
@@ -81,8 +85,8 @@ pub fn configure_grapheme_engine_builder(builder: GraphemeEngineBuilder) -> Grap
         .with_capability_interceptor(medousa_and_shell_capability_interceptor())
 }
 
-fn medousa_and_shell_capability_interceptor(
-) -> impl Fn(&CapabilityCall) -> Option<Result<Value, HostCallError>> + Send + Sync + 'static {
+fn medousa_and_shell_capability_interceptor()
+-> impl Fn(&CapabilityCall) -> Option<Result<Value, HostCallError>> + Send + Sync + 'static {
     move |call: &CapabilityCall| {
         if let Some(result) = try_medousa_call(call) {
             return Some(result);
@@ -225,7 +229,9 @@ impl WorkflowEngine for MedousaWorkflowEngine {
                     timeout.as_millis()
                 ))
             })?
-            .map_err(|err| StasisError::PortFailure(format!("grapheme sdk worker join error: {err}")))?
+            .map_err(|err| {
+                StasisError::PortFailure(format!("grapheme sdk worker join error: {err}"))
+            })?
             .map_err(Self::map_error)?;
 
         Ok(WorkflowExecutionOutput {
@@ -293,7 +299,8 @@ struct StoredSynthesis {
 }
 
 fn handle_digest(args: &Value) -> Result<Value, HostCallError> {
-    let session_id = arg_string(args, &["session_id", "session"]).unwrap_or_else(|| "default".to_string());
+    let session_id =
+        arg_string(args, &["session_id", "session"]).unwrap_or_else(|| "default".to_string());
     let query = arg_string(args, &["query", "q"]);
     let manuscript_id = arg_string(args, &["manuscript_id", "manuscript"]);
     let artifact_ref = arg_string(args, &["artifact_ref", "artifact_id", "artifact"]);
@@ -312,50 +319,55 @@ fn handle_digest(args: &Value) -> Result<Value, HostCallError> {
                 body.push('\n');
             }
             Err(err) => {
-                body.push_str(&format!("[MEDOUSA_MANUSCRIPT]\nstatus=error\nerror={err}\n"));
+                body.push_str(&format!(
+                    "[MEDOUSA_MANUSCRIPT]\nstatus=error\nerror={err}\n"
+                ));
             }
         }
     }
 
-    if let Some(identity_text) = compile_identity_digest_block(query.as_deref(), manuscript_id.as_deref())
-        && !identity_text.trim().is_empty() {
-            sections.push("identity".to_string());
-            body.push_str(&identity_text);
-            body.push('\n');
-        }
+    if let Some(identity_text) =
+        compile_identity_digest_block(query.as_deref(), manuscript_id.as_deref())
+        && !identity_text.trim().is_empty()
+    {
+        sections.push("identity".to_string());
+        body.push_str(&identity_text);
+        body.push('\n');
+    }
 
     if let Some(pack_selector) = pack_ref.as_deref()
-        && let Some(pack) = crate::context_pack::find_context_pack(&session_id, Some(pack_selector)) {
-            sections.push("context_pack".to_string());
-            body.push_str(&format!(
-                "[MEDOUSA_CONTEXT_PACK]\npack_id={}\nartifact_id={}\nclaims={}\nchunks={}\ntokens={}\n",
-                pack.pack_id,
-                pack.artifact_id,
-                pack.selected_claims.len(),
-                pack.selected_chunk_refs.len(),
-                pack.total_token_estimate,
-            ));
-            for claim in pack.selected_claims.iter().take(8) {
-                body.push_str("- ");
-                body.push_str(claim.statement.trim());
-                body.push('\n');
-            }
+        && let Some(pack) = crate::context_pack::find_context_pack(&session_id, Some(pack_selector))
+    {
+        sections.push("context_pack".to_string());
+        body.push_str(&format!(
+            "[MEDOUSA_CONTEXT_PACK]\npack_id={}\nartifact_id={}\nclaims={}\nchunks={}\ntokens={}\n",
+            pack.pack_id,
+            pack.artifact_id,
+            pack.selected_claims.len(),
+            pack.selected_chunk_refs.len(),
+            pack.total_token_estimate,
+        ));
+        for claim in pack.selected_claims.iter().take(8) {
+            body.push_str("- ");
+            body.push_str(claim.statement.trim());
+            body.push('\n');
         }
+    }
 
     if let Some(artifact_selector) = artifact_ref.as_deref()
-        && let Some(artifact) = crate::artifact_store::find_artifact(&session_id, Some(artifact_selector)) {
-            sections.push("artifact".to_string());
-            body.push_str(&format!(
-                "[MEDOUSA_ARTIFACT]\nid={}\ntool={}\nbytes={}\n",
-                artifact.record.artifact_id,
-                artifact.record.tool_name,
-                artifact.record.byte_size,
-            ));
-            if let Some(preview) = artifact_preview(&artifact.payload) {
-                body.push_str(&preview);
-                body.push('\n');
-            }
+        && let Some(artifact) =
+            crate::artifact_store::find_artifact(&session_id, Some(artifact_selector))
+    {
+        sections.push("artifact".to_string());
+        body.push_str(&format!(
+            "[MEDOUSA_ARTIFACT]\nid={}\ntool={}\nbytes={}\n",
+            artifact.record.artifact_id, artifact.record.tool_name, artifact.record.byte_size,
+        ));
+        if let Some(preview) = artifact_preview(&artifact.payload) {
+            body.push_str(&preview);
+            body.push('\n');
         }
+    }
 
     if let Some(input) = inline_input {
         sections.push("input".to_string());
@@ -373,7 +385,11 @@ fn handle_digest(args: &Value) -> Result<Value, HostCallError> {
 
     let bounded = truncate_chars(body.trim(), max_chars.max(256));
     let token_estimate = bounded.split_whitespace().count();
-    let digest_ref = format!("digest:{}:{}", short_session(&session_id), Uuid::new_v4().simple());
+    let digest_ref = format!(
+        "digest:{}:{}",
+        short_session(&session_id),
+        Uuid::new_v4().simple()
+    );
     let stored = StoredDigest {
         digest_ref: digest_ref.clone(),
         session_id: session_id.clone(),
@@ -411,9 +427,10 @@ fn compile_identity_digest_block(
         options.query_hints = Some(query.trim().to_string());
     }
     if let Some(manuscript_id) = manuscript_id.filter(|value| !value.trim().is_empty())
-        && let Ok(manuscript) = build_manuscript_context(manuscript_id) {
-            options = digest_options_for_manuscript(options, &manuscript);
-        }
+        && let Ok(manuscript) = build_manuscript_context(manuscript_id)
+    {
+        options = digest_options_for_manuscript(options, &manuscript);
+    }
     let ranked = compile_relational_memory_digest_with_options(&snapshot, options);
     if ranked.text.trim().is_empty() {
         None
@@ -430,7 +447,8 @@ fn handle_synthesize(args: &Value) -> Result<Value, HostCallError> {
         )
     })?;
 
-    let session_id = arg_string(args, &["session_id", "session"]).unwrap_or_else(|| "default".to_string());
+    let session_id =
+        arg_string(args, &["session_id", "session"]).unwrap_or_else(|| "default".to_string());
     let instruction = arg_string(args, &["prompt", "instruction", "task"]).ok_or_else(|| {
         HostCallError::Fatal("medousa.synthesize requires prompt/instruction".to_string())
     })?;
@@ -490,7 +508,11 @@ fn handle_synthesize(args: &Value) -> Result<Value, HostCallError> {
         None
     };
 
-    let synthesis_ref = format!("synthesis:{}:{}", short_session(&session_id), Uuid::new_v4().simple());
+    let synthesis_ref = format!(
+        "synthesis:{}:{}",
+        short_session(&session_id),
+        Uuid::new_v4().simple()
+    );
     let stored = StoredSynthesis {
         synthesis_ref: synthesis_ref.clone(),
         session_id: session_id.clone(),
@@ -513,7 +535,8 @@ fn handle_deliver(args: &Value) -> Result<Value, HostCallError> {
     let destination = arg_string(args, &["destination", "target", "channel"])
         .unwrap_or_else(|| "work".to_string())
         .to_ascii_lowercase();
-    let session_id = arg_string(args, &["session_id", "session"]).unwrap_or_else(|| "default".to_string());
+    let session_id =
+        arg_string(args, &["session_id", "session"]).unwrap_or_else(|| "default".to_string());
 
     if matches!(destination.as_str(), "quiet" | "none" | "noop") {
         return Ok(json!({
@@ -523,7 +546,8 @@ fn handle_deliver(args: &Value) -> Result<Value, HostCallError> {
         }));
     }
 
-    let title = arg_string(args, &["title", "summary"]).unwrap_or_else(|| "Grapheme delivery".to_string());
+    let title =
+        arg_string(args, &["title", "summary"]).unwrap_or_else(|| "Grapheme delivery".to_string());
     let body = resolve_delivery_body(args, &session_id)?;
 
     match destination.as_str() {
@@ -577,7 +601,10 @@ fn deliver_to_channel(args: &Value, session_id: &str, body: &str) -> Result<Valu
         None,
     );
     let client = reqwest::Client::new();
-    block_on(channel_delivery::dispatch_channel_message(&client, &target, body)).map_err(|err| {
+    block_on(channel_delivery::dispatch_channel_message(
+        &client, &target, body,
+    ))
+    .map_err(|err| {
         HostCallError::Fatal(format!("medousa.deliver channel dispatch failed: {err}"))
     })?;
     Ok(json!({
@@ -595,10 +622,9 @@ fn deliver_to_locus(session_id: &str, title: &str, body: &str) -> Result<Value, 
             "medousa.deliver locus requires medousa bridge init with memory writer".to_string(),
         )
     })?;
-    let writer = deps
-        .memory_writer
-        .as_ref()
-        .ok_or_else(|| HostCallError::Fatal("memory writer unavailable for locus deliver".to_string()))?;
+    let writer = deps.memory_writer.as_ref().ok_or_else(|| {
+        HostCallError::Fatal("memory writer unavailable for locus deliver".to_string())
+    })?;
     let locus_session = resolve_workshop_locus_session(session_id);
     let node = build_deliver_sttp_node(&locus_session, title, body);
     let response = block_on(writer.store_context(&MemoryStoreRequest {
@@ -639,9 +665,8 @@ fn resolve_digest_text(args: &Value, session_id: &str) -> Result<String, HostCal
         return Ok(text);
     }
     if let Some(digest_ref) = arg_string(args, &["digest_ref"]) {
-        return load_digest_text(&digest_ref).ok_or_else(|| {
-            HostCallError::Fatal(format!("digest_ref not found: {digest_ref}"))
-        });
+        return load_digest_text(&digest_ref)
+            .ok_or_else(|| HostCallError::Fatal(format!("digest_ref not found: {digest_ref}")));
     }
     if let Some(piped) = args.get("__input") {
         if let Some(digest_ref) = piped.get("digest_ref").and_then(Value::as_str) {
@@ -669,9 +694,8 @@ fn resolve_delivery_body(args: &Value, _session_id: &str) -> Result<String, Host
         });
     }
     if let Some(digest_ref) = arg_string(args, &["digest_ref"]) {
-        return load_digest_text(&digest_ref).ok_or_else(|| {
-            HostCallError::Fatal(format!("digest_ref not found: {digest_ref}"))
-        });
+        return load_digest_text(&digest_ref)
+            .ok_or_else(|| HostCallError::Fatal(format!("digest_ref not found: {digest_ref}")));
     }
     if let Some(piped) = args.get("__input") {
         if let Some(synthesis_ref) = piped.get("synthesis_ref").and_then(Value::as_str) {
@@ -712,9 +736,10 @@ fn artifact_preview(payload: &Value) -> Option<String> {
 fn arg_input_text(args: &Value, keys: &[&str]) -> Option<String> {
     for key in keys {
         if let Some(value) = args.get(*key)
-            && let Some(text) = value_to_digest_text(value) {
-                return Some(text);
-            }
+            && let Some(text) = value_to_digest_text(value)
+        {
+            return Some(text);
+        }
     }
     args.get("__input").and_then(value_to_digest_text)
 }
@@ -758,9 +783,10 @@ fn arg_usize(args: &Value, keys: &[&str]) -> Option<usize> {
                 return Some(number as usize);
             }
             if let Some(text) = value.as_str()
-                && let Ok(number) = text.trim().parse::<usize>() {
-                    return Some(number);
-                }
+                && let Ok(number) = text.trim().parse::<usize>()
+            {
+                return Some(number);
+            }
         }
     }
     None
@@ -794,7 +820,8 @@ fn persist_digest(digest: &StoredDigest) -> Result<(), HostCallError> {
     let root = StoreRoot::open_or_create_nofollow(&digests_root())
         .map_err(|err| HostCallError::Fatal(err.to_string()))?;
     let path = grapheme_ref_path(&digest.digest_ref)?;
-    let raw = serde_json::to_vec_pretty(digest).map_err(|err| HostCallError::Fatal(err.to_string()))?;
+    let raw =
+        serde_json::to_vec_pretty(digest).map_err(|err| HostCallError::Fatal(err.to_string()))?;
     root.atomic_write(&path, &raw)
         .map_err(|err| HostCallError::Fatal(err.to_string()))
 }
@@ -803,14 +830,15 @@ fn persist_synthesis(synthesis: &StoredSynthesis) -> Result<(), HostCallError> {
     let root = StoreRoot::open_or_create_nofollow(&syntheses_root())
         .map_err(|err| HostCallError::Fatal(err.to_string()))?;
     let path = grapheme_ref_path(&synthesis.synthesis_ref)?;
-    let raw = serde_json::to_vec_pretty(synthesis).map_err(|err| HostCallError::Fatal(err.to_string()))?;
+    let raw = serde_json::to_vec_pretty(synthesis)
+        .map_err(|err| HostCallError::Fatal(err.to_string()))?;
     root.atomic_write(&path, &raw)
         .map_err(|err| HostCallError::Fatal(err.to_string()))
 }
 
 fn grapheme_ref_path(ref_id: &str) -> Result<StorePath, HostCallError> {
-    let ref_id = GraphemeRefId::parse(ref_id)
-        .map_err(|err| HostCallError::Fatal(err.to_string()))?;
+    let ref_id =
+        GraphemeRefId::parse(ref_id).map_err(|err| HostCallError::Fatal(err.to_string()))?;
     StorePath::parse(&format!("{}.json", ref_id.storage_key().as_str()))
         .map_err(|err| HostCallError::Fatal(err.to_string()))
 }
@@ -883,11 +911,13 @@ mod tests {
         }))
         .expect("digest should succeed");
         assert!(result.get("digest_ref").and_then(Value::as_str).is_some());
-        assert!(result
-            .get("text")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .contains("Weekly sales"));
+        assert!(
+            result
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .contains("Weekly sales")
+        );
     }
 
     #[test]
@@ -906,11 +936,13 @@ mod tests {
             "input": { "rows": [{ "region": "west", "sales": 12 }] }
         }))
         .expect("digest should accept json input");
-        assert!(result
-            .get("text")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .contains("west"));
+        assert!(
+            result
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .contains("west")
+        );
     }
 
     #[test]

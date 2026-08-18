@@ -65,7 +65,12 @@ impl stasis::application::orchestration::tool_registry::StasisTool for MockWebSe
 
 fn surreal_backend_connect_label(backend: &RuntimeBackend) -> Option<String> {
     match backend {
-        RuntimeBackend::SurrealWs { endpoint, namespace, database, .. } => {
+        RuntimeBackend::SurrealWs {
+            endpoint,
+            namespace,
+            database,
+            ..
+        } => {
             let endpoint = endpoint.trim();
             let display = if endpoint.starts_with("ws://") || endpoint.starts_with("wss://") {
                 endpoint.to_string()
@@ -76,12 +81,17 @@ fn surreal_backend_connect_label(backend: &RuntimeBackend) -> Option<String> {
                 "SurrealDB {display} (ns={namespace}, db={database})"
             ))
         }
-        RuntimeBackend::SurrealKv { path, namespace, database, .. } => Some(format!(
-            "SurrealKV {path} (ns={namespace}, db={database})"
-        )),
-        RuntimeBackend::SurrealMem { namespace, database, .. } => Some(format!(
-            "Surreal mem:// (ns={namespace}, db={database})"
-        )),
+        RuntimeBackend::SurrealKv {
+            path,
+            namespace,
+            database,
+            ..
+        } => Some(format!("SurrealKV {path} (ns={namespace}, db={database})")),
+        RuntimeBackend::SurrealMem {
+            namespace,
+            database,
+            ..
+        } => Some(format!("Surreal mem:// (ns={namespace}, db={database})")),
         _ => None,
     }
 }
@@ -114,11 +124,14 @@ pub async fn build_daemon_stasis_composition(
                     std::process::id()
                 );
             }
-            let shell = timed_step("RuntimeFactory::build (connect + identity schema)", || async {
-                RuntimeFactory::build(config.backend.clone())
-                    .await
-                    .map_err(|err| anyhow::anyhow!("{err}"))
-            })
+            let shell = timed_step(
+                "RuntimeFactory::build (connect + identity schema)",
+                || async {
+                    RuntimeFactory::build(config.backend.clone())
+                        .await
+                        .map_err(|err| anyhow::anyhow!("{err}"))
+                },
+            )
             .await?;
             eprintln!("medousa-daemon: surreal runtime connected, initializing memory adapters…");
             let memory = MemoryAdapterBundle::from_runtime_shell(&shell).await?;
@@ -136,8 +149,11 @@ async fn build_in_memory_daemon_composition(
     let provider = crate::resolve_llm_provider(config.provider);
     let model = crate::resolve_llm_model(config.model);
     let base_url = crate::resolve_llm_base_url(Some(&provider), config.base_url);
-    let chat_client: Arc<dyn AiChatClient> =
-        Arc::new(crate::build_genai_chat_client(&provider, &model, base_url.as_deref()));
+    let chat_client: Arc<dyn AiChatClient> = Arc::new(crate::build_genai_chat_client(
+        &provider,
+        &model,
+        base_url.as_deref(),
+    ));
 
     grapheme_medousa_bridge::init_medousa_bridge(MedousaBridgeDeps {
         chat_client: chat_client.clone(),
@@ -145,8 +161,8 @@ async fn build_in_memory_daemon_composition(
         memory_writer: Some(memory.memory_writer.clone()),
     });
 
-    let in_memory_endpoint_store = Arc::new(InMemoryDeliveryEndpointStore::default())
-        as Arc<dyn DeliveryEndpointStore>;
+    let in_memory_endpoint_store =
+        Arc::new(InMemoryDeliveryEndpointStore::default()) as Arc<dyn DeliveryEndpointStore>;
 
     let workflow_registry = workflow::shared_workflow_registry();
     let prompt_pipeline = PromptExecutionPipeline::new(chat_client.clone());
@@ -231,8 +247,11 @@ async fn build_in_memory_local_composition(
     let provider = crate::resolve_llm_provider(config.provider);
     let model = crate::resolve_llm_model(config.model);
     let base_url = crate::resolve_llm_base_url(Some(&provider), config.base_url);
-    let chat_client: Arc<dyn AiChatClient> =
-        Arc::new(crate::build_genai_chat_client(&provider, &model, base_url.as_deref()));
+    let chat_client: Arc<dyn AiChatClient> = Arc::new(crate::build_genai_chat_client(
+        &provider,
+        &model,
+        base_url.as_deref(),
+    ));
 
     grapheme_medousa_bridge::init_medousa_bridge(MedousaBridgeDeps {
         chat_client: chat_client.clone(),
@@ -274,8 +293,11 @@ async fn wire_local_stasis_composition(
     let provider = crate::resolve_llm_provider(config.provider);
     let model = crate::resolve_llm_model(config.model);
     let base_url = crate::resolve_llm_base_url(Some(&provider), config.base_url);
-    let chat_client: Arc<dyn AiChatClient> =
-        Arc::new(crate::build_genai_chat_client(&provider, &model, base_url.as_deref()));
+    let chat_client: Arc<dyn AiChatClient> = Arc::new(crate::build_genai_chat_client(
+        &provider,
+        &model,
+        base_url.as_deref(),
+    ));
 
     let workflow_registry = workflow::shared_workflow_registry();
     let prompt_pipeline = PromptExecutionPipeline::new(chat_client.clone());
@@ -370,8 +392,11 @@ async fn wire_existing_daemon_composition(
     let provider = crate::resolve_llm_provider(config.provider);
     let model = crate::resolve_llm_model(config.model);
     let base_url = crate::resolve_llm_base_url(Some(&provider), config.base_url);
-    let chat_client: Arc<dyn AiChatClient> =
-        Arc::new(crate::build_genai_chat_client(&provider, &model, base_url.as_deref()));
+    let chat_client: Arc<dyn AiChatClient> = Arc::new(crate::build_genai_chat_client(
+        &provider,
+        &model,
+        base_url.as_deref(),
+    ));
 
     let workflow_registry = workflow::shared_workflow_registry();
     let prompt_pipeline = PromptExecutionPipeline::new(chat_client.clone());
@@ -386,10 +411,13 @@ async fn wire_existing_daemon_composition(
         memory_writer: memory_context_writer.clone(),
     });
     let workflow_engine = grapheme_medousa_bridge::medousa_workflow_engine();
-    let tool_registry = Arc::new(stasis::application::orchestration::tool_registry::InMemoryToolRegistry::default());
+    let tool_registry = Arc::new(
+        stasis::application::orchestration::tool_registry::InMemoryToolRegistry::default(),
+    );
     tool_registry.register_tool(MockWebSearchTool)?;
 
-    let endpoint_transports = if let Some(token) = channel_delivery::resolve_deliver_webhook_token() {
+    let endpoint_transports = if let Some(token) = channel_delivery::resolve_deliver_webhook_token()
+    {
         vec![Arc::new(
             HttpWebhookTransportPublisher::new().with_bearer_token(token),
         ) as Arc<dyn stasis::ports::outbound::runtime::endpoint_transport_publisher::EndpointTransportPublisher>]
@@ -514,10 +542,18 @@ fn register_daemon_handlers<R>(
     chat_client: &Arc<dyn AiChatClient>,
     tool_registry: &Arc<stasis::application::orchestration::tool_registry::InMemoryToolRegistry>,
     workflow_engine: &Arc<dyn stasis::ports::outbound::runtime::workflow_engine::WorkflowEngine>,
-    memory_context_reader: &Option<Arc<dyn stasis::ports::outbound::memory::memory_context_reader::MemoryContextReader>>,
-    memory_context_writer: &Option<Arc<dyn stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter>>,
-    identity_memory_store: &Option<Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>>,
-    memory_operations: &Option<Arc<dyn stasis::ports::outbound::memory::memory_operations::MemoryOperations>>,
+    memory_context_reader: &Option<
+        Arc<dyn stasis::ports::outbound::memory::memory_context_reader::MemoryContextReader>,
+    >,
+    memory_context_writer: &Option<
+        Arc<dyn stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter>,
+    >,
+    identity_memory_store: &Option<
+        Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>,
+    >,
+    memory_operations: &Option<
+        Arc<dyn stasis::ports::outbound::memory::memory_operations::MemoryOperations>,
+    >,
     thread_store: &Arc<dyn stasis::ports::outbound::runtime::thread_store::ThreadStore>,
     cluster_store: &Arc<dyn stasis::ports::outbound::runtime::cluster_node_store::ClusterNodeStore>,
 ) -> stasis::prelude::Result<()>
@@ -578,14 +614,16 @@ where
         rt.register_handler(MemorySchemaJobHandler::new(operations.clone()))?;
     }
 
-    rt.register_handler(ConcurrentPatternJobHandler::new_with_thread_store_and_memory(
-        chat_client.clone(),
-        tool_registry.clone(),
-        Some(thread_store.clone()),
-        memory_context_reader.clone(),
-        memory_context_writer.clone(),
-        identity_memory_store.clone(),
-    ))?;
+    rt.register_handler(
+        ConcurrentPatternJobHandler::new_with_thread_store_and_memory(
+            chat_client.clone(),
+            tool_registry.clone(),
+            Some(thread_store.clone()),
+            memory_context_reader.clone(),
+            memory_context_writer.clone(),
+            identity_memory_store.clone(),
+        ),
+    )?;
     rt.register_handler(HandoffPatternJobHandler::new_with_thread_store(
         chat_client.clone(),
         Some(thread_store.clone()),
@@ -600,7 +638,9 @@ where
     ))?;
 
     rt.register_handler(CoordinatorFailoverJobHandler::new(cluster_store.clone()))?;
-    rt.register_handler(QueueOwnershipRebalanceJobHandler::new(cluster_store.clone()))?;
+    rt.register_handler(QueueOwnershipRebalanceJobHandler::new(
+        cluster_store.clone(),
+    ))?;
 
     Ok(())
 }
@@ -613,7 +653,9 @@ trait DaemonRuntimeRegistrar {
 }
 
 impl DaemonRuntimeRegistrar for stasis::application::runtime::in_memory_runtime::InMemoryRuntime {
-    fn register_handler<H: stasis::application::runtime::in_memory_runtime::JobHandler + 'static>(
+    fn register_handler<
+        H: stasis::application::runtime::in_memory_runtime::JobHandler + 'static,
+    >(
         &self,
         handler: H,
     ) -> stasis::prelude::Result<()> {
@@ -622,7 +664,9 @@ impl DaemonRuntimeRegistrar for stasis::application::runtime::in_memory_runtime:
 }
 
 impl DaemonRuntimeRegistrar for stasis::application::runtime::surreal_runtime::SurrealRuntime {
-    fn register_handler<H: stasis::application::runtime::in_memory_runtime::JobHandler + 'static>(
+    fn register_handler<
+        H: stasis::application::runtime::in_memory_runtime::JobHandler + 'static,
+    >(
         &self,
         handler: H,
     ) -> stasis::prelude::Result<()> {

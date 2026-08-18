@@ -66,7 +66,8 @@ impl DeviceIdentity {
     fn create_at_path(path: &Path) -> Result<Self> {
         let signing_key = SigningKey::generate(&mut OsRng);
         let encoded = encode_hex(signing_key.to_bytes().as_slice());
-        fs::write(path, format!("{encoded}\n")).with_context(|| format!("write {}", path.display()))?;
+        fs::write(path, format!("{encoded}\n"))
+            .with_context(|| format!("write {}", path.display()))?;
         let verifying_key = signing_key.verifying_key();
         let device_id = device_id_from_public_key(verifying_key.as_bytes());
         Ok(Self {

@@ -29,12 +29,8 @@ pub struct RuntimeLearningHit {
 }
 
 pub fn build_grapheme_script_recall_block(prompt: &str, char_budget: usize) -> String {
-    let hits = GraphemeScriptService::search_ranked(
-        prompt,
-        None,
-        None,
-        DEFAULT_SCRIPT_RECALL_LIMIT,
-    );
+    let hits =
+        GraphemeScriptService::search_ranked(prompt, None, None, DEFAULT_SCRIPT_RECALL_LIMIT);
     if hits.is_empty() {
         return String::new();
     }
@@ -96,20 +92,12 @@ pub fn rank_runtime_learning_notes(query: &str, limit: usize) -> Vec<RuntimeLear
         score += 0.1 * (1.0 / (1.0 + age_hours / 48.0));
         score = score.clamp(0.0, 1.0);
 
-        let excerpt = truncate_text_for_budget(
-            &content.replace('\n', " "),
-            LEARNING_EXCERPT_CHARS,
-        );
+        let excerpt = truncate_text_for_budget(&content.replace('\n', " "), LEARNING_EXCERPT_CHARS);
         hits.push(RuntimeLearningHit {
             path: entry.path.clone(),
             title: entry.title.clone(),
             score,
-            line: format!(
-                "- [[{}]] {} — {}",
-                entry.path,
-                entry.title,
-                excerpt
-            ),
+            line: format!("- [[{}]] {} — {}", entry.path, entry.title, excerpt),
         });
     }
 
@@ -167,8 +155,12 @@ mod tests {
 
     #[test]
     fn runtime_learning_tag_detection() {
-        assert!(entry_has_runtime_learning_tag(&["runtime-learning".to_string()]));
-        assert!(entry_has_runtime_learning_tag(&["Medousa/Runtime-Learning".to_string()]));
+        assert!(entry_has_runtime_learning_tag(&[
+            "runtime-learning".to_string()
+        ]));
+        assert!(entry_has_runtime_learning_tag(&[
+            "Medousa/Runtime-Learning".to_string()
+        ]));
         assert!(!entry_has_runtime_learning_tag(&["journal".to_string()]));
     }
 

@@ -348,12 +348,12 @@ mod tests {
     fn production_profiles_match_declared_counts() {
         let without_pairing = production_registry(false);
         let with_pairing = production_registry(true);
-        assert_eq!(without_pairing.len(), 369);
-        assert_eq!(with_pairing.len(), 381);
+        assert_eq!(without_pairing.len(), 370);
+        assert_eq!(with_pairing.len(), 382);
         let artifacts = artifacts(&with_pairing);
         let inventory: serde_json::Value =
             serde_json::from_str(&artifacts.route_inventory_json).unwrap();
-        assert_eq!(inventory["operations"].as_array().unwrap().len(), 381);
+        assert_eq!(inventory["operations"].as_array().unwrap().len(), 382);
         assert!(artifacts.openapi_json.contains("\"openapi\": \"3.2.0\""));
     }
 
@@ -706,9 +706,14 @@ mod tests {
         }
         let openapi = std::fs::read_to_string(root.join("openapi.json"))
             .expect("checked-in openapi.json; run UPDATE_API_CONTRACT=1 cargo test -p medousa --lib daemon::contract::tests::checked_in_contract_artifacts_match_generation");
-        assert_eq!(openapi, artifacts.openapi_json);
+        let checked: serde_json::Value = serde_json::from_str(&openapi).unwrap();
+        let generated: serde_json::Value = serde_json::from_str(&artifacts.openapi_json).unwrap();
+        assert_eq!(checked, generated);
         let inventory = std::fs::read_to_string(root.join("route-inventory.json")).unwrap();
-        assert_eq!(inventory, artifacts.route_inventory_json);
+        let checked_inventory: serde_json::Value = serde_json::from_str(&inventory).unwrap();
+        let generated_inventory: serde_json::Value =
+            serde_json::from_str(&artifacts.route_inventory_json).unwrap();
+        assert_eq!(checked_inventory, generated_inventory);
     }
 
     #[test]

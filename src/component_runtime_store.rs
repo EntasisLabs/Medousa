@@ -5,20 +5,20 @@ use std::sync::Arc;
 
 use chrono::{Duration, Utc};
 use medousa_types::authority_id::{
-    component_runtime_event_record_key, ComponentId, EnvironmentProfileId,
+    ComponentId, EnvironmentProfileId, component_runtime_event_record_key,
 };
 use medousa_types::component_runtime::{
     ComponentRuntimeEvent, ComponentRuntimeEventInput, ComponentRuntimeProbeResult,
-    ComponentRuntimeProbeStatus, DEFAULT_RUNTIME_EVENT_TAIL_LIMIT, MAX_RUNTIME_EVENTS_PER_COMPONENT,
-    RUNTIME_EVENT_RETENTION_HOURS,
+    ComponentRuntimeProbeStatus, DEFAULT_RUNTIME_EVENT_TAIL_LIMIT,
+    MAX_RUNTIME_EVENTS_PER_COMPONENT, RUNTIME_EVENT_RETENTION_HOURS,
 };
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use stasis::prelude::RuntimeComposition;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 use surrealdb_types::SurrealValue;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{RwLock, broadcast};
 use uuid::Uuid;
 
 use crate::store_root::{StorePath, StoreRoot};
@@ -187,11 +187,7 @@ impl ComponentRuntimeHub {
         profile_id: &str,
         component_id: &str,
     ) -> medousa_types::component_runtime::ComponentRuntimeProbeRequest {
-        let probe_id = format!(
-            "probe-{}-{}",
-            component_id,
-            Utc::now().timestamp_millis()
-        );
+        let probe_id = format!("probe-{}-{}", component_id, Utc::now().timestamp_millis());
         let request = medousa_types::component_runtime::ComponentRuntimeProbeRequest {
             probe_id: probe_id.clone(),
             component_id: component_id.to_string(),
@@ -234,9 +230,11 @@ impl ComponentRuntimeHub {
         &self,
         probe_id: &str,
         timeout_ms: u64,
-    ) -> (ComponentRuntimeProbeStatus, Option<ComponentRuntimeProbeResult>) {
-        let deadline =
-            tokio::time::Instant::now() + tokio::time::Duration::from_millis(timeout_ms);
+    ) -> (
+        ComponentRuntimeProbeStatus,
+        Option<ComponentRuntimeProbeResult>,
+    ) {
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_millis(timeout_ms);
         loop {
             if let Some(result) = self.probe_results.read().await.get(probe_id).cloned() {
                 return (ComponentRuntimeProbeStatus::Ok, Some(result));
@@ -278,7 +276,11 @@ impl ComponentRuntimeHub {
                 source: input.source.clone(),
                 emitted_at,
             };
-            let nonce = format!("{}-{}", emitted_at.timestamp_millis(), Uuid::new_v4().simple());
+            let nonce = format!(
+                "{}-{}",
+                emitted_at.timestamp_millis(),
+                Uuid::new_v4().simple()
+            );
             let id = component_runtime_event_record_key(&profile, &component, &nonce)
                 .as_str()
                 .to_string();
@@ -347,11 +349,17 @@ impl ComponentRuntimeHub {
             .await
             .map_err(|err| err.to_string())?;
             let tail = self
-                .surreal_tail(db, profile_id, component_id, MAX_RUNTIME_EVENTS_PER_COMPONENT + 1)
+                .surreal_tail(
+                    db,
+                    profile_id,
+                    component_id,
+                    MAX_RUNTIME_EVENTS_PER_COMPONENT + 1,
+                )
                 .await?;
             if tail.len() > MAX_RUNTIME_EVENTS_PER_COMPONENT
-                && let Some(oldest) = tail.first() {
-                    db.query(
+                && let Some(oldest) = tail.first()
+            {
+                db.query(
                         "DELETE FROM type::table($table) \
                          WHERE profile_id = $profile_id AND component_id = $component_id AND emitted_at <= $cutoff",
                     )
@@ -361,7 +369,7 @@ impl ComponentRuntimeHub {
                     .bind(("cutoff", oldest.emitted_at_utc))
                     .await
                     .map_err(|err| err.to_string())?;
-                }
+            }
         } else {
             let mut doc = self.read_file_doc(profile_id, component_id).await?;
             doc.events.retain(|event| event.emitted_at_utc >= cutoff);
@@ -442,7 +450,9 @@ impl ComponentRuntimeHub {
         let store = file_store()?;
         let path = file_doc_path(profile_id, component_id)?;
         let raw = serde_json::to_string_pretty(doc).map_err(|err| err.to_string())?;
-        store.atomic_write(&path, raw.as_bytes()).map_err(|err| err.to_string())
+        store
+            .atomic_write(&path, raw.as_bytes())
+            .map_err(|err| err.to_string())
     }
 }
 

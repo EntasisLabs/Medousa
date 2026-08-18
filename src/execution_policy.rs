@@ -223,7 +223,10 @@ pub fn parallel_tool_batch_allowed(
     settings: &ParallelExecutionSettings,
 ) -> Result<(), String> {
     if !settings.parallel_tool_calls_enabled {
-        return Err("parallel tool calls disabled by runtime.workflow.parallel_tool_calls_enabled".to_string());
+        return Err(
+            "parallel tool calls disabled by runtime.workflow.parallel_tool_calls_enabled"
+                .to_string(),
+        );
     }
     if calls.len() <= 1 {
         return Ok(());
@@ -307,7 +310,10 @@ mod tests {
                 "cognition_grapheme_run".to_string(),
                 json!({ "source": "query {}" }),
             ),
-            ("cognition_memory_recall".to_string(), json!({ "query": "x" })),
+            (
+                "cognition_memory_recall".to_string(),
+                json!({ "query": "x" }),
+            ),
         ];
         let settings = ParallelExecutionSettings::default();
         assert!(parallel_tool_batch_allowed(&calls, &settings).is_err());

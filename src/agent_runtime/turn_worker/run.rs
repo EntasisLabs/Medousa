@@ -12,8 +12,8 @@ use stasis::application::orchestration::prompt_pipeline::PromptExecutionContext;
 use stasis::application::orchestration::tool_loop_pipeline::ToolLoopExecutionRequest;
 use tokio::sync::RwLock;
 
-use crate::agent_runtime::stream_sink::SharedAgentStreamSink;
 use crate::agent_runtime::provider_stream::{ProviderStreamBridge, fail_on_stream_overflow};
+use crate::agent_runtime::stream_sink::SharedAgentStreamSink;
 use crate::agent_runtime::system_prompt::DEFAULT_SYSTEM_PROMPT;
 use crate::agent_runtime::turn_completion::ToolLoopCompletionGate;
 use crate::agent_runtime::turn_ledger::append_tool_loop_policy;
@@ -66,10 +66,8 @@ fn worker_canvas_lane_enabled(is_bound_workshop: bool, record: &TurnWorkRecord) 
 }
 
 fn worker_turn_scope(record: &TurnWorkRecord) -> TurnContinuationScope {
-    let canvas_lane = worker_canvas_lane_enabled(
-        record.disposition == TurnWorkDisposition::Bound,
-        record,
-    );
+    let canvas_lane =
+        worker_canvas_lane_enabled(record.disposition == TurnWorkDisposition::Bound, record);
     TurnContinuationScope {
         turn_correlation_id: record
             .parent_turn_correlation_id
@@ -1854,5 +1852,4 @@ mod tests {
         drop(execution);
         assert_eq!(store.live_execution_count(), 0);
     }
-
 }

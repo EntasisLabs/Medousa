@@ -1,19 +1,20 @@
 //! Read-only custom view / environment status for doctor tool and HTTP API.
 
 use medousa_types::environment::{
-    ComponentType, CustomViewComponentStatus, CustomViewFeedStatus, CustomViewRecurringBindingStatus,
-    CustomViewSurfaceStatus, EnvironmentSpec, EnvironmentStatusResponse, SurfaceKind,
+    ComponentType, CustomViewComponentStatus, CustomViewFeedStatus,
+    CustomViewRecurringBindingStatus, CustomViewSurfaceStatus, EnvironmentSpec,
+    EnvironmentStatusResponse, SurfaceKind,
 };
 use medousa_types::layout::resolve_layout_root;
 use serde_json::Value;
 use stasis::prelude::RuntimeComposition;
 
 use crate::component_runtime_diagnostics::{
-    build_component_runtime_diagnostic, RuntimeDiagnosticOptions,
+    RuntimeDiagnosticOptions, build_component_runtime_diagnostic,
 };
 use crate::environment_store::EnvironmentHub;
 use crate::feed_store::feed_store;
-use crate::recurring_feed::{self, feeds_binding_to_json, RecurringFeedBinding};
+use crate::recurring_feed::{self, RecurringFeedBinding, feeds_binding_to_json};
 use crate::runtime_composition_ext::RuntimeCompositionExt;
 
 pub fn surface_nav_visible(spec: &EnvironmentSpec, surface_id: &str) -> bool {
@@ -28,11 +29,15 @@ pub fn active_preset_surface_ids(spec: &EnvironmentSpec) -> Vec<String> {
             return active.surfaces.clone();
         }
         if let Some(id) = spec.active_preset_id.as_deref()
-            && let Some(preset) = presets.iter().find(|preset| preset.id == id) {
-                return preset.surfaces.clone();
-            }
+            && let Some(preset) = presets.iter().find(|preset| preset.id == id)
+        {
+            return preset.surfaces.clone();
+        }
     }
-    spec.surfaces.iter().map(|surface| surface.id.clone()).collect()
+    spec.surfaces
+        .iter()
+        .map(|surface| surface.id.clone())
+        .collect()
 }
 
 fn presentation_artifact_id(config: &Value) -> Option<String> {
@@ -146,9 +151,10 @@ pub async fn build_environment_status(
         .filter(|surface| surface.kind == SurfaceKind::Custom)
     {
         if let Some(filter) = surface_filter
-            && surface.id != filter {
-                continue;
-            }
+            && surface.id != filter
+        {
+            continue;
+        }
 
         let nav_visible = surface_nav_visible(spec, &surface.id);
         if !nav_visible {
@@ -162,9 +168,10 @@ pub async fn build_environment_status(
             .filter(|component| component.surface_id == surface.id)
         {
             if let Some(filter) = diagnostics.and_then(|opts| opts.component_id_filter.as_deref())
-                && component.id != filter {
-                    continue;
-                }
+                && component.id != filter
+            {
+                continue;
+            }
             let mut runtime_diag = None;
             if let Some(opts) = diagnostics {
                 let wants_runtime = opts.include_runtime || opts.include_static_lint || opts.probe;
@@ -225,18 +232,17 @@ pub async fn build_environment_status(
                     .iter()
                     .any(|feed_id| subscribed_feed_ids.contains(feed_id))
             })
-            .map(|(recurring_id, binding, cron_expr, enabled)| {
-                CustomViewRecurringBindingStatus {
+            .map(
+                |(recurring_id, binding, cron_expr, enabled)| CustomViewRecurringBindingStatus {
                     recurring_id: recurring_id.clone(),
                     feed_ids: binding.feed_ids.clone(),
                     cron_expr: cron_expr.clone(),
                     enabled: *enabled,
-                }
-            })
+                },
+            )
             .collect();
 
-        let feed_mismatches =
-            feed_mismatches_for_surface(&subscribed_feed_ids, &recurring_rows);
+        let feed_mismatches = feed_mismatches_for_surface(&subscribed_feed_ids, &recurring_rows);
         feed_mismatch_count += feed_mismatches.len();
 
         custom_surfaces.push(CustomViewSurfaceStatus {
@@ -287,8 +293,7 @@ fn build_hints(
     }
     if pending {
         hints.push(
-            "A layout proposal is pending operator approval in Settings → Canvas."
-                .to_string(),
+            "A layout proposal is pending operator approval in Settings → Canvas.".to_string(),
         );
     }
     if diagnostics.is_some_and(|opts| opts.include_runtime || opts.include_static_lint) {

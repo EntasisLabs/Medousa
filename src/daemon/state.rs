@@ -105,7 +105,8 @@ pub struct AppState {
     /// Workshop shell session host (medousa-session sidecar).
     pub shell_sessions: Option<Arc<crate::daemon::shell_session_host::ShellSessionHost>>,
     /// Detamu world-model host (published SDK; SurrealKV under `{dataDir}/detamu`).
-    pub detamu: Option<Arc<crate::daemon::detamu_host::DetamuHost>>,
+    /// Dormant at boot — KV opens on first world query or Forge index.
+    pub detamu: Arc<crate::daemon::detamu_host::DetamuHandle>,
 }
 
 impl AppState {

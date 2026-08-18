@@ -194,9 +194,10 @@ pub fn runtime_settings_for_interactive_turn(
     };
     let base_url = crate::resolve_llm_base_url(
         Some(&provider),
-        base_url
+        base_url.as_deref().or(saved
+            .base_url
             .as_deref()
-            .or(saved.base_url.as_deref().filter(|value| !value.trim().is_empty())),
+            .filter(|value| !value.trim().is_empty())),
     )
     .unwrap_or_default();
     let mut settings = default_daemon_runtime_settings(backend, &provider, &model, &base_url);

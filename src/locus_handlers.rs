@@ -2,10 +2,10 @@
 
 use std::sync::Arc;
 
+use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::get;
-use axum::Json;
 use locus_core_rs::{ContextQueryService, NodeStore, SemanticIndexStore, SttpNode};
 use serde_json::Value;
 use stasis::ports::outbound::memory::memory_context_reader::MemoryContextReader;
@@ -50,7 +50,9 @@ fn summary_from_node(node: &SttpNode) -> LocusNodeSummary {
     }
 }
 
-fn summary_from_memory_node(node: &stasis::ports::outbound::memory::memory_models::MemoryNode) -> LocusNodeSummary {
+fn summary_from_memory_node(
+    node: &stasis::ports::outbound::memory::memory_models::MemoryNode,
+) -> LocusNodeSummary {
     LocusNodeSummary {
         sync_key: node.sync_key.clone(),
         session_id: node.session_id.clone(),
@@ -87,17 +89,23 @@ async fn list_nodes(
         .map_err(|err| err.to_string())
 }
 
-fn tag_filter_from_query(query: &LocusNodesQuery) -> stasis::ports::outbound::memory::memory_models::MemoryFilter {
+fn tag_filter_from_query(
+    query: &LocusNodesQuery,
+) -> stasis::ports::outbound::memory::memory_models::MemoryFilter {
     let mut input = serde_json::Map::new();
     if let Some(tags) = query.tags.as_ref()
-        && let Some(parsed) = parse_semantic_tags_from_value(Some(&Value::String(tags.clone()))) {
-            input.insert(
-                "semantic_tags".to_string(),
-                Value::Array(parsed.into_iter().map(Value::String).collect()),
-            );
-        }
+        && let Some(parsed) = parse_semantic_tags_from_value(Some(&Value::String(tags.clone())))
+    {
+        input.insert(
+            "semantic_tags".to_string(),
+            Value::Array(parsed.into_iter().map(Value::String).collect()),
+        );
+    }
     if let Some(prefix) = query.tag_prefix.as_ref().filter(|v| !v.trim().is_empty()) {
-        input.insert("tag_prefix".to_string(), Value::String(prefix.trim().to_string()));
+        input.insert(
+            "tag_prefix".to_string(),
+            Value::String(prefix.trim().to_string()),
+        );
     }
     memory_filter_from_tag_input(&Value::Object(input))
 }
@@ -156,10 +164,7 @@ pub fn locus_surface() -> crate::daemon::route_policy::DeclaredRouter<LocusApiSt
 
     DeclaredRouter::default()
         .route(policy("/v1/locus/nodes"), get(list_locus_nodes))
-        .route(
-            policy("/v1/locus/nodes/{sync_key}"),
-            get(get_locus_node),
-        )
+        .route(policy("/v1/locus/nodes/{sync_key}"), get(get_locus_node))
         .route(policy("/v1/locus/tags"), get(list_locus_tags))
 }
 
@@ -201,11 +206,7 @@ pub async fn list_locus_nodes(
         .map(|value| value.to_lowercase())
     {
         nodes.retain(|node| {
-            let tag_text = node
-                .semantic_tags
-                .as_deref()
-                .unwrap_or_default()
-                .join(" ");
+            let tag_text = node.semantic_tags.as_deref().unwrap_or_default().join(" ");
             let haystack = [
                 node.sync_key.as_str(),
                 node.session_id.as_str(),
@@ -220,10 +221,7 @@ pub async fn list_locus_nodes(
     }
 
     let retrieved = nodes.len();
-    Ok(Json(LocusNodesListResponse {
-        retrieved,
-        nodes,
-    }))
+    Ok(Json(LocusNodesListResponse { retrieved, nodes }))
 }
 
 pub async fn list_locus_tags(
@@ -274,7 +272,12 @@ pub async fn get_locus_node(
     let node = nodes
         .into_iter()
         .find(|node| node.sync_key == sync_key)
-        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("locus node not found: {sync_key}")))?;
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                format!("locus node not found: {sync_key}"),
+            )
+        })?;
 
     Ok(Json(LocusNodeDetailResponse {
         node: summary_from_node(&node),

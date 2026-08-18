@@ -4,12 +4,13 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -31,8 +32,62 @@ jobs:
         run: ./scripts/ci/check-runtime-context.sh
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets --exclude medousa-sdk-iroh -- -D warnings
-      - name: cargo test (lib)
-        run: cargo test -p medousa --lib
+      - name: cargo test (lib, hermetic)
+        timeout-minutes: 25
+        run: ./scripts/ci/test-hermetic.sh
+      - name: cargo test (workspace lib)
+        timeout-minutes: 25
+        run: cargo test --workspace --exclude medousa-sdk-iroh --lib
+
+  rust-deps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> .cache/cargo-target
+          cache-workspace-crates: true
+          cache-on-failure: true
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny,cargo-machete
+      - name: cargo deny
+        run: cargo deny check
+      - name: unused direct dependencies
+        run: ./scripts/ci/check-unused-deps.sh
+      - name: P09 dependency budget
+        run: ./scripts/ci/check-dependency-budget.sh
+
+  tauri-ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            apps/medousa-home/src-tauri -> apps/medousa-home/src-tauri/target
+          cache-on-failure: true
+      - name: cargo clippy (Home Tauri)
+        run: cargo clippy --manifest-path apps/medousa-home/src-tauri/Cargo.toml --all-targets -- -D warnings -A dead_code -A clippy::too_many_arguments -A clippy::large_enum_variant -A clippy::ptr_arg -A private_interfaces
+      - name: cargo test (Home Tauri lib)
+        run: cargo test --manifest-path apps/medousa-home/src-tauri/Cargo.toml --lib
+
+  perf-micro:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> .cache/cargo-target
+          cache-workspace-crates: true
+          cache-on-failure: true
+      - name: P01/P03 micro-CI budgets
+        run: ./scripts/ci/check-perf-budgets.sh
 
   filesystem-authority:
     name: Filesystem authority (${{ matrix.os }})
@@ -80,6 +135,7 @@ jobs:
           cache-dependency-path: apps/medousa-home/package-lock.json
       - run: npm ci
       - run: npm run check
+      - run: npm test
       - run: npm run test:h09
       - run: npm run build
       - run: npm run check:bundle-budget
@@ -163,9 +219,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: verify docs (advisory)
-        run: bash scripts/verify-docs.sh
-        continue-on-error: true
+      - name: verify docs
+        run: bash scripts/verify-docs.sh --strict
 
   sdk-contract:
     runs-on: ubuntu-latest

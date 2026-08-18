@@ -13,11 +13,11 @@
   type ShareKey = "agents" | "scheduled" | "delivery" | "maintenance";
 
   const DEFAULTS: RuntimeWorkerConfig = {
-    maxInFlight: 25,
-    agents: 8,
-    scheduled: 8,
-    delivery: 5,
-    maintenance: 4,
+    maxInFlight: 8,
+    agents: 2,
+    scheduled: 2,
+    delivery: 1,
+    maintenance: 1,
   };
 
   const fields: Array<{ key: ShareKey; label: string; hint: string }> = [

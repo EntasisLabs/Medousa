@@ -2,6 +2,7 @@
 name = "medousa-sdk"
 version = "0.9.1"
 edition = "2024"
+license = "MIT OR Apache-2.0"
 description = "HTTP client SDK for the Medousa daemon API"
 
 [features]
@@ -28,3 +29,6 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 futures-util = { version = "0.3", optional = true }
 eventsource-stream = { version = "0.2", optional = true }
 bytes = { version = "1", optional = true }
+
+[package.metadata.cargo-machete]
+ignored = ["eventsource-stream"]

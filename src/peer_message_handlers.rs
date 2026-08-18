@@ -16,15 +16,15 @@ use crate::mesh::delivery::{
     accept_inbound_delivery, bind_delivery_local_ref, receipt_header_value,
 };
 use crate::mesh::{
-    MeshCapability, MeshEnvelope, MeshInboundBody, MeshReceipt, record_has_capability,
-    require_remote_envelope, CAP_MESH_MESSAGE,
+    CAP_MESH_MESSAGE, MeshCapability, MeshEnvelope, MeshInboundBody, MeshReceipt,
+    record_has_capability, require_remote_envelope,
 };
 use crate::pairing::{PairedDeviceRecord, PairingRole, PairingService};
 use crate::peer_messages::{
-    append_message, build_message, get_message, involves_device,
+    PeerMessage, PeerMessageAttachmentSummary, PeerMessagePostRequest, PeerMessagesListResponse,
+    PeerUnreadCountResponse, append_message, build_message, get_message, involves_device,
     list_messages_filtered, list_messages_for_peer_device, mark_read, unread_count,
-    unread_count_for_device, PeerMessage, PeerMessageAttachmentSummary, PeerMessagePostRequest,
-    PeerMessagesListResponse, PeerUnreadCountResponse,
+    unread_count_for_device,
 };
 use crate::request_principal::{Capability, RequestPrincipal, TransportClass};
 use crate::share::bundle::{ShareConflictStrategy, ShareImportRequest};
@@ -220,8 +220,7 @@ async fn post_peer_message(
     } else {
         // Trusted local host UI may post bare payloads.
         let (_envelope, payload) = body.into_parts();
-        serde_json::from_value(payload)
-            .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
+        serde_json::from_value(payload).map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
     };
 
     let portal_host_reply = remote_record.as_ref().is_some_and(|record| {
@@ -475,8 +474,14 @@ fn involves_device_id(left: &str, right: &str) -> bool {
 fn mesh_status(err: crate::mesh::MeshEnvelopeError) -> (StatusCode, String) {
     use crate::mesh::MeshEnvelopeError::*;
     let status = match &err {
-        MissingEnvelope | BadSignature(_) | BadPublicKey(_) | Expired | NotYetValid
-        | PayloadHashMismatch | SenderMismatch | UnsupportedVersion(_) => StatusCode::UNAUTHORIZED,
+        MissingEnvelope
+        | BadSignature(_)
+        | BadPublicKey(_)
+        | Expired
+        | NotYetValid
+        | PayloadHashMismatch
+        | SenderMismatch
+        | UnsupportedVersion(_) => StatusCode::UNAUTHORIZED,
         CapabilityNotGranted(_) | UnknownCapability | RecipientMismatch => StatusCode::FORBIDDEN,
         Serialize(_) => StatusCode::BAD_REQUEST,
     };

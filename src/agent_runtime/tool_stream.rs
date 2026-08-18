@@ -192,7 +192,10 @@ pub fn summarize_tool_output(tool_name: &str, tool_output: &serde_json::Value) -
         return Some("Update sent".to_string());
     }
     if crate::ui_scene_tools::is_ui_scene_cognition_tool(tool_name) {
-        if matches!(tool_output.get("ok").and_then(|value| value.as_bool()), Some(false)) {
+        if matches!(
+            tool_output.get("ok").and_then(|value| value.as_bool()),
+            Some(false)
+        ) {
             return tool_output
                 .get("error")
                 .and_then(|value| value.as_str())
@@ -203,7 +206,10 @@ pub fn summarize_tool_output(tool_name: &str, tool_output: &serde_json::Value) -
         return Some("Scene updated".to_string());
     }
     if crate::ui_build_tools::is_ui_build_cognition_tool(tool_name) {
-        if matches!(tool_output.get("ok").and_then(|value| value.as_bool()), Some(false)) {
+        if matches!(
+            tool_output.get("ok").and_then(|value| value.as_bool()),
+            Some(false)
+        ) {
             return tool_output
                 .get("error")
                 .and_then(|value| value.as_str())
@@ -222,7 +228,10 @@ pub fn summarize_tool_output(tool_name: &str, tool_output: &serde_json::Value) -
     if crate::ui_present_tools::is_ui_present_cognition_tool(tool_name)
         || tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
     {
-        if matches!(tool_output.get("ok").and_then(|value| value.as_bool()), Some(false)) {
+        if matches!(
+            tool_output.get("ok").and_then(|value| value.as_bool()),
+            Some(false)
+        ) {
             return tool_output
                 .get("error")
                 .and_then(|value| value.as_str())
@@ -270,16 +279,22 @@ pub fn tool_status_from_output(tool_output: &serde_json::Value) -> &'static str 
         return "failed";
     }
     if matches!(
-        tool_output.get("persisted_verified").and_then(|value| value.as_bool()),
+        tool_output
+            .get("persisted_verified")
+            .and_then(|value| value.as_bool()),
         Some(false)
     ) && matches!(
-        tool_output.get("committed").and_then(|value| value.as_bool()),
+        tool_output
+            .get("committed")
+            .and_then(|value| value.as_bool()),
         Some(true)
     ) {
         return "failed";
     }
     if matches!(
-        tool_output.get("committed").and_then(|value| value.as_bool()),
+        tool_output
+            .get("committed")
+            .and_then(|value| value.as_bool()),
         Some(false)
     ) && !matches!(
         tool_output
@@ -346,12 +361,13 @@ pub fn persist_and_enrich_artifact_refs(
             &receipt.hash64,
             receipt.byte_size,
             tool_input,
-        ) {
-            for item in refs.iter_mut().filter(|item| item.role == "input") {
-                item.artifact_id = Some(record.artifact_id.clone());
-                item.label = Some(format!("{tool_name} input"));
-            }
+        )
+    {
+        for item in refs.iter_mut().filter(|item| item.role == "input") {
+            item.artifact_id = Some(record.artifact_id.clone());
+            item.label = Some(format!("{tool_name} input"));
         }
+    }
     if let Some(receipt) = output_receipt
         && let Ok(record) = crate::artifact_store::persist_tool_artifact(
             session_id,
@@ -360,12 +376,13 @@ pub fn persist_and_enrich_artifact_refs(
             &receipt.hash64,
             receipt.byte_size,
             tool_output,
-        ) {
-            for item in refs.iter_mut().filter(|item| item.role == "output") {
-                item.artifact_id = Some(record.artifact_id.clone());
-                item.label = Some(format!("{tool_name} output"));
-            }
+        )
+    {
+        for item in refs.iter_mut().filter(|item| item.role == "output") {
+            item.artifact_id = Some(record.artifact_id.clone());
+            item.label = Some(format!("{tool_name} output"));
         }
+    }
     refs
 }
 
@@ -543,7 +560,9 @@ mod tests {
 
     #[test]
     fn scene_ops_from_tool_output_rejects_not_ok_or_empty() {
-        assert!(scene_ops_from_tool_output(&json!({ "ok": false, "ops": [{ "op": "x" }] })).is_none());
+        assert!(
+            scene_ops_from_tool_output(&json!({ "ok": false, "ops": [{ "op": "x" }] })).is_none()
+        );
         assert!(scene_ops_from_tool_output(&json!({ "ok": true, "ops": [] })).is_none());
         assert!(scene_ops_from_tool_output(&json!({ "ok": true })).is_none());
     }

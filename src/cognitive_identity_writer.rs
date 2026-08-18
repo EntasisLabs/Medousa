@@ -8,20 +8,20 @@ use serde_json::{Value, json};
 use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 use stasis::ports::outbound::memory::identity_memory_models::{
-    AutonomyScope, CommitEntityUpdateRequest, CommitEntityUpdateResponse, ContactEntity,
-    EntityRef, IdentityEntityType, ProposeEntityUpdateRequest, RelationshipEntity,
-    RelationshipKind, RelationshipStatus, UpdateSource, UpdateTier, UserEntity,
+    AutonomyScope, CommitEntityUpdateRequest, CommitEntityUpdateResponse, ContactEntity, EntityRef,
+    IdentityEntityType, ProposeEntityUpdateRequest, RelationshipEntity, RelationshipKind,
+    RelationshipStatus, UpdateSource, UpdateTier, UserEntity,
 };
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
 use stasis::ports::outbound::memory::memory_models::MemoryStoreRequest;
 
 use crate::cognitive_identity::{
-    compile_relational_memory_digest, load_cognitive_identity_snapshot,
-    DEFAULT_RELATIONAL_DIGEST_BUDGET,
+    DEFAULT_RELATIONAL_DIGEST_BUDGET, compile_relational_memory_digest,
+    load_cognitive_identity_snapshot,
 };
 use crate::identity_memory::full_identity_context_request;
-use crate::identity_store_ext::{user_patch_already_applied, MedousaIdentityMemoryStore};
+use crate::identity_store_ext::{MedousaIdentityMemoryStore, user_patch_already_applied};
 use crate::identity_write_policy::{evaluate_identity_commit, load_identity_product_config};
 use crate::product_config::IdentityProductConfig;
 
@@ -60,7 +60,7 @@ impl CognitiveIdentityWriter {
         memory_writer: Option<Arc<dyn MemoryContextWriter>>,
     ) -> Self {
         let service = Arc::new(IdentityMemoryService::new(
-            store.clone() as Arc<dyn IdentityMemoryStore>,
+            store.clone() as Arc<dyn IdentityMemoryStore>
         ));
         Self {
             service,
@@ -227,9 +227,9 @@ impl CognitiveIdentityWriter {
                 4,
             ))
             .await?;
-        context.user.ok_or_else(|| {
-            StasisError::PortFailure(format!("identity user not found: {user_id}"))
-        })
+        context
+            .user
+            .ok_or_else(|| StasisError::PortFailure(format!("identity user not found: {user_id}")))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -265,7 +265,11 @@ impl CognitiveIdentityWriter {
         let mut user_version = None;
 
         for (idx, proposal_id) in proposed.proposal_ids.iter().enumerate() {
-            let tier = proposed.tiers.get(idx).copied().unwrap_or(UpdateTier::AutoCommit);
+            let tier = proposed
+                .tiers
+                .get(idx)
+                .copied()
+                .unwrap_or(UpdateTier::AutoCommit);
             if should_hold_for_confirmation(source, tier) {
                 requires_confirmation = true;
                 last_rationale = Some(
@@ -331,13 +335,9 @@ impl CognitiveIdentityWriter {
         }
 
         let store_dyn = self.store.clone() as Arc<dyn IdentityMemoryStore>;
-        let snapshot = load_cognitive_identity_snapshot(
-            Some(&store_dyn),
-            user_id,
-            Some("interactive"),
-            8,
-        )
-        .await;
+        let snapshot =
+            load_cognitive_identity_snapshot(Some(&store_dyn), user_id, Some("interactive"), 8)
+                .await;
         let digest_preview = Some(compile_relational_memory_digest(
             &snapshot,
             DEFAULT_RELATIONAL_DIGEST_BUDGET,
@@ -372,10 +372,7 @@ impl CognitiveIdentityWriter {
         let Some(user) = context.user else {
             return Ok((false, 0));
         };
-        Ok((
-            user_patch_already_applied(&user, patch),
-            user.version,
-        ))
+        Ok((user_patch_already_applied(&user, patch), user.version))
     }
 }
 
@@ -390,7 +387,11 @@ pub async fn maybe_store_identity_sttp_bridge(
     let Some(writer) = memory_writer else {
         return Ok(false);
     };
-    let Some(node) = response.sttp_bridge_node.as_deref().filter(|raw| !raw.is_empty()) else {
+    let Some(node) = response
+        .sttp_bridge_node
+        .as_deref()
+        .filter(|raw| !raw.is_empty())
+    else {
         return Ok(false);
     };
 
@@ -498,10 +499,7 @@ mod tests {
 
     #[test]
     fn slugify_builds_stable_contact_id() {
-        assert_eq!(
-            contact_id_from_display_name("Mario"),
-            "contact:mario"
-        );
+        assert_eq!(contact_id_from_display_name("Mario"), "contact:mario");
     }
 
     #[test]
@@ -580,7 +578,9 @@ mod tests {
         assert!(!result.requires_confirmation);
 
         let store_dyn = store as Arc<dyn IdentityMemoryStore>;
-        let snapshot = load_cognitive_identity_snapshot(Some(&store_dyn), &user_id, Some("interactive"), 8).await;
+        let snapshot =
+            load_cognitive_identity_snapshot(Some(&store_dyn), &user_id, Some("interactive"), 8)
+                .await;
         let digest = compile_relational_memory_digest(&snapshot, 800);
         assert!(digest.contains("matcha"));
     }

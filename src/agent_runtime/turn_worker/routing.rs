@@ -64,7 +64,9 @@ pub fn host_bus_env_mode() -> HostBusEnvMode {
         .as_deref()
     {
         None | Some("") | Some("auto") => HostBusEnvMode::Auto,
-        Some("1") | Some("true") | Some("yes") | Some("on") | Some("force") => HostBusEnvMode::Force,
+        Some("1") | Some("true") | Some("yes") | Some("on") | Some("force") => {
+            HostBusEnvMode::Force
+        }
         Some("0") | Some("false") | Some("off") | Some("no") => HostBusEnvMode::Off,
         Some(_) => HostBusEnvMode::Auto,
     }
@@ -112,8 +114,8 @@ fn prompt_has_avec_calibrate_ritual(lower: &str) -> bool {
     let avec_posture = ["avec", "mood", "focused", "focus", "calibrat"]
         .iter()
         .any(|n| lower.contains(n));
-    let pull_ritual =
-        lower.contains("pull") && (lower.contains("preset") || lower.contains("focused") || lower.contains("avec"));
+    let pull_ritual = lower.contains("pull")
+        && (lower.contains("preset") || lower.contains("focused") || lower.contains("avec"));
     (avec_posture && lower.contains("calibrat")) || pull_ritual
 }
 
@@ -195,7 +197,8 @@ pub fn apply_host_profile_to_activation(
         activation.max_tool_rounds = profile.host_max_tool_rounds;
         if activation.enforce_no_tools {
             activation.enforce_no_tools = false;
-            activation.tool_call_mode = stasis::application::orchestration::tool_loop_pipeline::ToolCallMode::Auto;
+            activation.tool_call_mode =
+                stasis::application::orchestration::tool_loop_pipeline::ToolCallMode::Auto;
             activation.reason = "host_bus_delegate_requires_spawn";
         }
     }
@@ -225,7 +228,8 @@ mod tests {
 
     #[test]
     fn routes_avec_calibrate() {
-        let route = classify_host_turn_route_heuristic("pull focused AVEC and calibrate my posture");
+        let route =
+            classify_host_turn_route_heuristic("pull focused AVEC and calibrate my posture");
         assert!(matches!(
             route,
             HostTurnRoute::Delegate {

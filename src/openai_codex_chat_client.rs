@@ -8,9 +8,7 @@ use genai::{Client, Headers};
 use stasis::application::runtime::chat_options_resolver::apply_model_reasoning_suffix;
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
-use stasis::ports::outbound::ai_chat_client::{
-    AiChatClient, StreamDelta, send_stream_delta,
-};
+use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta, send_stream_delta};
 use tokio::sync::mpsc;
 
 use crate::inference_router::OPENAI_CODEX_PROVIDER_ID;

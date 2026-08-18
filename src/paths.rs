@@ -140,7 +140,10 @@ mod tests {
     #[test]
     fn default_data_dir_ends_with_medousa() {
         let path = default_medousa_data_dir();
-        assert_eq!(path.file_name().and_then(|name| name.to_str()), Some("medousa"));
+        assert_eq!(
+            path.file_name().and_then(|name| name.to_str()),
+            Some("medousa")
+        );
     }
 
     #[test]

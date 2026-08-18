@@ -71,7 +71,10 @@ pub async fn apply_ask_job_complete_actions(
         parts.push("journal updated".to_string());
     }
     if notified_channel.is_some() {
-        parts.push(format!("notified via {}", notified_channel.as_deref().unwrap()));
+        parts.push(format!(
+            "notified via {}",
+            notified_channel.as_deref().unwrap()
+        ));
     }
     let message = if parts.is_empty() {
         "no completion actions applied".to_string()
@@ -102,9 +105,10 @@ pub fn compose_ask_journal_body(record: &AskJobRecord, output: &str) -> String {
 
     let mut sections = Vec::new();
     if let Some(follow_up) = interim
-        && !texts_equivalent(follow_up, result) {
-            sections.push(format!("**Follow-up:**\n{follow_up}\n"));
-        }
+        && !texts_equivalent(follow_up, result)
+    {
+        sections.push(format!("**Follow-up:**\n{follow_up}\n"));
+    }
     if result.is_empty() {
         sections.push("**Result:**\n(no output captured)\n".to_string());
     } else if sections.is_empty() {
@@ -124,12 +128,10 @@ fn compose_notify_text(record: &AskJobRecord, output: &str) -> String {
         .filter(|value| !value.is_empty());
     let mut body = String::new();
     if let Some(follow_up) = interim
-        && !texts_equivalent(follow_up, output) {
-            body.push_str(&format!(
-                "Follow-up:\n{}\n\n",
-                truncate(follow_up, 600)
-            ));
-        }
+        && !texts_equivalent(follow_up, output)
+    {
+        body.push_str(&format!("Follow-up:\n{}\n\n", truncate(follow_up, 600)));
+    }
     body.push_str(&truncate(output, 1200));
     format!(
         "✓ Ask completed · {}\n\n{}\n\n— {}",
@@ -180,28 +182,24 @@ fn resolve_notify_target(channel: &str) -> Option<ChannelDeliveryTarget> {
     let normalized = channel.to_ascii_lowercase();
     match normalized.as_str() {
         "telegram" => config.telegram.heartbeat_chat_ids.first().map(|chat_id| {
-            heartbeat_delivery_target(
-                "telegram",
-                &format!("telegram:chat:{chat_id}"),
-            )
+            heartbeat_delivery_target("telegram", &format!("telegram:chat:{chat_id}"))
         }),
-        "discord" => config.discord.heartbeat_channel_ids.first().map(|channel_id| {
-            heartbeat_delivery_target(
-                "discord",
-                &format!("discord:channel:{channel_id}"),
-            )
-        }),
-        "slack" => config.slack.heartbeat_channel_ids.first().map(|channel_id| {
-            heartbeat_delivery_target(
-                "slack",
-                &format!("slack:channel:{channel_id}"),
-            )
-        }),
+        "discord" => config
+            .discord
+            .heartbeat_channel_ids
+            .first()
+            .map(|channel_id| {
+                heartbeat_delivery_target("discord", &format!("discord:channel:{channel_id}"))
+            }),
+        "slack" => config
+            .slack
+            .heartbeat_channel_ids
+            .first()
+            .map(|channel_id| {
+                heartbeat_delivery_target("slack", &format!("slack:channel:{channel_id}"))
+            }),
         "whatsapp" => config.whatsapp.heartbeat_chat_jids.first().map(|chat_jid| {
-            heartbeat_delivery_target(
-                "whatsapp",
-                &format!("whatsapp:chat:{chat_jid}"),
-            )
+            heartbeat_delivery_target("whatsapp", &format!("whatsapp:chat:{chat_jid}"))
         }),
         _ => None,
     }
@@ -249,10 +247,8 @@ mod tests {
 
     #[test]
     fn journal_body_includes_follow_up_and_result() {
-        let body = compose_ask_journal_body(
-            &sample_record(),
-            "Here is the full synthesized report.",
-        );
+        let body =
+            compose_ask_journal_body(&sample_record(), "Here is the full synthesized report.");
         assert!(body.contains("**Follow-up:**"));
         assert!(body.contains("give me a moment"));
         assert!(body.contains("**Result:**"));

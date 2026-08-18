@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 
 use medousa_engine::{
-    TurnEventLog, TurnStorePort, UpsertOutcome, configure_log_root, default_log_root,
-    prune_committed, recover_uncommitted, TURN_LOG_DIR,
+    TURN_LOG_DIR, TurnEventLog, TurnStorePort, UpsertOutcome, configure_log_root, default_log_root,
+    prune_committed, recover_uncommitted,
 };
 
 use crate::engine_adapters::SessionTurnStore;
@@ -45,7 +45,10 @@ pub fn recovery_ledger_contains(session_id: &str, turn_id: &str) -> bool {
 pub fn mark_recovery_ledger(session_id: &str, turn_id: &str) {
     let Ok((_session, _mutation)) = crate::session_deletion::acquire_mutation_for_str(session_id)
     else {
-        tracing::warn!(session_id, "rejected recovery ledger write for deleting session");
+        tracing::warn!(
+            session_id,
+            "rejected recovery ledger write for deleting session"
+        );
         return;
     };
     let mut map = load_recovery_ledger();
@@ -53,16 +56,18 @@ pub fn mark_recovery_ledger(session_id: &str, turn_id: &str) {
         .entry(session_id.to_string())
         .or_insert_with(|| serde_json::Value::Array(Vec::new()));
     if let Some(arr) = entry.as_array_mut()
-        && !arr.iter().any(|id| id.as_str() == Some(turn_id)) {
-            arr.push(serde_json::Value::String(turn_id.to_string()));
-        }
+        && !arr.iter().any(|id| id.as_str() == Some(turn_id))
+    {
+        arr.push(serde_json::Value::String(turn_id.to_string()));
+    }
     save_recovery_ledger(&map);
 }
 
 pub fn delete_session_recovery(session_id: &str) -> Result<(), String> {
     let root_path = paths::medousa_data_dir().join(TURN_LOG_DIR);
     let root = StoreRoot::open_or_create(&root_path).map_err(|error| error.to_string())?;
-    let ledger_path = StorePath::parse("recovery_ledger.json").expect("static recovery ledger path");
+    let ledger_path =
+        StorePath::parse("recovery_ledger.json").expect("static recovery ledger path");
     let mut ledger = match root.read(&ledger_path) {
         Ok(bytes) => serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(&bytes)
             .map_err(|_| "recovery ledger is corrupt".to_string())?,
@@ -103,15 +108,16 @@ pub fn delete_session_recovery(session_id: &str) -> Result<(), String> {
             entry.path.file_name().trim_end_matches(".jsonl")
         );
         let marker = StorePath::parse(&marker_name).map_err(|error| error.to_string())?;
-        root.remove_file(&entry.path).map_err(|error| error.to_string())?;
-        root.remove_file(&marker).map_err(|error| error.to_string())?;
+        root.remove_file(&entry.path)
+            .map_err(|error| error.to_string())?;
+        root.remove_file(&marker)
+            .map_err(|error| error.to_string())?;
     }
 
     let verify_ledger = root.read(&ledger_path).map_err(|error| error.to_string())?;
-    let verify_ledger = serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(
-        &verify_ledger,
-    )
-    .map_err(|_| "recovery ledger is corrupt".to_string())?;
+    let verify_ledger =
+        serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(&verify_ledger)
+            .map_err(|_| "recovery ledger is corrupt".to_string())?;
     if verify_ledger.contains_key(session_id) {
         return Err("session recovery ledger entry remains after deletion".to_string());
     }
@@ -126,7 +132,10 @@ pub async fn run_startup_turn_recovery() {
 
     let recovered = recover_uncommitted(&root);
     if !recovered.is_empty() {
-        tracing::info!(count = recovered.len(), "recovering uncommitted turn journals");
+        tracing::info!(
+            count = recovered.len(),
+            "recovering uncommitted turn journals"
+        );
     }
 
     let store = SessionTurnStore;
@@ -145,9 +154,7 @@ pub async fn run_startup_turn_recovery() {
         let mut committed_any = false;
 
         for turn in item.history {
-            let outcome = store
-                .upsert_turn(&session_id, &turn_id, turn)
-                .await;
+            let outcome = store.upsert_turn(&session_id, &turn_id, turn).await;
             match outcome {
                 Ok(UpsertOutcome::Inserted) => {
                     committed_any = true;
@@ -200,11 +207,12 @@ mod tests {
         let temp = tempfile::tempdir().expect("temporary recovery root");
         let root = temp.path().join("turn-logs");
         configure_log_root(root.clone());
-        let envelope = TurnEnvelope::new("turn-recover-1", Principal::operator())
-            .with_surface(Some(medousa_engine::TurnSurface {
+        let envelope = TurnEnvelope::new("turn-recover-1", Principal::operator()).with_surface(
+            Some(medousa_engine::TurnSurface {
                 channel_id: Some("session-recover".into()),
                 ..Default::default()
-            }));
+            }),
+        );
         {
             let log = TurnEventLog::open_in(&root, envelope.clone()).unwrap();
             log.append(TurnEvent::FinalResponse {
@@ -212,7 +220,8 @@ mod tests {
                 tool_names: vec![],
                 parts: vec![],
                 committed_at: Utc::now(),
-            }).unwrap();
+            })
+            .unwrap();
         }
 
         let pending = recover_uncommitted(&root);
@@ -231,6 +240,9 @@ mod tests {
         }
 
         assert!(recover_uncommitted(&root).is_empty());
-        assert!(recovery_ledger_contains("session-recover", "turn-recover-1"));
+        assert!(recovery_ledger_contains(
+            "session-recover",
+            "turn-recover-1"
+        ));
     }
 }

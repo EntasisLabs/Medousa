@@ -85,10 +85,7 @@ pub fn allowed_actions(item: &WorkItem) -> AllowedActions {
         continue_editing: match item.state {
             WorkState::AwaitingReview if has_sealed_evidence => ActionAffordance::yes(),
             WorkState::AwaitingReview => ActionAffordance::no("No sealed evidence yet"),
-            _ => ActionAffordance::no(format!(
-                "Cannot continue editing in state {}",
-                item.state
-            )),
+            _ => ActionAffordance::no(format!("Cannot continue editing in state {}", item.state)),
         },
         seal: if has_running {
             ActionAffordance::yes()
@@ -299,10 +296,7 @@ impl ReviewCommentProjection {
                 }
                 .into()
             }),
-            resolved_by_id: comment
-                .resolved_by
-                .as_ref()
-                .map(|actor| actor.id.clone()),
+            resolved_by_id: comment.resolved_by.as_ref().map(|actor| actor.id.clone()),
         }
     }
 }
@@ -808,7 +802,6 @@ pub fn synthesize_review(
     }
 }
 
-
 fn changed_since_previous_paths(
     forge: &Forge,
     item: &WorkItem,
@@ -822,18 +815,14 @@ fn changed_since_previous_paths(
     if item.changes_requested.is_empty() {
         return Vec::new();
     }
-    let previous = item
-        .attempts
-        .iter()
-        .rev()
-        .find(|attempt| {
-            attempt.id.as_str() != current_id
-                && attempt.evidence_id.is_some()
-                && item
-                    .changes_requested
-                    .iter()
-                    .any(|request| request.attempt_id == attempt.id)
-        });
+    let previous = item.attempts.iter().rev().find(|attempt| {
+        attempt.id.as_str() != current_id
+            && attempt.evidence_id.is_some()
+            && item
+                .changes_requested
+                .iter()
+                .any(|request| request.attempt_id == attempt.id)
+    });
     let Some(previous) = previous else {
         return Vec::new();
     };
@@ -851,8 +840,10 @@ fn changed_since_previous_paths(
         .iter()
         .map(|file| file.path.as_str())
         .collect();
-    let current_paths: std::collections::HashSet<&str> =
-        current_files.iter().map(|file| file.path.as_str()).collect();
+    let current_paths: std::collections::HashSet<&str> = current_files
+        .iter()
+        .map(|file| file.path.as_str())
+        .collect();
     let mut out: Vec<String> = current_paths
         .difference(&previous_paths)
         .chain(previous_paths.difference(&current_paths))
@@ -964,9 +955,7 @@ fn review_candidates(forge: &Forge, item: &WorkItem) -> Vec<ReviewCandidateProje
         .collect()
 }
 
-fn collect_coder_intents_by_path(
-    commands: &str,
-) -> std::collections::HashMap<String, Vec<String>> {
+fn collect_coder_intents_by_path(commands: &str) -> std::collections::HashMap<String, Vec<String>> {
     let mut by_path: std::collections::HashMap<String, Vec<String>> =
         std::collections::HashMap::new();
     for line in commands.lines() {
@@ -1008,8 +997,7 @@ fn collect_coder_intents_by_path(
 
 /// Count +/- lines per path from a unified `patch.diff` (best-effort skim stats).
 fn count_patch_line_stats(patch: &str) -> std::collections::HashMap<String, (u32, u32)> {
-    let mut stats: std::collections::HashMap<String, (u32, u32)> =
-        std::collections::HashMap::new();
+    let mut stats: std::collections::HashMap<String, (u32, u32)> = std::collections::HashMap::new();
     let mut current: Option<String> = None;
     for line in patch.lines() {
         if let Some(rest) = line.strip_prefix("diff --git ") {
@@ -1119,12 +1107,8 @@ fn build_timeline(forge: &Forge, item: &WorkItem) -> Vec<ReviewTimelineEntry> {
                     "Comment added",
                     Some(format!("{}:{}", comment.path, comment.start_line)),
                 ),
-                EventPayload::ReviewCommentResolved { .. } => {
-                    ("comment", "Comment resolved", None)
-                }
-                EventPayload::ReviewCommentDeleted { .. } => {
-                    ("comment", "Comment removed", None)
-                }
+                EventPayload::ReviewCommentResolved { .. } => ("comment", "Comment resolved", None),
+                EventPayload::ReviewCommentDeleted { .. } => ("comment", "Comment removed", None),
                 EventPayload::ChangesRequested { request } => (
                     "decision",
                     "Changes requested",
@@ -1361,8 +1345,8 @@ diff --git a/src/lib.rs b/src/lib.rs
     #[test]
     fn continue_editing_is_allowed_only_while_awaiting_review_with_evidence() {
         use medousa_forge::model::{
-            Attempt, AttemptId, AttemptState, EvidenceId, ExecutorDescriptor, GitOid, GitWorkTarget,
-            WorkItem, WorkState, WorkTarget,
+            Attempt, AttemptId, AttemptState, EvidenceId, ExecutorDescriptor, GitOid,
+            GitWorkTarget, WorkItem, WorkState, WorkTarget,
         };
 
         let mut item = WorkItem::new(
@@ -1440,11 +1424,7 @@ diff --git a/src/lib.rs b/src/lib.rs
         assert_eq!(synthesis.risk, "attention");
         assert_eq!(synthesis.status, "needs_attention");
         assert!(synthesis.blocks_approval);
-        assert!(
-            synthesis
-                .status_summary
-                .contains("deserves your attention")
-        );
+        assert!(synthesis.status_summary.contains("deserves your attention"));
     }
 
     #[test]

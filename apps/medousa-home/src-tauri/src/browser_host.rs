@@ -783,9 +783,8 @@ pub fn browser_bridge_open_tab(
         parse_opened_by(opened_by.as_deref()),
     )
     .and_then(|_| TabGroupManager::get_group(&tab_group_id))
-    .map(|group| {
+    .inspect(|_group| {
         emit_browser_context_updated(&app, &tab_group_id);
-        group
     })
     .ok_or_else(|| "tab group not found".to_string())
 }
@@ -806,9 +805,8 @@ pub fn browser_bridge_navigate_tab(
         parse_opened_by(opened_by.as_deref()),
     )
     .and_then(|_| TabGroupManager::get_group(&tab_group_id))
-    .map(|group| {
+    .inspect(|_group| {
         emit_browser_context_updated(&app, &tab_group_id);
-        group
     })
     .ok_or_else(|| "navigation failed".to_string())
 }

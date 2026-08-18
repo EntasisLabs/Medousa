@@ -161,7 +161,9 @@ impl TurnBudgetRequestStore {
             ));
         }
 
-        let requested_rounds = input.requested_rounds.clamp(1, MAX_REQUESTED_ROUNDS_PER_ASK);
+        let requested_rounds = input
+            .requested_rounds
+            .clamp(1, MAX_REQUESTED_ROUNDS_PER_ASK);
         if input.max_tool_rounds >= ABSOLUTE_MAX_TOOL_ROUNDS {
             return Err(format!(
                 "turn is already at the absolute max tool rounds ({ABSOLUTE_MAX_TOOL_ROUNDS})"
@@ -174,9 +176,7 @@ impl TurnBudgetRequestStore {
             request_id: request_id.clone(),
             turn_correlation_id: input.turn_correlation_id,
             stream_turn_id: input.stream_turn_id,
-            session_id: input
-                .session_id
-                .unwrap_or_else(|| "default".to_string()),
+            session_id: input.session_id.unwrap_or_else(|| "default".to_string()),
             channel: input.channel,
             rounds_executed: input.rounds_executed,
             max_tool_rounds: input.max_tool_rounds,
@@ -224,17 +224,19 @@ impl TurnBudgetRequestStore {
     fn signal_waiter(&self, request_id: &str, resolution: BudgetResolution) {
         if let Ok(mut guard) = self.waiters.try_lock() {
             if let Some(waiter) = guard.remove(request_id)
-                && let Some(tx) = waiter.tx {
-                    let _ = tx.send(resolution);
-                }
+                && let Some(tx) = waiter.tx
+            {
+                let _ = tx.send(resolution);
+            }
         } else {
             let store = Arc::clone(&self.waiters);
             let request_id = request_id.to_string();
             tokio::spawn(async move {
                 if let Some(waiter) = store.lock().await.remove(&request_id)
-                    && let Some(tx) = waiter.tx {
-                        let _ = tx.send(resolution);
-                    }
+                    && let Some(tx) = waiter.tx
+                {
+                    let _ = tx.send(resolution);
+                }
             });
         }
     }
@@ -267,9 +269,7 @@ impl TurnBudgetRequestStore {
             .lock()
             .expect("turn budget records")
             .values()
-            .filter(|record| {
-                include_terminal || record.status == TurnBudgetRequestStatus::Pending
-            })
+            .filter(|record| include_terminal || record.status == TurnBudgetRequestStatus::Pending)
             .cloned()
             .collect()
     }
@@ -292,7 +292,9 @@ impl TurnBudgetRequestStore {
         }
 
         let requested = record.requested_rounds.min(MAX_REQUESTED_ROUNDS_PER_ASK);
-        let granted = extra_rounds.unwrap_or(requested).clamp(1, MAX_REQUESTED_ROUNDS_PER_ASK);
+        let granted = extra_rounds
+            .unwrap_or(requested)
+            .clamp(1, MAX_REQUESTED_ROUNDS_PER_ASK);
         let new_max = record
             .max_tool_rounds
             .saturating_add(granted)

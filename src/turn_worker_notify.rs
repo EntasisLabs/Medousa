@@ -80,7 +80,9 @@ static INGEST_CHANNEL_DELIVERY_BRIDGE: Lazy<Mutex<Option<IngestChannelDeliveryBr
     Lazy::new(|| Mutex::new(None));
 
 pub fn register_ingest_channel_delivery_bridge(bridge: IngestChannelDeliveryBridge) {
-    *INGEST_CHANNEL_DELIVERY_BRIDGE.lock().expect("ingest bridge lock") = Some(bridge);
+    *INGEST_CHANNEL_DELIVERY_BRIDGE
+        .lock()
+        .expect("ingest bridge lock") = Some(bridge);
 }
 
 static PARENT_TURN_STREAM_REGISTRY: Lazy<Mutex<Option<TurnStreamRegistry>>> =
@@ -167,40 +169,36 @@ pub async fn publish_worker_ui_side_effects_to_parent_turn(
         || tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE)
         && let Some(ui_artifact) =
             crate::agent_runtime::tool_stream::ui_artifact_from_tool_output(tool_output)
+    {
+        if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
+            && let Some(previous) = tool_output
+                .get("previous_artifact_id")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
         {
-            if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
-                && let Some(previous) = tool_output
-                    .get("previous_artifact_id")
-                    .and_then(|value| value.as_str())
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                {
-                    let root = tool_output
-                        .get("root_artifact_id")
-                        .and_then(|value| value.as_str())
-                        .map(str::trim)
-                        .filter(|value| !value.is_empty());
-                    if let Ok(event) =
-                        crate::interactive_turn_runtime::artifact_updated_stream_event(
-                            parent_turn_id,
-                            previous,
-                            ui_artifact,
-                            root,
-                        )
-                    {
-                        publish_interactive_turn_event(&entry, Ok(event));
-                    }
-                    return;
-                }
-            if let Ok(event) =
-                crate::interactive_turn_runtime::artifact_presented_stream_event(
-                    parent_turn_id,
-                    ui_artifact,
-                )
-            {
+            let root = tool_output
+                .get("root_artifact_id")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            if let Ok(event) = crate::interactive_turn_runtime::artifact_updated_stream_event(
+                parent_turn_id,
+                previous,
+                ui_artifact,
+                root,
+            ) {
                 publish_interactive_turn_event(&entry, Ok(event));
             }
+            return;
         }
+        if let Ok(event) = crate::interactive_turn_runtime::artifact_presented_stream_event(
+            parent_turn_id,
+            ui_artifact,
+        ) {
+            publish_interactive_turn_event(&entry, Ok(event));
+        }
+    }
 }
 
 fn ingest_channel_delivery_bridge() -> Option<IngestChannelDeliveryBridge> {

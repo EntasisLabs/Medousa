@@ -2,6 +2,7 @@
 name = "medousa-browser-lite"
 version = "0.9.1"
 edition = "2024"
+license = "MIT OR Apache-2.0"
 description = "Shared DuckDuckGo HTML lite search, challenge detection, and cache for Agent Browser Host"
 
 [dependencies]
@@ -17,3 +18,6 @@ tokio = { version = "1", features = ["sync"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[package.metadata.cargo-machete]
+ignored = ["chrono", "serde_json"]

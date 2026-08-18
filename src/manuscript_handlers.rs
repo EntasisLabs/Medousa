@@ -1,26 +1,28 @@
 //! HTTP handlers for manuscript / specialist catalog and editor-lite.
 
+use axum::Json;
 use axum::extract::Path;
+use axum::extract::Query;
 use axum::http::StatusCode;
 use axum::routing::get;
-use axum::Json;
-use axum::extract::Query;
 
+use crate::daemon::route_policy::{
+    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
+};
 use crate::daemon_api::{
     CreateManuscriptRequest, ManuscriptCatalogEntry, ManuscriptCatalogQuery,
     ManuscriptCatalogResponse, ManuscriptDetailResponse, ManuscriptImportRequest,
     ManuscriptImportResponse, ManuscriptImportResultEntry, ManuscriptOpenshellSummary,
     ManuscriptScriptEntry, UpdateManuscriptRequest,
 };
-use crate::daemon::route_policy::{
-    BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
-};
 use crate::identity_manuscript::{
     self, ManuscriptScope, build_manuscript_context, palette_tools_for_editor,
     scheduled_tool_preview, validate_manuscript_for_scheduled_lane,
 };
 use crate::skill_execution::discover_skill_for_manuscript;
-use crate::skill_import::{SkillImportPreset, import_skills_at_path, import_skills_from_roots, preset_skill_roots};
+use crate::skill_import::{
+    SkillImportPreset, import_skills_at_path, import_skills_from_roots, preset_skill_roots,
+};
 use crate::skill_ingest::risk_class_label;
 
 pub async fn list_manuscripts_catalog(
@@ -34,8 +36,8 @@ pub async fn list_manuscripts_catalog(
         .map(str::trim)
         .filter(|value| !value.is_empty());
 
-    let mut entries =
-        identity_manuscript::list_manuscripts().map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    let mut entries = identity_manuscript::list_manuscripts()
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
 
     if let Some(prefix) = prefix {
         entries.retain(|entry| entry.id.starts_with(prefix));
@@ -91,15 +93,14 @@ pub async fn get_manuscript_detail(
 ) -> Result<Json<ManuscriptDetailResponse>, (StatusCode, String)> {
     let manuscript_id = manuscript_id.trim();
     if manuscript_id.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "manuscript_id is required".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "manuscript_id is required".to_string(),
+        ));
     }
 
-    let context = build_manuscript_context(manuscript_id).map_err(|err| {
-        (
-            StatusCode::NOT_FOUND,
-            err.to_string(),
-        )
-    })?;
+    let context = build_manuscript_context(manuscript_id)
+        .map_err(|err| (StatusCode::NOT_FOUND, err.to_string()))?;
 
     let listing = identity_manuscript::list_manuscripts()
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
@@ -146,12 +147,14 @@ pub async fn patch_manuscript_detail(
 ) -> Result<Json<ManuscriptDetailResponse>, (StatusCode, String)> {
     let manuscript_id = manuscript_id.trim();
     if manuscript_id.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "manuscript_id is required".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "manuscript_id is required".to_string(),
+        ));
     }
 
-    let context = identity_manuscript::apply_editor_lite_update(manuscript_id, &request).map_err(
-        |err| (StatusCode::BAD_REQUEST, err.to_string()),
-    )?;
+    let context = identity_manuscript::apply_editor_lite_update(manuscript_id, &request)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
 
     let listing = identity_manuscript::list_manuscripts()
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
@@ -227,16 +230,24 @@ pub async fn import_manuscripts(
     let scope = parse_scope(request.scope.as_deref())?;
     let force = request.force.unwrap_or(false);
 
-    let results = if let Some(preset) = request.preset.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    let results = if let Some(preset) = request
+        .preset
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         let preset = parse_preset(preset)?;
         let roots = preset_skill_roots(preset);
-        import_skills_from_roots(&roots, scope, force, None).map_err(|err| {
-            (StatusCode::BAD_REQUEST, err.to_string())
-        })?
-    } else if let Some(path) = request.path.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
-        import_skills_at_path(std::path::Path::new(path), scope, force, None).map_err(|err| {
-            (StatusCode::BAD_REQUEST, err.to_string())
-        })?
+        import_skills_from_roots(&roots, scope, force, None)
+            .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
+    } else if let Some(path) = request
+        .path
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        import_skills_at_path(std::path::Path::new(path), scope, force, None)
+            .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
     } else {
         return Err((
             StatusCode::BAD_REQUEST,

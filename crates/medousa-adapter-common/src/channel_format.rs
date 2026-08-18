@@ -99,9 +99,14 @@ mod tests {
 
     #[test]
     fn telegram_markdown_v2_escapes_specials() {
-        let escaped = format_for_telegram_markdown_v2("*hello* _world_");
-        assert!(escaped.contains(r"\*hello\*"));
-        assert!(escaped.contains(r"\_world\_"));
+        assert_eq!(
+            format_for_telegram_markdown_v2("*hello* _world_"),
+            "*hello* _world_"
+        );
+        let escaped = format_for_telegram_markdown_v2("price is 5*3 and file_name!");
+        assert!(escaped.contains(r"\*"), "{escaped}");
+        assert!(escaped.contains(r"\_"), "{escaped}");
+        assert!(escaped.contains(r"\!"), "{escaped}");
     }
 
     #[test]

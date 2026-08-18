@@ -7,8 +7,8 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use stasis::domain::runtime::job::JobState;
 use stasis::prelude::RuntimeComposition;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 use surrealdb_types::SurrealValue;
 use tokio::sync::RwLock as AsyncRwLock;
 
@@ -341,7 +341,9 @@ pub async fn continuation_lineage_for_turn(
         .await
 }
 
-pub fn lineage_entry_from_record(record: &TurnContinuationRecord) -> crate::daemon_api::TurnContinuationLineageEntry {
+pub fn lineage_entry_from_record(
+    record: &TurnContinuationRecord,
+) -> crate::daemon_api::TurnContinuationLineageEntry {
     crate::daemon_api::TurnContinuationLineageEntry {
         child_job_id: record.child_job_id.clone(),
         turn_correlation_id: record.turn_correlation_id.clone(),
@@ -439,7 +441,10 @@ pub async fn register_turn_child_job(
         turn_finished: false,
         turn_outcome: None,
         child_was_dead_letter: false,
-        delivery_target: scope.delivery_target.as_ref().map(StoredDeliveryTarget::from),
+        delivery_target: scope
+            .delivery_target
+            .as_ref()
+            .map(StoredDeliveryTarget::from),
         provider: scope.provider.clone(),
         model: scope.model.clone(),
         response_depth_mode: scope.response_depth_mode.clone(),
@@ -447,9 +452,7 @@ pub async fn register_turn_child_job(
         updated_at: now,
     };
     if let Err(err) = turn_continuation_store().upsert(record).await {
-        eprintln!(
-            "turn continuation register failed child_job_id={child_job_id}: {err:#}"
-        );
+        eprintln!("turn continuation register failed child_job_id={child_job_id}: {err:#}");
     }
 }
 
@@ -659,7 +662,10 @@ impl TurnContinuationStore for SurrealTurnContinuationStore {
             .bind(("id", id))
             .await
             .ok()?;
-        response.take::<Option<TurnContinuationRecord>>(0).ok().flatten()
+        response
+            .take::<Option<TurnContinuationRecord>>(0)
+            .ok()
+            .flatten()
     }
 
     async fn mark_consumed(&self, child_job_id: &str) -> anyhow::Result<()> {
@@ -772,7 +778,9 @@ impl TurnContinuationStore for SurrealTurnContinuationStore {
         else {
             return Vec::new();
         };
-        response.take::<Vec<TurnContinuationRecord>>(0).unwrap_or_default()
+        response
+            .take::<Vec<TurnContinuationRecord>>(0)
+            .unwrap_or_default()
     }
 }
 

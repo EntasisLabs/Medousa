@@ -59,7 +59,9 @@ mod tests {
     #[test]
     fn browser_host_requires_client_flag() {
         assert!(!surface_supports_browser_host(None));
-        assert!(!surface_supports_browser_host(Some(&TurnSurfaceContext::tui())));
+        assert!(!surface_supports_browser_host(Some(
+            &TurnSurfaceContext::tui()
+        )));
         assert!(surface_supports_browser_host(Some(
             &TurnSurfaceContext::default().with_browser_host(true)
         )));

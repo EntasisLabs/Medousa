@@ -1,8 +1,8 @@
 //! HTTP handlers for calendar APIs (`/v1/calendar/*`).
 
+use axum::Json;
 use axum::extract::{Path, Query};
 use axum::http::StatusCode;
-use axum::Json;
 use medousa_types::{
     CalendarDeleteResponse, CalendarExportQuery, CalendarExportResponse, CalendarImportRequest,
     CalendarImportResponse, CalendarListQuery, CalendarListResponse, CalendarWriteRequest,
@@ -24,11 +24,7 @@ pub fn calendar_surface() -> DeclaredRouter {
                 get(list_calendar_events),
             ),
             (
-                calendar_write_policy(
-                    axum::http::Method::POST,
-                    "/v1/calendar/events",
-                    256 * 1024,
-                ),
+                calendar_write_policy(axum::http::Method::POST, "/v1/calendar/events", 256 * 1024),
                 post(create_calendar_event),
             ),
         ])

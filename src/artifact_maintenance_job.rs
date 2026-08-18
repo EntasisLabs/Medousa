@@ -41,7 +41,9 @@ impl ArtifactMaintenanceJobPayload {
 
     pub fn to_payload_ref(&self) -> StasisResult<String> {
         serde_json::to_string(self).map_err(|err| {
-            StasisError::PortFailure(format!("failed to encode artifact maintenance payload: {err}"))
+            StasisError::PortFailure(format!(
+                "failed to encode artifact maintenance payload: {err}"
+            ))
         })
     }
 }
@@ -66,8 +68,8 @@ impl JobHandler for ArtifactMaintenanceJobHandler {
     }
 
     async fn execute(&self, job: &Job) -> StasisResult<JobExecutionOutcome> {
-        let payload: ArtifactMaintenanceJobPayload =
-            serde_json::from_str(&job.payload_ref).map_err(|err| {
+        let payload: ArtifactMaintenanceJobPayload = serde_json::from_str(&job.payload_ref)
+            .map_err(|err| {
                 StasisError::PortFailure(format!(
                     "invalid artifact maintenance payload for job {}: {err}",
                     job.id

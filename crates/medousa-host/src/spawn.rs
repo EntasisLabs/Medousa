@@ -256,24 +256,44 @@ fn local_engine_log_path() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn probe_test_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     fn serve_status(body: String) -> (String, std::thread::JoinHandle<()>) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let bind = listener.local_addr().unwrap().to_string();
         let task = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 1024];
-            let read = stream.read(&mut request).unwrap();
-            assert!(
-                String::from_utf8_lossy(&request[..read])
-                    .starts_with("GET /_medousa/status HTTP/1.1")
-            );
-            write!(
-                stream,
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            )
-            .unwrap();
+            loop {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = Vec::new();
+                let mut buf = [0_u8; 1024];
+                loop {
+                    let read = stream.read(&mut buf).unwrap_or(0);
+                    if read == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&buf[..read]);
+                    if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                if !String::from_utf8_lossy(&request).contains("GET /_medousa/status") {
+                    continue;
+                }
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .unwrap();
+                break;
+            }
         });
         (bind, task)
     }
@@ -286,6 +306,7 @@ mod tests {
 
     #[test]
     fn probe_requires_a_versioned_ready_worker_handshake() {
+        let _lock = probe_test_lock();
         let (bind, task) = serve_status(status_json(1, "ready"));
         let status = probe_local_worker(&bind).unwrap();
         task.join().unwrap();
@@ -296,6 +317,7 @@ mod tests {
 
     #[test]
     fn probe_rejects_incompatible_protocols() {
+        let _lock = probe_test_lock();
         let (bind, task) = serve_status(status_json(999, "ready"));
         let error = probe_local_worker(&bind).unwrap_err();
         task.join().unwrap();
@@ -304,6 +326,7 @@ mod tests {
 
     #[test]
     fn probe_rejects_loading_as_ready() {
+        let _lock = probe_test_lock();
         let (bind, task) = serve_status(status_json(1, "loading"));
         let error = probe_local_worker(&bind).unwrap_err();
         task.join().unwrap();

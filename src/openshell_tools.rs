@@ -461,17 +461,16 @@ impl CognitionOpenshellSandboxRunTool {
             })
             .await;
 
-        let continuation = crate::agent_runtime::execution_context::turn_continuation_scope(
-            &self.turn_scope,
-        )
-        .await
-        .map(|scope| {
-            ExternalJson::new(continuation_tool_metadata(
-                &scope,
-                &job_id,
-                ContinuationAwaitMode::Async,
-            ))
-        });
+        let continuation =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await
+                .map(|scope| {
+                    ExternalJson::new(continuation_tool_metadata(
+                        &scope,
+                        &job_id,
+                        ContinuationAwaitMode::Async,
+                    ))
+                });
         Ok(OpenshellSandboxRunOutput::Enqueued {
             job_id,
             status: "enqueued".to_string(),

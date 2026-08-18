@@ -248,7 +248,7 @@ Full plan: [road-to-production-plan.md](road-to-production-plan.md)
 | WS3 CLI + headless install/Docker | ✅ |
 | WS4 Multi-workshop hardening | ✅ |
 | WS5 version unification and initial PR CI | ✅ |
-| Repo-wide required tests, packaged-app checks, and performance gates | 🔄 [hardening H12](hardening/README.md) |
+| Repo-wide required tests, packaged-app checks, and performance gates | 🔄 [hardening H11](hardening/11-package-and-dependency-boundaries.md) / [H12](hardening/12-quality-gates.md) |
 
 ---
 

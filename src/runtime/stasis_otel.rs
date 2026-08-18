@@ -19,7 +19,10 @@ pub fn stasis_otel_enabled_from_defaults(defaults: &TuiDefaults) -> bool {
 pub fn apply_stasis_otel_user_preference(enabled: bool) {
     // SAFETY: Medousa sets process-global env for Stasis builder construction, same as TUI env overrides.
     unsafe {
-        std::env::set_var(ENV_STASIS_OTEL_ENABLED, if enabled { "true" } else { "false" });
+        std::env::set_var(
+            ENV_STASIS_OTEL_ENABLED,
+            if enabled { "true" } else { "false" },
+        );
     }
 }
 
@@ -35,7 +38,9 @@ pub fn apply_stasis_otel_from_defaults(defaults: &TuiDefaults) {
 /// Attach OTLP telemetry to a Stasis builder when the master switch is on.
 ///
 /// Fail-open: a missing OTLP collector must not block chat or daemon startup.
-pub fn attach_otel_to_builder(builder: StasisRuntimeBuilder) -> anyhow::Result<StasisRuntimeBuilder> {
+pub fn attach_otel_to_builder(
+    builder: StasisRuntimeBuilder,
+) -> anyhow::Result<StasisRuntimeBuilder> {
     if !stasis_otel_enabled() {
         return Ok(builder);
     }
@@ -97,13 +102,13 @@ mod tests {
 
     #[test]
     fn user_preference_forces_master_switch_off_by_default() {
+        let _lock = crate::test_env::lock();
         let key = ENV_STASIS_OTEL_ENABLED;
         let prior = std::env::var(key).ok();
         apply_stasis_otel_user_preference(false);
         assert!(!stasis_otel_enabled());
         apply_stasis_otel_user_preference(true);
         assert!(stasis_otel_enabled());
-        // SAFETY: test-local env restore.
         unsafe {
             match prior {
                 Some(value) => std::env::set_var(key, value),

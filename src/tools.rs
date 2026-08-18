@@ -46,8 +46,7 @@ use crate::tui::runtime_services::{
     build_tool_loop_pipeline_for_target, build_tui_runtime_services,
 };
 use crate::turn_continuation::{
-    self, ContinuationAwaitMode, continuation_tool_metadata,
-    wire_turn_child_job,
+    self, ContinuationAwaitMode, continuation_tool_metadata, wire_turn_child_job,
 };
 use crate::typed_tools::{CompatOption, ExternalJson, ToolId, medousa_tool};
 
@@ -184,8 +183,7 @@ pub(crate) async fn validate_grapheme_source_for_schedule(
 }
 
 async fn remember_last_grapheme_source(source: &str) {
-    if let Some(context) =
-        crate::agent_runtime::execution_context::active_turn_execution_context()
+    if let Some(context) = crate::agent_runtime::execution_context::active_turn_execution_context()
     {
         context.remember_grapheme_source(source);
     }
@@ -428,17 +426,16 @@ impl CognitionJobEnqueueTool {
             })
             .await;
 
-        let continuation = crate::agent_runtime::execution_context::turn_continuation_scope(
-            &self.turn_scope,
-        )
-        .await
-        .map(|scope| {
-            ExternalJson::new(continuation_tool_metadata(
-                &scope,
-                &job_id,
-                ContinuationAwaitMode::Async,
-            ))
-        });
+        let continuation =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await
+                .map(|scope| {
+                    ExternalJson::new(continuation_tool_metadata(
+                        &scope,
+                        &job_id,
+                        ContinuationAwaitMode::Async,
+                    ))
+                });
 
         Ok(JobEnqueueOutput::Enqueued {
             job_id,
@@ -543,8 +540,8 @@ impl CognitionGraphemeRunTool {
             crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
                 .await
                 .map(|scope| {
-                continuation_tool_metadata(&scope, &job_id, ContinuationAwaitMode::Sync)
-            });
+                    continuation_tool_metadata(&scope, &job_id, ContinuationAwaitMode::Sync)
+                });
 
         self.runtime.enqueue_job(job).await?;
 
@@ -1239,17 +1236,16 @@ impl CognitionGraphemePromoteToJobTool {
             })
             .await;
 
-        let continuation = crate::agent_runtime::execution_context::turn_continuation_scope(
-            &self.turn_scope,
-        )
-        .await
-        .map(|scope| {
-            ExternalJson::new(continuation_tool_metadata(
-                &scope,
-                &job_id,
-                ContinuationAwaitMode::Async,
-            ))
-        });
+        let continuation =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await
+                .map(|scope| {
+                    ExternalJson::new(continuation_tool_metadata(
+                        &scope,
+                        &job_id,
+                        ContinuationAwaitMode::Async,
+                    ))
+                });
         Ok(GraphemePromoteToJobOutput::Enqueued {
             job_id,
             job_type: "workflow.grapheme.run".to_string(),
@@ -1417,10 +1413,9 @@ impl CognitionGraphemePromoteToRecurringTool {
         .start_immediately(input.start_immediately)
         .build(now)?;
 
-        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
-            &self.turn_scope,
-        )
-        .await;
+        let scope =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await;
         let ambient = ambient_from_turn_scope(scope.as_ref());
         let fallback_session_id = scope
             .as_ref()
@@ -1628,10 +1623,9 @@ impl CognitionGraphemePromoteLastRunToRecurringTool {
         .start_immediately(input.start_immediately)
         .build(now)?;
 
-        let scope = crate::agent_runtime::execution_context::turn_continuation_scope(
-            &self.turn_scope,
-        )
-        .await;
+        let scope =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await;
         let ambient = ambient_from_turn_scope(scope.as_ref());
         let fallback_session_id = scope
             .as_ref()
