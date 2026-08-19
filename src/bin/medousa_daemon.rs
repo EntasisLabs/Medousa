@@ -699,7 +699,7 @@ async fn main() -> Result<()> {
         .merge(medousa::daemon::router::build_runtime_admin_surface())
         .merge(medousa::daemon::runtime_tui_defaults::surface())
         .merge(medousa::inference_profiles_handlers::surface())
-        .merge(medousa::integration_handlers::surface())
+        .merge(medousa::integration_handlers::surface().with_state(()))
         .merge(medousa::daemon::jobs::recurring_surface())
         .merge(medousa::daemon::jobs::workspace_retry_surface())
         .merge(medousa::daemon::router::build_workshop_surface())
