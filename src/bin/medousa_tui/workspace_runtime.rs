@@ -55,9 +55,7 @@ pub(crate) fn live_stream_count(state: &TuiState) -> usize {
     let focused = usize::from(state.active_request_task.is_some() || state.is_processing);
     let background = state.session_tasks.len();
     // Avoid double-counting if focused task was also left in session_tasks.
-    if state.active_request_task.is_some()
-        && state.session_tasks.contains_key(&state.session_id)
-    {
+    if state.active_request_task.is_some() && state.session_tasks.contains_key(&state.session_id) {
         background
     } else {
         focused + background
@@ -168,10 +166,7 @@ pub(crate) async fn focus_group(state: &mut TuiState, group_id: &str) {
     if current_group == group_id {
         return;
     }
-    let target_tab_kind = state
-        .workspace
-        .group_active_tab(group_id)
-        .map(|t| t.kind());
+    let target_tab_kind = state.workspace.group_active_tab(group_id).map(|t| t.kind());
     let target_session = state
         .workspace
         .group_active_tab(group_id)
@@ -205,10 +200,7 @@ pub(crate) async fn focus_group(state: &mut TuiState, group_id: &str) {
     persist_workspace(state);
 }
 
-pub(crate) async fn split_active(
-    state: &mut TuiState,
-    direction: SplitDirection,
-) -> EventOutcome {
+pub(crate) async fn split_active(state: &mut TuiState, direction: SplitDirection) -> EventOutcome {
     // Home rule: splitting a terminal pane creates a new shell session, not a chat.
     if state.workspace.active_tab().map(|t| t.kind())
         == Some(medousa::tui::workspace::ShellTabKind::Terminal)
@@ -266,7 +258,9 @@ pub(crate) async fn close_active_pane(state: &mut TuiState) -> EventOutcome {
         .iter()
         .filter_map(|t| t.chat_session_id().map(str::to_string))
         .collect();
-    state.chat_lanes.retain(|sid, _| live_sessions.contains(sid));
+    state
+        .chat_lanes
+        .retain(|sid, _| live_sessions.contains(sid));
     for (sid, task) in state.session_tasks.drain().collect::<Vec<_>>() {
         if live_sessions.contains(&sid) {
             state.session_tasks.insert(sid, task);

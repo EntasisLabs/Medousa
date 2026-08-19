@@ -3,10 +3,9 @@
 use chrono::Utc;
 
 use crate::environment::{
-    ComponentDef, ComponentType, EnvironmentSpec, LayoutPreset, MobileAskEntry, MobileTabBar,
+    CHROME_ACTION_OPEN_ASK, ComponentDef, ComponentType, ENVIRONMENT_SPEC_VERSION, EnvironmentSpec,
+    LayoutPreset, MobileAskEntry, MobileTabBar, SAFETY_SURFACE_RUNTIME, SAFETY_SURFACE_SETTINGS,
     ShellChromeDef, ShellChromeMobile, SurfaceDef, SurfaceKind, SurfaceLayout, UiPresentation,
-    CHROME_ACTION_OPEN_ASK, ENVIRONMENT_SPEC_VERSION, SAFETY_SURFACE_RUNTIME,
-    SAFETY_SURFACE_SETTINGS,
 };
 
 pub const DEFAULT_PROFILE_ID: &str = "personal";
@@ -98,14 +97,38 @@ pub fn default_surfaces() -> Vec<SurfaceDef> {
         ("work", "Work", "layout-grid", Some("work"), None),
         ("code", "Code", "code-2", Some("code"), None),
         ("library", "Library", "book-open", Some("library"), None),
-        ("notes", "Notes", "notebook-text", Some("notes"), Some("notes")),
+        (
+            "notes",
+            "Notes",
+            "notebook-text",
+            Some("notes"),
+            Some("notes"),
+        ),
         ("files", "Files", "folder", Some("files"), None),
-        ("artifacts", "Artifacts", "sparkles", Some("artifacts"), None),
-        ("calendar", "Calendar", "calendar-days", Some("calendar"), None),
+        (
+            "artifacts",
+            "Artifacts",
+            "sparkles",
+            Some("artifacts"),
+            None,
+        ),
+        (
+            "calendar",
+            "Calendar",
+            "calendar-days",
+            Some("calendar"),
+            None,
+        ),
         ("web", "Web", "globe", Some("web"), Some("web")),
         ("context", "Context", "orbit", Some("context"), None),
         ("workshop", "Capabilities", "zap", Some("workshop"), None),
-        ("automations", "Automations", "calendar", Some("automations"), None),
+        (
+            "automations",
+            "Automations",
+            "calendar",
+            Some("automations"),
+            None,
+        ),
         ("messaging", "Messaging", "radio", Some("messaging"), None),
         (
             SAFETY_SURFACE_RUNTIME,
@@ -156,7 +179,9 @@ pub fn writing_studio_demo_spec(profile_id: impl Into<String>) -> EnvironmentSpe
 
     if let Some(presets) = &mut spec.layout_presets {
         for preset in presets.iter_mut() {
-            if preset.id == DEFAULT_PRESET_ID && !preset.surfaces.iter().any(|id| id == "writing-studio") {
+            if preset.id == DEFAULT_PRESET_ID
+                && !preset.surfaces.iter().any(|id| id == "writing-studio")
+            {
                 preset.surfaces.push("writing-studio".to_string());
             }
         }

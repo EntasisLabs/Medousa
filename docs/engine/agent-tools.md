@@ -40,14 +40,20 @@ Source: `src/tool_bootstrap.rs`
 
 | Family | Examples |
 |--------|----------|
-| Vault | `cognition_vault_*` — [vault.md](vault.md) |
-| Calendar | `cognition_calendar_*` — [calendar.md](calendar.md) |
-| Artifacts | `cognition_artifact_*` — [artifacts.md](artifacts.md) |
+| Store | `cognition_store_read` / `cognition_store_write` (`action=vault.read\|artifacts.write\|…`) — [vault.md](vault.md), [artifacts.md](artifacts.md) |
+| Capability | `cognition_capability` (`action=capability.find\|grapheme.invoke\|mcp.invoke\|…`) — catalog, MCP, and Grapheme discover/run |
+| Schema | `cognition_schema` (`domain` + `types=[...]`) — batched typed action parameter schemas |
+| Runtime | `cognition_runtime_query` / `cognition_runtime_mutate` (`action=job.list\|job.enqueue\|workflow.run\|…`) |
+| Turn | `cognition_turn` (`action=turn.finish\|turn.checkpoint\|turn.begin_work\|…`) |
+| Memory | `cognition_memory_query` / `cognition_memory_mutate` (`action=memory.context\|memory.store\|…`) |
+| Identity | `cognition_identity_query` / `cognition_identity_mutate` (`action=identity.recall\|identity.remember\|…`) |
+| Calendar | `cognition_calendar_query` / `cognition_calendar_mutate` (`action=calendar.list\|calendar.create\|…`) — [calendar.md](calendar.md) |
+| Workshop | `cognition_workshop_query` / `cognition_workshop_mutate` (`action=workshop.status\|workshop.spawn\|workshop.cancel\|workshop.steer`) |
 | MCP | `cognition.mcp.*` — [mcp-gateway-setup.md](../mcp-gateway-setup.md) |
 | UI present | `cognition_ui_present` — emits `ui_artifact` on stream |
 | Web | `cognition_web_search` — all surfaces; BrowserHost → lite → Grapheme chain |
 | Browser fetch | `cognition_browser_fetch` — gated on `supports_browser_host` |
-| Finish | `cognition_finish` — ends tool loop |
+| Finish | `cognition_turn action=turn.finish` — ends tool loop |
 
 ---
 

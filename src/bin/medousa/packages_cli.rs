@@ -2,8 +2,8 @@
 
 use anyhow::{Context, Result, anyhow};
 use medousa_install_support::{
-    fetch_release_manifest, install_tarball_package, installed_package_dir, is_tarball_package,
-    package_installed, resolve_package_alias, resolve_release_package, PackageCatalogEntry,
+    PackageCatalogEntry, fetch_release_manifest, install_tarball_package, installed_package_dir,
+    is_tarball_package, package_installed, resolve_package_alias, resolve_release_package,
 };
 use serde::Serialize;
 use std::path::Path;
@@ -13,27 +13,30 @@ pub fn run_pull(args: &[String]) -> Result<()> {
     let name = positional_arg(args).ok_or_else(|| {
         anyhow!("usage: medousa pull <name> [--json]\nNames: engine, mcp-gateway, telegram, discord, slack, whatsapp, local-brain, …")
     })?;
-    let package_id = resolve_package_alias(&name)
-        .ok_or_else(|| anyhow!("unknown package '{}'", name))?;
+    let package_id =
+        resolve_package_alias(&name).ok_or_else(|| anyhow!("unknown package '{}'", name))?;
     if !is_tarball_package(package_id) {
         bail_or_json(
             json,
-            &format!("package '{package_id}' is not installable via pull (use the Installer for desktop)"),
+            &format!(
+                "package '{package_id}' is not installable via pull (use the Installer for desktop)"
+            ),
         )?;
         return Ok(());
     }
 
     let data_dir = medousa::paths::medousa_data_dir();
     let rt = tokio::runtime::Runtime::new().context("start tokio runtime")?;
-    let package = rt.block_on(async {
-        install_tarball_package(&data_dir, package_id, None, |pct, phase| {
-            if !json {
-                eprintln!("[{pct:5.1}%] {phase}");
-            }
+    let package = rt
+        .block_on(async {
+            install_tarball_package(&data_dir, package_id, None, |pct, phase| {
+                if !json {
+                    eprintln!("[{pct:5.1}%] {phase}");
+                }
+            })
+            .await
         })
-        .await
-    })
-    .map_err(|err| anyhow!("{err}"))?;
+        .map_err(|err| anyhow!("{err}"))?;
 
     if json {
         println!(
@@ -329,7 +332,10 @@ fn local_package_version(data_dir: &Path, package_id: &str) -> Option<String> {
 fn read_nested_package_version(packages_dir: &Path) -> Option<String> {
     let candidates = [
         packages_dir.join("install-manifest.json"),
-        packages_dir.join("bin").join("..").join("install-manifest.json"),
+        packages_dir
+            .join("bin")
+            .join("..")
+            .join("install-manifest.json"),
     ];
     for path in candidates {
         if let Ok(raw) = std::fs::read_to_string(&path)
@@ -387,9 +393,7 @@ fn has_flag(args: &[String], flag: &str) -> bool {
 }
 
 fn positional_arg(args: &[String]) -> Option<String> {
-    args.iter()
-        .find(|a| !a.starts_with('-'))
-        .cloned()
+    args.iter().find(|a| !a.starts_with('-')).cloned()
 }
 
 fn bail_or_json(json: bool, message: &str) -> Result<()> {

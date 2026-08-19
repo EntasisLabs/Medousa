@@ -1,5 +1,4 @@
 use medousa::{
-    
     ArtifactCommandRequest, ArtifactCommandResponse, ArtifactCommandSpec,
     ArtifactVerificationPolicyInput, RuntimeConfigCommandSpec, RuntimeVerifyPolicyState,
 };
@@ -52,12 +51,21 @@ pub(crate) async fn handle_verify_policy_command(
     let request = super::slash_command_services::build_runtime_config_request(
         state,
         RuntimeConfigCommandSpec::VerifyPolicy {
-            args: args.into_iter().map(ToString::to_string).collect::<Vec<_>>(),
+            args: args
+                .into_iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
             current: RuntimeVerifyPolicyState {
                 min_citation_coverage: state.settings.verifier_min_citation_coverage.clone(),
                 min_avg_support_strength: state.settings.verifier_min_avg_support_strength.clone(),
-                min_supported_claim_ratio: state.settings.verifier_min_supported_claim_ratio.clone(),
-                min_claim_support_strength: state.settings.verifier_min_claim_support_strength.clone(),
+                min_supported_claim_ratio: state
+                    .settings
+                    .verifier_min_supported_claim_ratio
+                    .clone(),
+                min_claim_support_strength: state
+                    .settings
+                    .verifier_min_claim_support_strength
+                    .clone(),
             },
         },
     );
@@ -180,7 +188,12 @@ fn build_verifier_route_label_if_needed(
     state
         .stage_routing
         .get("verifier")
-        .map(|route| format!("{}:{} policy={}", route.provider, route.model, route.policy_profile))
+        .map(|route| {
+            format!(
+                "{}:{} policy={}",
+                route.provider, route.model, route.policy_profile
+            )
+        })
         .or_else(|| Some("default".to_string()))
 }
 
@@ -191,9 +204,7 @@ async fn execute_artifact_command_via_daemon(
     daemon_artifact_command(daemon_url, &request)
         .await
         .map(|response| (response, None))
-        .map_err(|err| {
-            format!("daemon error: {}", truncate_error(&err.to_string(), 200))
-        })
+        .map_err(|err| format!("daemon error: {}", truncate_error(&err.to_string(), 200)))
 }
 
 fn joined_query(args: &[&str]) -> Option<String> {

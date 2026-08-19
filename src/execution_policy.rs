@@ -176,41 +176,64 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
                 StepExecutionClass::Mutating
             }
         }
-        "cognition_capability_invoke" => StepExecutionClass::Mutating,
-        "cognition_memory_store"
-        | "cognition_memory_calibrate"
-        | "cognition_runtime_workflow_run"
-        | "cognition_runtime_workflow_schedule"
-        | "cognition_runtime_recurring_register"
-        | "cognition_mcp_promote_to_job"
-        | "cognition_grapheme_promote_to_job"
-        | "cognition_job_enqueue"
+        "cognition_capability" => {
+            let action = input
+                .get("action")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            if action.ends_with(".find")
+                || (action == "mcp.invoke"
+                    && input
+                        .get("effect_class")
+                        .and_then(|value| value.as_str())
+                        .is_some_and(|value| value.eq_ignore_ascii_case("external_read")))
+            {
+                StepExecutionClass::ReadOnly
+            } else {
+                StepExecutionClass::Mutating
+            }
+        }
+        "cognition_turn" => {
+            let action = input
+                .get("action")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            match action {
+                "turn.finish"
+                | "turn.checkpoint"
+                | "turn.prepare_final"
+                | "turn.request_more_rounds" => StepExecutionClass::ReadOnly,
+                _ => StepExecutionClass::Mutating,
+            }
+        }
+        "cognition_workshop_mutate" => {
+            let action = input
+                .get("action")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            if action == "workshop.spawn" {
+                StepExecutionClass::ReadOnly
+            } else {
+                StepExecutionClass::Mutating
+            }
+        }
+        "cognition_runtime_mutate"
+        | "cognition_memory_mutate"
+        | "cognition_identity_mutate"
+        | "cognition_calendar_mutate"
         | "cognition_openshell_sandbox_run" => StepExecutionClass::Mutating,
         "cognition_openshell_status" | "cognition_skill_discover" | "cognition_skill_propose" => {
             StepExecutionClass::ReadOnly
         }
         "cognition_skill_probe" => StepExecutionClass::Mutating,
-        "cognition_memory_recall"
-        | "cognition_memory_context"
-        | "cognition_memory_list"
-        | "cognition_memory_schema"
-        | "cognition_memory_moods"
-        | "cognition_runtime_jobs_list"
-        | "cognition_runtime_jobs_status"
-        | "cognition_runtime_delivery_status"
-        | "cognition_mcp_discover"
-        | "cognition_capability_search"
-        | "cognition_grapheme_modules"
-        | "cognition_grapheme_template_run"
-        | "cognition_web_search"
-        | "cognition_turn_prepare_final"
-        | "cognition.turn.prepare_final"
-        | "cognition_turn_finish"
-        | "cognition.turn.finish"
-        | "cognition_turn_checkpoint"
-        | "cognition.turn.checkpoint"
-        | "cognition_turn_request_more_rounds"
-        | "cognition.turn.request_more_rounds" => StepExecutionClass::ReadOnly,
+        "cognition_memory_query"
+        | "cognition_identity_query"
+        | "cognition_calendar_query"
+        | "cognition_workshop_query"
+        | "cognition_store_read"
+        | "cognition_runtime_query"
+        | "cognition_schema"
+        | "cognition_web_search" => StepExecutionClass::ReadOnly,
         _ if tool_name.contains("modules") || tool_name.contains("examples") => {
             StepExecutionClass::ReadOnly
         }
@@ -307,15 +330,196 @@ mod tests {
     fn parallel_tool_batch_blocks_mutating_without_flag() {
         let calls = vec![
             (
-                "cognition_grapheme_run".to_string(),
-                json!({ "source": "query {}" }),
+                "cognition_capability".to_string(),
+                json!({ "action": "grapheme.invoke", "script": "query {}" }),
             ),
             (
-                "cognition_memory_recall".to_string(),
-                json!({ "query": "x" }),
+                "cognition_memory_query".to_string(),
+                json!({ "action": "memory.recall", "query": "x" }),
             ),
         ];
         let settings = ParallelExecutionSettings::default();
         assert!(parallel_tool_batch_allowed(&calls, &settings).is_err());
+    }
+
+    #[test]
+    fn spawn_turn_worker_is_parallel_safe() {
+        let input = json!({
+            "action": "workshop.spawn",
+            "intent": "research",
+            "task": "look this up",
+            "user_ack": "On it."
+        });
+        assert_eq!(
+            classify_tool_call("cognition_workshop_mutate", &input),
+            StepExecutionClass::ReadOnly
+        );
+        let calls = vec![
+            ("cognition_workshop_mutate".to_string(), input.clone()),
+            ("cognition_workshop_mutate".to_string(), input),
+        ];
+        let settings = ParallelExecutionSettings::default();
+        assert!(parallel_tool_batch_allowed(&calls, &settings).is_ok());
+        let cancel = json!({ "action": "workshop.cancel", "work_id": "work-1" });
+        assert_eq!(
+            classify_tool_call("cognition_workshop_mutate", &cancel),
+            StepExecutionClass::Mutating
+        );
+    }
+
+    #[test]
+    fn turn_finish_is_parallel_safe_and_begin_work_is_mutating() {
+        let finish = json!({ "action": "turn.finish", "message": "Done." });
+        let begin = json!({
+            "action": "turn.begin_work",
+            "message": "Starting",
+            "goal": "inspect"
+        });
+        assert_eq!(
+            classify_tool_call("cognition_turn", &finish),
+            StepExecutionClass::ReadOnly
+        );
+        assert_eq!(
+            classify_tool_call("cognition_turn", &begin),
+            StepExecutionClass::Mutating
+        );
+    }
+
+    #[test]
+    fn store_read_is_parallel_safe_and_store_write_is_mutating() {
+        let read = json!({ "action": "vault.search", "query": "notes" });
+        let write = json!({ "action": "vault.write", "path": "a.md", "content": "x" });
+        assert_eq!(
+            classify_tool_call("cognition_store_read", &read),
+            StepExecutionClass::ReadOnly
+        );
+        assert_eq!(
+            classify_tool_call("cognition_store_write", &write),
+            StepExecutionClass::Mutating
+        );
+        let settings = ParallelExecutionSettings::default();
+        assert!(
+            parallel_tool_batch_allowed(
+                &[
+                    ("cognition_store_read".to_string(), read.clone()),
+                    ("cognition_store_read".to_string(), read),
+                ],
+                &settings
+            )
+            .is_ok()
+        );
+        assert!(
+            parallel_tool_batch_allowed(
+                &[
+                    ("cognition_store_read".to_string(), json!({})),
+                    ("cognition_store_write".to_string(), write),
+                ],
+                &settings
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn capability_find_is_parallel_safe_and_invoke_is_mutating() {
+        let find = json!({ "action": "grapheme.find", "module": "web" });
+        let invoke = json!({ "action": "capability.invoke", "capability": "web_research" });
+        let mcp_read = json!({
+            "action": "mcp.invoke",
+            "server_id": "web",
+            "tool_name": "search",
+            "effect_class": "external_read"
+        });
+        assert_eq!(
+            classify_tool_call("cognition_capability", &find),
+            StepExecutionClass::ReadOnly
+        );
+        assert_eq!(
+            classify_tool_call("cognition_capability", &invoke),
+            StepExecutionClass::Mutating
+        );
+        assert_eq!(
+            classify_tool_call("cognition_capability", &mcp_read),
+            StepExecutionClass::ReadOnly
+        );
+    }
+
+    #[test]
+    fn runtime_query_is_parallel_safe_and_mutate_is_mutating() {
+        let query = json!({ "action": "job.list" });
+        let mutate = json!({
+            "action": "job.enqueue",
+            "job_type": "workflow.grapheme.run",
+            "payload_ref": "grapheme:inline:query {}"
+        });
+        assert_eq!(
+            classify_tool_call("cognition_runtime_query", &query),
+            StepExecutionClass::ReadOnly
+        );
+        assert_eq!(
+            classify_tool_call("cognition_runtime_mutate", &mutate),
+            StepExecutionClass::Mutating
+        );
+        let settings = ParallelExecutionSettings::default();
+        assert!(
+            parallel_tool_batch_allowed(
+                &[
+                    ("cognition_runtime_query".to_string(), query.clone()),
+                    ("cognition_runtime_query".to_string(), query),
+                ],
+                &settings
+            )
+            .is_ok()
+        );
+        assert!(
+            parallel_tool_batch_allowed(
+                &[
+                    (
+                        "cognition_runtime_query".to_string(),
+                        json!({ "action": "delivery.status" })
+                    ),
+                    ("cognition_runtime_mutate".to_string(), mutate),
+                ],
+                &settings
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn identity_query_is_parallel_safe_and_mutate_is_mutating() {
+        let query = json!({ "action": "identity.recall", "query": "Mario" });
+        let mutate = json!({
+            "action": "identity.remember",
+            "fact_kind": "preference",
+            "subject": "beverage",
+            "statement": "matcha"
+        });
+        assert_eq!(
+            classify_tool_call("cognition_identity_query", &query),
+            StepExecutionClass::ReadOnly
+        );
+        assert_eq!(
+            classify_tool_call("cognition_identity_mutate", &mutate),
+            StepExecutionClass::Mutating
+        );
+    }
+
+    #[test]
+    fn calendar_query_is_parallel_safe_and_mutate_is_mutating() {
+        let query = json!({ "action": "calendar.list", "from": "2026-08-18T00:00:00Z" });
+        let mutate = json!({
+            "action": "calendar.create",
+            "summary": "Standup",
+            "dtstart": "2026-08-18T17:00:00Z"
+        });
+        assert_eq!(
+            classify_tool_call("cognition_calendar_query", &query),
+            StepExecutionClass::ReadOnly
+        );
+        assert_eq!(
+            classify_tool_call("cognition_calendar_mutate", &mutate),
+            StepExecutionClass::Mutating
+        );
     }
 }

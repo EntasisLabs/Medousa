@@ -3,169 +3,6 @@
   "contracts": [
     {
       "registry": "coder_bound",
-      "name": "cognition_artifact_grep",
-      "description": "Search inside an HTML artifact source (literal case-insensitive match with line numbers). Use before cognition_artifact_write to locate CSS/HTML snippets.",
-      "input_schema": {
-        "properties": {
-          "artifact_id": {
-            "type": "string"
-          },
-          "context_lines": {
-            "maximum": 10,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "pattern": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "artifact_id",
-          "intent",
-          "pattern"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:workspace"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_artifact_list",
-      "description": "List HTML presentation artifacts for the current chat session (newest first). Workflow: list → grep/read → cognition_artifact_write to revise.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "limit": {
-            "maximum": 100,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "query": {
-            "description": "Optional filter on title or artifact_id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:workspace"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_artifact_read",
-      "description": "Read HTML source for a presentation artifact (budget-capped). Optional line_start/line_end for surgical edits.",
-      "input_schema": {
-        "properties": {
-          "artifact_id": {
-            "type": "string"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "line_end": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "line_start": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "max_chars": {
-            "maximum": 20000,
-            "minimum": 256,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "artifact_id",
-          "intent"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:workspace"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_artifact_write",
-      "description": "Create or revise an HTML presentation artifact. Pass artifact_id to publish a new revision (content-addressed). Use if_match_hash64 for optimistic concurrency. First-time publish: use cognition_ui_present. Canvas widgets using MedousaStore: get/set/delete return Promises — use async/await (wiki topic artifact_runtime).",
-      "input_schema": {
-        "properties": {
-          "artifact_id": {
-            "description": "When set, supersedes this artifact revision",
-            "type": "string"
-          },
-          "height": {
-            "maximum": 1200,
-            "minimum": 120,
-            "type": "integer"
-          },
-          "html": {
-            "description": "HTML fragment or document. MedousaStore get/set/delete are async — await in async init and handlers (cognition_environment_wiki topic=artifact_runtime).",
-            "type": "string"
-          },
-          "if_match_hash64": {
-            "description": "Optional hash64 of the artifact being revised",
-            "type": "string"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "presentation": {
-            "enum": [
-              "fullscreen",
-              "inline",
-              "panel"
-            ],
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "html",
-          "intent",
-          "presentation",
-          "title"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:workspace"
-      ]
-    },
-    {
-      "registry": "coder_bound",
       "name": "cognition_browser_act",
       "description": "Act on the shared human Web tab (click, type, press, scroll, select, wait). Requires a browser-capable client (Home desktop/iOS) and agent control of the tab. Use cognition_browser_snapshot first to discover selectors.",
       "input_schema": {
@@ -295,127 +132,102 @@
     },
     {
       "registry": "coder_bound",
-      "name": "cognition_capability_invoke",
-      "description": "Resolve a capability intent and execute the best available binding in one call. Returns a policy receipt with binding_used, decision, result, and fallback_available.",
+      "name": "cognition_calendar_mutate",
+      "description": "Write personal calendar: create, update, delete, or import ICS. action is a typed name (calendar.create, calendar.update, calendar.delete, calendar.import). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "binding": {
-            "properties": {
-              "reference": {
-                "type": "string"
-              },
-              "source": {
-                "enum": [
-                  "grapheme",
-                  "mcp"
-                ],
-                "type": "string"
-              }
-            },
-            "type": "object"
-          },
-          "capability": {
-            "description": "Capability id, e.g. document_search",
-            "type": "string"
-          },
-          "input": {
-            "description": "Arguments forwarded to MCP or used to build Grapheme source",
-            "type": "object"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "preferred_source": {
+          "action": {
             "enum": [
-              "grapheme",
-              "mcp"
+              "calendar.create",
+              "calendar.delete",
+              "calendar.import",
+              "calendar.update"
             ],
             "type": "string"
           },
-          "query": {
-            "description": "Fuzzy resolve when capability id is unknown",
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
             "type": "string"
-          },
-          "source": {
-            "description": "Optional explicit Grapheme source override",
-            "type": "string"
-          },
-          "try_fallbacks": {
-            "default": true,
-            "type": "boolean"
           }
         },
         "required": [
+          "action",
           "intent"
         ],
         "type": "object"
       },
       "output_schema_present": true,
       "placements": [
-        "coder:domain:capabilities"
+        "coder:initial"
       ]
     },
     {
       "registry": "coder_bound",
-      "name": "cognition_capability_resolve",
-      "description": "Resolve a capability intent to Grapheme and MCP implementations.",
+      "name": "cognition_calendar_query",
+      "description": "Read personal calendar: list events or export ICS. action is a typed name (calendar.list, calendar.export). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "capability": {
-            "description": "Capability id, e.g. document_search",
+          "action": {
+            "enum": [
+              "calendar.export",
+              "calendar.list"
+            ],
             "type": "string"
           },
           "intent": {
             "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
             "maxLength": 320,
             "type": "string"
-          },
-          "query": {
-            "description": "Optional fuzzy query when capability id is unknown",
-            "type": "string"
           }
         },
         "required": [
+          "action",
           "intent"
         ],
         "type": "object"
       },
       "output_schema_present": true,
       "placements": [
-        "coder:domain:capabilities"
+        "coder:initial"
       ]
     },
     {
       "registry": "coder_bound",
-      "name": "cognition_capability_search",
-      "description": "Keyword search capability intents by query, alias, or keywords.",
+      "name": "cognition_capability",
+      "description": "Find or run a capability, MCP tool, or Grapheme module. action is a typed name (capability.find, grapheme.invoke, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
+          "action": {
+            "enum": [
+              "capability.find",
+              "capability.invoke",
+              "grapheme.find",
+              "grapheme.invoke",
+              "mcp.find",
+              "mcp.invoke"
+            ],
+            "type": "string"
+          },
           "intent": {
             "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
             "maxLength": 320,
             "type": "string"
-          },
-          "limit": {
-            "description": "Max matches (default 10)",
-            "type": "integer"
-          },
-          "query": {
-            "description": "Search query",
-            "type": "string"
           }
         },
         "required": [
-          "intent",
-          "query"
+          "action",
+          "intent"
         ],
         "type": "object"
       },
       "output_schema_present": true,
       "placements": [
-        "coder:domain:capabilities"
+        "coder:domain:capabilities",
+        "coder:initial"
       ]
     },
     {
@@ -493,52 +305,6 @@
       "output_schema_present": true,
       "placements": [
         "coder:domain:history"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_code_apply_patch",
-      "description": "Write full content or replace an exact snippet in a file under the session root / Forge worktree. Coding domain only.",
-      "input_schema": {
-        "properties": {
-          "content": {
-            "description": "Full file content (write)",
-            "type": "string"
-          },
-          "expected_sha256": {
-            "description": "Required current digest from code_read, or `missing` for a new file",
-            "type": "string"
-          },
-          "find": {
-            "description": "Exact snippet to replace",
-            "type": "string"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
-          },
-          "replace": {
-            "description": "Replacement for `find`",
-            "type": "string"
-          },
-          "root": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "expected_sha256",
-          "intent",
-          "path"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
       ]
     },
     {
@@ -647,89 +413,6 @@
       "placements": [
         "coder:domain:intelligence",
         "coder:editor_context"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_code_read",
-      "description": "Read a whole text file when it fits, or a bounded line/byte range. Oversized whole-file requests return actionable range orientation instead of an opaque failure. Coding domain only.",
-      "input_schema": {
-        "properties": {
-          "byte_end": {
-            "description": "Optional exclusive byte end; cannot be combined with line ranges",
-            "minimum": 1,
-            "type": "integer"
-          },
-          "byte_start": {
-            "description": "Optional 0-based byte start; cannot be combined with line ranges",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "line_end": {
-            "description": "Optional 1-based inclusive line end",
-            "minimum": 1,
-            "type": "integer"
-          },
-          "line_start": {
-            "description": "Optional 1-based inclusive line start",
-            "minimum": 1,
-            "type": "integer"
-          },
-          "path": {
-            "description": "Absolute or root-relative file path",
-            "type": "string"
-          },
-          "root": {
-            "description": "Optional explicit root (default: scripts library)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "path"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_code_search",
-      "description": "Search for a substring under the scripts root or a Forge worktree. Coding domain only.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "max_results": {
-            "type": "integer"
-          },
-          "query": {
-            "type": "string"
-          },
-          "root": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
       ]
     },
     {
@@ -1598,67 +1281,22 @@
     },
     {
       "registry": "coder_bound",
-      "name": "cognition_grapheme_cli_run",
-      "description": "Run grapheme code through Stasis runtime workflow execution (workflow.grapheme.run) using the same path as scheduled jobs.",
+      "name": "cognition_identity_mutate",
+      "description": "Write identity: remember a fact, propose a patch, or commit. action is a typed name (identity.remember, identity.propose, identity.commit). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "json": {
-            "default": true,
-            "description": "Deprecated compatibility flag; runtime mode always returns JSON",
-            "type": "boolean"
-          },
-          "native_modules": {
-            "default": false,
-            "description": "Deprecated compatibility flag; ignored in runtime mode",
-            "type": "boolean"
-          },
-          "source": {
-            "description": "Complete Grapheme script source",
-            "type": "string"
-          },
-          "stream_steps": {
-            "default": true,
-            "description": "Deprecated compatibility flag; ignored in runtime mode",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "intent",
-          "source"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:capabilities"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_grapheme_examples",
-      "description": "List or show Grapheme examples. action=list|show",
-      "input_schema": {
+        "additionalProperties": true,
         "properties": {
           "action": {
-            "description": "list or show",
             "enum": [
-              "list",
-              "show"
+              "identity.commit",
+              "identity.propose",
+              "identity.remember"
             ],
             "type": "string"
           },
           "intent": {
             "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
             "maxLength": 320,
-            "type": "string"
-          },
-          "name": {
-            "description": "Example name for action=show",
             "type": "string"
           }
         },
@@ -1670,239 +1308,286 @@
       },
       "output_schema_present": true,
       "placements": [
-        "coder:domain:capabilities"
+        "coder:initial"
       ]
     },
     {
       "registry": "coder_bound",
-      "name": "cognition_grapheme_modules",
-      "description": "Search Grapheme modules by query. Mirrors: grapheme modules search <query> --yaml",
+      "name": "cognition_identity_query",
+      "description": "Read identity: recall facts or load graph context. action is a typed name (identity.recall, identity.context). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "query": {
-            "description": "Search query, e.g. web",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:capabilities"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_grapheme_modules_info",
-      "description": "Inspect Grapheme module metadata. Mirrors: grapheme modules info <module> --yaml",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "module": {
-            "description": "Module id, e.g. web",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "module"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:capabilities"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_grapheme_modules_ops",
-      "description": "Inspect Grapheme module operations. Mirrors: grapheme modules ops <query> --yaml",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "query": {
-            "description": "Module or op query, e.g. web",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:capabilities"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_grapheme_run",
-      "description": "Execute a Grapheme script synchronously and return the result. Grapheme is a typed workflow scripting language. Built-in modules in the 'grapheme/*' namespace are allowed by default (for example core, web). Scripts run sandboxed with guardrails enforced. Example source: import core from \"grapheme/core\"\nquery Run { core.echo(message: \"hello\") { state { current } } }",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "source": {
-            "description": "Complete Grapheme source code. Imports under 'grapheme/*' are allowed by default.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "source"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:capabilities"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_grapheme_template_run",
-      "description": "Run a preset Grapheme workflow template. Supported templates: research_report, http_poll, csv_digest.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "params": {
-            "description": "Template parameters (topic/query, url, etc.)",
-            "type": "object"
-          },
-          "template": {
+          "action": {
             "enum": [
-              "csv_digest",
-              "http_poll",
-              "research_report"
+              "identity.context",
+              "identity.recall"
             ],
             "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "params",
-          "template"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:capabilities"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_mcp_discover",
-      "description": "Search external MCP tools via the MCP Client gateway.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "limit": {
-            "description": "Max matches (default 20)",
-            "type": "integer"
-          },
-          "query": {
-            "description": "Search query",
-            "type": "string"
-          },
-          "server_id": {
-            "description": "Optional MCP server id filter",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:capabilities"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_mcp_invoke",
-      "description": "Invoke an external MCP tool via the MCP Client gateway.",
-      "input_schema": {
-        "properties": {
-          "approval_granted": {
-            "description": "Set true after the operator approves a prior approval_required response",
-            "type": "boolean"
-          },
-          "input": {
-            "type": "object"
           },
           "intent": {
             "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
             "maxLength": 320,
             "type": "string"
-          },
-          "server_id": {
-            "type": "string"
-          },
-          "tool_name": {
-            "type": "string"
-          },
-          "turn_token": {
-            "description": "Optional pre-minted turn token",
-            "type": "string"
           }
         },
         "required": [
-          "intent",
-          "server_id",
-          "tool_name"
+          "action",
+          "intent"
         ],
         "type": "object"
       },
       "output_schema_present": true,
       "placements": [
-        "coder:domain:capabilities"
+        "coder:initial"
       ]
     },
     {
       "registry": "coder_bound",
-      "name": "cognition_mcp_servers",
-      "description": "List MCP servers known to the MCP Client gateway.",
+      "name": "cognition_memory_mutate",
+      "description": "Write Locus memory: store an STTP node, calibrate AVEC, or evict nodes. action is a typed name (memory.store, memory.calibrate, memory.evict). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
+          "action": {
+            "enum": [
+              "memory.calibrate",
+              "memory.evict",
+              "memory.store"
+            ],
+            "type": "string"
+          },
           "intent": {
             "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
             "maxLength": 320,
             "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "intent"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:domain:memory",
+        "coder:initial"
+      ]
+    },
+    {
+      "registry": "coder_bound",
+      "name": "cognition_memory_query",
+      "description": "Read Locus memory: schema, AVEC context, list, recall, tags, or mood presets. action is a typed name (memory.context, memory.recall, …). Fetch fields with cognition_schema types=[...].",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "enum": [
+              "memory.context",
+              "memory.list",
+              "memory.moods",
+              "memory.recall",
+              "memory.schema",
+              "memory.tags"
+            ],
+            "type": "string"
+          },
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "intent"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:domain:memory",
+        "coder:initial"
+      ]
+    },
+    {
+      "registry": "coder_bound",
+      "name": "cognition_runtime_mutate",
+      "description": "Mutate durable runtime work. action is a typed name (job.enqueue, workflow.run, …). Fetch fields with cognition_schema types=[...].",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "enum": [
+              "job.cancel",
+              "job.enqueue",
+              "recurring.cancel",
+              "recurring.pause",
+              "recurring.register",
+              "workflow.cancel",
+              "workflow.plan",
+              "workflow.run",
+              "workflow.schedule"
+            ],
+            "type": "string"
+          },
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "intent"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:initial"
+      ]
+    },
+    {
+      "registry": "coder_bound",
+      "name": "cognition_runtime_query",
+      "description": "Inspect jobs, recurring, workflows, or delivery. action is a typed name (job.list, workflow.status, …). Fetch fields with cognition_schema types=[...].",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "enum": [
+              "delivery.status",
+              "job.list",
+              "job.status",
+              "recurring.doctor",
+              "recurring.list",
+              "recurring.preview",
+              "workflow.status"
+            ],
+            "type": "string"
+          },
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "intent"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:initial"
+      ]
+    },
+    {
+      "registry": "coder_bound",
+      "name": "cognition_schema",
+      "description": "Fetch typed action parameter schemas. `types` is a list — batch several actions in one call (read then execute). Omit `types` and set `domain` to list action names.",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "domain": {
+            "enum": [
+              "calendar",
+              "capability",
+              "identity",
+              "memory",
+              "runtime",
+              "store",
+              "turn",
+              "workshop"
+            ],
+            "type": "string"
+          },
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
+            "type": "string"
+          },
+          "types": {
+            "items": {
+              "enum": [
+                "artifacts.delete",
+                "artifacts.list",
+                "artifacts.read",
+                "artifacts.search",
+                "artifacts.write",
+                "calendar.create",
+                "calendar.delete",
+                "calendar.export",
+                "calendar.import",
+                "calendar.list",
+                "calendar.update",
+                "capability.find",
+                "capability.invoke",
+                "code.read",
+                "code.search",
+                "code.write",
+                "delivery.status",
+                "grapheme.find",
+                "grapheme.invoke",
+                "identity.commit",
+                "identity.context",
+                "identity.propose",
+                "identity.recall",
+                "identity.remember",
+                "job.cancel",
+                "job.enqueue",
+                "job.list",
+                "job.status",
+                "mcp.find",
+                "mcp.invoke",
+                "memory.calibrate",
+                "memory.context",
+                "memory.evict",
+                "memory.list",
+                "memory.moods",
+                "memory.recall",
+                "memory.schema",
+                "memory.store",
+                "memory.tags",
+                "recurring.cancel",
+                "recurring.doctor",
+                "recurring.list",
+                "recurring.pause",
+                "recurring.preview",
+                "recurring.register",
+                "scripts.list",
+                "scripts.read",
+                "scripts.search",
+                "scripts.write",
+                "turn.begin_work",
+                "turn.checkpoint",
+                "turn.finish",
+                "turn.prepare_final",
+                "turn.propose_mode",
+                "turn.request_more_rounds",
+                "turn.update_user",
+                "vault.delete",
+                "vault.list",
+                "vault.move",
+                "vault.read",
+                "vault.search",
+                "vault.write",
+                "workflow.cancel",
+                "workflow.plan",
+                "workflow.run",
+                "workflow.schedule",
+                "workflow.status",
+                "workshop.cancel",
+                "workshop.spawn",
+                "workshop.status",
+                "workshop.steer"
+              ],
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -1912,289 +1597,7 @@
       },
       "output_schema_present": true,
       "placements": [
-        "coder:domain:capabilities"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_memory_context",
-      "description": "Primary memory retrieval by AVEC resonance. Requires stability/friction/logic/autonomy. Optional context_keywords and semantic_tags (indexed, match-all). Use tag_prefix for prefix vocabulary search. Set session_id to null for global retrieval across sessions.",
-      "input_schema": {
-        "properties": {
-          "alpha": {
-            "type": "number"
-          },
-          "autonomy": {
-            "type": "number"
-          },
-          "beta": {
-            "type": "number"
-          },
-          "context_keywords": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "friction": {
-            "type": "number"
-          },
-          "from_utc": {
-            "type": "string"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "logic": {
-            "type": "number"
-          },
-          "semantic_tags": {
-            "description": "Indexed Locus tags (match-all). Example: [\"session\", \"profile:work\"]",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "stability": {
-            "type": "number"
-          },
-          "tag_prefix": {
-            "description": "Match nodes whose indexed tags share this prefix (e.g. profile:)",
-            "type": "string"
-          },
-          "tiers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "to_utc": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "autonomy",
-          "friction",
-          "intent",
-          "logic",
-          "stability"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:memory"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_memory_list",
-      "description": "Memory inventory, newest-first. Optional context_keywords filter on context_summary. Optional semantic_tags (indexed, match-all) or tag_prefix. Omit session_id or pass null for global listing.",
-      "input_schema": {
-        "properties": {
-          "context_keywords": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "semantic_tags": {
-            "description": "Indexed Locus tags (match-all)",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "tag_prefix": {
-            "description": "Match nodes whose indexed tags share this prefix",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:memory"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_memory_recall",
-      "description": "Retrieve memory by natural-language keywords (legacy). Prefer cognition_memory_context with explicit AVEC when possible. Optional semantic_tags or tag_prefix for indexed filtering. Pass session_id to scope to one session, or null to search across all sessions.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "limit": {
-            "maximum": 20,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "query": {
-            "type": "string"
-          },
-          "semantic_tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "tag_prefix": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:memory"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_memory_schema",
-      "description": "Advanced raw Locus schema diagnostic. Normal Coder memory does not require model-authored STTP; use cognition_coder_memory_commit.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:memory"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_memory_store",
-      "description": "Advanced diagnostic-only raw STTP store. For normal Coder memory writes use cognition_coder_memory_commit; the runtime compiles strict STTP from simple structured fields.",
-      "input_schema": {
-        "properties": {
-          "content": {
-            "description": "Deprecated: use `node` with full STTP instead",
-            "type": "string"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "node": {
-            "description": "Full STTP node payload with ⊕ ⦿ ◈ ⍉ layers",
-            "type": "string"
-          },
-          "semantic_tags": {
-            "description": "Optional Locus semantic tags merged into the STTP prime block",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "description": "Locus session id (defaults to current turn session)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "node"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:memory"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_memory_tags",
-      "description": "List indexed Locus semantic tags for the active profile tenant. Optional prefix narrows vocabulary (e.g. profile:, chat:, medousa). Use before recall/list to pick tag filters.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "limit": {
-            "maximum": 500,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "prefix": {
-            "description": "Filter tags by prefix (case-insensitive)",
-            "type": "string"
-          },
-          "session_id": {
-            "description": "Optional session to derive tenant scope",
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "intent"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:memory"
+        "coder:initial"
       ]
     },
     {
@@ -2325,303 +1728,109 @@
     },
     {
       "registry": "coder_bound",
-      "name": "cognition_spawn_turn_worker",
-      "description": "Spawn a peer sub-agent for parallel research or side tasks while Coder stays on the Forge lease.",
+      "name": "cognition_store_read",
+      "description": "Read or search vault notes, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.read, artifacts.search, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "manuscript_id": {
-            "description": "Optional YAML specialty (voice, tools, worker intent, spec.worker.stage_role, spec.worker.model_hint).",
-            "type": "string"
-          },
-          "model_hint": {
-            "description": "Optional. Prefer omit or 'auto' to use user stage-routing / host prefs. Only set provider:model when explicitly requested (e.g. deepseek:deepseek-v4-flash).",
-            "type": "string"
-          },
-          "stage_role": {
-            "description": "Optional StageRoutingMatrix role (extractor, verifier, chunker, …)",
-            "type": "string"
-          },
-          "task": {
-            "description": "Focused task for the worker: capability id, module.op, URLs, and constraints. Include what the host already resolved so the worker does not rediscover.",
-            "type": "string"
-          },
-          "user_ack": {
-            "description": "Short message for the user while the worker runs",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "task",
-          "user_ack"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_turn_begin_work",
-      "description": "Spawn a peer sub-agent for parallel work on this undertaking; does not leave Coder / does not enter Chat workshop.",
-      "input_schema": {
-        "properties": {
-          "goal": {
-            "description": "Focused execution task for the bound workshop (tools, surfaces, constraints)",
-            "type": "string"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "message": {
-            "description": "Short principal-facing ack before workshop execution",
-            "type": "string"
-          }
-        },
-        "required": [
-          "goal",
-          "intent",
-          "message"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_turn_checkpoint",
-      "description": "Share a substantive mid-task update with the principal and hand the turn back to them. The conversation is not over — you may continue after they reply. Use when tool work produced real progress but you are not done (not a final answer). Prefer this over streaming long interim prose that the runtime may loop on.",
-      "input_schema": {
-        "properties": {
-          "awaiting": {
-            "description": "Optional: what you need from the principal before more tool work (decision, confirmation, missing detail)",
-            "type": "string"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "message": {
-            "description": "Principal-facing update: what you did, what you found, and what happens next or what you need from them",
-            "type": "string"
-          },
-          "reason": {
-            "description": "Optional short note for logs (not shown to the principal)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "message"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_turn_finish",
-      "description": "Deliver the complete principal-facing final answer now and end this turn immediately. Use it as an explicit hard stop after tool work; synthesis-bound workers require it for direct pass-through, while principal-facing turns may also commit after two consecutive non-tool responses. Mid-task handoffs use cognition_turn_checkpoint.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "message": {
-            "description": "Complete principal-facing final answer for this turn",
-            "type": "string"
-          },
-          "reason": {
-            "description": "Optional short note for logs (not shown to the user)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "message"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_turn_propose_mode",
-      "description": "Propose switching Medousa's mode for the current chat. Use Coder only when repository inspection, edits, commands, or tests would materially help; programming explanations stay in General. The runtime applies the user's auto-accept/expiry policy and never expands authority from this tool alone.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "mode": {
+          "action": {
             "enum": [
-              "coder",
-              "general"
+              "artifacts.list",
+              "artifacts.read",
+              "artifacts.search",
+              "code.read",
+              "code.search",
+              "scripts.list",
+              "scripts.read",
+              "scripts.search",
+              "vault.list",
+              "vault.read",
+              "vault.search"
             ],
             "type": "string"
           },
-          "reason": {
-            "description": "Short user-facing reason this mode better fits the work",
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
             "type": "string"
-          },
-          "scope": {
-            "default": "session",
+          }
+        },
+        "required": [
+          "action",
+          "intent"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:domain:workspace",
+        "coder:initial"
+      ]
+    },
+    {
+      "registry": "coder_bound",
+      "name": "cognition_store_write",
+      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.write, artifacts.write, …). Fetch fields with cognition_schema types=[...].",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
             "enum": [
-              "session",
-              "task"
+              "artifacts.delete",
+              "artifacts.write",
+              "code.write",
+              "scripts.write",
+              "vault.delete",
+              "vault.move",
+              "vault.write"
             ],
             "type": "string"
           },
-          "task_id": {
-            "description": "Required for task scope; use the active undertaking/work id when relevant",
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
             "type": "string"
           }
         },
         "required": [
-          "intent",
-          "mode",
-          "reason"
+          "action",
+          "intent"
         ],
         "type": "object"
       },
       "output_schema_present": true,
       "placements": [
+        "coder:domain:workspace",
         "coder:initial"
       ]
     },
     {
       "registry": "coder_bound",
-      "name": "cognition_turn_request_more_rounds",
-      "description": "Request additional tool rounds when the current budget is too tight. Pauses until the principal approves or denies. Include reason and progress summary.",
+      "name": "cognition_turn",
+      "description": "Control this turn: begin work, update the principal, checkpoint, finish, or request more rounds. action is a typed name (turn.finish, turn.checkpoint, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
+          "action": {
+            "enum": [
+              "turn.begin_work",
+              "turn.checkpoint",
+              "turn.finish",
+              "turn.prepare_final",
+              "turn.propose_mode",
+              "turn.request_more_rounds",
+              "turn.update_user"
+            ],
+            "type": "string"
+          },
           "intent": {
             "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
             "maxLength": 320,
             "type": "string"
-          },
-          "progress_summary": {
-            "description": "What is done and what remains",
-            "type": "string"
-          },
-          "reason": {
-            "description": "Why the current budget is insufficient",
-            "type": "string"
-          },
-          "requested_rounds": {
-            "description": "How many additional model/tool rounds you need",
-            "maximum": 8,
-            "minimum": 1,
-            "type": "integer"
           }
         },
         "required": [
-          "intent",
-          "reason",
-          "requested_rounds"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_turn_update_user",
-      "description": "Tell the principal what you are doing right now — retries, quick course-corrections, \"pulling schemas\", \"one sec\". Call in the same model round as your next tool. Does not end the turn. Prefer this over naked chat prose (prose without tools fights the turn loop). For heavy/long-running work starting, use cognition_turn_begin_work instead.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "message": {
-            "description": "Short principal-facing status line",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "message"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_turn_worker_cancel",
-      "description": "Cancel a peer sub-agent spawned from this Coder turn.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "work_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "work_id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:initial"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_turn_worker_status",
-      "description": "Check status of peer sub-agents spawned from this Coder turn.",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "session_id": {
-            "type": "string"
-          },
-          "work_id": {
-            "type": "string"
-          }
-        },
-        "required": [
+          "action",
           "intent"
         ],
         "type": "object"
@@ -2629,212 +1838,6 @@
       "output_schema_present": true,
       "placements": [
         "coder:initial"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_vault_grep",
-      "description": "Search inside a vault note (literal case-insensitive match with line numbers). Use cognition_vault_search to discover notes; use grep for surgical edits.",
-      "input_schema": {
-        "properties": {
-          "context_lines": {
-            "maximum": 10,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "path": {
-            "type": "string"
-          },
-          "pattern": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "path",
-          "pattern"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:workspace"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_vault_list",
-      "description": "List vault notes (path + title + semantic tags). Optional tag filter (match-all).",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "prefix": {
-            "description": "Optional path prefix filter",
-            "type": "string"
-          },
-          "semantic_tags": {
-            "description": "Indexed-style tag filter (match-all), aligned with Locus tags",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "tag_prefix": {
-            "description": "Filter notes with tags sharing this prefix",
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:workspace"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_vault_read",
-      "description": "Read a vault note body (budget-capped).",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "line_end": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "line_start": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "max_chars": {
-            "maximum": 20000,
-            "minimum": 256,
-            "type": "integer"
-          },
-          "path": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "intent",
-          "path"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:workspace"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_vault_search",
-      "description": "Search vault notes by full text and/or semantic tags (match-all).",
-      "input_schema": {
-        "properties": {
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "limit": {
-            "maximum": 50,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "q": {
-            "description": "Full-text query (optional if semantic_tags set)",
-            "type": "string"
-          },
-          "semantic_tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "intent"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:workspace"
-      ]
-    },
-    {
-      "registry": "coder_bound",
-      "name": "cognition_vault_write",
-      "description": "Create or update a vault markdown note. Merges Locus-aligned semantic tags into frontmatter.",
-      "input_schema": {
-        "properties": {
-          "auto_workshop_tags": {
-            "description": "Merge medousa/vault/session/profile/chat defaults (default true)",
-            "type": "boolean"
-          },
-          "content": {
-            "type": "string"
-          },
-          "if_match": {
-            "description": "Optional content_hash for optimistic concurrency",
-            "type": "string"
-          },
-          "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
-            "maxLength": 320,
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
-          },
-          "semantic_tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "description": "Chat session for workshop linking tags (defaults to current turn session)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "content",
-          "intent",
-          "path"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "coder:domain:workspace"
       ]
     },
     {
@@ -2881,6 +1884,68 @@
       "output_schema_present": true,
       "placements": [
         "coder:domain:research"
+      ]
+    },
+    {
+      "registry": "coder_bound",
+      "name": "cognition_workshop_mutate",
+      "description": "Spawn, cancel, or steer a peer sub-agent. action=workshop.spawn for parallel research while Coder stays on the Forge lease.",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "enum": [
+              "workshop.cancel",
+              "workshop.spawn",
+              "workshop.steer"
+            ],
+            "type": "string"
+          },
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "intent"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:initial"
+      ]
+    },
+    {
+      "registry": "coder_bound",
+      "name": "cognition_workshop_query",
+      "description": "Check status of peer sub-agents spawned from this Coder turn.",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "enum": [
+              "workshop.status"
+            ],
+            "type": "string"
+          },
+          "intent": {
+            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "maxLength": 320,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "intent"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "coder:initial"
       ]
     },
     {
@@ -2956,186 +2021,6 @@
       "output_schema_present": true,
       "placements": [
         "coder:unbound"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_artifact_delete",
-      "description": "Delete an HTML presentation artifact and its revision chain from the session store. Use cognition_artifact_list to discover artifact_id values first.",
-      "input_schema": {
-        "properties": {
-          "artifact_id": {
-            "description": "Presentation artifact id or alias to delete",
-            "type": "string"
-          }
-        },
-        "required": [
-          "artifact_id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:documents",
-        "general:domain:presentation",
-        "workshop:authorized:general",
-        "workshop:authorized:research"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_artifact_grep",
-      "description": "Search inside an HTML artifact source (literal case-insensitive match with line numbers). Use before cognition_artifact_write to locate CSS/HTML snippets.",
-      "input_schema": {
-        "properties": {
-          "artifact_id": {
-            "type": "string"
-          },
-          "context_lines": {
-            "maximum": 10,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "pattern": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "artifact_id",
-          "pattern"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:bootstrap",
-        "general:domain:documents",
-        "general:domain:presentation",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:presentation"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_artifact_list",
-      "description": "List HTML presentation artifacts for the current chat session (newest first). Workflow: list → grep/read → cognition_artifact_write to revise.",
-      "input_schema": {
-        "properties": {
-          "limit": {
-            "maximum": 100,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "query": {
-            "description": "Optional filter on title or artifact_id",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:bootstrap",
-        "general:domain:documents",
-        "general:domain:presentation",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:presentation"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_artifact_read",
-      "description": "Read HTML source for a presentation artifact (budget-capped). Optional line_start/line_end for surgical edits.",
-      "input_schema": {
-        "properties": {
-          "artifact_id": {
-            "type": "string"
-          },
-          "line_end": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "line_start": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "max_chars": {
-            "maximum": 20000,
-            "minimum": 256,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "artifact_id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:bootstrap",
-        "general:domain:documents",
-        "general:domain:presentation",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:presentation"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_artifact_write",
-      "description": "Create or revise an HTML presentation artifact. Pass artifact_id to publish a new revision (content-addressed). Use if_match_hash64 for optimistic concurrency. First-time publish: use cognition_ui_present. Canvas widgets using MedousaStore: get/set/delete return Promises — use async/await (wiki topic artifact_runtime).",
-      "input_schema": {
-        "properties": {
-          "artifact_id": {
-            "description": "When set, supersedes this artifact revision",
-            "type": "string"
-          },
-          "height": {
-            "maximum": 1200,
-            "minimum": 120,
-            "type": "integer"
-          },
-          "html": {
-            "description": "HTML fragment or document. MedousaStore get/set/delete are async — await in async init and handlers (cognition_environment_wiki topic=artifact_runtime).",
-            "type": "string"
-          },
-          "if_match_hash64": {
-            "description": "Optional hash64 of the artifact being revised",
-            "type": "string"
-          },
-          "presentation": {
-            "enum": [
-              "fullscreen",
-              "inline",
-              "panel"
-            ],
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "html",
-          "presentation",
-          "title"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:documents",
-        "general:domain:presentation",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:presentation"
       ]
     },
     {
@@ -3257,408 +2142,23 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_calendar_create",
-      "description": "Create a calendar event in the vault .ics store. For all-day events set all_day=true and use UTC midnights for the calendar date.",
+      "name": "cognition_calendar_mutate",
+      "description": "Write personal calendar: create, update, delete, or import ICS. action is a typed name (calendar.create, calendar.update, calendar.delete, calendar.import). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "alarms": {
-            "description": "Display alerts before start",
-            "items": {
-              "properties": {
-                "action": {
-                  "description": "VALARM action (display)",
-                  "type": "string"
-                },
-                "trigger_minutes_before": {
-                  "description": "Minutes before dtstart",
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "trigger_minutes_before"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "all_day": {
-            "description": "True for DATE (calendar-day) events; use UTC midnights for dtstart/dtend.",
-            "type": "boolean"
-          },
-          "calendar_path": {
-            "description": "Alias for path",
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "dtend": {
-            "description": "RFC3339 end. All-day: exclusive next-day YYYY-MM-DDT00:00:00Z.",
-            "type": "string"
-          },
-          "dtstart": {
-            "description": "RFC3339 start. All-day: YYYY-MM-DDT00:00:00Z for that calendar date.",
-            "type": "string"
-          },
-          "location": {
-            "type": "string"
-          },
-          "note_path": {
-            "description": "Optional vault-relative markdown note linked to this event",
-            "type": "string"
-          },
-          "path": {
-            "description": "Vault-relative .ics path (default calendar/personal.ics)",
-            "type": "string"
-          },
-          "rrule": {
-            "description": "Optional RRULE body (without RRULE: prefix)",
-            "type": "string"
-          },
-          "summary": {
-            "description": "Event title",
-            "type": "string"
-          }
-        },
-        "required": [
-          "dtstart",
-          "summary"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:calendar",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:calendar"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_calendar_delete",
-      "description": "Delete a calendar event by uid from the vault .ics store.",
-      "input_schema": {
-        "properties": {
-          "path": {
-            "description": "Vault-relative .ics path (default calendar/personal.ics)",
-            "type": "string"
-          },
-          "uid": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "uid"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:calendar",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:calendar"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_calendar_export",
-      "description": "Export the vault calendar as raw ICS text.",
-      "input_schema": {
-        "properties": {
-          "path": {
-            "description": "Vault-relative .ics path (default calendar/personal.ics)",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:calendar",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:calendar"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_calendar_import",
-      "description": "Merge VEVENT components from raw ICS text into the vault calendar (UID upsert).",
-      "input_schema": {
-        "properties": {
-          "calendar_path": {
-            "description": "Alias for path",
-            "type": "string"
-          },
-          "ics": {
-            "description": "Raw RFC 5545 text",
-            "type": "string"
-          },
-          "path": {
-            "description": "Vault-relative .ics path (default calendar/personal.ics)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "ics"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:calendar",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:calendar"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_calendar_list",
-      "description": "List personal calendar events in a time range (RRULE expanded). Default store: calendar/personal.ics.",
-      "input_schema": {
-        "properties": {
-          "from": {
-            "description": "RFC3339 range start (inclusive)",
-            "type": "string"
-          },
-          "path": {
-            "description": "Vault-relative .ics path (default calendar/personal.ics)",
-            "type": "string"
-          },
-          "to": {
-            "description": "RFC3339 range end (exclusive)",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:bootstrap",
-        "general:domain:calendar",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:calendar"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_calendar_update",
-      "description": "Update an existing calendar event by uid (full replace of mutable fields).",
-      "input_schema": {
-        "properties": {
-          "alarms": {
-            "description": "Display alerts before start",
-            "items": {
-              "properties": {
-                "action": {
-                  "description": "VALARM action (display)",
-                  "type": "string"
-                },
-                "trigger_minutes_before": {
-                  "description": "Minutes before dtstart",
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "trigger_minutes_before"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "all_day": {
-            "description": "True for DATE (calendar-day) events; use UTC midnights for dtstart/dtend.",
-            "type": "boolean"
-          },
-          "calendar_path": {
-            "description": "Alias for path",
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "dtend": {
-            "description": "RFC3339 end. All-day: exclusive next-day YYYY-MM-DDT00:00:00Z.",
-            "type": "string"
-          },
-          "dtstart": {
-            "description": "RFC3339 start. All-day: YYYY-MM-DDT00:00:00Z for that calendar date.",
-            "type": "string"
-          },
-          "location": {
-            "type": "string"
-          },
-          "note_path": {
-            "description": "Optional vault-relative markdown note linked to this event",
-            "type": "string"
-          },
-          "path": {
-            "description": "Vault-relative .ics path (default calendar/personal.ics)",
-            "type": "string"
-          },
-          "rrule": {
-            "description": "Optional RRULE body (without RRULE: prefix)",
-            "type": "string"
-          },
-          "summary": {
-            "description": "Event title",
-            "type": "string"
-          },
-          "uid": {
-            "description": "Event UID to update",
-            "type": "string"
-          }
-        },
-        "required": [
-          "dtstart",
-          "summary",
-          "uid"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:calendar",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:calendar"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_capability_invoke",
-      "description": "Resolve a capability intent and execute the best available binding in one call. Returns a policy receipt with binding_used, decision, result, and fallback_available.",
-      "input_schema": {
-        "properties": {
-          "binding": {
-            "properties": {
-              "reference": {
-                "type": "string"
-              },
-              "source": {
-                "enum": [
-                  "grapheme",
-                  "mcp"
-                ],
-                "type": "string"
-              }
-            },
-            "type": "object"
-          },
-          "capability": {
-            "description": "Capability id, e.g. document_search",
-            "type": "string"
-          },
-          "input": {
-            "description": "Arguments forwarded to MCP or used to build Grapheme source",
-            "type": "object"
-          },
-          "preferred_source": {
+          "action": {
             "enum": [
-              "grapheme",
-              "mcp"
+              "calendar.create",
+              "calendar.delete",
+              "calendar.import",
+              "calendar.update"
             ],
             "type": "string"
-          },
-          "query": {
-            "description": "Fuzzy resolve when capability id is unknown",
-            "type": "string"
-          },
-          "source": {
-            "description": "Optional explicit Grapheme source override",
-            "type": "string"
-          },
-          "try_fallbacks": {
-            "default": true,
-            "type": "boolean"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:bootstrap",
-        "workshop:domain:execute"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_capability_list",
-      "description": "List registered capability intents in the Medousa capability catalog.",
-      "input_schema": {
-        "properties": {
-          "limit": {
-            "description": "Max entries (default 50)",
-            "type": "integer"
-          },
-          "prefix": {
-            "description": "Optional capability id prefix filter",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:catalog"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_capability_resolve",
-      "description": "Resolve a capability intent to Grapheme and MCP implementations.",
-      "input_schema": {
-        "properties": {
-          "capability": {
-            "description": "Capability id, e.g. document_search",
-            "type": "string"
-          },
-          "query": {
-            "description": "Optional fuzzy query when capability id is unknown",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:catalog",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:discover"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_capability_search",
-      "description": "Keyword search capability intents by query, alias, or keywords.",
-      "input_schema": {
-        "properties": {
-          "limit": {
-            "description": "Max matches (default 10)",
-            "type": "integer"
-          },
-          "query": {
-            "description": "Search query",
-            "type": "string"
           }
         },
         "required": [
-          "query"
+          "action"
         ],
         "type": "object"
       },
@@ -3666,9 +2166,84 @@
       "placements": [
         "general:authorized",
         "general:bootstrap",
+        "general:domain:calendar",
         "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
         "workshop:authorized:research",
-        "workshop:domain:discover"
+        "workshop:bootstrap",
+        "workshop:domain:calendar"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_calendar_query",
+      "description": "Read personal calendar: list events or export ICS. action is a typed name (calendar.list, calendar.export). Fetch fields with cognition_schema types=[...].",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "enum": [
+              "calendar.export",
+              "calendar.list"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:bootstrap",
+        "general:domain:calendar",
+        "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
+        "workshop:authorized:research",
+        "workshop:bootstrap",
+        "workshop:domain:calendar"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_capability",
+      "description": "Find or run a capability, MCP tool, or Grapheme module. action is a typed name (capability.find, grapheme.invoke, …). Fetch fields with cognition_schema types=[...].",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "enum": [
+              "capability.find",
+              "capability.invoke",
+              "grapheme.find",
+              "grapheme.invoke",
+              "mcp.find",
+              "mcp.invoke"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:bootstrap",
+        "general:domain:catalog",
+        "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
+        "workshop:authorized:research",
+        "workshop:bootstrap",
+        "workshop:domain:discover",
+        "workshop:domain:execute"
       ]
     },
     {
@@ -3734,46 +2309,6 @@
       "placements": [
         "general:authorized",
         "general:domain:history"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_code_apply_patch",
-      "description": "Write full content or replace an exact snippet in a file under the session root / Forge worktree. Coding domain only.",
-      "input_schema": {
-        "properties": {
-          "content": {
-            "description": "Full file content (write)",
-            "type": "string"
-          },
-          "expected_sha256": {
-            "description": "Required current digest from code_read, or `missing` for a new file",
-            "type": "string"
-          },
-          "find": {
-            "description": "Exact snippet to replace",
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
-          },
-          "replace": {
-            "description": "Replacement for `find`",
-            "type": "string"
-          },
-          "root": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "expected_sha256",
-          "path"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:domain:coding"
       ]
     },
     {
@@ -3867,77 +2402,6 @@
         "workshop:authorized:general",
         "workshop:authorized:research",
         "workshop:domain:execute"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_code_read",
-      "description": "Read a whole text file when it fits, or a bounded line/byte range. Oversized whole-file requests return actionable range orientation instead of an opaque failure. Coding domain only.",
-      "input_schema": {
-        "properties": {
-          "byte_end": {
-            "description": "Optional exclusive byte end; cannot be combined with line ranges",
-            "minimum": 1,
-            "type": "integer"
-          },
-          "byte_start": {
-            "description": "Optional 0-based byte start; cannot be combined with line ranges",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "line_end": {
-            "description": "Optional 1-based inclusive line end",
-            "minimum": 1,
-            "type": "integer"
-          },
-          "line_start": {
-            "description": "Optional 1-based inclusive line start",
-            "minimum": 1,
-            "type": "integer"
-          },
-          "path": {
-            "description": "Absolute or root-relative file path",
-            "type": "string"
-          },
-          "root": {
-            "description": "Optional explicit root (default: scripts library)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "path"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:domain:coding"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_code_search",
-      "description": "Search for a substring under the scripts root or a Forge worktree. Coding domain only.",
-      "input_schema": {
-        "properties": {
-          "max_results": {
-            "type": "integer"
-          },
-          "query": {
-            "type": "string"
-          },
-          "root": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:domain:coding"
       ]
     },
     {
@@ -4948,57 +3412,17 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_grapheme_cli_run",
-      "description": "Run grapheme code through Stasis runtime workflow execution (workflow.grapheme.run) using the same path as scheduled jobs.",
+      "name": "cognition_identity_mutate",
+      "description": "Write identity: remember a fact, propose a patch, or commit. action is a typed name (identity.remember, identity.propose, identity.commit). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
-        "properties": {
-          "json": {
-            "default": true,
-            "description": "Deprecated compatibility flag; runtime mode always returns JSON",
-            "type": "boolean"
-          },
-          "native_modules": {
-            "default": false,
-            "description": "Deprecated compatibility flag; ignored in runtime mode",
-            "type": "boolean"
-          },
-          "source": {
-            "description": "Complete Grapheme script source",
-            "type": "string"
-          },
-          "stream_steps": {
-            "default": true,
-            "description": "Deprecated compatibility flag; ignored in runtime mode",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "source"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:research",
-        "workshop:domain:execute"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_examples",
-      "description": "List or show Grapheme examples. action=list|show",
-      "input_schema": {
+        "additionalProperties": true,
         "properties": {
           "action": {
-            "description": "list or show",
             "enum": [
-              "list",
-              "show"
+              "identity.commit",
+              "identity.propose",
+              "identity.remember"
             ],
-            "type": "string"
-          },
-          "name": {
-            "description": "Example name for action=show",
             "type": "string"
           }
         },
@@ -5009,808 +3433,34 @@
       },
       "output_schema_present": true,
       "placements": [
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:discover"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_modules",
-      "description": "Search Grapheme modules by query. Mirrors: grapheme modules search <query> --yaml",
-      "input_schema": {
-        "properties": {
-          "query": {
-            "description": "Search query, e.g. web",
-            "type": "string"
-          }
-        },
-        "required": [
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:discover"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_modules_info",
-      "description": "Inspect Grapheme module metadata. Mirrors: grapheme modules info <module> --yaml",
-      "input_schema": {
-        "properties": {
-          "module": {
-            "description": "Module id, e.g. web",
-            "type": "string"
-          }
-        },
-        "required": [
-          "module"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:research",
-        "workshop:domain:discover"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_modules_ops",
-      "description": "Inspect Grapheme module operations. Mirrors: grapheme modules ops <query> --yaml",
-      "input_schema": {
-        "properties": {
-          "query": {
-            "description": "Module or op query, e.g. web",
-            "type": "string"
-          }
-        },
-        "required": [
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:research",
-        "workshop:domain:discover"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_promote_last_run_to_recurring",
-      "description": "Promote the last executed Grapheme source to recurring schedule. You can also provide source explicitly.",
-      "input_schema": {
-        "properties": {
-          "cron_expr": {
-            "description": "7-field cron: sec min hour day-of-month month day-of-week year (e.g. 0 0 */4 * * * *)",
-            "type": "string"
-          },
-          "delivery": {
-            "description": "Where to push each successful run (independent of current UI channel). 7-field cron required separately.",
-            "properties": {
-              "channel": {
-                "description": "telegram | discord | slack | whatsapp | cli",
-                "type": "string"
-              },
-              "channel_id": {
-                "description": "Canonical id, e.g. telegram:chat:123",
-                "type": "string"
-              },
-              "discord_channel_id": {
-                "type": "string"
-              },
-              "mode": {
-                "default": "explicit",
-                "enum": [
-                  "current_channel",
-                  "explicit",
-                  "linked_channel",
-                  "product_default"
-                ],
-                "type": "string"
-              },
-              "session_id": {
-                "description": "Medousa session for job context",
-                "type": "string"
-              },
-              "slack_channel_id": {
-                "type": "string"
-              },
-              "telegram_chat_id": {
-                "type": "string"
-              },
-              "user_id": {
-                "type": "string"
-              },
-              "whatsapp_chat_jid": {
-                "type": "string"
-              }
-            },
-            "type": "object"
-          },
-          "enabled": {
-            "default": true,
-            "description": "Enabled schedule",
-            "type": "boolean"
-          },
-          "feeds": {
-            "description": "Environment feed ids to publish each materialized run terminal event.",
-            "properties": {
-              "feed_ids": {
-                "description": "Bounded feed bus ids, e.g. trip.london.trains",
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "payload_mode": {
-                "default": "parsed_poll",
-                "enum": [
-                  "parsed_poll",
-                  "raw_excerpt",
-                  "summary"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "feed_ids"
-            ],
-            "type": "object"
-          },
-          "id": {
-            "description": "Optional recurring id",
-            "type": "string"
-          },
-          "jitter_seconds": {
-            "default": 0,
-            "description": "Jitter seconds",
-            "type": "integer"
-          },
-          "max_attempts": {
-            "default": 1,
-            "description": "Max attempts per materialized job",
-            "type": "integer"
-          },
-          "queue": {
-            "default": "default",
-            "description": "Runtime queue",
-            "type": "string"
-          },
-          "source": {
-            "description": "Optional source override; if omitted, uses last remembered source",
-            "type": "string"
-          },
-          "start_immediately": {
-            "default": false,
-            "description": "Set next_run_at=now",
-            "type": "boolean"
-          },
-          "timezone": {
-            "default": "UTC",
-            "description": "IANA timezone",
-            "type": "string"
-          }
-        },
-        "required": [
-          "cron_expr"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": []
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_promote_to_job",
-      "description": "Promote Grapheme source to a durable one-off runtime job (workflow.grapheme.run).",
-      "input_schema": {
-        "properties": {
-          "max_attempts": {
-            "default": 1,
-            "description": "Max job attempts",
-            "type": "integer"
-          },
-          "priority": {
-            "default": 100,
-            "description": "Job priority",
-            "type": "integer"
-          },
-          "queue": {
-            "default": "default",
-            "description": "Runtime queue",
-            "type": "string"
-          },
-          "source": {
-            "description": "Complete Grapheme source",
-            "type": "string"
-          }
-        },
-        "required": [
-          "source"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": []
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_promote_to_recurring",
-      "description": "Promote Grapheme source to a durable recurring schedule (register_recurring).",
-      "input_schema": {
-        "properties": {
-          "cron_expr": {
-            "description": "7-field cron: sec min hour day-of-month month day-of-week year (e.g. 0 0 */4 * * * *)",
-            "type": "string"
-          },
-          "delivery": {
-            "description": "Where to push each successful run (independent of current UI channel). 7-field cron required separately.",
-            "properties": {
-              "channel": {
-                "description": "telegram | discord | slack | whatsapp | cli",
-                "type": "string"
-              },
-              "channel_id": {
-                "description": "Canonical id, e.g. telegram:chat:123",
-                "type": "string"
-              },
-              "discord_channel_id": {
-                "type": "string"
-              },
-              "mode": {
-                "default": "explicit",
-                "enum": [
-                  "current_channel",
-                  "explicit",
-                  "linked_channel",
-                  "product_default"
-                ],
-                "type": "string"
-              },
-              "session_id": {
-                "description": "Medousa session for job context",
-                "type": "string"
-              },
-              "slack_channel_id": {
-                "type": "string"
-              },
-              "telegram_chat_id": {
-                "type": "string"
-              },
-              "user_id": {
-                "type": "string"
-              },
-              "whatsapp_chat_jid": {
-                "type": "string"
-              }
-            },
-            "type": "object"
-          },
-          "enabled": {
-            "default": true,
-            "description": "Enabled schedule",
-            "type": "boolean"
-          },
-          "feeds": {
-            "description": "Environment feed ids to publish each materialized run terminal event.",
-            "properties": {
-              "feed_ids": {
-                "description": "Bounded feed bus ids, e.g. trip.london.trains",
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "payload_mode": {
-                "default": "parsed_poll",
-                "enum": [
-                  "parsed_poll",
-                  "raw_excerpt",
-                  "summary"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "feed_ids"
-            ],
-            "type": "object"
-          },
-          "id": {
-            "description": "Optional recurring id",
-            "type": "string"
-          },
-          "jitter_seconds": {
-            "default": 0,
-            "description": "Jitter seconds",
-            "type": "integer"
-          },
-          "max_attempts": {
-            "default": 1,
-            "description": "Max attempts per materialized job",
-            "type": "integer"
-          },
-          "queue": {
-            "default": "default",
-            "description": "Runtime queue",
-            "type": "string"
-          },
-          "source": {
-            "description": "Complete Grapheme source",
-            "type": "string"
-          },
-          "start_immediately": {
-            "default": false,
-            "description": "Set next_run_at=now",
-            "type": "boolean"
-          },
-          "timezone": {
-            "default": "UTC",
-            "description": "IANA timezone",
-            "type": "string"
-          }
-        },
-        "required": [
-          "cron_expr",
-          "source"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": []
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_run",
-      "description": "Execute a Grapheme script synchronously and return the result. Grapheme is a typed workflow scripting language. Built-in modules in the 'grapheme/*' namespace are allowed by default (for example core, web). Scripts run sandboxed with guardrails enforced. Example source: import core from \"grapheme/core\"\nquery Run { core.echo(message: \"hello\") { state { current } } }",
-      "input_schema": {
-        "properties": {
-          "source": {
-            "description": "Complete Grapheme source code. Imports under 'grapheme/*' are allowed by default.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "source"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:execute"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_script_list",
-      "description": "List saved Grapheme scripts by optional module or tag filter.",
-      "input_schema": {
-        "properties": {
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "module": {
-            "type": "string"
-          },
-          "tag": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:catalog",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:scripts"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_script_load",
-      "description": "Load a saved Grapheme script body and metadata by id for run or edit.",
-      "input_schema": {
-        "properties": {
-          "id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:catalog",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:bootstrap"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_script_save",
-      "description": "Save a reusable Grapheme script to the workshop library with module tags and intent metadata. Turn start may inject [MEDOUSA_GRAPHEME_SCRIPTS] matches — load full body with cognition_grapheme_script_load.",
-      "input_schema": {
-        "properties": {
-          "body": {
-            "description": "Full Grapheme script source",
-            "type": "string"
-          },
-          "id": {
-            "description": "Optional stable id (slug derived from name when omitted)",
-            "type": "string"
-          },
-          "intent": {
-            "description": "Short intent label for search/recall",
-            "type": "string"
-          },
-          "modules": {
-            "description": "Module tags e.g. web, http, core",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "name": {
-            "type": "string"
-          },
-          "session_id": {
-            "description": "Optional source session for provenance",
-            "type": "string"
-          },
-          "tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "body",
-          "name"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:catalog",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:scripts"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_script_search",
-      "description": "Keyword search over saved Grapheme scripts (name, modules, tags, intent, body). Use before authoring when [MEDOUSA_GRAPHEME_SCRIPTS] suggests a match.",
-      "input_schema": {
-        "properties": {
-          "limit": {
-            "maximum": 50,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "module": {
-            "type": "string"
-          },
-          "q": {
-            "type": "string"
-          },
-          "tag": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "q"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:catalog",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:scripts"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_grapheme_template_run",
-      "description": "Run a preset Grapheme workflow template. Supported templates: research_report, http_poll, csv_digest.",
-      "input_schema": {
-        "properties": {
-          "params": {
-            "description": "Template parameters (topic/query, url, etc.)",
-            "type": "object"
-          },
-          "template": {
-            "enum": [
-              "csv_digest",
-              "http_poll",
-              "research_report"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "params",
-          "template"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:bootstrap",
-        "workshop:domain:execute"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_identity_commit",
-      "description": "Commit a proposed identity patch when tier and Medousa policy allow. Pass expected_version from context; set approver for approval_required tiers.",
-      "input_schema": {
-        "properties": {
-          "approver": {
-            "type": "string"
-          },
-          "confidence": {
-            "type": "number"
-          },
-          "entity_id": {
-            "type": "string"
-          },
-          "entity_type": {
-            "type": "string"
-          },
-          "expected_version": {
-            "type": "integer"
-          },
-          "patch": {
-            "type": "object"
-          },
-          "proposal_id": {
-            "type": "string"
-          },
-          "source": {
-            "type": "string"
-          },
-          "tier": {
-            "enum": [
-              "approval_required",
-              "auto_commit",
-              "confirm_required"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "expected_version",
-          "proposal_id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:identity"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_identity_context",
-      "description": "Read identity graph context (persona, user, channels, relationships) for this turn.",
-      "input_schema": {
-        "properties": {
-          "channel_id": {
-            "description": "Override channel id",
-            "type": "string"
-          },
-          "mode": {
-            "description": "Identity context slice (default: cognitive)",
-            "enum": [
-              "cognitive",
-              "full",
-              "policy"
-            ],
-            "type": "string"
-          },
-          "persona_id": {
-            "description": "Override persona id",
-            "type": "string"
-          },
-          "relationship_limit": {
-            "maximum": 64,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "user_id": {
-            "description": "Override identity user id",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:identity"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_identity_propose",
-      "description": "Propose a durable identity patch (persona, user, relationship). Returns proposal_ids and tiers; use cognition_identity_commit when policy allows.",
-      "input_schema": {
-        "properties": {
-          "actor": {
-            "type": "string"
-          },
-          "confidence": {
-            "maximum": 1,
-            "minimum": 0,
-            "type": "number"
-          },
-          "entity_id": {
-            "type": "string"
-          },
-          "entity_type": {
-            "description": "persona | user | contact | relationship | channel | policy",
-            "type": "string"
-          },
-          "expires_at": {
-            "description": "RFC3339 UTC",
-            "type": "string"
-          },
-          "patch": {
-            "description": "Flat or nested JSON patch object",
-            "type": "object"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "source": {
-            "enum": [
-              "model_inferred",
-              "system_event",
-              "user_direct"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "entity_id",
-          "entity_type",
-          "patch"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:identity"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_identity_recall",
-      "description": "Search durable identity memory (preferences, people, notes) by keyword. Use when the turn-start digest lacks detail.",
-      "input_schema": {
-        "properties": {
-          "fact_kind": {
-            "description": "Optional filter; defaults to any",
-            "enum": [
-              "any",
-              "note",
-              "person",
-              "preference"
-            ],
-            "type": "string"
-          },
-          "limit": {
-            "maximum": 20,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "query": {
-            "type": "string"
-          },
-          "user_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
         "general:authorized",
         "general:bootstrap",
-        "general:domain:memory",
+        "general:domain:identity",
         "workshop:authorized:general",
         "workshop:authorized:memory_avec_calibrate",
         "workshop:authorized:memory_context",
         "workshop:authorized:research",
-        "workshop:domain:memory"
+        "workshop:bootstrap",
+        "workshop:domain:identity"
       ]
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_identity_remember",
-      "description": "Remember a durable personal fact in identity memory (preferences, people, notes). Prefer over cognition_memory_store for operator world-model facts.",
+      "name": "cognition_identity_query",
+      "description": "Read identity: recall facts or load graph context. action is a typed name (identity.recall, identity.context). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "aliases": {
-            "description": "Optional contact aliases (person facts only)",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "attributes": {
-            "description": "Optional structured tags for people (role, employer, …) — rendered as policy_tags",
-            "type": "object"
-          },
-          "confidence": {
-            "maximum": 1,
-            "minimum": 0,
-            "type": "number"
-          },
-          "fact_kind": {
-            "description": "preference = user key/value; person = contact + relationship; note = preference key or freeform note",
+          "action": {
             "enum": [
-              "note",
-              "person",
-              "preference"
+              "identity.context",
+              "identity.recall"
             ],
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "source": {
-            "description": "Defaults to user_direct when operator stated the fact",
-            "enum": [
-              "model_inferred",
-              "system_event",
-              "user_direct"
-            ],
-            "type": "string"
-          },
-          "statement": {
-            "description": "Human-readable fact, e.g. User prefers matcha over coffee",
-            "type": "string"
-          },
-          "subject": {
-            "description": "Preference key (beverage), person display name (Mario), or note subject",
-            "type": "string"
-          },
-          "user_id": {
-            "description": "Override default identity user id",
             "type": "string"
           }
         },
         "required": [
-          "fact_kind",
-          "statement",
-          "subject"
+          "action"
         ],
         "type": "object"
       },
@@ -5818,7 +3468,13 @@
       "placements": [
         "general:authorized",
         "general:bootstrap",
-        "general:domain:memory"
+        "general:domain:identity",
+        "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
+        "workshop:authorized:research",
+        "workshop:bootstrap",
+        "workshop:domain:identity"
       ]
     },
     {
@@ -5844,37 +3500,6 @@
         "workshop:authorized:general",
         "workshop:authorized:research",
         "workshop:domain:environment"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_job_enqueue",
-      "description": "Persist a job into the Stasis runtime for durable background execution. Use this to schedule work: grapheme scripts, orchestration patterns, memory operations, or any registered workflow handler. Valid job_type values: workflow.grapheme.run, workflow.grapheme.echo, workflow.stasis.orchestration.sequential, workflow.stasis.orchestration.concurrent, workflow.stasis.orchestration.handoff, workflow.stasis.agent_session, workflow.stasis.prompt, openshell.sandbox.run.",
-      "input_schema": {
-        "properties": {
-          "job_type": {
-            "description": "The job handler identifier, e.g. 'workflow.grapheme.run'",
-            "type": "string"
-          },
-          "note": {
-            "description": "Optional human-readable note about the intent of this job",
-            "type": "string"
-          },
-          "payload_ref": {
-            "description": "Serialized job payload. For grapheme: 'grapheme:inline:<source>'. For JSON payloads: serialized JSON string.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "job_type",
-          "payload_ref"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
       ]
     },
     {
@@ -6084,485 +3709,22 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_mcp_discover",
-      "description": "Search external MCP tools via the MCP Client gateway.",
+      "name": "cognition_memory_mutate",
+      "description": "Write Locus memory: store an STTP node, calibrate AVEC, or evict nodes. action is a typed name (memory.store, memory.calibrate, memory.evict). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "limit": {
-            "description": "Max matches (default 20)",
-            "type": "integer"
-          },
-          "query": {
-            "description": "Search query",
-            "type": "string"
-          },
-          "server_id": {
-            "description": "Optional MCP server id filter",
-            "type": "string"
-          }
-        },
-        "required": [
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:discover"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_mcp_invoke",
-      "description": "Invoke an external MCP tool via the MCP Client gateway.",
-      "input_schema": {
-        "properties": {
-          "approval_granted": {
-            "description": "Set true after the operator approves a prior approval_required response",
-            "type": "boolean"
-          },
-          "input": {
-            "type": "object"
-          },
-          "server_id": {
-            "type": "string"
-          },
-          "tool_name": {
-            "type": "string"
-          },
-          "turn_token": {
-            "description": "Optional pre-minted turn token",
-            "type": "string"
-          }
-        },
-        "required": [
-          "server_id",
-          "tool_name"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:execute"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_mcp_promote_to_job",
-      "description": "Promote a successful MCP invoke into a durable sequential workflow job with one MCP step.",
-      "input_schema": {
-        "properties": {
-          "input": {
-            "type": "object"
-          },
-          "note": {
-            "type": "string"
-          },
-          "queue": {
-            "default": "default",
-            "type": "string"
-          },
-          "server_id": {
-            "type": "string"
-          },
-          "step_id": {
-            "default": "mcp_step",
-            "type": "string"
-          },
-          "tool_name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "server_id",
-          "tool_name"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": []
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_mcp_servers",
-      "description": "List MCP servers known to the MCP Client gateway.",
-      "input_schema": {
-        "properties": {},
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:research",
-        "workshop:domain:discover"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_memory_calibrate",
-      "description": "Measure AVEC drift for a session. Call at session start and after heavy reasoning before store/retrieve.",
-      "input_schema": {
-        "properties": {
-          "autonomy": {
-            "type": "number"
-          },
-          "friction": {
-            "type": "number"
-          },
-          "logic": {
-            "type": "number"
-          },
-          "session_id": {
-            "type": "string"
-          },
-          "stability": {
-            "type": "number"
-          },
-          "trigger": {
-            "description": "e.g. manual, session_start",
-            "type": "string"
-          }
-        },
-        "required": [
-          "autonomy",
-          "friction",
-          "logic",
-          "stability",
-          "trigger"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:memory",
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:domain:memory"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_memory_context",
-      "description": "Primary memory retrieval by AVEC resonance. Requires stability/friction/logic/autonomy. Optional context_keywords and semantic_tags (indexed, match-all). Use tag_prefix for prefix vocabulary search. Set session_id to null for global retrieval across sessions.",
-      "input_schema": {
-        "properties": {
-          "alpha": {
-            "type": "number"
-          },
-          "autonomy": {
-            "type": "number"
-          },
-          "beta": {
-            "type": "number"
-          },
-          "context_keywords": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "friction": {
-            "type": "number"
-          },
-          "from_utc": {
-            "type": "string"
-          },
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "logic": {
-            "type": "number"
-          },
-          "semantic_tags": {
-            "description": "Indexed Locus tags (match-all). Example: [\"session\", \"profile:work\"]",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "stability": {
-            "type": "number"
-          },
-          "tag_prefix": {
-            "description": "Match nodes whose indexed tags share this prefix (e.g. profile:)",
-            "type": "string"
-          },
-          "tiers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "to_utc": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "autonomy",
-          "friction",
-          "logic",
-          "stability"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:bootstrap",
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:authorized:memory_context",
-        "workshop:authorized:research",
-        "workshop:bootstrap"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_memory_evict",
-      "description": "Evict Locus memory nodes (dry-run by default). Supports by_filter, purge_session, by_node_ids, and by_sync_keys modes.",
-      "input_schema": {
-        "properties": {
-          "dry_run": {
-            "description": "Preview deletions without applying (default: true)",
-            "type": "boolean"
-          },
-          "force": {
-            "description": "Bypass inbound-reference blocks (default: false)",
-            "type": "boolean"
-          },
-          "max_nodes": {
-            "description": "Safety cap on nodes touched (default: 5000)",
-            "type": "integer"
-          },
-          "mode": {
-            "description": "Eviction strategy (default: by_filter)",
+          "action": {
             "enum": [
-              "by_filter",
-              "by_node_ids",
-              "by_sync_keys",
-              "purge_session"
+              "memory.calibrate",
+              "memory.evict",
+              "memory.store"
             ],
             "type": "string"
-          },
-          "node_ids": {
-            "description": "Node ids for by_node_ids mode",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "description": "Locus session scope (defaults to current turn session)",
-            "type": "string"
-          },
-          "sync_keys": {
-            "description": "Sync keys for by_sync_keys mode",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "tiers": {
-            "description": "Filter tiers for by_filter mode",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": []
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_memory_list",
-      "description": "Memory inventory, newest-first. Optional context_keywords filter on context_summary. Optional semantic_tags (indexed, match-all) or tag_prefix. Omit session_id or pass null for global listing.",
-      "input_schema": {
-        "properties": {
-          "context_keywords": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "semantic_tags": {
-            "description": "Indexed Locus tags (match-all)",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "tag_prefix": {
-            "description": "Match nodes whose indexed tags share this prefix",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:memory",
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:authorized:memory_context",
-        "workshop:domain:memory"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_memory_moods",
-      "description": "AVEC mood presets and blend preview. Use before store/retrieve when reasoning posture is unset.",
-      "input_schema": {
-        "properties": {
-          "blend": {
-            "type": "number"
-          },
-          "current_autonomy": {
-            "type": "number"
-          },
-          "current_friction": {
-            "type": "number"
-          },
-          "current_logic": {
-            "type": "number"
-          },
-          "current_stability": {
-            "type": "number"
-          },
-          "target_mood": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:memory",
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:authorized:memory_context",
-        "workshop:domain:memory"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_memory_recall",
-      "description": "Retrieve memory by natural-language keywords (legacy). Prefer cognition_memory_context with explicit AVEC when possible. Optional semantic_tags or tag_prefix for indexed filtering. Pass session_id to scope to one session, or null to search across all sessions.",
-      "input_schema": {
-        "properties": {
-          "limit": {
-            "maximum": 20,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "query": {
-            "type": "string"
-          },
-          "semantic_tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "tag_prefix": {
-            "type": "string"
           }
         },
         "required": [
-          "query"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:memory",
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:authorized:memory_context",
-        "workshop:authorized:research",
-        "workshop:domain:memory"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_memory_schema",
-      "description": "Return a canonical STTP node example and the active ingest profile before storing memory.",
-      "input_schema": {
-        "properties": {},
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:memory",
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:authorized:memory_context",
-        "workshop:domain:memory"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_memory_store",
-      "description": "Store a complete STTP node in Locus memory. Requires `node` (full STTP string). Optional `session_id` defaults to the current turn session.",
-      "input_schema": {
-        "properties": {
-          "content": {
-            "description": "Deprecated: use `node` with full STTP instead",
-            "type": "string"
-          },
-          "node": {
-            "description": "Full STTP node payload with ⊕ ⦿ ◈ ⍉ layers",
-            "type": "string"
-          },
-          "semantic_tags": {
-            "description": "Optional Locus semantic tags merged into the STTP prime block",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "description": "Locus session id (defaults to current turn session)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "node"
+          "action"
         ],
         "type": "object"
       },
@@ -6581,31 +3743,40 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_memory_tags",
-      "description": "List indexed Locus semantic tags for the active profile tenant. Optional prefix narrows vocabulary (e.g. profile:, chat:, medousa). Use before recall/list to pick tag filters.",
+      "name": "cognition_memory_query",
+      "description": "Read Locus memory: schema, AVEC context, list, recall, tags, or mood presets. action is a typed name (memory.context, memory.recall, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "limit": {
-            "maximum": 500,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "prefix": {
-            "description": "Filter tags by prefix (case-insensitive)",
+          "action": {
+            "enum": [
+              "memory.context",
+              "memory.list",
+              "memory.moods",
+              "memory.recall",
+              "memory.schema",
+              "memory.tags"
+            ],
             "type": "string"
-          },
-          "session_id": {
-            "description": "Optional session to derive tenant scope",
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
+        "required": [
+          "action"
+        ],
         "type": "object"
       },
       "output_schema_present": true,
-      "placements": []
+      "placements": [
+        "general:authorized",
+        "general:bootstrap",
+        "general:domain:memory",
+        "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
+        "workshop:authorized:research",
+        "workshop:bootstrap",
+        "workshop:domain:memory"
+      ]
     },
     {
       "registry": "general_runtime",
@@ -6683,627 +3854,198 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_runtime_delivery_status",
-      "description": "Summarize runtime queue, outbox, and recurring workload counts. Includes pending outbox event previews when available.",
+      "name": "cognition_runtime_mutate",
+      "description": "Mutate durable runtime work. action is a typed name (job.enqueue, workflow.run, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "pending_limit": {
-            "description": "Max pending outbox rows to preview (1-50, default 10)",
-            "maximum": 50,
-            "minimum": 1,
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_jobs_cancel",
-      "description": "Cancel a pending runtime job (enqueued or leased).",
-      "input_schema": {
-        "properties": {
-          "job_id": {
-            "description": "Runtime job identifier",
-            "type": "string"
-          }
-        },
-        "required": [
-          "job_id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_jobs_list",
-      "description": "List runtime jobs with optional state and correlation_id filters. Defaults to enqueued and running jobs.",
-      "input_schema": {
-        "properties": {
-          "correlation_id": {
-            "description": "Optional correlation_id filter (exact match)",
-            "type": "string"
-          },
-          "limit": {
-            "description": "Max jobs to return (1-100, default 20)",
-            "maximum": 100,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "state": {
-            "description": "Optional filter: enqueued, leased, running, succeeded, failed, dead_letter, canceled",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_jobs_status",
-      "description": "Inspect job attempts and latest execution status for a given job_id.",
-      "input_schema": {
-        "properties": {
-          "job_id": {
-            "description": "Runtime job identifier",
-            "type": "string"
-          }
-        },
-        "required": [
-          "job_id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_recurring_cancel",
-      "description": "Disable a recurring schedule (soft cancel). The definition remains in the registry with enabled=false.",
-      "input_schema": {
-        "properties": {
-          "recurring_id": {
-            "description": "Recurring definition id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "recurring_id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_recurring_doctor",
-      "description": "Diagnose recurring schedules: cron, next run, enabled state, and channel delivery bindings.",
-      "input_schema": {
-        "properties": {
-          "recurring_id": {
-            "description": "Optional single recurring id; omit to inspect all",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_recurring_list",
-      "description": "List registered recurring job definitions with optional channel delivery bindings.",
-      "input_schema": {
-        "properties": {
-          "enabled_only": {
-            "default": false,
-            "description": "When true, return only enabled schedules",
-            "type": "boolean"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_recurring_pause",
-      "description": "Pause a recurring schedule by setting enabled=false.",
-      "input_schema": {
-        "properties": {
-          "recurring_id": {
-            "description": "Recurring definition id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "recurring_id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_recurring_preview",
-      "description": "Validate cron/timezone configuration and preview upcoming recurring run times.",
-      "input_schema": {
-        "properties": {
-          "count": {
-            "description": "How many future runs to preview (1-20, default 5)",
-            "maximum": 20,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "cron_expr": {
-            "description": "Cron expression to validate",
-            "type": "string"
-          },
-          "start_at": {
-            "description": "Optional RFC3339 UTC start timestamp",
-            "type": "string"
-          },
-          "timezone": {
-            "default": "UTC",
-            "description": "IANA timezone",
-            "type": "string"
-          }
-        },
-        "required": [
-          "cron_expr"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_recurring_register",
-      "description": "Register a durable recurring schedule for Grapheme or other runtime job types. Grapheme sources are preflight-validated before registration.",
-      "input_schema": {
-        "properties": {
-          "cron_expr": {
-            "description": "7-field cron: sec min hour day-of-month month day-of-week year (e.g. every 4h: 0 0 */4 * * * *)",
-            "type": "string"
-          },
-          "delivery": {
-            "description": "Where to push each successful run (independent of current UI channel). 7-field cron required separately.",
-            "properties": {
-              "channel": {
-                "description": "telegram | discord | slack | whatsapp | cli",
-                "type": "string"
-              },
-              "channel_id": {
-                "description": "Canonical id, e.g. telegram:chat:123",
-                "type": "string"
-              },
-              "discord_channel_id": {
-                "type": "string"
-              },
-              "mode": {
-                "default": "explicit",
-                "enum": [
-                  "current_channel",
-                  "explicit",
-                  "linked_channel",
-                  "product_default"
-                ],
-                "type": "string"
-              },
-              "session_id": {
-                "description": "Medousa session for job context",
-                "type": "string"
-              },
-              "slack_channel_id": {
-                "type": "string"
-              },
-              "telegram_chat_id": {
-                "type": "string"
-              },
-              "user_id": {
-                "type": "string"
-              },
-              "whatsapp_chat_jid": {
-                "type": "string"
-              }
-            },
-            "type": "object"
-          },
-          "enabled": {
-            "default": true,
-            "type": "boolean"
-          },
-          "feeds": {
-            "description": "Environment feed ids to publish each materialized run terminal event.",
-            "properties": {
-              "feed_ids": {
-                "description": "Bounded feed bus ids, e.g. trip.london.trains",
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "payload_mode": {
-                "default": "parsed_poll",
-                "enum": [
-                  "parsed_poll",
-                  "raw_excerpt",
-                  "summary"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "feed_ids"
-            ],
-            "type": "object"
-          },
-          "jitter_seconds": {
-            "default": 0,
-            "type": "integer"
-          },
-          "job_type": {
-            "default": "workflow.grapheme.run",
-            "description": "Runtime job handler",
-            "type": "string"
-          },
-          "max_attempts": {
-            "default": 1,
-            "type": "integer"
-          },
-          "payload_template_ref": {
-            "description": "Optional explicit payload template (overrides source)",
-            "type": "string"
-          },
-          "queue": {
-            "default": "default",
-            "description": "Runtime queue",
-            "type": "string"
-          },
-          "recurring_id": {
-            "description": "Optional recurring id",
-            "type": "string"
-          },
-          "source": {
-            "description": "Grapheme source (required when job_type is workflow.grapheme.run)",
-            "type": "string"
-          },
-          "start_immediately": {
-            "default": false,
-            "type": "boolean"
-          },
-          "timezone": {
-            "default": "UTC",
-            "description": "IANA timezone",
-            "type": "string"
-          }
-        },
-        "required": [
-          "cron_expr"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_workflow_cancel",
-      "description": "Cancel a workflow: disable scheduled recurring (if any) and cancel pending root job.",
-      "input_schema": {
-        "properties": {
-          "workflow_id": {
-            "description": "Workflow identifier",
-            "type": "string"
-          }
-        },
-        "required": [
-          "workflow_id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_workflow_plan",
-      "description": "Suggest a workflow JSON plan from a natural-language goal without executing it. Returns execute_with guidance (workflow_run, workflow_schedule, capability_invoke, etc.).",
-      "input_schema": {
-        "properties": {
-          "context": {
-            "description": "Optional hints: url, csv_url, topic, query, telegram_chat_id, timezone",
-            "type": "object"
-          },
-          "goal": {
-            "description": "Natural-language description of desired durable work",
-            "type": "string"
-          }
-        },
-        "required": [
-          "goal"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_workflow_run",
-      "description": "Execute a declarative multi-step workflow now. Strategies: sequential (default), concurrent (parallel read-only steps), handoff (sequential with $handoff.context).",
-      "input_schema": {
-        "properties": {
-          "mode": {
-            "default": "default",
-            "type": "string"
-          },
-          "name": {
-            "description": "Optional human-readable workflow name",
-            "type": "string"
-          },
-          "note": {
-            "type": "string"
-          },
-          "on_failure": {
-            "default": "stop",
+          "action": {
             "enum": [
-              "continue",
-              "stop"
+              "job.cancel",
+              "job.enqueue",
+              "recurring.cancel",
+              "recurring.pause",
+              "recurring.register",
+              "workflow.cancel",
+              "workflow.plan",
+              "workflow.run",
+              "workflow.schedule"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:bootstrap",
+        "general:domain:runtime",
+        "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
+        "workshop:authorized:research",
+        "workshop:bootstrap",
+        "workshop:domain:runtime"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_runtime_query",
+      "description": "Inspect jobs, recurring, workflows, or delivery. action is a typed name (job.list, workflow.status, …). Fetch fields with cognition_schema types=[...].",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "enum": [
+              "delivery.status",
+              "job.list",
+              "job.status",
+              "recurring.doctor",
+              "recurring.list",
+              "recurring.preview",
+              "workflow.status"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:bootstrap",
+        "general:domain:runtime",
+        "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
+        "workshop:authorized:research",
+        "workshop:bootstrap",
+        "workshop:domain:runtime"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_schema",
+      "description": "Fetch typed action parameter schemas. `types` is a list — batch several actions in one call (read then execute). Omit `types` and set `domain` to list action names.",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "domain": {
+            "enum": [
+              "calendar",
+              "capability",
+              "identity",
+              "memory",
+              "runtime",
+              "store",
+              "turn",
+              "workshop"
             ],
             "type": "string"
           },
-          "queue": {
-            "default": "default",
-            "type": "string"
-          },
-          "steps": {
-            "description": "Ordered workflow steps (grapheme, prompt, or mcp)",
+          "types": {
             "items": {
-              "type": "object"
+              "enum": [
+                "artifacts.delete",
+                "artifacts.list",
+                "artifacts.read",
+                "artifacts.search",
+                "artifacts.write",
+                "calendar.create",
+                "calendar.delete",
+                "calendar.export",
+                "calendar.import",
+                "calendar.list",
+                "calendar.update",
+                "capability.find",
+                "capability.invoke",
+                "code.read",
+                "code.search",
+                "code.write",
+                "delivery.status",
+                "grapheme.find",
+                "grapheme.invoke",
+                "identity.commit",
+                "identity.context",
+                "identity.propose",
+                "identity.recall",
+                "identity.remember",
+                "job.cancel",
+                "job.enqueue",
+                "job.list",
+                "job.status",
+                "mcp.find",
+                "mcp.invoke",
+                "memory.calibrate",
+                "memory.context",
+                "memory.evict",
+                "memory.list",
+                "memory.moods",
+                "memory.recall",
+                "memory.schema",
+                "memory.store",
+                "memory.tags",
+                "recurring.cancel",
+                "recurring.doctor",
+                "recurring.list",
+                "recurring.pause",
+                "recurring.preview",
+                "recurring.register",
+                "scripts.list",
+                "scripts.read",
+                "scripts.search",
+                "scripts.write",
+                "turn.begin_work",
+                "turn.checkpoint",
+                "turn.finish",
+                "turn.prepare_final",
+                "turn.propose_mode",
+                "turn.request_more_rounds",
+                "turn.update_user",
+                "vault.delete",
+                "vault.list",
+                "vault.move",
+                "vault.read",
+                "vault.search",
+                "vault.write",
+                "workflow.cancel",
+                "workflow.plan",
+                "workflow.run",
+                "workflow.schedule",
+                "workflow.status",
+                "workshop.cancel",
+                "workshop.spawn",
+                "workshop.status",
+                "workshop.steer"
+              ],
+              "type": "string"
             },
             "type": "array"
-          },
-          "strategy": {
-            "default": "sequential",
-            "enum": [
-              "concurrent",
-              "handoff",
-              "sequential"
-            ],
-            "type": "string"
           }
         },
-        "required": [
-          "steps"
-        ],
         "type": "object"
       },
       "output_schema_present": true,
       "placements": [
         "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_workflow_schedule",
-      "description": "Register a recurring schedule for a declarative workflow. Requires scheduled lane; grapheme steps are preflight-validated.",
-      "input_schema": {
-        "properties": {
-          "cron_expr": {
-            "description": "7-field cron: sec min hour day-of-month month day-of-week year (e.g. every 4h: 0 0 */4 * * * *)",
-            "type": "string"
-          },
-          "delivery": {
-            "description": "Where to push each successful run (independent of current UI channel). 7-field cron required separately.",
-            "properties": {
-              "channel": {
-                "description": "telegram | discord | slack | whatsapp | cli",
-                "type": "string"
-              },
-              "channel_id": {
-                "description": "Canonical id, e.g. telegram:chat:123",
-                "type": "string"
-              },
-              "discord_channel_id": {
-                "type": "string"
-              },
-              "mode": {
-                "default": "explicit",
-                "enum": [
-                  "current_channel",
-                  "explicit",
-                  "linked_channel",
-                  "product_default"
-                ],
-                "type": "string"
-              },
-              "session_id": {
-                "description": "Medousa session for job context",
-                "type": "string"
-              },
-              "slack_channel_id": {
-                "type": "string"
-              },
-              "telegram_chat_id": {
-                "type": "string"
-              },
-              "user_id": {
-                "type": "string"
-              },
-              "whatsapp_chat_jid": {
-                "type": "string"
-              }
-            },
-            "type": "object"
-          },
-          "enabled": {
-            "default": true,
-            "type": "boolean"
-          },
-          "feeds": {
-            "description": "Environment feed ids to publish each materialized run terminal event.",
-            "properties": {
-              "feed_ids": {
-                "description": "Bounded feed bus ids, e.g. trip.london.trains",
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "payload_mode": {
-                "default": "parsed_poll",
-                "enum": [
-                  "parsed_poll",
-                  "raw_excerpt",
-                  "summary"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "feed_ids"
-            ],
-            "type": "object"
-          },
-          "jitter_seconds": {
-            "default": 0,
-            "type": "integer"
-          },
-          "max_attempts": {
-            "default": 1,
-            "type": "integer"
-          },
-          "mode": {
-            "default": "default",
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "note": {
-            "type": "string"
-          },
-          "on_failure": {
-            "default": "stop",
-            "enum": [
-              "continue",
-              "stop"
-            ],
-            "type": "string"
-          },
-          "queue": {
-            "default": "default",
-            "type": "string"
-          },
-          "recurring_id": {
-            "type": "string"
-          },
-          "start_immediately": {
-            "default": false,
-            "type": "boolean"
-          },
-          "steps": {
-            "items": {
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "strategy": {
-            "default": "sequential",
-            "enum": [
-              "concurrent",
-              "handoff",
-              "sequential"
-            ],
-            "type": "string"
-          },
-          "timezone": {
-            "default": "UTC",
-            "type": "string"
-          }
-        },
-        "required": [
-          "cron_expr",
-          "steps"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_runtime_workflow_status",
-      "description": "Aggregate status for a workflow by workflow_id.",
-      "input_schema": {
-        "properties": {
-          "workflow_id": {
-            "description": "Workflow identifier",
-            "type": "string"
-          }
-        },
-        "required": [
-          "workflow_id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:runtime"
+        "general:bootstrap",
+        "general:domain:catalog",
+        "general:domain:runtime",
+        "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
+        "workshop:authorized:research",
+        "workshop:bootstrap",
+        "workshop:domain:discover",
+        "workshop:domain:execute",
+        "workshop:domain:runtime"
       ]
     },
     {
@@ -7573,45 +4315,92 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_spawn_turn_worker",
-      "description": "Delegate heavy work to a background turn worker (web/Grapheme execution, memory rituals). Returns immediately; the worker runs tools with a focused policy, then a synthesis pass delivers the final user-facing answer. Intents: memory.avec_calibrate | memory.context | research | general. Optional manuscript_id loads a YAML specialty (voice, tool allowlist, identity pins, OpenShell/skill tools). Manuscript spec.worker.stage_role selects a StageRoutingMatrix route (extractor, verifier, …); spec.worker.model_hint overrides provider/model. Spawn-time stage_role/model_hint win over manuscript defaults. Prefer omitting model_hint (or set model_hint=auto) so workshop StageRoutingMatrix / host preferences choose provider+model. Only pass provider:model when the user explicitly asked for that combo. Bare model ids infer the provider when unambiguous; otherwise they inherit the host turn provider — never the process default. Use manuscript_id=echo-skill or openshell-researcher for sandbox script execution. Put resolved capability/module/op and any host evidence into task — workers do not see parent chat.",
+      "name": "cognition_store_read",
+      "description": "Read or search vault notes, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.read, artifacts.search, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "intent": {
-            "description": "Worker profile: memory.avec_calibrate | memory.context | research | general",
-            "type": "string"
-          },
-          "manuscript_id": {
-            "description": "Optional YAML specialty (voice, tools, worker intent, spec.worker.stage_role, spec.worker.model_hint).",
-            "type": "string"
-          },
-          "model_hint": {
-            "description": "Optional. Prefer omit or 'auto' to use user stage-routing / host prefs. Only set provider:model when explicitly requested (e.g. deepseek:deepseek-v4-flash).",
-            "type": "string"
-          },
-          "stage_role": {
-            "description": "Optional StageRoutingMatrix role (extractor, verifier, chunker, …)",
-            "type": "string"
-          },
-          "task": {
-            "description": "Focused task for the worker: capability id, module.op, URLs, and constraints. Include what the host already resolved so the worker does not rediscover.",
-            "type": "string"
-          },
-          "user_ack": {
-            "description": "Short message for the user while the worker runs",
+          "action": {
+            "enum": [
+              "artifacts.list",
+              "artifacts.read",
+              "artifacts.search",
+              "code.read",
+              "code.search",
+              "scripts.list",
+              "scripts.read",
+              "scripts.search",
+              "vault.list",
+              "vault.read",
+              "vault.search"
+            ],
             "type": "string"
           }
         },
         "required": [
-          "task",
-          "user_ack"
+          "action"
         ],
         "type": "object"
       },
       "output_schema_present": true,
       "placements": [
         "general:authorized",
-        "general:bootstrap"
+        "general:bootstrap",
+        "general:domain:catalog",
+        "general:domain:documents",
+        "general:domain:presentation",
+        "general:domain:vault",
+        "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
+        "workshop:authorized:research",
+        "workshop:bootstrap",
+        "workshop:domain:presentation",
+        "workshop:domain:scripts",
+        "workshop:domain:vault"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_store_write",
+      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.write, artifacts.write, …). Fetch fields with cognition_schema types=[...].",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "enum": [
+              "artifacts.delete",
+              "artifacts.write",
+              "code.write",
+              "scripts.write",
+              "vault.delete",
+              "vault.move",
+              "vault.write"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:bootstrap",
+        "general:domain:catalog",
+        "general:domain:documents",
+        "general:domain:presentation",
+        "general:domain:vault",
+        "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
+        "workshop:authorized:research",
+        "workshop:bootstrap",
+        "workshop:domain:presentation",
+        "workshop:domain:scripts",
+        "workshop:domain:vault"
       ]
     },
     {
@@ -7728,87 +4517,26 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_turn_begin_work",
-      "description": "Enter the bound workshop for multi-tool execution (environment/canvas, components, vault writes). Provide a short principal-facing message and a concrete goal for the workshop executor. Host turn ends with the ack; synthesis delivers on the same thread when the workshop finishes.",
+      "name": "cognition_turn",
+      "description": "Control this turn: begin work, update the principal, checkpoint, finish, or request more rounds. action is a typed name (turn.finish, turn.checkpoint, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "goal": {
-            "description": "Focused execution task for the bound workshop (tools, surfaces, constraints)",
-            "type": "string"
-          },
-          "intent": {
-            "description": "Optional worker profile: general | research (default general)",
-            "type": "string"
-          },
-          "message": {
-            "description": "Short principal-facing ack before workshop execution",
+          "action": {
+            "enum": [
+              "turn.begin_work",
+              "turn.checkpoint",
+              "turn.finish",
+              "turn.prepare_final",
+              "turn.propose_mode",
+              "turn.request_more_rounds",
+              "turn.update_user"
+            ],
             "type": "string"
           }
         },
         "required": [
-          "goal",
-          "message"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:bootstrap",
-        "workshop:bootstrap"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_turn_checkpoint",
-      "description": "Share a substantive mid-task update with the principal and hand the turn back to them. The conversation is not over — you may continue after they reply. Use when tool work produced real progress but you are not done (not a final answer). Prefer this over streaming long interim prose that the runtime may loop on.",
-      "input_schema": {
-        "properties": {
-          "awaiting": {
-            "description": "Optional: what you need from the principal before more tool work (decision, confirmation, missing detail)",
-            "type": "string"
-          },
-          "message": {
-            "description": "Principal-facing update: what you did, what you found, and what happens next or what you need from them",
-            "type": "string"
-          },
-          "reason": {
-            "description": "Optional short note for logs (not shown to the principal)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "message"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:bootstrap",
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:authorized:memory_context",
-        "workshop:authorized:research"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_turn_finish",
-      "description": "Deliver the complete principal-facing final answer now and end this turn immediately. Use it as an explicit hard stop after tool work; synthesis-bound workers require it for direct pass-through, while principal-facing turns may also commit after two consecutive non-tool responses. Mid-task handoffs use cognition_turn_checkpoint.",
-      "input_schema": {
-        "properties": {
-          "message": {
-            "description": "Complete principal-facing final answer for this turn",
-            "type": "string"
-          },
-          "reason": {
-            "description": "Optional short note for logs (not shown to the user)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "message"
+          "action"
         ],
         "type": "object"
       },
@@ -7821,177 +4549,6 @@
         "workshop:authorized:memory_context",
         "workshop:authorized:research",
         "workshop:bootstrap"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_turn_prepare_final",
-      "description": "Deprecated — prefer cognition_turn_finish with the complete answer. Workshop workers may still call this; host turns should use cognition_turn_update_user for quick status, cognition_turn_begin_work before heavy work, and cognition_turn_finish to commit.",
-      "input_schema": {
-        "properties": {
-          "reason": {
-            "description": "Optional short note for logs (not shown to the user)",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:authorized:memory_context",
-        "workshop:authorized:research"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_turn_propose_mode",
-      "description": "Propose switching Medousa's mode for the current chat. Use Coder only when repository inspection, edits, commands, or tests would materially help; programming explanations stay in General. The runtime applies the user's auto-accept/expiry policy and never expands authority from this tool alone.",
-      "input_schema": {
-        "properties": {
-          "mode": {
-            "enum": [
-              "coder",
-              "general"
-            ],
-            "type": "string"
-          },
-          "reason": {
-            "description": "Short user-facing reason this mode better fits the work",
-            "type": "string"
-          },
-          "scope": {
-            "default": "session",
-            "enum": [
-              "session",
-              "task"
-            ],
-            "type": "string"
-          },
-          "task_id": {
-            "description": "Required for task scope; use the active undertaking/work id when relevant",
-            "type": "string"
-          }
-        },
-        "required": [
-          "mode",
-          "reason"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:bootstrap",
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:authorized:memory_context",
-        "workshop:authorized:research"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_turn_request_more_rounds",
-      "description": "Request additional tool rounds when the current budget is too tight. Pauses until the principal approves or denies. Include reason and progress summary.",
-      "input_schema": {
-        "properties": {
-          "progress_summary": {
-            "description": "What is done and what remains",
-            "type": "string"
-          },
-          "reason": {
-            "description": "Why the current budget is insufficient",
-            "type": "string"
-          },
-          "requested_rounds": {
-            "description": "How many additional model/tool rounds you need",
-            "maximum": 8,
-            "minimum": 1,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "reason",
-          "requested_rounds"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:authorized:memory_context",
-        "workshop:authorized:research"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_turn_update_user",
-      "description": "Tell the principal what you are doing right now — retries, quick course-corrections, \"pulling schemas\", \"one sec\". Call in the same model round as your next tool. Does not end the turn. Prefer this over naked chat prose (prose without tools fights the turn loop). For heavy/long-running work starting, use cognition_turn_begin_work instead.",
-      "input_schema": {
-        "properties": {
-          "message": {
-            "description": "Short principal-facing status line",
-            "type": "string"
-          }
-        },
-        "required": [
-          "message"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:bootstrap",
-        "workshop:authorized:general",
-        "workshop:authorized:memory_avec_calibrate",
-        "workshop:authorized:memory_context",
-        "workshop:authorized:research",
-        "workshop:bootstrap"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_turn_worker_cancel",
-      "description": "Cancel an exact worker generation owned by the active host session (best-effort; in-flight worker may still finish).",
-      "input_schema": {
-        "properties": {
-          "work_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "work_id"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_turn_worker_status",
-      "description": "List or fetch status of background turn workers. On an active host turn, omit session_id to use the current session.",
-      "input_schema": {
-        "properties": {
-          "session_id": {
-            "type": "string"
-          },
-          "work_id": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:bootstrap"
       ]
     },
     {
@@ -8077,7 +4634,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_ui_present",
-      "description": "Present an HTML artifact in chat (inline card, side panel, or fullscreen) when the connected client advertises supports_ui_artifacts. Persist workflow: publish HTML here, then persist=true + surface_id (custom surface only) + component_id + slot to pin on the canvas. For first-time publish only — use cognition_artifact_write to revise an existing artifact. Canvas widgets: use MedousaStore (not localStorage); get/set/delete are async — await them in async handlers. inline: compact preview card. panel/fullscreen: use a transparent outer page background (no hard-coded #000 body); center content up to ~900px wide. Use height only for inline preview cap.",
+      "description": "Present an HTML artifact in chat (inline card, side panel, or fullscreen) when the connected client advertises supports_ui_artifacts. Persist workflow: publish HTML here, then persist=true + surface_id (custom surface only) + component_id + slot to pin on the canvas. For first-time publish only — use cognition_store_write action=artifacts.write to revise an existing artifact. Canvas widgets: use MedousaStore (not localStorage); get/set/delete are async — await them in async handlers. inline: compact preview card. panel/fullscreen: use a transparent outer page background (no hard-coded #000 body); center content up to ~900px wide. Use height only for inline preview cap.",
       "input_schema": {
         "properties": {
           "component_id": {
@@ -8238,273 +4795,6 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_vault_delete",
-      "description": "Soft-delete a vault markdown note (moves to .trash). Use after confirming the path with list/read.",
-      "input_schema": {
-        "properties": {
-          "path": {
-            "description": "Relative vault note path to delete",
-            "type": "string"
-          }
-        },
-        "required": [
-          "path"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:documents",
-        "general:domain:vault",
-        "workshop:domain:vault"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_vault_grep",
-      "description": "Search inside a vault note (literal case-insensitive match with line numbers). Use cognition_vault_search to discover notes; use grep for surgical edits.",
-      "input_schema": {
-        "properties": {
-          "context_lines": {
-            "maximum": 10,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "path": {
-            "type": "string"
-          },
-          "pattern": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "path",
-          "pattern"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:bootstrap",
-        "general:domain:documents",
-        "general:domain:vault",
-        "workshop:domain:vault"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_vault_list",
-      "description": "List vault notes (path + title + semantic tags). Optional tag filter (match-all).",
-      "input_schema": {
-        "properties": {
-          "limit": {
-            "maximum": 200,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "prefix": {
-            "description": "Optional path prefix filter",
-            "type": "string"
-          },
-          "semantic_tags": {
-            "description": "Indexed-style tag filter (match-all), aligned with Locus tags",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "tag_prefix": {
-            "description": "Filter notes with tags sharing this prefix",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:documents",
-        "general:domain:vault",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:vault"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_vault_move",
-      "description": "Move/rename a vault note to a new relative path. Creates parent folders as needed and removes the source note.",
-      "input_schema": {
-        "properties": {
-          "from_path": {
-            "description": "Existing note path",
-            "type": "string"
-          },
-          "to_path": {
-            "description": "Destination path",
-            "type": "string"
-          }
-        },
-        "required": [
-          "from_path",
-          "to_path"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:documents",
-        "general:domain:vault",
-        "workshop:domain:vault"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_vault_read",
-      "description": "Read a vault note body (budget-capped).",
-      "input_schema": {
-        "properties": {
-          "line_end": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "line_start": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "max_chars": {
-            "maximum": 20000,
-            "minimum": 256,
-            "type": "integer"
-          },
-          "path": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "path"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:domain:documents",
-        "general:domain:vault",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:vault"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_vault_search",
-      "description": "Search vault notes by full text and/or semantic tags (match-all).",
-      "input_schema": {
-        "properties": {
-          "limit": {
-            "maximum": 50,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "q": {
-            "description": "Full-text query (optional if semantic_tags set)",
-            "type": "string"
-          },
-          "semantic_tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:authorized",
-        "general:bootstrap",
-        "general:domain:documents",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:vault"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_vault_tags",
-      "description": "List semantic tags used across vault notes (shared vocabulary with Locus memory).",
-      "input_schema": {
-        "properties": {
-          "limit": {
-            "maximum": 500,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "prefix": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:vault",
-        "workshop:domain:vault"
-      ]
-    },
-    {
-      "registry": "general_runtime",
-      "name": "cognition_vault_write",
-      "description": "Create or update a vault markdown note. Merges Locus-aligned semantic tags into frontmatter.",
-      "input_schema": {
-        "properties": {
-          "auto_workshop_tags": {
-            "description": "Merge medousa/vault/session/profile/chat defaults (default true)",
-            "type": "boolean"
-          },
-          "content": {
-            "type": "string"
-          },
-          "if_match": {
-            "description": "Optional content_hash for optimistic concurrency",
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
-          },
-          "semantic_tags": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "session_id": {
-            "description": "Chat session for workshop linking tags (defaults to current turn session)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "content",
-          "path"
-        ],
-        "type": "object"
-      },
-      "output_schema_present": true,
-      "placements": [
-        "general:domain:documents",
-        "general:domain:vault",
-        "workshop:authorized:general",
-        "workshop:authorized:research",
-        "workshop:domain:vault"
-      ]
-    },
-    {
-      "registry": "general_runtime",
       "name": "cognition_web_search",
       "description": "Search the public web with one call. Uses configured provider preference and binding fallbacks (web.<provider>, then websearch.search). For deep reports use mode=research_report.",
       "input_schema": {
@@ -8550,28 +4840,64 @@
     },
     {
       "registry": "general_runtime",
-      "name": "cognition_workshop_steer",
-      "description": "Forward a principal steer message into the active bound workshop for this session. Use when the operator adds guidance while workshop execution is in flight.",
+      "name": "cognition_workshop_mutate",
+      "description": "Write workshop/worker control: spawn, cancel, or steer. action is a typed name (workshop.spawn, workshop.cancel, workshop.steer). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
+        "additionalProperties": true,
         "properties": {
-          "message": {
-            "description": "Steer text for the bound workshop",
-            "type": "string"
-          },
-          "work_id": {
-            "description": "Exact bound-workshop generation returned by begin-work.",
+          "action": {
+            "enum": [
+              "workshop.cancel",
+              "workshop.spawn",
+              "workshop.steer"
+            ],
             "type": "string"
           }
         },
         "required": [
-          "message",
-          "work_id"
+          "action"
         ],
         "type": "object"
       },
       "output_schema_present": true,
       "placements": [
-        "general:authorized"
+        "general:authorized",
+        "general:bootstrap",
+        "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
+        "workshop:authorized:research",
+        "workshop:bootstrap"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_workshop_query",
+      "description": "Read workshop/worker status. action is a typed name (workshop.status). Fetch fields with cognition_schema types=[...].",
+      "input_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "enum": [
+              "workshop.status"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:bootstrap",
+        "workshop:authorized:general",
+        "workshop:authorized:memory_avec_calibrate",
+        "workshop:authorized:memory_context",
+        "workshop:authorized:research",
+        "workshop:bootstrap"
       ]
     },
     {

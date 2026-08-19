@@ -5,32 +5,17 @@ pub const LEGACY_MANUAL_TOOL_CONTRACTS: &[&str] = &[];
 
 /// Typed contracts already excluded from the manual migration allowlist.
 pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
-    "cognition_artifact_delete",
-    "cognition_artifact_grep",
-    "cognition_artifact_list",
-    "cognition_artifact_read",
-    "cognition_artifact_write",
     "cognition_browser_act",
     "cognition_browser_fetch",
     "cognition_browser_snapshot",
-    "cognition_calendar_create",
-    "cognition_calendar_delete",
-    "cognition_calendar_export",
-    "cognition_calendar_import",
-    "cognition_calendar_list",
-    "cognition_calendar_update",
+    "cognition_calendar_mutate",
+    "cognition_calendar_query",
     "cognition_chat_history_read",
     "cognition_chat_history_search",
-    "cognition_capability_list",
-    "cognition_capability_invoke",
-    "cognition_capability_resolve",
-    "cognition_capability_search",
-    "cognition_code_apply_patch",
+    "cognition_capability",
     "cognition_code_definition",
     "cognition_code_diagnostics",
     "cognition_code_hover",
-    "cognition_code_read",
-    "cognition_code_search",
     "cognition_code_symbols",
     "cognition_coder_shell_run",
     "cognition_coder_shell_status",
@@ -56,26 +41,8 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_environment_wiki",
     "cognition_feed_publish",
     "cognition_feed_subscribe",
-    "cognition_grapheme_script_save",
-    "cognition_grapheme_cli_run",
-    "cognition_grapheme_examples",
-    "cognition_grapheme_modules",
-    "cognition_grapheme_modules_info",
-    "cognition_grapheme_modules_ops",
-    "cognition_grapheme_promote_last_run_to_recurring",
-    "cognition_grapheme_promote_to_job",
-    "cognition_grapheme_promote_to_recurring",
-    "cognition_grapheme_run",
-    "cognition_grapheme_template_run",
-    "cognition_grapheme_script_list",
-    "cognition_grapheme_script_load",
-    "cognition_grapheme_script_search",
-    "cognition_identity_commit",
-    "cognition_identity_context",
-    "cognition_identity_propose",
-    "cognition_identity_recall",
-    "cognition_identity_remember",
-    "cognition_job_enqueue",
+    "cognition_identity_mutate",
+    "cognition_identity_query",
     "cognition_intent_resolve",
     "cognition_layout_apply",
     "cognition_layout_get",
@@ -84,38 +51,15 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_manuscript_overlay_list",
     "cognition_manuscript_overlay_propose",
     "cognition_manuscript_resolve",
-    "cognition_mcp_discover",
-    "cognition_mcp_invoke",
-    "cognition_mcp_promote_to_job",
-    "cognition_mcp_servers",
-    "cognition_memory_calibrate",
-    "cognition_memory_context",
-    "cognition_memory_evict",
-    "cognition_memory_list",
-    "cognition_memory_moods",
-    "cognition_memory_recall",
-    "cognition_memory_schema",
-    "cognition_memory_store",
-    "cognition_memory_tags",
+    "cognition_memory_mutate",
+    "cognition_memory_query",
     "cognition_openshell_sandbox_run",
     "cognition_project_bind",
     "cognition_project_create",
     "cognition_project_list",
-    "cognition_runtime_delivery_status",
-    "cognition_runtime_jobs_cancel",
-    "cognition_runtime_jobs_status",
-    "cognition_runtime_jobs_list",
-    "cognition_runtime_recurring_cancel",
-    "cognition_runtime_recurring_doctor",
-    "cognition_runtime_recurring_list",
-    "cognition_runtime_recurring_pause",
-    "cognition_runtime_recurring_preview",
-    "cognition_runtime_recurring_register",
-    "cognition_runtime_workflow_cancel",
-    "cognition_runtime_workflow_plan",
-    "cognition_runtime_workflow_run",
-    "cognition_runtime_workflow_schedule",
-    "cognition_runtime_workflow_status",
+    "cognition_runtime_mutate",
+    "cognition_runtime_query",
+    "cognition_schema",
     "cognition_openshell_status",
     "cognition_shell_session_interrupt",
     "cognition_shell_session_run",
@@ -125,35 +69,21 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_skill_discover",
     "cognition_skill_probe",
     "cognition_skill_propose",
-    "cognition_spawn_turn_worker",
+    "cognition_store_read",
+    "cognition_store_write",
     "cognition_tool_history_detail",
     "cognition_tool_history_summary",
     "cognition_tools_discover",
-    "cognition_turn_checkpoint",
-    "cognition_turn_begin_work",
-    "cognition_turn_finish",
-    "cognition_turn_prepare_final",
-    "cognition_turn_propose_mode",
-    "cognition_turn_request_more_rounds",
-    "cognition_turn_update_user",
-    "cognition_turn_worker_cancel",
-    "cognition_turn_worker_status",
+    "cognition_turn",
     "cognition_ui_build",
     "cognition_ui_present",
     "cognition_ui_scene",
     "cognition_utility_day_of_week",
     "cognition_utility_time_now",
     "cognition_utility_uuid",
-    "cognition_vault_delete",
-    "cognition_vault_list",
-    "cognition_vault_grep",
-    "cognition_vault_move",
-    "cognition_vault_read",
-    "cognition_vault_search",
-    "cognition_vault_tags",
-    "cognition_vault_write",
     "cognition_web_search",
-    "cognition_workshop_steer",
+    "cognition_workshop_mutate",
+    "cognition_workshop_query",
 ];
 
 pub fn registered_cognition_tools() -> impl Iterator<Item = &'static str> {
@@ -164,16 +94,8 @@ pub fn registered_cognition_tools() -> impl Iterator<Item = &'static str> {
 }
 
 /// Grapheme first-class tools (templates + discovery + run) — worker execution surface.
-pub const WORKER_GRAPHEME_EXECUTION_TOOLS: &[&str] = &[
-    "cognition_web_search",
-    "cognition_grapheme_template_run",
-    "cognition_grapheme_modules",
-    "cognition_grapheme_modules_info",
-    "cognition_grapheme_modules_ops",
-    "cognition_grapheme_examples",
-    "cognition_grapheme_run",
-    "cognition_grapheme_cli_run",
-];
+pub const WORKER_GRAPHEME_EXECUTION_TOOLS: &[&str] =
+    &["cognition_web_search", "cognition_capability"];
 
 #[cfg(test)]
 mod tests {
@@ -206,17 +128,13 @@ mod tests {
                 "research allowlist missing {tool}"
             );
         }
-        assert!(tool_allowed("cognition_capability_invoke", &allow));
-        assert!(tool_allowed("cognition_mcp_discover", &allow));
+        assert!(tool_allowed("cognition_capability", &allow));
     }
 
     #[test]
     fn general_worker_sees_capability_and_template_shortcuts() {
         let allow = allowed_tool_names_for_intent(TurnWorkerIntent::General);
-        assert!(tool_allowed("cognition_capability_invoke", &allow));
-        assert!(tool_allowed("cognition_grapheme_template_run", &allow));
-        assert!(tool_allowed("cognition_grapheme_modules", &allow));
-        assert!(tool_allowed("cognition_grapheme_examples", &allow));
+        assert!(tool_allowed("cognition_capability", &allow));
     }
 
     #[test]
@@ -233,25 +151,25 @@ mod tests {
     fn host_bus_allowlist_matches_registered_runtime_and_memory_tools() {
         let host = host_bus_tool_names();
         for tool in [
-            "cognition_memory_store",
-            "cognition_job_enqueue",
-            "cognition_runtime_workflow_run",
-            "cognition_capability_search",
-            "cognition_spawn_turn_worker",
-            "cognition_turn_begin_work",
-            "cognition_turn_finish",
+            crate::public_api::COGNITION_MEMORY_MUTATE,
+            "cognition_runtime_query",
+            "cognition_runtime_mutate",
+            "cognition_schema",
+            "cognition_capability",
+            crate::public_api::COGNITION_WORKSHOP_QUERY,
+            crate::public_api::COGNITION_WORKSHOP_MUTATE,
+            "cognition_turn",
         ] {
             assert!(tool_allowed(tool, &host), "host bus missing {tool}");
         }
         assert!(!tool_allowed("cognition_turn_prepare_final", &host));
         assert!(!tool_allowed("cognition_grapheme_run", &host));
-        assert!(!tool_allowed("cognition_capability_invoke", &host));
-        assert!(!tool_allowed("cognition_grapheme_template_run", &host));
-        assert!(tool_allowed("cognition_identity_recall", &host));
-        assert!(tool_allowed("cognition_identity_remember", &host));
+        assert!(tool_allowed("cognition_capability", &host));
+        assert!(tool_allowed("cognition_identity_query", &host));
+        assert!(tool_allowed("cognition_identity_mutate", &host));
         let research = allowed_tool_names_for_intent(TurnWorkerIntent::Research);
-        assert!(tool_allowed("cognition_identity_recall", &research));
-        assert!(!tool_allowed("cognition_identity_remember", &research));
+        assert!(tool_allowed("cognition_identity_query", &research));
+        assert!(tool_allowed("cognition_identity_mutate", &research));
     }
 
     #[test]

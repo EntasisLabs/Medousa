@@ -48,13 +48,13 @@ Home overlays vault reminders from `calendar/reminders.md` (`- [ ] … @due(YYYY
 
 | Tool | Purpose |
 |------|---------|
-| `cognition_calendar_list` | List events in a time range (RRULE expanded) |
-| `cognition_calendar_create` | Create event |
-| `cognition_calendar_update` | Update by `uid` |
-| `cognition_calendar_delete` | Delete by `uid` |
-| `cognition_calendar_import` | Import raw ICS body |
-| `cognition_calendar_export` | Export ICS text |
+| `cognition_calendar_query` `action=calendar.list` | List events in a time range (RRULE expanded) |
+| `cognition_calendar_query` `action=calendar.export` | Export ICS text |
+| `cognition_calendar_mutate` `action=calendar.create` | Create event |
+| `cognition_calendar_mutate` `action=calendar.update` | Update by `uid` |
+| `cognition_calendar_mutate` `action=calendar.delete` | Delete by `uid` |
+| `cognition_calendar_mutate` `action=calendar.import` | Import raw ICS body |
 
-Discover domain **calendar**. Host auto-unlocks the domain (bootstrap peek: `cognition_calendar_list`). Research/General workers get the full set.
+Public primitives; fetch field schemas with `cognition_schema` `domain=calendar`. Default store: `calendar/personal.ics`.
 
 Source: `src/calendar_tools.rs`, service: `src/calendar/service.rs`. See also [agent-tools.md](agent-tools.md).

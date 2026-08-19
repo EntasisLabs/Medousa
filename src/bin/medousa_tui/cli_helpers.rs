@@ -84,7 +84,9 @@ pub(crate) fn print_help() {
     println!("  /connection [url]       Workshop Connection picker / switch URL");
     println!("  /history                Open session history menu");
     println!("  /name                   Show current session display name");
-    println!("  /name <label>           Set global session display name (Surreal when daemon uses it)");
+    println!(
+        "  /name <label>           Set global session display name (Surreal when daemon uses it)"
+    );
     println!("  /settings               Open settings menu");
     println!("  /edit [path]            Open embedded editor (optional file)");
     println!("  /open <path>            Open file in embedded editor");

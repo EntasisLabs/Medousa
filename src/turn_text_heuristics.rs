@@ -271,7 +271,7 @@ const PENDING_SPAWN_DRAFT_PHRASES: &[&str] = &[
     "delegate to",
     "background worker",
     "workshop",
-    "cognition_spawn_turn_worker",
+    "cognition_workshop_mutate",
     "hand off",
     "handoff",
     "workers next",

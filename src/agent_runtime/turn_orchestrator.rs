@@ -827,9 +827,9 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
         current_turn_user_message,
         inference_profile_kind,
         inference_targets,
-        supports_ui_artifacts: _,
-        supports_liquid_markdown: _,
-        supports_browser_host: _,
+        supports_ui_artifacts,
+        supports_liquid_markdown,
+        supports_browser_host,
         round_context_provider,
         evidence_undertaking_id,
         compact_evidence_receipt_sink,
@@ -941,9 +941,11 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
         host_handoff_slot: host_handoff_slot.clone(),
         host_continuity_bundle,
         configured_max_tool_rounds: turn_loop_settings.configured_max_tool_rounds,
-        supports_ui_artifacts: params.supports_ui_artifacts,
-        supports_liquid_markdown: params.supports_liquid_markdown,
-        supports_browser_host: params.supports_browser_host,
+        supports_ui_artifacts,
+        supports_liquid_markdown,
+        supports_browser_host,
+        parent_agent_mode: Some(agent_mode.id.as_str().to_string()),
+        parent_code_work_id: evidence_undertaking_id.clone(),
     };
     let _worker_parent_lease = match worker_scheduler.register_parent(worker_runtime, worker_bus) {
         Ok(lease) => lease,
@@ -962,8 +964,8 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
             base_url.as_deref(),
             true,
             Some(session_id.as_str()),
-            params.supports_ui_artifacts,
-            params.supports_browser_host,
+            supports_ui_artifacts,
+            supports_browser_host,
             scope_snapshot
                 .as_ref()
                 .and_then(|scope| scope.channel_surface.as_deref()),
@@ -1041,8 +1043,8 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
         messages.push(ChatMessage::system(system_prompt_for_host_profile(
             &super::modes::system_prompt_for_mode(DEFAULT_SYSTEM_PROMPT, &agent_mode),
             host_bus,
-            params.supports_ui_artifacts,
-            params.supports_liquid_markdown,
+            supports_ui_artifacts,
+            supports_liquid_markdown,
             suggested_intent,
         )));
         messages.extend(prior_messages);
@@ -1141,8 +1143,8 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
         system_prompt: Some(system_prompt_for_host_profile(
             &super::modes::system_prompt_for_mode(DEFAULT_SYSTEM_PROMPT, &agent_mode),
             host_bus,
-            params.supports_ui_artifacts,
-            params.supports_liquid_markdown,
+            supports_ui_artifacts,
+            supports_liquid_markdown,
             suggested_intent,
         )),
         context: prompt_ctx.clone(),
@@ -1279,8 +1281,8 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
             target.base_url.as_deref().or(base_url.as_deref()),
             host_bus,
             Some(session_id.as_str()),
-            params.supports_ui_artifacts,
-            params.supports_browser_host,
+            supports_ui_artifacts,
+            supports_browser_host,
             scope_snapshot
                 .as_ref()
                 .and_then(|scope| scope.channel_surface.as_deref()),

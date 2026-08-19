@@ -88,6 +88,63 @@ impl StageRoutingMatrix {
             "final_response",
         ]
     }
+
+    fn routes(&self) -> [&StageRoute; 7] {
+        [
+            &self.orchestrator,
+            &self.chunker,
+            &self.extractor,
+            &self.summarizer,
+            &self.verifier,
+            &self.packer,
+            &self.final_response,
+        ]
+    }
+
+    /// When every role shares the same provider+model, that pair.
+    ///
+    /// A uniform matrix is almost always a clone of an old host Chat model, not
+    /// a per-role customization.
+    pub fn uniform_target(&self) -> Option<(&str, &str)> {
+        let routes = self.routes();
+        let provider = routes[0].provider.trim();
+        let model = routes[0].model.trim();
+        if provider.is_empty() || model.is_empty() {
+            return None;
+        }
+        routes
+            .iter()
+            .all(|route| {
+                route.provider.trim().eq_ignore_ascii_case(provider) && route.model.trim() == model
+            })
+            .then_some((provider, model))
+    }
+
+    /// Keep Chat on the host picker model.
+    ///
+    /// Settings → Models / the composer picker write `provider`+`model` (and the
+    /// main inference profile) without rewriting a leftover uniform stage matrix.
+    /// Host turns used `final_response`, so Chat kept calling DeepSeek after the
+    /// picker showed GPT Luna. Rebase a uniform leftover clone; pin only
+    /// `final_response` when roles actually differ.
+    pub fn aligned_with_host(self, provider: &str, model: &str) -> Self {
+        let provider = provider.trim();
+        let model = model.trim();
+        if provider.is_empty() || model.is_empty() {
+            return self;
+        }
+        if let Some((current_provider, current_model)) = self.uniform_target()
+            && (!current_provider.eq_ignore_ascii_case(provider) || current_model != model)
+        {
+            return Self::default_for(provider, model);
+        }
+        let mut aligned = self;
+        if let Some(route) = aligned.get_mut("final_response") {
+            route.provider = provider.to_string();
+            route.model = model.to_string();
+        }
+        aligned
+    }
 }
 
 pub fn normalize_role(role: &str) -> String {
@@ -124,5 +181,29 @@ mod tests {
             .expect("route should exist");
         route.model = "gpt-4.1-mini".to_string();
         assert_eq!(matrix.final_response.model, "gpt-4.1-mini");
+    }
+
+    #[test]
+    fn uniform_stale_matrix_rebases_to_host_chat() {
+        let aligned = StageRoutingMatrix::default_for("deepseek", "deepseek-v4-flash")
+            .aligned_with_host("openai", "gpt-5.6-luna");
+        assert_eq!(aligned.final_response.provider, "openai");
+        assert_eq!(aligned.final_response.model, "gpt-5.6-luna");
+        assert_eq!(aligned.extractor.provider, "openai");
+        assert_eq!(aligned.extractor.model, "gpt-5.6-luna");
+    }
+
+    #[test]
+    fn mixed_matrix_keeps_worker_role_and_pins_chat() {
+        let mut matrix = StageRoutingMatrix::default_for("openai", "gpt-5.6-luna");
+        matrix.extractor.provider = "deepseek".to_string();
+        matrix.extractor.model = "deepseek-v4-flash".to_string();
+        matrix.final_response.provider = "deepseek".to_string();
+        matrix.final_response.model = "deepseek-v4-flash".to_string();
+        let aligned = matrix.aligned_with_host("openai", "gpt-5.6-luna");
+        assert_eq!(aligned.extractor.provider, "deepseek");
+        assert_eq!(aligned.extractor.model, "deepseek-v4-flash");
+        assert_eq!(aligned.final_response.provider, "openai");
+        assert_eq!(aligned.final_response.model, "gpt-5.6-luna");
     }
 }

@@ -261,8 +261,9 @@ async fn read_candidate_notebook(
     let result = tokio::time::timeout(
         MEMORY_TIMEOUT,
         registry.invoke_tool(
-            "cognition_memory_list",
+            crate::public_api::COGNITION_MEMORY_QUERY,
             json!({
+                "action": "memory.list",
                 "session_id": scope.session_id,
                 "limit": NOTEBOOK_QUERY_LIMIT,
             }),
@@ -497,7 +498,7 @@ mod tests {
         }
 
         async fn invoke_tool(&self, tool_name: &str, input: Value) -> Result<Value> {
-            assert_eq!(tool_name, "cognition_memory_list");
+            assert_eq!(tool_name, crate::public_api::COGNITION_MEMORY_QUERY);
             if self.unavailable {
                 return Err(input_error("simulated Locus outage"));
             }

@@ -189,7 +189,10 @@ pub(crate) async fn open_note_path(state: &mut TuiState, path: &str) -> bool {
                 focus: NotesFocus::Buffer,
             };
             state.note_buffers.insert(resp.note.path.clone(), buffer);
-            if state.workspace.open_notes_tab_in_active(&resp.note.path, &title) {
+            if state
+                .workspace
+                .open_notes_tab_in_active(&resp.note.path, &title)
+            {
                 state.mode = UiMode::Notes;
                 super::workspace_runtime::persist_workspace(state);
                 super::push_obs(state, format!("✓ opened note {}", resp.note.path));
@@ -469,9 +472,7 @@ pub(crate) async fn ask_about_active_note(state: &mut TuiState) {
         state.session_id = chat_session;
         state.session_display_name = Some(title);
         state.conversation.clear();
-        state.input_buffer = format!(
-            "About note `{path}`:\n\n```md\n{snippet}\n```\n\n"
-        );
+        state.input_buffer = format!("About note `{path}`:\n\n```md\n{snippet}\n```\n\n");
         state.mode = UiMode::Chat;
         super::workspace_runtime::persist_workspace(state);
         super::push_obs(state, "✓ ask-about-note composer ready".to_string());
@@ -500,7 +501,10 @@ pub(crate) async fn handle_notes_picker_key(
             EventOutcome::Continue
         }
         KeyCode::Enter => {
-            if let Some(hit) = state.notes_picker_hits.get(state.notes_picker_selected).cloned()
+            if let Some(hit) = state
+                .notes_picker_hits
+                .get(state.notes_picker_selected)
+                .cloned()
             {
                 let _ = open_note_path(state, &hit.path).await;
             }
@@ -577,73 +581,66 @@ pub(crate) async fn handle_notes_key(
     };
 
     match focus {
-        NotesFocus::Tree => {
-            match key.code {
-                KeyCode::Up | KeyCode::Char('k') => {
-                    if let Some(note) = focused_note_mut(state) {
-                        note.tree_selected = note.tree_selected.saturating_sub(1);
-                        note.tree_scroll = note.tree_scroll.min(note.tree_selected as u16);
-                    }
+        NotesFocus::Tree => match key.code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(note) = focused_note_mut(state) {
+                    note.tree_selected = note.tree_selected.saturating_sub(1);
+                    note.tree_scroll = note.tree_scroll.min(note.tree_selected as u16);
                 }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    if let Some(note) = focused_note_mut(state)
-                        && !note.tree.is_empty()
-                    {
-                        note.tree_selected = (note.tree_selected + 1)
-                            .min(note.tree.len().saturating_sub(1));
-                        if note.tree_selected as u16 >= note.tree_scroll.saturating_add(8) {
-                            note.tree_scroll = note.tree_scroll.saturating_add(1);
-                        }
-                    }
-                }
-                KeyCode::Enter => {
-                    let path = focused_note_mut(state).and_then(|note| {
-                        note.tree.get(note.tree_selected).cloned()
-                    });
-                    if let Some(path) = path {
-                        let _ = open_note_path(state, &path).await;
-                        if let Some(note) = focused_note_mut(state) {
-                            note.focus = NotesFocus::Buffer;
-                        }
-                    }
-                }
-                _ => {}
             }
-        }
-        NotesFocus::Backlinks => {
-            match key.code {
-                KeyCode::Up | KeyCode::Char('k') => {
-                    if let Some(note) = focused_note_mut(state) {
-                        note.links_selected = note.links_selected.saturating_sub(1);
-                        note.links_scroll = note.links_scroll.min(note.links_selected as u16);
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Some(note) = focused_note_mut(state)
+                    && !note.tree.is_empty()
+                {
+                    note.tree_selected =
+                        (note.tree_selected + 1).min(note.tree.len().saturating_sub(1));
+                    if note.tree_selected as u16 >= note.tree_scroll.saturating_add(8) {
+                        note.tree_scroll = note.tree_scroll.saturating_add(1);
                     }
                 }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    if let Some(note) = focused_note_mut(state) {
-                        let len = link_targets(note).len();
-                        if len > 0 {
-                            note.links_selected =
-                                (note.links_selected + 1).min(len.saturating_sub(1));
-                            if note.links_selected as u16 >= note.links_scroll.saturating_add(8) {
-                                note.links_scroll = note.links_scroll.saturating_add(1);
-                            }
-                        }
-                    }
-                }
-                KeyCode::Enter => {
-                    let path = focused_note_mut(state).and_then(|note| {
-                        link_targets(note).get(note.links_selected).cloned()
-                    });
-                    if let Some(path) = path {
-                        let _ = open_note_path(state, &path).await;
-                        if let Some(note) = focused_note_mut(state) {
-                            note.focus = NotesFocus::Buffer;
-                        }
-                    }
-                }
-                _ => {}
             }
-        }
+            KeyCode::Enter => {
+                let path = focused_note_mut(state)
+                    .and_then(|note| note.tree.get(note.tree_selected).cloned());
+                if let Some(path) = path {
+                    let _ = open_note_path(state, &path).await;
+                    if let Some(note) = focused_note_mut(state) {
+                        note.focus = NotesFocus::Buffer;
+                    }
+                }
+            }
+            _ => {}
+        },
+        NotesFocus::Backlinks => match key.code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(note) = focused_note_mut(state) {
+                    note.links_selected = note.links_selected.saturating_sub(1);
+                    note.links_scroll = note.links_scroll.min(note.links_selected as u16);
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Some(note) = focused_note_mut(state) {
+                    let len = link_targets(note).len();
+                    if len > 0 {
+                        note.links_selected = (note.links_selected + 1).min(len.saturating_sub(1));
+                        if note.links_selected as u16 >= note.links_scroll.saturating_add(8) {
+                            note.links_scroll = note.links_scroll.saturating_add(1);
+                        }
+                    }
+                }
+            }
+            KeyCode::Enter => {
+                let path = focused_note_mut(state)
+                    .and_then(|note| link_targets(note).get(note.links_selected).cloned());
+                if let Some(path) = path {
+                    let _ = open_note_path(state, &path).await;
+                    if let Some(note) = focused_note_mut(state) {
+                        note.focus = NotesFocus::Buffer;
+                    }
+                }
+            }
+            _ => {}
+        },
         NotesFocus::Buffer => {
             let Some(note) = focused_note_mut(state) else {
                 return EventOutcome::Continue;
@@ -676,13 +673,17 @@ pub(crate) async fn handle_notes_key(
                     note.preferred_col = None;
                 }
                 KeyCode::Up => {
-                    let col = note.preferred_col.unwrap_or_else(|| note.buffer.line_col().1);
+                    let col = note
+                        .preferred_col
+                        .unwrap_or_else(|| note.buffer.line_col().1);
                     note.preferred_col = Some(col);
                     note.buffer.move_up(col);
                     note.scroll = note.scroll.saturating_sub(1);
                 }
                 KeyCode::Down => {
-                    let col = note.preferred_col.unwrap_or_else(|| note.buffer.line_col().1);
+                    let col = note
+                        .preferred_col
+                        .unwrap_or_else(|| note.buffer.line_col().1);
                     note.preferred_col = Some(col);
                     note.buffer.move_down(col);
                     note.scroll = note.scroll.saturating_add(1);

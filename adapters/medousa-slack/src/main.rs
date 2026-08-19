@@ -47,7 +47,8 @@ async fn main() -> Result<()> {
     );
     println!("medousa_slack socket mode — final replies via outbox push or poll fallback");
 
-    let connector = SlackClientHyperHttpsConnector::new().context("create slack hyper connector")?;
+    let connector =
+        SlackClientHyperHttpsConnector::new().context("create slack hyper connector")?;
     let client = Arc::new(SlackClient::new(connector));
     let environment = Arc::new(
         SlackClientEventsListenerEnvironment::new(client).with_user_state((*state).clone()),
@@ -158,12 +159,7 @@ async fn handle_push_event(
                 post_slack_message(&state, &channel_id, &truncate_for_slack(&text)).await?;
             }
             Ok(AdapterDeliveryOutcome::StreamError { message }) => {
-                post_slack_message(
-                    &state,
-                    &channel_id,
-                    &truncate_for_slack(&message),
-                )
-                .await?;
+                post_slack_message(&state, &channel_id, &truncate_for_slack(&message)).await?;
             }
             Err(err) => {
                 post_slack_message(

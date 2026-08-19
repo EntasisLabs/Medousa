@@ -1,5 +1,5 @@
 use chrono::Utc;
-pub use medousa_types::local::{GpuBackend, HardwareProfile, HardwareProbe, HardwareTier};
+pub use medousa_types::local::{GpuBackend, HardwareProbe, HardwareProfile, HardwareTier};
 use std::fs;
 use std::path::PathBuf;
 
@@ -36,9 +36,10 @@ pub fn probe_hardware() -> HardwareProbe {
 fn free_disk_gb_on_data_volume() -> u64 {
     let path = medousa_data_dir();
     if let Some(parent) = path.parent()
-        && let Ok(space) = fs2::available_space(parent) {
-            return space / 1024 / 1024 / 1024;
-        }
+        && let Ok(space) = fs2::available_space(parent)
+    {
+        return space / 1024 / 1024 / 1024;
+    }
     if let Ok(space) = fs2::available_space(&path) {
         return space / 1024 / 1024 / 1024;
     }

@@ -88,8 +88,8 @@ fn verify_and_decode(token: &str, secret: &str) -> Result<McpTurnTokenClaims> {
 }
 
 fn sign_payload(payload: &str, secret: &str) -> Result<String> {
-    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-        .context("invalid HMAC key length")?;
+    let mut mac =
+        HmacSha256::new_from_slice(secret.as_bytes()).context("invalid HMAC key length")?;
     mac.update(payload.as_bytes());
     Ok(URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes()))
 }

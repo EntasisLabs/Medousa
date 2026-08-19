@@ -406,7 +406,7 @@ impl VaultService {
             &request,
             None,
             WorkspaceEventActor::Agent,
-            Some("cognition_vault_move"),
+            Some("cognition_store_write"),
         )?;
         vault_store().delete_note(from)?;
         Ok(written)

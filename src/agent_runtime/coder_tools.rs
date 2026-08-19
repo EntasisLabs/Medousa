@@ -32,14 +32,7 @@ use crate::typed_tools::{
     ToolPlacementIndex, ToolRegistrar,
 };
 
-const TURN_CONTROL_TOOLS: &[&str] = &[
-    "cognition_turn_begin_work",
-    "cognition_turn_update_user",
-    "cognition_turn_checkpoint",
-    "cognition_turn_finish",
-    "cognition_turn_request_more_rounds",
-    "cognition_turn_propose_mode",
-];
+const TURN_CONTROL_TOOLS: &[&str] = &[crate::public_api::COGNITION_TURN];
 
 pub const COGNITION_CODER_TOOLS_DISCOVER: &str = "cognition_coder_tools_discover";
 pub const COGNITION_ENGINEERING_POINTERS: &str = "cognition_engineering_pointers";
@@ -103,36 +96,14 @@ struct EngineeringPointersOutput {
     pointers: Vec<super::coder_pointers::CoderEngineeringPointer>,
 }
 
-const GENERAL_MODE_RUNTIME_TOOLS: &[&str] = &[
-    "cognition_job_enqueue",
-    "cognition_grapheme_promote_to_job",
-    "cognition_grapheme_promote_to_recurring",
-    "cognition_grapheme_promote_last_run_to_recurring",
-    "cognition_mcp_promote_to_job",
-    "cognition_workshop_steer",
-];
-
-const CODER_PEER_SPAWN_TOOLS: &[&str] = &[
-    "cognition_spawn_turn_worker",
-    "cognition_turn_worker_status",
-    "cognition_turn_worker_cancel",
-];
-
 const CODER_ADVANCED_MEMORY_TOOLS: &[&str] = &[
-    "cognition_memory_schema",
-    "cognition_memory_context",
-    "cognition_memory_list",
-    "cognition_memory_recall",
-    "cognition_memory_store",
-    "cognition_memory_tags",
+    crate::public_api::COGNITION_MEMORY_QUERY,
+    crate::public_api::COGNITION_MEMORY_MUTATE,
 ];
 
 const CODER_SCOPED_MEMORY_TOOLS: &[&str] = &[
-    "cognition_memory_context",
-    "cognition_memory_list",
-    "cognition_memory_recall",
-    "cognition_memory_store",
-    "cognition_memory_tags",
+    crate::public_api::COGNITION_MEMORY_QUERY,
+    crate::public_api::COGNITION_MEMORY_MUTATE,
 ];
 
 const CODER_RESEARCH_TOOLS: &[&str] = &[
@@ -142,32 +113,11 @@ const CODER_RESEARCH_TOOLS: &[&str] = &[
     "cognition_browser_act",
 ];
 
-const CODER_CAPABILITY_TOOLS: &[&str] = &[
-    "cognition_capability_search",
-    "cognition_capability_resolve",
-    "cognition_capability_invoke",
-    "cognition_mcp_discover",
-    "cognition_mcp_servers",
-    "cognition_mcp_invoke",
-    "cognition_grapheme_modules",
-    "cognition_grapheme_modules_info",
-    "cognition_grapheme_modules_ops",
-    "cognition_grapheme_examples",
-    "cognition_grapheme_run",
-    "cognition_grapheme_cli_run",
-    "cognition_grapheme_template_run",
-];
+const CODER_CAPABILITY_TOOLS: &[&str] = &["cognition_capability"];
 
 const CODER_WORKSPACE_TOOLS: &[&str] = &[
-    "cognition_vault_list",
-    "cognition_vault_read",
-    "cognition_vault_grep",
-    "cognition_vault_search",
-    "cognition_vault_write",
-    "cognition_artifact_list",
-    "cognition_artifact_read",
-    "cognition_artifact_grep",
-    "cognition_artifact_write",
+    crate::public_api::COGNITION_STORE_READ,
+    crate::public_api::COGNITION_STORE_WRITE,
 ];
 
 const CODER_DISCOVERABLE_DOMAINS: &[&str] = &[
@@ -265,9 +215,10 @@ impl CoderMemoryBoundary {
 
 fn automatic_memory_boundary(
     tool_name: &str,
+    input: &Value,
     claims: &[CoderClaimScope],
 ) -> Option<CoderMemoryBoundary> {
-    if tool_name == crate::coding_tools::COGNITION_CODE_APPLY_PATCH
+    if tool_name == crate::public_api::COGNITION_STORE_WRITE
         || tool_name == super::coder_semantic_actions::COGNITION_CODER_CHANGE_SET_APPLY
     {
         Some(CoderMemoryBoundary::Change)
@@ -277,14 +228,14 @@ fn automatic_memory_boundary(
             .any(|claim| claim.mode == super::coder_claims::CoderClaimMode::Verify)
     {
         Some(CoderMemoryBoundary::Verification)
-    } else if crate::turn_control_tools::is_checkpoint_turn_tool_name(tool_name)
-        || crate::turn_control_tools::is_begin_work_tool_name(tool_name)
-        || tool_name == crate::agent_runtime::turn_worker_tools::COGNITION_SPAWN_TURN_WORKER
+    } else if crate::turn_control_tools::is_checkpoint_turn_tool_name(tool_name, input)
+        || crate::turn_control_tools::is_begin_work_tool_name(tool_name, input)
+        || crate::agent_runtime::turn_worker_tools::is_workshop_spawn_call(tool_name, input)
     {
         Some(CoderMemoryBoundary::Handoff)
-    } else if crate::turn_control_tools::is_request_more_rounds_tool_name(tool_name) {
+    } else if crate::turn_control_tools::is_request_more_rounds_tool_name(tool_name, input) {
         Some(CoderMemoryBoundary::Budget)
-    } else if crate::turn_control_tools::is_finish_turn_tool_name(tool_name) {
+    } else if crate::turn_control_tools::is_finish_turn_tool_name(tool_name, input) {
         Some(CoderMemoryBoundary::Terminal)
     } else {
         None
@@ -293,6 +244,9 @@ fn automatic_memory_boundary(
 
 fn coder_tool_allowed(tool_id: ToolId, policy: &WorkPolicy) -> bool {
     let tool_name = tool_id.as_str();
+    if crate::public_api::is_public_api_tool(tool_name) {
+        return true;
+    }
     let os_shell = matches!(
         tool_name,
         crate::shell_tools::COGNITION_SHELL_RUN | crate::shell_tools::COGNITION_SHELL_STATUS
@@ -306,10 +260,7 @@ fn coder_tool_allowed(tool_id: ToolId, policy: &WorkPolicy) -> bool {
                 | crate::coding_tools::COGNITION_CODER_SHELL_RUN
                 | crate::coding_tools::COGNITION_CODER_SHELL_STATUS
         );
-    !os_shell
-        && !restricted_shell
-        && !tool_name.starts_with("cognition_runtime_")
-        && !GENERAL_MODE_RUNTIME_TOOLS.contains(&tool_name)
+    !os_shell && !restricted_shell && !tool_name.starts_with("cognition_runtime_")
 }
 
 fn shared_memory_retry_queue(
@@ -354,8 +305,9 @@ async fn try_store_memory_commit_with_registry(
 ) -> Result<Value> {
     let existing = invoke_locus_registry_tool(
         registry,
-        "cognition_memory_list",
+        crate::public_api::COGNITION_MEMORY_QUERY,
         json!({
+            "action": "memory.list",
             "session_id": scope.session_id,
             "semantic_tags": [commit.dedupe_tag],
             "limit": 1,
@@ -376,8 +328,9 @@ async fn try_store_memory_commit_with_registry(
 
     let stored = invoke_locus_registry_tool(
         registry,
-        "cognition_memory_store",
+        crate::public_api::COGNITION_MEMORY_MUTATE,
         json!({
+            "action": "memory.store",
             "session_id": scope.session_id,
             "node": commit.raw_node,
             "semantic_tags": commit.semantic_tags,
@@ -488,8 +441,9 @@ async fn promote_memory_task(
     let (decisions, verifications) = tokio::join!(
         invoke_locus_registry_tool(
             registry,
-            "cognition_memory_list",
+            crate::public_api::COGNITION_MEMORY_QUERY,
             json!({
+                "action": "memory.list",
                 "session_id": source_scope.session_id,
                 "semantic_tags": ["kind:decision", accepted_head_tag.clone()],
                 "limit": MAX_ACCEPTED_PROMOTIONS_PER_KIND,
@@ -497,8 +451,9 @@ async fn promote_memory_task(
         ),
         invoke_locus_registry_tool(
             registry,
-            "cognition_memory_list",
+            crate::public_api::COGNITION_MEMORY_QUERY,
             json!({
+                "action": "memory.list",
                 "session_id": source_scope.session_id,
                 "semantic_tags": ["kind:verification", accepted_head_tag],
                 "limit": MAX_ACCEPTED_PROMOTIONS_PER_KIND,
@@ -1626,8 +1581,9 @@ impl CoderBoundToolRegistry {
         let lineage_limit = limit.saturating_mul(2).clamp(1, 40);
         let (current, parent, undertaking, repository) = tokio::join!(
             self.invoke_locus_tool(
-                "cognition_memory_list",
+                crate::public_api::COGNITION_MEMORY_QUERY,
                 json!({
+                    "action": "memory.list",
                     "session_id": self.memory_scope.session_id,
                     "limit": lineage_limit,
                 }),
@@ -1636,8 +1592,9 @@ impl CoderBoundToolRegistry {
                 match parent_scope.as_ref() {
                     Some(scope) => Some(
                         self.invoke_locus_tool(
-                            "cognition_memory_list",
+                            crate::public_api::COGNITION_MEMORY_QUERY,
                             json!({
+                                "action": "memory.list",
                                 "session_id": scope.session_id,
                                 "limit": lineage_limit,
                             }),
@@ -1648,15 +1605,17 @@ impl CoderBoundToolRegistry {
                 }
             },
             self.invoke_locus_tool(
-                "cognition_memory_list",
+                crate::public_api::COGNITION_MEMORY_QUERY,
                 json!({
+                    "action": "memory.list",
                     "session_id": undertaking_scope.session_id,
                     "limit": lineage_limit,
                 }),
             ),
             self.invoke_locus_tool(
-                "cognition_memory_list",
+                crate::public_api::COGNITION_MEMORY_QUERY,
                 json!({
+                    "action": "memory.list",
                     "session_id": repository_scope.session_id,
                     "limit": lineage_limit,
                 }),
@@ -1766,6 +1725,7 @@ impl CoderBoundToolRegistry {
                 );
                 let recall_input = |session_id: &str| {
                     let mut input = json!({
+                        "action": "memory.recall",
                         "session_id": session_id,
                         "query": query.query,
                         "limit": query.limit.saturating_mul(2).clamp(1, 24),
@@ -1777,14 +1737,14 @@ impl CoderBoundToolRegistry {
                 };
                 let (current, parent, undertaking, repository) = tokio::join!(
                     self.invoke_locus_tool(
-                        "cognition_memory_recall",
+                        crate::public_api::COGNITION_MEMORY_QUERY,
                         recall_input(&self.memory_scope.session_id),
                     ),
                     async {
                         match parent_scope.as_ref() {
                             Some(scope) => Some(
                                 self.invoke_locus_tool(
-                                    "cognition_memory_recall",
+                                    crate::public_api::COGNITION_MEMORY_QUERY,
                                     recall_input(&scope.session_id),
                                 )
                                 .await,
@@ -1793,11 +1753,11 @@ impl CoderBoundToolRegistry {
                         }
                     },
                     self.invoke_locus_tool(
-                        "cognition_memory_recall",
+                        crate::public_api::COGNITION_MEMORY_QUERY,
                         recall_input(&undertaking_scope.session_id),
                     ),
                     self.invoke_locus_tool(
-                        "cognition_memory_recall",
+                        crate::public_api::COGNITION_MEMORY_QUERY,
                         recall_input(&repository_scope.session_id),
                     ),
                 );
@@ -1963,7 +1923,8 @@ impl CoderBoundToolRegistry {
             StasisError::PortFailure("Coder tools require an object input".into())
         })?;
         if CODER_SCOPED_MEMORY_TOOLS.contains(&tool_name) {
-            if tool_name == "cognition_memory_store"
+            if tool_name == crate::public_api::COGNITION_MEMORY_MUTATE
+                && map.get("action").and_then(Value::as_str) == Some("memory.store")
                 && let Some(raw_node) = map
                     .get("node")
                     .or_else(|| map.get("content"))
@@ -1979,24 +1940,27 @@ impl CoderBoundToolRegistry {
                 Value::String(self.memory_scope.session_id.clone()),
             );
         }
-        if crate::coding_tools::is_coding_cognition_tool(tool_name) {
-            match tool_name {
-                crate::coding_tools::COGNITION_CODE_READ
-                | crate::coding_tools::COGNITION_CODE_SEARCH
-                | crate::coding_tools::COGNITION_CODE_APPLY_PATCH => {
-                    reject_mismatched_string(
-                        map.get("root"),
-                        &self.entry.worktree.to_string_lossy(),
-                        "root",
-                    )?;
-                    map.insert(
-                        "root".into(),
-                        Value::String(self.entry.worktree.to_string_lossy().into_owned()),
-                    );
-                    if tool_name == crate::coding_tools::COGNITION_CODE_APPLY_PATCH {
-                        self.validate_mutation_path(map.get("path"))?;
-                    }
+        if crate::public_api::is_public_api_tool(tool_name) {
+            if map
+                .get("action")
+                .and_then(Value::as_str)
+                .is_some_and(|action| action.starts_with("code."))
+            {
+                reject_mismatched_string(
+                    map.get("root"),
+                    &self.entry.worktree.to_string_lossy(),
+                    "root",
+                )?;
+                map.insert(
+                    "root".into(),
+                    Value::String(self.entry.worktree.to_string_lossy().into_owned()),
+                );
+                if tool_name == crate::public_api::COGNITION_STORE_WRITE {
+                    self.validate_mutation_path(map.get("path"))?;
                 }
+            }
+        } else if crate::coding_tools::is_coding_cognition_tool(tool_name) {
+            match tool_name {
                 crate::coding_tools::COGNITION_SHELL_SESSION_STATUS => {
                     if map.get("create").and_then(Value::as_bool) != Some(true) {
                         return Err(StasisError::PortFailure(
@@ -2367,7 +2331,7 @@ impl ToolRegistry for CoderBoundToolRegistry {
             authority.lease(),
             &self.entry.worktree,
         );
-        let memory_boundary = automatic_memory_boundary(tool_name, &claims);
+        let memory_boundary = automatic_memory_boundary(tool_name, &input, &claims);
         let admission = match authority.begin_tool_activity(
             tool_name,
             intent.as_str(),
@@ -2392,7 +2356,7 @@ impl ToolRegistry for CoderBoundToolRegistry {
         };
         let call_id = admission.call_id;
         let _claim_heartbeat = ClaimHeartbeatGuard::start(&authority, &call_id);
-        if !visible {
+        if !visible && !crate::public_api::is_public_api_tool(tool_name) {
             let err = StasisError::PortFailure(format!(
                 "Coder tool is authorized but not visible; unlock its domain with {COGNITION_CODER_TOOLS_DISCOVER}: {tool_name}"
             ));
@@ -2498,19 +2462,16 @@ impl ToolRegistry for CoderBoundToolRegistry {
             .await
         } else if CODER_RUNTIME_TOOLS.contains(&tool_name) {
             self.invoke_runtime_tool(tool_name, &input)
-        } else if crate::turn_control_tools::is_begin_work_tool_name(tool_name) {
+        } else if crate::turn_control_tools::is_begin_work_tool_name(tool_name, &input) {
             match remap_begin_work_to_spawn_input(&input, spawn_intent_hint) {
                 Ok(spawn_input) => {
                     self.inner
-                        .invoke_tool(
-                            crate::agent_runtime::turn_worker_tools::COGNITION_SPAWN_TURN_WORKER,
-                            spawn_input,
-                        )
+                        .invoke_tool(crate::public_api::COGNITION_WORKSHOP_MUTATE, spawn_input)
                         .await
                 }
                 Err(err) => Err(err),
             }
-        } else if tool_name == crate::agent_runtime::turn_worker_tools::COGNITION_SPAWN_TURN_WORKER
+        } else if crate::agent_runtime::turn_worker_tools::is_workshop_spawn_call(tool_name, &input)
         {
             let mut spawn_input = input.clone();
             ensure_spawn_worker_intent(&mut spawn_input, spawn_intent_hint);
@@ -2628,45 +2589,17 @@ fn coder_runtime_tool_definitions() -> Vec<Tool> {
 fn with_required_coder_intent(
     tool: Tool,
 ) -> std::result::Result<Tool, crate::typed_tools::ModeToolAdapterError> {
-    let replaces_base_intent = tool.name.as_str()
-        == crate::agent_runtime::turn_worker_tools::COGNITION_SPAWN_TURN_WORKER
-        || crate::turn_control_tools::is_begin_work_tool_name(tool.name.as_str());
-    let base_has_intent = tool
-        .schema
-        .as_ref()
-        .and_then(|schema| schema.get("properties"))
-        .and_then(Value::as_object)
-        .is_some_and(|properties| properties.contains_key("intent"));
-    if replaces_base_intent && base_has_intent {
-        CODER_MODE_ADAPTER.compose_tool_with_projection(
-            tool,
-            &crate::typed_tools::ModeInputProjection::replacing(["intent"]),
-        )
-    } else {
-        CODER_MODE_ADAPTER.compose_tool(tool)
-    }
+    CODER_MODE_ADAPTER.compose_tool(tool)
 }
 
 fn with_coder_tool_advertisement(tool: Tool) -> Tool {
     match tool.name.as_str() {
-        name if crate::turn_control_tools::is_begin_work_tool_name(name) => tool.with_description(
-            "Spawn a peer sub-agent for parallel work on this undertaking; does not leave Coder / does not enter Chat workshop.",
+        crate::public_api::COGNITION_WORKSHOP_MUTATE => tool.with_description(
+            "Spawn, cancel, or steer a peer sub-agent. action=workshop.spawn for parallel research while Coder stays on the Forge lease.",
         ),
-        "cognition_spawn_turn_worker" => tool.with_description(
-            "Spawn a peer sub-agent for parallel research or side tasks while Coder stays on the Forge lease.",
-        ),
-        "cognition_turn_worker_status" => {
+        crate::public_api::COGNITION_WORKSHOP_QUERY => {
             tool.with_description("Check status of peer sub-agents spawned from this Coder turn.")
         }
-        "cognition_turn_worker_cancel" => {
-            tool.with_description("Cancel a peer sub-agent spawned from this Coder turn.")
-        }
-        "cognition_memory_schema" => tool.with_description(
-            "Advanced raw Locus schema diagnostic. Normal Coder memory does not require model-authored STTP; use cognition_coder_memory_commit.",
-        ),
-        "cognition_memory_store" => tool.with_description(
-            "Advanced diagnostic-only raw STTP store. For normal Coder memory writes use cognition_coder_memory_commit; the runtime compiles strict STTP from simple structured fields.",
-        ),
         _ => tool,
     }
 }
@@ -2745,11 +2678,6 @@ pub(crate) fn contract_policy_references() -> HashSet<String> {
         .into_iter()
         .map(|id| id.as_str().to_string())
         .collect::<HashSet<_>>();
-    names.extend(
-        GENERAL_MODE_RUNTIME_TOOLS
-            .iter()
-            .map(|name| (*name).to_string()),
-    );
     names.insert(crate::shell_tools::COGNITION_SHELL_RUN.to_string());
     names.insert(crate::shell_tools::COGNITION_SHELL_STATUS.to_string());
     names
@@ -2772,10 +2700,10 @@ pub(crate) fn contract_placement_labels(catalog: &ToolCatalog, tool_name: &str) 
 }
 
 fn coder_initial_tool_ids() -> HashSet<ToolId> {
-    crate::coding_tools::CODING_COGNITION_TOOLS
+    crate::public_api::PUBLIC_API_TOOLS
         .iter()
+        .chain(crate::coding_tools::CODING_COGNITION_TOOLS.iter())
         .chain(TURN_CONTROL_TOOLS.iter())
-        .chain(CODER_PEER_SPAWN_TOOLS.iter())
         .chain(super::coder_memory::CODER_MEMORY_TOOL_NAMES.iter())
         .chain(
             [
@@ -2808,7 +2736,6 @@ fn resolve_known_coder_tool_id(wire_name: &str) -> Option<ToolId> {
     crate::tool_names::registered_cognition_tools()
         .map(ToolId::new)
         .chain(coder_visible_tool_ids())
-        .chain(GENERAL_MODE_RUNTIME_TOOLS.iter().copied().map(ToolId::new))
         .chain(
             [
                 crate::shell_tools::COGNITION_SHELL_RUN,
@@ -2820,7 +2747,7 @@ fn resolve_known_coder_tool_id(wire_name: &str) -> Option<ToolId> {
         .find(|id| id.as_str() == wire_name)
 }
 
-/// Map Coder `cognition_turn_begin_work` args onto `cognition_spawn_turn_worker`.
+/// Map Coder `cognition_turn action=turn.begin_work` args onto `cognition_workshop_mutate action=workshop.spawn`.
 pub(crate) fn remap_begin_work_to_spawn_input(
     input: &Value,
     worker_intent_hint: Option<crate::agent_runtime::turn_worker::TurnWorkerIntent>,
@@ -2841,7 +2768,7 @@ pub(crate) fn remap_begin_work_to_spawn_input(
         (None, Some(message)) => (message.to_string(), message.to_string()),
         (None, None) => {
             return Err(StasisError::PortFailure(
-                "cognition_turn_begin_work: goal or message is required to spawn a peer sub-agent"
+                "cognition_turn action=turn.begin_work: goal or message is required to spawn a peer sub-agent"
                     .into(),
             ));
         }
@@ -2850,6 +2777,7 @@ pub(crate) fn remap_begin_work_to_spawn_input(
         .map(|value| value.as_str().to_string())
         .unwrap_or_else(|| default_peer_spawn_intent(&task, &user_ack));
     let mut out = json!({
+        "action": "workshop.spawn",
         "task": task,
         "user_ack": user_ack,
         "intent": intent,
@@ -3122,23 +3050,25 @@ mod tests {
     impl ToolRegistry for RecordingRegistry {
         async fn list_tools(&self) -> Result<Vec<Tool>> {
             Ok(vec![
-                Tool::new(crate::coding_tools::COGNITION_CODE_READ),
+                Tool::new(crate::public_api::COGNITION_STORE_READ),
                 Tool::new(crate::coding_tools::COGNITION_SHELL_SESSION_STATUS),
                 Tool::new(crate::coding_tools::COGNITION_CODER_SHELL_RUN),
                 Tool::new(crate::coding_tools::COGNITION_CODER_SHELL_STATUS),
                 Tool::new(crate::code_intelligence_tools::COGNITION_CODE_DIAGNOSTICS),
                 Tool::new(crate::detamu_tools::COGNITION_DETAMU_STATUS),
-                Tool::new("cognition_vault_write"),
-                Tool::new("cognition_memory_list"),
-                Tool::new("cognition_memory_recall"),
-                Tool::new("cognition_memory_store"),
+                Tool::new(crate::public_api::COGNITION_STORE_WRITE),
+                Tool::new(crate::public_api::COGNITION_MEMORY_QUERY),
+                Tool::new(crate::public_api::COGNITION_MEMORY_MUTATE),
                 Tool::new("cognition_web_search"),
-                Tool::new("cognition_mcp_discover"),
-                Tool::new("cognition_mcp_invoke"),
+                Tool::new("cognition_capability"),
+                Tool::new("cognition_schema"),
+                Tool::new("cognition_runtime_query"),
+                Tool::new("cognition_runtime_mutate"),
                 Tool::new("cognition_runtime_jobs_cancel"),
-                Tool::new("cognition_spawn_turn_worker").with_description("Host spawn worker"),
-                Tool::new("cognition_turn_begin_work").with_description("Enter bound Workshop"),
-                Tool::new("cognition_turn_worker_status"),
+                Tool::new(crate::public_api::COGNITION_WORKSHOP_MUTATE)
+                    .with_description("Host spawn worker"),
+                Tool::new(crate::public_api::COGNITION_TURN),
+                Tool::new(crate::public_api::COGNITION_WORKSHOP_QUERY),
                 Tool::new("cognition_shell_run"),
                 Tool::new("cognition_shell_status"),
             ])
@@ -3161,7 +3091,18 @@ mod tests {
                     "simulated Locus outage".to_string(),
                 ));
             }
-            if tool_name == "cognition_memory_list" || tool_name == "cognition_memory_recall" {
+            let action = input.get("action").and_then(Value::as_str).unwrap_or("");
+            if tool_name == crate::public_api::COGNITION_MEMORY_QUERY
+                && matches!(
+                    action,
+                    "memory.list"
+                        | "memory.recall"
+                        | "memory.context"
+                        | "memory.schema"
+                        | "memory.tags"
+                        | "memory.moods"
+                )
+            {
                 let session_id = input.get("session_id").and_then(Value::as_str);
                 let required_tags = input
                     .get("semantic_tags")
@@ -3191,7 +3132,9 @@ mod tests {
                     .cloned()
                     .collect::<Vec<_>>();
                 Ok(json!({ "retrieved": nodes.len(), "nodes": nodes }))
-            } else if tool_name == "cognition_memory_store" {
+            } else if tool_name == crate::public_api::COGNITION_MEMORY_MUTATE
+                && action == "memory.store"
+            {
                 let session_id = input
                     .get("session_id")
                     .and_then(Value::as_str)
@@ -3231,7 +3174,9 @@ mod tests {
                     "next_sequence": 17,
                     "input": input
                 }))
-            } else if tool_name == "cognition_spawn_turn_worker" {
+            } else if crate::agent_runtime::turn_worker_tools::is_workshop_spawn_call(
+                tool_name, &input,
+            ) {
                 Ok(json!({
                     "ok": true,
                     "worker_spawned": true,
@@ -3363,9 +3308,10 @@ mod tests {
 
         registry_a
             .invoke_tool(
-                crate::coding_tools::COGNITION_CODE_APPLY_PATCH,
+                crate::public_api::COGNITION_STORE_WRITE,
                 json!({
                     "intent": "Regenerate the Rust dependency lockfile",
+                    "action": "code.write",
                     "path": "Cargo.lock",
                     "expected_sha256": "missing",
                     "content": "version = 4\n"
@@ -3375,9 +3321,10 @@ mod tests {
             .expect("first lockfile claim");
         let conflict = registry_b
             .invoke_tool(
-                crate::coding_tools::COGNITION_CODE_APPLY_PATCH,
+                crate::public_api::COGNITION_STORE_WRITE,
                 json!({
                     "intent": "Update the same dependency lockfile",
+                    "action": "code.write",
                     "path": "Cargo.lock",
                     "expected_sha256": "missing",
                     "content": "version = 4\n"
@@ -3392,9 +3339,13 @@ mod tests {
         let invoked = inner_a.invoked_tools.lock().expect("tools lock");
         assert_eq!(
             invoked.first().map(String::as_str),
-            Some(crate::coding_tools::COGNITION_CODE_APPLY_PATCH)
+            Some(crate::public_api::COGNITION_STORE_WRITE)
         );
-        assert!(invoked.iter().any(|tool| tool == "cognition_memory_store"));
+        assert!(
+            invoked
+                .iter()
+                .any(|tool| tool == crate::public_api::COGNITION_MEMORY_MUTATE)
+        );
     }
 
     #[tokio::test]
@@ -3410,7 +3361,7 @@ mod tests {
         );
         let tools = registry.list_tools().await.expect("list");
         assert!(
-            registry.visible_tools.lock().expect("visible tools").len() <= 24,
+            registry.visible_tools.lock().expect("visible tools").len() <= 27,
             "Coder bootstrap schema must remain intentionally bounded"
         );
         for memory_tool in super::super::coder_memory::CODER_MEMORY_TOOL_NAMES {
@@ -3455,7 +3406,27 @@ mod tests {
         assert!(
             tools
                 .iter()
-                .any(|tool| tool.name.as_str() == crate::coding_tools::COGNITION_CODE_READ)
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_STORE_READ)
+        );
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_CAPABILITY)
+        );
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_SCHEMA)
+        );
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_RUNTIME_QUERY)
+        );
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_RUNTIME_MUTATE)
         );
         assert!(tools.iter().any(|tool| {
             tool.name.as_str() == crate::coding_tools::COGNITION_SHELL_SESSION_STATUS
@@ -3470,14 +3441,17 @@ mod tests {
                 .iter()
                 .any(|tool| tool.name.as_str() == COGNITION_CODER_EVIDENCE_READ)
         );
-        for hidden in [
-            "cognition_vault_write",
-            "cognition_memory_recall",
-            "cognition_memory_store",
-            "cognition_web_search",
-            "cognition_mcp_discover",
-            "cognition_mcp_invoke",
-        ] {
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_MEMORY_QUERY)
+        );
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_MEMORY_MUTATE)
+        );
+        for hidden in ["cognition_web_search"] {
             assert!(
                 tools.iter().all(|tool| tool.name.as_str() != hidden),
                 "unselected tool leaked into the Coder bootstrap: {hidden}"
@@ -3494,20 +3468,14 @@ mod tests {
         assert!(
             tools
                 .iter()
-                .any(|tool| tool.name.as_str() == "cognition_spawn_turn_worker"),
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_WORKSHOP_MUTATE),
             "peer spawn should be visible in Coder"
         );
-        let begin_work = tools
-            .iter()
-            .find(|tool| tool.name.as_str() == "cognition_turn_begin_work")
-            .expect("begin_work visible");
         assert!(
-            begin_work
-                .description
-                .as_deref()
-                .unwrap_or_default()
-                .contains("peer sub-agent"),
-            "Coder begin_work should advertise peer spawn"
+            tools
+                .iter()
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_TURN),
+            "turn control should be visible in Coder"
         );
         for tool in &tools {
             let schema = tool.schema.as_ref().expect("Coder schema");
@@ -3522,9 +3490,10 @@ mod tests {
 
         registry
             .invoke_tool(
-                crate::coding_tools::COGNITION_CODE_READ,
+                crate::public_api::COGNITION_STORE_READ,
                 json!({
                     "intent": "Inspect the source before making a change",
+                    "action": "code.read",
                     "path": "src/lib.rs"
                 }),
             )
@@ -3542,67 +3511,18 @@ mod tests {
         );
         assert!(input.get("intent").is_none());
 
-        let hidden_memory = registry
+        registry
             .invoke_tool(
-                "cognition_memory_recall",
+                crate::public_api::COGNITION_MEMORY_QUERY,
                 json!({
                     "intent": "Recall the user's established implementation preferences",
+                    "action": "memory.recall",
                     "session_id": "attacker-controlled-session",
                     "query": "implementation preferences"
                 }),
             )
             .await
-            .expect_err("undiscovered memory tool denied");
-        assert!(hidden_memory.to_string().contains("not visible"));
-
-        registry
-            .invoke_tool(
-                COGNITION_CODER_TOOLS_DISCOVER,
-                json!({
-                    "intent": "Reveal bounded Locus tools for explicit memory recall",
-                    "domain": "memory"
-                }),
-            )
-            .await
-            .expect("discover memory");
-        let after_memory = registry.list_tools().await.expect("list after memory");
-        for memory_tool in ["cognition_memory_recall", "cognition_memory_store"] {
-            assert!(
-                after_memory
-                    .iter()
-                    .any(|tool| tool.name.as_str() == memory_tool),
-                "discovered memory tool missing: {memory_tool}"
-            );
-        }
-        let raw_store = after_memory
-            .iter()
-            .find(|tool| tool.name.as_str() == "cognition_memory_store")
-            .expect("advanced raw store visible");
-        assert!(
-            raw_store
-                .description
-                .as_deref()
-                .is_some_and(|description| description.contains("cognition_coder_memory_commit")),
-            "advanced raw store must direct Coder back to the typed facade"
-        );
-        assert!(
-            after_memory
-                .iter()
-                .all(|tool| tool.name.as_str() != "cognition_vault_write"),
-            "discovering memory must not reveal the workspace pack"
-        );
-
-        registry
-            .invoke_tool(
-                "cognition_memory_recall",
-                json!({
-                    "intent": "Recall the user's established implementation preferences",
-                    "session_id": "attacker-controlled-session",
-                    "query": "implementation preferences"
-                }),
-            )
-            .await
-            .expect("discovered memory tool");
+            .expect("public memory query is callable without discover");
         let input = inner
             .last_input
             .lock()
@@ -3622,11 +3542,11 @@ mod tests {
                 json!({ "intent": "Cancel a durable runtime job", "job_id": "job-1" }),
             )
             .await
-            .expect_err("runtime control denied");
+            .expect_err("ghost runtime tool denied");
         assert!(
             denied
                 .to_string()
-                .contains("outside the Coder mode contract")
+                .contains("absent from the assembled Coder catalog")
         );
 
         registry
@@ -3675,7 +3595,7 @@ mod tests {
         registry
             .restore_checkpoint_surface(
                 &[
-                    crate::coding_tools::COGNITION_CODE_READ.to_string(),
+                    crate::public_api::COGNITION_STORE_READ.to_string(),
                     "cognition_runtime_jobs_cancel".to_string(),
                 ],
                 Some("node-42"),
@@ -3684,7 +3604,7 @@ mod tests {
 
         assert_eq!(
             registry.checkpoint_visible_tools().unwrap(),
-            vec![crate::coding_tools::COGNITION_CODE_READ.to_string()]
+            vec![crate::public_api::COGNITION_STORE_READ.to_string()]
         );
         assert_eq!(
             registry.checkpoint_memory_cursor().unwrap().as_deref(),
@@ -3694,7 +3614,7 @@ mod tests {
         assert_eq!(tools.len(), 1);
         assert_eq!(
             tools[0].name.as_str(),
-            crate::coding_tools::COGNITION_CODE_READ
+            crate::public_api::COGNITION_STORE_READ
         );
     }
 
@@ -3760,7 +3680,10 @@ mod tests {
             .expect("stored STTP")
             .replace(&pinned_session, "another-locus-session");
         let scope_error = registry
-            .bind_input("cognition_memory_store", json!({ "node": mismatched_raw }))
+            .bind_input(
+                crate::public_api::COGNITION_MEMORY_MUTATE,
+                json!({ "action": "memory.store", "node": mismatched_raw }),
+            )
             .expect_err("raw STTP cannot escape the environment scope");
         assert!(
             scope_error
@@ -3784,7 +3707,7 @@ mod tests {
                 .lock()
                 .expect("invoked tools")
                 .iter()
-                .filter(|tool| tool.as_str() == "cognition_memory_store")
+                .filter(|tool| tool.as_str() == crate::public_api::COGNITION_MEMORY_MUTATE)
                 .count(),
             1
         );
@@ -3825,7 +3748,7 @@ mod tests {
             .iter()
             .rev()
             .find(|(tool, input)| {
-                tool == "cognition_memory_recall"
+                tool == crate::public_api::COGNITION_MEMORY_QUERY
                     && input.get("session_id").and_then(Value::as_str)
                         == Some(pinned_session.as_str())
             })
@@ -3985,9 +3908,10 @@ mod tests {
 
         let patch_result = registry
             .invoke_tool(
-                crate::coding_tools::COGNITION_CODE_APPLY_PATCH,
+                crate::public_api::COGNITION_STORE_WRITE,
                 json!({
                     "intent": "Update the demo implementation",
+                    "action": "code.write",
                     "path": "src/lib.rs",
                     "expected_sha256": "missing",
                     "content": "pub fn demo() { println!(\"updated\"); }\n"
@@ -4022,7 +3946,7 @@ mod tests {
                 .lock()
                 .expect("invoked tools")
                 .iter()
-                .filter(|tool| tool.as_str() == "cognition_memory_store")
+                .filter(|tool| tool.as_str() == crate::public_api::COGNITION_MEMORY_MUTATE)
                 .count(),
             1
         );
@@ -4098,26 +4022,39 @@ mod tests {
             reason: "focused verification".into(),
         };
         assert_eq!(
-            automatic_memory_boundary(crate::coding_tools::COGNITION_SHELL_SESSION_RUN, &[verify]),
+            automatic_memory_boundary(
+                crate::coding_tools::COGNITION_SHELL_SESSION_RUN,
+                &json!({}),
+                &[verify]
+            ),
             Some(CoderMemoryBoundary::Verification)
         );
         assert_eq!(
-            automatic_memory_boundary(crate::turn_control_tools::COGNITION_TURN_CHECKPOINT, &[]),
+            automatic_memory_boundary(
+                crate::public_api::COGNITION_TURN,
+                &json!({ "action": "turn.checkpoint" }),
+                &[]
+            ),
             Some(CoderMemoryBoundary::Handoff)
         );
         assert_eq!(
             automatic_memory_boundary(
-                crate::turn_control_tools::COGNITION_TURN_REQUEST_MORE_ROUNDS,
+                crate::public_api::COGNITION_TURN,
+                &json!({ "action": "turn.request_more_rounds" }),
                 &[]
             ),
             Some(CoderMemoryBoundary::Budget)
         );
         assert_eq!(
-            automatic_memory_boundary(crate::turn_control_tools::COGNITION_TURN_FINISH, &[]),
+            automatic_memory_boundary(
+                crate::public_api::COGNITION_TURN,
+                &json!({ "action": "turn.finish" }),
+                &[]
+            ),
             Some(CoderMemoryBoundary::Terminal)
         );
         assert_eq!(
-            automatic_memory_boundary(crate::coding_tools::COGNITION_CODE_READ, &[]),
+            automatic_memory_boundary(crate::public_api::COGNITION_STORE_READ, &json!({}), &[]),
             None
         );
     }
@@ -4149,9 +4086,10 @@ mod tests {
         assert!(
             registry
                 .invoke_tool(
-                    crate::coding_tools::COGNITION_CODE_READ,
+                    crate::public_api::COGNITION_STORE_READ,
                     json!({
                         "intent": "Inspect source outside the claimed root",
+                        "action": "code.read",
                         "path": "src/lib.rs",
                         "root": "/tmp/other"
                     }),
@@ -4162,9 +4100,10 @@ mod tests {
         assert!(
             registry
                 .invoke_tool(
-                    crate::coding_tools::COGNITION_CODE_APPLY_PATCH,
+                    crate::public_api::COGNITION_STORE_WRITE,
                     json!({
                         "intent": "Change a path outside the allowed policy",
+                        "action": "code.write",
                         "path": "README.md",
                         "expected_sha256": "missing",
                         "content": "x"
@@ -4194,7 +4133,7 @@ mod tests {
         assert!(
             registry
                 .invoke_tool(
-                    crate::coding_tools::COGNITION_CODE_READ,
+                    crate::public_api::COGNITION_STORE_READ,
                     json!({ "path": "src/lib.rs" }),
                 )
                 .await
@@ -4216,7 +4155,7 @@ mod tests {
 
         let error = registry
             .invoke_tool(
-                crate::coding_tools::COGNITION_CODE_READ,
+                crate::public_api::COGNITION_STORE_READ,
                 json!({ "path": "src/lib.rs" }),
             )
             .await
@@ -4354,9 +4293,10 @@ mod tests {
 
         registry
             .invoke_tool(
-                crate::coding_tools::COGNITION_CODE_READ,
+                crate::public_api::COGNITION_STORE_READ,
                 json!({
                     "intent": "Inspect the implementation before changing it",
+                    "action": "code.read",
                     "path": "src/lib.rs"
                 }),
             )
@@ -4461,7 +4401,7 @@ mod tests {
         assert!(
             after
                 .iter()
-                .all(|tool| tool.name.as_str() != "cognition_memory_recall")
+                .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_MEMORY_QUERY)
         );
         assert!(
             after
@@ -4617,9 +4557,10 @@ mod tests {
         );
         registry
             .invoke_tool(
-                crate::coding_tools::COGNITION_CODE_READ,
+                crate::public_api::COGNITION_STORE_READ,
                 json!({
                     "intent": "Inspect the current implementation",
+                    "action": "code.read",
                     "path": "src/lib.rs"
                 }),
             )
@@ -4640,7 +4581,7 @@ mod tests {
                 COGNITION_ENGINEERING_HISTORY,
                 json!({
                     "intent": "Review the latest read lifecycle without replaying the transcript",
-                    "tool": "code_read",
+                    "tool": "store_read",
                     "limit": 2
                 }),
             )
@@ -4650,7 +4591,7 @@ mod tests {
         assert!(history["events"].as_array().is_some_and(|events| {
             events
                 .iter()
-                .all(|event| event["tool"] == crate::coding_tools::COGNITION_CODE_READ)
+                .all(|event| event["tool"] == crate::public_api::COGNITION_STORE_READ)
         }));
     }
 
@@ -4674,11 +4615,11 @@ mod tests {
             &policy
         ));
         assert!(coder_tool_allowed(
-            ToolId::new("cognition_spawn_turn_worker"),
+            ToolId::new(crate::public_api::COGNITION_WORKSHOP_MUTATE),
             &policy
         ));
-        assert!(!coder_tool_allowed(
-            ToolId::new("cognition_workshop_steer"),
+        assert!(coder_tool_allowed(
+            ToolId::new(crate::public_api::COGNITION_WORKSHOP_QUERY),
             &policy
         ));
     }
@@ -4696,6 +4637,7 @@ mod tests {
         assert_eq!(mapped["task"], "Survey related crates for the bug");
         assert_eq!(mapped["user_ack"], "Researching dependency graph");
         assert_eq!(mapped["intent"], "research");
+        assert_eq!(mapped["action"], "workshop.spawn");
 
         let goal_only =
             remap_begin_work_to_spawn_input(&json!({ "goal": "Write a focused unit test" }), None)
@@ -4726,8 +4668,9 @@ mod tests {
         );
         let out = registry
             .invoke_tool(
-                "cognition_turn_begin_work",
+                crate::public_api::COGNITION_TURN,
                 json!({
+                    "action": "turn.begin_work",
                     "intent": "Delegate parallel research",
                     "goal": "Investigate failing CI flakes",
                     "message": "Spinning a research peer"
@@ -4739,14 +4682,19 @@ mod tests {
         let invoked = inner.invoked_tools.lock().expect("tools");
         assert_eq!(
             invoked.first().map(String::as_str),
-            Some("cognition_spawn_turn_worker")
+            Some(crate::public_api::COGNITION_WORKSHOP_MUTATE)
         );
-        assert!(invoked.iter().any(|tool| tool == "cognition_memory_store"));
+        assert!(
+            invoked
+                .iter()
+                .any(|tool| tool == crate::public_api::COGNITION_MEMORY_MUTATE)
+        );
         drop(invoked);
         let input = &out["input"];
         assert_eq!(input["task"], "Investigate failing CI flakes");
         assert_eq!(input["user_ack"], "Spinning a research peer");
         assert_eq!(input["intent"], "research");
+        assert_eq!(input["action"], "workshop.spawn");
     }
 
     #[tokio::test]

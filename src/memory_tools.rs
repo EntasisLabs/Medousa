@@ -42,7 +42,7 @@ const COGNITION_MEMORY_EVICT_ID: ToolId = ToolId::new("cognition_memory_evict");
 const DEFAULT_RECALL_AVEC: (f32, f32, f32, f32) = (0.82, 0.31, 0.88, 0.74);
 
 #[derive(Debug, Default)]
-enum MemorySessionScopeInput {
+pub(crate) enum MemorySessionScopeInput {
     #[default]
     Missing,
     Global,
@@ -101,11 +101,15 @@ impl JsonSchema for MemorySessionScopeInput {
 }
 
 #[derive(Debug, Default)]
-struct CompatibleSemanticTags(Option<Vec<String>>);
+pub(crate) struct CompatibleSemanticTags(Option<Vec<String>>);
 
 impl CompatibleSemanticTags {
     fn as_deref(&self) -> Option<&[String]> {
         self.0.as_deref()
+    }
+
+    pub(crate) fn from_vec(tags: Option<Vec<String>>) -> Option<Self> {
+        tags.map(|tags| Self(Some(tags)))
     }
 }
 
@@ -344,7 +348,7 @@ pub struct MemorySchemaOutput {
 #[medousa_tool(id = COGNITION_MEMORY_SCHEMA_ID)]
 impl CognitionMemorySchemaTool {
     /// Return a canonical STTP node example and the active ingest profile before storing memory.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         _input: MemorySchemaInput,
     ) -> stasis::prelude::Result<MemorySchemaOutput> {
@@ -354,13 +358,13 @@ impl CognitionMemorySchemaTool {
             ingest_profile_policy: ingest_profile_name(profile).to_string(),
             semantic_index: typed_semantic_index_schema_guidance(),
             workflow: [
-                "call cognition_memory_schema",
-                "optionally cognition_memory_calibrate and cognition_memory_moods",
-                "cognition_memory_store with full STTP node string — put semantic_tags in provenance.prime (or pass cognition_memory_store.semantic_tags to merge workshop tags)",
+                "call cognition_memory_query action=memory.schema",
+                "optionally cognition_memory_mutate action=memory.calibrate and cognition_memory_query action=memory.moods",
+                "cognition_memory_mutate action=memory.store with full STTP node string — put semantic_tags in provenance.prime (or pass semantic_tags on memory.store to merge workshop tags)",
                 "optional provenance.semantic_links for typed cross-node relations",
-                "cognition_memory_context or cognition_memory_list with semantic_tags for indexed recall",
-                "cognition_memory_tags to browse the tag vocabulary",
-                "cognition_memory_context for AVEC-ranked retrieval",
+                "cognition_memory_query action=memory.context or action=memory.list with semantic_tags for indexed recall",
+                "cognition_memory_query action=memory.tags to browse the tag vocabulary",
+                "cognition_memory_query action=memory.context for AVEC-ranked retrieval",
             ]
             .into_iter()
             .map(str::to_string)
@@ -408,21 +412,21 @@ impl CognitionMemoryStoreTool {
 pub struct MemoryStoreInput {
     /// Full STTP node payload with ⊕ ⦿ ◈ ⍉ layers
     #[schemars(required, with = "String")]
-    node: Option<String>,
+    pub(crate) node: Option<String>,
     /// Locus session id (defaults to current turn session)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    session_id: Option<String>,
+    pub(crate) session_id: Option<String>,
     /// Optional Locus semantic tags merged into the STTP prime block
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
-    semantic_tags: Option<Vec<String>>,
+    pub(crate) semantic_tags: Option<Vec<String>>,
     /// Deprecated: use `node` with full STTP instead
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    content: Option<String>,
+    pub(crate) content: Option<String>,
     #[schemars(skip)]
-    vibe_signature: Option<String>,
+    pub(crate) vibe_signature: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for MemoryStoreInput {
@@ -477,8 +481,8 @@ impl TryFrom<MemoryStoreInput> for MemoryStoreCommand {
             })
             .ok_or_else(|| {
                 StasisError::PortFailure(
-                    "cognition_memory_store: `node` (full STTP string) is required. \
-                     Call cognition_memory_schema first."
+                    "cognition_memory_mutate action=memory.store: `node` (full STTP string) is required. \
+                     Call cognition_memory_query action=memory.schema first."
                         .to_string(),
                 )
             })?;
@@ -534,7 +538,7 @@ pub enum MemoryStoreOutput {
 #[medousa_tool(id = COGNITION_MEMORY_STORE_ID)]
 impl CognitionMemoryStoreTool {
     /// Store a complete STTP node in Locus memory. Requires `node` (full STTP string). Optional `session_id` defaults to the current turn session.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: MemoryStoreInput,
     ) -> stasis::prelude::Result<MemoryStoreOutput> {
@@ -650,18 +654,18 @@ impl CognitionMemoryCalibrateTool {
 pub struct MemoryCalibrateInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    session_id: Option<String>,
+    pub(crate) session_id: Option<String>,
     #[schemars(required, with = "f64")]
-    stability: Option<f64>,
+    pub(crate) stability: Option<f64>,
     #[schemars(required, with = "f64")]
-    friction: Option<f64>,
+    pub(crate) friction: Option<f64>,
     #[schemars(required, with = "f64")]
-    logic: Option<f64>,
+    pub(crate) logic: Option<f64>,
     #[schemars(required, with = "f64")]
-    autonomy: Option<f64>,
+    pub(crate) autonomy: Option<f64>,
     /// e.g. manual, session_start
     #[schemars(required, with = "String")]
-    trigger: Option<String>,
+    pub(crate) trigger: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for MemoryCalibrateInput {
@@ -710,7 +714,7 @@ pub struct MemoryCalibrateOutput {
 #[medousa_tool(id = COGNITION_MEMORY_CALIBRATE_ID)]
 impl CognitionMemoryCalibrateTool {
     /// Measure AVEC drift for a session. Call at session start and after heavy reasoning before store/retrieve.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: MemoryCalibrateInput,
     ) -> stasis::prelude::Result<MemoryCalibrateOutput> {
@@ -750,7 +754,11 @@ impl CognitionMemoryCalibrateTool {
             .calibration
             .calibrate_async(&session_id, stability, friction, logic, autonomy, trigger)
             .await
-            .map_err(|e| StasisError::PortFailure(format!("cognition_memory_calibrate: {e}")))?;
+            .map_err(|e| {
+                StasisError::PortFailure(format!(
+                    "cognition_memory_mutate action=memory.calibrate: {e}"
+                ))
+            })?;
 
         Ok(MemoryCalibrateOutput {
             previous_avec: MemoryAvecOutput::from_locus(result.previous_avec),
@@ -801,51 +809,51 @@ pub struct MemoryContextInput {
         with = "MemorySessionScopeInput",
         skip_serializing_if = "MemorySessionScopeInput::is_missing"
     )]
-    session_id: MemorySessionScopeInput,
+    pub(crate) session_id: MemorySessionScopeInput,
     #[schemars(required, with = "f64")]
-    stability: Option<f64>,
+    pub(crate) stability: Option<f64>,
     #[schemars(required, with = "f64")]
-    friction: Option<f64>,
+    pub(crate) friction: Option<f64>,
     #[schemars(required, with = "f64")]
-    logic: Option<f64>,
+    pub(crate) logic: Option<f64>,
     #[schemars(required, with = "f64")]
-    autonomy: Option<f64>,
+    pub(crate) autonomy: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
-    context_keywords: Option<Vec<String>>,
+    pub(crate) context_keywords: Option<Vec<String>>,
     /// Indexed Locus tags (match-all). Example: ["session", "profile:work"]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         with = "CompatibleSemanticTags",
         skip_serializing_if = "Option::is_none"
     )]
-    semantic_tags: Option<CompatibleSemanticTags>,
+    pub(crate) semantic_tags: Option<CompatibleSemanticTags>,
     /// Match nodes whose indexed tags share this prefix (e.g. profile:)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    tag_prefix: Option<String>,
+    pub(crate) tag_prefix: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         with = "usize",
         range(min = 1, max = 200),
         skip_serializing_if = "Option::is_none"
     )]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "f64", skip_serializing_if = "Option::is_none")]
-    alpha: Option<f64>,
+    pub(crate) alpha: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "f64", skip_serializing_if = "Option::is_none")]
-    beta: Option<f64>,
+    pub(crate) beta: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    from_utc: Option<String>,
+    pub(crate) from_utc: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    to_utc: Option<String>,
+    pub(crate) to_utc: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Vec<String>", skip_serializing_if = "Option::is_none")]
-    tiers: Option<Vec<String>>,
+    pub(crate) tiers: Option<Vec<String>>,
 }
 
 impl<'de> Deserialize<'de> for MemoryContextInput {
@@ -934,7 +942,7 @@ pub enum MemoryContextOutput {
 #[medousa_tool(id = COGNITION_MEMORY_CONTEXT_ID)]
 impl CognitionMemoryContextTool {
     /// Primary memory retrieval by AVEC resonance. Requires stability/friction/logic/autonomy. Optional context_keywords and semantic_tags (indexed, match-all). Use tag_prefix for prefix vocabulary search. Set session_id to null for global retrieval across sessions.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: MemoryContextInput,
     ) -> stasis::prelude::Result<MemoryContextOutput> {
@@ -1057,11 +1065,9 @@ impl CognitionMemoryContextTool {
             include_explain: true,
         };
 
-        let response = self
-            .memory_reader
-            .recall(&recall)
-            .await
-            .map_err(|e| StasisError::PortFailure(format!("cognition_memory_context: {e}")))?;
+        let response = self.memory_reader.recall(&recall).await.map_err(|e| {
+            StasisError::PortFailure(format!("cognition_memory_query action=memory.context: {e}"))
+        })?;
 
         Ok(MemoryContextOutput::Recalled {
             retrieved: response.retrieved,
@@ -1113,34 +1119,34 @@ pub struct MemoryListInput {
         with = "MemorySessionScopeInput",
         skip_serializing_if = "MemorySessionScopeInput::is_missing"
     )]
-    session_id: MemorySessionScopeInput,
+    pub(crate) session_id: MemorySessionScopeInput,
     #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 1, max = 200),
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    limit: CompatOption<usize>,
+    pub(crate) limit: CompatOption<usize>,
     #[serde(default)]
     #[schemars(
         with = "Vec<String>",
         skip_serializing_if = "crate::typed_tools::CompatList::is_none"
     )]
-    context_keywords: CompatList<String>,
+    pub(crate) context_keywords: CompatList<String>,
     /// Indexed Locus tags (match-all)
     #[serde(default)]
     #[schemars(
         with = "CompatibleSemanticTags",
         skip_serializing_if = "Option::is_none"
     )]
-    semantic_tags: Option<CompatibleSemanticTags>,
+    pub(crate) semantic_tags: Option<CompatibleSemanticTags>,
     /// Match nodes whose indexed tags share this prefix
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    tag_prefix: CompatOption<String>,
+    pub(crate) tag_prefix: CompatOption<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1161,7 +1167,7 @@ pub enum MemoryListOutput {
 #[medousa_tool(id = COGNITION_MEMORY_LIST_ID)]
 impl CognitionMemoryListTool {
     /// Memory inventory, newest-first. Optional context_keywords filter on context_summary. Optional semantic_tags (indexed, match-all) or tag_prefix. Omit session_id or pass null for global listing.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: MemoryListInput,
     ) -> stasis::prelude::Result<MemoryListOutput> {
@@ -1190,7 +1196,11 @@ impl CognitionMemoryListTool {
                 .context_query
                 .list_nodes_async(limit, session_id.as_deref())
                 .await
-                .map_err(|e| StasisError::PortFailure(format!("cognition_memory_list: {e}")))?;
+                .map_err(|e| {
+                    StasisError::PortFailure(format!(
+                        "cognition_memory_query action=memory.list: {e}"
+                    ))
+                })?;
             return Ok(MemoryListOutput::Listed {
                 retrieved: listed.retrieved,
                 nodes: listed.nodes.iter().map(Into::into).collect(),
@@ -1216,11 +1226,9 @@ impl CognitionMemoryListTool {
             }
         }
 
-        let found = self
-            .memory_reader
-            .find(&find)
-            .await
-            .map_err(|e| StasisError::PortFailure(format!("cognition_memory_list: {e}")))?;
+        let found = self.memory_reader.find(&find).await.map_err(|e| {
+            StasisError::PortFailure(format!("cognition_memory_query action=memory.list: {e}"))
+        })?;
 
         let nodes = found
             .nodes
@@ -1271,29 +1279,29 @@ impl CognitionMemoryRecallTool {
 #[derive(Debug, JsonSchema)]
 pub struct MemoryRecallInput {
     #[schemars(required, with = "String")]
-    query: Option<String>,
+    pub(crate) query: Option<String>,
     #[serde(default, skip_serializing_if = "MemorySessionScopeInput::is_missing")]
     #[schemars(
         with = "MemorySessionScopeInput",
         skip_serializing_if = "MemorySessionScopeInput::is_missing"
     )]
-    session_id: MemorySessionScopeInput,
+    pub(crate) session_id: MemorySessionScopeInput,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         with = "usize",
         range(min = 1, max = 20),
         skip_serializing_if = "Option::is_none"
     )]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         with = "CompatibleSemanticTags",
         skip_serializing_if = "Option::is_none"
     )]
-    semantic_tags: Option<CompatibleSemanticTags>,
+    pub(crate) semantic_tags: Option<CompatibleSemanticTags>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    tag_prefix: Option<String>,
+    pub(crate) tag_prefix: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for MemoryRecallInput {
@@ -1340,11 +1348,15 @@ impl TryFrom<MemoryRecallInput> for MemoryRecallCommand {
 
     fn try_from(input: MemoryRecallInput) -> Result<Self, Self::Error> {
         let query = input.query.ok_or_else(|| {
-            StasisError::PortFailure("cognition_memory_recall: query is required".to_string())
+            StasisError::PortFailure(
+                "cognition_memory_query action=memory.recall: query is required".to_string(),
+            )
         })?;
         Ok(Self {
             query: TrimmedText::new(query).map_err(|_| {
-                StasisError::PortFailure("cognition_memory_recall: query is required".to_string())
+                StasisError::PortFailure(
+                    "cognition_memory_query action=memory.recall: query is required".to_string(),
+                )
             })?,
             session_id: input.session_id,
             limit: input.limit.unwrap_or(5).min(20),
@@ -1359,7 +1371,7 @@ impl TryFrom<MemoryRecallInput> for MemoryRecallCommand {
 #[medousa_tool(id = COGNITION_MEMORY_RECALL_ID)]
 impl CognitionMemoryRecallTool {
     /// Retrieve memory by natural-language keywords (legacy). Prefer cognition_memory_context with explicit AVEC when possible. Optional semantic_tags or tag_prefix for indexed filtering. Pass session_id to scope to one session, or null to search across all sessions.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: MemoryRecallInput,
     ) -> stasis::prelude::Result<MemoryContextOutput> {
@@ -1427,21 +1439,21 @@ pub struct MemoryTagsInput {
         with = "MemorySessionScopeInput",
         skip_serializing_if = "MemorySessionScopeInput::is_missing"
     )]
-    session_id: MemorySessionScopeInput,
+    pub(crate) session_id: MemorySessionScopeInput,
     /// Filter tags by prefix (case-insensitive)
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    prefix: CompatOption<String>,
+    pub(crate) prefix: CompatOption<String>,
     #[serde(default)]
     #[schemars(
         with = "usize",
         range(min = 1, max = 500),
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    limit: CompatOption<usize>,
+    pub(crate) limit: CompatOption<usize>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1456,7 +1468,7 @@ pub struct MemoryTagsOutput {
 #[medousa_tool(id = COGNITION_MEMORY_TAGS_ID)]
 impl CognitionMemoryTagsTool {
     /// List indexed Locus semantic tags for the active profile tenant. Optional prefix narrows vocabulary (e.g. profile:, chat:, medousa). Use before recall/list to pick tag filters.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: MemoryTagsInput,
     ) -> stasis::prelude::Result<MemoryTagsOutput> {
@@ -1498,14 +1510,18 @@ impl CognitionMemoryTagsTool {
             .semantic_index
             .find_tags_async(&tenant, prefix.as_deref(), limit)
             .await
-            .map_err(|err| StasisError::PortFailure(format!("cognition_memory_tags: {err}")))?;
+            .map_err(|err| {
+                StasisError::PortFailure(format!(
+                    "cognition_memory_query action=memory.tags: {err}"
+                ))
+            })?;
 
         Ok(MemoryTagsOutput {
             tenant_id: tenant,
             prefix,
             count: tags.len(),
             tags,
-            usage: "Pass tags to cognition_memory_context, cognition_memory_list, or cognition_memory_recall via semantic_tags (match-all).".to_string(),
+            usage: "Pass tags to cognition_memory_query action=memory.context|memory.list|memory.recall via semantic_tags (match-all).".to_string(),
         })
     }
 }
@@ -1533,37 +1549,37 @@ pub struct MemoryMoodsInput {
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    target_mood: CompatOption<String>,
+    pub(crate) target_mood: CompatOption<String>,
     #[serde(default)]
     #[schemars(
         with = "f64",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    blend: CompatOption<f64>,
+    pub(crate) blend: CompatOption<f64>,
     #[serde(default)]
     #[schemars(
         with = "f64",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    current_stability: CompatOption<f64>,
+    pub(crate) current_stability: CompatOption<f64>,
     #[serde(default)]
     #[schemars(
         with = "f64",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    current_friction: CompatOption<f64>,
+    pub(crate) current_friction: CompatOption<f64>,
     #[serde(default)]
     #[schemars(
         with = "f64",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    current_logic: CompatOption<f64>,
+    pub(crate) current_logic: CompatOption<f64>,
     #[serde(default)]
     #[schemars(
         with = "f64",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    current_autonomy: CompatOption<f64>,
+    pub(crate) current_autonomy: CompatOption<f64>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1592,7 +1608,7 @@ pub struct MemoryMoodsOutput {
 #[medousa_tool(id = COGNITION_MEMORY_MOODS_ID)]
 impl CognitionMemoryMoodsTool {
     /// AVEC mood presets and blend preview. Use before store/retrieve when reasoning posture is unset.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: MemoryMoodsInput,
     ) -> stasis::prelude::Result<MemoryMoodsOutput> {
@@ -1912,56 +1928,56 @@ pub struct MemoryEvictInput {
         with = "MemoryEvictModeSchema",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    mode: CompatOption<String>,
+    pub(crate) mode: CompatOption<String>,
     /// Preview deletions without applying (default: true)
     #[serde(default)]
     #[schemars(
         with = "bool",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    dry_run: CompatOption<bool>,
+    pub(crate) dry_run: CompatOption<bool>,
     /// Bypass inbound-reference blocks (default: false)
     #[serde(default)]
     #[schemars(
         with = "bool",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    force: CompatOption<bool>,
+    pub(crate) force: CompatOption<bool>,
     /// Locus session scope (defaults to current turn session)
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    session_id: CompatOption<String>,
+    pub(crate) session_id: CompatOption<String>,
     /// Filter tiers for by_filter mode
     #[serde(default)]
     #[schemars(
         with = "Vec<String>",
         skip_serializing_if = "crate::typed_tools::CompatList::is_none"
     )]
-    tiers: CompatList<String>,
+    pub(crate) tiers: CompatList<String>,
     /// Node ids for by_node_ids mode
     #[serde(default)]
     #[schemars(
         with = "Vec<String>",
         skip_serializing_if = "crate::typed_tools::CompatList::is_none"
     )]
-    node_ids: CompatList<String>,
+    pub(crate) node_ids: CompatList<String>,
     /// Sync keys for by_sync_keys mode
     #[serde(default)]
     #[schemars(
         with = "Vec<String>",
         skip_serializing_if = "crate::typed_tools::CompatList::is_none"
     )]
-    sync_keys: CompatList<String>,
+    pub(crate) sync_keys: CompatList<String>,
     /// Safety cap on nodes touched (default: 5000)
     #[serde(default)]
     #[schemars(
         with = "i64",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    max_nodes: CompatOption<usize>,
+    pub(crate) max_nodes: CompatOption<usize>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1978,7 +1994,7 @@ pub struct MemoryEvictOutput {
 #[medousa_tool(id = COGNITION_MEMORY_EVICT_ID)]
 impl CognitionMemoryEvictTool {
     /// Evict Locus memory nodes (dry-run by default). Supports by_filter, purge_session, by_node_ids, and by_sync_keys modes.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: MemoryEvictInput,
     ) -> stasis::prelude::Result<MemoryEvictOutput> {

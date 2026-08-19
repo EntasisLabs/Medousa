@@ -103,8 +103,8 @@ const TOPICS: &[WikiTopic] = &[
         step_10_layout(.97): "cognition_layout_get then cognition_layout_apply for side-by-side or grid — main slot only; immediate live update"
     },
     turn_discipline(.98): {
-        progress(.97): "cognition_turn_update_user for quick status; cognition_turn_begin_work before heavy tools",
-        finalize(.99): "cognition_turn_finish after tool work — naked prose becomes stub"
+        progress(.97): "cognition_turn action=turn.update_user for quick status; cognition_turn action=turn.begin_work before heavy tools",
+        finalize(.99): "cognition_turn action=turn.finish after tool work — naked prose becomes stub"
     },
     stuck_routing(.96): {
         missing_field(.97): "common_errors topic",
@@ -271,7 +271,7 @@ const TOPICS: &[WikiTopic] = &[
         client(.98): "supports_ui_artifacts must be true",
         surface_exists(.99): "custom surface must be applied before persist"
     },
-    revise(.97): "cognition_artifact_write with existing artifact_id — not repeat ui_present for same content",
+    revise(.97): "cognition_store_write action=artifacts.write with existing artifact_id — not repeat ui_present for same content",
     html_discipline(.95): {
         inline(.95): "compact card; optional height px cap",
         panel_fullscreen(.94): "transparent outer background; ~900px content — avoid full-page #000 body"
@@ -494,22 +494,19 @@ const TOPICS: &[WikiTopic] = &[
         api(.97): "MedousaFeed.on('trip.london.trains', handler) for custom DOM; MedousaFeed.fetchTail(id) on reconnect (parent proxies GET /v1/feeds/{id}/tail)"
     },
     register_recurring(.99): {
-        tool(.99): "cognition_runtime_recurring_register with feeds.feed_ids + cron http_poll grapheme",
+        tool(.99): "cognition_runtime_mutate action=recurring.register with feeds.feed_ids + cron http_poll grapheme",
         fields(.98): "{ feeds: { feed_ids: [trip.london.trains], payload_mode: parsed_poll } }"
     },
     personal_app_recipe(.97): {
         preferred(.98): "cognition_custom_view_compose { surface_id, component_id, html, feed_ids, recurring }",
-        step_1(.97): "cognition_grapheme_template_run template=http_poll url=<discovered>",
+        step_1(.97): "cognition_capability action=grapheme.invoke template=http_poll url=<discovered>",
         step_2(.97): "cognition_ui_present + cognition_layout_apply dashboard HTML",
         step_3(.97): "cognition_feed_subscribe same feed_ids",
-        step_4(.97): "cognition_runtime_recurring_register same feed_ids + 5m cron",
+        step_4(.97): "cognition_runtime_mutate action=recurring.register same feed_ids + 5m cron",
         step_5(.96): "Turn ends — ticks keep UI live via component_patch SSE"
     }"#,
         related: &["tool_map", "example_trip_poll", "component_schema"],
-        call_next: &[
-            "cognition_feed_subscribe",
-            "cognition_runtime_recurring_register",
-        ],
+        call_next: &["cognition_feed_subscribe", "cognition_runtime_mutate"],
     },
     WikiTopic {
         id: "example_trip_poll",
@@ -520,7 +517,7 @@ const TOPICS: &[WikiTopic] = &[
     cron(.98): "0 */5 * * * * * (every 5 minutes, 7-field cron, min interval 60s enforced separately)",
     recurring_register(.99): {
         job_type(.99): "workflow.grapheme.run",
-        source(.98): "http_poll grapheme from cognition_grapheme_template_run url=<train-status-url>",
+        source(.98): "http_poll grapheme from cognition_capability template=http_poll url=<train-status-url>",
         feeds(.99): "{ feed_ids: [trip.london.trains], payload_mode: parsed_poll }"
     },
     component(.98): {
@@ -529,10 +526,7 @@ const TOPICS: &[WikiTopic] = &[
     },
     payload_fields(.98): "phase tick_succeeded|tick_failed, checkedAt, statusCode, excerpt, recurringId, jobId"#,
         related: &["feed_client", "component_schema"],
-        call_next: &[
-            "cognition_feed_subscribe",
-            "cognition_runtime_recurring_register",
-        ],
+        call_next: &["cognition_feed_subscribe", "cognition_runtime_mutate"],
     },
     WikiTopic {
         id: "custom_view_compose",
@@ -576,7 +570,7 @@ const TOPICS: &[WikiTopic] = &[
         future_controls(.95): "media_embed config.hidden reserved — future MedousaWidget.invoke(componentId, action) sibling to MedousaStore",
         probe(.95): "probe=true runs MedousaStore.ready + round-trip when Home client online"
     },
-    fix_hints(.96): "issues[].fix_hint + suggested_actions[] — patch via cognition_artifact_write, re-run doctor",
+    fix_hints(.96): "issues[].fix_hint + suggested_actions[] — patch via cognition_store_write action=artifacts.write, re-run doctor",
     http(.96): "GET /v1/environment/status?include_runtime=true mirrors lightweight runtime for Settings Canvas"#,
         related: &[
             "custom_view_compose",
@@ -587,7 +581,7 @@ const TOPICS: &[WikiTopic] = &[
         call_next: &[
             "cognition_custom_view_doctor",
             "cognition_environment_patch",
-            "cognition_artifact_write",
+            "cognition_store_write",
         ],
     },
     WikiTopic {
@@ -629,7 +623,7 @@ const TOPICS: &[WikiTopic] = &[
             "component_schema",
             "environment_theme",
         ],
-        call_next: &["cognition_custom_view_doctor", "cognition_artifact_write"],
+        call_next: &["cognition_custom_view_doctor", "cognition_store_write"],
     },
     WikiTopic {
         id: "environment_theme",
@@ -672,10 +666,10 @@ const TOPICS: &[WikiTopic] = &[
         render_native_scene(.98): "enriched markdown embeds (```card``` / ```carousel``` / ```actions``` / ```callout``` / ```section``` / ```chips``` / ```media``` / ```cite``` / ```compare``` / ```plan``` / ```timeline``` / ```shortlist``` / ```decision``` / ```brief``` / ```dashboard``` / ```chart``` / ```mermaid```) for chat; cognition_ui_build for streaming scenes",
         persist_scene(.98): "cognition_component_create type:scene, config.scene:{ops:[…]} — durable Liquid scene pinned to a custom surface",
         publish_html(.98): "cognition_ui_present",
-        edit_html(.97): "cognition_artifact_write",
+        edit_html(.97): "cognition_store_write action=artifacts.write",
         stack_layout(.98): "cognition_layout_get / cognition_layout_apply / cognition_layout_reset",
         feed_subscribe(.96): "cognition_feed_subscribe",
-        recurring_feeds(.96): "cognition_runtime_recurring_register feeds.feed_ids",
+        recurring_feeds(.96): "cognition_runtime_mutate action=recurring.register feeds.feed_ids",
         compose_custom_view(.97): "cognition_custom_view_compose — prefer for feed+poll dashboards",
         diagnose_custom_view(.96): "cognition_custom_view_doctor",
         environment_patch(.96): "cognition_environment_patch — incremental ops: add_custom_surface, update_surface (label/icon), set_environment_theme, add_component, set_component_feeds, rewrite_active_preset_surfaces (needs approval)",

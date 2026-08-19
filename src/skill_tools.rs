@@ -279,7 +279,7 @@ impl SkillProposeOutput {
             next_tools: SkillProposalNextTools {
                 observe: Vec::new(),
                 propose: vec![
-                    "cognition_identity_remember".to_string(),
+                    "cognition_identity_mutate".to_string(),
                     "medousa skill-import".to_string(),
                 ],
                 sandbox: vec![
@@ -656,7 +656,7 @@ mod tests {
     #[test]
     fn skill_tool_names_are_prefixed() {
         assert!(is_skill_cognition_tool(COGNITION_SKILL_PROBE));
-        assert!(!is_skill_cognition_tool("cognition_memory_recall"));
+        assert!(!is_skill_cognition_tool("cognition_memory_query"));
     }
 
     #[test]

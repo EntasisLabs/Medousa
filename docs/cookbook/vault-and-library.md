@@ -35,7 +35,7 @@ Full table: [vault.md](../engine/vault.md)
 
 ## Agent tools
 
-`cognition_vault_list`, `read` (line range), `grep`, `search`, `tags`, `write` — grouped in **documents** discover domain.
+`cognition_store_read` / `cognition_store_write` with `store=vault` — list, read, search (path = in-file grep), write, delete, move. `facet=tags` on list.
 
 ---
 

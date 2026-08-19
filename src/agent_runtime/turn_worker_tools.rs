@@ -2,6 +2,7 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use stasis::domain::errors::StasisError;
 
 use crate::agent_runtime::turn_worker::{
@@ -21,15 +22,16 @@ const COGNITION_TURN_WORKER_STATUS_ID: ToolId = ToolId::new(COGNITION_TURN_WORKE
 const COGNITION_SPAWN_TURN_WORKER_ID: ToolId = ToolId::new(COGNITION_SPAWN_TURN_WORKER);
 const COGNITION_WORKSHOP_STEER_ID: ToolId = ToolId::new(COGNITION_WORKSHOP_STEER);
 
-pub fn is_spawn_turn_worker_tool_name(name: &str) -> bool {
-    name.trim() == COGNITION_SPAWN_TURN_WORKER
+pub fn is_workshop_spawn_call(tool_name: &str, input: &Value) -> bool {
+    tool_name.trim() == crate::public_api::COGNITION_WORKSHOP_MUTATE
+        && input.get("action").and_then(Value::as_str) == Some("workshop.spawn")
 }
 
 pub fn worker_spawn_from_invocations(
     invocations: &[stasis::application::orchestration::tool_loop_pipeline::ToolInvocation],
 ) -> Option<(String, String)> {
     invocations.iter().rev().find_map(|inv| {
-        if !is_spawn_turn_worker_tool_name(&inv.tool_name) {
+        if !is_workshop_spawn_call(&inv.tool_name, &inv.tool_input) {
             return None;
         }
         let spawned = inv
@@ -70,34 +72,34 @@ pub struct SpawnTurnWorkerInput {
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    intent: CompatOption<String>,
+    pub(crate) intent: CompatOption<String>,
     /// Focused task for the worker: capability id, module.op, URLs, and constraints. Include what the host already resolved so the worker does not rediscover.
     #[schemars(required, with = "String")]
-    task: CompatOption<String>,
+    pub(crate) task: CompatOption<String>,
     /// Short message for the user while the worker runs
     #[schemars(required, with = "String")]
-    user_ack: CompatOption<String>,
+    pub(crate) user_ack: CompatOption<String>,
     /// Optional YAML specialty (voice, tools, worker intent, spec.worker.stage_role, spec.worker.model_hint).
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    manuscript_id: CompatOption<String>,
+    pub(crate) manuscript_id: CompatOption<String>,
     /// Optional StageRoutingMatrix role (extractor, verifier, chunker, …)
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    stage_role: CompatOption<String>,
+    pub(crate) stage_role: CompatOption<String>,
     /// Optional. Prefer omit or 'auto' to use user stage-routing / host prefs. Only set provider:model when explicitly requested (e.g. deepseek:deepseek-v4-flash).
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    model_hint: CompatOption<String>,
+    pub(crate) model_hint: CompatOption<String>,
 }
 
 impl<'de> Deserialize<'de> for SpawnTurnWorkerInput {
@@ -187,8 +189,8 @@ fn optional_worker_text(value: Option<String>) -> Option<String> {
 
 #[medousa_tool(id = COGNITION_SPAWN_TURN_WORKER_ID)]
 impl CognitionSpawnTurnWorkerTool {
-    /// Delegate heavy work to a background turn worker (web/Grapheme execution, memory rituals). Returns immediately; the worker runs tools with a focused policy, then a synthesis pass delivers the final user-facing answer. Intents: memory.avec_calibrate | memory.context | research | general. Optional manuscript_id loads a YAML specialty (voice, tool allowlist, identity pins, OpenShell/skill tools). Manuscript spec.worker.stage_role selects a StageRoutingMatrix route (extractor, verifier, …); spec.worker.model_hint overrides provider/model. Spawn-time stage_role/model_hint win over manuscript defaults. Prefer omitting model_hint (or set model_hint=auto) so workshop StageRoutingMatrix / host preferences choose provider+model. Only pass provider:model when the user explicitly asked for that combo. Bare model ids infer the provider when unambiguous; otherwise they inherit the host turn provider — never the process default. Use manuscript_id=echo-skill or openshell-researcher for sandbox script execution. Put resolved capability/module/op and any host evidence into task — workers do not see parent chat.
-    async fn invoke_typed(
+    /// Delegate heavy work to a background turn worker (web/Grapheme execution, memory rituals). Returns immediately with user_ack; the worker runs tools with a focused policy, then results return to the host so it can answer. Intents: memory.avec_calibrate | memory.context | research | general. Optional manuscript_id loads a YAML specialty (voice, tool allowlist, identity pins, OpenShell/skill tools). Manuscript spec.worker.stage_role selects a StageRoutingMatrix route (extractor, verifier, …); spec.worker.model_hint overrides provider/model. Spawn-time stage_role/model_hint win over manuscript defaults. Prefer omitting model_hint (or set model_hint=auto) so workshop StageRoutingMatrix / host preferences choose provider+model. Only pass provider:model when the user explicitly asked for that combo. Bare model ids infer the provider when unambiguous; otherwise they inherit the host turn provider — never the process default. Use manuscript_id=echo-skill or openshell-researcher for sandbox script execution. Put resolved capability/module/op and any host evidence into task — workers do not see parent chat.
+    pub(crate) async fn invoke_typed(
         &self,
         input: SpawnTurnWorkerInput,
     ) -> stasis::prelude::Result<SpawnTurnWorkerOutput> {
@@ -250,13 +252,13 @@ pub struct TurnWorkerStatusInput {
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    work_id: CompatOption<String>,
+    pub(crate) work_id: CompatOption<String>,
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    session_id: CompatOption<String>,
+    pub(crate) session_id: CompatOption<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -279,7 +281,7 @@ pub enum TurnWorkerStatusOutput {
 #[medousa_tool(id = COGNITION_TURN_WORKER_STATUS_ID)]
 impl CognitionTurnWorkerStatusTool {
     /// List or fetch status of background turn workers. On an active host turn, omit session_id to use the current session.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: TurnWorkerStatusInput,
     ) -> stasis::prelude::Result<TurnWorkerStatusOutput> {
@@ -358,7 +360,7 @@ pub struct TurnWorkerCancelOutput {
 #[medousa_tool(id = COGNITION_TURN_WORKER_CANCEL_ID)]
 impl CognitionTurnWorkerCancelTool {
     /// Cancel an exact worker generation owned by the active host session (best-effort; in-flight worker may still finish).
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: TurnWorkerCancelInput,
     ) -> stasis::prelude::Result<TurnWorkerCancelOutput> {
@@ -398,17 +400,6 @@ impl CognitionTurnWorkerCancelTool {
     }
 }
 
-pub fn register_turn_worker_tools(
-    registry: &mut impl crate::typed_tools::ToolRegistration,
-    scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
-) -> stasis::prelude::Result<()> {
-    registry.register_typed_tool(CognitionSpawnTurnWorkerTool::new(scheduler.clone()))?;
-    registry.register_typed_tool(CognitionWorkshopSteerTool::new(scheduler.clone()))?;
-    registry.register_typed_tool(CognitionTurnWorkerStatusTool::new(scheduler.clone()))?;
-    registry.register_typed_tool(CognitionTurnWorkerCancelTool::new(scheduler))?;
-    Ok(())
-}
-
 pub struct CognitionWorkshopSteerTool {
     scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
 }
@@ -422,9 +413,9 @@ impl CognitionWorkshopSteerTool {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct WorkshopSteerInput {
     /// Exact bound-workshop generation returned by begin-work.
-    work_id: String,
+    pub(crate) work_id: String,
     /// Steer text for the bound workshop
-    message: String,
+    pub(crate) message: String,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -451,7 +442,7 @@ impl WorkshopSteerOutput {
 #[medousa_tool(id = COGNITION_WORKSHOP_STEER_ID)]
 impl CognitionWorkshopSteerTool {
     /// Forward a principal steer message into the active bound workshop for this session. Use when the operator adds guidance while workshop execution is in flight.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: WorkshopSteerInput,
     ) -> stasis::prelude::Result<WorkshopSteerOutput> {

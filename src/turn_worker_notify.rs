@@ -356,6 +356,8 @@ mod tests {
                 stream_id: None,
             }),
             parent_user_prompt: None,
+            parent_agent_mode: None,
+            parent_code_work_id: None,
             handoff_capsule: None,
             worker_scratch: None,
             synthesis_delivered: false,

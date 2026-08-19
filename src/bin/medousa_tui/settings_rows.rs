@@ -172,10 +172,7 @@ pub(crate) fn is_toggle_row(id: SettingsRowId) -> bool {
 }
 
 pub(crate) fn is_routing_edit_row(id: SettingsRowId) -> bool {
-    matches!(
-        id,
-        SettingsRowId::RouteProvider | SettingsRowId::RouteModel
-    )
+    matches!(id, SettingsRowId::RouteProvider | SettingsRowId::RouteModel)
 }
 
 pub(crate) fn selected_settings_field_mut(
@@ -248,20 +245,18 @@ pub(crate) fn quick_adjust_setting(state: &mut TuiState, id: SettingsRowId, forw
                 super::cycle_tool_call_mode(&state.settings_draft.tool_call_mode, forward);
         }
         SettingsRowId::HostTurnBusMode => {
-            state.settings_draft.host_turn_bus_mode = super::cycle_host_turn_bus_mode(
-                &state.settings_draft.host_turn_bus_mode,
+            state.settings_draft.host_turn_bus_mode =
+                super::cycle_host_turn_bus_mode(&state.settings_draft.host_turn_bus_mode, forward);
+        }
+        SettingsRowId::WebSearchPreferredProvider => {
+            state.settings_draft.web_search_preferred_provider = super::cycle_web_search_provider(
+                &state.settings_draft.web_search_preferred_provider,
                 forward,
             );
         }
-        SettingsRowId::WebSearchPreferredProvider => {
-            state.settings_draft.web_search_preferred_provider =
-                super::cycle_web_search_provider(
-                    &state.settings_draft.web_search_preferred_provider,
-                    forward,
-                );
-        }
         SettingsRowId::ThinkingCapture => {
-            let value = super::parse_bool_with_default(&state.settings_draft.thinking_capture, true);
+            let value =
+                super::parse_bool_with_default(&state.settings_draft.thinking_capture, true);
             state.settings_draft.thinking_capture = (!value).to_string();
         }
         SettingsRowId::StasisOtelEnabled => {
@@ -308,8 +303,12 @@ pub(crate) fn quick_adjust_setting(state: &mut TuiState, id: SettingsRowId, forw
             forward,
         ),
         SettingsRowId::ThinkingMaxLines => {
-            let current =
-                super::parse_usize_with_bounds(&state.settings_draft.thinking_max_lines, 300, 50, 5000);
+            let current = super::parse_usize_with_bounds(
+                &state.settings_draft.thinking_max_lines,
+                300,
+                50,
+                5000,
+            );
             let step = if current < 500 { 50 } else { 100 };
             let next = step_usize(current, step, forward).clamp(50, 5000);
             state.settings_draft.thinking_max_lines = next.to_string();
@@ -344,8 +343,12 @@ pub(crate) fn quick_adjust_setting(state: &mut TuiState, id: SettingsRowId, forw
             );
         }
         SettingsRowId::SliceHotWindowTurns => {
-            let current =
-                super::parse_usize_with_bounds(&state.settings_draft.slice_hot_window_turns, 8, 2, 32);
+            let current = super::parse_usize_with_bounds(
+                &state.settings_draft.slice_hot_window_turns,
+                8,
+                2,
+                32,
+            );
             let next = step_usize(current, 1, forward).clamp(2, 32);
             state.settings_draft.slice_hot_window_turns = next.to_string();
             let cold = super::parse_usize_with_bounds(
@@ -359,8 +362,12 @@ pub(crate) fn quick_adjust_setting(state: &mut TuiState, id: SettingsRowId, forw
             }
         }
         SettingsRowId::SliceColdWindowTurns => {
-            let hot =
-                super::parse_usize_with_bounds(&state.settings_draft.slice_hot_window_turns, 8, 2, 32);
+            let hot = super::parse_usize_with_bounds(
+                &state.settings_draft.slice_hot_window_turns,
+                8,
+                2,
+                32,
+            );
             let current = super::parse_usize_with_bounds(
                 &state.settings_draft.slice_cold_window_turns,
                 24,
@@ -406,7 +413,11 @@ pub(crate) fn quick_adjust_setting(state: &mut TuiState, id: SettingsRowId, forw
                 .to_string();
         }
         SettingsRowId::VerifierMinCitationCoverage => {
-            adjust_verifier_float(&mut state.settings_draft.verifier_min_citation_coverage, 0.60, forward);
+            adjust_verifier_float(
+                &mut state.settings_draft.verifier_min_citation_coverage,
+                0.60,
+                forward,
+            );
         }
         SettingsRowId::VerifierMinAvgSupportStrength => {
             adjust_verifier_float(
@@ -482,9 +493,11 @@ pub(crate) fn quick_adjust_setting(state: &mut TuiState, id: SettingsRowId, forw
         SettingsRowId::RouteFallbackChain => {
             let role = routing_editor_role(state).to_string();
             if let Some(route) = state.stage_routing_draft.get_mut(&role) {
-                let options = [vec![role.clone(), "safe-default".to_string()],
+                let options = [
+                    vec![role.clone(), "safe-default".to_string()],
                     vec!["safe-default".to_string()],
-                    vec![role, "balanced".to_string(), "safe-default".to_string()]];
+                    vec![role, "balanced".to_string(), "safe-default".to_string()],
+                ];
                 let idx = options
                     .iter()
                     .position(|v| *v == route.fallback_chain)
@@ -571,7 +584,9 @@ fn adjust_round_field(field: &mut String, default_value: usize, forward: bool) {
 fn adjust_prompt_chars(field: &mut String, default: usize, forward: bool) {
     let current = super::parse_usize_with_bounds(field, default, 64, 4000);
     let step = if current < 1000 { 32 } else { 128 };
-    *field = step_usize(current, step, forward).clamp(64, 4000).to_string();
+    *field = step_usize(current, step, forward)
+        .clamp(64, 4000)
+        .to_string();
 }
 
 fn adjust_verifier_float(field: &mut String, default: f32, forward: bool) {

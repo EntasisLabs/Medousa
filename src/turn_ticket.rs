@@ -399,7 +399,7 @@ mod tests {
         let event = crate::interactive_turn_runtime::worker_ack_stream_event_with_tools(
             "turn-1",
             "On it.",
-            vec!["cognition_spawn_turn_worker".to_string()],
+            vec![crate::public_api::COGNITION_WORKSHOP_MUTATE.to_string()],
             Some("work-1"),
         )
         .expect("event");

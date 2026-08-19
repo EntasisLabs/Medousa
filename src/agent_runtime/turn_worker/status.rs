@@ -29,7 +29,7 @@ pub fn format_active_workers_block(session_id: &str) -> Option<String> {
         "[MEDOUSA_ACTIVE_WORKERS]".to_string(),
         format!("session_id={session_id}"),
         format!("count={}", active.len()),
-        "Use cognition_turn_worker_status (session_id optional on host turn) for drill-down."
+        "Use cognition_workshop_query action=workshop.status (session_id optional on host turn) for drill-down."
             .to_string(),
     ];
 
@@ -87,6 +87,8 @@ mod tests {
             max_tool_rounds: 8,
             delivery_target: None,
             parent_user_prompt: None,
+            parent_agent_mode: None,
+            parent_code_work_id: None,
             handoff_capsule: None,
             worker_scratch: None,
             synthesis_delivered: false,

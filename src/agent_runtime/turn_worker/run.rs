@@ -29,6 +29,7 @@ use crate::agent_runtime::{
 use crate::channel_delivery::ChannelDeliveryTarget;
 use crate::daemon_api::InteractiveTurnRequest;
 use crate::stage_routing::StageRoutingMatrix;
+use crate::tools::TuiRuntime;
 use crate::tui::settings::RuntimeSettings;
 use crate::turn_continuation::TurnContinuationScope;
 use stasis::application::orchestration::prompt_pipeline::{
@@ -118,6 +119,8 @@ pub struct ActiveWorkerBusSession {
     /// Host client advertised Liquid Markdown hydration support.
     pub supports_liquid_markdown: bool,
     pub supports_browser_host: bool,
+    pub parent_agent_mode: Option<String>,
+    pub parent_code_work_id: Option<String>,
 }
 
 /// Tooling snapshot for background workers (no full `Arc<TuiRuntime>` required).
@@ -343,7 +346,7 @@ impl TurnWorkerScheduler {
     ) -> stasis::prelude::Result<SpawnTurnWorkerOutput> {
         let parent = self.active_parent().map_err(|error| {
             stasis::domain::errors::StasisError::PortFailure(format!(
-                "cognition_spawn_turn_worker: {error}"
+                "cognition_workshop_mutate: {error}"
             ))
         })?;
         let bus = &parent.bus;
@@ -464,6 +467,8 @@ impl TurnWorkerScheduler {
                 .filter(|s| !s.is_empty())
                 .map(str::to_string)
                 .or_else(|| Some(bus.parent_user_prompt.clone())),
+            parent_agent_mode: bus.parent_agent_mode.clone(),
+            parent_code_work_id: bus.parent_code_work_id.clone(),
             handoff_capsule: Some(handoff),
             worker_scratch: None,
             synthesis_delivered: false,
@@ -534,7 +539,7 @@ impl TurnWorkerScheduler {
 
         let runtime = self.runtime.read().await.clone().ok_or_else(|| {
             stasis::domain::errors::StasisError::PortFailure(
-                "cognition_spawn_turn_worker: stasis runtime not ready".to_string(),
+                "cognition_workshop_mutate: stasis runtime not ready".to_string(),
             )
         })?;
         crate::agent_runtime::turn_worker_job::enqueue_turn_worker_job(
@@ -657,6 +662,8 @@ impl TurnWorkerScheduler {
             max_tool_rounds,
             delivery_target,
             parent_user_prompt: Some(bus.parent_user_prompt.clone()),
+            parent_agent_mode: bus.parent_agent_mode.clone(),
+            parent_code_work_id: bus.parent_code_work_id.clone(),
             handoff_capsule: Some(handoff),
             worker_scratch: None,
             synthesis_delivered: false,
@@ -784,6 +791,7 @@ pub async fn run_worker_turn(
     work_id: String,
     sink: SharedAgentStreamSink,
     stream_turn_id: u64,
+    agent: Arc<TuiRuntime>,
 ) {
     let Some(record) = store.get(&work_id) else {
         return;
@@ -860,7 +868,7 @@ pub async fn run_worker_turn(
     let _execution_lease = execution_lease;
     crate::agent_runtime::execution_context::with_turn_execution_context(
         execution_context,
-        run_worker_turn_inner(store, ctx, work_id, sink, stream_turn_id, record),
+        run_worker_turn_inner(store, ctx, work_id, sink, stream_turn_id, record, agent),
     )
     .await;
 }
@@ -872,6 +880,7 @@ async fn run_worker_turn_inner(
     sink: SharedAgentStreamSink,
     stream_turn_id: u64,
     record: TurnWorkRecord,
+    agent: Arc<TuiRuntime>,
 ) {
     store.update(&work_id, |record| {
         if record.status == TurnWorkStatus::Pending {
@@ -879,8 +888,24 @@ async fn run_worker_turn_inner(
         }
     });
     if store.is_work_cancelled(&work_id) {
+        store.update(&work_id, |record| {
+            record.status = TurnWorkStatus::Cancelled;
+            record.termination_reason = Some("workshop_cancelled".to_string());
+        });
         sink.notice(format!("◈ work_cancelled work_id={work_id}"))
             .await;
+        if let Some(updated) = store.get(&work_id) {
+            let is_bound_workshop = updated.disposition == TurnWorkDisposition::Bound;
+            deliver_worker_parent_outcome(
+                &ctx,
+                &agent,
+                updated,
+                sink,
+                stream_turn_id,
+                is_bound_workshop,
+            )
+            .await;
+        }
         return;
     }
     sink.notice(format!("◈ work_running work_id={work_id}"))
@@ -1049,6 +1074,17 @@ async fn run_worker_turn_inner(
         });
         sink.notice(format!("◈ work_cancelled work_id={work_id}"))
             .await;
+        if let Some(updated) = store.get(&work_id) {
+            deliver_worker_parent_outcome(
+                &ctx,
+                &agent,
+                updated,
+                sink,
+                stream_turn_id,
+                is_bound_workshop,
+            )
+            .await;
+        }
         return;
     }
 
@@ -1078,6 +1114,17 @@ async fn run_worker_turn_inner(
                 });
                 sink.notice(format!("◈ work_cancelled work_id={work_id}"))
                     .await;
+                if let Some(updated) = store.get(&work_id) {
+                    deliver_worker_parent_outcome(
+                        &ctx,
+                        &agent,
+                        updated,
+                        sink.clone(),
+                        stream_turn_id,
+                        is_bound_workshop,
+                    )
+                    .await;
+                }
             } else {
                 let tool_names: Vec<String> = response
                     .tool_invocations
@@ -1108,7 +1155,15 @@ async fn run_worker_turn_inner(
                     .await;
                 }
                 if let Some(updated) = store.get(&work_id) {
-                    run_synthesis_turn(&ctx, updated, sink, stream_turn_id).await;
+                    deliver_worker_parent_outcome(
+                        &ctx,
+                        &agent,
+                        updated,
+                        sink,
+                        stream_turn_id,
+                        is_bound_workshop,
+                    )
+                    .await;
                 }
             }
         }
@@ -1122,6 +1177,17 @@ async fn run_worker_turn_inner(
                 if is_bound_workshop && let Some(cancelled) = store.get(&work_id) {
                     crate::feed_adapters::publish_workshop_terminal(&cancelled, "cancelled", None)
                         .await;
+                }
+                if let Some(updated) = store.get(&work_id) {
+                    deliver_worker_parent_outcome(
+                        &ctx,
+                        &agent,
+                        updated,
+                        sink,
+                        stream_turn_id,
+                        is_bound_workshop,
+                    )
+                    .await;
                 }
                 return;
             }
@@ -1147,10 +1213,52 @@ async fn run_worker_turn_inner(
                 .await;
             }
             if let Some(failed) = store.get(&work_id) {
-                run_worker_failure_notify(&ctx, failed, sink, stream_turn_id).await;
+                deliver_worker_parent_outcome(
+                    &ctx,
+                    &agent,
+                    failed,
+                    sink,
+                    stream_turn_id,
+                    is_bound_workshop,
+                )
+                .await;
             }
         }
     }
+}
+
+async fn deliver_worker_parent_outcome(
+    ctx: &WorkerRuntimeContext,
+    agent: &TuiRuntime,
+    record: TurnWorkRecord,
+    sink: SharedAgentStreamSink,
+    stream_turn_id: u64,
+    is_bound_workshop: bool,
+) {
+    if is_bound_workshop {
+        match record.status {
+            TurnWorkStatus::Completed => {
+                run_synthesis_turn(ctx, record, sink, stream_turn_id).await;
+            }
+            TurnWorkStatus::Failed => {
+                run_worker_failure_notify(ctx, record, sink, stream_turn_id).await;
+            }
+            _ => {}
+        }
+        return;
+    }
+    super::host_resume::maybe_resume_host_after_parallel_worker(
+        ctx,
+        &agent.execution_registry,
+        agent,
+        &record,
+        sink,
+    )
+    .await;
+}
+
+fn parallel_worker_uses_host_resume(disposition: TurnWorkDisposition) -> bool {
+    disposition == TurnWorkDisposition::Parallel
 }
 
 pub async fn resume_synthesis_if_needed(
@@ -1158,7 +1266,26 @@ pub async fn resume_synthesis_if_needed(
     execution_registry: &crate::agent_runtime::execution_context::TurnExecutionRegistry,
     record: TurnWorkRecord,
     sink: SharedAgentStreamSink,
+    agent: Option<&TuiRuntime>,
 ) {
+    if parallel_worker_uses_host_resume(record.disposition) {
+        let Some(agent) = agent else {
+            tracing::warn!(
+                work_id = %record.work_id,
+                "parallel host resume skipped without agent runtime"
+            );
+            return;
+        };
+        super::host_resume::maybe_resume_host_after_parallel_worker(
+            ctx,
+            execution_registry,
+            agent,
+            &record,
+            sink,
+        )
+        .await;
+        return;
+    }
     if record.synthesis_delivered || record.status != TurnWorkStatus::Completed {
         return;
     }
@@ -1554,6 +1681,8 @@ mod tests {
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
             supports_browser_host: false,
+            parent_agent_mode: None,
+            parent_code_work_id: None,
         };
         (runtime, bus)
     }
@@ -1582,6 +1711,8 @@ mod tests {
             max_tool_rounds: 8,
             delivery_target: None,
             parent_user_prompt: None,
+            parent_agent_mode: None,
+            parent_code_work_id: None,
             handoff_capsule: None,
             worker_scratch: None,
             synthesis_delivered: false,
@@ -1851,5 +1982,15 @@ mod tests {
 
         drop(execution);
         assert_eq!(store.live_execution_count(), 0);
+    }
+
+    #[test]
+    fn parallel_workers_resume_host_bound_workers_synthesize() {
+        assert!(parallel_worker_uses_host_resume(
+            TurnWorkDisposition::Parallel
+        ));
+        assert!(!parallel_worker_uses_host_resume(
+            TurnWorkDisposition::Bound
+        ));
     }
 }

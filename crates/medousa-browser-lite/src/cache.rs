@@ -60,9 +60,9 @@ impl SearchCache {
                 .iter()
                 .min_by_key(|(_, v)| v.inserted)
                 .map(|(k, _)| k.clone())
-            {
-                guard.remove(&oldest_key);
-            }
+        {
+            guard.remove(&oldest_key);
+        }
         guard.insert(
             key,
             CacheEntry {

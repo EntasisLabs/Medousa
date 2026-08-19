@@ -21,10 +21,7 @@ pub fn stable_operation_id(method: &str, path: &str) -> String {
                 .strip_prefix('{')
                 .and_then(|rest| rest.strip_suffix('}'))
             {
-                format!(
-                    "by_{}",
-                    name.trim_start_matches('*').replace('-', "_")
-                )
+                format!("by_{}", name.trim_start_matches('*').replace('-', "_"))
             } else {
                 segment.replace('-', "_")
             }

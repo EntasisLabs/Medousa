@@ -525,7 +525,7 @@ mod tests {
     fn openshell_tool_names_are_stable() {
         assert!(is_openshell_cognition_tool(COGNITION_OPENSHELL_STATUS));
         assert!(is_openshell_cognition_tool(COGNITION_OPENSHELL_SANDBOX_RUN));
-        assert!(!is_openshell_cognition_tool("cognition_memory_recall"));
+        assert!(!is_openshell_cognition_tool("cognition_memory_query"));
     }
 
     #[test]

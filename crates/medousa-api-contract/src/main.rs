@@ -45,7 +45,8 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    let operations: Vec<medousa_api_contract::OperationSpec> = match serde_json::from_str(&payload) {
+    let operations: Vec<medousa_api_contract::OperationSpec> = match serde_json::from_str(&payload)
+    {
         Ok(operations) => operations,
         Err(error) => {
             eprintln!("parse IR: {error}");
@@ -67,7 +68,10 @@ fn main() -> ExitCode {
     }
     let writes = [
         ("openapi.json", artifacts.openapi_json.as_bytes()),
-        ("route-inventory.json", artifacts.route_inventory_json.as_bytes()),
+        (
+            "route-inventory.json",
+            artifacts.route_inventory_json.as_bytes(),
+        ),
         ("ops.rs", artifacts.rust_ops.as_bytes()),
         ("ops.py", artifacts.python_ops.as_bytes()),
         ("ops.ts", artifacts.typescript_ops.as_bytes()),

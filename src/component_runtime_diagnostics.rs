@@ -74,7 +74,7 @@ pub async fn build_component_runtime_diagnostic(
                         fix_hint: "Reset with component store API or patch artifact to use Array.isArray guards.".to_string(),
                     });
                     diagnostic.suggested_actions.push(ComponentSuggestedAction {
-                        tool: "cognition_artifact_write".to_string(),
+                        tool: "cognition_store_write".to_string(),
                         reason: format!("Fix store read guards for key '{key}'"),
                     });
                 }
@@ -101,7 +101,7 @@ pub async fn build_component_runtime_diagnostic(
                         code: "RUNTIME_LOG".to_string(),
                         severity: event.level.clone(),
                         message: event.message.clone(),
-                        fix_hint: "Read artifact source and patch the failing line via cognition_artifact_write.".to_string(),
+                        fix_hint: "Read artifact source and patch the failing line via cognition_store_write action=artifacts.write.".to_string(),
                     });
                 }
             }
@@ -152,7 +152,7 @@ pub async fn build_component_runtime_diagnostic(
         .any(|i| i.code.starts_with("STATIC_"))
     {
         diagnostic.suggested_actions.push(ComponentSuggestedAction {
-            tool: "cognition_artifact_write".to_string(),
+            tool: "cognition_store_write".to_string(),
             reason: "Fix static anti-patterns in HTML (localStorage, store guards)".to_string(),
         });
     }
@@ -208,7 +208,7 @@ fn push_issue_from_lint(
         "STATIC_STORE_SYNC_USAGE" => {
             "MedousaStore is async — use async functions and await get/set/delete; see wiki topic artifact_runtime.".to_string()
         }
-        _ => "Patch artifact HTML via cognition_artifact_write.".to_string(),
+        _ => "Patch artifact HTML via cognition_store_write action=artifacts.write.".to_string(),
     };
     issues.push(ComponentRuntimeIssue {
         code: finding.code.clone(),

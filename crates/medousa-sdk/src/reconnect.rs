@@ -4,20 +4,18 @@
 //! semantics so SDK consumers get bounded, jittered reattach with `?since=<seq>`
 //! against the daemon's disk-backed turn spine.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::transport::path_with_query;
 
 /// Policy for reconnecting an interactive turn SSE stream after a drop.
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ReconnectPolicy {
     pub backoff: BackoffPolicy,
     pub breaker: CircuitBreakerConfig,
 }
-
 
 /// Exponential backoff with cap and deterministic pseudo-jitter (no `rand` dep).
 #[derive(Debug, Clone)]
@@ -170,7 +168,8 @@ pub fn stream_path_with_since(path: &str, since: u64) -> String {
     if let Ok(mut url) = reqwest::Url::parse(path) {
         url.set_query(None);
         if since > 0 {
-            url.query_pairs_mut().append_pair("since", &since.to_string());
+            url.query_pairs_mut()
+                .append_pair("since", &since.to_string());
         }
         return url.into();
     }

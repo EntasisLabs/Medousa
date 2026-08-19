@@ -26,14 +26,8 @@ static SESSION_SURFACE_FILES: Lazy<crate::session_storage::SessionFileStore> = L
 /// Host console domains unlocked at session start (no `cognition_tools_discover` step).
 pub const DEFAULT_HOST_AUTO_UNLOCK_DOMAINS: &[&str] = &["memory", "vault", "calendar"];
 
-pub const CALENDAR_DOMAIN_TOOLS: &[&str] = &[
-    "cognition_calendar_list",
-    "cognition_calendar_create",
-    "cognition_calendar_update",
-    "cognition_calendar_delete",
-    "cognition_calendar_import",
-    "cognition_calendar_export",
-];
+pub const CALENDAR_DOMAIN_TOOLS: &[&str] =
+    &["cognition_calendar_query", "cognition_calendar_mutate"];
 
 pub const BROWSER_HOST_AUTO_UNLOCK_DOMAIN: &str = "browser";
 
@@ -67,26 +61,23 @@ pub const ENVIRONMENT_DOMAIN_TOOLS: &[&str] = &[
 /// Always-visible host console tools (~12+).
 pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     COGNITION_TOOLS_DISCOVER,
-    "cognition_capability_search",
+    "cognition_capability",
+    "cognition_schema",
+    "cognition_runtime_query",
+    "cognition_runtime_mutate",
     "cognition_tool_history_summary",
-    "cognition_spawn_turn_worker",
-    "cognition_memory_context",
-    "cognition_memory_store",
-    "cognition_identity_recall",
-    "cognition_identity_remember",
+    "cognition_workshop_query",
+    "cognition_workshop_mutate",
+    "cognition_memory_query",
+    "cognition_memory_mutate",
+    "cognition_identity_query",
+    "cognition_identity_mutate",
     "cognition_web_search",
-    "cognition_vault_search",
-    "cognition_vault_grep",
-    "cognition_calendar_list",
-    "cognition_artifact_list",
-    "cognition_artifact_read",
-    "cognition_artifact_grep",
-    "cognition_turn_begin_work",
-    "cognition_turn_update_user",
-    "cognition_turn_checkpoint",
-    "cognition_turn_finish",
-    "cognition_turn_propose_mode",
-    "cognition_turn_worker_status",
+    "cognition_store_read",
+    "cognition_store_write",
+    "cognition_calendar_query",
+    "cognition_calendar_mutate",
+    "cognition_turn",
     "cognition_ui_present",
     "cognition_ui_build",
     "cognition_ui_scene",
@@ -95,15 +86,22 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
 /// Always-visible worker workshop tools.
 pub const WORKER_BOOTSTRAP_TOOLS: &[&str] = &[
     COGNITION_TOOLS_DISCOVER,
-    "cognition_turn_begin_work",
-    "cognition_turn_update_user",
-    "cognition_turn_finish",
-    "cognition_capability_invoke",
+    "cognition_turn",
+    "cognition_capability",
+    "cognition_schema",
+    "cognition_runtime_query",
+    "cognition_runtime_mutate",
     "cognition_web_search",
-    "cognition_grapheme_script_load",
-    "cognition_grapheme_template_run",
-    "cognition_memory_context",
-    "cognition_memory_store",
+    "cognition_store_read",
+    "cognition_store_write",
+    "cognition_memory_query",
+    "cognition_memory_mutate",
+    "cognition_identity_query",
+    "cognition_identity_mutate",
+    "cognition_calendar_query",
+    "cognition_calendar_mutate",
+    "cognition_workshop_query",
+    "cognition_workshop_mutate",
     "cognition_ui_build",
     "cognition_ui_scene",
     "cognition_ui_present",
@@ -148,63 +146,37 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 domain: "memory",
                 summary: "Locus session memory — schema, calibrate, moods, store, recall",
                 tools: &[
-                    "cognition_memory_schema",
-                    "cognition_memory_moods",
-                    "cognition_memory_calibrate",
-                    "cognition_memory_list",
-                    "cognition_memory_recall",
-                    "cognition_memory_store",
-                    "cognition_identity_recall",
-                    "cognition_identity_remember",
+                    "cognition_memory_query",
+                    "cognition_memory_mutate",
                 ],
             },
             ToolDomainCatalogEntry {
                 domain: "catalog",
                 summary: "Inspect capabilities, manuscripts, saved Grapheme scripts",
                 tools: &[
-                    "cognition_capability_list",
-                    "cognition_capability_resolve",
+                    "cognition_capability",
+                    "cognition_schema",
                     "cognition_manuscript_list",
                     "cognition_manuscript_resolve",
-                    "cognition_grapheme_script_list",
-                    "cognition_grapheme_script_search",
-                    "cognition_grapheme_script_load",
-                    "cognition_grapheme_script_save",
+                    "cognition_store_read",
+                    "cognition_store_write",
                 ],
             },
             ToolDomainCatalogEntry {
                 domain: "runtime",
                 summary: "Durable jobs, workflows, recurring schedules, delivery",
                 tools: &[
-                    "cognition_job_enqueue",
-                    "cognition_runtime_workflow_run",
-                    "cognition_runtime_workflow_plan",
-                    "cognition_runtime_workflow_status",
-                    "cognition_runtime_workflow_cancel",
-                    "cognition_runtime_workflow_schedule",
-                    "cognition_runtime_jobs_list",
-                    "cognition_runtime_jobs_status",
-                    "cognition_runtime_jobs_cancel",
-                    "cognition_runtime_delivery_status",
-                    "cognition_runtime_recurring_list",
-                    "cognition_runtime_recurring_register",
-                    "cognition_runtime_recurring_pause",
-                    "cognition_runtime_recurring_cancel",
-                    "cognition_runtime_recurring_doctor",
-                    "cognition_runtime_recurring_preview",
+                    "cognition_schema",
+                    "cognition_runtime_query",
+                    "cognition_runtime_mutate",
                 ],
             },
             ToolDomainCatalogEntry {
                 domain: "vault",
                 summary: "Vault notes — list, read, write (tag runtime-learning for recall)",
                 tools: &[
-                    "cognition_vault_list",
-                    "cognition_vault_read",
-                    "cognition_vault_grep",
-                    "cognition_vault_write",
-                    "cognition_vault_delete",
-                    "cognition_vault_move",
-                    "cognition_vault_tags",
+                    "cognition_store_read",
+                    "cognition_store_write",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -214,35 +186,22 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "documents",
-                summary: "Edit files: vault markdown (cognition_vault_*) or HTML presentations (cognition_artifact_*). Workflow: list/search → grep → read → write.",
+                summary: "Edit files: vault markdown or HTML presentations via cognition_store_read / cognition_store_write (action=vault.read|artifacts.write|…).",
                 tools: &[
-                    "cognition_vault_list",
-                    "cognition_vault_read",
-                    "cognition_vault_grep",
-                    "cognition_vault_search",
-                    "cognition_vault_write",
-                    "cognition_vault_delete",
-                    "cognition_vault_move",
-                    "cognition_artifact_list",
-                    "cognition_artifact_read",
-                    "cognition_artifact_grep",
-                    "cognition_artifact_write",
-                    "cognition_artifact_delete",
+                    "cognition_store_read",
+                    "cognition_store_write",
                     "cognition_ui_present",
                 ],
             },
             ToolDomainCatalogEntry {
                 domain: "presentation",
-                summary: "Liquid chat embeds (markdown) first; cognition_ui_build for streaming scenes; legacy ui_scene + HTML artifacts",
+                summary: "Liquid chat embeds (markdown) first; cognition_ui_build for streaming scenes; HTML artifacts via cognition_store_read/write action=artifacts.read|artifacts.write",
                 tools: &[
                     "cognition_ui_build",
                     "cognition_ui_scene",
                     "cognition_ui_present",
-                    "cognition_artifact_list",
-                    "cognition_artifact_read",
-                    "cognition_artifact_grep",
-                    "cognition_artifact_write",
-                    "cognition_artifact_delete",
+                    "cognition_store_read",
+                    "cognition_store_write",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -258,9 +217,8 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 domain: "identity",
                 summary: "Identity graph inspect and commit (operator-gated writes)",
                 tools: &[
-                    "cognition_identity_context",
-                    "cognition_identity_propose",
-                    "cognition_identity_commit",
+                    "cognition_identity_query",
+                    "cognition_identity_mutate",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -310,19 +268,16 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "coding",
-                summary: "Workshop coding toolkit — read/patch under scripts/Forge roots, shared shell sessions (opt-in)",
+                summary: "Workshop shared shell sessions (opt-in). Read/patch files with cognition_store_read/write action=code.read|code.write.",
                 tools: crate::coding_tools::CODING_COGNITION_TOOLS,
             },
             ToolDomainCatalogEntry {
                 domain: "execute",
                 summary: "Run resolved capabilities, Grapheme scripts, MCP invokes",
                 tools: &[
-                    "cognition_capability_invoke",
+                    "cognition_capability",
+                    "cognition_schema",
                     "cognition_web_search",
-                    "cognition_grapheme_run",
-                    "cognition_grapheme_cli_run",
-                    "cognition_mcp_invoke",
-                    "cognition_grapheme_template_run",
                     "cognition_shell_status",
                     "cognition_shell_run",
                     "cognition_code_hover",
@@ -334,42 +289,39 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             ToolDomainCatalogEntry {
                 domain: "discover",
                 summary: "Capability/Grapheme discovery when handoff lacks resolution",
-                tools: &[
-                    "cognition_capability_search",
-                    "cognition_capability_resolve",
-                    "cognition_grapheme_modules",
-                    "cognition_grapheme_modules_info",
-                    "cognition_grapheme_modules_ops",
-                    "cognition_grapheme_examples",
-                    "cognition_mcp_discover",
-                    "cognition_mcp_servers",
-                ],
+                tools: &["cognition_capability", "cognition_schema"],
             },
             ToolDomainCatalogEntry {
                 domain: "memory",
                 summary: "Workshop memory ritual tools",
                 tools: &[
-                    "cognition_memory_schema",
-                    "cognition_memory_moods",
-                    "cognition_memory_calibrate",
-                    "cognition_memory_list",
-                    "cognition_memory_recall",
-                    "cognition_memory_store",
-                    "cognition_identity_recall",
+                    "cognition_memory_query",
+                    "cognition_memory_mutate",
+                ],
+            },
+            ToolDomainCatalogEntry {
+                domain: "identity",
+                summary: "Identity graph inspect and remember",
+                tools: &[
+                    "cognition_identity_query",
+                    "cognition_identity_mutate",
+                ],
+            },
+            ToolDomainCatalogEntry {
+                domain: "runtime",
+                summary: "Durable jobs, workflows, recurring schedules, delivery",
+                tools: &[
+                    "cognition_schema",
+                    "cognition_runtime_query",
+                    "cognition_runtime_mutate",
                 ],
             },
             ToolDomainCatalogEntry {
                 domain: "vault",
                 summary: "Vault read/search/write for workshop notes and journal articles",
                 tools: &[
-                    "cognition_vault_list",
-                    "cognition_vault_read",
-                    "cognition_vault_grep",
-                    "cognition_vault_search",
-                    "cognition_vault_write",
-                    "cognition_vault_delete",
-                    "cognition_vault_move",
-                    "cognition_vault_tags",
+                    "cognition_store_read",
+                    "cognition_store_write",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -390,11 +342,10 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "scripts",
-                summary: "Save/load reusable Grapheme scripts",
+                summary: "Save/load reusable Grapheme scripts via cognition_store_read/write action=scripts.read|scripts.write",
                 tools: &[
-                    "cognition_grapheme_script_save",
-                    "cognition_grapheme_script_list",
-                    "cognition_grapheme_script_search",
+                    "cognition_store_read",
+                    "cognition_store_write",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -404,15 +355,13 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "presentation",
-                summary: "Liquid chat embeds (markdown) first; ui_build for streaming scenes; legacy ui_scene + HTML artifacts",
+                summary: "Liquid chat embeds (markdown) first; ui_build for streaming scenes; HTML artifacts via cognition_store_read/write action=artifacts.read|artifacts.write",
                 tools: &[
                     "cognition_ui_build",
                     "cognition_ui_scene",
                     "cognition_ui_present",
-                    "cognition_artifact_list",
-                    "cognition_artifact_read",
-                    "cognition_artifact_grep",
-                    "cognition_artifact_write",
+                    "cognition_store_read",
+                    "cognition_store_write",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -678,7 +627,7 @@ pub fn build_tool_hints_block(
     let full_allow = host_bus_tool_names();
     let surface = load_session_tool_surface(session_id);
     let mut lines = vec![
-        "Bootstrap tools are always available. Chat auto-unlocks memory, vault read, identity, and catalog/runtime orchestration. Studio/canvas tools unlock in Workshop after begin_work.".to_string(),
+        "Bootstrap tools are always available. Store, memory, identity, and catalog/runtime orchestration are on the public library; Studio/canvas tools still unlock in Workshop after begin_work.".to_string(),
         format!(
             "Unlocked domains: {}",
             if surface.unlocked_domains.is_empty() {
@@ -896,9 +845,15 @@ mod tests {
         assert!(HOST_BOOTSTRAP_TOOLS.len() >= 8);
         assert!(HOST_BOOTSTRAP_TOOLS.len() <= 24);
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&COGNITION_TOOLS_DISCOVER));
-        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_remember"));
-        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_recall"));
-        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_calendar_list"));
+        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_turn"));
+        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_mutate"));
+        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_query"));
+        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_calendar_query"));
+        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_calendar_mutate"));
+        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_workshop_query"));
+        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_workshop_mutate"));
+        assert!(!HOST_BOOTSTRAP_TOOLS.contains(&"cognition_spawn_turn_worker"));
+        assert!(!HOST_BOOTSTRAP_TOOLS.contains(&"cognition_turn_worker_status"));
     }
 
     #[test]
@@ -963,13 +918,13 @@ mod tests {
             allow.insert((*name).to_string());
         }
         allow.insert(COGNITION_TOOLS_DISCOVER.to_string());
-        allow.insert("cognition_mcp_discover".to_string());
+        allow.insert("cognition_capability".to_string());
 
         ensure_bound_workshop_session_tool_defaults(&session_id);
         let after = effective_tool_names(&session_id, ToolSurfaceLane::Worker, &allow);
         assert!(after.contains("cognition_environment_get"));
         assert!(after.contains("cognition_environment_propose"));
-        assert!(after.contains("cognition_mcp_discover"));
+        assert!(after.contains("cognition_capability"));
 
         let _ = delete_session_tool_surface(&session_id);
     }
@@ -980,14 +935,20 @@ mod tests {
         let session_id = format!("sess-defaults-{}", uuid::Uuid::new_v4().simple());
         let allow = host_bus_tool_names();
         let before = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
-        assert!(!before.contains("cognition_vault_write"));
-        assert!(!before.contains("cognition_memory_calibrate"));
+        assert!(before.contains("cognition_store_read"));
+        assert!(before.contains("cognition_store_write"));
+        assert!(before.contains("cognition_calendar_query"));
+        assert!(before.contains("cognition_calendar_mutate"));
+        assert!(!before.contains("cognition_skill_discover"));
 
         ensure_host_session_tool_defaults(&session_id);
         let after = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
-        assert!(after.contains("cognition_vault_read"));
-        assert!(!after.contains("cognition_vault_write"));
-        assert!(after.contains("cognition_memory_calibrate"));
+        assert!(after.contains("cognition_store_read"));
+        assert!(after.contains("cognition_store_write"));
+        assert!(after.contains("cognition_memory_query"));
+        assert!(after.contains("cognition_memory_mutate"));
+        assert!(after.contains("cognition_calendar_query"));
+        assert!(after.contains("cognition_calendar_mutate"));
 
         let _ = delete_session_tool_surface(&session_id);
     }
@@ -998,13 +959,17 @@ mod tests {
         let session_id = format!("sess-test-{}", uuid::Uuid::new_v4().simple());
         let allow = host_bus_tool_names();
         let before = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
-        assert!(!before.contains("cognition_memory_schema"));
-        assert!(before.contains("cognition_identity_remember"));
-        assert!(before.contains("cognition_identity_recall"));
+        assert!(before.contains("cognition_memory_query"));
+        assert!(before.contains("cognition_memory_mutate"));
+        assert!(before.contains("cognition_identity_mutate"));
+        assert!(before.contains("cognition_identity_query"));
+        assert!(before.contains("cognition_calendar_query"));
+        assert!(before.contains("cognition_calendar_mutate"));
+        assert!(!before.contains("cognition_skill_discover"));
 
-        unlock_session_domains(&session_id, ToolSurfaceLane::Host, &["memory"]).expect("unlock");
+        unlock_session_domains(&session_id, ToolSurfaceLane::Host, &["skill"]).expect("unlock");
         let after = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
-        assert!(after.contains("cognition_memory_schema"));
+        assert!(after.contains("cognition_skill_discover"));
 
         let _ = delete_session_tool_surface(&session_id);
     }

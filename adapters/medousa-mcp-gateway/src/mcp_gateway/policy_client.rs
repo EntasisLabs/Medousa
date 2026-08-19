@@ -26,11 +26,12 @@ impl DaemonPolicyClient {
         &self,
         request: &McpPolicyEvaluateRequest,
     ) -> Result<McpPolicyEvaluateResponse> {
-        let mut builder = self
-            .client
-            .post(&self.policy_url)
-            .json(request);
-        if let Some(token) = self.policy_token.as_deref().filter(|value| !value.is_empty()) {
+        let mut builder = self.client.post(&self.policy_url).json(request);
+        if let Some(token) = self
+            .policy_token
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
             builder = builder.bearer_auth(token);
         }
 

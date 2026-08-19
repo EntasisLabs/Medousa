@@ -21,13 +21,17 @@ pub struct ContractDiff {
 }
 
 pub fn diff_contracts(baseline: &ContractRegistry, candidate: &ContractRegistry) -> ContractDiff {
-    let baseline_ids: BTreeSet<_> = baseline.operations().map(|op| op.operation_id.clone()).collect();
+    let baseline_ids: BTreeSet<_> = baseline
+        .operations()
+        .map(|op| op.operation_id.clone())
+        .collect();
     let candidate_ids: BTreeSet<_> = candidate
         .operations()
         .map(|op| op.operation_id.clone())
         .collect();
     let added_operations: Vec<String> = candidate_ids.difference(&baseline_ids).cloned().collect();
-    let removed_operations: Vec<String> = baseline_ids.difference(&candidate_ids).cloned().collect();
+    let removed_operations: Vec<String> =
+        baseline_ids.difference(&candidate_ids).cloned().collect();
 
     let mut breaking_changes = Vec::new();
     for id in baseline_ids.intersection(&candidate_ids) {
@@ -125,6 +129,10 @@ mod tests {
         mutated.register(changed).unwrap();
         let diff = diff_contracts(&baseline, &mutated);
         assert_eq!(diff.class, CompatibilityClass::Breaking);
-        assert!(diff.breaking_changes.iter().any(|row| row.contains("method")));
+        assert!(
+            diff.breaking_changes
+                .iter()
+                .any(|row| row.contains("method"))
+        );
     }
 }

@@ -9,8 +9,8 @@ use medousa::session::ConversationTurn;
 use medousa::session_storage::SessionId;
 use medousa::session_store::{SessionStore, SurrealSessionStore};
 use medousa::turn_parts::user_conversation_turn;
-use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
 use surrealdb_types::SurrealValue;
 use tokio::sync::Mutex;
 
@@ -55,12 +55,13 @@ async fn surreal_session_store_append_and_load_history() {
         .append_turn(&session_id, &user_turn("first", base))
         .await
         .unwrap();
-    store.append_turn(
-        &session_id,
-        &user_turn("second", base + Duration::minutes(1)),
-    )
-    .await
-    .unwrap();
+    store
+        .append_turn(
+            &session_id,
+            &user_turn("second", base + Duration::minutes(1)),
+        )
+        .await
+        .unwrap();
 
     let turns = store.load_history(&session_id);
     assert_eq!(turns.len(), 2);
@@ -72,12 +73,13 @@ async fn surreal_session_store_append_and_load_history() {
 async fn surreal_session_store_persists_turns_with_parts_timeline() {
     let store = setup_store().await;
     let session_id = session_id("medousa-home-parts");
-    store.append_turn(
-        &session_id,
-        &user_conversation_turn("hello with structured parts"),
-    )
-    .await
-    .unwrap();
+    store
+        .append_turn(
+            &session_id,
+            &user_conversation_turn("hello with structured parts"),
+        )
+        .await
+        .unwrap();
 
     let turns = store.load_history(&session_id);
     assert_eq!(turns.len(), 1);
@@ -96,24 +98,27 @@ async fn surreal_list_history_sessions_includes_named_workshop_sessions() {
     let store = setup_store().await;
     let base = Utc.with_ymd_and_hms(2026, 6, 8, 15, 0, 0).unwrap();
 
-    store.append_turn(
-        &session_id("medousa-home"),
-        &user_turn("workshop default", base),
-    )
-    .await
-    .unwrap();
-    store.append_turn(
-        &session_id("medousa-home-30ddc8bf-e469-40f0-8b5d-ca1c0397c8a4"),
-        &user_turn("ios new chat", base + Duration::minutes(5)),
-    )
-    .await
-    .unwrap();
-    store.append_turn(
-        &session_id("2e326df0bb3f42219f51aa4d776efe2c"),
-        &user_turn("tui uuid session", base + Duration::minutes(10)),
-    )
-    .await
-    .unwrap();
+    store
+        .append_turn(
+            &session_id("medousa-home"),
+            &user_turn("workshop default", base),
+        )
+        .await
+        .unwrap();
+    store
+        .append_turn(
+            &session_id("medousa-home-30ddc8bf-e469-40f0-8b5d-ca1c0397c8a4"),
+            &user_turn("ios new chat", base + Duration::minutes(5)),
+        )
+        .await
+        .unwrap();
+    store
+        .append_turn(
+            &session_id("2e326df0bb3f42219f51aa4d776efe2c"),
+            &user_turn("tui uuid session", base + Duration::minutes(10)),
+        )
+        .await
+        .unwrap();
 
     let sessions = store.list_history_sessions(50);
     let ids: Vec<_> = sessions.iter().map(|s| s.session_id.as_str()).collect();
@@ -142,12 +147,13 @@ async fn surreal_list_history_sessions_ordered_by_recency() {
         .append_turn(&session_id("older-session"), &user_turn("old", base))
         .await
         .unwrap();
-    store.append_turn(
-        &session_id("newer-session"),
-        &user_turn("new", base + Duration::hours(2)),
-    )
-    .await
-    .unwrap();
+    store
+        .append_turn(
+            &session_id("newer-session"),
+            &user_turn("new", base + Duration::hours(2)),
+        )
+        .await
+        .unwrap();
 
     let sessions = store.list_history_sessions(10);
     assert_eq!(sessions.len(), 2);
@@ -162,12 +168,13 @@ async fn surreal_list_history_sessions_respects_limit() {
 
     for i in 0..5 {
         let session_id = session_id(&format!("session-{i}"));
-        store.append_turn(
-            &session_id,
-            &user_turn(&format!("turn {i}"), base + Duration::minutes(i as i64)),
-        )
-        .await
-        .unwrap();
+        store
+            .append_turn(
+                &session_id,
+                &user_turn(&format!("turn {i}"), base + Duration::minutes(i as i64)),
+            )
+            .await
+            .unwrap();
     }
 
     let sessions = store.list_history_sessions(3);

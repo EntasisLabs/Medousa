@@ -2,7 +2,9 @@ use std::env;
 use std::path::PathBuf;
 
 use chrono::Utc;
-use medousa::session::{append_turn, resolve_history_resume_target, session_turn_count, ConversationTurn};
+use medousa::session::{
+    ConversationTurn, append_turn, resolve_history_resume_target, session_turn_count,
+};
 
 fn make_temp_data_dir() -> PathBuf {
     let base = env::temp_dir();

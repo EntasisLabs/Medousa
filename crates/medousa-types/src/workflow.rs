@@ -75,7 +75,9 @@ fn default_on_failure() -> String {
 impl WorkflowStepSpec {
     pub fn id(&self) -> &str {
         match self {
-            Self::Grapheme { id, .. } | Self::Prompt { id, .. } | Self::Mcp { id, .. }
+            Self::Grapheme { id, .. }
+            | Self::Prompt { id, .. }
+            | Self::Mcp { id, .. }
             | Self::ToolReplay { id, .. } => id,
         }
     }

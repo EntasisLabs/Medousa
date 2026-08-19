@@ -74,7 +74,10 @@ pub fn render_turn_tool_lines(
             Span::raw("  "),
             Span::styled(format!("{glyph} "), Style::default().fg(color)),
             Span::styled(name, Style::default().fg(Color::Cyan)),
-            Span::styled(format!("  {input_summary}"), Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("  {input_summary}"),
+                Style::default().fg(Color::DarkGray),
+            ),
         ];
         if let Some(summary) = output_summary.filter(|value| !value.trim().is_empty()) {
             spans.push(Span::raw(" → "));
@@ -120,9 +123,7 @@ pub fn render_handoff_line(turn: &ConversationTurn) -> Option<Line<'static>> {
         }
     })?;
     let (kind, text, work_id) = handoff;
-    let work_hint = work_id
-        .map(|id| format!(" · {id}"))
-        .unwrap_or_default();
+    let work_hint = work_id.map(|id| format!(" · {id}")).unwrap_or_default();
     Some(Line::from(vec![
         Span::styled("  ↗ ", Style::default().fg(Color::Magenta)),
         Span::styled(

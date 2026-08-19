@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::future::Future;
 use std::sync::Arc;
 
-use genai::chat::{ChatMessage, ChatRequest, ToolResponse};
+use genai::chat::{ChatMessage, ChatRequest, ChatRole, ContentPart, MessageContent, ToolResponse};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
@@ -48,12 +48,11 @@ use crate::turn_budget_request::{
     BudgetResolution, CreateTurnBudgetRequest, turn_budget_request_store,
 };
 use crate::turn_control_tools::{
-    COGNITION_TURN_BEGIN_WORK, COGNITION_TURN_CHECKPOINT, COGNITION_TURN_FINISH,
     begin_work_note_from_invocations, checkpoint_turn_from_invocations,
-    finish_turn_from_invocations, is_begin_work_tool_name, is_checkpoint_turn_tool_name,
-    is_finish_turn_tool_name, is_prepare_final_tool_name, is_request_more_rounds_tool_name,
-    is_update_user_tool_name, request_more_rounds_from_invocations, terminal_text_for_fsm_end,
-    turn_progress_message_from_invocations, workshop_entered_from_invocations,
+    finish_turn_from_invocations, is_begin_work_tool_name, is_finish_turn_tool_name,
+    is_prepare_final_tool_name, is_turn_control_call, request_more_rounds_from_invocations,
+    terminal_text_for_fsm_end, turn_progress_message_from_invocations,
+    workshop_entered_from_invocations,
 };
 
 const DEFAULT_MAX_TOOL_ROUNDS: usize =
@@ -443,8 +442,9 @@ impl MedousaToolLoopPipeline {
                     tool_rounds_remaining,
                 );
                 sync_scratch_snapshot(completion_gate.as_deref_mut(), &turn_ctx.scratchpad);
-                let messages =
+                let mut messages =
                     turn_ctx.build_model_messages(shared_inputs.system_prompt.as_deref());
+                ensure_assistant_tool_turn_reasoning(&mut messages);
                 let chat_request = ChatRequest::new(messages).with_tools(tools.clone());
                 let response = match chunk_tx {
                     Some(tx) => {
@@ -515,6 +515,8 @@ impl MedousaToolLoopPipeline {
                     .first_text()
                     .map(|value| value.trim().to_string())
                     .filter(|value| !value.is_empty());
+                let reasoning_content = response.reasoning_content.clone();
+                let assistant_content = response.content.clone();
                 let tool_calls = response.into_tool_calls();
 
                 if tool_calls.is_empty() {
@@ -742,20 +744,15 @@ impl MedousaToolLoopPipeline {
 
                 let finish_requested = tool_calls
                     .iter()
-                    .any(|call| is_finish_turn_tool_name(&call.fn_name));
+                    .any(|call| is_finish_turn_tool_name(&call.fn_name, &call.fn_arguments));
                 if !tool_calls.is_empty() && !finish_requested {
                     pack_hold = None;
                 }
 
                 if pending_final_answer
-                    && tool_calls.iter().any(|call| {
-                        !is_prepare_final_tool_name(&call.fn_name)
-                            && !is_begin_work_tool_name(&call.fn_name)
-                            && !is_update_user_tool_name(&call.fn_name)
-                            && !is_checkpoint_turn_tool_name(&call.fn_name)
-                            && !is_finish_turn_tool_name(&call.fn_name)
-                            && !is_request_more_rounds_tool_name(&call.fn_name)
-                    })
+                    && tool_calls
+                        .iter()
+                        .any(|call| !is_turn_control_call(&call.fn_name))
                 {
                     pending_final_answer = false;
                 }
@@ -763,7 +760,10 @@ impl MedousaToolLoopPipeline {
                 turn_ctx
                     .tool_lane
                     .messages
-                    .push(ChatMessage::from(tool_calls.clone()));
+                    .push(assistant_tool_round_message(
+                        assistant_content,
+                        reasoning_content,
+                    ));
 
                 let invocations_before = invocations.len();
                 let batch: Vec<(String, Value)> = tool_calls
@@ -853,7 +853,7 @@ impl MedousaToolLoopPipeline {
                                 tool_output_text,
                             )));
                         completed_provider_call_ids.insert(call.call_id.clone());
-                        if is_prepare_final_tool_name(&call.fn_name) {
+                        if is_prepare_final_tool_name(&call.fn_name, &call.fn_arguments) {
                             prepare_final_in_batch = true;
                         }
                         invocations.push(ToolInvocation {
@@ -908,7 +908,7 @@ impl MedousaToolLoopPipeline {
                         .map_err(|error| turn_boundary_failure("tool invocation", error))?;
                         let tool_output = tool_output_from_invoke(output);
 
-                        if is_prepare_final_tool_name(&call.fn_name) {
+                        if is_prepare_final_tool_name(&call.fn_name, &call.fn_arguments) {
                             prepare_final_in_batch = true;
                         }
 
@@ -1228,7 +1228,7 @@ impl MedousaToolLoopPipeline {
                                         push_turn_control_message(
                                             &mut turn_ctx.tool_lane.messages,
                                             &format!(
-                                                "{TURN_CONTROL_PREFIX}\nOperator denied extra tool rounds. Wrap up with cognition_turn_finish, one clarifying question, or best-effort answer now."
+                                                "{TURN_CONTROL_PREFIX}\nOperator denied extra tool rounds. Wrap up with cognition_turn action=turn.finish, one clarifying question, or best-effort answer now."
                                             ),
                                         );
                                     }
@@ -1246,7 +1246,7 @@ impl MedousaToolLoopPipeline {
                                 push_turn_control_message(
                                     &mut turn_ctx.tool_lane.messages,
                                     &format!(
-                                        "{TURN_CONTROL_PREFIX}\nExtra rounds unavailable: {err}. Finish with cognition_turn_finish or best effort."
+                                        "{TURN_CONTROL_PREFIX}\nExtra rounds unavailable: {err}. Finish with cognition_turn action=turn.finish or best effort."
                                     ),
                                 );
                             }
@@ -1273,8 +1273,8 @@ impl MedousaToolLoopPipeline {
                         );
                     }
                     let last = invocations.last().cloned().unwrap_or(ToolInvocation {
-                        tool_name: COGNITION_TURN_FINISH.to_string(),
-                        tool_input: Value::Null,
+                        tool_name: crate::public_api::COGNITION_TURN.to_string(),
+                        tool_input: serde_json::json!({ "action": "turn.finish" }),
                         tool_output: Value::Null,
                     });
                     persist_checkpoint!(
@@ -1310,8 +1310,8 @@ impl MedousaToolLoopPipeline {
                         );
                     }
                     let last = invocations.last().cloned().unwrap_or(ToolInvocation {
-                        tool_name: COGNITION_TURN_CHECKPOINT.to_string(),
-                        tool_input: Value::Null,
+                        tool_name: crate::public_api::COGNITION_TURN.to_string(),
+                        tool_input: serde_json::json!({ "action": "turn.checkpoint" }),
                         tool_output: Value::Null,
                     });
                     persist_checkpoint!(
@@ -1338,7 +1338,7 @@ impl MedousaToolLoopPipeline {
                 if let Some((work_id, ack)) = workshop_entered_from_invocations(round_invocations) {
                     let intent = invocations
                         .iter()
-                        .find(|i| is_begin_work_tool_name(&i.tool_name))
+                        .find(|i| is_begin_work_tool_name(&i.tool_name, &i.tool_input))
                         .and_then(|i| i.tool_input.get("intent"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("general");
@@ -1365,8 +1365,8 @@ impl MedousaToolLoopPipeline {
                         );
                     }
                     let last = invocations.last().cloned().unwrap_or(ToolInvocation {
-                        tool_name: COGNITION_TURN_BEGIN_WORK.to_string(),
-                        tool_input: Value::Null,
+                        tool_name: crate::public_api::COGNITION_TURN.to_string(),
+                        tool_input: serde_json::json!({ "action": "turn.begin_work" }),
                         tool_output: Value::Null,
                     });
                     persist_checkpoint!(
@@ -1395,7 +1395,12 @@ impl MedousaToolLoopPipeline {
                 {
                     let intent = invocations
                         .iter()
-                        .find(|i| i.tool_name == "cognition_spawn_turn_worker")
+                        .find(|i| {
+                            crate::agent_runtime::turn_worker_tools::is_workshop_spawn_call(
+                                &i.tool_name,
+                                &i.tool_input,
+                            )
+                        })
                         .and_then(|i| i.tool_input.get("intent"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("general");
@@ -1422,7 +1427,7 @@ impl MedousaToolLoopPipeline {
                         );
                     }
                     let last = invocations.last().cloned().unwrap_or(ToolInvocation {
-                        tool_name: "cognition_spawn_turn_worker".to_string(),
+                        tool_name: crate::public_api::COGNITION_WORKSHOP_MUTATE.to_string(),
                         tool_input: Value::Null,
                         tool_output: Value::Null,
                     });
@@ -1896,7 +1901,7 @@ fn recoverable_tool_error_value(message: &str) -> Value {
         "ok": false,
         "error": message,
         "recoverable": true,
-        "hint": "Read the error, fix arguments or choose another allowed tool, retry once if policy allows; delegate via cognition_spawn_turn_worker when the host profile blocks direct execution."
+        "hint": "Read the error, fix arguments or choose another allowed tool, retry once if policy allows; delegate via cognition_workshop_mutate action=workshop.spawn when the host profile blocks direct execution."
     })
 }
 
@@ -1924,6 +1929,53 @@ fn build_fallback_synthesis_prompt(
 
 fn is_serde_json_completion_error(err: &StasisError) -> bool {
     err.to_string().contains("Serde JSON error")
+}
+
+/// Replay an assistant tool-call turn, including thinking-mode `reasoning_content`.
+///
+/// DeepSeek V4 (and Kimi) require that field on later requests once the original
+/// turn used tools. Rebuilding from `ChatMessage::from(tool_calls)` alone drops
+/// both the CoT and any assistant preamble text. Empty string is intentional when
+/// no CoT was returned — the field must still be present on tool-call turns.
+fn assistant_tool_round_message(
+    content: MessageContent,
+    reasoning_content: Option<String>,
+) -> ChatMessage {
+    let reasoning = reasoning_content
+        .filter(|text| !text.is_empty())
+        .or_else(|| {
+            content
+                .joined_reasoning_content()
+                .filter(|text| !text.is_empty())
+        })
+        .unwrap_or_default();
+    let parts: Vec<ContentPart> = content
+        .parts()
+        .iter()
+        .filter(|part| !part.is_reasoning_content())
+        .cloned()
+        .collect();
+    ChatMessage::assistant(MessageContent::from_parts(parts))
+        .with_reasoning_content(Some(reasoning))
+}
+
+/// Providers that require thinking-mode CoT on tool turns (DeepSeek, Kimi) 400 if
+/// an assistant tool-call message omits `reasoning_content` entirely. Keep the
+/// field present on every such message before the request leaves the tool loop.
+fn ensure_assistant_tool_turn_reasoning(messages: &mut [ChatMessage]) {
+    for message in messages.iter_mut() {
+        if message.role != ChatRole::Assistant {
+            continue;
+        }
+        let parts = message.content.parts();
+        if !parts.iter().any(ContentPart::is_tool_call) {
+            continue;
+        }
+        if parts.iter().any(ContentPart::is_reasoning_content) {
+            continue;
+        }
+        message.content.push(ContentPart::ReasoningContent(String::new()));
+    }
 }
 
 /// Outcome of a chat completion that may have hit malformed provider tool-call JSON.
@@ -2012,11 +2064,14 @@ fn sanitize_tool_name_for_model(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        MALFORMED_TOOL_JSON_GUIDANCE, is_serde_json_completion_error, recoverable_tool_error_value,
-        tool_output_from_invoke, tool_round_budget_exhausted_message,
+        MALFORMED_TOOL_JSON_GUIDANCE, assistant_tool_round_message,
+        ensure_assistant_tool_turn_reasoning, is_serde_json_completion_error,
+        recoverable_tool_error_value, tool_output_from_invoke, tool_round_budget_exhausted_message,
     };
     use crate::agent_runtime::turn_completion_fsm::TurnCompletionProfile;
     use crate::turn_control_tools::finish_turn_from_invocations;
+    use genai::chat::{ChatMessage, ContentPart, MessageContent, ToolCall};
+    use serde_json::json;
     use stasis::domain::errors::StasisError;
 
     #[test]
@@ -2035,6 +2090,68 @@ mod tests {
         assert!(MALFORMED_TOOL_JSON_GUIDANCE.contains("Self-correct"));
         assert!(MALFORMED_TOOL_JSON_GUIDANCE.contains("cognition_ui_build"));
         assert!(MALFORMED_TOOL_JSON_GUIDANCE.contains("do NOT ask them to retry"));
+    }
+
+    #[test]
+    fn assistant_tool_round_replays_reasoning_content() {
+        let message = assistant_tool_round_message(
+            MessageContent::from_parts(vec![
+                ContentPart::Text("checking status".into()),
+                ContentPart::ToolCall(ToolCall {
+                    call_id: "call-1".into(),
+                    fn_name: "cognition_workshop_query".into(),
+                    fn_arguments: json!({ "action": "workshop.status" }),
+                    thought_signatures: None,
+                }),
+            ]),
+            Some("I should check worker status first.".into()),
+        );
+        assert_eq!(message.content.first_text(), Some("checking status"));
+        assert!(message.content.contains_tool_call());
+        assert_eq!(
+            message.content.joined_reasoning_content().as_deref(),
+            Some("I should check worker status first.")
+        );
+        assert!(
+            message
+                .content
+                .parts()
+                .iter()
+                .any(|part| matches!(part, ContentPart::ReasoningContent(_)))
+        );
+    }
+
+    #[test]
+    fn assistant_tool_round_keeps_empty_reasoning_field() {
+        let message = assistant_tool_round_message(
+            MessageContent::from_parts(vec![ContentPart::ToolCall(ToolCall {
+                call_id: "call-empty".into(),
+                fn_name: "cognition_workshop_query".into(),
+                fn_arguments: json!({ "action": "workshop.status" }),
+                thought_signatures: None,
+            })]),
+            None,
+        );
+        assert_eq!(
+            message.content.joined_reasoning_content().as_deref(),
+            Some("")
+        );
+    }
+
+    #[test]
+    fn ensure_tool_turn_reasoning_fills_missing_field() {
+        let mut messages = vec![ChatMessage::from(vec![ToolCall {
+            call_id: "call-missing".into(),
+            fn_name: "cognition_workshop_query".into(),
+            fn_arguments: json!({ "action": "workshop.status" }),
+            thought_signatures: None,
+        }])];
+        assert!(messages[0].content.joined_reasoning_content().is_none());
+        ensure_assistant_tool_turn_reasoning(&mut messages);
+        assert_eq!(
+            messages[0].content.joined_reasoning_content().as_deref(),
+            Some("")
+        );
     }
 
     #[test]
@@ -2071,13 +2188,13 @@ mod tests {
                           once the full calibration summary is ready for you to read.";
         let invocations = vec![
             ToolInvocation {
-                tool_name: "cognition_memory_moods".to_string(),
-                tool_input: serde_json::json!(null),
+                tool_name: crate::public_api::COGNITION_MEMORY_QUERY.to_string(),
+                tool_input: serde_json::json!({ "action": "memory.moods" }),
                 tool_output: serde_json::json!(null),
             },
             ToolInvocation {
-                tool_name: "cognition_memory_calibrate".to_string(),
-                tool_input: serde_json::json!(null),
+                tool_name: crate::public_api::COGNITION_MEMORY_MUTATE.to_string(),
+                tool_input: serde_json::json!({ "action": "memory.calibrate" }),
                 tool_output: serde_json::json!(null),
             },
         ];
@@ -2127,8 +2244,8 @@ mod tests {
     fn checkpoint_turn_from_invocations_is_detected_for_loop_exit() {
         use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
         let invocations = vec![ToolInvocation {
-            tool_name: "cognition_turn_checkpoint".to_string(),
-            tool_input: serde_json::json!({"message": "Here is progress so far."}),
+            tool_name: crate::public_api::COGNITION_TURN.to_string(),
+            tool_input: serde_json::json!({"action": "turn.checkpoint", "message": "Here is progress so far."}),
             tool_output: serde_json::json!({"ok": true, "checkpoint_turn": true}),
         }];
         assert_eq!(
@@ -2141,8 +2258,8 @@ mod tests {
     fn finish_turn_from_invocations_is_detected_for_loop_exit() {
         use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
         let invocations = vec![ToolInvocation {
-            tool_name: "cognition_turn_finish".to_string(),
-            tool_input: serde_json::json!({"message": "Final answer ready."}),
+            tool_name: crate::public_api::COGNITION_TURN.to_string(),
+            tool_input: serde_json::json!({"action": "turn.finish", "message": "Final answer ready."}),
             tool_output: serde_json::json!({"ok": true, "finish_turn": true}),
         }];
         assert_eq!(

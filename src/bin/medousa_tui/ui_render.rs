@@ -66,15 +66,17 @@ pub(crate) fn render(frame: &mut ratatui::Frame, state: &mut TuiState) {
     } else {
         "  [Ctrl+; panes]"
     };
-    let active_kind = state.workspace.active_tab().map(|t| t.kind()).or(
-        match state.mode {
+    let active_kind = state
+        .workspace
+        .active_tab()
+        .map(|t| t.kind())
+        .or(match state.mode {
             UiMode::Notes => Some(ShellTabKind::Notes),
             UiMode::Code => Some(ShellTabKind::Code),
             UiMode::Review => Some(ShellTabKind::Review),
             UiMode::Terminal => Some(ShellTabKind::Terminal),
             _ => None,
-        },
-    );
+        });
     let input_title = match active_kind {
         Some(ShellTabKind::Notes) => {
             let conflict = state
@@ -277,10 +279,7 @@ fn collect_pane_regions(node: &SplitNode, area: Rect, out: &mut Vec<(String, Rec
             };
             let chunks = Layout::default()
                 .direction(dir)
-                .constraints([
-                    Constraint::Percentage(pct_a),
-                    Constraint::Percentage(pct_b),
-                ])
+                .constraints([Constraint::Percentage(pct_a), Constraint::Percentage(pct_b)])
                 .split(area);
             collect_pane_regions(a, chunks[0], out);
             collect_pane_regions(b, chunks[1], out);
@@ -393,14 +392,13 @@ fn render_notes_pane(
         .and_then(|t| t.notes_path().map(str::to_string))
         .unwrap_or_default();
     let Some(note) = state.note_buffers.get(&path) else {
-        let widget = Paragraph::new("(note not loaded — Ctrl+; o)")
-            .block(
-                Block::default()
-                    .title(" Note ")
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(ui_border()))
-                    .style(Style::default().bg(ui_panel_bg())),
-            );
+        let widget = Paragraph::new("(note not loaded — Ctrl+; o)").block(
+            Block::default()
+                .title(" Note ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(ui_border()))
+                .style(Style::default().bg(ui_panel_bg())),
+        );
         frame.render_widget(widget, area);
         return;
     };
@@ -503,10 +501,7 @@ fn render_notes_pane(
             } else {
                 Style::default().fg(Color::White)
             };
-            link_lines.push(Line::from(Span::styled(
-                format!("{marker} {bl}"),
-                style,
-            )));
+            link_lines.push(Line::from(Span::styled(format!("{marker} {bl}"), style)));
             flat_idx += 1;
         }
     }
@@ -535,10 +530,7 @@ fn render_notes_pane(
             } else {
                 Style::default().fg(Color::White)
             };
-            link_lines.push(Line::from(Span::styled(
-                format!("{marker} {out}"),
-                style,
-            )));
+            link_lines.push(Line::from(Span::styled(format!("{marker} {out}"), style)));
             flat_idx += 1;
         }
     }
@@ -579,14 +571,13 @@ fn render_code_pane(
         .and_then(|t| t.code_work_id().map(str::to_string))
         .unwrap_or_default();
     let Some(ws) = state.code_workspaces.get(&work_id) else {
-        let widget = Paragraph::new("(code workspace not loaded — Ctrl+; f)")
-            .block(
-                Block::default()
-                    .title(" Code ")
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(ui_border()))
-                    .style(Style::default().bg(ui_panel_bg())),
-            );
+        let widget = Paragraph::new("(code workspace not loaded — Ctrl+; f)").block(
+            Block::default()
+                .title(" Code ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(ui_border()))
+                .style(Style::default().bg(ui_panel_bg())),
+        );
         frame.render_widget(widget, area);
         return;
     };
@@ -607,10 +598,7 @@ fn render_code_pane(
         } else {
             Style::default().fg(Color::White)
         };
-        tree_lines.push(Line::from(Span::styled(
-            format!("{marker} {path}"),
-            style,
-        )));
+        tree_lines.push(Line::from(Span::styled(format!("{marker} {path}"), style)));
     }
     if tree_lines.is_empty() {
         tree_lines.push(Line::from(Span::styled(
@@ -676,14 +664,13 @@ fn render_review_pane(
         .and_then(|t| t.review_work_id().map(str::to_string))
         .unwrap_or_default();
     let Some(review) = state.review_workspaces.get(&work_id) else {
-        let widget = Paragraph::new("(review not loaded — Ctrl+; r)")
-            .block(
-                Block::default()
-                    .title(" Review ")
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(ui_border()))
-                    .style(Style::default().bg(ui_panel_bg())),
-            );
+        let widget = Paragraph::new("(review not loaded — Ctrl+; r)").block(
+            Block::default()
+                .title(" Review ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(ui_border()))
+                .style(Style::default().bg(ui_panel_bg())),
+        );
         frame.render_widget(widget, area);
         return;
     };
@@ -720,7 +707,10 @@ fn render_review_pane(
         "approve:{}  finish:{}  files:{}/{}",
         if review.can_review { "yes" } else { "no" },
         if review.can_apply { "yes" } else { "no" },
-        review.file_selected.saturating_add(1).min(review.files.len().max(1)),
+        review
+            .file_selected
+            .saturating_add(1)
+            .min(review.files.len().max(1)),
         review.files.len()
     );
     lines.push(Line::from(Span::styled(
@@ -776,11 +766,7 @@ fn render_review_pane(
     let widget = Paragraph::new(Text::from(lines))
         .block(
             Block::default()
-                .title(if focused {
-                    " Review  ● "
-                } else {
-                    " Review "
-                })
+                .title(if focused { " Review  ● " } else { " Review " })
                 .borders(Borders::ALL)
                 .border_style(border)
                 .style(Style::default().bg(ui_panel_bg())),
@@ -870,14 +856,8 @@ fn render_terminal_pane(
         let mut spans: Vec<Span> = Vec::with_capacity(cols);
         for col in 0..cols {
             let cell = grid.cell_at_view(col as u16, row as u16, view_offset);
-            let mut fg = cell
-                .fg
-                .map(ansi_indexed_color)
-                .unwrap_or(default_fg);
-            let mut bg = cell
-                .bg
-                .map(ansi_indexed_color)
-                .unwrap_or(default_bg);
+            let mut fg = cell.fg.map(ansi_indexed_color).unwrap_or(default_fg);
+            let mut bg = cell.bg.map(ansi_indexed_color).unwrap_or(default_bg);
             // Bold on dim indexed colors → bright sibling (xterm-ish).
             if cell.bold
                 && let Some(idx) = cell.fg
@@ -892,11 +872,7 @@ fn render_terminal_pane(
             if cell.bold {
                 style = style.add_modifier(Modifier::BOLD);
             }
-            if focused
-                && view_offset == 0
-                && col as u16 == cursor_col
-                && row as u16 == cursor_row
-            {
+            if focused && view_offset == 0 && col as u16 == cursor_col && row as u16 == cursor_row {
                 style = style.bg(default_fg).fg(default_bg);
             }
             spans.push(Span::styled(cell.ch.to_string(), style));
@@ -946,7 +922,10 @@ fn render_connection_picker_overlay(frame: &mut ratatui::Frame, state: &TuiState
     )));
     if state.connection_picker_editing_custom {
         lines.push(Line::from(Span::styled(
-            format!(" Paste URL: {}_  Enter apply · Esc cancel", state.connection_picker_custom),
+            format!(
+                " Paste URL: {}_  Enter apply · Esc cancel",
+                state.connection_picker_custom
+            ),
             Style::default().fg(Color::Yellow),
         )));
     } else {
@@ -1106,10 +1085,7 @@ fn render_forge_picker_overlay(frame: &mut ratatui::Frame, state: &TuiState) {
                 hit.title.as_str()
             };
             lines.push(Line::from(Span::styled(
-                format!(
-                    "{marker} {title}  [{} / {}]",
-                    hit.human_phase, hit.state
-                ),
+                format!("{marker} {title}  [{} / {}]", hit.human_phase, hit.state),
                 style,
             )));
             if selected && !hit.brief.is_empty() {
@@ -1638,35 +1614,36 @@ fn render_history_overlay(frame: &mut ratatui::Frame, state: &mut TuiState) {
         }
 
         if state.history_show_verification_detail
-            && let Some(selected) = state.history_items.get(state.history_selected) {
-                lines.push(Line::from(""));
-                lines.push(Line::from(Span::styled(
-                    " Verification Signals ",
-                    Style::default()
-                        .fg(ui_accent_primary())
-                        .add_modifier(Modifier::BOLD),
-                )));
+            && let Some(selected) = state.history_items.get(state.history_selected)
+        {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                " Verification Signals ",
+                Style::default()
+                    .fg(ui_accent_primary())
+                    .add_modifier(Modifier::BOLD),
+            )));
 
-                match (
-                    selected.last_verification_confidence,
-                    selected.last_verification_coverage,
-                    selected.last_verification_verified,
-                ) {
-                    (Some(confidence), Some(coverage), Some(verified)) => {
-                        let trust_label = if confidence >= 0.80 {
-                            "high"
-                        } else if confidence >= 0.60 {
-                            "medium"
-                        } else {
-                            "low"
-                        };
-                        let status = if verified { "verified" } else { "failed" };
-                        let status_style = if verified {
-                            Style::default().fg(Color::Green)
-                        } else {
-                            Style::default().fg(Color::Red)
-                        };
-                        lines.push(Line::from(vec![
+            match (
+                selected.last_verification_confidence,
+                selected.last_verification_coverage,
+                selected.last_verification_verified,
+            ) {
+                (Some(confidence), Some(coverage), Some(verified)) => {
+                    let trust_label = if confidence >= 0.80 {
+                        "high"
+                    } else if confidence >= 0.60 {
+                        "medium"
+                    } else {
+                        "low"
+                    };
+                    let status = if verified { "verified" } else { "failed" };
+                    let status_style = if verified {
+                        Style::default().fg(Color::Green)
+                    } else {
+                        Style::default().fg(Color::Red)
+                    };
+                    lines.push(Line::from(vec![
                             Span::styled(" status=", Style::default().fg(Color::Gray)),
                             Span::styled(status, status_style),
                             Span::styled(
@@ -1676,15 +1653,15 @@ fn render_history_overlay(frame: &mut ratatui::Frame, state: &mut TuiState) {
                                 Style::default().fg(Color::White),
                             ),
                         ]));
-                    }
-                    _ => {
-                        lines.push(Line::from(Span::styled(
-                            " no verification metrics available for selected session",
-                            Style::default().fg(Color::Gray),
-                        )));
-                    }
+                }
+                _ => {
+                    lines.push(Line::from(Span::styled(
+                        " no verification metrics available for selected session",
+                        Style::default().fg(Color::Gray),
+                    )));
                 }
             }
+        }
     }
 
     let text = Text::from(lines);
@@ -1917,8 +1894,7 @@ fn build_conversation_text(
             .filter(|active| *active == index)
             .map(|_| &state.turn_parts);
         lines.extend(super::tui_presentation::render_turn_tool_lines(
-            turn,
-            live_parts,
+            turn, live_parts,
         ));
 
         lines.push(Line::from(""));

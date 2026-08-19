@@ -46,7 +46,8 @@ pub async fn spawn_backend(
             Ok(Arc::new(GraphemeBackend::spawn()))
         }
         ServerKind::Stdio { command } => {
-            let (command, args) = resolve_stdio_launch(spec.language.as_str(), command, &spec.args, workspace_root);
+            let (command, args) =
+                resolve_stdio_launch(spec.language.as_str(), command, &spec.args, workspace_root);
             Ok(Arc::new(
                 StdioBackend::spawn(&command, &args, workspace_root, logs).await?,
             ))
@@ -105,7 +106,10 @@ fn discover_csharp_project(workspace_root: &std::path::Path) -> Option<PathBuf> 
     }
     solutions.sort();
     projects.sort();
-    solutions.into_iter().next().or_else(|| projects.into_iter().next())
+    solutions
+        .into_iter()
+        .next()
+        .or_else(|| projects.into_iter().next())
 }
 
 /// Whether csharp tooling is available via csharp-ls or OmniSharp.

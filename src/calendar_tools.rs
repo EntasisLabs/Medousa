@@ -23,19 +23,6 @@ const COGNITION_CALENDAR_UPDATE_ID: ToolId = ToolId::new("cognition_calendar_upd
 const COGNITION_CALENDAR_DELETE_ID: ToolId = ToolId::new("cognition_calendar_delete");
 const COGNITION_CALENDAR_IMPORT_ID: ToolId = ToolId::new("cognition_calendar_import");
 
-pub fn register_calendar_tools(
-    registry: &mut impl crate::typed_tools::ToolRegistration,
-    event_tx: mpsc::Sender<TuiEvent>,
-) -> StasisResult<()> {
-    registry.register_typed_tool(CognitionCalendarListTool::new(event_tx.clone()))?;
-    registry.register_typed_tool(CognitionCalendarCreateTool::new(event_tx.clone()))?;
-    registry.register_typed_tool(CognitionCalendarUpdateTool::new(event_tx.clone()))?;
-    registry.register_typed_tool(CognitionCalendarDeleteTool::new(event_tx.clone()))?;
-    registry.register_typed_tool(CognitionCalendarImportTool::new(event_tx.clone()))?;
-    registry.register_typed_tool(CognitionCalendarExportTool::new(event_tx))?;
-    Ok(())
-}
-
 fn emit_invoked(event_tx: &mpsc::Sender<TuiEvent>, tool_name: &str, summary: &str) {
     let _ = event_tx.try_send(TuiEvent::ToolInvoked {
         tool_name: tool_name.to_string(),
@@ -64,11 +51,11 @@ fn required_trimmed(value: Option<String>, field: &str) -> StasisResult<TrimmedT
 #[derive(Debug, JsonSchema)]
 pub struct CalendarAlarmInput {
     /// Minutes before dtstart
-    trigger_minutes_before: i64,
+    pub(crate) trigger_minutes_before: i64,
     /// VALARM action (display)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    action: Option<String>,
+    pub(crate) action: Option<String>,
 }
 
 fn deserialize_compat_calendar_alarms<'de, D>(
@@ -110,47 +97,47 @@ where
 pub struct CalendarWriteFieldsInput {
     /// Event title
     #[schemars(required, with = "String")]
-    summary: Option<String>,
+    pub(crate) summary: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    description: Option<String>,
+    pub(crate) description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    location: Option<String>,
+    pub(crate) location: Option<String>,
     /// RFC3339 start. All-day: YYYY-MM-DDT00:00:00Z for that calendar date.
     #[schemars(required, with = "String")]
-    dtstart: Option<String>,
+    pub(crate) dtstart: Option<String>,
     /// RFC3339 end. All-day: exclusive next-day YYYY-MM-DDT00:00:00Z.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    dtend: Option<String>,
+    pub(crate) dtend: Option<String>,
     /// True for DATE (calendar-day) events; use UTC midnights for dtstart/dtend.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
-    all_day: Option<bool>,
+    pub(crate) all_day: Option<bool>,
     /// Optional RRULE body (without RRULE: prefix)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    rrule: Option<String>,
+    pub(crate) rrule: Option<String>,
     /// Optional vault-relative markdown note linked to this event
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    note_path: Option<String>,
+    pub(crate) note_path: Option<String>,
     /// Display alerts before start
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         with = "Vec<CalendarAlarmInput>",
         skip_serializing_if = "Option::is_none"
     )]
-    alarms: Option<Vec<CalendarAlarmInput>>,
+    pub(crate) alarms: Option<Vec<CalendarAlarmInput>>,
     /// Vault-relative .ics path (default calendar/personal.ics)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    path: Option<String>,
+    pub(crate) path: Option<String>,
     /// Alias for path
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    calendar_path: Option<String>,
+    pub(crate) calendar_path: Option<String>,
 }
 
 impl CalendarWriteFieldsInput {
@@ -289,21 +276,21 @@ pub struct CalendarListInput {
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    from: CompatOption<String>,
+    pub(crate) from: CompatOption<String>,
     /// RFC3339 range end (exclusive)
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    to: CompatOption<String>,
+    pub(crate) to: CompatOption<String>,
     /// Vault-relative .ics path (default calendar/personal.ics)
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    path: CompatOption<String>,
+    pub(crate) path: CompatOption<String>,
 }
 
 #[derive(Debug)]
@@ -331,7 +318,7 @@ impl TryFrom<CalendarListInput> for CalendarListCommand {
 #[medousa_tool(id = COGNITION_CALENDAR_LIST_ID)]
 impl CognitionCalendarListTool {
     /// List personal calendar events in a time range (RRULE expanded). Default store: calendar/personal.ics.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: CalendarListInput,
     ) -> stasis::prelude::Result<CalendarListResponse> {
@@ -362,9 +349,9 @@ impl CognitionCalendarCreateTool {
 #[derive(Debug, JsonSchema)]
 pub struct CalendarCreateInput {
     #[serde(flatten)]
-    fields: CalendarWriteFieldsInput,
+    pub(crate) fields: CalendarWriteFieldsInput,
     #[schemars(skip)]
-    hidden_uid: Option<String>,
+    pub(crate) hidden_uid: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for CalendarCreateInput {
@@ -380,7 +367,7 @@ impl<'de> Deserialize<'de> for CalendarCreateInput {
 #[medousa_tool(id = COGNITION_CALENDAR_CREATE_ID)]
 impl CognitionCalendarCreateTool {
     /// Create a calendar event in the vault .ics store. For all-day events set all_day=true and use UTC midnights for the calendar date.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: CalendarCreateInput,
     ) -> stasis::prelude::Result<CalendarWriteResponse> {
@@ -409,9 +396,9 @@ impl CognitionCalendarUpdateTool {
 pub struct CalendarUpdateInput {
     /// Event UID to update
     #[schemars(required, with = "String")]
-    uid: Option<String>,
+    pub(crate) uid: Option<String>,
     #[serde(flatten)]
-    fields: CalendarWriteFieldsInput,
+    pub(crate) fields: CalendarWriteFieldsInput,
 }
 
 impl<'de> Deserialize<'de> for CalendarUpdateInput {
@@ -427,7 +414,7 @@ impl<'de> Deserialize<'de> for CalendarUpdateInput {
 #[medousa_tool(id = COGNITION_CALENDAR_UPDATE_ID)]
 impl CognitionCalendarUpdateTool {
     /// Update an existing calendar event by uid (full replace of mutable fields).
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: CalendarUpdateInput,
     ) -> stasis::prelude::Result<CalendarWriteResponse> {
@@ -452,11 +439,11 @@ impl CognitionCalendarDeleteTool {
 #[derive(Debug, JsonSchema)]
 pub struct CalendarDeleteInput {
     #[schemars(required, with = "String")]
-    uid: Option<String>,
+    pub(crate) uid: Option<String>,
     /// Vault-relative .ics path (default calendar/personal.ics)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    path: Option<String>,
+    pub(crate) path: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for CalendarDeleteInput {
@@ -499,7 +486,7 @@ impl TryFrom<CalendarDeleteInput> for CalendarDeleteCommand {
 #[medousa_tool(id = COGNITION_CALENDAR_DELETE_ID)]
 impl CognitionCalendarDeleteTool {
     /// Delete a calendar event by uid from the vault .ics store.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: CalendarDeleteInput,
     ) -> stasis::prelude::Result<CalendarDeleteResponse> {
@@ -526,15 +513,15 @@ impl CognitionCalendarImportTool {
 pub struct CalendarImportInput {
     /// Raw RFC 5545 text
     #[schemars(required, with = "String")]
-    ics: Option<String>,
+    pub(crate) ics: Option<String>,
     /// Vault-relative .ics path (default calendar/personal.ics)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    path: Option<String>,
+    pub(crate) path: Option<String>,
     /// Alias for path
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    calendar_path: Option<String>,
+    pub(crate) calendar_path: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for CalendarImportInput {
@@ -588,7 +575,7 @@ impl TryFrom<CalendarImportInput> for CalendarImportCommand {
 #[medousa_tool(id = COGNITION_CALENDAR_IMPORT_ID)]
 impl CognitionCalendarImportTool {
     /// Merge VEVENT components from raw ICS text into the vault calendar (UID upsert).
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: CalendarImportInput,
     ) -> stasis::prelude::Result<CalendarImportResponse> {
@@ -626,7 +613,7 @@ pub struct CalendarExportInput {
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    path: CompatOption<String>,
+    pub(crate) path: CompatOption<String>,
 }
 
 #[derive(Debug)]
@@ -647,7 +634,7 @@ impl TryFrom<CalendarExportInput> for CalendarExportCommand {
 #[medousa_tool(id = COGNITION_CALENDAR_EXPORT_ID)]
 impl CognitionCalendarExportTool {
     /// Export the vault calendar as raw ICS text.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: CalendarExportInput,
     ) -> stasis::prelude::Result<CalendarExportResponse> {

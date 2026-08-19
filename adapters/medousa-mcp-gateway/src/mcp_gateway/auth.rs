@@ -35,22 +35,13 @@ mod tests {
 
     #[test]
     fn gateway_auth_requires_matching_bearer() {
-        assert!(verify_gateway_bearer(
-            Some("Bearer secret"),
-            Some("secret")
-        ));
-        assert!(!verify_gateway_bearer(
-            Some("Bearer wrong"),
-            Some("secret")
-        ));
+        assert!(verify_gateway_bearer(Some("Bearer secret"), Some("secret")));
+        assert!(!verify_gateway_bearer(Some("Bearer wrong"), Some("secret")));
     }
 
     #[test]
     fn admin_auth_requires_token() {
         assert!(!verify_admin_bearer(None, None));
-        assert!(verify_admin_bearer(
-            Some("Bearer admin"),
-            Some("admin")
-        ));
+        assert!(verify_admin_bearer(Some("Bearer admin"), Some("admin")));
     }
 }

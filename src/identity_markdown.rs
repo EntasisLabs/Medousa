@@ -72,7 +72,7 @@ pub async fn export_identity_markdown(
          Policy-guided cognitive operator. Evidence-first, tool-grounded, lane-aware.\n\n\
          ## Recall\n\
          This export is a **derived ranked slice** of identity memory. For live lookup use \
-         `cognition_identity_recall` or `medousa identity-remember`.\n"
+         `cognition_identity_query action=identity.recall` or `medousa identity-remember`.\n"
     );
 
     let preferences_body = if ranked.preference_lines.is_empty() {
@@ -91,7 +91,7 @@ pub async fn export_identity_markdown(
          User id: {user_id}\n\n\
          ## Preferences (ranked export)\n\
          {preferences_body}\n\n\
-         Omitted from export: {} preference(s). Use `cognition_identity_recall` for full lookup.\n",
+         Omitted from export: {} preference(s). Use `cognition_identity_query action=identity.recall` for full lookup.\n",
         ranked.stats.omitted_preferences
     );
 
@@ -110,7 +110,7 @@ pub async fn export_identity_markdown(
         "# PEOPLE\n\n\
          ## Relationships (ranked export)\n\
          {people_body}\n\n\
-         Omitted from export: {} relationship(s). Use `cognition_identity_recall` for full lookup.\n",
+         Omitted from export: {} relationship(s). Use `cognition_identity_query action=identity.recall` for full lookup.\n",
         ranked.stats.omitted_people
     );
 

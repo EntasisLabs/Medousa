@@ -3,7 +3,7 @@
 use std::str::FromStr;
 
 use anyhow::{Context, Result, bail};
-use httparse::{Response, Status, EMPTY_HEADER};
+use httparse::{EMPTY_HEADER, Response, Status};
 use iroh::{Endpoint, endpoint::presets};
 use iroh_tickets::endpoint::EndpointTicket;
 use tokio::sync::OnceCell;
@@ -133,10 +133,7 @@ async fn read_http_response_headers(
         if raw.len() >= MAX_HEADER_BYTES {
             bail!("HTTP response headers exceed {MAX_HEADER_BYTES} bytes");
         }
-        let read = recv
-            .read(&mut chunk)
-            .await
-            .context("read HTTP response")?;
+        let read = recv.read(&mut chunk).await.context("read HTTP response")?;
         let Some(read) = read else {
             bail!("truncated HTTP response before headers");
         };
@@ -157,10 +154,7 @@ fn find_header_end(raw: &[u8]) -> Option<usize> {
 
 type ParsedResponseHeaders = (u16, Vec<(String, String)>, usize, Vec<u8>);
 
-fn parse_response_headers(
-    raw: &[u8],
-    header_end: usize,
-) -> Result<ParsedResponseHeaders> {
+fn parse_response_headers(raw: &[u8], header_end: usize) -> Result<ParsedResponseHeaders> {
     let mut headers = [EMPTY_HEADER; 32];
     let mut response = Response::new(&mut headers);
     let status = response

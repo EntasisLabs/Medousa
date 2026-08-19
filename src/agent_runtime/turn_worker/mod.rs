@@ -1,5 +1,6 @@
 //! In-process host/worker turn bus (Phase 1).
 
+mod host_resume;
 mod model_routing;
 mod policy;
 mod prompts;
@@ -9,6 +10,10 @@ mod run;
 mod status;
 mod store;
 
+pub use host_resume::{
+    fallback_host_resume_text, host_resume_prompt, maybe_resume_host_after_parallel_worker,
+    register_host_resume_ports,
+};
 pub use model_routing::{
     default_stage_role_for_intent, resolve_worker_llm_target, resolve_worker_llm_target_with_matrix,
 };

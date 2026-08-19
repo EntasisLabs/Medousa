@@ -26,9 +26,9 @@ spec:
     max_tool_rounds: 8
   tools:
     allow:
-      - cognition_identity_recall
-      - cognition_memory_context
-      - cognition_capability_invoke
+      - cognition_identity_query
+      - cognition_memory_query
+      - cognition_capability
   locus:
     session_id: locus-morning-brief
   delivery:

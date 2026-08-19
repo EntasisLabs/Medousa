@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use medousa_types::stage_routing::StageRoutingMatrix;
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MedousaConfigPaths {
@@ -435,6 +437,11 @@ fn apply_dto_to_file(file: &mut TuiDefaultsFile, dto: &TuiDefaultsDto) {
     if dto.stage_routing.is_some() {
         file.stage_routing = dto.stage_routing.clone();
     }
+    file.stage_routing = align_saved_stage_routing(
+        file.stage_routing.clone(),
+        file.provider.as_deref(),
+        file.model.as_deref(),
+    );
 }
 
 #[tauri::command]
@@ -532,17 +539,59 @@ mod tests {
             "gpt-5",
         ));
     }
+
+    #[test]
+    fn summary_aligns_uniform_deepseek_matrix_to_luna() {
+        let matrix = serde_json::to_value(super::StageRoutingMatrix::default_for(
+            "deepseek",
+            "deepseek-v4-flash",
+        ))
+        .expect("matrix");
+        let aligned = super::align_saved_stage_routing(
+            Some(matrix),
+            Some("openai"),
+            Some("gpt-5.6-luna"),
+        )
+        .expect("aligned");
+        assert_eq!(aligned["final_response"]["provider"], "openai");
+        assert_eq!(aligned["final_response"]["model"], "gpt-5.6-luna");
+        assert_eq!(aligned["extractor"]["provider"], "openai");
+    }
+}
+
+fn align_saved_stage_routing(
+    raw: Option<serde_json::Value>,
+    provider: Option<&str>,
+    model: Option<&str>,
+) -> Option<serde_json::Value> {
+    let Some(provider) = provider.map(str::trim).filter(|value| !value.is_empty()) else {
+        return raw;
+    };
+    let Some(model) = model.map(str::trim).filter(|value| !value.is_empty()) else {
+        return raw;
+    };
+    match raw {
+        None => serde_json::to_value(StageRoutingMatrix::default_for(provider, model)).ok(),
+        Some(value) => match serde_json::from_value::<StageRoutingMatrix>(value.clone()) {
+            Ok(matrix) => serde_json::to_value(matrix.aligned_with_host(provider, model)).ok(),
+            Err(_) => Some(value),
+        },
+    }
 }
 
 #[tauri::command]
 pub fn load_tui_defaults_summary() -> TuiDefaultsSummary {
     let file = read_tui_defaults_file();
     TuiDefaultsSummary {
-        provider: file.provider,
-        model: file.model,
+        provider: file.provider.clone(),
+        model: file.model.clone(),
         response_depth_mode: file.response_depth_mode,
         reasoning_effort: file.reasoning_effort,
-        stage_routing: file.stage_routing,
+        stage_routing: align_saved_stage_routing(
+            file.stage_routing,
+            file.provider.as_deref(),
+            file.model.as_deref(),
+        ),
         favorite_models: file.favorite_models,
         active_voice_id: file.active_voice_id,
         custom_voice_presets: file.custom_voice_presets,
@@ -624,6 +673,11 @@ pub async fn persist_tui_runtime_prefs(
     if let Some(matrix) = stage_routing {
         file.stage_routing = Some(matrix);
     }
+    file.stage_routing = align_saved_stage_routing(
+        file.stage_routing.clone(),
+        file.provider.as_deref(),
+        file.model.as_deref(),
+    );
     write_tui_defaults_file(&file)?;
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     if unload_local_worker {

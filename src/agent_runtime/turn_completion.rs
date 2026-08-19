@@ -284,7 +284,16 @@ pub fn user_prompt_has_avec_ritual_intent(prompt: &str) -> bool {
 fn tool_was_invoked(invocations: &[ToolInvocation], needles: &[&str]) -> bool {
     invocations.iter().any(|inv| {
         let name = inv.tool_name.to_ascii_lowercase();
-        needles.iter().any(|needle| name.contains(needle))
+        let action = inv
+            .tool_input
+            .get("action")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        needles.iter().any(|needle| {
+            let needle = needle.to_ascii_lowercase();
+            name.contains(&needle) || action.contains(&needle)
+        })
     })
 }
 
@@ -301,28 +310,13 @@ pub fn missing_ritual_tools_for_avec(
     let mut missing = Vec::new();
 
     if (lower.contains("pull") || lower.contains("preset"))
-        && !tool_was_invoked(
-            invocations,
-            &[
-                "cognition_memory_moods",
-                "memory_moods",
-                "cognition_memory_context",
-                "memory_context",
-            ],
-        )
+        && !tool_was_invoked(invocations, &["memory.moods", "memory.context"])
     {
-        missing.push("cognition_memory_moods".to_string());
+        missing.push("cognition_memory_query action=memory.moods".to_string());
     }
 
-    if !tool_was_invoked(
-        invocations,
-        &[
-            "cognition_memory_calibrate",
-            "memory_calibrate",
-            "calibrate",
-        ],
-    ) {
-        missing.push("cognition_memory_calibrate".to_string());
+    if !tool_was_invoked(invocations, &["memory.calibrate"]) {
+        missing.push("cognition_memory_mutate action=memory.calibrate".to_string());
     }
     missing
 }
@@ -641,12 +635,13 @@ async fn emit_gatekeeper_notice(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn ritual_detects_missing_calibrate() {
         let invocations = vec![ToolInvocation {
-            tool_name: "cognition_memory_moods".to_string(),
-            tool_input: Value::Null,
+            tool_name: crate::public_api::COGNITION_MEMORY_QUERY.to_string(),
+            tool_input: json!({ "action": "memory.moods" }),
             tool_output: Value::Null,
         }];
         let missing =
@@ -657,8 +652,8 @@ mod tests {
     #[test]
     fn ritual_detects_missing_moods_on_pull() {
         let invocations = vec![ToolInvocation {
-            tool_name: "cognition_memory_calibrate".to_string(),
-            tool_input: Value::Null,
+            tool_name: crate::public_api::COGNITION_MEMORY_MUTATE.to_string(),
+            tool_input: json!({ "action": "memory.calibrate" }),
             tool_output: Value::Null,
         }];
         let missing = missing_ritual_tools_for_avec("pull focused AVEC preset", &invocations);

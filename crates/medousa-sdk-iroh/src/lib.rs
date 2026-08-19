@@ -7,7 +7,7 @@ mod workshop;
 
 pub use iroh_hook::IrohHttpHook;
 pub use medousa_iroh_http::{
-    iroh_http_get_text, iroh_http_request, IrohHttpBody, IrohHttpResponse, ALPN,
+    ALPN, IrohHttpBody, IrohHttpResponse, iroh_http_get_text, iroh_http_request,
 };
 pub use route::{
     WorkshopRoute, invalidate_route_cache, is_connect_error, pick_route, pick_route_with_bearer,

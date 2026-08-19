@@ -106,9 +106,7 @@ pub fn discrepancy_report(
                 detail: "query text is embedded in a path template".into(),
             });
         }
-        if !declared.iter().any(|item| same_route(item, route))
-            && route.method != "SSE"
-        {
+        if !declared.iter().any(|item| same_route(item, route)) && route.method != "SSE" {
             rows.push(DiscrepancyRow {
                 kind: DiscrepancyKind::ExtraInParity,
                 method: route.method.clone(),
@@ -301,10 +299,9 @@ mod tests {
         ];
         let report = discrepancy_report(&registry, &manifest, &parity);
         assert!(
-            report
-                .rows
-                .iter()
-                .any(|row| row.kind == DiscrepancyKind::MissingFromManifest && row.path == "/health")
+            report.rows.iter().any(
+                |row| row.kind == DiscrepancyKind::MissingFromManifest && row.path == "/health"
+            )
         );
         assert!(
             report

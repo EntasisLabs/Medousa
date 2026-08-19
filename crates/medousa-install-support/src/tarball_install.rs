@@ -10,18 +10,15 @@ use sha2::{Digest, Sha256};
 use tar::Archive;
 
 use crate::manifest::{
-    mark_package_installed, package_dir, shared_bin_dir, unmark_package_installed,
-    resolve_release_package,
-    ReleaseManifest, ReleasePackage,
+    ReleaseManifest, ReleasePackage, mark_package_installed, package_dir, resolve_release_package,
+    shared_bin_dir, unmark_package_installed,
 };
 use crate::packages::{catalog_entry, is_tarball_package};
 use crate::release_config::release_manifest_url;
 
 pub async fn fetch_release_manifest() -> Result<ReleaseManifest, String> {
     let url = release_manifest_url();
-    let client = Client::builder()
-        .build()
-        .map_err(|err| err.to_string())?;
+    let client = Client::builder().build().map_err(|err| err.to_string())?;
     let response = client
         .get(&url)
         .send()
@@ -56,7 +53,10 @@ pub async fn install_tarball_package(
     let package = resolve_release_package(&manifest, package_id)?.clone();
 
     progress(5.0, "Downloading package…");
-    let bytes = download_url(&package.url, |pct| progress(5.0 + pct * 0.65, "Downloading…")).await?;
+    let bytes = download_url(&package.url, |pct| {
+        progress(5.0 + pct * 0.65, "Downloading…")
+    })
+    .await?;
     progress(72.0, "Verifying SHA256…");
     verify_sha256(&bytes, &package.sha256)?;
     progress(78.0, "Extracting…");
@@ -81,8 +81,8 @@ pub async fn install_tarball_package(
 }
 
 pub fn remove_tarball_package(data_dir: &Path, package_id: &str) -> Result<(), String> {
-    let entry = catalog_entry(package_id)
-        .ok_or_else(|| format!("unknown package: {package_id}"))?;
+    let entry =
+        catalog_entry(package_id).ok_or_else(|| format!("unknown package: {package_id}"))?;
     if !entry.optional {
         return Err(format!("cannot remove required package: {package_id}"));
     }
@@ -125,10 +125,12 @@ pub fn verify_sha256(bytes: &[u8], expected: &str) -> Result<(), String> {
 }
 
 pub async fn download_url(url: &str, mut progress: impl FnMut(f32)) -> Result<Vec<u8>, String> {
-    let client = Client::builder()
-        .build()
+    let client = Client::builder().build().map_err(|err| err.to_string())?;
+    let response = client
+        .get(url)
+        .send()
+        .await
         .map_err(|err| err.to_string())?;
-    let response = client.get(url).send().await.map_err(|err| err.to_string())?;
     if !response.status().is_success() {
         return Err(format!("download failed: {}", response.status()));
     }

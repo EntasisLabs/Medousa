@@ -38,7 +38,10 @@ pub fn build_ingest_stream_url(daemon_base_url: &str, stream_id: &str) -> String
 }
 
 /// Consume an ingest SSE stream until a terminal event arrives.
-pub async fn consume_ingest_stream(client: &Client, stream_url: &str) -> Result<IngestStreamResult> {
+pub async fn consume_ingest_stream(
+    client: &Client,
+    stream_url: &str,
+) -> Result<IngestStreamResult> {
     let sdk = MedousaClient::with_transport(
         Arc::new(HttpTransport::with_client(client.clone())),
         stream_url,
@@ -53,7 +56,10 @@ pub async fn consume_ingest_stream(client: &Client, stream_url: &str) -> Result<
         match payload.event {
             TurnStreamEventV2::ContentAppend { text } => {
                 if !text.is_empty() {
-                    result.final_text.get_or_insert_with(String::new).push_str(&text);
+                    result
+                        .final_text
+                        .get_or_insert_with(String::new)
+                        .push_str(&text);
                 }
             }
             TurnStreamEventV2::NeedsInput { text, .. } => {
@@ -78,9 +84,10 @@ pub async fn consume_ingest_stream(client: &Client, stream_url: &str) -> Result<
             TurnStreamEventV2::Error {
                 operator_message, ..
             } => {
-                result.error = Some(non_empty(operator_message).unwrap_or_else(|| {
-                    "ingest stream failed".to_string()
-                }));
+                result.error = Some(
+                    non_empty(operator_message)
+                        .unwrap_or_else(|| "ingest stream failed".to_string()),
+                );
                 return Ok(result);
             }
             TurnStreamEventV2::ReasoningAppend { .. }
