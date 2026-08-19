@@ -76,6 +76,7 @@ pub enum RuntimeQueryAction {
     DeliveryStatus(DeliveryStatus),
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action")]
 pub enum RuntimeMutateAction {
