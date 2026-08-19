@@ -1394,6 +1394,36 @@
         "title": "CreateAgentSessionResponse",
         "type": "object"
       },
+      "CreateIntegrationRequest": {
+        "properties": {
+          "base_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "catalog_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "CreateIntegrationRequest",
+        "type": "object"
+      },
       "CustomViewComponentStatus": {
         "properties": {
           "artifactId": {
@@ -1543,6 +1573,22 @@
           "navVisible",
           "surfaceId"
         ],
+        "type": "object"
+      },
+      "DeleteIntegrationResponse": {
+        "properties": {
+          "connection_id": {
+            "type": "string"
+          },
+          "deleted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "connection_id",
+          "deleted"
+        ],
+        "title": "DeleteIntegrationResponse",
         "type": "object"
       },
       "DesktopNavStyle": {
@@ -2743,6 +2789,122 @@
         ],
         "type": "object"
       },
+      "IntegrationConnection": {
+        "properties": {
+          "base_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "catalog_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "connection_id": {
+            "type": "string"
+          },
+          "created_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "secrets": {
+            "$ref": "#/components/schemas/IntegrationSecretStatus"
+          },
+          "updated_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection_id",
+          "created_at_utc",
+          "kind",
+          "label",
+          "secrets",
+          "updated_at_utc"
+        ],
+        "title": "IntegrationConnection",
+        "type": "object"
+      },
+      "IntegrationListResponse": {
+        "properties": {
+          "connections": {
+            "items": {
+              "$ref": "#/components/schemas/IntegrationConnection"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "connections"
+        ],
+        "title": "IntegrationListResponse",
+        "type": "object"
+      },
+      "IntegrationSecretMutationResponse": {
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "connection_id": {
+            "type": "string"
+          },
+          "slot": {
+            "$ref": "#/components/schemas/IntegrationSecretSlot"
+          }
+        },
+        "required": [
+          "configured",
+          "connection_id",
+          "slot"
+        ],
+        "title": "IntegrationSecretMutationResponse",
+        "type": "object"
+      },
+      "IntegrationSecretSlot": {
+        "enum": [
+          "api_key",
+          "oauth_bundle",
+          "bot_token",
+          "app_token",
+          "auth_key"
+        ],
+        "type": "string"
+      },
+      "IntegrationSecretStatus": {
+        "properties": {
+          "api_key": {
+            "default": false,
+            "type": "boolean"
+          },
+          "app_token": {
+            "default": false,
+            "type": "boolean"
+          },
+          "auth_key": {
+            "default": false,
+            "type": "boolean"
+          },
+          "bot_token": {
+            "default": false,
+            "type": "boolean"
+          },
+          "oauth_bundle": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "InteractiveTurnRequest": {
         "properties": {
           "additional_manuscript_ids": {
@@ -3474,6 +3636,36 @@
           "phase"
         ],
         "title": "ModelDownloadProgress",
+        "type": "object"
+      },
+      "PatchIntegrationRequest": {
+        "properties": {
+          "base_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "catalog_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "title": "PatchIntegrationRequest",
         "type": "object"
       },
       "SessionAgentModeResponse": {
@@ -5635,6 +5827,18 @@
           "fullscreen"
         ],
         "type": "string"
+      },
+      "UpsertIntegrationSecretRequest": {
+        "properties": {
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "UpsertIntegrationSecretRequest",
+        "type": "object"
       },
       "VaultAddRootRequest": {
         "properties": {
@@ -18570,6 +18774,439 @@
           "lastEventId": true,
           "replay": true,
           "transport": "sse"
+        }
+      }
+    },
+    "/v1/integrations": {
+      "get": {
+        "operationId": "integrations.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationListResponse"
+                }
+              }
+            },
+            "description": "integrations.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      },
+      "post": {
+        "operationId": "integrations.post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIntegrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnection"
+                }
+              }
+            },
+            "description": "integrations.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/integrations/{connection_id}": {
+      "delete": {
+        "operationId": "integrations.by_connection_id.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteIntegrationResponse"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.delete"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.delete"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.delete"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      },
+      "get": {
+        "operationId": "integrations.by_connection_id.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnection"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      },
+      "patch": {
+        "operationId": "integrations.by_connection_id.patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchIntegrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnection"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.patch"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.patch"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.patch"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/integrations/{connection_id}/secrets/{slot}": {
+      "delete": {
+        "operationId": "integrations.by_connection_id.secrets.by_slot.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "slot",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationSecretMutationResponse"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.secrets.by_slot.delete"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.secrets.by_slot.delete"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.secrets.by_slot.delete"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      },
+      "put": {
+        "operationId": "integrations.by_connection_id.secrets.by_slot.put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "slot",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertIntegrationSecretRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationSecretMutationResponse"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.secrets.by_slot.put"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.secrets.by_slot.put"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.secrets.by_slot.put"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
         }
       }
     },

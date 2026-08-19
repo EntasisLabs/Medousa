@@ -7562,7 +7562,6 @@ dependencies = [
  "image",
  "iroh",
  "iroh-tickets",
- "keyring",
  "libc",
  "locus-core-rs",
  "mdns-sd",
@@ -7580,6 +7579,7 @@ dependencies = [
  "medousa-mcp-gateway",
  "medousa-mcp-server",
  "medousa-sdk",
+ "medousa-secrets",
  "medousa-store",
  "medousa-tool-macros",
  "medousa-types",
@@ -7808,7 +7808,8 @@ dependencies = [
  "anyhow",
  "arc-swap",
  "base64 0.22.1",
- "keyring",
+ "medousa-secrets",
+ "medousa-types",
  "rand 0.8.6",
  "serde",
  "serde_json",
@@ -7920,6 +7921,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "medousa-secrets"
+version = "0.9.1"
+dependencies = [
+ "anyhow",
+ "keyring",
+ "medousa-types",
+ "serde",
+ "serde_json",
+ "uuid 1.23.1",
+ "zeroize",
+]
+
+[[package]]
 name = "medousa-session"
 version = "0.9.1"
 dependencies = [
@@ -7946,8 +7960,6 @@ name = "medousa-slack"
 version = "0.9.1"
 dependencies = [
  "anyhow",
- "dirs 5.0.1",
- "keyring",
  "medousa-adapter-common",
  "medousa-sdk",
  "medousa-types",
@@ -8011,6 +8023,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "uuid 1.23.1",
 ]
 
 [[package]]

@@ -202,6 +202,21 @@ fn main() {
     export_type!(schemas, FeedStreamQuery, "FeedStreamQuery");
     export_type!(schemas, FeedStreamEvent, "FeedStreamEvent");
 
+    // Integrations / secrets (status only; values never appear on the wire)
+    export_type!(schemas, IntegrationSecretSlot, "IntegrationSecretSlot");
+    export_type!(schemas, IntegrationSecretStatus, "IntegrationSecretStatus");
+    export_type!(schemas, IntegrationConnection, "IntegrationConnection");
+    export_type!(schemas, IntegrationListResponse, "IntegrationListResponse");
+    export_type!(schemas, CreateIntegrationRequest, "CreateIntegrationRequest");
+    export_type!(schemas, PatchIntegrationRequest, "PatchIntegrationRequest");
+    export_type!(schemas, DeleteIntegrationResponse, "DeleteIntegrationResponse");
+    export_type!(schemas, UpsertIntegrationSecretRequest, "UpsertIntegrationSecretRequest");
+    export_type!(
+        schemas,
+        IntegrationSecretMutationResponse,
+        "IntegrationSecretMutationResponse"
+    );
+
     let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../sdk-contract");
     fs::create_dir_all(&out_dir).expect("create sdk-contract dir");

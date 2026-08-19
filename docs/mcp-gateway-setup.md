@@ -166,7 +166,7 @@ Foreground commands (`medousa daemon`, `medousa mcp` via binary) block the shell
 ```bash
 medousa start daemon [--backend surreal-mem] [--bind 127.0.0.1:7419]
 medousa start mcp-gateway
-medousa start discord|telegram|slack|whatsapp   # needs tokens in keyring / setup
+medousa start discord|telegram|slack|whatsapp   # tokens from engine integrations store
 medousa start all    # daemon + mcp-gateway + enabled adapters
 ```
 

@@ -48,26 +48,10 @@ export async function saveWhatsAppConfig(config: {
   });
 }
 
-export async function messagingSecretStatus(secretId: string): Promise<boolean> {
-  return invoke<boolean>("messaging_secret_status", { secretId });
-}
-
-export async function messagingSaveSecret(
-  secretId: string,
-  value: string | null,
-): Promise<void> {
-  await invoke("messaging_save_secret", {
-    secretId,
-    value: value?.trim() ? value.trim() : null,
+export async function messagingSyncAdapters(daemonUrl?: string | null): Promise<void> {
+  await invoke("messaging_sync_adapters", {
+    daemonUrl: daemonUrl?.trim() ? daemonUrl.trim() : null,
   });
-}
-
-export async function messagingClearSecret(secretId: string): Promise<void> {
-  await invoke("messaging_clear_secret", { secretId });
-}
-
-export async function messagingReadSecret(secretId: string): Promise<string | null> {
-  return invoke<string | null>("messaging_read_secret", { secretId });
 }
 
 export function parseNumberCsv(raw: string): number[] {

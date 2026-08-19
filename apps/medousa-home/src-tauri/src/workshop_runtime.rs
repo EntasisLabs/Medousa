@@ -269,21 +269,6 @@ pub(crate) fn should_load_private_brain(explicit: bool) -> bool {
     explicit
 }
 
-fn apply_daemon_messaging_env(command: &mut Command) {
-    if let Ok(Some(token)) = crate::messaging::secrets::load_secret_value("telegram_bot_token") {
-        command.env("MEDOUSA_TELEGRAM_BOT_TOKEN", token);
-    }
-    if let Ok(Some(token)) = crate::messaging::secrets::load_secret_value("discord_bot_token") {
-        command.env("MEDOUSA_DISCORD_BOT_TOKEN", token);
-    }
-    if let Ok(Some(token)) = crate::messaging::secrets::load_secret_value("slack_bot_token") {
-        command.env("MEDOUSA_SLACK_BOT_TOKEN", token);
-    }
-    if let Ok(Some(token)) = crate::messaging::secrets::load_secret_value("slack_app_token") {
-        command.env("MEDOUSA_SLACK_APP_TOKEN", token);
-    }
-}
-
 fn apply_daemon_apns_env(command: &mut Command) {
     const KEYS: &[&str] = &[
         "MEDOUSA_APNS_TEAM_ID",
@@ -577,7 +562,6 @@ pub fn spawn_local_engine(
     command.env("MEDOUSA_DATA_DIR", data_dir.to_string_lossy().to_string());
     // So ACP can find `agent` / `codex` / `npx` even when the GUI PATH is thin.
     enrich_daemon_path(&mut command);
-    apply_daemon_messaging_env(&mut command);
     apply_daemon_apns_env(&mut command);
     command.stdin(Stdio::null());
     command.stdout(Stdio::from(log_file));

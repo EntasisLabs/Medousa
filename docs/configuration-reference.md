@@ -75,7 +75,11 @@ Medousa resolves LLM settings in order: **saved defaults → env → built-in de
 There is no `no_auth` or loopback bypass setting. Except for constant liveness,
 an active pairing ceremony, and scoped preview URLs, daemon routes require a
 named local-app or paired bearer. First-party native clients load their own
-credential from the platform keyring or owner-only data-directory file.
+credential from the daemon secret service
+(`com.entasislabs.medousa.secrets.daemon`) or an owner-only data-directory file.
+Pairing session tokens for remote workshops use
+`com.entasislabs.medousa.secrets.client`. macOS Keychain prompts at most twice
+on first write.
 
 **Tauri app (desktop dev):**
 

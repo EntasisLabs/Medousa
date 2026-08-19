@@ -2,23 +2,19 @@
   import { X } from "@lucide/svelte";
   import type { ProviderCatalogEntry } from "$lib/types/providers";
   import {
-    messagingClearSecret,
-    messagingSaveSecret,
-    messagingSecretStatus,
-  } from "$lib/messaging";
-  import {
     CUSTOM_PROVIDER_CATALOG_ID,
     isValidBaseUrl,
     normalizeBaseUrl,
     normalizeCustomProviderId,
   } from "$lib/utils/customProvider";
   import {
-    apiKeySecretId,
     loadCustomProviderId,
     loadProviderBaseUrlOverride,
     providerAllowsApiKey,
     providerAllowsBaseUrl,
+    providerApiKeyConfigured,
     saveCustomProviderId,
+    saveProviderApiKey,
     saveProviderBaseUrlOverride,
   } from "$lib/utils/providerSettings";
 
@@ -56,9 +52,7 @@
       "";
     keyDraft = "";
     hadKey = providerAllowsApiKey(entry)
-      ? await messagingSecretStatus(
-          apiKeySecretId(isCustom ? customProviderIdDraft || "custom" : entry.id),
-        )
+      ? await providerApiKeyConfigured(entry.id)
       : false;
   }
 
@@ -93,19 +87,13 @@
       }
 
       if (providerAllowsApiKey(entry)) {
-        const keySecret = apiKeySecretId(
-          isCustom ? normalizeCustomProviderId(customProviderIdDraft) || "custom" : entry.id,
-        );
         const trimmedKey = keyDraft.trim();
         if (trimmedKey) {
-          await messagingSaveSecret(keySecret, trimmedKey);
-          if (entry.id === "openai" || entry.id === "deepseek") {
-            await messagingSaveSecret("api_key", trimmedKey);
-          }
+          await saveProviderApiKey(entry.id, trimmedKey);
         }
       }
 
-      message = "Saved on this device.";
+      message = "Saved.";
       await onSaved();
       onClose();
     } catch (err) {
@@ -119,10 +107,7 @@
     saving = true;
     message = null;
     try {
-      const keySecret = apiKeySecretId(
-        isCustom ? normalizeCustomProviderId(customProviderIdDraft) || "custom" : entry.id,
-      );
-      await messagingClearSecret(keySecret);
+      await saveProviderApiKey(entry.id, null);
       keyDraft = "";
       hadKey = false;
       message = "Key removed.";

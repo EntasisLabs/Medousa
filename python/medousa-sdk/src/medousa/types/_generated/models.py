@@ -583,6 +583,33 @@ class IngestAttachment(MedousaModel):
     kind: str
 
 
+class IntegrationSecretStatus(MedousaModel):
+    api_key: bool | None = False
+    app_token: bool | None = False
+    auth_key: bool | None = False
+    bot_token: bool | None = False
+    oauth_bundle: bool | None = False
+
+
+class IntegrationConnection(MedousaModel):
+    base_url: str | None = None
+    catalog_id: str | None = None
+    connection_id: str
+    created_at_utc: AwareDatetime
+    kind: str
+    label: str
+    secrets: IntegrationSecretStatus
+    updated_at_utc: AwareDatetime
+
+
+class IntegrationSecretSlot(Enum):
+    api_key = 'api_key'
+    oauth_bundle = 'oauth_bundle'
+    bot_token = 'bot_token'
+    app_token = 'app_token'
+    auth_key = 'auth_key'
+
+
 class HostContextPosition(MedousaModel):
     character: int = Field(..., ge=0)
     line: int = Field(..., ge=0)
@@ -1695,6 +1722,10 @@ class WorkspaceEventRef(MedousaModel):
     ref_type: str
 
 
+class CountsByColumn(RootModel[int]):
+    root: int = Field(..., ge=0)
+
+
 class AgentModeTransitionPolicy(MedousaModel):
     auto_accept: AgentModeAutoAccept | None = 'never'
     proposal_ttl_seconds: int = Field(..., ge=0)
@@ -1984,8 +2015,20 @@ class CreateAgentSessionResponse(MedousaModel):
     work_id: str | None = None
 
 
+class CreateIntegrationRequest(MedousaModel):
+    base_url: str | None = None
+    catalog_id: str | None = None
+    kind: str
+    label: str | None = None
+
+
 class DecideAgentModeProposalRequest(MedousaModel):
     accept: bool
+
+
+class DeleteIntegrationResponse(MedousaModel):
+    connection_id: str
+    deleted: bool
 
 
 class DeleteRecurringResponse(MedousaModel):
@@ -2123,6 +2166,16 @@ class IngestResponse(MedousaModel):
     stream_url: str | None = Field(
         None, description='Absolute URL for SSE stream consumption by adapters'
     )
+
+
+class IntegrationListResponse(MedousaModel):
+    connections: list[IntegrationConnection]
+
+
+class IntegrationSecretMutationResponse(MedousaModel):
+    configured: bool
+    connection_id: str
+    slot: IntegrationSecretSlot
 
 
 class InteractiveTurnResponse(MedousaModel):
@@ -2290,6 +2343,13 @@ class McpGatewayStatusResponse(MedousaModel):
     message: str
     reachable: bool
     servers: list[McpGatewayServerRuntime]
+
+
+class PatchIntegrationRequest(MedousaModel):
+    base_url: str | None = None
+    catalog_id: str | None = None
+    kind: str | None = None
+    label: str | None = None
 
 
 class RecurringDeliveryResponse(MedousaModel):
@@ -2515,6 +2575,10 @@ class UpdateRecurringResponse(MedousaModel):
     next_run_at_utc: AwareDatetime
     recurring_id: str
     timezone: str
+
+
+class UpsertIntegrationSecretRequest(MedousaModel):
+    value: str
 
 
 class VaultAddRootRequest(MedousaModel):
@@ -2894,7 +2958,7 @@ class WorkspaceEvent(MedousaModel):
 
 class WorkspaceSnapshot(MedousaModel):
     cards: list[WorkCard]
-    counts_by_column: dict[str, int]
+    counts_by_column: dict[str, CountsByColumn]
     feed_tail: list[WorkspaceEvent]
     server_time_utc: AwareDatetime
     workspace_revision: int = Field(..., ge=0)

@@ -4,7 +4,10 @@ import {
   migrateGlobalTuiDefaultsToEngine,
   putEngineTuiDefaults,
 } from "$lib/daemon";
-import { messagingSecretStatus, messagingSaveSecret, messagingClearSecret } from "$lib/messaging";
+import {
+  saveProviderApiKey,
+  providerApiKeyConfigured,
+} from "$lib/utils/providerSettings";
 import { workshopDefaultsSyncPort } from "$lib/runtime/workshopDefaultsPorts";
 import type { StageRoutingMatrix } from "$lib/types/runtime";
 import {
@@ -108,10 +111,14 @@ export class WorkshopDefaultsStore {
           this.draft.model ?? "qwen2.5:7b",
         );
       }
-      this.apiKeySet = await messagingSecretStatus("api_key");
+      this.apiKeySet = this.draft.provider
+        ? await providerApiKeyConfigured(this.draft.provider)
+        : false;
       this.apiKeyDraft = "";
       this.clearApiKey = false;
-      this.sttApiKeySet = await messagingSecretStatus("stt_api_key");
+      this.sttApiKeySet = this.draft.sttProvider
+        ? await providerApiKeyConfigured(this.draft.sttProvider)
+        : false;
       this.sttApiKeyDraft = "";
       this.clearSttApiKey = false;
       workshopDefaultsSyncPort().applyVoiceDraft(this.draft);
@@ -235,28 +242,31 @@ export class WorkshopDefaultsStore {
       await putEngineTuiDefaults(payload);
 
       if (this.clearApiKey) {
-        await messagingClearSecret("api_key");
+        if (payload.provider?.trim()) {
+          await saveProviderApiKey(payload.provider.trim().toLowerCase(), null);
+        }
         this.apiKeySet = false;
       } else if (this.apiKeyDraft.trim()) {
         const key = this.apiKeyDraft.trim();
-        await messagingSaveSecret("api_key", key);
         const provider = payload.provider?.trim().toLowerCase();
         if (provider) {
-          await messagingSaveSecret(`api_key_${provider}`, key);
+          await saveProviderApiKey(provider, key);
         }
         this.apiKeySet = true;
         this.apiKeyDraft = "";
       }
 
       if (this.clearSttApiKey) {
-        await messagingClearSecret("stt_api_key");
+        const sttProvider = payload.sttProvider?.trim().toLowerCase();
+        if (sttProvider) {
+          await saveProviderApiKey(sttProvider, null);
+        }
         this.sttApiKeySet = false;
       } else if (this.sttApiKeyDraft.trim()) {
         const key = this.sttApiKeyDraft.trim();
-        await messagingSaveSecret("stt_api_key", key);
         const sttProvider = payload.sttProvider?.trim().toLowerCase();
         if (sttProvider) {
-          await messagingSaveSecret(`api_key_${sttProvider}`, key);
+          await saveProviderApiKey(sttProvider, key);
         }
         this.sttApiKeySet = true;
         this.sttApiKeyDraft = "";

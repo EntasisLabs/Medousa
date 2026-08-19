@@ -79,6 +79,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::inference_profiles_handlers::surface().inventory())
         .expect("duplicate inference profiles route policy");
     inventory
+        .extend(crate::integration_handlers::surface().inventory())
+        .expect("duplicate integration route policy");
+    inventory
         .extend(crate::environment_handlers::environment_surface().inventory())
         .expect("duplicate environment route policy");
     inventory
@@ -1229,12 +1232,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 370);
-        assert_eq!(with_pairing.entries().len(), 382);
+        assert_eq!(without_pairing.entries().len(), 377);
+        assert_eq!(with_pairing.entries().len(), 389);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 382);
+        assert_eq!(rows.len(), 389);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"

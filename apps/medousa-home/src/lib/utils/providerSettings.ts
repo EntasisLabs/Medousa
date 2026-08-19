@@ -1,16 +1,18 @@
 import type { ProviderCatalogEntry } from "$lib/types/providers";
 import {
-  messagingClearSecret,
-  messagingReadSecret,
-  messagingSaveSecret,
-  messagingSecretStatus,
-} from "$lib/messaging";
-import {
   CUSTOM_PROVIDER_CATALOG_ID,
   isValidBaseUrl,
   normalizeBaseUrl,
   normalizeCustomProviderId,
 } from "$lib/utils/customProvider";
+import {
+  deleteIntegrationSecret,
+  ensureConnection,
+  findConnectionByKind,
+  findCustomConnection,
+  putIntegrationSecret,
+  type IntegrationConnection,
+} from "$lib/utils/integrations";
 
 export const CUSTOM_PROVIDER_ID_SECRET = "custom_provider_id";
 
@@ -39,26 +41,37 @@ export function providerIsConfigurable(entry: ProviderCatalogEntry): boolean {
   return providerAllowsBaseUrl(entry) || providerAllowsApiKey(entry);
 }
 
+async function connectionForCatalog(
+  catalogProviderId: string,
+): Promise<IntegrationConnection | null> {
+  if (catalogProviderId === CUSTOM_PROVIDER_CATALOG_ID) {
+    return findCustomConnection();
+  }
+  return findConnectionByKind(catalogProviderId);
+}
+
 export async function loadCustomProviderId(): Promise<string | null> {
-  const raw = await messagingReadSecret(CUSTOM_PROVIDER_ID_SECRET);
-  const id = raw ? normalizeCustomProviderId(raw) : "";
-  return id || null;
+  const connection = await findCustomConnection();
+  const id = connection?.kind ? normalizeCustomProviderId(connection.kind) : "";
+  if (id && id !== CUSTOM_PROVIDER_CATALOG_ID) return id;
+  const catalogId = connection?.catalog_id
+    ? normalizeCustomProviderId(connection.catalog_id)
+    : "";
+  return catalogId && catalogId !== CUSTOM_PROVIDER_CATALOG_ID ? catalogId : null;
 }
 
 export async function saveCustomProviderId(id: string | null): Promise<void> {
   const normalized = id ? normalizeCustomProviderId(id) : "";
-  if (normalized) {
-    await messagingSaveSecret(CUSTOM_PROVIDER_ID_SECRET, normalized);
-  } else {
-    await messagingClearSecret(CUSTOM_PROVIDER_ID_SECRET);
-  }
+  if (!normalized) return;
+  await ensureConnection(normalized, { catalogId: CUSTOM_PROVIDER_CATALOG_ID });
 }
 
 export async function loadProviderBaseUrlOverride(
   catalogProviderId: string,
 ): Promise<string | null> {
-  const raw = await messagingReadSecret(baseUrlSecretId(catalogProviderId));
-  if (!raw?.trim()) return null;
+  const connection = await connectionForCatalog(catalogProviderId);
+  const raw = connection?.base_url?.trim() ?? "";
+  if (!raw) return null;
   return normalizeBaseUrl(raw);
 }
 
@@ -66,13 +79,17 @@ export async function saveProviderBaseUrlOverride(
   catalogProviderId: string,
   url: string | null,
 ): Promise<void> {
-  const secretId = baseUrlSecretId(catalogProviderId);
   const trimmed = url?.trim() ?? "";
-  if (trimmed && isValidBaseUrl(trimmed)) {
-    await messagingSaveSecret(secretId, normalizeBaseUrl(trimmed));
-  } else {
-    await messagingClearSecret(secretId);
+  const baseUrl = trimmed && isValidBaseUrl(trimmed) ? normalizeBaseUrl(trimmed) : null;
+  if (catalogProviderId === CUSTOM_PROVIDER_CATALOG_ID) {
+    const runtimeId = (await loadCustomProviderId()) ?? CUSTOM_PROVIDER_CATALOG_ID;
+    await ensureConnection(runtimeId, {
+      catalogId: CUSTOM_PROVIDER_CATALOG_ID,
+      baseUrl,
+    });
+    return;
   }
+  await ensureConnection(catalogProviderId, { baseUrl });
 }
 
 export async function resolveProviderBaseUrl(
@@ -109,6 +126,41 @@ export async function resolveApiKeySecretId(
   return apiKeySecretId(entry.id);
 }
 
+export async function saveProviderApiKey(
+  catalogProviderId: string,
+  value: string | null,
+): Promise<void> {
+  const runtimeId =
+    catalogProviderId === CUSTOM_PROVIDER_CATALOG_ID
+      ? (await loadCustomProviderId()) ?? CUSTOM_PROVIDER_CATALOG_ID
+      : catalogProviderId;
+  const extras =
+    catalogProviderId === CUSTOM_PROVIDER_CATALOG_ID
+      ? { catalogId: CUSTOM_PROVIDER_CATALOG_ID }
+      : {};
+  const connection = await ensureConnection(runtimeId, extras);
+  const trimmed = value?.trim() ?? "";
+  if (trimmed) {
+    await putIntegrationSecret(connection.connection_id, "api_key", trimmed);
+  } else {
+    await deleteIntegrationSecret(connection.connection_id, "api_key");
+  }
+}
+
+export async function providerApiKeyConfigured(
+  catalogProviderId: string,
+): Promise<boolean> {
+  const connection = await connectionForCatalog(catalogProviderId);
+  if (connection?.secrets.api_key) return true;
+  if (catalogProviderId === CUSTOM_PROVIDER_CATALOG_ID) {
+    const runtimeId = await loadCustomProviderId();
+    if (runtimeId) {
+      return Boolean((await findConnectionByKind(runtimeId))?.secrets.api_key);
+    }
+  }
+  return false;
+}
+
 export interface ProviderSettingsSummary {
   baseUrl: string | null;
   baseUrlIsOverride: boolean;
@@ -123,9 +175,8 @@ export async function loadProviderSettingsSummary(
   const savedUrl = await loadProviderBaseUrlOverride(entry.id);
   const defaultUrl = entry.defaultBaseUrl?.trim() || null;
   const baseUrl = savedUrl ?? defaultUrl;
-  const keySecret = await resolveApiKeySecretId(entry);
   const hasApiKey = providerAllowsApiKey(entry)
-    ? await messagingSecretStatus(keySecret)
+    ? await providerApiKeyConfigured(entry.id)
     : false;
   const customProviderId =
     entry.id === CUSTOM_PROVIDER_CATALOG_ID ? await loadCustomProviderId() : null;

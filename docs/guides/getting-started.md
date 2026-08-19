@@ -52,7 +52,9 @@ Pick one path:
 | **Ollama** | You already run Ollama locally. |
 
 If offline brain isn’t installed yet, the wizard points you to
-**Settings → Packages** to add it. Cloud keys work without Packages.
+**Settings → Packages** to add it. Cloud keys work without Packages. On first save, macOS may ask twice to use
+the Keychain (once for the engine, once for this app). After that it stays
+quiet.
 
 Enter Home whenever you are ready. Optional package downloads continue in the
 background and do not block the workspace.

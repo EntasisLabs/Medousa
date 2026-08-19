@@ -406,6 +406,20 @@ pub enum DaemonOperation {
     IngestByStreamIdStreamGet,
     #[serde(rename = "ingest.post")]
     IngestPost,
+    #[serde(rename = "integrations.by_connection_id.delete")]
+    IntegrationsByConnectionIdDelete,
+    #[serde(rename = "integrations.by_connection_id.get")]
+    IntegrationsByConnectionIdGet,
+    #[serde(rename = "integrations.by_connection_id.patch")]
+    IntegrationsByConnectionIdPatch,
+    #[serde(rename = "integrations.by_connection_id.secrets.by_slot.delete")]
+    IntegrationsByConnectionIdSecretsBySlotDelete,
+    #[serde(rename = "integrations.by_connection_id.secrets.by_slot.put")]
+    IntegrationsByConnectionIdSecretsBySlotPut,
+    #[serde(rename = "integrations.get")]
+    IntegrationsGet,
+    #[serde(rename = "integrations.post")]
+    IntegrationsPost,
     #[serde(rename = "interactive.turn.by_turn_id.stream.get")]
     InteractiveTurnByTurnIdStreamGet,
     #[serde(rename = "interactive.turn.post")]
@@ -974,6 +988,13 @@ impl DaemonOperation {
             Self::IdentityUpdateProposePost => "identity.update.propose.post",
             Self::IngestByStreamIdStreamGet => "ingest.by_stream_id.stream.get",
             Self::IngestPost => "ingest.post",
+            Self::IntegrationsByConnectionIdDelete => "integrations.by_connection_id.delete",
+            Self::IntegrationsByConnectionIdGet => "integrations.by_connection_id.get",
+            Self::IntegrationsByConnectionIdPatch => "integrations.by_connection_id.patch",
+            Self::IntegrationsByConnectionIdSecretsBySlotDelete => "integrations.by_connection_id.secrets.by_slot.delete",
+            Self::IntegrationsByConnectionIdSecretsBySlotPut => "integrations.by_connection_id.secrets.by_slot.put",
+            Self::IntegrationsGet => "integrations.get",
+            Self::IntegrationsPost => "integrations.post",
             Self::InteractiveTurnByTurnIdStreamGet => "interactive.turn.by_turn_id.stream.get",
             Self::InteractiveTurnPost => "interactive.turn.post",
             Self::JobsAskPost => "jobs.ask.post",

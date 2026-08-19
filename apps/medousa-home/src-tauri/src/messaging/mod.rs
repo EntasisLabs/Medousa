@@ -1,3 +1,4 @@
+pub mod daemon_slots;
 pub mod product_config;
 pub mod secrets;
 
@@ -17,25 +18,21 @@ pub fn messaging_save_channel_config(request: ChannelConfigSave) -> Result<(), S
 }
 
 #[tauri::command]
-pub fn messaging_secret_status(secret_id: String) -> Result<bool, String> {
-    secrets::secret_is_set(secret_id.trim())
+pub fn messaging_secret_status(_secret_id: String) -> Result<bool, String> {
+    Err("provider and channel secrets are stored by the engine — use Settings integrations".into())
 }
 
 #[tauri::command]
-pub fn messaging_save_secret(secret_id: String, value: Option<String>) -> Result<(), String> {
-    secrets::save_secret(secret_id.trim(), value)?;
-    crate::channel_adapters::sync_channel_adapters(None)?;
-    Ok(())
+pub fn messaging_save_secret(_secret_id: String, _value: Option<String>) -> Result<(), String> {
+    Err("provider and channel secrets are stored by the engine — use Settings integrations".into())
 }
 
 #[tauri::command]
-pub fn messaging_clear_secret(secret_id: String) -> Result<(), String> {
-    secrets::clear_secret(secret_id.trim())?;
-    crate::channel_adapters::sync_channel_adapters(None)?;
-    Ok(())
+pub fn messaging_clear_secret(_secret_id: String) -> Result<(), String> {
+    Err("provider and channel secrets are stored by the engine — use Settings integrations".into())
 }
 
 #[tauri::command]
-pub fn messaging_read_secret(secret_id: String) -> Result<Option<String>, String> {
-    secrets::load_secret_value(secret_id.trim())
+pub fn messaging_read_secret(_secret_id: String) -> Result<Option<String>, String> {
+    Err("secret values are never returned to Home".into())
 }

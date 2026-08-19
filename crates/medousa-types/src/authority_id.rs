@@ -17,7 +17,7 @@ pub struct IdentifierError {
 }
 
 impl IdentifierError {
-    fn new(kind: &'static str, reason: &'static str) -> Self {
+    pub fn new(kind: &'static str, reason: &'static str) -> Self {
         Self { kind, reason }
     }
 }
@@ -36,6 +36,12 @@ pub struct StorageAuthorityKey(String);
 impl StorageAuthorityKey {
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Opaque filesystem name for a typed keyring account. Keyring accounts stay
+    /// human-readable; file fallbacks never embed the `v1/…` path.
+    pub fn for_secret_path(account: &str) -> Self {
+        Self::derive("sp1-", "secret-path", account)
     }
 
     fn derive(prefix: &'static str, domain: &'static str, value: &str) -> Self {

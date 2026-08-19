@@ -41,6 +41,7 @@ pub mod recurring_handlers;
 pub mod recurring_schedule;
 pub mod runtime_composition_ext;
 pub mod runtime_job_spec;
+pub mod secret_migration;
 pub mod semantic_values;
 pub mod sse_turn_projection;
 pub mod tool_bootstrap;
@@ -110,6 +111,8 @@ pub mod inference_profiles;
 pub mod inference_profiles_handlers;
 pub mod inference_router;
 pub mod install;
+pub mod integration_handlers;
+pub mod integration_store;
 pub mod layout_tools;
 pub mod local_credential_handlers;
 pub mod local_daemon_auth;
@@ -468,6 +471,7 @@ pub fn resolve_llm_base_url(
         })
         .or_else(|| std::env::var("MEDOUSA_LLM_BASE_URL").ok())
         .or_else(|| std::env::var("STASIS_LLM_BASE_URL").ok())
+        .or_else(|| crate::session::load_provider_base_url(&provider))
 }
 
 pub async fn build_runtime(

@@ -4,7 +4,8 @@
 //! Prefer [`crate::paths::scoped_test_data_dir`] when only the data root changes.
 //!
 //! `MEDOUSA_TEST_HERMETIC=1` (set by `scripts/ci/test-hermetic.sh`) refuses the
-//! host keyring and panics if unit tests initialize the live ChatGPT OAuth broker.
+//! host keyring via `medousa-secrets` and panics if unit tests initialize the
+//! live ChatGPT OAuth broker.
 
 use std::ffi::{OsStr, OsString};
 use std::sync::{Mutex, MutexGuard};
@@ -13,14 +14,6 @@ static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 pub(crate) fn hermetic() -> bool {
     std::env::var_os("MEDOUSA_TEST_HERMETIC").is_some()
-}
-
-/// Skip OS keyring in the hermetic lib suite (treat as unconfigured).
-pub(crate) fn refuse_host_keyring() -> Result<(), keyring::Error> {
-    if hermetic() {
-        return Err(keyring::Error::NoEntry);
-    }
-    Ok(())
 }
 
 pub(crate) fn panic_if_hermetic_host(what: &str) {

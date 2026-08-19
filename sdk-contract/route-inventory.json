@@ -3391,6 +3391,118 @@
       "trust_group": "portal"
     },
     {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "integrations.get",
+      "path": "/v1/integrations",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 16384,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "integrations.post",
+      "path": "/v1/integrations",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "DELETE",
+      "operation_id": "integrations.by_connection_id.delete",
+      "path": "/v1/integrations/{connection_id}",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "integrations.by_connection_id.get",
+      "path": "/v1/integrations/{connection_id}",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 16384,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "PATCH",
+      "operation_id": "integrations.by_connection_id.patch",
+      "path": "/v1/integrations/{connection_id}",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "DELETE",
+      "operation_id": "integrations.by_connection_id.secrets.by_slot.delete",
+      "path": "/v1/integrations/{connection_id}/secrets/{slot}",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 16384,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "PUT",
+      "operation_id": "integrations.by_connection_id.secrets.by_slot.put",
+      "path": "/v1/integrations/{connection_id}/secrets/{slot}",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
       "body_limit": 1048576,
       "bootstrap_public": false,
       "browser_policy": "native_only",

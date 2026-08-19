@@ -3641,6 +3641,7 @@ dependencies = [
  "medousa-local-inference",
  "medousa-sdk",
  "medousa-sdk-iroh",
+ "medousa-secrets",
  "medousa-types",
  "objc2",
  "objc2-app-kit",
@@ -3725,7 +3726,8 @@ dependencies = [
  "anyhow",
  "arc-swap",
  "base64 0.22.1",
- "keyring",
+ "medousa-secrets",
+ "medousa-types",
  "rand 0.8.6",
  "serde",
  "serde_json",
@@ -3790,6 +3792,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "medousa-secrets"
+version = "0.9.1"
+dependencies = [
+ "anyhow",
+ "keyring",
+ "medousa-types",
+ "serde",
+ "serde_json",
+ "zeroize",
+]
+
+[[package]]
 name = "medousa-types"
 version = "0.9.1"
 dependencies = [
@@ -3800,6 +3814,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "uuid",
 ]
 
 [[package]]

@@ -52,7 +52,7 @@ medousa credentials revoke medousa-tui
 The three first-party credentials (`home-local`, `medousa-cli`, and
 `medousa-tui`) are independently revocable. Rotation atomically installs a new
 verifier generation in the running daemon and invalidates the old generation;
-restart the rotated client so it reloads its platform-keyring or owner-only-file
+restart the rotated client so it reloads its daemon secret-service or owner-only-file
 secret. The CLI refuses to revoke its own credential—rotate it instead.
 
 `list` also reports the bounded revocation audit, denial counters, current

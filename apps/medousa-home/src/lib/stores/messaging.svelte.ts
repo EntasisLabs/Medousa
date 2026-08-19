@@ -1,13 +1,17 @@
 import {
   loadProductConfigSummary,
-  messagingClearSecret,
-  messagingSaveSecret,
+  messagingSyncAdapters,
   saveDiscordConfig,
   saveSlackConfig,
   saveTelegramConfig,
   saveWhatsAppConfig,
 } from "$lib/messaging";
 import type { ProductConfigSummary } from "$lib/types/messaging";
+import {
+  deleteIntegrationSecret,
+  ensureConnection,
+  putIntegrationSecret,
+} from "$lib/utils/integrations";
 import {
   friendlySettingsError,
   isMissingCapabilityError,
@@ -44,10 +48,15 @@ export class MessagingStore {
     clearToken?: boolean;
   }) {
     await this.persist(async () => {
+      const connection = await ensureConnection("telegram");
       if (config.clearToken) {
-        await messagingClearSecret("telegram_bot_token");
+        await deleteIntegrationSecret(connection.connection_id, "bot_token");
       } else if (config.botToken?.trim()) {
-        await messagingSaveSecret("telegram_bot_token", config.botToken);
+        await putIntegrationSecret(
+          connection.connection_id,
+          "bot_token",
+          config.botToken.trim(),
+        );
       }
       await saveTelegramConfig({
         allowedUserIds: config.allowedUserIds,
@@ -65,10 +74,15 @@ export class MessagingStore {
     clearToken?: boolean;
   }) {
     await this.persist(async () => {
+      const connection = await ensureConnection("discord");
       if (config.clearToken) {
-        await messagingClearSecret("discord_bot_token");
+        await deleteIntegrationSecret(connection.connection_id, "bot_token");
       } else if (config.botToken?.trim()) {
-        await messagingSaveSecret("discord_bot_token", config.botToken);
+        await putIntegrationSecret(
+          connection.connection_id,
+          "bot_token",
+          config.botToken.trim(),
+        );
       }
       await saveDiscordConfig({
         commandPrefix: config.commandPrefix,
@@ -88,15 +102,24 @@ export class MessagingStore {
     clearAppToken?: boolean;
   }) {
     await this.persist(async () => {
+      const connection = await ensureConnection("slack");
       if (config.clearBotToken) {
-        await messagingClearSecret("slack_bot_token");
+        await deleteIntegrationSecret(connection.connection_id, "bot_token");
       } else if (config.botToken?.trim()) {
-        await messagingSaveSecret("slack_bot_token", config.botToken);
+        await putIntegrationSecret(
+          connection.connection_id,
+          "bot_token",
+          config.botToken.trim(),
+        );
       }
       if (config.clearAppToken) {
-        await messagingClearSecret("slack_app_token");
+        await deleteIntegrationSecret(connection.connection_id, "app_token");
       } else if (config.appToken?.trim()) {
-        await messagingSaveSecret("slack_app_token", config.appToken);
+        await putIntegrationSecret(
+          connection.connection_id,
+          "app_token",
+          config.appToken.trim(),
+        );
       }
       await saveSlackConfig({
         allowedUserIds: config.allowedUserIds,
@@ -124,6 +147,7 @@ export class MessagingStore {
     this.saveMessage = null;
     try {
       await action();
+      await messagingSyncAdapters();
       await this.refresh();
       this.saveMessage = "Saved";
     } catch (err) {

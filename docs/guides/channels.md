@@ -27,6 +27,8 @@ Guide: [Packages](packages.md).
 
 Open Settings messaging / channel surfaces (wording may sit under Reach or a
 Messaging section depending on build) and paste bot tokens / webhook secrets.
+Home sends those to the local engine over generated `/v1/integrations*` ops;
+the engine stores them. Secret values never come back to the app.
 
 Keep secrets on your machine — Medousa does not require a Medousa cloud account
 for channels.

@@ -3137,6 +3137,37 @@
       }
     }
   },
+  "CreateIntegrationRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreateIntegrationRequest",
+    "type": "object",
+    "required": [
+      "kind"
+    ],
+    "properties": {
+      "base_url": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "catalog_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "kind": {
+        "type": "string"
+      },
+      "label": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
   "DecideAgentModeProposalRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "DecideAgentModeProposalRequest",
@@ -3146,6 +3177,23 @@
     ],
     "properties": {
       "accept": {
+        "type": "boolean"
+      }
+    }
+  },
+  "DeleteIntegrationResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DeleteIntegrationResponse",
+    "type": "object",
+    "required": [
+      "connection_id",
+      "deleted"
+    ],
+    "properties": {
+      "connection_id": {
+        "type": "string"
+      },
+      "deleted": {
         "type": "boolean"
       }
     }
@@ -9517,6 +9565,240 @@
       }
     }
   },
+  "IntegrationConnection": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "IntegrationConnection",
+    "type": "object",
+    "required": [
+      "connection_id",
+      "created_at_utc",
+      "kind",
+      "label",
+      "secrets",
+      "updated_at_utc"
+    ],
+    "properties": {
+      "base_url": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "catalog_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "connection_id": {
+        "type": "string"
+      },
+      "created_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "kind": {
+        "type": "string"
+      },
+      "label": {
+        "type": "string"
+      },
+      "secrets": {
+        "$ref": "#/definitions/IntegrationSecretStatus"
+      },
+      "updated_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "definitions": {
+      "IntegrationSecretStatus": {
+        "type": "object",
+        "properties": {
+          "api_key": {
+            "default": false,
+            "type": "boolean"
+          },
+          "app_token": {
+            "default": false,
+            "type": "boolean"
+          },
+          "auth_key": {
+            "default": false,
+            "type": "boolean"
+          },
+          "bot_token": {
+            "default": false,
+            "type": "boolean"
+          },
+          "oauth_bundle": {
+            "default": false,
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
+  "IntegrationListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "IntegrationListResponse",
+    "type": "object",
+    "required": [
+      "connections"
+    ],
+    "properties": {
+      "connections": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/IntegrationConnection"
+        }
+      }
+    },
+    "definitions": {
+      "IntegrationConnection": {
+        "type": "object",
+        "required": [
+          "connection_id",
+          "created_at_utc",
+          "kind",
+          "label",
+          "secrets",
+          "updated_at_utc"
+        ],
+        "properties": {
+          "base_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "catalog_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "connection_id": {
+            "type": "string"
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "secrets": {
+            "$ref": "#/definitions/IntegrationSecretStatus"
+          },
+          "updated_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "IntegrationSecretStatus": {
+        "type": "object",
+        "properties": {
+          "api_key": {
+            "default": false,
+            "type": "boolean"
+          },
+          "app_token": {
+            "default": false,
+            "type": "boolean"
+          },
+          "auth_key": {
+            "default": false,
+            "type": "boolean"
+          },
+          "bot_token": {
+            "default": false,
+            "type": "boolean"
+          },
+          "oauth_bundle": {
+            "default": false,
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
+  "IntegrationSecretMutationResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "IntegrationSecretMutationResponse",
+    "type": "object",
+    "required": [
+      "configured",
+      "connection_id",
+      "slot"
+    ],
+    "properties": {
+      "configured": {
+        "type": "boolean"
+      },
+      "connection_id": {
+        "type": "string"
+      },
+      "slot": {
+        "$ref": "#/definitions/IntegrationSecretSlot"
+      }
+    },
+    "definitions": {
+      "IntegrationSecretSlot": {
+        "type": "string",
+        "enum": [
+          "api_key",
+          "oauth_bundle",
+          "bot_token",
+          "app_token",
+          "auth_key"
+        ]
+      }
+    }
+  },
+  "IntegrationSecretSlot": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "IntegrationSecretSlot",
+    "type": "string",
+    "enum": [
+      "api_key",
+      "oauth_bundle",
+      "bot_token",
+      "app_token",
+      "auth_key"
+    ]
+  },
+  "IntegrationSecretStatus": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "IntegrationSecretStatus",
+    "type": "object",
+    "properties": {
+      "api_key": {
+        "default": false,
+        "type": "boolean"
+      },
+      "app_token": {
+        "default": false,
+        "type": "boolean"
+      },
+      "auth_key": {
+        "default": false,
+        "type": "boolean"
+      },
+      "bot_token": {
+        "default": false,
+        "type": "boolean"
+      },
+      "oauth_bundle": {
+        "default": false,
+        "type": "boolean"
+      }
+    }
+  },
   "InteractiveTurnRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "InteractiveTurnRequest",
@@ -12986,6 +13268,37 @@
       },
       "phase": {
         "type": "string"
+      }
+    }
+  },
+  "PatchIntegrationRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PatchIntegrationRequest",
+    "type": "object",
+    "properties": {
+      "base_url": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "catalog_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "kind": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "label": {
+        "type": [
+          "string",
+          "null"
+        ]
       }
     }
   },
@@ -17996,6 +18309,19 @@
         "type": "string"
       },
       "timezone": {
+        "type": "string"
+      }
+    }
+  },
+  "UpsertIntegrationSecretRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "UpsertIntegrationSecretRequest",
+    "type": "object",
+    "required": [
+      "value"
+    ],
+    "properties": {
+      "value": {
         "type": "string"
       }
     }

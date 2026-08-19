@@ -81,9 +81,16 @@ extensions. Handlers consume that typed context; they do not parse
 
 The daemon creates a random local capability during installation/first secure
 startup and stores only the material needed to verify it. Home obtains the
-credential through the platform credential store or an owner-only file under
-the Medousa data directory. It is attached by the Tauri/native transport, never
-exposed to the webview JavaScript runtime.
+credential through the daemon-owned platform credential store
+(`com.entasislabs.medousa.secrets.daemon`) or an owner-only file under the
+Medousa data directory. Pairing tokens for remote workshops live in a separate
+client service (`com.entasislabs.medousa.secrets.client`). Provider, bot, STT,
+and Surreal material is written only by the daemon (generated
+`/v1/integrations*` and `/v1/auth/chatgpt*` ops); Home never receives secret
+values on the HTTP wire. macOS Keychain therefore prompts at most twice on
+first write (daemon service + client service), then stays silent. The local
+credential is attached by the Tauri/native transport, never exposed to the
+webview JavaScript runtime.
 
 Other same-user native clients may enroll for their own named local capability.
 Credentials are individually revocable and rotatable. File permissions are a

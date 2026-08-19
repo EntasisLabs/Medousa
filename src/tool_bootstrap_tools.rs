@@ -236,7 +236,7 @@ impl CognitionToolsDiscoverTool {
         };
 
         let (surface, tools) = discover_session_domain(&session_id, lane, domain, &allowlist)
-            .map_err(|err| StasisError::PortFailure(err))?;
+            .map_err(StasisError::PortFailure)?;
 
         let catalog = domain_catalog(lane)
             .iter()

@@ -323,6 +323,31 @@ deduplicates concurrent refreshes. An upstream authentication failure permits
 one refresh-and-retry; a permanent refresh failure changes status to
 `reauth_required`.
 
+ChatGPT OAuth envelopes persist as the `oauth_bundle` slot on the seeded
+`chatgpt` integration connection. Status objects stay token-free.
+
+---
+
+## Integrations (provider, bot, and platform secrets)
+
+The daemon is the only writer of daemon-owned secrets. Clients send
+`connection_id` + slot; responses are status only (configured bools, never
+values). Body limit is 16KiB for APNs PEM / OAuth JSON.
+
+| Method | Path | Types / purpose |
+|--------|------|-----------------|
+| GET | `/v1/integrations` | List `IntegrationConnection` records + slot presence |
+| POST | `/v1/integrations` | Create connection (`CreateIntegrationRequest`) |
+| GET | `/v1/integrations/{connection_id}` | One connection |
+| PATCH | `/v1/integrations/{connection_id}` | Label / `base_url` / catalog metadata |
+| DELETE | `/v1/integrations/{connection_id}` | Drop record and delete its keyring slots |
+| PUT | `/v1/integrations/{connection_id}/secrets/{slot}` | Upsert secret; response is status only |
+| DELETE | `/v1/integrations/{connection_id}/secrets/{slot}` | Delete one slot |
+
+Slots: `api_key`, `oauth_bundle`, `bot_token`, `app_token`, `auth_key`. Policy is
+`AdminRuntime` + `BrowserPolicy::NativeOnly` (same as ChatGPT OAuth): local-app
+Home and personal/root portal can configure; shared-mode non-root members cannot.
+
 ---
 
 ## Agents (hot-swappable runtimes)

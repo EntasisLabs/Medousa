@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use super::secrets;
+use super::daemon_slots;
 
 fn medousa_data_dir() -> PathBuf {
     crate::paths::medousa_data_dir()
@@ -160,7 +160,7 @@ pub fn load_product_config_summary() -> Result<ProductConfigSummary, String> {
                 .get("heartbeat_chat_ids")
                 .and_then(|value| serde_json::from_value(value.clone()).ok())
                 .unwrap_or_default(),
-            credentials_set: secrets::secret_is_set("telegram_bot_token")?,
+            credentials_set: false,
             adapter_running: false,
         },
         discord: DiscordChannelSummary {
@@ -177,7 +177,7 @@ pub fn load_product_config_summary() -> Result<ProductConfigSummary, String> {
                 .get("heartbeat_channel_ids")
                 .and_then(|value| serde_json::from_value(value.clone()).ok())
                 .unwrap_or_default(),
-            credentials_set: secrets::secret_is_set("discord_bot_token")?,
+            credentials_set: false,
             adapter_running: false,
         },
         slack: SlackChannelSummary {
@@ -193,8 +193,8 @@ pub fn load_product_config_summary() -> Result<ProductConfigSummary, String> {
                 .get("heartbeat_channel_ids")
                 .and_then(|value| serde_json::from_value(value.clone()).ok())
                 .unwrap_or_default(),
-            bot_token_set: secrets::secret_is_set("slack_bot_token")?,
-            app_token_set: secrets::secret_is_set("slack_app_token")?,
+            bot_token_set: false,
+            app_token_set: false,
             adapter_running: false,
         },
         whatsapp: WhatsAppChannelSummary {
@@ -226,6 +226,7 @@ pub fn load_product_config_summary() -> Result<ProductConfigSummary, String> {
             adapter_running: false,
         },
     };
+    daemon_slots::overlay_channel_credentials(&mut summary);
     crate::channel_adapters::adapter_status_for_summary(&mut summary);
     Ok(summary)
 }

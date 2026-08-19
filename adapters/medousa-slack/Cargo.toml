@@ -10,8 +10,6 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"
-dirs = "5"
-keyring = "2.3"
 medousa-adapter-common = { path = "../../crates/medousa-adapter-common" }
 medousa-sdk = { path = "../../crates/medousa-sdk" }
 medousa-types = { path = "../../crates/medousa-types" }

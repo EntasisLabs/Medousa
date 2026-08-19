@@ -26,6 +26,7 @@ members = [
     "crates/medousa-browser-bridge",
     "crates/medousa-install-support",
     "crates/medousa-local-credential",
+    "crates/medousa-secrets",
     "crates/medousa-mcp-server",
     "crates/medousa-acp-client",
     "crates/medousa-adapter-common",
@@ -71,6 +72,7 @@ medousa-adapter-common = { path = "crates/medousa-adapter-common" }
 medousa-mcp-gateway = { path = "adapters/medousa-mcp-gateway" }
 medousa-install-support = { path = "crates/medousa-install-support" }
 medousa-local-credential = { path = "crates/medousa-local-credential" }
+medousa-secrets = { path = "crates/medousa-secrets" }
 medousa-engine = { path = "crates/medousa-engine" }
 medousa-host = { path = "crates/medousa-host" }
 medousa-store = { path = "crates/medousa-store" }
@@ -110,7 +112,6 @@ grapheme-runtime = "0.6.1"
 grapheme-lsp = "0.6.1"
 schemars = "0.8"
 genai = "0.6.5"
-keyring = "2.3"
 locus-core-rs = "0.4.2"
 once_cell = "1"
 surrealdb-types = { version = "3.1.5" }

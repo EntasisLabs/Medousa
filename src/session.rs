@@ -1,22 +1,11 @@
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use medousa_secrets::SecretStore;
 use medousa_types::authority_id::ProviderId;
+use medousa_types::{DaemonSecretPath, IntegrationSecretSlot, KIND_DISCORD, KIND_SLACK, KIND_TELEGRAM};
 
 pub use medousa_types::session::{ConversationTurn, SessionHistorySummary, TuiDefaults};
-
-const API_KEY_SERVICE: &str = "medousa.tui";
-const API_KEY_ACCOUNT: &str = "api_key";
-const DISCORD_BOT_TOKEN_SERVICE: &str = "medousa.discord";
-const DISCORD_BOT_TOKEN_ACCOUNT: &str = "bot_token";
-const TELEGRAM_BOT_TOKEN_SERVICE: &str = "medousa.telegram";
-const TELEGRAM_BOT_TOKEN_ACCOUNT: &str = "bot_token";
-const SLACK_BOT_TOKEN_SERVICE: &str = "medousa.slack";
-const SLACK_BOT_TOKEN_ACCOUNT: &str = "bot_token";
-const SLACK_APP_TOKEN_SERVICE: &str = "medousa.slack";
-const SLACK_APP_TOKEN_ACCOUNT: &str = "app_token";
-const SURREAL_PASSWORD_SERVICE: &str = "medousa.surreal";
-const SURREAL_PASSWORD_ACCOUNT: &str = "password";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApiKeyStorageBackend {
@@ -30,6 +19,10 @@ pub(crate) fn medousa_data_dir() -> PathBuf {
     crate::paths::medousa_data_dir()
 }
 
+fn secret_store() -> SecretStore {
+    SecretStore::new(medousa_data_dir())
+}
+
 fn last_session_path() -> PathBuf {
     medousa_data_dir().join("last_session")
 }
@@ -38,137 +31,18 @@ fn tui_defaults_path() -> PathBuf {
     medousa_data_dir().join("tui_defaults.json")
 }
 
-fn api_key_secret_path() -> PathBuf {
-    medousa_data_dir().join("secrets").join("api_key")
-}
-
-fn discord_bot_token_secret_path() -> PathBuf {
-    medousa_data_dir().join("secrets").join("discord_bot_token")
-}
-
-fn telegram_bot_token_secret_path() -> PathBuf {
-    medousa_data_dir()
-        .join("secrets")
-        .join("telegram_bot_token")
-}
-
-fn slack_bot_token_secret_path() -> PathBuf {
-    medousa_data_dir().join("secrets").join("slack_bot_token")
-}
-
-fn slack_app_token_secret_path() -> PathBuf {
-    medousa_data_dir().join("secrets").join("slack_app_token")
-}
-
-fn keyring_entry(service: &str, account: &str) -> Result<keyring::Entry, keyring::Error> {
-    #[cfg(test)]
-    crate::test_env::refuse_host_keyring()?;
-    keyring::Entry::new(service, account)
-}
-
-fn api_key_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
-    keyring_entry(API_KEY_SERVICE, API_KEY_ACCOUNT)
-}
-
-fn provider_api_key_keyring_entry(provider: &ProviderId) -> Result<keyring::Entry, keyring::Error> {
-    keyring_entry("medousa.providers", provider.storage_key().as_str())
-}
-
-fn provider_api_key_secret_path(provider: &ProviderId) -> PathBuf {
-    medousa_data_dir()
-        .join("secrets")
-        .join(format!("api_key_{}", provider.storage_key().as_str()))
-}
-
-fn file_provider_api_key(provider: &ProviderId) -> Option<String> {
-    std::fs::read_to_string(provider_api_key_secret_path(provider))
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            std::fs::read_to_string(
-                medousa_data_dir()
-                    .join("secrets")
-                    .join(format!("api_key_{}", provider.as_str())),
-            )
-            .ok()
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-        })
-}
-
-fn discord_bot_token_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
-    keyring_entry(DISCORD_BOT_TOKEN_SERVICE, DISCORD_BOT_TOKEN_ACCOUNT)
-}
-
-fn telegram_bot_token_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
-    keyring_entry(TELEGRAM_BOT_TOKEN_SERVICE, TELEGRAM_BOT_TOKEN_ACCOUNT)
-}
-
-fn slack_bot_token_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
-    keyring_entry(SLACK_BOT_TOKEN_SERVICE, SLACK_BOT_TOKEN_ACCOUNT)
-}
-
-fn slack_app_token_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
-    keyring_entry(SLACK_APP_TOKEN_SERVICE, SLACK_APP_TOKEN_ACCOUNT)
-}
-
-fn file_api_key() -> Option<String> {
-    std::fs::read_to_string(api_key_secret_path())
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
-fn file_discord_bot_token() -> Option<String> {
-    std::fs::read_to_string(discord_bot_token_secret_path())
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
-fn file_telegram_bot_token() -> Option<String> {
-    std::fs::read_to_string(telegram_bot_token_secret_path())
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
-fn file_slack_bot_token() -> Option<String> {
-    std::fs::read_to_string(slack_bot_token_secret_path())
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
-fn file_slack_app_token() -> Option<String> {
-    std::fs::read_to_string(slack_app_token_secret_path())
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
 pub fn detect_tui_api_key_storage_backend() -> ApiKeyStorageBackend {
-    if let Ok(entry) = api_key_keyring_entry() {
-        if entry
-            .get_password()
-            .ok()
-            .map(|v| !v.trim().is_empty())
-            .unwrap_or(false)
-        {
-            return ApiKeyStorageBackend::KeychainActive;
-        }
-        if file_api_key().is_some() {
-            return ApiKeyStorageBackend::FileFallbackActive;
-        }
-        return ApiKeyStorageBackend::KeychainReady;
+    let defaults = load_tui_defaults();
+    let provider = defaults
+        .provider
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("openai");
+    if load_provider_api_key(provider).is_some() {
+        return ApiKeyStorageBackend::KeychainActive;
     }
-
-    if file_api_key().is_some() {
-        ApiKeyStorageBackend::FileFallbackActive
-    } else {
-        ApiKeyStorageBackend::FileFallbackReady
-    }
+    ApiKeyStorageBackend::KeychainReady
 }
 
 pub(crate) fn atomic_write(path: &PathBuf, bytes: &[u8]) -> std::io::Result<()> {
@@ -229,55 +103,24 @@ pub fn load_tui_defaults() -> TuiDefaults {
     defaults
 }
 
-fn surreal_password_secret_path() -> PathBuf {
-    medousa_data_dir().join("surreal_password")
-}
-
-fn surreal_password_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
-    keyring_entry(SURREAL_PASSWORD_SERVICE, SURREAL_PASSWORD_ACCOUNT)
-}
-
-fn file_surreal_password() -> Option<String> {
-    std::fs::read_to_string(surreal_password_secret_path())
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+fn surreal_password_path() -> Result<DaemonSecretPath, String> {
+    let installation = secret_store()
+        .ensure_installation_id()
+        .map_err(|err| err.to_string())?;
+    Ok(DaemonSecretPath::surreal_password(installation))
 }
 
 pub fn load_surreal_password() -> Option<String> {
-    if let Ok(entry) = surreal_password_keyring_entry()
-        && let Ok(value) = entry.get_password()
-    {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() {
-            return Some(trimmed.to_string());
-        }
-    }
-    file_surreal_password()
+    let _ = crate::secret_migration::migrate_legacy_secrets();
+    let path = surreal_password_path().ok()?;
+    secret_store().get_daemon(&path)
 }
 
 pub fn save_surreal_password(password: Option<&str>) {
-    let path = surreal_password_secret_path();
-
-    match password.map(str::trim).filter(|v| !v.is_empty()) {
-        Some(value) => {
-            let mut persisted = false;
-            if let Ok(entry) = surreal_password_keyring_entry() {
-                persisted = entry.set_password(value).is_ok();
-            }
-            if persisted {
-                let _ = std::fs::remove_file(&path);
-            } else {
-                let _ = atomic_write(&path, value.as_bytes());
-            }
-        }
-        None => {
-            if let Ok(entry) = surreal_password_keyring_entry() {
-                let _ = entry.delete_password();
-            }
-            let _ = std::fs::remove_file(path);
-        }
-    }
+    let Ok(path) = surreal_password_path() else {
+        return;
+    };
+    let _ = secret_store().set_daemon(&path, password);
 }
 
 pub fn save_tui_defaults(defaults: &TuiDefaults) {
@@ -323,19 +166,17 @@ pub fn save_tui_defaults_merged(incoming: serde_json::Value) -> Result<TuiDefaul
 }
 
 pub fn load_tui_api_key() -> Option<String> {
-    if let Ok(entry) = api_key_keyring_entry()
-        && let Ok(value) = entry.get_password()
-    {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() {
-            return Some(trimmed.to_string());
-        }
-    }
-
-    file_api_key()
+    let defaults = load_tui_defaults();
+    let provider = defaults
+        .provider
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("openai");
+    load_provider_api_key(provider)
 }
 
-/// Per-provider API key (Phase 3). Falls back to legacy workshop key when provider matches main.
+/// Per-provider API key. Falls back to env when no connection secret exists.
 pub fn load_provider_api_key(provider: &str) -> Option<String> {
     let provider = provider.to_ascii_lowercase();
     let provider = ProviderId::parse(&provider).ok()?;
@@ -347,39 +188,25 @@ pub fn load_provider_api_key(provider: &str) -> Option<String> {
         return None;
     }
 
-    if let Ok(entry) = provider_api_key_keyring_entry(&provider)
-        && let Ok(value) = entry.get_password()
+    if let Some(value) =
+        crate::integration_store::load_kind_secret(provider.as_str(), IntegrationSecretSlot::ApiKey)
     {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() {
-            return Some(trimmed.to_string());
-        }
-    }
-    if let Ok(entry) = keyring_entry("medousa.providers", provider.as_str())
-        && let Ok(value) = entry.get_password()
-    {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() {
-            return Some(trimmed.to_string());
-        }
-    }
-    if let Some(value) = file_provider_api_key(&provider) {
         return Some(value);
     }
-
-    let defaults = load_tui_defaults();
-    let main_provider = crate::resolve_llm_provider(defaults.provider.as_deref())
-        .trim()
-        .to_ascii_lowercase();
-    if provider.as_str() == main_provider {
-        return load_tui_api_key();
-    }
-
     provider_api_key_from_env(provider.as_str())
 }
 
 pub fn provider_api_key_configured(provider: &str) -> bool {
     load_provider_api_key(provider).is_some()
+}
+
+pub fn load_provider_base_url(provider: &str) -> Option<String> {
+    let provider = provider.trim().to_ascii_lowercase();
+    let connection = crate::integration_store::find_first_kind(&provider)?;
+    crate::integration_store::get_connection(connection.as_str())
+        .ok()
+        .and_then(|row| row.base_url)
+        .filter(|value| !value.trim().is_empty())
 }
 
 pub fn chatgpt_oauth_configured() -> bool {
@@ -391,42 +218,11 @@ pub fn save_provider_api_key(provider: &str, api_key: Option<&str>) {
     let Ok(provider) = ProviderId::parse(&provider) else {
         return;
     };
-    let path = provider_api_key_secret_path(&provider);
-    match api_key.map(str::trim).filter(|value| !value.is_empty()) {
-        Some(value) => {
-            let mut persisted = false;
-            if let Ok(entry) = provider_api_key_keyring_entry(&provider) {
-                persisted = entry.set_password(value).is_ok();
-            }
-            if persisted {
-                let _ = std::fs::remove_file(&path);
-                let _ = std::fs::remove_file(
-                    medousa_data_dir()
-                        .join("secrets")
-                        .join(format!("api_key_{}", provider.as_str())),
-                );
-                if let Ok(entry) = keyring_entry("medousa.providers", provider.as_str()) {
-                    let _ = entry.delete_password();
-                }
-            } else {
-                let _ = atomic_write(&path, value.as_bytes());
-            }
-        }
-        None => {
-            if let Ok(entry) = provider_api_key_keyring_entry(&provider) {
-                let _ = entry.delete_password();
-            }
-            if let Ok(entry) = keyring_entry("medousa.providers", provider.as_str()) {
-                let _ = entry.delete_password();
-            }
-            let _ = std::fs::remove_file(path);
-            let _ = std::fs::remove_file(
-                medousa_data_dir()
-                    .join("secrets")
-                    .join(format!("api_key_{}", provider.as_str())),
-            );
-        }
-    }
+    let _ = crate::integration_store::save_kind_secret(
+        provider.as_str(),
+        IntegrationSecretSlot::ApiKey,
+        api_key,
+    );
 }
 
 fn provider_api_key_from_env(provider: &str) -> Option<String> {
@@ -464,66 +260,26 @@ fn provider_api_key_from_env(provider: &str) -> Option<String> {
 }
 
 pub fn save_tui_api_key(api_key: Option<&str>) {
-    let path = api_key_secret_path();
-
-    match api_key.map(str::trim).filter(|v| !v.is_empty()) {
-        Some(value) => {
-            let mut persisted = false;
-            if let Ok(entry) = api_key_keyring_entry() {
-                persisted = entry.set_password(value).is_ok();
-            }
-
-            if persisted {
-                let _ = std::fs::remove_file(path);
-            } else {
-                let _ = atomic_write(&path, value.as_bytes());
-            }
-        }
-        None => {
-            if let Ok(entry) = api_key_keyring_entry() {
-                let _ = entry.delete_password();
-            }
-            let _ = std::fs::remove_file(path);
-        }
-    }
+    let defaults = load_tui_defaults();
+    let provider = defaults
+        .provider
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("openai");
+    save_provider_api_key(provider, api_key);
 }
 
 pub fn load_discord_bot_token() -> Option<String> {
-    if let Ok(entry) = discord_bot_token_keyring_entry()
-        && let Ok(value) = entry.get_password()
-    {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() {
-            return Some(trimmed.to_string());
-        }
-    }
-
-    file_discord_bot_token()
+    crate::integration_store::load_kind_secret(KIND_DISCORD, IntegrationSecretSlot::BotToken)
 }
 
 pub fn save_discord_bot_token(token: Option<&str>) {
-    let path = discord_bot_token_secret_path();
-
-    match token.map(str::trim).filter(|v| !v.is_empty()) {
-        Some(value) => {
-            let mut persisted = false;
-            if let Ok(entry) = discord_bot_token_keyring_entry() {
-                persisted = entry.set_password(value).is_ok();
-            }
-
-            if persisted {
-                let _ = std::fs::remove_file(path);
-            } else {
-                let _ = atomic_write(&path, value.as_bytes());
-            }
-        }
-        None => {
-            if let Ok(entry) = discord_bot_token_keyring_entry() {
-                let _ = entry.delete_password();
-            }
-            let _ = std::fs::remove_file(path);
-        }
-    }
+    let _ = crate::integration_store::save_kind_secret(
+        KIND_DISCORD,
+        IntegrationSecretSlot::BotToken,
+        token,
+    );
 }
 
 pub fn load_telegram_bot_token() -> Option<String> {
@@ -539,118 +295,51 @@ pub fn load_telegram_bot_token() -> Option<String> {
             }
         }
     }
-
-    if let Ok(entry) = telegram_bot_token_keyring_entry()
-        && let Ok(value) = entry.get_password()
-    {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() {
-            return Some(trimmed.to_string());
-        }
-    }
-
-    file_telegram_bot_token()
+    crate::integration_store::load_kind_secret(KIND_TELEGRAM, IntegrationSecretSlot::BotToken)
 }
 
 pub fn save_telegram_bot_token(token: Option<&str>) {
-    let path = telegram_bot_token_secret_path();
-
-    match token.map(str::trim).filter(|v| !v.is_empty()) {
-        Some(value) => {
-            let mut persisted = false;
-            if let Ok(entry) = telegram_bot_token_keyring_entry() {
-                persisted = entry.set_password(value).is_ok();
-            }
-
-            if persisted {
-                let _ = std::fs::remove_file(path);
-            } else {
-                let _ = atomic_write(&path, value.as_bytes());
-            }
-        }
-        None => {
-            if let Ok(entry) = telegram_bot_token_keyring_entry() {
-                let _ = entry.delete_password();
-            }
-            let _ = std::fs::remove_file(path);
-        }
-    }
+    let _ = crate::integration_store::save_kind_secret(
+        KIND_TELEGRAM,
+        IntegrationSecretSlot::BotToken,
+        token,
+    );
 }
 
 pub fn load_slack_bot_token() -> Option<String> {
-    if let Ok(entry) = slack_bot_token_keyring_entry()
-        && let Ok(value) = entry.get_password()
-    {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() {
-            return Some(trimmed.to_string());
-        }
-    }
-
-    file_slack_bot_token()
+    std::env::var("MEDOUSA_SLACK_BOT_TOKEN")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            crate::integration_store::load_kind_secret(KIND_SLACK, IntegrationSecretSlot::BotToken)
+        })
 }
 
 pub fn save_slack_bot_token(token: Option<&str>) {
-    let path = slack_bot_token_secret_path();
-
-    match token.map(str::trim).filter(|v| !v.is_empty()) {
-        Some(value) => {
-            let mut persisted = false;
-            if let Ok(entry) = slack_bot_token_keyring_entry() {
-                persisted = entry.set_password(value).is_ok();
-            }
-
-            if persisted {
-                let _ = std::fs::remove_file(path);
-            } else {
-                let _ = atomic_write(&path, value.as_bytes());
-            }
-        }
-        None => {
-            if let Ok(entry) = slack_bot_token_keyring_entry() {
-                let _ = entry.delete_password();
-            }
-            let _ = std::fs::remove_file(path);
-        }
-    }
+    let _ = crate::integration_store::save_kind_secret(
+        KIND_SLACK,
+        IntegrationSecretSlot::BotToken,
+        token,
+    );
 }
 
 pub fn load_slack_app_token() -> Option<String> {
-    if let Ok(entry) = slack_app_token_keyring_entry()
-        && let Ok(value) = entry.get_password()
-    {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() {
-            return Some(trimmed.to_string());
-        }
-    }
-
-    file_slack_app_token()
+    std::env::var("MEDOUSA_SLACK_APP_TOKEN")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            crate::integration_store::load_kind_secret(KIND_SLACK, IntegrationSecretSlot::AppToken)
+        })
 }
 
 pub fn save_slack_app_token(token: Option<&str>) {
-    let path = slack_app_token_secret_path();
-
-    match token.map(str::trim).filter(|v| !v.is_empty()) {
-        Some(value) => {
-            let mut persisted = false;
-            if let Ok(entry) = slack_app_token_keyring_entry() {
-                persisted = entry.set_password(value).is_ok();
-            }
-
-            if persisted {
-                let _ = std::fs::remove_file(path);
-            } else {
-                let _ = atomic_write(&path, value.as_bytes());
-            }
-        }
-        None => {
-            if let Ok(entry) = slack_app_token_keyring_entry() {
-                let _ = entry.delete_password();
-            }
-            let _ = std::fs::remove_file(path);
-        }
-    }
+    let _ = crate::integration_store::save_kind_secret(
+        KIND_SLACK,
+        IntegrationSecretSlot::AppToken,
+        token,
+    );
 }
 
 pub(crate) fn file_load_history(
@@ -962,14 +651,21 @@ pub fn format_session_history_label(session_id: &str, display_name: Option<&str>
 #[cfg(test)]
 mod provider_authority_tests {
     use super::*;
+    use medousa_types::{ConnectionId, InstallationId};
 
     #[test]
     fn provider_secret_paths_are_opaque_and_reject_traversal() {
-        let provider = ProviderId::parse("openai.compatible").unwrap();
-        let path = provider_api_key_secret_path(&provider);
-        let name = path.file_name().unwrap().to_string_lossy();
-        assert!(name.starts_with("api_key_pv1-"));
-        assert!(!name.contains("openai.compatible"));
+        let installation = InstallationId::parse("01234567-89ab-cdef-0123-456789abcdef").unwrap();
+        let connection = ConnectionId::parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee").unwrap();
+        let path = DaemonSecretPath::integration(
+            installation,
+            connection,
+            IntegrationSecretSlot::ApiKey,
+        );
+        let key = path.storage_key();
+        assert!(key.as_str().starts_with("sp1-"));
+        assert!(!key.as_str().contains("api_key"));
+        assert!(!path.keyring_account().contains("openai"));
         assert!(ProviderId::parse("../../outside").is_err());
     }
 }

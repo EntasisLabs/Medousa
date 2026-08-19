@@ -41,6 +41,7 @@ sha2 = "0.10"
 bytes = "1"
 url = "2"
 medousa-types = { path = "../../../crates/medousa-types" }
+medousa-secrets = { path = "../../../crates/medousa-secrets" }
 medousa-sdk = { path = "../../../crates/medousa-sdk", default-features = false, features = ["async", "sse"] }
 medousa-sdk-iroh = { path = "../../../crates/medousa-sdk-iroh", default-features = false, features = ["async", "sse"] }
 medousa-iroh-http = { path = "../../../crates/medousa-iroh-http" }

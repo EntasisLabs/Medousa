@@ -220,6 +220,34 @@ pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
             request: Some("CreateAgentSessionRequest"),
             response: "CreateAgentSessionResponse",
         },
+        "integrations.get" => WireBinding {
+            request: None,
+            response: "IntegrationListResponse",
+        },
+        "integrations.post" => WireBinding {
+            request: Some("CreateIntegrationRequest"),
+            response: "IntegrationConnection",
+        },
+        "integrations.by_connection_id.get" => WireBinding {
+            request: None,
+            response: "IntegrationConnection",
+        },
+        "integrations.by_connection_id.patch" => WireBinding {
+            request: Some("PatchIntegrationRequest"),
+            response: "IntegrationConnection",
+        },
+        "integrations.by_connection_id.delete" => WireBinding {
+            request: None,
+            response: "DeleteIntegrationResponse",
+        },
+        "integrations.by_connection_id.secrets.by_slot.put" => WireBinding {
+            request: Some("UpsertIntegrationSecretRequest"),
+            response: "IntegrationSecretMutationResponse",
+        },
+        "integrations.by_connection_id.secrets.by_slot.delete" => WireBinding {
+            request: None,
+            response: "IntegrationSecretMutationResponse",
+        },
         other => {
             if let Some((_, name)) = stream_binding(other) {
                 return Some(WireBinding {
