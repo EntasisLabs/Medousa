@@ -82,38 +82,44 @@ export function defaultSttModel(providerId = "openai"): string {
   return providerId.trim().toLowerCase() === "groq" ? "whisper-large-v3" : "whisper-1";
 }
 
-export function defaultWorkshopDefaults(): Required<
-  Pick<
-    TuiDefaults,
-    | "backend"
-    | "provider"
-    | "model"
-    | "toolCallMode"
-    | "hostTurnBusMode"
-    | "maxToolRounds"
-    | "hostBusMaxToolRounds"
-    | "activationToolIntentMaxRounds"
-    | "activationShortTurnMaxToolRounds"
-    | "continuationMaxToolRounds"
-    | "maxTextOnlyStuckContinues"
-    | "classifierRestrictedMaxToolRounds"
-    | "thinkingCapture"
-    | "stasisOtelEnabled"
-    | "thinkingMaxLines"
-    | "activationDirectAnswerMaxPromptChars"
-    | "activationLongSessionTurnThreshold"
-    | "activationLongSessionMaxPromptChars"
-    | "sliceHotWindowTurns"
-    | "sliceColdWindowTurns"
-    | "retryRuntimeMaxRetries"
-    | "retryRuntimeMaxRounds"
-    | "verifierMinCitationCoverage"
-    | "verifierMinAvgSupportStrength"
-    | "verifierMinSupportedClaimRatio"
-    | "verifierMinClaimSupportStrength"
-    | "responseDepthMode"
-  >
-> {
+export function defaultWorkshopDefaults(): Omit<
+  Required<
+    Pick<
+      TuiDefaults,
+      | "backend"
+      | "provider"
+      | "model"
+      | "toolCallMode"
+      | "hostTurnBusMode"
+      | "maxToolRounds"
+      | "hostBusMaxToolRounds"
+      | "activationToolIntentMaxRounds"
+      | "activationShortTurnMaxToolRounds"
+      | "continuationMaxToolRounds"
+      | "maxTextOnlyStuckContinues"
+      | "classifierRestrictedMaxToolRounds"
+      | "thinkingCapture"
+      | "stasisOtelEnabled"
+      | "thinkingMaxLines"
+      | "activationDirectAnswerMaxPromptChars"
+      | "activationLongSessionTurnThreshold"
+      | "activationLongSessionMaxPromptChars"
+      | "sliceHotWindowTurns"
+      | "sliceColdWindowTurns"
+      | "retryRuntimeMaxRetries"
+      | "retryRuntimeMaxRounds"
+      | "verifierMinCitationCoverage"
+      | "verifierMinAvgSupportStrength"
+      | "verifierMinSupportedClaimRatio"
+      | "verifierMinClaimSupportStrength"
+      | "responseDepthMode"
+    >
+  >,
+  "provider" | "model"
+> & {
+  provider: string;
+  model: string;
+} {
   return {
     backend: "surreal-mem",
     provider: "ollama",
@@ -199,8 +205,8 @@ export function normalizeWorkshopDefaults(raw: TuiDefaults): TuiDefaults {
     reasoningEffort: raw.reasoningEffort?.trim() || null,
     stageRouting: alignStageRoutingWithHost(
       raw.stageRouting,
-      raw.provider?.trim() || defaults.provider || "ollama",
-      raw.model?.trim() || defaults.model || "qwen2.5:7b",
+      raw.provider?.trim() || defaults.provider,
+      raw.model?.trim() || defaults.model,
     ),
     webSearchPreferredProvider: raw.webSearchPreferredProvider?.trim() || "",
     webSearchTryFallbacks: raw.webSearchTryFallbacks ?? true,

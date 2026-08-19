@@ -3451,12 +3451,13 @@ mod tests {
                 .iter()
                 .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_MEMORY_MUTATE)
         );
-        assert!(
-            tools
-                .iter()
-                .all(|tool| tool.name.as_str() != "cognition_web_search"),
-            "unselected tool leaked into the Coder bootstrap: cognition_web_search"
-        );
+        #[allow(clippy::single_element_loop)]
+        for hidden in ["cognition_web_search"] {
+            assert!(
+                tools.iter().all(|tool| tool.name.as_str() != hidden),
+                "unselected tool leaked into the Coder bootstrap: {hidden}"
+            );
+        }
         for runtime_control in ["cognition_runtime_jobs_cancel", "cognition_shell_run"] {
             assert!(
                 tools
