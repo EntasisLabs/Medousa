@@ -8,7 +8,8 @@
 //! exercise the production decision code, not a reimplementation of it.
 //!
 //! What is locked here (the cases the plan calls out):
-//! * plain reply (no tool calls) — terminates on prose,
+//! * two consecutive non-tool replies commit (`content_pack_merged`),
+//! * announcement before tools holds, then a tool round can proceed,
 //! * tool round then `cognition_turn_finish` — terminal commit + tool slicing,
 //! * checkpoint / worker-ack handoff termination reasons,
 //! * event-driven prose completion before and after tool use,
@@ -52,8 +53,8 @@ use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use crate::payload_receipt::ArtifactReceiptMeta;
 use crate::request_principal::{RequestPrincipal, TransportClass};
 use crate::session_storage::SessionId;
+use crate::turn_api::CognitionTurnTool;
 use crate::turn_continuation::TurnContinuationScope;
-use crate::turn_control_tools::{CognitionTurnCheckpointTool, CognitionTurnFinishTool};
 
 // ── Scripted model provider ──────────────────────────────────────────────────
 
@@ -81,6 +82,32 @@ fn tool_call(name: &str, args: Value) -> ToolCall {
         fn_arguments: args,
         thought_signatures: None,
     }
+}
+
+fn finish_call(message: &str) -> ToolCall {
+    tool_call(
+        crate::public_api::COGNITION_TURN,
+        json!({ "action": "turn.finish", "message": message }),
+    )
+}
+
+fn checkpoint_call(message: &str) -> ToolCall {
+    tool_call(
+        crate::public_api::COGNITION_TURN,
+        json!({ "action": "turn.checkpoint", "message": message }),
+    )
+}
+
+fn register_golden_turn_tool(registry: &InMemoryToolRegistry) {
+    registry
+        .register_tool(CognitionTurnTool::new(
+            Arc::new(crate::agent_runtime::turn_worker::TurnWorkerScheduler::new(
+                crate::agent_runtime::turn_worker::turn_worker_store(),
+            )),
+            "golden".to_string(),
+            crate::agent_runtime::execution_context::TurnScopeAccess::default(),
+        ))
+        .unwrap();
 }
 
 fn tool_response(calls: Vec<ToolCall>) -> ChatResponse {
@@ -400,8 +427,7 @@ async fn run_golden(
 ) -> GoldenOutcome {
     let registry = InMemoryToolRegistry::default();
     registry.register_tool(DataProbeTool).unwrap();
-    registry.register_tool(CognitionTurnFinishTool).unwrap();
-    registry.register_tool(CognitionTurnCheckpointTool).unwrap();
+    register_golden_turn_tool(&registry);
 
     let client = Arc::new(ScriptedClient::new(steps));
     let pipeline = MedousaToolLoopPipeline::new(
@@ -488,13 +514,10 @@ async fn run_golden(
 async fn golden_round_context_is_injected_before_the_next_inference() {
     let registry = InMemoryToolRegistry::default();
     registry.register_tool(DataProbeTool).unwrap();
-    registry.register_tool(CognitionTurnFinishTool).unwrap();
+    register_golden_turn_tool(&registry);
     let client = Arc::new(ScriptedClient::new(vec![
         tool_response(vec![tool_call("data_probe", json!({ "q": "state" }))]),
-        tool_response(vec![tool_call(
-            "cognition_turn_finish",
-            json!({ "message": "Done after observing the delta." }),
-        )]),
+        tool_response(vec![finish_call("Done after observing the delta.")]),
     ]));
     let pipeline = MedousaToolLoopPipeline::new(
         PromptExecutionPipeline::new(client.clone()),
@@ -539,13 +562,10 @@ async fn golden_round_context_is_injected_before_the_next_inference() {
 async fn golden_large_tool_output_is_bounded_for_model_but_preserved_in_receipt() {
     let registry = InMemoryToolRegistry::default();
     registry.register_tool(LargeDataProbeTool).unwrap();
-    registry.register_tool(CognitionTurnFinishTool).unwrap();
+    register_golden_turn_tool(&registry);
     let client = Arc::new(ScriptedClient::new(vec![
         tool_response(vec![tool_call("large_data_probe", json!({}))]),
-        tool_response(vec![tool_call(
-            "cognition_turn_finish",
-            json!({ "message": "Done after the focused observation." }),
-        )]),
+        tool_response(vec![finish_call("Done after the focused observation.")]),
     ]));
     let pipeline = MedousaToolLoopPipeline::new(
         PromptExecutionPipeline::new(client.clone()),
@@ -643,22 +663,23 @@ async fn golden_model_visible_tools_refresh_after_a_tool_round() {
 }
 
 #[tokio::test]
-async fn golden_plain_reply_terminates_on_first_non_tool_response() {
+async fn golden_plain_reply_commits_on_two_consecutive_non_tool_responses() {
     let first = "Here is a complete explanation of how the ingester maps channel \
                  sessions to Medousa history without any further steps needed.";
+    let second = "That mapping is the whole answer; nothing else to inspect.";
     let outcome = run_golden(
         "explain the ingester mapping",
-        vec![text_response(first)],
+        vec![text_response(first), text_response(second)],
         10,
         false,
     )
     .await;
 
-    assert_eq!(outcome.termination_reason, "no_tools_prose");
-    assert_eq!(outcome.text, first);
-    assert_eq!(outcome.rounds_executed, 1);
+    assert_eq!(outcome.termination_reason, "content_pack_merged");
+    assert_eq!(outcome.text, format!("{first}\n\n{second}"));
+    assert_eq!(outcome.rounds_executed, 2);
     assert!(outcome.tool_invocations.is_empty());
-    assert!(outcome.event_kinds.is_empty());
+    assert_eq!(outcome.event_kinds, vec!["pack_hold".to_string()]);
 }
 
 #[tokio::test]
@@ -667,10 +688,7 @@ async fn golden_tool_round_then_finish_commits_terminal_body() {
         "look something up then answer",
         vec![
             tool_response(vec![tool_call("data_probe", json!({ "q": "ingest" }))]),
-            tool_response(vec![tool_call(
-                "cognition_turn_finish",
-                json!({ "message": "Final answer grounded in the probe." }),
-            )]),
+            tool_response(vec![finish_call("Final answer grounded in the probe.")]),
         ],
         10,
         false,
@@ -682,10 +700,7 @@ async fn golden_tool_round_then_finish_commits_terminal_body() {
     assert_eq!(outcome.rounds_executed, 2);
     assert_eq!(
         outcome.tool_invocations,
-        vec![
-            "data_probe".to_string(),
-            "cognition_turn_finish".to_string()
-        ]
+        vec!["data_probe".to_string(), "cognition_turn".to_string()]
     );
     // Tooling slices: probe runs in round 1; the finish tool runs in round 2.
     // (Scratch reset between rounds only fires on the streaming path; this case
@@ -695,8 +710,8 @@ async fn golden_tool_round_then_finish_commits_terminal_body() {
         vec![
             "tool_started:data_probe".to_string(),
             "tool_finished:data_probe".to_string(),
-            "tool_started:cognition_turn_finish".to_string(),
-            "tool_finished:cognition_turn_finish".to_string(),
+            "tool_started:cognition_turn".to_string(),
+            "tool_finished:cognition_turn".to_string(),
         ],
         "events: {:?}",
         outcome.events
@@ -713,10 +728,7 @@ async fn golden_finish_appends_to_held_non_tool_response() {
         vec![
             tool_response(vec![tool_call("data_probe", json!({ "q": "pty" }))]),
             text_response(held),
-            tool_response(vec![tool_call(
-                "cognition_turn_finish",
-                json!({ "message": finish }),
-            )]),
+            tool_response(vec![finish_call(finish)]),
         ],
         10,
         false,
@@ -757,9 +769,8 @@ async fn golden_tool_call_resets_the_held_non_tool_response() {
 async fn golden_checkpoint_handoff_terminates_as_checkpoint() {
     let outcome = run_golden(
         "do partial work and hand back",
-        vec![tool_response(vec![tool_call(
-            "cognition_turn_checkpoint",
-            json!({ "message": "Found three blockers — your call on scope." }),
+        vec![tool_response(vec![checkpoint_call(
+            "Found three blockers — your call on scope.",
         )])],
         10,
         false,
@@ -772,18 +783,27 @@ async fn golden_checkpoint_handoff_terminates_as_checkpoint() {
 }
 
 #[tokio::test]
-async fn golden_non_tool_announcement_before_tools_is_terminal() {
+async fn golden_non_tool_announcement_before_tools_holds_then_tools_proceed() {
+    let held = "The probe confirmed the mapping is owned by the ingest adapter.";
+    let final_text = "No further inspection is required; that is the answer.";
     let outcome = run_golden(
         "kick off some work",
-        vec![text_response("Let me check that for you.")],
+        vec![
+            text_response("Let me check that for you."),
+            tool_response(vec![tool_call("data_probe", json!({ "q": "ingest" }))]),
+            text_response(held),
+            text_response(final_text),
+        ],
         10,
         false,
     )
     .await;
 
-    assert_eq!(outcome.termination_reason, "no_tools_prose");
-    assert_eq!(outcome.text, "Let me check that for you.");
-    assert_eq!(outcome.rounds_executed, 1);
+    assert_eq!(outcome.termination_reason, "content_pack_merged");
+    assert_eq!(outcome.text, format!("{held}\n\n{final_text}"));
+    assert!(!outcome.text.contains("Let me check that for you."));
+    assert_eq!(outcome.rounds_executed, 4);
+    assert_eq!(outcome.tool_invocations, vec!["data_probe".to_string()]);
 }
 
 #[tokio::test]
@@ -830,19 +850,29 @@ async fn golden_max_rounds_fuse_terminates() {
 async fn golden_streamed_content_reaches_sink() {
     let first = "Here is a complete explanation of how the ingester maps channel \
                  sessions to Medousa history without any further steps needed.";
-    let outcome = run_golden("stream me an answer", vec![text_response(first)], 10, true).await;
+    let second = "That mapping is the whole answer; nothing else to inspect.";
+    let outcome = run_golden(
+        "stream me an answer",
+        vec![text_response(first), text_response(second)],
+        10,
+        true,
+    )
+    .await;
 
-    assert_eq!(outcome.termination_reason, "no_tools_prose");
-    assert_eq!(outcome.rounds_executed, 1);
-    assert_eq!(outcome.request_count, 1);
-    assert_eq!(outcome.streamed, vec![first.to_string()]);
+    assert_eq!(outcome.termination_reason, "content_pack_merged");
+    assert_eq!(outcome.rounds_executed, 2);
+    assert_eq!(outcome.request_count, 2);
+    assert_eq!(
+        outcome.streamed,
+        vec![first.to_string(), second.to_string()]
+    );
     assert_eq!(
         outcome
             .event_kinds
             .iter()
             .filter(|kind| kind.as_str() == "content")
             .count(),
-        1
+        2
     );
-    assert!(!outcome.event_kinds.iter().any(|kind| kind == "pack_hold"));
+    assert!(outcome.event_kinds.iter().any(|kind| kind == "pack_hold"));
 }

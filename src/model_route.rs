@@ -155,6 +155,7 @@ pub fn stage_matrix_for_host(host_provider: &str, host_model: &str) -> StageRout
             !matrix.orchestrator.provider.trim().is_empty()
                 && !matrix.orchestrator.model.trim().is_empty()
         })
+        .map(|matrix| matrix.aligned_with_host(host_provider, host_model))
         .unwrap_or_else(|| StageRoutingMatrix::default_for(host_provider, host_model))
 }
 
@@ -176,19 +177,18 @@ pub fn resolve_delegated_llm_route(req: DelegatedLlmRoute<'_>) -> (String, Strin
         return target;
     }
 
-    let owned_matrix;
-    let matrix = if let Some(matrix) = req.stage_matrix {
-        matrix
-    } else {
-        owned_matrix = stage_matrix_for_host(req.host_provider, req.host_model);
-        &owned_matrix
+    let owned_matrix = match req.stage_matrix {
+        Some(matrix) => matrix
+            .clone()
+            .aligned_with_host(req.host_provider, req.host_model),
+        None => stage_matrix_for_host(req.host_provider, req.host_model),
     };
 
     if let Some(role) = req
         .stage_role
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        && let Some(route) = matrix.get(role)
+        && let Some(route) = owned_matrix.get(role)
     {
         return (
             crate::resolve_llm_provider(Some(&route.provider)),
@@ -289,5 +289,18 @@ mod tests {
     fn same_provider_keeps_host_base_url() {
         let url = resolve_route_base_url("openai", "openai", Some("https://proxy.example/v1"));
         assert_eq!(url.as_deref(), Some("https://proxy.example/v1"));
+    }
+
+    #[test]
+    fn uniform_stale_matrix_does_not_steal_host_chat() {
+        let matrix = StageRoutingMatrix::default_for("deepseek", "deepseek-v4-flash");
+        let route = resolve_delegated_llm_route(DelegatedLlmRoute {
+            host_provider: "openai",
+            host_model: "gpt-5.6-luna",
+            model_hint: None,
+            stage_role: Some("final_response"),
+            stage_matrix: Some(&matrix),
+        });
+        assert_eq!(route, ("openai".into(), "gpt-5.6-luna".into()));
     }
 }

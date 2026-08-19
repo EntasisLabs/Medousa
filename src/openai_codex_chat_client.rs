@@ -253,6 +253,8 @@ impl AiChatClient for RoutedChatClient {
         options: Option<&ChatOptions>,
     ) -> StasisResult<ChatResponse> {
         match self {
+            // Non-stream responses already carry tool_calls + reasoning_content on the
+            // body; no capture flags required.
             Self::Provider(client) => client.complete(request, options).await,
             Self::ChatGpt(client) => client.complete(request, options).await,
         }
@@ -265,10 +267,27 @@ impl AiChatClient for RoutedChatClient {
         chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
     ) -> StasisResult<ChatResponse> {
         match self {
-            Self::Provider(client) => client.complete_stream(request, options, chunk_tx).await,
+            // stasis GenaiChatClient enables content/reasoning capture on stream, but
+            // not tool-call capture. Without this, text+tools responses (common for
+            // DeepSeek thinking mode) keep the preamble and drop tool_calls — then
+            // the tool loop never stores a round-trippable assistant tool turn.
+            Self::Provider(client) => {
+                let options = provider_stream_options(options);
+                client
+                    .complete_stream(request, Some(&options), chunk_tx)
+                    .await
+            }
             Self::ChatGpt(client) => client.complete_stream(request, options, chunk_tx).await,
         }
     }
+}
+
+/// Stream options that keep tool calls in `ChatResponse.content` for transcript authority.
+fn provider_stream_options(options: Option<&ChatOptions>) -> ChatOptions {
+    options
+        .cloned()
+        .unwrap_or_default()
+        .with_capture_tool_calls(true)
 }
 
 fn request_headers(access_token: &str, account_id: &str) -> Headers {
@@ -313,6 +332,14 @@ mod tests {
     use axum::extract::State;
     use axum::http::HeaderMap;
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn provider_stream_options_enable_tool_call_capture() {
+        let incoming = ChatOptions::default().with_temperature(0.2);
+        let options = provider_stream_options(Some(&incoming));
+        assert_eq!(options.temperature, Some(0.2));
+        assert_eq!(options.capture_tool_calls, Some(true));
+    }
 
     #[test]
     fn route_selection_keeps_api_key_and_chatgpt_clients_distinct() {

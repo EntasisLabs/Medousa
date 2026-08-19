@@ -30,18 +30,6 @@ const EXTERNAL_OR_CONDITIONAL_POLICY_REFERENCES: &[(&str, &str)] = &[];
 
 const HOST_BOOTSTRAP_AUTHORIZATION_EXCEPTIONS: &[(&str, &str)] = &[
     (
-        "cognition_artifact_grep",
-        "advertised for handoff, but execution remains Workshop-scoped",
-    ),
-    (
-        "cognition_artifact_list",
-        "advertised for handoff, but execution remains Workshop-scoped",
-    ),
-    (
-        "cognition_artifact_read",
-        "advertised for handoff, but execution remains Workshop-scoped",
-    ),
-    (
         "cognition_ui_build",
         "advertised for handoff, but execution remains Workshop-scoped",
     ),
@@ -53,16 +41,9 @@ const HOST_BOOTSTRAP_AUTHORIZATION_EXCEPTIONS: &[(&str, &str)] = &[
         "cognition_ui_scene",
         "advertised for handoff, but execution remains Workshop-scoped",
     ),
-    (
-        "cognition_vault_grep",
-        "advertised for handoff, but execution remains Workshop-scoped",
-    ),
 ];
 
-const WORKER_BOOTSTRAP_AUTHORIZATION_EXCEPTIONS: &[(&str, &str)] = &[(
-    "cognition_turn_begin_work",
-    "Workshop cannot recursively enter another bound Workshop",
-)];
+const WORKER_BOOTSTRAP_AUTHORIZATION_EXCEPTIONS: &[(&str, &str)] = &[];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct ContractBaseline {
@@ -610,32 +591,33 @@ fn normalized_snapshot_detects_contract_and_placement_drift() {
 #[tokio::test]
 async fn legacy_invocation_fixture_covers_required_input_and_aliases() {
     let registry = InMemoryToolRegistry::default();
+    let scheduler =
+        std::sync::Arc::new(crate::agent_runtime::turn_worker::TurnWorkerScheduler::new(
+            crate::agent_runtime::turn_worker::turn_worker_store(),
+        ));
     registry
-        .register_tool(crate::turn_control_tools::CognitionTurnUpdateUserTool)
+        .register_tool(crate::turn_api::CognitionTurnTool::new(
+            scheduler,
+            "fixture".to_string(),
+            crate::agent_runtime::execution_context::TurnScopeAccess::default(),
+        ))
         .expect("register fixture tool");
     let accepted = registry
         .invoke_tool(
-            crate::turn_control_tools::COGNITION_TURN_UPDATE_USER,
-            json!({ "message": "Still working" }),
+            crate::public_api::COGNITION_TURN,
+            json!({ "action": "turn.update_user", "message": "Still working" }),
         )
         .await
         .expect("valid update fixture");
     assert_eq!(accepted["message"], "Still working");
     let rejected = registry
         .invoke_tool(
-            crate::turn_control_tools::COGNITION_TURN_UPDATE_USER,
-            json!({}),
+            crate::public_api::COGNITION_TURN,
+            json!({ "action": "turn.update_user" }),
         )
         .await
         .expect_err("missing required message must remain invalid");
-    assert!(
-        rejected
-            .to_string()
-            .contains("missing required field 'message'")
-    );
-    assert!(crate::turn_control_tools::is_update_user_tool_name(
-        crate::turn_control_tools::COGNITION_TURN_UPDATE_USER_DOTTED
-    ));
+    assert!(rejected.to_string().contains("message"));
 }
 
 #[test]

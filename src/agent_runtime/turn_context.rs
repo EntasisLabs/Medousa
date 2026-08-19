@@ -225,7 +225,7 @@ impl TurnScratchpad {
     }
 }
 
-/// Host → worker context passed at `cognition_spawn_turn_worker` (Phase 3).
+/// Host → worker context passed at `cognition_workshop_mutate action=workshop.spawn` (Phase 3).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerHandoffCapsule {
     pub session_id: String,
@@ -514,7 +514,7 @@ pub fn tool_output_ok(output: &Value) -> bool {
 }
 
 #[allow(clippy::too_many_arguments)]
-/// Snapshot host scratch for the next `cognition_spawn_turn_worker` (updated each tool round).
+/// Snapshot host scratch for the next `cognition_workshop_mutate action=workshop.spawn` (updated each tool round).
 pub async fn publish_host_handoff_snapshot(
     session_id: Option<&str>,
     stream_turn_id: u64,
@@ -558,10 +558,10 @@ pub fn tool_results_from_invocations(invocations: &[ToolInvocation]) -> Vec<(Str
 fn default_worker_constraints() -> Vec<String> {
     vec![
         "Complete WORKER_TASK only — host already orchestrated; do not redo its discovery".to_string(),
-        "Read HOST_TOOL_DIGESTS before capability_search, resolve, or grapheme modules search".to_string(),
-        "Use session_id on all cognition_memory_* tools".to_string(),
+        "Read HOST_TOOL_DIGESTS before cognition_capability action=capability.find".to_string(),
+        "Use session_id on cognition_memory_query and cognition_memory_mutate".to_string(),
         "Ground final worker text in tool receipts; do not invent results".to_string(),
-        "After tools: cognition_turn_finish commits the final reply — naked prose ends the turn with a stub. cognition_turn_update_user for mid-turn status; cognition_turn_begin_work before heavy work; cognition_turn_checkpoint for mid-task handoff; call tools for more work, never plan-only prose".to_string(),
+        "After tools: cognition_turn action=turn.finish commits the final reply — naked prose ends the turn with a stub. cognition_turn action=turn.update_user for mid-turn status; cognition_turn action=turn.begin_work before heavy work; cognition_turn action=turn.checkpoint for mid-task handoff; call tools for more work, never plan-only prose".to_string(),
     ]
 }
 
@@ -588,12 +588,35 @@ pub fn compact_tool_receipt_hint(tool_name: &str, output: &Value) -> Option<Stri
 
     let normalized = tool_name.trim().to_ascii_lowercase();
     match normalized.as_str() {
-        "cognition_capability_resolve" | "cognition.capability.resolve" => output
-            .get("recommended")
-            .and_then(|value| value.get("reference"))
-            .and_then(|value| value.as_str())
-            .or_else(|| output.get("capability").and_then(|value| value.as_str()))
-            .map(|reference| format!("recommended={reference}")),
+        "cognition_capability_resolve"
+        | "cognition.capability.resolve"
+        | "cognition_capability" => {
+            if let Some(hint) = output
+                .get("recommended")
+                .and_then(|value| value.get("reference"))
+                .and_then(|value| value.as_str())
+                .or_else(|| output.get("capability").and_then(|value| value.as_str()))
+                .map(|reference| format!("recommended={reference}"))
+            {
+                Some(hint)
+            } else if let Some(hint) = output
+                .get("matches")
+                .and_then(|value| value.as_array())
+                .and_then(|matches| matches.first())
+                .and_then(|entry| entry.get("capability"))
+                .and_then(|value| value.as_str())
+                .map(|capability| format!("top={capability}"))
+            {
+                Some(hint)
+            } else {
+                output
+                    .get("binding")
+                    .and_then(|value| value.get("reference"))
+                    .and_then(|value| value.as_str())
+                    .or_else(|| output.get("capability").and_then(|value| value.as_str()))
+                    .map(|reference| format!("binding={reference}"))
+            }
+        }
         "cognition_capability_search" | "cognition.capability.search" => output
             .get("matches")
             .and_then(|value| value.as_array())
@@ -601,22 +624,24 @@ pub fn compact_tool_receipt_hint(tool_name: &str, output: &Value) -> Option<Stri
             .and_then(|entry| entry.get("capability"))
             .and_then(|value| value.as_str())
             .map(|capability| format!("top={capability}")),
-        "cognition_memory_context" => output
+        "cognition_memory_query" => output
             .get("status")
             .and_then(|value| value.as_str())
-            .map(|status| format!("status={status}")),
-        "cognition_memory_recall" => output
-            .get("hits")
-            .or_else(|| output.get("snippets"))
-            .and_then(|value| value.as_array())
-            .map(|hits| format!("hits={}", hits.len())),
+            .map(|status| format!("status={status}"))
+            .or_else(|| {
+                output
+                    .get("hits")
+                    .or_else(|| output.get("snippets"))
+                    .and_then(|value| value.as_array())
+                    .map(|hits| format!("hits={}", hits.len()))
+            }),
         "cognition_capability_invoke" | "cognition.capability.invoke" => output
             .get("binding")
             .and_then(|value| value.get("reference"))
             .and_then(|value| value.as_str())
             .or_else(|| output.get("capability").and_then(|value| value.as_str()))
             .map(|reference| format!("binding={reference}")),
-        "cognition_spawn_turn_worker" => output
+        "cognition_workshop_mutate" => output
             .get("intent")
             .and_then(|value| value.as_str())
             .map(|intent| format!("intent={intent}")),
@@ -725,16 +750,16 @@ mod tests {
         let mut s = TurnScratchpad::from_user_prompt("calibrate my avec");
         s.on_tool_round_start(1);
         s.record_round_digest(&[
-            ("cognition_memory_schema".to_string(), true),
-            ("cognition_memory_calibrate".to_string(), false),
+            ("cognition_memory_query".to_string(), true),
+            ("cognition_memory_mutate".to_string(), false),
         ]);
         assert_eq!(s.step, 1);
         assert_eq!(s.phase, TurnScratchPhase::Execute);
-        assert!(s.last_error.as_ref().unwrap().contains("calibrate"));
+        assert!(s.last_error.as_ref().unwrap().contains("mutate"));
         let body = s.format_control_body(5);
         assert!(body.contains("goal="));
         assert!(body.contains("digests_recent=round=1"));
-        assert!(body.contains("tools_this_turn=cognition_memory_schema"));
+        assert!(body.contains("tools_this_turn=cognition_memory_query"));
     }
 
     #[test]
@@ -756,8 +781,8 @@ mod tests {
     fn handoff_capsule_seeds_worker_scratch() {
         let mut host = TurnScratchpad::from_user_prompt("calibrate session");
         host.on_tool_round_start(2);
-        host.record_round_digest(&[("cognition_memory_schema".to_string(), true)]);
-        host.set_open_gaps(&["cognition_memory_calibrate".to_string()]);
+        host.record_round_digest(&[("cognition_memory_query".to_string(), true)]);
+        host.set_open_gaps(&["cognition_memory_mutate".to_string()]);
         let mut cap = WorkerHandoffCapsule::from_host_context(
             "sess-1",
             42,
@@ -797,7 +822,7 @@ mod tests {
         let mut scratch = TurnScratchpad::default();
         scratch.on_tool_round_start(1);
         scratch.record_round_digest_from_invocations(&[ToolInvocation {
-            tool_name: "cognition_capability_resolve".to_string(),
+            tool_name: "cognition_capability".to_string(),
             tool_input: json!({}),
             tool_output: json!({
                 "capability": "web_research",

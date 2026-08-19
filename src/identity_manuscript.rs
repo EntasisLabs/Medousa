@@ -181,12 +181,7 @@ pub struct ManuscriptContext {
 }
 
 const SCHEDULED_ESSENTIAL_TOOLS: &[&str] = &[
-    "cognition_turn_prepare_final",
-    "cognition.turn.prepare_final",
-    "cognition_turn_finish",
-    "cognition.turn.finish",
-    "cognition_turn_request_more_rounds",
-    "cognition.turn.request_more_rounds",
+    "cognition_turn",
     "cognition_utility_time_now",
     "cognition_utility_day_of_week",
     "cognition_utility_uuid",
@@ -199,8 +194,10 @@ pub fn scheduled_lane_tool_universe() -> HashSet<String> {
     universe.extend(allowed_tool_names_for_intent(
         TurnWorkerIntent::MemoryContext,
     ));
+    universe.remove("cognition_identity_mutate");
     universe.remove("cognition_identity_remember");
     universe.remove("cognition_spawn_turn_worker");
+    universe.remove("cognition_workshop_mutate");
     // OS-native shell stays interactive-only for now (no scheduled allow flag yet).
     universe.retain(|tool| !is_shell_cognition_tool(tool));
     universe
@@ -239,9 +236,9 @@ pub fn validate_manuscript_for_scheduled_lane(manuscript: &ManuscriptContext) ->
     if manuscript
         .tools_allow
         .iter()
-        .any(|tool| tool.contains("identity_remember"))
+        .any(|tool| tool == "cognition_identity_mutate" || tool.contains("identity_remember"))
     {
-        bail!("cognition_identity_remember is not allowed on scheduled manuscript lane");
+        bail!("cognition_identity_mutate is not allowed on scheduled manuscript lane");
     }
     if manuscript
         .tools_allow
@@ -1584,8 +1581,8 @@ spec:
             spec: ManuscriptSpec {
                 tools: ManuscriptToolsSpec {
                     allow: vec![
-                        "cognition_memory_context".to_string(),
-                        "cognition_identity_recall".to_string(),
+                        "cognition_memory_query".to_string(),
+                        "cognition_identity_query".to_string(),
                     ],
                 },
                 identity: ManuscriptIdentitySpec {
@@ -1609,7 +1606,7 @@ spec:
             },
             spec: ManuscriptSpec {
                 tools: ManuscriptToolsSpec {
-                    allow: vec!["cognition_capability_invoke".to_string()],
+                    allow: vec!["cognition_capability".to_string()],
                 },
                 identity: ManuscriptIdentitySpec {
                     pins: ManuscriptIdentityPins {
@@ -1626,9 +1623,9 @@ spec:
         assert_eq!(
             merged.spec.tools.allow,
             vec![
-                "cognition_memory_context".to_string(),
-                "cognition_identity_recall".to_string(),
-                "cognition_capability_invoke".to_string(),
+                "cognition_memory_query".to_string(),
+                "cognition_identity_query".to_string(),
+                "cognition_capability".to_string(),
             ]
         );
         assert_eq!(
@@ -1718,9 +1715,9 @@ spec:
             worker_model_hint: None,
             max_tool_rounds: None,
             tools_allow: vec![
-                "cognition_identity_recall".to_string(),
-                "cognition_memory_context".to_string(),
-                "cognition_spawn_turn_worker".to_string(),
+                "cognition_identity_query".to_string(),
+                "cognition_memory_query".to_string(),
+                "cognition_workshop_mutate".to_string(),
             ],
             locus_session_id: None,
             delivery_mode: None,
@@ -1737,10 +1734,12 @@ spec:
 
         validate_manuscript_for_scheduled_lane(&manuscript).expect("valid allowlist");
         let allow = scheduled_tool_allowlist_for_manuscript(&manuscript);
-        assert!(allow.contains("cognition_identity_recall"));
-        assert!(allow.contains("cognition_memory_context"));
+        assert!(allow.contains("cognition_identity_query"));
+        assert!(allow.contains("cognition_memory_query"));
         assert!(!allow.contains("cognition_spawn_turn_worker"));
+        assert!(!allow.contains("cognition_workshop_mutate"));
         assert!(!allow.contains("cognition_identity_remember"));
+        assert!(!allow.contains("cognition_identity_mutate"));
     }
 
     #[test]
@@ -1794,7 +1793,7 @@ spec:
             worker_model_hint: None,
             max_tool_rounds: None,
             tools_allow: vec![
-                "cognition_identity_recall".to_string(),
+                "cognition_identity_query".to_string(),
                 "cognition_openshell_sandbox_run".to_string(),
             ],
             locus_session_id: None,
@@ -1841,7 +1840,7 @@ spec:
             worker_stage_role: Some("summarizer".to_string()),
             worker_model_hint: Some("openai:gpt-4o-mini".to_string()),
             max_tool_rounds: Some(8),
-            tools_allow: vec!["cognition_memory_context".to_string()],
+            tools_allow: vec!["cognition_memory_query".to_string()],
             locus_session_id: None,
             delivery_mode: None,
             delivery_on_complete: None,

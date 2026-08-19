@@ -137,17 +137,18 @@ async fn handle_tui_event_for_focused(event: TuiEvent, state: &mut TuiState) {
                 return;
             }
             if let Some(idx) = state.active_agent_stream_turn
-                && let Some(turn) = state.conversation.get_mut(idx) {
-                    let body = held.trim();
-                    if !body.is_empty() {
-                        turn.content = body.to_string();
-                    }
-                    if !tool_names.is_empty() {
-                        turn.tool_names = tool_names;
-                    }
-                    turn.answer_state = Some("pack_hold".to_string());
-                    turn.timestamp = Utc::now();
+                && let Some(turn) = state.conversation.get_mut(idx)
+            {
+                let body = held.trim();
+                if !body.is_empty() {
+                    turn.content = body.to_string();
                 }
+                if !tool_names.is_empty() {
+                    turn.tool_names = tool_names;
+                }
+                turn.answer_state = Some("pack_hold".to_string());
+                turn.timestamp = Utc::now();
+            }
             state.pending_agent_chunk_delta.clear();
             state.pending_agent_chunk_count = 0;
             if state.auto_scroll {
@@ -192,11 +193,12 @@ async fn handle_tui_event_for_focused(event: TuiEvent, state: &mut TuiState) {
             state.turn_parts.archive_progress_note(&text);
             super::push_obs(state, format!("◈ {text}"));
             if let Some(idx) = state.active_agent_stream_turn
-                && let Some(turn) = state.conversation.get_mut(idx) {
-                    turn.tool_names = tool_names;
-                    turn.answer_state = Some("final_pending".to_string());
-                    turn.timestamp = Utc::now();
-                }
+                && let Some(turn) = state.conversation.get_mut(idx)
+            {
+                turn.tool_names = tool_names;
+                turn.answer_state = Some("final_pending".to_string());
+                turn.timestamp = Utc::now();
+            }
             if state.auto_scroll {
                 state.conv_scroll = state.conv_max_scroll;
             }
@@ -215,11 +217,12 @@ async fn handle_tui_event_for_focused(event: TuiEvent, state: &mut TuiState) {
             state.turn_parts.archive_progress_note(&message);
             super::push_obs(state, format!("◈ {message}"));
             if let Some(idx) = state.active_agent_stream_turn
-                && let Some(turn) = state.conversation.get_mut(idx) {
-                    turn.tool_names = tool_names;
-                    turn.answer_state = Some("tool_loop".to_string());
-                    turn.timestamp = Utc::now();
-                }
+                && let Some(turn) = state.conversation.get_mut(idx)
+            {
+                turn.tool_names = tool_names;
+                turn.answer_state = Some("tool_loop".to_string());
+                turn.timestamp = Utc::now();
+            }
             if state.auto_scroll {
                 state.conv_scroll = state.conv_max_scroll;
             }
@@ -282,8 +285,7 @@ async fn handle_tui_event_for_focused(event: TuiEvent, state: &mut TuiState) {
                 turn
             };
             let session_id = state.session_id.clone();
-            super::history_services::append_turn_daemon_first(state, &session_id, &finalized)
-                .await;
+            super::history_services::append_turn_daemon_first(state, &session_id, &finalized).await;
             if state.auto_scroll {
                 state.conv_scroll = state.conv_max_scroll;
             }
@@ -319,9 +321,10 @@ async fn handle_tui_event_for_focused(event: TuiEvent, state: &mut TuiState) {
                 } else {
                     let tail = std::mem::take(&mut state.stream_tag_tail);
                     if let Some(idx) = state.active_agent_stream_turn
-                        && let Some(turn) = state.conversation.get_mut(idx) {
-                            turn.content.push_str(&tail);
-                        }
+                        && let Some(turn) = state.conversation.get_mut(idx)
+                    {
+                        turn.content.push_str(&tail);
+                    }
                 }
             }
             state.in_thinking_tag = false;
@@ -450,12 +453,9 @@ async fn handle_tui_event_for_focused(event: TuiEvent, state: &mut TuiState) {
             input_summary,
             tool_round,
         } => {
-            state.turn_parts.tool_started(
-                &tool_run_id,
-                &tool_name,
-                &input_summary,
-                tool_round,
-            );
+            state
+                .turn_parts
+                .tool_started(&tool_run_id, &tool_name, &input_summary, tool_round);
             let label = super::tui_presentation::format_tool_name(&tool_name);
             super::push_obs(state, format!("◆ {label}  {input_summary}"));
             super::invalidate_markdown_cache(state);
@@ -930,7 +930,8 @@ mod resolve_content_tests {
     #[test]
     fn terminal_keeps_substantive_stream_over_divergent_final() {
         let streamed = "Here is what I found about locus: STTP nodes under session medousa-ux.";
-        let final_answer = "Different rewrite from a synthesis pass that the user never saw stream.";
+        let final_answer =
+            "Different rewrite from a synthesis pass that the user never saw stream.";
         let merged = resolve_agent_turn_content(streamed, final_answer, true, false);
         assert_eq!(merged, streamed);
     }

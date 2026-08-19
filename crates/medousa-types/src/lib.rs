@@ -3,8 +3,8 @@
 //! Used by the server, SDK clients, and channel adapters to prevent contract drift.
 
 pub mod api_error;
-pub mod capability;
 pub mod authority_id;
+pub mod capability;
 pub mod component_runtime;
 pub mod component_store;
 pub mod daemon_api;
@@ -14,9 +14,9 @@ pub mod environment_icons;
 pub mod environment_themes;
 pub mod environment_validate;
 pub mod feed;
-pub mod layout;
 pub mod grapheme_extras;
 pub mod inference;
+pub mod layout;
 pub mod local;
 pub mod mcp_gateway;
 pub mod mcp_gateway_api;
@@ -33,15 +33,15 @@ pub mod workflow;
 pub mod workflow_plan;
 
 pub use api_error::*;
-pub use capability::*;
 pub use authority_id::*;
+pub use capability::*;
 pub use component_runtime::*;
 pub use component_store::*;
 pub use daemon_api::*;
 pub use environment::*;
 pub use feed::*;
-pub use layout::*;
 pub use grapheme_extras::*;
+pub use layout::*;
 pub use local::*;
 pub use mcp_gateway::*;
 pub use mcp_gateway_api::*;

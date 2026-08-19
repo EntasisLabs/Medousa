@@ -51,12 +51,10 @@ Same-PC co-located Obsidian vaults work as an additional root; switch with the v
 
 | Tool | Purpose |
 |------|---------|
-| `cognition_vault_list` | List notes |
-| `cognition_vault_read` | Read note (optional `line_start` / `line_end`) |
-| `cognition_vault_grep` | Literal grep across vault |
-| `cognition_vault_search` | Full-text search |
-| `cognition_vault_tags` | Tag listing |
-| `cognition_vault_write` | Create/update note |
+| `cognition_store_read` | `store=vault`, `op=list\|read\|search` (`search` with `path` is in-file grep; `facet=tags` lists tags) |
+| `cognition_store_write` | `store=vault`, `op=write\|delete\|move` |
+
+Same primitives cover artifacts (`store=artifacts`) and code (`store=code`). See [artifacts.md](artifacts.md).
 
 Bootstrap domain **documents** groups vault + artifact edit tools — see [agent-tools.md](agent-tools.md).
 

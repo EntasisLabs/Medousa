@@ -46,7 +46,7 @@ pub fn resolve_skill_run_script(manuscript_id: &str, script: Option<&str>) -> Re
         .ok_or_else(|| anyhow::anyhow!("manuscript '{manuscript_id}' has no runnable scripts"))
 }
 
-/// Host-bus prompt: orchestrate via `cognition_spawn_turn_worker` (worker gets manuscript tools).
+/// Host-bus prompt: orchestrate via `cognition_workshop_mutate action=workshop.spawn` (worker gets manuscript tools).
 pub fn build_skill_run_ingest_prompt(args: &SkillRunArgs) -> Result<String> {
     let script = resolve_skill_run_script(&args.manuscript_id, args.script.as_deref())?;
     let discovery = discover_skill_for_manuscript(&args.manuscript_id)?;
@@ -70,7 +70,7 @@ pub fn build_skill_run_ingest_prompt(args: &SkillRunArgs) -> Result<String> {
         ),
         "Steps:".to_string(),
         format!(
-            "1. Call cognition_spawn_turn_worker with intent=research, manuscript_id=\"{}\",",
+            "1. Call cognition_workshop_mutate action=workshop.spawn with intent=research, manuscript_id=\"{}\",",
             args.manuscript_id
         ),
         format!(

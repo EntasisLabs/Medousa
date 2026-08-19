@@ -14,18 +14,18 @@ use medousa_types::{InteractiveTurnStreamEvent, TurnStreamEnvelopeV2};
 use serde::de::DeserializeOwned;
 
 #[cfg(all(feature = "async", feature = "sse"))]
-use tokio::time::{sleep, Sleep};
+use tokio::time::{Sleep, sleep};
 
+#[cfg(all(feature = "async", feature = "sse"))]
+use crate::SdkError;
 #[cfg(all(feature = "async", feature = "sse"))]
 use crate::client::MedousaClient;
 #[cfg(all(feature = "async", feature = "sse"))]
 use crate::reconnect::{
-    stream_path_with_since, CircuitBreaker, CircuitState, OverlapGuard, ReconnectPolicy,
+    CircuitBreaker, CircuitState, OverlapGuard, ReconnectPolicy, stream_path_with_since,
 };
 #[cfg(all(feature = "async", feature = "sse"))]
-use crate::streaming::{decode_sse_json, SseLineStream};
-#[cfg(all(feature = "async", feature = "sse"))]
-use crate::SdkError;
+use crate::streaming::{SseLineStream, decode_sse_json};
 
 #[cfg(all(feature = "async", feature = "sse"))]
 type EventStream<'a, E> = Pin<Box<dyn Stream<Item = Result<E, SdkError>> + Send + 'a>>;
@@ -142,12 +142,14 @@ where
 
     fn open_stream(&self) -> EventStream<'a, E> {
         let path = stream_path_with_since(&self.base_path, self.last_seq);
-        let byte_stream = self
-            .client
-            .transport()
-            .stream_sse_with_accept(self.client.base_url(), path, self.accept);
+        let byte_stream = self.client.transport().stream_sse_with_accept(
+            self.client.base_url(),
+            path,
+            self.accept,
+        );
         Box::pin(
-            SseLineStream::new(byte_stream).map(|line| line.and_then(|data| decode_sse_json(&data))),
+            SseLineStream::new(byte_stream)
+                .map(|line| line.and_then(|data| decode_sse_json(&data))),
         )
     }
 

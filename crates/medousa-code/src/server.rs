@@ -17,7 +17,9 @@ use serde_json::{Value, json};
 use tower_http::cors::CorsLayer;
 use url::Url;
 
-use crate::backend::{LanguageServerBackend, command_available, csharp_tooling_available, spawn_backend};
+use crate::backend::{
+    LanguageServerBackend, command_available, csharp_tooling_available, spawn_backend,
+};
 use crate::detamu::{DetamuDocumentSnapshot, DetamuServerHandle};
 use crate::diagnostics::WorkspaceDiagnosticStore;
 use crate::document::DocumentStore;
@@ -796,9 +798,7 @@ async fn language_sessions(
     })))
 }
 
-async fn language_matrix(
-    State(state): State<Arc<OrchestratorState>>,
-) -> Json<Value> {
+async fn language_matrix(State(state): State<Arc<OrchestratorState>>) -> Json<Value> {
     let languages: Vec<Value> = state
         .pool
         .registry()
@@ -1405,8 +1405,14 @@ mod tests {
             true
         );
         assert_eq!(params["capabilities"]["window"]["workDoneProgress"], true);
-        assert_eq!(params["capabilities"]["window"]["showMessage"], serde_json::json!({}));
-        assert_eq!(params["capabilities"]["textDocument"]["hover"], serde_json::json!({}));
+        assert_eq!(
+            params["capabilities"]["window"]["showMessage"],
+            serde_json::json!({})
+        );
+        assert_eq!(
+            params["capabilities"]["textDocument"]["hover"],
+            serde_json::json!({})
+        );
     }
 
     #[tokio::test]
@@ -1519,11 +1525,13 @@ mod tests {
             .expect("svelte row");
         assert_eq!(svelte["command"], "svelteserver");
         assert_eq!(svelte["package_id"], "langservers");
-        assert!(svelte["extensions"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|ext| ext == "svelte"));
+        assert!(
+            svelte["extensions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|ext| ext == "svelte")
+        );
         // Registry membership alone is not usability — probe the binary.
         assert!(svelte["usable"].is_boolean());
         assert_eq!(svelte["usable"], svelte["binary_available"]);

@@ -81,7 +81,8 @@ fn run(fragment_bytes: usize, transcript_messages: usize, subscribers: usize) ->
     for index in 0..transcript_messages {
         log.append(TurnEvent::Notice {
             message: format!("existing message {index}"),
-        }).expect("append benchmark history");
+        })
+        .expect("append benchmark history");
     }
 
     let delta = "x".repeat(fragment_bytes);
@@ -93,9 +94,11 @@ fn run(fragment_bytes: usize, transcript_messages: usize, subscribers: usize) ->
     let mut subscriber_seq = vec![transcript_messages as u64; subscribers];
     for index in 0..fragments {
         let before = Instant::now();
-        let event = log.append(TurnEvent::ContentDelta {
-            delta: delta.clone(),
-        }).expect("append benchmark delta");
+        let event = log
+            .append(TurnEvent::ContentDelta {
+                delta: delta.clone(),
+            })
+            .expect("append benchmark delta");
         for since in &mut subscriber_seq {
             let delivered = log.snapshot_since(*since);
             *since = event.seq();

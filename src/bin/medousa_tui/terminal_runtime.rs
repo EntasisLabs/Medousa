@@ -15,9 +15,9 @@ use medousa_sdk::transport::decode;
 use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::mpsc;
+use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::header::AUTHORIZATION;
-use tokio_tungstenite::tungstenite::Message;
 use vte::Parser;
 
 use super::daemon_commands::daemon_client;
@@ -30,7 +30,9 @@ pub(crate) enum OutboundFrame {
 
 #[derive(Debug, Clone)]
 pub(crate) enum TerminalUiEvent {
-    Dirty { session_id: String },
+    Dirty {
+        session_id: String,
+    },
     Status {
         session_id: String,
         connected: bool,
@@ -67,7 +69,13 @@ pub(crate) struct TerminalPane {
 }
 
 impl TerminalPane {
-    fn new(session_id: String, work_id: Option<String>, title: String, cols: u16, rows: u16) -> Self {
+    fn new(
+        session_id: String,
+        work_id: Option<String>,
+        title: String,
+        cols: u16,
+        rows: u16,
+    ) -> Self {
         Self {
             session_id,
             work_id,
@@ -199,28 +207,28 @@ async fn create_and_open_terminal(
         "cols": cols,
         "rows": rows,
     });
-    let created = match shell_post::<CreateResp>(&state.daemon_url, "/v1/sessions/shell", body).await
-    {
-        Ok(resp) if resp.ok => resp,
-        Ok(resp) => {
-            super::push_obs(
-                state,
-                format!(
-                    "⚠ shell create failed: {}",
-                    if resp.message.is_empty() {
-                        "unknown"
-                    } else {
-                        &resp.message
-                    }
-                ),
-            );
-            return false;
-        }
-        Err(err) => {
-            super::push_obs(state, format!("⚠ shell create failed: {err}"));
-            return false;
-        }
-    };
+    let created =
+        match shell_post::<CreateResp>(&state.daemon_url, "/v1/sessions/shell", body).await {
+            Ok(resp) if resp.ok => resp,
+            Ok(resp) => {
+                super::push_obs(
+                    state,
+                    format!(
+                        "⚠ shell create failed: {}",
+                        if resp.message.is_empty() {
+                            "unknown"
+                        } else {
+                            &resp.message
+                        }
+                    ),
+                );
+                return false;
+            }
+            Err(err) => {
+                super::push_obs(state, format!("⚠ shell create failed: {err}"));
+                return false;
+            }
+        };
 
     let title = title_override
         .map(str::to_string)
@@ -311,28 +319,28 @@ pub(crate) async fn split_with_new_terminal(
         "cols": cols,
         "rows": rows,
     });
-    let created = match shell_post::<CreateResp>(&state.daemon_url, "/v1/sessions/shell", body).await
-    {
-        Ok(resp) if resp.ok => resp,
-        Ok(resp) => {
-            super::push_obs(
-                state,
-                format!(
-                    "⚠ shell create failed: {}",
-                    if resp.message.is_empty() {
-                        "unknown"
-                    } else {
-                        &resp.message
-                    }
-                ),
-            );
-            return EventOutcome::Continue;
-        }
-        Err(err) => {
-            super::push_obs(state, format!("⚠ shell create failed: {err}"));
-            return EventOutcome::Continue;
-        }
-    };
+    let created =
+        match shell_post::<CreateResp>(&state.daemon_url, "/v1/sessions/shell", body).await {
+            Ok(resp) if resp.ok => resp,
+            Ok(resp) => {
+                super::push_obs(
+                    state,
+                    format!(
+                        "⚠ shell create failed: {}",
+                        if resp.message.is_empty() {
+                            "unknown"
+                        } else {
+                            &resp.message
+                        }
+                    ),
+                );
+                return EventOutcome::Continue;
+            }
+            Err(err) => {
+                super::push_obs(state, format!("⚠ shell create failed: {err}"));
+                return EventOutcome::Continue;
+            }
+        };
 
     let title = short_terminal_title(&created.session_id);
     let bound_work = created.work_id.or(work_id);
@@ -346,7 +354,13 @@ pub(crate) async fn split_with_new_terminal(
         return EventOutcome::Continue;
     }
 
-    let mut pane = TerminalPane::new(created.session_id.clone(), bound_work, title.clone(), cols, rows);
+    let mut pane = TerminalPane::new(
+        created.session_id.clone(),
+        bound_work,
+        title.clone(),
+        cols,
+        rows,
+    );
     spawn_attach(state, &mut pane);
     state.terminal_panes.insert(created.session_id, pane);
     state.mode = UiMode::Terminal;
@@ -386,10 +400,7 @@ fn spawn_attach(state: &TuiState, pane: &mut TerminalPane) {
     pane.attach_task = Some(tokio::spawn(run_attach(cfg, stdin_rx)));
 }
 
-async fn run_attach(
-    cfg: AttachConfig,
-    mut stdin_rx: mpsc::UnboundedReceiver<OutboundFrame>,
-) {
+async fn run_attach(cfg: AttachConfig, mut stdin_rx: mpsc::UnboundedReceiver<OutboundFrame>) {
     let AttachConfig {
         daemon_url,
         session_id,
@@ -401,10 +412,7 @@ async fn run_attach(
     } = cfg;
     let url = ws_url_for(
         &daemon_url,
-        &format!(
-            "/v1/sessions/shell/{}",
-            urlencoding::encode(&session_id)
-        ),
+        &format!("/v1/sessions/shell/{}", urlencoding::encode(&session_id)),
     );
     let Ok(mut request) = url.as_str().into_client_request() else {
         let _ = event_tx
@@ -669,8 +677,7 @@ pub(crate) async fn refresh_terminal_picker(state: &mut TuiState) {
             }
             state.terminal_picker_hits = sessions;
             if state.terminal_picker_selected >= state.terminal_picker_hits.len() {
-                state.terminal_picker_selected =
-                    state.terminal_picker_hits.len().saturating_sub(1);
+                state.terminal_picker_selected = state.terminal_picker_hits.len().saturating_sub(1);
             }
         }
         Err(err) => {
@@ -698,8 +705,8 @@ pub(crate) async fn handle_terminal_picker_key(
         }
         KeyCode::Down | KeyCode::Char('j') => {
             if !state.terminal_picker_hits.is_empty() {
-                state.terminal_picker_selected = (state.terminal_picker_selected + 1)
-                    .min(state.terminal_picker_hits.len() - 1);
+                state.terminal_picker_selected =
+                    (state.terminal_picker_selected + 1).min(state.terminal_picker_hits.len() - 1);
             }
             EventOutcome::Continue
         }
@@ -709,12 +716,8 @@ pub(crate) async fn handle_terminal_picker_key(
                 .get(state.terminal_picker_selected)
                 .cloned()
             {
-                let _ = attach_existing_terminal(
-                    state,
-                    &hit.session_id,
-                    hit.work_id.as_deref(),
-                )
-                .await;
+                let _ =
+                    attach_existing_terminal(state, &hit.session_id, hit.work_id.as_deref()).await;
             } else {
                 let _ = open_new_terminal(state).await;
             }
@@ -805,18 +808,11 @@ pub(crate) async fn handle_terminal_key(key: KeyEvent, state: &mut TuiState) -> 
     }
 
     // Local scrollback pager — do not forward PageUp/PageDown/Esc-while-scrolled to PTY.
-    if matches!(
-        key.code,
-        KeyCode::PageUp | KeyCode::PageDown | KeyCode::Esc
-    ) {
+    if matches!(key.code, KeyCode::PageUp | KeyCode::PageDown | KeyCode::Esc) {
         let Some(pane) = state.terminal_panes.get_mut(&session_id) else {
             return EventOutcome::Continue;
         };
-        let sb_len = pane
-            .grid
-            .lock()
-            .map(|g| g.scrollback_len())
-            .unwrap_or(0) as u16;
+        let sb_len = pane.grid.lock().map(|g| g.scrollback_len()).unwrap_or(0) as u16;
         let page = pane.rows.max(1);
         match key.code {
             KeyCode::PageUp => {

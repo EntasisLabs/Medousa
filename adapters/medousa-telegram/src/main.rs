@@ -152,16 +152,13 @@ async fn handle_message(
     }
 
     if should_send_immediate_ingest_reply(&response) {
-        bot.send_message(msg.chat.id, format_ingest_ack(&response)).await?;
+        bot.send_message(msg.chat.id, format_ingest_ack(&response))
+            .await?;
     }
     Ok(())
 }
 
-async fn send_telegram_agent_message(
-    bot: &Bot,
-    chat_id: ChatId,
-    text: &str,
-) -> ResponseResult<()> {
+async fn send_telegram_agent_message(bot: &Bot, chat_id: ChatId, text: &str) -> ResponseResult<()> {
     let formatted = format_for_telegram_markdown_v2(text);
     match bot
         .send_message(chat_id, formatted)
@@ -170,7 +167,8 @@ async fn send_telegram_agent_message(
     {
         Ok(_) => Ok(()),
         Err(_) => {
-            bot.send_message(chat_id, truncate_for_telegram(text)).await?;
+            bot.send_message(chat_id, truncate_for_telegram(text))
+                .await?;
             Ok(())
         }
     }

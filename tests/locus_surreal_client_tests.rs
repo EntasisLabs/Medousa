@@ -147,11 +147,7 @@ async fn semantic_tag_sync_is_recallable_on_bundled_surrealql() -> Result<()> {
         sync_key: "sync-written".into(),
     };
     index
-        .sync_node_tags_async(
-            node_ref.clone(),
-            &["memory".into(), "runtime".into()],
-            None,
-        )
+        .sync_node_tags_async(node_ref.clone(), &["memory".into(), "runtime".into()], None)
         .await?;
 
     let sync_keys = index

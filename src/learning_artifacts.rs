@@ -45,7 +45,7 @@ pub fn build_grapheme_script_recall_block(prompt: &str, char_budget: usize) -> S
     }
     format!(
         "[MEDOUSA_GRAPHEME_SCRIPTS]\n\
-         Saved workshop scripts matching this turn (load with cognition_grapheme_script_load):\n\
+         Saved workshop scripts matching this turn (load with cognition_store_read action=scripts.read):\n\
          {body}"
     )
 }
@@ -123,7 +123,7 @@ pub fn build_runtime_learnings_block(prompt: &str, char_budget: usize) -> String
     }
     format!(
         "[MEDOUSA_RUNTIME_LEARNINGS]\n\
-         Vault notes tagged runtime-learning (save with cognition_vault_write + tags: [runtime-learning]):\n\
+         Vault notes tagged runtime-learning (save with cognition_store_write action=vault.write + tags: [runtime-learning]):\n\
          {body}"
     )
 }

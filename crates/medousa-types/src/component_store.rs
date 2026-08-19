@@ -21,7 +21,9 @@ pub fn is_valid_component_store_scope(id: &str) -> bool {
     if !first.is_ascii_lowercase() {
         return false;
     }
-    chars.all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-' || ch == '_' || ch == '.')
+    chars.all(|ch| {
+        ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-' || ch == '_' || ch == '.'
+    })
 }
 
 /// Validate store keys inside a component scope.

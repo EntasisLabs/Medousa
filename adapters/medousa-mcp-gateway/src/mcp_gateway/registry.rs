@@ -11,12 +11,14 @@ use tokio::sync::RwLock;
 use tokio::time::Duration;
 use uuid::Uuid;
 
-use medousa_types::mcp_gateway_api::{McpCatalogSyncEntry, McpCatalogSyncResponse};
-use crate::mcp_gateway::catalog::{auto_tag_capabilities, discover_from_entries, mock_tool_catalog};
+use crate::mcp_gateway::catalog::{
+    auto_tag_capabilities, discover_from_entries, mock_tool_catalog,
+};
 use crate::mcp_gateway::policy_client::DaemonPolicyClient;
 use crate::mcp_gateway::remote_client::{RemoteMcpSession, RemoteTransport};
 use crate::mcp_gateway::server_config::{McpGatewayFullConfig, McpServerConfig};
 use crate::mcp_gateway::stdio_client::StdioMcpSession;
+use medousa_types::mcp_gateway_api::{McpCatalogSyncEntry, McpCatalogSyncResponse};
 use medousa_types::mcp_gateway_api::{
     McpEffectClass, McpInvokeError, McpInvokeRequest, McpInvokeResponse, McpPolicyEvaluateRequest,
     McpServerSummary, McpServersResponse, McpToolCatalogEntry, McpTurnLane,
@@ -54,7 +56,7 @@ impl ServerRegistry {
             config.daemon_policy_url.clone(),
             config.policy_token.clone(),
         );
-        
+
         Self {
             config,
             policy_client,
@@ -138,12 +140,7 @@ impl ServerRegistry {
                             .collect();
                         let count = mock_tools.len();
                         tools.extend(mock_tools);
-                        servers.push(status_from_config(
-                            server,
-                            false,
-                            count,
-                            Some(message),
-                        ));
+                        servers.push(status_from_config(server, false, count, Some(message)));
                     } else {
                         servers.push(status_from_config(server, false, 0, Some(message)));
                     }
@@ -171,7 +168,8 @@ impl ServerRegistry {
                 .iter()
                 .map(|tool| {
                     let available = snapshot.servers.iter().any(|server| {
-                        server.server_id == tool.server_id && (server.connected || server.tool_count > 0)
+                        server.server_id == tool.server_id
+                            && (server.connected || server.tool_count > 0)
                     }) || self.config.servers.is_empty();
                     McpCatalogSyncEntry {
                         server_id: tool.server_id.clone(),
@@ -244,7 +242,11 @@ impl ServerRegistry {
         };
 
         if !invokes_enabled {
-            return fail("invokes_disabled", "MCP invokes are disabled".to_string(), false);
+            return fail(
+                "invokes_disabled",
+                "MCP invokes are disabled".to_string(),
+                false,
+            );
         }
 
         if let Some(token) = request.turn_token.as_deref() {
@@ -436,10 +438,7 @@ fn tool_entry_from_definition(
         tool_name: tool.name.clone(),
         title: tool.title,
         description: tool.description,
-        input_schema_summary: tool
-            .input_schema
-            .as_ref()
-            .map(|schema| schema.to_string()),
+        input_schema_summary: tool.input_schema.as_ref().map(|schema| schema.to_string()),
         effect_class,
         capability_ids,
         stability: "live".to_string(),
@@ -563,9 +562,7 @@ pub fn infer_effect_class(tool_name: &str, description: Option<&str>) -> McpEffe
 
 fn dedupe_tools(tools: &mut Vec<McpToolCatalogEntry>) {
     let mut seen = HashSet::new();
-    tools.retain(|tool| {
-        seen.insert(format!("{}.{}", tool.server_id, tool.tool_name))
-    });
+    tools.retain(|tool| seen.insert(format!("{}.{}", tool.server_id, tool.tool_name)));
 }
 
 #[cfg(test)]

@@ -20,9 +20,11 @@ impl ContractRegistry {
                 spec.operation_id
             )));
         }
-        if self.operations.values().any(|existing| {
-            existing.method == spec.method && existing.path == spec.path
-        }) {
+        if self
+            .operations
+            .values()
+            .any(|existing| existing.method == spec.method && existing.path == spec.path)
+        {
             return Err(ContractError::invalid(format!(
                 "duplicate method and path {} {}",
                 spec.method.as_str(),
@@ -75,9 +77,7 @@ pub fn registry_from_operations(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spec::{
-        Audience, FeatureProfile, HttpMethod, ResponseSpec, SchemaRef, Stability,
-    };
+    use crate::spec::{Audience, FeatureProfile, HttpMethod, ResponseSpec, SchemaRef, Stability};
 
     fn liveness() -> OperationSpec {
         OperationSpec {
@@ -114,6 +114,12 @@ mod tests {
         assert!(registry.register(liveness()).is_err());
         let mut other = liveness();
         other.operation_id = "health.alias".into();
-        assert!(registry.register(other).unwrap_err().to_string().contains("duplicate method"));
+        assert!(
+            registry
+                .register(other)
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate method")
+        );
     }
 }

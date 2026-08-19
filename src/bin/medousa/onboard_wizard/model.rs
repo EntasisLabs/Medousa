@@ -70,8 +70,6 @@ impl BackendChoice {
             Self::SurrealWs { endpoint } => format!("surreal-ws:{}", endpoint),
         }
     }
-
-
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -284,8 +282,8 @@ impl WizardState {
             .unwrap_or("")
             .trim()
             .to_string();
-        let configure_telegram = bootstrap.existing_telegram_token
-            || !initial_telegram_allow_user_ids.is_empty();
+        let configure_telegram =
+            bootstrap.existing_telegram_token || !initial_telegram_allow_user_ids.is_empty();
         let configure_slack = (bootstrap.existing_slack_bot_token
             && bootstrap.existing_slack_app_token)
             || !bootstrap.initial_slack_allow_user_ids.is_empty();
@@ -876,7 +874,8 @@ impl WizardState {
                         self.discord_command_prefix =
                             self.bootstrap.initial_discord_command_prefix.clone();
                     } else {
-                        self.discord_command_prefix = self.discord_command_prefix.trim().to_string();
+                        self.discord_command_prefix =
+                            self.discord_command_prefix.trim().to_string();
                     }
                     self.move_next();
                 } else {
@@ -895,8 +894,9 @@ impl WizardState {
                 if key.code == KeyCode::Enter {
                     self.telegram_token = self.telegram_token.trim().to_string();
                     if self.telegram_token.is_empty() && !self.bootstrap.existing_telegram_token {
-                        self.status_message =
-                            Some("Telegram token is required to enable Telegram setup.".to_string());
+                        self.status_message = Some(
+                            "Telegram token is required to enable Telegram setup.".to_string(),
+                        );
                     } else {
                         self.move_next();
                     }
@@ -922,7 +922,8 @@ impl WizardState {
             WizardStep::TelegramHeartbeat => match key.code {
                 KeyCode::Enter | KeyCode::Right => self.move_next(),
                 KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
-                    self.telegram_heartbeat_nudges_enabled = !self.telegram_heartbeat_nudges_enabled;
+                    self.telegram_heartbeat_nudges_enabled =
+                        !self.telegram_heartbeat_nudges_enabled;
                 }
                 KeyCode::Left => {}
                 _ => edit_text_field(&mut self.telegram_heartbeat_chat_ids, key),
@@ -931,8 +932,10 @@ impl WizardState {
                 if key.code == KeyCode::Enter {
                     self.slack_bot_token = self.slack_bot_token.trim().to_string();
                     if self.slack_bot_token.is_empty() && !self.bootstrap.existing_slack_bot_token {
-                        self.status_message =
-                            Some("Slack bot token (xoxb-…) is required when Slack is enabled.".to_string());
+                        self.status_message = Some(
+                            "Slack bot token (xoxb-…) is required when Slack is enabled."
+                                .to_string(),
+                        );
                     } else {
                         self.move_next();
                     }
@@ -957,7 +960,8 @@ impl WizardState {
             }
             WizardStep::SlackAllowUserIds => {
                 if key.code == KeyCode::Enter {
-                    self.slack_allow_user_ids = normalize_slack_user_ids_csv(&self.slack_allow_user_ids);
+                    self.slack_allow_user_ids =
+                        normalize_slack_user_ids_csv(&self.slack_allow_user_ids);
                     self.move_next();
                 } else {
                     edit_text_field(&mut self.slack_allow_user_ids, key);
@@ -1048,9 +1052,7 @@ impl WizardState {
         ];
         let current_idx = variants
             .iter()
-            .position(|v| {
-                std::mem::discriminant(v) == std::mem::discriminant(&self.backend_choice)
-            })
+            .position(|v| std::mem::discriminant(v) == std::mem::discriminant(&self.backend_choice))
             .unwrap_or(0) as i32;
         let next_idx = (current_idx + delta).rem_euclid(variants.len() as i32) as usize;
         // Transfer existing config if same variant
@@ -1223,11 +1225,7 @@ impl WizardState {
         let configure_mcp_gateway = self.configure_mcp_gateway;
         let start_mcp_gateway = self.start_mcp_gateway;
 
-        if (start_discord
-            || start_telegram
-            || start_slack
-            || start_whatsapp
-            || start_mcp_gateway)
+        if (start_discord || start_telegram || start_slack || start_whatsapp || start_mcp_gateway)
             && !start_daemon
             && !self.bootstrap.force_no_daemon
         {
@@ -1256,8 +1254,7 @@ impl WizardState {
                 self.discord_command_prefix.trim().to_string()
             },
             discord_heartbeat_nudges_enabled: self.discord_heartbeat_nudges_enabled,
-            discord_heartbeat_channel_ids: if self.discord_heartbeat_channel_ids.trim().is_empty()
-            {
+            discord_heartbeat_channel_ids: if self.discord_heartbeat_channel_ids.trim().is_empty() {
                 None
             } else {
                 Some(self.discord_heartbeat_channel_ids.trim().to_string())
@@ -1320,7 +1317,10 @@ impl WizardState {
     }
 }
 
-fn default_model_for_choice(bootstrap: &WizardBootstrap, provider_choice: ProviderChoice) -> String {
+fn default_model_for_choice(
+    bootstrap: &WizardBootstrap,
+    provider_choice: ProviderChoice,
+) -> String {
     if provider_choice == ProviderChoice::Ollama {
         bootstrap.default_ollama_model.clone()
     } else {

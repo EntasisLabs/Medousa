@@ -102,7 +102,12 @@ pub fn package_catalog() -> Vec<PackageCatalogEntry> {
             &["medousa", "medousa_daemon", "medousa_cli", "medousa_tui"],
             PackageCategory::Core,
             "Zap",
-            &["express", "offline-workstation", "developer", "headless-server"],
+            &[
+                "express",
+                "offline-workstation",
+                "developer",
+                "headless-server",
+            ],
             70 * 1024 * 1024,
             false,
             false,
@@ -434,7 +439,9 @@ pub fn package_short_hint(package_id: &str) -> &'static str {
         "langservers" => {
             "Optional Pyright, TypeScript, and Svelte language servers for the coding engine."
         }
-        "shell-session" => "Workshop shell session host (medousa-session) — shared PTY for Terminal tabs and coding agents.",
+        "shell-session" => {
+            "Workshop shell session host (medousa-session) — shared PTY for Terminal tabs and coding agents."
+        }
         _ => "Optional Medousa component.",
     }
 }
@@ -653,8 +660,10 @@ mod tests {
 
     #[test]
     fn composition_covers_catalog_and_keeps_optional_workloads_out_of_default_engine() {
-        let catalog: std::collections::HashSet<_> =
-            package_catalog().into_iter().map(|entry| entry.id).collect();
+        let catalog: std::collections::HashSet<_> = package_catalog()
+            .into_iter()
+            .map(|entry| entry.id)
+            .collect();
         let composition = package_composition();
         let composed: std::collections::HashSet<_> =
             composition.iter().map(|row| row.package_id).collect();

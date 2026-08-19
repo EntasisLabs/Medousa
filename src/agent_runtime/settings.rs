@@ -219,14 +219,17 @@ pub fn runtime_settings_for_interactive_turn(
 pub fn stage_routing_for_interactive_turn(request: &InteractiveTurnRequest) -> StageRoutingMatrix {
     if request.provider.trim().is_empty() && request.model.trim().is_empty() {
         let saved = crate::session::load_tui_defaults();
-        if let Some(matrix) = saved.stage_routing.clone() {
-            return matrix;
-        }
         let main = crate::inference_profiles::main_target(&saved);
+        if let Some(matrix) = saved.stage_routing.clone() {
+            return matrix.aligned_with_host(&main.provider, &main.model);
+        }
         return StageRoutingMatrix::default_for(&main.provider, &main.model);
     }
 
-    request.stage_routing.clone()
+    request
+        .stage_routing
+        .clone()
+        .aligned_with_host(&request.provider, &request.model)
 }
 
 #[cfg(test)]
@@ -242,5 +245,28 @@ mod tests {
                 .configured_max_tool_rounds,
             30
         );
+    }
+
+    #[test]
+    fn host_picker_rebases_uniform_stale_stage_matrix() {
+        let mut payload = serde_json::json!({
+            "session_id": "s",
+            "prompt": "hi",
+            "persist_user_turn": true,
+            "response_depth_mode": "standard",
+            "provider": "openai",
+            "model": "gpt-5.6-luna",
+        });
+        payload["stage_routing"] = serde_json::to_value(StageRoutingMatrix::default_for(
+            "deepseek",
+            "deepseek-v4-flash",
+        ))
+        .expect("matrix");
+        let request: crate::daemon_api::InteractiveTurnRequest =
+            serde_json::from_value(payload).expect("request");
+        let matrix = stage_routing_for_interactive_turn(&request);
+        assert_eq!(matrix.final_response.provider, "openai");
+        assert_eq!(matrix.final_response.model, "gpt-5.6-luna");
+        assert_eq!(matrix.extractor.provider, "openai");
     }
 }

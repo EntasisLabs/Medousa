@@ -1,9 +1,9 @@
 use super::*;
 
 use settings_rows::{
-    is_float_row, is_numeric_row, is_routing_edit_row, is_toggle_row,
-    selected_settings_field_mut as draft_field_for_row, settings_row_id,
-    quick_adjust_setting as quick_adjust_row, SETTINGS_TABS,
+    SETTINGS_TABS, is_float_row, is_numeric_row, is_routing_edit_row, is_toggle_row,
+    quick_adjust_setting as quick_adjust_row, selected_settings_field_mut as draft_field_for_row,
+    settings_row_id,
 };
 
 pub(crate) async fn handle_settings_key_event(
@@ -22,20 +22,18 @@ pub(crate) async fn handle_settings_key_event(
             KeyCode::Backspace => {
                 if let Some(target) = selected_route_field_mut(state) {
                     target.pop();
-                } else if let Some(target) = draft_field_for_row(
-                    state,
-                    settings_row_id(state.settings_selected),
-                ) {
+                } else if let Some(target) =
+                    draft_field_for_row(state, settings_row_id(state.settings_selected))
+                {
                     target.pop();
                 }
             }
             KeyCode::Char(c) => {
                 if let Some(target) = selected_route_field_mut(state) {
                     target.push(c);
-                } else if let Some(target) = draft_field_for_row(
-                    state,
-                    settings_row_id(state.settings_selected),
-                ) {
+                } else if let Some(target) =
+                    draft_field_for_row(state, settings_row_id(state.settings_selected))
+                {
                     target.push(c);
                 }
             }
@@ -118,7 +116,8 @@ pub(crate) async fn handle_settings_key_event(
                             | SettingsRowId::RoutePolicyProfile
                             | SettingsRowId::RouteFallbackChain
                             | SettingsRowId::ResetSelectedRoute
-                    ) => {
+                    ) =>
+                {
                     quick_adjust_setting(state, true);
                 }
                 SettingsRowId::EnvOverrides => {
@@ -130,10 +129,7 @@ pub(crate) async fn handle_settings_key_event(
                 }
                 SettingsRowId::ClearApiKey => {
                     state.settings_draft.api_key.clear();
-                    push_obs_alert(
-                        state,
-                        "✓ API key will be removed when you save".to_string(),
-                    );
+                    push_obs_alert(state, "✓ API key will be removed when you save".to_string());
                 }
                 SettingsRowId::UpdateApiKey => {
                     let key = state.settings_draft.api_key.trim().to_string();
@@ -312,8 +308,9 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
         .get(selected_role)
         .expect("selected routing role should exist");
 
-    let inference_profile_lines =
-        medousa::inference_profiles::profile_lines_from_defaults(&medousa::session::load_tui_defaults());
+    let inference_profile_lines = medousa::inference_profiles::profile_lines_from_defaults(
+        &medousa::session::load_tui_defaults(),
+    );
 
     let rows = vec![
         format!(
@@ -342,18 +339,17 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
                 state.settings_draft.allowed_modules.clone()
             }
         ),
-        {
-            format!("{}  [read-only]", inference_profile_lines.0)
-        },
-        {
-            format!("{}  [read-only]", inference_profile_lines.1)
-        },
-        {
-            format!("{}  [read-only]", inference_profile_lines.2)
-        },
+        { format!("{}  [read-only]", inference_profile_lines.0) },
+        { format!("{}  [read-only]", inference_profile_lines.1) },
+        { format!("{}  [read-only]", inference_profile_lines.2) },
         format!(
             "Web search provider: {}  [edit]",
-            if state.settings_draft.web_search_preferred_provider.trim().is_empty() {
+            if state
+                .settings_draft
+                .web_search_preferred_provider
+                .trim()
+                .is_empty()
+            {
                 "Auto (capability order)".to_string()
             } else {
                 state.settings_draft.web_search_preferred_provider.clone()
@@ -663,14 +659,8 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
                 "Short questions up to {} chars",
                 direct_chars
             )));
-            rail.push(Line::from(format!(
-                "Long chat after {} turns",
-                long_turns
-            )));
-            rail.push(Line::from(format!(
-                "Long chat up to {} chars",
-                long_chars
-            )));
+            rail.push(Line::from(format!("Long chat after {} turns", long_turns)));
+            rail.push(Line::from(format!("Long chat up to {} chars", long_chars)));
             rail.push(Line::from(format!(
                 "Keep {} recent / {} summarized turns",
                 hot_turns, cold_turns
@@ -699,14 +689,8 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
                 "Quality",
                 Style::default().fg(Color::Cyan),
             )));
-            rail.push(Line::from(format!(
-                "Turn retries: {}",
-                retry_max
-            )));
-            rail.push(Line::from(format!(
-                "Tool retries: {}",
-                retry_rounds
-            )));
+            rail.push(Line::from(format!("Turn retries: {}", retry_max)));
+            rail.push(Line::from(format!("Tool retries: {}", retry_rounds)));
             rail.push(Line::from(format!(
                 "Source coverage: {}",
                 state.settings_draft.verifier_min_citation_coverage
@@ -906,7 +890,6 @@ fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
     quick_adjust_row(state, settings_row_id(state.settings_selected), forward);
 }
 
-
 fn sync_all_route_targets_to_global(state: &mut TuiState) {
     let provider = state.settings_draft.provider.trim();
     let model = state.settings_draft.model.trim();
@@ -927,10 +910,7 @@ fn sync_all_route_targets_to_global(state: &mut TuiState) {
 
     push_obs_alert(
         state,
-        format!(
-            "✓ all task types now use {}:{}",
-            provider, model
-        ),
+        format!("✓ all task types now use {}:{}", provider, model),
     );
 }
 
@@ -1020,7 +1000,7 @@ fn row_style_for_settings_index(idx: usize, selected: bool) -> Style {
             | SettingsRowId::SetAllRouteTargets
             | SettingsRowId::RouteTargetPreset
             | SettingsRowId::RoutePolicyProfile
-            |             SettingsRowId::RouteFallbackChain
+            | SettingsRowId::RouteFallbackChain
             | SettingsRowId::ResetSelectedRoute => Style::default().fg(Color::LightCyan),
             SettingsRowId::InferenceMainProfile
             | SettingsRowId::InferenceVisionProfile

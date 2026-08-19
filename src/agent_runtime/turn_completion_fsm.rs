@@ -1,10 +1,10 @@
 //! Explicit turn completion FSM — text-only model rounds.
 //!
 //! Completion is structural, never inferred from the wording of model prose:
-//! - before tool use, one text-only response ends the turn;
-//! - after tool use, principal-facing turns preserve and commit two consecutive
-//!   text-only responses;
+//! - principal-facing turns preserve and commit two consecutive text-only
+//!   responses, whether or not tools have run;
 //! - any intervening tool call resets the held response;
+//! - cognition_turn_finish ends immediately and appends onto one held response;
 //! - synthesis-bound workers retain their explicit-finish boundary after tools.
 
 use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
@@ -78,8 +78,8 @@ pub fn continue_control_message(reason: ContinueReason, _missing_tools: &[String
         ContinueReason::EmptyAfterTools => {
             "Turn continues: last model round had no tool calls and no assistant text. \
              Call the tools you still need in this round, then deliver the complete answer; \
-             cognition_turn_finish is the explicit hard stop and cognition_turn_checkpoint \
-             is for a mid-task handoff. Synthesis-bound workers must use cognition_turn_finish \
+             cognition_turn action=turn.finish is the explicit hard stop and cognition_turn action=turn.checkpoint \
+             is for a mid-task handoff. Synthesis-bound workers must use cognition_turn action=turn.finish \
              for direct pass-through."
                 .to_string()
         }
@@ -90,7 +90,7 @@ pub fn continue_control_message(reason: ContinueReason, _missing_tools: &[String
 }
 
 fn host_empty_after_tools_control_message() -> String {
-    "Turn continues: last round had no assistant text after tools. Call cognition_turn_begin_work for \
+    "Turn continues: last round had no assistant text after tools. Call cognition_turn action=turn.begin_work for \
      execution work or any host tools you still need, then deliver your answer in prose."
         .to_string()
 }
@@ -155,20 +155,7 @@ pub struct AfterToolsRoundContext<'a> {
 }
 
 fn decide_host_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> TurnRoundAction {
-    let draft = ctx.draft_text.trim();
-
-    if let Some(action) = common_terminal_guard(
-        draft,
-        ctx.pending_final_answer,
-        ctx.rounds_executed,
-        ctx.max_tool_rounds,
-    ) {
-        return action;
-    }
-
-    TurnRoundAction::EndTurn {
-        termination_reason: "no_tools_prose",
-    }
+    decide_principal_no_tool_debt_text_round(ctx)
 }
 
 fn decide_host_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) -> TurnRoundAction {
@@ -228,6 +215,10 @@ pub fn decide_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> TurnRound
 }
 
 fn decide_foreground_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> TurnRoundAction {
+    decide_principal_no_tool_debt_text_round(ctx)
+}
+
+fn decide_principal_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> TurnRoundAction {
     let draft = ctx.draft_text.trim();
 
     if let Some(action) = common_terminal_guard(
@@ -239,9 +230,7 @@ fn decide_foreground_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> Tu
         return action;
     }
 
-    TurnRoundAction::EndTurn {
-        termination_reason: "no_tools_prose",
-    }
+    continue_loop(ContinueReason::PackHold, vec![])
 }
 
 /// Decide a text-only round after tools have run.
@@ -339,7 +328,7 @@ mod event_driven_tests {
     }
 
     #[test]
-    fn principal_prose_before_tools_ends_regardless_of_wording() {
+    fn principal_prose_before_tools_enters_the_same_hold() {
         for draft in [
             "Let me inspect that next.",
             "Here is the complete answer.",
@@ -351,12 +340,26 @@ mod event_driven_tests {
             ] {
                 assert!(matches!(
                     decide_no_tool_debt_text_round(&no_tools(draft, profile)),
-                    TurnRoundAction::EndTurn {
-                        termination_reason: "no_tools_prose"
+                    TurnRoundAction::ContinueLoop {
+                        reason: ContinueReason::PackHold,
+                        ..
                     }
                 ));
             }
         }
+    }
+
+    #[test]
+    fn worker_prose_before_tools_still_ends_without_pack_hold() {
+        assert!(matches!(
+            decide_no_tool_debt_text_round(&no_tools(
+                "Here is the worker result.",
+                TurnCompletionProfile::WorkerSynthesis,
+            )),
+            TurnRoundAction::EndTurn {
+                termination_reason: "no_tools_prose"
+            }
+        ));
     }
 
     #[test]

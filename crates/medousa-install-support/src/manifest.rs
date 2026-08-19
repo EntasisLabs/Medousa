@@ -166,9 +166,7 @@ pub fn unmark_package_installed(data_dir: &Path, package_id: &str) -> Result<(),
 pub fn release_package_matches_host(pkg: &ReleasePackage) -> bool {
     use crate::release_config::{host_platform_key, host_target};
 
-    pkg.target == "any"
-        || pkg.target == host_platform_key()
-        || pkg.target == host_target()
+    pkg.target == "any" || pkg.target == host_platform_key() || pkg.target == host_target()
 }
 
 /// Desktop bundles must match the host OS artifact type (guards against bad manifests).
@@ -219,9 +217,10 @@ pub fn resolve_release_package<'a>(
     ];
     for key in &keys {
         if let Some(pkg) = manifest.packages.get(key)
-            && release_package_usable_on_host(pkg) {
-                return Ok(pkg);
-            }
+            && release_package_usable_on_host(pkg)
+        {
+            return Ok(pkg);
+        }
     }
     manifest
         .packages
@@ -290,7 +289,13 @@ mod tests {
     fn package_directories_require_catalog_ids_and_are_opaque() {
         let root = Path::new("/tmp/medousa-package-authority-test");
         let directory = package_dir(root, "local-brain").unwrap();
-        assert!(!directory.file_name().unwrap().to_string_lossy().contains("brain"));
+        assert!(
+            !directory
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .contains("brain")
+        );
         assert!(package_dir(root, "../../outside").is_err());
         assert!(package_dir(root, "not-in-catalog").is_err());
     }

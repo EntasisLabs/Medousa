@@ -119,8 +119,11 @@ fn add_effects_and_capabilities(index: &mut ToolPlacementIndex) {
         "cognition_utility_day_of_week",
         "cognition_utility_time_now",
         "cognition_utility_uuid",
-        "cognition_vault_list",
+        crate::public_api::COGNITION_STORE_READ,
         crate::agent_runtime::coder_tools::COGNITION_ENGINEERING_POINTERS,
+        crate::public_api::COGNITION_RUNTIME_QUERY,
+        crate::public_api::COGNITION_SCHEMA,
+        crate::public_api::COGNITION_MEMORY_QUERY,
     ] {
         index.set_effect(ToolId::new(name), ToolEffect::Observe);
     }
@@ -159,12 +162,20 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
         "Unlock a tool domain for this session (memory, catalog, runtime, …)",
     ),
     (
-        "cognition_capability_search",
-        "Search capability catalog by keyword",
+        "cognition_capability",
+        "Find or invoke a capability, MCP tool, or Grapheme module by typed action name",
     ),
     (
-        "cognition_capability_resolve",
-        "Resolve capability id to bindings",
+        "cognition_schema",
+        "Fetch typed action parameter schemas (batch several types in one call)",
+    ),
+    (
+        "cognition_runtime_query",
+        "Inspect jobs, recurring, workflows, or delivery by typed action name",
+    ),
+    (
+        "cognition_runtime_mutate",
+        "Enqueue, cancel, register, pause, run, schedule, or plan by typed action name",
     ),
     (
         "cognition_tool_history_summary",
@@ -175,54 +186,44 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
         "Full tool receipt for slice_id=turn:N",
     ),
     (
-        "cognition_spawn_turn_worker",
-        "Delegate execution to workshop lane",
+        crate::public_api::COGNITION_WORKSHOP_QUERY,
+        "Read workshop/worker status by typed action (workshop.status)",
     ),
     (
-        "cognition_memory_context",
-        "Load Locus AVEC + session memory context",
+        crate::public_api::COGNITION_WORKSHOP_MUTATE,
+        "Spawn, cancel, or steer workshop/workers by typed action (workshop.spawn, workshop.cancel, workshop.steer)",
     ),
     (
-        "cognition_memory_store",
-        "Store episodic STTP node in Locus memory",
+        crate::public_api::COGNITION_MEMORY_QUERY,
+        "Read Locus memory by typed action (memory.context, memory.recall, memory.schema, …)",
     ),
     (
-        "cognition_identity_recall",
-        "Look up preferences, people, and identity facts",
+        crate::public_api::COGNITION_MEMORY_MUTATE,
+        "Write Locus memory by typed action (memory.store, memory.calibrate, memory.evict)",
     ),
     (
-        "cognition_identity_remember",
-        "Remember durable personal facts in identity memory",
-    ),
-    ("cognition_vault_search", "Search vault notes"),
-    ("cognition_vault_grep", "Grep inside a vault note by line"),
-    (
-        "cognition_vault_tags",
-        "List semantic tags across vault notes (shared with Locus)",
+        crate::public_api::COGNITION_IDENTITY_QUERY,
+        "Read identity by typed action (identity.recall, identity.context)",
     ),
     (
-        "cognition_calendar_list",
-        "List personal calendar events in a time range",
+        crate::public_api::COGNITION_IDENTITY_MUTATE,
+        "Write identity by typed action (identity.remember, identity.propose, identity.commit)",
     ),
     (
-        "cognition_calendar_create",
-        "Create a calendar event in vault .ics",
+        "cognition_store_read",
+        "Read or search vault, artifacts, code, or saved scripts",
     ),
     (
-        "cognition_calendar_update",
-        "Update a calendar event by uid",
+        "cognition_store_write",
+        "Write, delete, or move vault, artifacts, code, or saved scripts",
     ),
     (
-        "cognition_calendar_delete",
-        "Delete a calendar event by uid",
+        crate::public_api::COGNITION_CALENDAR_QUERY,
+        "Read personal calendar by typed action (calendar.list, calendar.export)",
     ),
     (
-        "cognition_calendar_import",
-        "Import VEVENTs from raw ICS text",
-    ),
-    (
-        "cognition_calendar_export",
-        "Export the vault calendar as ICS",
+        crate::public_api::COGNITION_CALENDAR_MUTATE,
+        "Write personal calendar by typed action (calendar.create, calendar.update, calendar.delete, calendar.import)",
     ),
     (
         "cognition_web_search",
@@ -241,20 +242,8 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
         "Click/type/scroll on the shared Web tab (agent control required)",
     ),
     (
-        "cognition_turn_begin_work",
-        "Signal heavy/long-running tool work starting (workers, big crawls)",
-    ),
-    (
-        "cognition_turn_update_user",
-        "Short status to the principal mid-turn (retries, course-corrections) — call with your next tool",
-    ),
-    (
-        "cognition_turn_checkpoint",
-        "Mid-task update; hand turn to principal",
-    ),
-    (
-        "cognition_turn_finish",
-        "Commit principal-ready answer (required after tool work)",
+        "cognition_turn",
+        "Turn control: begin work, update the principal, checkpoint, or finish (action=turn.finish / turn.checkpoint / …)",
     ),
     (
         "cognition_ui_build",
@@ -268,31 +257,6 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
         "cognition_ui_present",
         "Publish a new HTML artifact in chat (inline, panel, or fullscreen)",
     ),
-    (
-        "cognition_artifact_list",
-        "List HTML presentation artifacts in this session",
-    ),
-    (
-        "cognition_artifact_read",
-        "Read HTML artifact source (line range or budget)",
-    ),
-    (
-        "cognition_artifact_grep",
-        "Grep inside an HTML artifact by line",
-    ),
-    (
-        "cognition_artifact_write",
-        "Revise or create an HTML artifact revision",
-    ),
-    (
-        "cognition_artifact_delete",
-        "Delete an HTML presentation artifact revision chain",
-    ),
-    (
-        "cognition_vault_delete",
-        "Soft-delete a vault note (moves to .trash)",
-    ),
-    ("cognition_vault_move", "Move or rename a vault note path"),
     (
         "cognition_environment_wiki",
         "Canvas SDK STTP nodes — schemas, merge_spec, recipes; call before guessing propose JSON",
@@ -366,18 +330,5 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
     (
         "cognition_custom_view_compose",
         "One-shot custom view + HTML + feeds + layout + recurring poll",
-    ),
-    ("cognition_turn_worker_status", "Pending worker status"),
-    (
-        "cognition_capability_invoke",
-        "One-shot capability execution",
-    ),
-    (
-        "cognition_grapheme_script_load",
-        "Load saved Grapheme script body",
-    ),
-    (
-        "cognition_grapheme_template_run",
-        "Run preset Grapheme template",
     ),
 ];

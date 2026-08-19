@@ -169,7 +169,7 @@ function isTelemetry(text: string): boolean {
     "interactive turn accepted",
     "agent runtime started",
     "running cognition_",
-    "cognition_turn_",
+            "cognition_turn",
     "context ",
     "orchestrator=",
     "fallback=",

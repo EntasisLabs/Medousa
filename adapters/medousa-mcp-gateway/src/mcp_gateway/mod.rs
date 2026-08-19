@@ -5,9 +5,9 @@ pub mod catalog;
 pub mod config;
 mod policy_client;
 pub mod registry;
+mod remote_client;
 pub mod server_config;
 pub mod starter_config;
-mod remote_client;
 mod stdio_client;
 
 pub use auth::{verify_admin_bearer, verify_gateway_bearer, verify_policy_bearer};
@@ -72,9 +72,9 @@ pub async fn serve(config: McpGatewayFullConfig) -> anyhow::Result<()> {
     };
 
     let app = build_router(state);
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .map_err(|error| anyhow::anyhow!("failed to bind medousa-mcp-gateway on {addr}: {error}"))?;
+    let listener = tokio::net::TcpListener::bind(addr).await.map_err(|error| {
+        anyhow::anyhow!("failed to bind medousa-mcp-gateway on {addr}: {error}")
+    })?;
 
     println!("medousa-mcp-gateway listening on http://{addr}");
     axum::serve(listener, app)
@@ -139,9 +139,7 @@ async fn invoke(
 ) -> Result<Json<McpInvokeResponse>, (StatusCode, String)> {
     authorize_gateway(&headers, &state)?;
     let invokes_enabled = *state.invokes_enabled.read().await;
-    Ok(Json(
-        state.registry.invoke(request, invokes_enabled).await,
-    ))
+    Ok(Json(state.registry.invoke(request, invokes_enabled).await))
 }
 
 async fn admin_refresh_catalog(
@@ -149,10 +147,15 @@ async fn admin_refresh_catalog(
     headers: HeaderMap,
 ) -> Result<Json<McpGatewayHealthResponse>, (StatusCode, String)> {
     if !verify_admin_bearer(
-        headers.get(AUTHORIZATION).and_then(|value| value.to_str().ok()),
+        headers
+            .get(AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
         state.config.admin_token.as_deref(),
     ) {
-        return Err((StatusCode::UNAUTHORIZED, "invalid admin bearer token".to_string()));
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "invalid admin bearer token".to_string(),
+        ));
     }
 
     state
@@ -169,10 +172,15 @@ async fn admin_disable_invokes(
     headers: HeaderMap,
 ) -> Result<Json<McpAdminStatusResponse>, (StatusCode, String)> {
     if !verify_admin_bearer(
-        headers.get(AUTHORIZATION).and_then(|value| value.to_str().ok()),
+        headers
+            .get(AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
         state.config.admin_token.as_deref(),
     ) {
-        return Err((StatusCode::UNAUTHORIZED, "invalid admin bearer token".to_string()));
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "invalid admin bearer token".to_string(),
+        ));
     }
 
     *state.invokes_enabled.write().await = false;
@@ -188,10 +196,15 @@ async fn admin_enable_invokes(
     headers: HeaderMap,
 ) -> Result<Json<McpAdminStatusResponse>, (StatusCode, String)> {
     if !verify_admin_bearer(
-        headers.get(AUTHORIZATION).and_then(|value| value.to_str().ok()),
+        headers
+            .get(AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
         state.config.admin_token.as_deref(),
     ) {
-        return Err((StatusCode::UNAUTHORIZED, "invalid admin bearer token".to_string()));
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "invalid admin bearer token".to_string(),
+        ));
     }
 
     *state.invokes_enabled.write().await = true;
@@ -202,14 +215,22 @@ async fn admin_enable_invokes(
     }))
 }
 
-fn authorize_gateway(headers: &HeaderMap, state: &GatewayState) -> Result<(), (StatusCode, String)> {
+fn authorize_gateway(
+    headers: &HeaderMap,
+    state: &GatewayState,
+) -> Result<(), (StatusCode, String)> {
     if verify_gateway_bearer(
-        headers.get(AUTHORIZATION).and_then(|value| value.to_str().ok()),
+        headers
+            .get(AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
         state.config.gateway_token.as_deref(),
     ) {
         Ok(())
     } else {
-        Err((StatusCode::UNAUTHORIZED, "invalid gateway bearer token".to_string()))
+        Err((
+            StatusCode::UNAUTHORIZED,
+            "invalid gateway bearer token".to_string(),
+        ))
     }
 }
 

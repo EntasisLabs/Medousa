@@ -78,17 +78,19 @@ Domain `coding` in `tool_bootstrap` (worker lane) — unlocked via
 (manuscript / Forge `work_id` bind / Settings). Tools registered in
 `runtime_services.rs`:
 
-`cognition_code_read`, `cognition_code_search`, `cognition_code_apply_patch`,
+Read/patch files with `cognition_store_read` / `cognition_store_write`
+(`store=code`). Shared PTY sessions:
+
 `cognition_shell_session_status`, `cognition_shell_session_run`,
 `cognition_shell_session_interrupt`.
 
-`cognition_code_read` keeps whole-file reads for model-safe files and returns a
+`cognition_store_read` (`store=code`, `op=read`) keeps whole-file reads for model-safe files and returns a
 SHA-256 content digest. Oversized whole-file requests return a successful
 `orientation_required` observation with size, digest/line metadata when a
 bounded scan is safe, and suggested line/byte range calls. Ranged reads return
 exact coverage plus a continuation call; payload limits are navigation
 boundaries rather than opaque failures. Every
-`cognition_code_apply_patch` call must present that digest as
+`cognition_store_write` (`store=code`) call must present that digest as
 `expected_sha256` (or `missing` when creating a file), so stale observations
 fail before mutation. Reads, writes, recursive search, and shell output have
 hard payload limits; symlinks cannot be used to escape an allowed root.

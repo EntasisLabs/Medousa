@@ -180,9 +180,6 @@ impl SessionBootstrapToolRegistry {
             allowed.remove(crate::ui_present_tools::COGNITION_UI_PRESENT);
             allowed.remove(crate::ui_scene_tools::COGNITION_UI_SCENE);
             allowed.remove(crate::ui_build_tools::COGNITION_UI_BUILD);
-            for name in crate::artifact_tools::ARTIFACT_COGNITION_TOOLS {
-                allowed.remove(*name);
-            }
         }
         if !self.supports_browser_host {
             for name in BROWSER_COGNITION_TOOLS {
@@ -200,12 +197,17 @@ impl ToolRegistry for SessionBootstrapToolRegistry {
         let tools = self.inner.list_tools().await?;
         Ok(tools
             .into_iter()
-            .filter(|tool| tool_allowed(tool.name.as_str(), &allowed))
+            .filter(|tool| {
+                crate::public_api::is_public_api_tool(tool.name.as_str())
+                    || tool_allowed(tool.name.as_str(), &allowed)
+            })
             .collect())
     }
 
     async fn invoke_tool(&self, tool_name: &str, input: Value) -> Result<Value> {
-        if !tool_allowed(tool_name, &self.effective_allowlist()) {
+        if !crate::public_api::is_public_api_tool(tool_name)
+            && !tool_allowed(tool_name, &self.effective_allowlist())
+        {
             return Err(StasisError::PortFailure(format!(
                 "tool not on session surface (call cognition_tools_discover to unlock catalog/runtime/…): {tool_name}"
             )));
@@ -220,12 +222,17 @@ impl ToolRegistry for AllowlistToolRegistry {
         let tools = self.inner.list_tools().await?;
         Ok(tools
             .into_iter()
-            .filter(|tool| tool_allowed(tool.name.as_str(), &self.allowlist))
+            .filter(|tool| {
+                crate::public_api::is_public_api_tool(tool.name.as_str())
+                    || tool_allowed(tool.name.as_str(), &self.allowlist)
+            })
             .collect())
     }
 
     async fn invoke_tool(&self, tool_name: &str, input: Value) -> Result<Value> {
-        if !tool_allowed(tool_name, &self.allowlist) {
+        if !crate::public_api::is_public_api_tool(tool_name)
+            && !tool_allowed(tool_name, &self.allowlist)
+        {
             return Err(StasisError::PortFailure(format!(
                 "tool not allowed in this turn profile: {tool_name}"
             )));

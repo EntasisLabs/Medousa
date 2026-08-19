@@ -45,27 +45,10 @@ pub fn is_artifact_cognition_tool(name: &str) -> bool {
 }
 
 pub fn register_artifact_tools(
-    registry: &mut impl crate::typed_tools::ToolRegistration,
-    event_tx: mpsc::Sender<TuiEvent>,
-    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
+    _registry: &mut impl crate::typed_tools::ToolRegistration,
+    _event_tx: mpsc::Sender<TuiEvent>,
+    _turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 ) -> StasisResult<()> {
-    registry.register_typed_tool(CognitionArtifactListTool::new(
-        event_tx.clone(),
-        turn_scope.clone(),
-    ))?;
-    registry.register_typed_tool(CognitionArtifactReadTool::new(
-        event_tx.clone(),
-        turn_scope.clone(),
-    ))?;
-    registry.register_typed_tool(CognitionArtifactGrepTool::new(
-        event_tx.clone(),
-        turn_scope.clone(),
-    ))?;
-    registry.register_typed_tool(CognitionArtifactWriteTool::new(
-        event_tx.clone(),
-        turn_scope.clone(),
-    ))?;
-    registry.register_typed_tool(CognitionArtifactDeleteTool::new(event_tx, turn_scope))?;
     Ok(())
 }
 
@@ -135,14 +118,14 @@ pub struct ArtifactListInput {
         range(min = 1, max = 100),
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    limit: CompatOption<usize>,
+    pub(crate) limit: CompatOption<usize>,
     /// Optional filter on title or artifact_id
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    query: CompatOption<String>,
+    pub(crate) query: CompatOption<String>,
 }
 
 #[derive(Debug)]
@@ -187,7 +170,7 @@ pub struct ArtifactListOutput {
 #[medousa_tool(id = COGNITION_ARTIFACT_LIST_ID)]
 impl CognitionArtifactListTool {
     /// List HTML presentation artifacts for the current chat session (newest first). Workflow: list → grep/read → cognition_artifact_write to revise.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: ArtifactListInput,
     ) -> stasis::prelude::Result<ArtifactListOutput> {
@@ -247,28 +230,28 @@ impl CognitionArtifactReadTool {
 #[derive(Debug, JsonSchema)]
 pub struct ArtifactReadInput {
     #[schemars(required, with = "String")]
-    artifact_id: Option<String>,
+    pub(crate) artifact_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         with = "usize",
         range(min = 1),
         skip_serializing_if = "Option::is_none"
     )]
-    line_start: Option<usize>,
+    pub(crate) line_start: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         with = "usize",
         range(min = 1),
         skip_serializing_if = "Option::is_none"
     )]
-    line_end: Option<usize>,
+    pub(crate) line_end: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         with = "usize",
         range(min = 256, max = 20000),
         skip_serializing_if = "Option::is_none"
     )]
-    max_chars: Option<usize>,
+    pub(crate) max_chars: Option<usize>,
 }
 
 impl<'de> Deserialize<'de> for ArtifactReadInput {
@@ -336,7 +319,7 @@ pub struct ArtifactReadOutput {
 #[medousa_tool(id = COGNITION_ARTIFACT_READ_ID)]
 impl CognitionArtifactReadTool {
     /// Read HTML source for a presentation artifact (budget-capped). Optional line_start/line_end for surgical edits.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: ArtifactReadInput,
     ) -> stasis::prelude::Result<ArtifactReadOutput> {
@@ -393,23 +376,23 @@ impl CognitionArtifactGrepTool {
 #[derive(Debug, JsonSchema)]
 pub struct ArtifactGrepInput {
     #[schemars(required, with = "String")]
-    artifact_id: Option<String>,
+    pub(crate) artifact_id: Option<String>,
     #[schemars(required, with = "String")]
-    pattern: Option<String>,
+    pub(crate) pattern: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         with = "usize",
         range(min = 0, max = 10),
         skip_serializing_if = "Option::is_none"
     )]
-    context_lines: Option<usize>,
+    pub(crate) context_lines: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         with = "usize",
         range(min = 1, max = 200),
         skip_serializing_if = "Option::is_none"
     )]
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
 }
 
 impl<'de> Deserialize<'de> for ArtifactGrepInput {
@@ -463,7 +446,7 @@ impl TryFrom<ArtifactGrepInput> for ArtifactGrepCommand {
 #[medousa_tool(id = COGNITION_ARTIFACT_GREP_ID)]
 impl CognitionArtifactGrepTool {
     /// Search inside an HTML artifact source (literal case-insensitive match with line numbers). Use before cognition_artifact_write to locate CSS/HTML snippets.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: ArtifactGrepInput,
     ) -> stasis::prelude::Result<crate::line_grep::LineGrepResult> {
@@ -520,27 +503,27 @@ enum ArtifactPresentationSchema {
 #[derive(Debug, JsonSchema)]
 pub struct ArtifactWriteInput {
     #[schemars(required, with = "String")]
-    title: Option<String>,
+    pub(crate) title: Option<String>,
     /// HTML fragment or document. MedousaStore get/set/delete are async — await in async init and handlers (cognition_environment_wiki topic=artifact_runtime).
     #[schemars(required, with = "String")]
-    html: Option<String>,
+    pub(crate) html: Option<String>,
     #[schemars(required, with = "ArtifactPresentationSchema")]
-    presentation: Option<String>,
+    pub(crate) presentation: Option<String>,
     /// When set, supersedes this artifact revision
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    artifact_id: Option<String>,
+    pub(crate) artifact_id: Option<String>,
     /// Optional hash64 of the artifact being revised
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    if_match_hash64: Option<String>,
+    pub(crate) if_match_hash64: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(
         with = "u64",
         range(min = 120, max = 1200),
         skip_serializing_if = "Option::is_none"
     )]
-    height: Option<u64>,
+    pub(crate) height: Option<u64>,
 }
 
 impl<'de> Deserialize<'de> for ArtifactWriteInput {
@@ -661,7 +644,7 @@ pub struct ArtifactWriteOutput {
 #[medousa_tool(id = COGNITION_ARTIFACT_WRITE_ID)]
 impl CognitionArtifactWriteTool {
     /// Create or revise an HTML presentation artifact. Pass artifact_id to publish a new revision (content-addressed). Use if_match_hash64 for optimistic concurrency. First-time publish: use cognition_ui_present. Canvas widgets using MedousaStore: get/set/delete return Promises — use async/await (wiki topic artifact_runtime).
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: ArtifactWriteInput,
     ) -> stasis::prelude::Result<ArtifactWriteOutput> {
@@ -850,7 +833,7 @@ mod tests {
 pub struct ArtifactDeleteInput {
     /// Presentation artifact id or alias to delete
     #[schemars(required, with = "String")]
-    artifact_id: Option<String>,
+    pub(crate) artifact_id: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for ArtifactDeleteInput {
@@ -895,7 +878,7 @@ pub struct ArtifactDeleteOutput {
 #[medousa_tool(id = COGNITION_ARTIFACT_DELETE_ID)]
 impl CognitionArtifactDeleteTool {
     /// Delete an HTML presentation artifact and its revision chain from the session store. Use cognition_artifact_list to discover artifact_id values first.
-    async fn invoke_typed(
+    pub(crate) async fn invoke_typed(
         &self,
         input: ArtifactDeleteInput,
     ) -> stasis::prelude::Result<ArtifactDeleteOutput> {

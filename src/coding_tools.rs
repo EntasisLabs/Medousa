@@ -15,7 +15,9 @@ use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 use stasis::prelude::{Result as StasisResult, StasisError};
 
-use crate::typed_tools::{CompatOption, ExternalJson, ToolId, medousa_tool};
+use crate::typed_tools::{
+    CompatOption, ExternalJson, ToolId, TypedTool, medousa_tool, serialize_output,
+};
 
 pub const COGNITION_CODE_READ: &str = "cognition_code_read";
 pub const COGNITION_CODE_SEARCH: &str = "cognition_code_search";
@@ -37,9 +39,6 @@ const COGNITION_CODER_SHELL_RUN_ID: ToolId = ToolId::new(COGNITION_CODER_SHELL_R
 const COGNITION_CODER_SHELL_STATUS_ID: ToolId = ToolId::new(COGNITION_CODER_SHELL_STATUS);
 
 pub const CODING_COGNITION_TOOLS: &[&str] = &[
-    COGNITION_CODE_READ,
-    COGNITION_CODE_SEARCH,
-    COGNITION_CODE_APPLY_PATCH,
     COGNITION_SHELL_SESSION_STATUS,
     COGNITION_SHELL_SESSION_RUN,
     COGNITION_SHELL_SESSION_INTERRUPT,
@@ -294,16 +293,16 @@ struct CognitionCoderShellRunTool;
 struct CognitionCoderShellStatusTool;
 
 #[derive(Debug, Deserialize, JsonSchema)]
-struct CodeReadInput {
+pub(crate) struct CodeReadInput {
     /// Absolute or root-relative file path
-    path: String,
+    pub(crate) path: String,
     /// Optional explicit root (default: scripts library)
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    root: CompatOption<String>,
+    pub(crate) root: CompatOption<String>,
     /// Optional 1-based inclusive line start
     #[serde(default)]
     #[schemars(
@@ -311,7 +310,7 @@ struct CodeReadInput {
         range(min = 1),
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    line_start: CompatOption<u64>,
+    pub(crate) line_start: CompatOption<u64>,
     /// Optional 1-based inclusive line end
     #[serde(default)]
     #[schemars(
@@ -319,14 +318,14 @@ struct CodeReadInput {
         range(min = 1),
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    line_end: CompatOption<u64>,
+    pub(crate) line_end: CompatOption<u64>,
     /// Optional 0-based byte start; cannot be combined with line ranges
     #[serde(default)]
     #[schemars(
         with = "u64",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    byte_start: CompatOption<u64>,
+    pub(crate) byte_start: CompatOption<u64>,
     /// Optional exclusive byte end; cannot be combined with line ranges
     #[serde(default)]
     #[schemars(
@@ -334,7 +333,7 @@ struct CodeReadInput {
         range(min = 1),
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    byte_end: CompatOption<u64>,
+    pub(crate) byte_end: CompatOption<u64>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
@@ -1048,20 +1047,20 @@ fn text_line_count(content: &str) -> usize {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
-struct CodeSearchInput {
-    query: String,
+pub(crate) struct CodeSearchInput {
+    pub(crate) query: String,
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    root: CompatOption<String>,
+    pub(crate) root: CompatOption<String>,
     #[serde(default)]
     #[schemars(
         with = "i64",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    max_results: CompatOption<u64>,
+    pub(crate) max_results: CompatOption<u64>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1164,37 +1163,37 @@ fn search_dir(
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
-struct CodeApplyPatchInput {
-    path: String,
+pub(crate) struct CodeApplyPatchInput {
+    pub(crate) path: String,
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    root: CompatOption<String>,
+    pub(crate) root: CompatOption<String>,
     /// Full file content (write)
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    content: CompatOption<String>,
+    pub(crate) content: CompatOption<String>,
     /// Exact snippet to replace
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    find: CompatOption<String>,
+    pub(crate) find: CompatOption<String>,
     /// Replacement for `find`
     #[serde(default)]
     #[schemars(
         with = "String",
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
-    replace: CompatOption<String>,
+    pub(crate) replace: CompatOption<String>,
     /// Required current digest from code_read, or `missing` for a new file
-    expected_sha256: String,
+    pub(crate) expected_sha256: String,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
@@ -1920,12 +1919,32 @@ impl CognitionCoderShellRunTool {
     }
 }
 
+pub(crate) async fn invoke_code_read(input: CodeReadInput) -> StasisResult<serde_json::Value> {
+    serialize_output(
+        CognitionCodeReadTool::tool_id(),
+        CognitionCodeReadTool.invoke_typed(input).await?,
+    )
+}
+
+pub(crate) async fn invoke_code_search(input: CodeSearchInput) -> StasisResult<serde_json::Value> {
+    serialize_output(
+        CognitionCodeSearchTool::tool_id(),
+        CognitionCodeSearchTool.invoke_typed(input).await?,
+    )
+}
+
+pub(crate) async fn invoke_code_apply_patch(
+    input: CodeApplyPatchInput,
+) -> StasisResult<serde_json::Value> {
+    serialize_output(
+        CognitionCodeApplyPatchTool::tool_id(),
+        CognitionCodeApplyPatchTool.invoke_typed(input).await?,
+    )
+}
+
 pub fn register_coding_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
 ) -> stasis::prelude::Result<()> {
-    registry.register_typed_tool(CognitionCodeReadTool)?;
-    registry.register_typed_tool(CognitionCodeSearchTool)?;
-    registry.register_typed_tool(CognitionCodeApplyPatchTool)?;
     registry.register_typed_tool(CognitionShellSessionStatusTool)?;
     registry.register_typed_tool(CognitionShellSessionRunTool)?;
     registry.register_typed_tool(CognitionShellSessionInterruptTool)?;

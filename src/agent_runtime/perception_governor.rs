@@ -722,7 +722,7 @@ mod tests {
         let input = json!({"ok": true, "content": "small"});
         let mut governor = ToolPerceptionGovernor::default();
         assert_eq!(
-            governor.observe("cognition_code_read", &input, 4_096),
+            governor.observe("cognition_store_read", &input, 4_096),
             input
         );
     }
@@ -738,7 +738,7 @@ mod tests {
             "content": "x".repeat(20_000),
         });
         let mut governor = ToolPerceptionGovernor::default();
-        let observed = governor.observe("cognition_code_read", &input, 4_096);
+        let observed = governor.observe("cognition_store_read", &input, 4_096);
         assert_eq!(observed["perception_status"], "bounded");
         assert_eq!(observed["preserved"]["path"], "src/lib.rs");
         assert_eq!(
@@ -827,7 +827,7 @@ mod tests {
         let payload = "x".repeat(20_000);
         let mut governor = ToolPerceptionGovernor::default();
         governor.observe(
-            "cognition_code_read",
+            "cognition_store_read",
             &json!({"ok": true, "content": payload}),
             4_096,
         );

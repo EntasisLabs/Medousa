@@ -65,11 +65,7 @@ pub trait Transport: Send + Sync {
         &'a self,
         base_url: &'a str,
         path: String,
-    ) -> Pin<
-        Box<
-            dyn Stream<Item = Result<bytes::Bytes, SdkError>> + Send + 'a,
-        >,
-    >;
+    ) -> Pin<Box<dyn Stream<Item = Result<bytes::Bytes, SdkError>> + Send + 'a>>;
 
     /// Open an SSE byte stream with an explicit negotiated media type.
     #[cfg(feature = "sse")]
@@ -184,9 +180,7 @@ impl Transport for HttpTransport {
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
         let url = Self::url(base_url, path);
         let client = self.client.clone();
-        Box::pin(async move {
-            Self::request(client, reqwest::Method::GET, url, None).await
-        })
+        Box::pin(async move { Self::request(client, reqwest::Method::GET, url, None).await })
     }
 
     fn post_json<'a>(
@@ -197,9 +191,7 @@ impl Transport for HttpTransport {
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
         let url = Self::url(base_url, path);
         let client = self.client.clone();
-        Box::pin(async move {
-            Self::request(client, reqwest::Method::POST, url, Some(body)).await
-        })
+        Box::pin(async move { Self::request(client, reqwest::Method::POST, url, Some(body)).await })
     }
 
     fn delete_json<'a>(
@@ -209,9 +201,7 @@ impl Transport for HttpTransport {
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
         let url = Self::url(base_url, path);
         let client = self.client.clone();
-        Box::pin(async move {
-            Self::request(client, reqwest::Method::DELETE, url, None).await
-        })
+        Box::pin(async move { Self::request(client, reqwest::Method::DELETE, url, None).await })
     }
 
     fn put_json<'a>(
@@ -222,9 +212,7 @@ impl Transport for HttpTransport {
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
         let url = Self::url(base_url, path);
         let client = self.client.clone();
-        Box::pin(async move {
-            Self::request(client, reqwest::Method::PUT, url, Some(body)).await
-        })
+        Box::pin(async move { Self::request(client, reqwest::Method::PUT, url, Some(body)).await })
     }
 
     fn patch_json<'a>(
@@ -235,9 +223,9 @@ impl Transport for HttpTransport {
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
         let url = Self::url(base_url, path);
         let client = self.client.clone();
-        Box::pin(async move {
-            Self::request(client, reqwest::Method::PATCH, url, Some(body)).await
-        })
+        Box::pin(
+            async move { Self::request(client, reqwest::Method::PATCH, url, Some(body)).await },
+        )
     }
 
     fn post_empty_json<'a>(
@@ -247,9 +235,7 @@ impl Transport for HttpTransport {
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
         let url = Self::url(base_url, path);
         let client = self.client.clone();
-        Box::pin(async move {
-            Self::request(client, reqwest::Method::POST, url, None).await
-        })
+        Box::pin(async move { Self::request(client, reqwest::Method::POST, url, None).await })
     }
 
     fn put_text<'a>(
@@ -287,11 +273,7 @@ impl Transport for HttpTransport {
         &'a self,
         base_url: &'a str,
         path: String,
-    ) -> Pin<
-        Box<
-            dyn Stream<Item = Result<bytes::Bytes, SdkError>> + Send + 'a,
-        >,
-    > {
+    ) -> Pin<Box<dyn Stream<Item = Result<bytes::Bytes, SdkError>> + Send + 'a>> {
         self.stream_sse_with_accept(base_url, path, "text/event-stream")
     }
 

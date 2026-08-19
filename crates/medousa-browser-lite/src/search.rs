@@ -2,15 +2,13 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::cache::SearchCache;
-use crate::challenge::{detect_challenge, ChallengeReason};
 use crate::DEFAULT_USER_AGENT;
+use crate::cache::SearchCache;
+use crate::challenge::{ChallengeReason, detect_challenge};
 
 static RESULT_LINK: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(
-        r#"(?is)<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>(.*?)</a>"#,
-    )
-    .expect("result link regex")
+    Regex::new(r#"(?is)<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>(.*?)</a>"#)
+        .expect("result link regex")
 });
 static RESULT_SNIPPET: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r#"(?is)<a[^>]+class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</a>"#)
@@ -49,7 +47,10 @@ pub fn search_ddg_html_cached(query: &str, max_results: usize) -> Result<SearchR
     Ok(response)
 }
 
-pub async fn search_ddg_html_async(query: &str, max_results: usize) -> Result<SearchResponse, String> {
+pub async fn search_ddg_html_async(
+    query: &str,
+    max_results: usize,
+) -> Result<SearchResponse, String> {
     let query = query.to_string();
     tokio::task::spawn_blocking(move || search_ddg_html(&query, max_results))
         .await
@@ -168,9 +169,10 @@ fn parse_ddg_results(html: &str, max_results: usize) -> Vec<SearchHit> {
 
 fn decode_ddg_redirect(href: &str) -> String {
     if let Some(rest) = href.strip_prefix("//duckduckgo.com/l/?uddg=")
-        && let Ok(decoded) = urlencoding_decode(rest.split('&').next().unwrap_or(rest)) {
-            return decoded;
-        }
+        && let Ok(decoded) = urlencoding_decode(rest.split('&').next().unwrap_or(rest))
+    {
+        return decoded;
+    }
     href.trim().to_string()
 }
 

@@ -1,8 +1,8 @@
 use std::env;
 use std::path::PathBuf;
 
-use axum::extract::{Extension, Path as AxumPath};
 use axum::Json;
+use axum::extract::{Extension, Path as AxumPath};
 
 use medousa::daemon_api::{SessionHistoryListRequest, SessionSetDisplayNameRequest};
 use medousa::daemon_handlers::{list_session_history, set_session_display_name};

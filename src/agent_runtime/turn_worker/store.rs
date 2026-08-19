@@ -109,6 +109,12 @@ pub struct TurnWorkRecord {
     pub max_tool_rounds: usize,
     pub delivery_target: Option<StoredDeliveryTarget>,
     pub parent_user_prompt: Option<String>,
+    /// Snapshotted host agent mode (`general` / `coder`) so resume stays in-lane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_agent_mode: Option<String>,
+    /// Snapshotted Forge work id when the host spawned from Coder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_code_work_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub handoff_capsule: Option<WorkerHandoffCapsule>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -460,6 +466,96 @@ impl TurnWorkerStore {
             .collect()
     }
 
+    pub fn parallel_cohort(
+        &self,
+        session_id: &str,
+        parent_stream_turn_id: u64,
+    ) -> Vec<TurnWorkRecord> {
+        let mut records = self
+            .records
+            .lock()
+            .expect("turn worker records")
+            .values()
+            .filter(|record| {
+                !record.archived
+                    && record.disposition == TurnWorkDisposition::Parallel
+                    && record.session_id == session_id
+                    && record.parent_stream_turn_id == parent_stream_turn_id
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        records.sort_by(|left, right| {
+            left.created_at
+                .cmp(&right.created_at)
+                .then(left.work_id.cmp(&right.work_id))
+        });
+        records
+    }
+
+    /// Atomically claim a finished parallel spawn cohort for one host-resume turn.
+    ///
+    /// Returns `None` while any sibling is still pending/running, when the cohort
+    /// is empty, or when every member is already marked delivered.
+    pub fn try_claim_parallel_cohort_intake(
+        &self,
+        session_id: &str,
+        parent_stream_turn_id: u64,
+    ) -> Option<Vec<TurnWorkRecord>> {
+        let mut guard = self.records.lock().expect("turn worker records");
+        let ids: Vec<String> = guard
+            .values()
+            .filter(|record| {
+                !record.archived
+                    && record.disposition == TurnWorkDisposition::Parallel
+                    && record.session_id == session_id
+                    && record.parent_stream_turn_id == parent_stream_turn_id
+            })
+            .map(|record| record.work_id.clone())
+            .collect();
+        if ids.is_empty() {
+            return None;
+        }
+        let terminal = |status: TurnWorkStatus| {
+            matches!(
+                status,
+                TurnWorkStatus::Completed | TurnWorkStatus::Failed | TurnWorkStatus::Cancelled
+            )
+        };
+        if ids
+            .iter()
+            .any(|id| guard.get(id).is_none_or(|record| !terminal(record.status)))
+        {
+            return None;
+        }
+        if ids.iter().all(|id| {
+            guard
+                .get(id)
+                .is_some_and(|record| record.synthesis_delivered)
+        }) {
+            return None;
+        }
+        let now = Utc::now();
+        let mut claimed = Vec::new();
+        for id in &ids {
+            let Some(record) = guard.get_mut(id) else {
+                continue;
+            };
+            record.synthesis_delivered = true;
+            record.updated_at = now;
+            claimed.push(record.clone());
+        }
+        drop(guard);
+        claimed.sort_by(|left, right| {
+            left.created_at
+                .cmp(&right.created_at)
+                .then(left.work_id.cmp(&right.work_id))
+        });
+        for record in &claimed {
+            self.persist(&record.work_id, record.stasis_job_id.as_deref());
+        }
+        Some(claimed)
+    }
+
     pub fn list_incomplete(&self) -> Vec<TurnWorkRecord> {
         self.records
             .lock()
@@ -470,8 +566,13 @@ impl TurnWorkerStore {
                     && (matches!(
                         record.status,
                         TurnWorkStatus::Pending | TurnWorkStatus::Running
-                    ) || (record.status == TurnWorkStatus::Completed
-                        && !record.synthesis_delivered))
+                    ) || (!record.synthesis_delivered
+                        && (record.status == TurnWorkStatus::Completed
+                            || (record.disposition == TurnWorkDisposition::Parallel
+                                && matches!(
+                                    record.status,
+                                    TurnWorkStatus::Failed | TurnWorkStatus::Cancelled
+                                )))))
             })
             .cloned()
             .collect()
@@ -794,5 +895,148 @@ mod tests {
 
         assert_eq!(fs::read_to_string(&canonical).unwrap(), "{}");
         assert!(legacy.exists());
+    }
+
+    fn test_record(
+        work_id: &str,
+        session_id: &str,
+        parent_stream_turn_id: u64,
+        status: TurnWorkStatus,
+    ) -> TurnWorkRecord {
+        TurnWorkRecord {
+            work_id: work_id.to_string(),
+            session_id: session_id.to_string(),
+            identity_user_id: None,
+            parent_turn_correlation_id: None,
+            parent_stream_turn_id,
+            intent: "research".to_string(),
+            task_prompt: "task".to_string(),
+            status,
+            result_text: Some("done".to_string()),
+            tool_names: Vec::new(),
+            termination_reason: None,
+            error: None,
+            user_ack: "On it".to_string(),
+            provider: "openai".to_string(),
+            model: "gpt".to_string(),
+            response_depth_mode: "normal".to_string(),
+            max_tool_rounds: 8,
+            delivery_target: None,
+            parent_user_prompt: Some("user prompt".to_string()),
+            parent_agent_mode: Some("general".to_string()),
+            parent_code_work_id: None,
+            handoff_capsule: None,
+            worker_scratch: None,
+            synthesis_delivered: false,
+            stasis_job_id: None,
+            thread_id: None,
+            stage_role: None,
+            model_hint: None,
+            manuscript_id: None,
+            branch_group_id: None,
+            archived: false,
+            disposition: TurnWorkDisposition::Parallel,
+            steer_messages: Vec::new(),
+            supports_ui_artifacts: false,
+            supports_liquid_markdown: false,
+            supports_browser_host: false,
+            live_tool_activity: Vec::new(),
+            live_thinking: String::new(),
+            live_output: String::new(),
+            thinking_started_at: None,
+            thinking_finished_at: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn seed(store: &TurnWorkerStore, record: TurnWorkRecord) {
+        store
+            .records
+            .lock()
+            .expect("turn worker records")
+            .insert(record.work_id.clone(), record);
+    }
+
+    #[test]
+    fn parallel_cohort_waits_while_a_sibling_is_running() {
+        let store = TurnWorkerStore::empty_for_tests();
+        seed(
+            &store,
+            test_record("work-a", "sess-c", 7, TurnWorkStatus::Completed),
+        );
+        seed(
+            &store,
+            test_record("work-b", "sess-c", 7, TurnWorkStatus::Running),
+        );
+        assert!(
+            store
+                .try_claim_parallel_cohort_intake("sess-c", 7)
+                .is_none()
+        );
+        assert_eq!(store.parallel_cohort("sess-c", 7).len(), 2);
+    }
+
+    #[test]
+    fn parallel_cohort_claims_once_when_all_terminal() {
+        let store = TurnWorkerStore::empty_for_tests();
+        let mut failed = test_record("work-a", "sess-c", 9, TurnWorkStatus::Failed);
+        failed.result_text = None;
+        failed.error = Some("boom".to_string());
+        seed(&store, failed);
+        seed(
+            &store,
+            test_record("work-b", "sess-c", 9, TurnWorkStatus::Completed),
+        );
+        let claimed = store
+            .try_claim_parallel_cohort_intake("sess-c", 9)
+            .expect("claim");
+        assert_eq!(claimed.len(), 2);
+        assert!(claimed.iter().all(|record| record.synthesis_delivered));
+        assert!(
+            store
+                .try_claim_parallel_cohort_intake("sess-c", 9)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn bound_workers_are_not_part_of_a_parallel_cohort() {
+        let store = TurnWorkerStore::empty_for_tests();
+        let mut bound = test_record("work-bound", "sess-c", 3, TurnWorkStatus::Completed);
+        bound.disposition = TurnWorkDisposition::Bound;
+        seed(&store, bound);
+        seed(
+            &store,
+            test_record("work-p", "sess-c", 3, TurnWorkStatus::Completed),
+        );
+        let claimed = store
+            .try_claim_parallel_cohort_intake("sess-c", 3)
+            .expect("claim");
+        assert_eq!(claimed.len(), 1);
+        assert_eq!(claimed[0].work_id, "work-p");
+    }
+
+    #[test]
+    fn list_incomplete_retries_undelivered_failed_parallel_not_bound() {
+        let store = TurnWorkerStore::empty_for_tests();
+        seed(
+            &store,
+            test_record("work-f", "sess-c", 1, TurnWorkStatus::Failed),
+        );
+        let mut bound_failed = test_record("work-bf", "sess-c", 1, TurnWorkStatus::Failed);
+        bound_failed.disposition = TurnWorkDisposition::Bound;
+        seed(&store, bound_failed);
+        let mut delivered = test_record("work-d", "sess-c", 2, TurnWorkStatus::Failed);
+        delivered.synthesis_delivered = true;
+        seed(&store, delivered);
+        let ids: Vec<String> = store
+            .list_incomplete()
+            .into_iter()
+            .map(|record| record.work_id)
+            .collect();
+        assert!(ids.contains(&"work-f".to_string()));
+        assert!(!ids.contains(&"work-bf".to_string()));
+        assert!(!ids.contains(&"work-d".to_string()));
     }
 }

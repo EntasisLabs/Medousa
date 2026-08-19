@@ -11,7 +11,9 @@ use medousa_sdk::{SdkError, Transport};
 use futures_util::{Stream, StreamExt, TryStreamExt};
 
 use crate::iroh_hook::IrohHttpHook;
-use crate::route::{is_connect_error, pick_route_with_bearer, invalidate_route_cache, WorkshopRoute};
+use crate::route::{
+    WorkshopRoute, invalidate_route_cache, is_connect_error, pick_route_with_bearer,
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct WorkshopTransportConfig {
@@ -44,10 +46,7 @@ pub struct WorkshopTransport {
 
 impl WorkshopTransport {
     pub fn new(config: WorkshopTransportConfig) -> Self {
-        Self {
-            config,
-            iroh: None,
-        }
+        Self { config, iroh: None }
     }
 
     pub fn from_lan_base(lan_base: impl Into<String>) -> Self {
@@ -112,9 +111,8 @@ impl WorkshopTransport {
     ) -> Result<serde_json::Value, SdkError> {
         let route = self.pick_workshop_route().await;
 
-        let payload = body.map(|value| {
-            serde_json::to_vec(&value).map_err(|e| SdkError::Serde(e.to_string()))
-        });
+        let payload = body
+            .map(|value| serde_json::to_vec(&value).map_err(|e| SdkError::Serde(e.to_string())));
         let payload = match payload {
             Some(Ok(bytes)) => Some(bytes),
             Some(Err(e)) => return Err(e),
@@ -135,7 +133,8 @@ impl WorkshopTransport {
 
         let result = match route {
             WorkshopRoute::Lan => {
-                self.lan_request_json(method, path, payload.as_deref()).await
+                self.lan_request_json(method, path, payload.as_deref())
+                    .await
             }
             WorkshopRoute::Iroh => {
                 let hook = self
@@ -351,9 +350,10 @@ impl Transport for WorkshopTransport {
                 match route {
                     WorkshopRoute::Lan => open_lan_sse(&transport, &path, accept).await,
                     WorkshopRoute::Iroh => {
-                        let hook = transport.iroh.as_ref().ok_or_else(|| {
-                            SdkError::Transport("iroh hook missing".to_string())
-                        })?;
+                        let hook = transport
+                            .iroh
+                            .as_ref()
+                            .ok_or_else(|| SdkError::Transport("iroh hook missing".to_string()))?;
                         Ok(hook.stream_sse(stream_route_path(&path), &header_refs))
                     }
                 }

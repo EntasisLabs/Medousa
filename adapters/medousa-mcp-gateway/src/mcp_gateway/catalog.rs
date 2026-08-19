@@ -100,9 +100,11 @@ pub fn discover_from_entries(
         .collect::<Vec<_>>();
 
     let mut scored = catalog
-        .iter().filter(|&tool| {
+        .iter()
+        .filter(|&tool| {
             server_id.is_none_or(|expected| tool.server_id.eq_ignore_ascii_case(expected))
-        }).cloned()
+        })
+        .cloned()
         .filter_map(|tool| {
             let score = score_tool_match(&tool, &normalized, &tokens);
             if score == 0 {
@@ -179,7 +181,9 @@ fn score_tool_match(tool: &McpToolCatalogEntry, query: &str, tokens: &[&str]) ->
         return 0;
     }
 
-    ((overlap as f32 / tokens.len() as f32) * 80.0).round().max(1.0) as u8
+    ((overlap as f32 / tokens.len() as f32) * 80.0)
+        .round()
+        .max(1.0) as u8
 }
 
 fn entry(
@@ -212,9 +216,11 @@ mod tests {
     fn discover_finds_notion_document_search() {
         let matches = discover_from_catalog("notion pages", None, 10);
         assert!(!matches.is_empty());
-        assert!(matches
-            .iter()
-            .any(|entry| entry.server_id == "notion" && entry.tool_name == "search_pages"));
+        assert!(
+            matches
+                .iter()
+                .any(|entry| entry.server_id == "notion" && entry.tool_name == "search_pages")
+        );
     }
 
     #[test]

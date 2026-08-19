@@ -92,6 +92,10 @@ pub fn normalize_tui_defaults(defaults: &mut TuiDefaults) {
     }
 
     sync_flat_fields_from_profiles(defaults);
+    if let Some(matrix) = defaults.stage_routing.take() {
+        let host = main_target(defaults);
+        defaults.stage_routing = Some(matrix.aligned_with_host(&host.provider, &host.model));
+    }
 }
 
 pub fn sync_top_level_from_main(defaults: &mut TuiDefaults) {
@@ -303,6 +307,7 @@ pub fn apply_profiles(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::stage_routing::StageRoutingMatrix;
 
     #[test]
     fn migrates_flat_fields_into_profiles_on_normalize() {
@@ -340,5 +345,23 @@ mod tests {
             fallbacks: Vec::new(),
         });
         assert!(vision_profile_ready(&defaults));
+    }
+
+    #[test]
+    fn normalize_rebases_uniform_stage_matrix_to_chat_model() {
+        let mut defaults = TuiDefaults {
+            provider: Some("openai".to_string()),
+            model: Some("gpt-5.6-luna".to_string()),
+            stage_routing: Some(StageRoutingMatrix::default_for(
+                "deepseek",
+                "deepseek-v4-flash",
+            )),
+            ..TuiDefaults::default()
+        };
+        normalize_tui_defaults(&mut defaults);
+        let matrix = defaults.stage_routing.expect("matrix");
+        assert_eq!(matrix.final_response.provider, "openai");
+        assert_eq!(matrix.final_response.model, "gpt-5.6-luna");
+        assert_eq!(matrix.summarizer.provider, "openai");
     }
 }

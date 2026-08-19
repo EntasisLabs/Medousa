@@ -5,6 +5,7 @@ import type { VoicePreset } from "$lib/types/voicePresets";
 import { normalizeFavoriteModels } from "$lib/utils/modelCatalog";
 import { normalizeInferenceProfiles, syncFlatFieldsFromProfiles } from "$lib/types/inferenceProfiles";
 import { DEFAULT_VOICE_ID, normalizeCustomVoicePresets } from "$lib/types/voicePresets";
+import { alignStageRoutingWithHost } from "$lib/utils/stageRouting";
 
 export interface TuiDefaults {
   backend?: string | null;
@@ -196,7 +197,11 @@ export function normalizeWorkshopDefaults(raw: TuiDefaults): TuiDefaults {
       raw.verifierMinClaimSupportStrength ?? defaults.verifierMinClaimSupportStrength,
     responseDepthMode: raw.responseDepthMode?.trim() || defaults.responseDepthMode,
     reasoningEffort: raw.reasoningEffort?.trim() || null,
-    stageRouting: raw.stageRouting ?? null,
+    stageRouting: alignStageRoutingWithHost(
+      raw.stageRouting,
+      raw.provider?.trim() || defaults.provider,
+      raw.model?.trim() || defaults.model,
+    ),
     webSearchPreferredProvider: raw.webSearchPreferredProvider?.trim() || "",
     webSearchTryFallbacks: raw.webSearchTryFallbacks ?? true,
     sttProvider: raw.sttProvider?.trim() || "openai",

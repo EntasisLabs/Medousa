@@ -647,26 +647,29 @@ pub(crate) async fn start_prompt_run(
             supports_browser_host: false,
             channel_surface: Some("tui".to_string()),
         };
-        let execution = match medousa::agent_runtime::execution_context::TurnExecutionContext::from_scope(
-            format!("tui-turn-{turn_id}"),
-            medousa::request_principal::RequestPrincipal::local_app(
-                std::sync::Arc::from("medousa-tui"),
-                medousa::request_principal::TransportClass::Loopback,
-            ),
-            tokio_util::sync::CancellationToken::new(),
-            std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
-            scope,
-        ) {
-            Ok(execution) => execution,
-            Err(error) => {
-                sink.agent_error(turn_id, format!("turn admission failed: {error}")).await;
-                return;
-            }
-        };
+        let execution =
+            match medousa::agent_runtime::execution_context::TurnExecutionContext::from_scope(
+                format!("tui-turn-{turn_id}"),
+                medousa::request_principal::RequestPrincipal::local_app(
+                    std::sync::Arc::from("medousa-tui"),
+                    medousa::request_principal::TransportClass::Loopback,
+                ),
+                tokio_util::sync::CancellationToken::new(),
+                std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
+                scope,
+            ) {
+                Ok(execution) => execution,
+                Err(error) => {
+                    sink.agent_error(turn_id, format!("turn admission failed: {error}"))
+                        .await;
+                    return;
+                }
+            };
         let execution_lease = match execution_registry.admit(execution) {
             Ok(lease) => lease,
             Err(error) => {
-                sink.agent_error(turn_id, format!("turn admission failed: {error}")).await;
+                sink.agent_error(turn_id, format!("turn admission failed: {error}"))
+                    .await;
                 return;
             }
         };
@@ -675,53 +678,54 @@ pub(crate) async fn start_prompt_run(
         medousa::agent_runtime::execution_context::with_turn_execution_context(
             execution_context,
             turn_orchestrator::execute_local_turn(
-            sink.clone(),
-            LocalTurnExecutionParams {
-                agent_mode,
-                turn_id,
-                session_id,
-                backend,
-                provider,
-                model,
-                base_url,
-                response_depth_mode,
-                reasoning_effort,
-                worker_scheduler,
-                tool_registry,
-                client_registry,
-                identity_memory_store,
-                turn_scope: turn_scope.clone(),
-                activation,
-                pipeline,
-                no_tools_pipeline,
-                prior_messages,
-                prompt_for_request,
-                original_prompt: original_prompt_for_continuation,
-                intent_classifier_recent_context,
-                retry_max_retries,
-                retry_max_rounds,
-                continuation_response_depth_mode,
-                continuation_stage_route,
-                continuation_recall_readiness,
-                prompt_preview,
-                turn_loop_settings,
-                handoff_vibe_signature,
-                handoff_model_avec,
-                host_continuity_bundle,
-                session_scratch_seed,
-                current_turn_user_message,
-                inference_profile_kind: medousa::inference_profiles::InferenceProfileKind::Main,
-                inference_targets,
-                supports_ui_artifacts: false,
-                supports_liquid_markdown: false,
-                supports_browser_host: false,
-                round_context_provider: None,
-                evidence_undertaking_id: None,
-                compact_evidence_receipt_sink: None,
-                active_turn_checkpoint_sink: None,
-                active_turn_resume: None,
-            },
-        ))
+                sink.clone(),
+                LocalTurnExecutionParams {
+                    agent_mode,
+                    turn_id,
+                    session_id,
+                    backend,
+                    provider,
+                    model,
+                    base_url,
+                    response_depth_mode,
+                    reasoning_effort,
+                    worker_scheduler,
+                    tool_registry,
+                    client_registry,
+                    identity_memory_store,
+                    turn_scope: turn_scope.clone(),
+                    activation,
+                    pipeline,
+                    no_tools_pipeline,
+                    prior_messages,
+                    prompt_for_request,
+                    original_prompt: original_prompt_for_continuation,
+                    intent_classifier_recent_context,
+                    retry_max_retries,
+                    retry_max_rounds,
+                    continuation_response_depth_mode,
+                    continuation_stage_route,
+                    continuation_recall_readiness,
+                    prompt_preview,
+                    turn_loop_settings,
+                    handoff_vibe_signature,
+                    handoff_model_avec,
+                    host_continuity_bundle,
+                    session_scratch_seed,
+                    current_turn_user_message,
+                    inference_profile_kind: medousa::inference_profiles::InferenceProfileKind::Main,
+                    inference_targets,
+                    supports_ui_artifacts: false,
+                    supports_liquid_markdown: false,
+                    supports_browser_host: false,
+                    round_context_provider: None,
+                    evidence_undertaking_id: None,
+                    compact_evidence_receipt_sink: None,
+                    active_turn_checkpoint_sink: None,
+                    active_turn_resume: None,
+                },
+            ),
+        )
         .await;
         drop(execution_lease);
     });
@@ -834,10 +838,8 @@ async fn consume_daemon_interactive_stream(
         medousa_local_credential::TUI_LOCAL_NAME,
     )
     .map_err(|err| err.to_string())?;
-    let sdk = MedousaClient::with_transport(
-        Arc::new(HttpTransport::with_client(client)),
-        stream_url,
-    );
+    let sdk =
+        MedousaClient::with_transport(Arc::new(HttpTransport::with_client(client)), stream_url);
     let interactive = sdk.interactive();
     let mut events = interactive.stream_reconnecting_v2(stream_url);
     let mut saw_terminal = false;
@@ -942,10 +944,7 @@ async fn dispatch_daemon_stream_event(
                 .await
                 .map_err(|err| err.to_string())?;
         }
-        TurnStreamEventV2::NeedsInput {
-            text,
-            tool_names,
-        } => {
+        TurnStreamEventV2::NeedsInput { text, tool_names } => {
             let text = fallback_text(text, "(empty clarification request)");
             event_tx
                 .send(TuiEvent::AgentNeedsInput {
@@ -956,10 +955,7 @@ async fn dispatch_daemon_stream_event(
                 .await
                 .map_err(|err| err.to_string())?;
         }
-        TurnStreamEventV2::Checkpoint {
-            text,
-            tool_names,
-        } => {
+        TurnStreamEventV2::Checkpoint { text, tool_names } => {
             event_tx
                 .send(TuiEvent::AgentResponse {
                     turn_id,
@@ -1040,10 +1036,7 @@ async fn dispatch_daemon_stream_event(
             event_tx
                 .send(TuiEvent::AgentError {
                     turn_id,
-                    message: fallback_text(
-                        operator_message,
-                        "daemon interactive stream failed",
-                    ),
+                    message: fallback_text(operator_message, "daemon interactive stream failed"),
                 })
                 .await
                 .map_err(|err| err.to_string())?;

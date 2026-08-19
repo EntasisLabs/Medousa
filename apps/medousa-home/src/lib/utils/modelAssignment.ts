@@ -5,6 +5,7 @@ import { defaultSttModel } from "$lib/types/workshopDefaults";
 import { resolveModelDisplayLabel } from "$lib/utils/modelCatalog";
 import { resolveProviderLabel } from "$lib/utils/chatModelPicker";
 import { customProviderHint } from "$lib/utils/customProvider";
+import { alignStageRoutingWithHost } from "$lib/utils/stageRouting";
 import type { ProvidersListResult } from "$lib/types/providers";
 
 export type ProfileKind = "main" | "vision" | "stt";
@@ -151,6 +152,14 @@ export function applyModelSelection(
     return syncFlatFieldsFromProfiles({
       ...draft,
       inferenceProfiles: mergeProfiles(draft, patch),
+      stageRouting:
+        target.profile === "main"
+          ? alignStageRoutingWithHost(
+              draft.stageRouting,
+              selection.provider,
+              selection.model,
+            )
+          : draft.stageRouting,
     });
   }
 
