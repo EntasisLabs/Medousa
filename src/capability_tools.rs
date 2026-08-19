@@ -25,14 +25,14 @@ use crate::schema_api::{
     TypedActionSchema, advertised_object_schema, string_enum_schema, typed_action_schema,
 };
 use crate::tools::{
-    CapabilityListInput, CapabilityResolveInput, CapabilitySearchInput, CognitionCapabilityListTool,
-    CognitionCapabilityResolveTool, CognitionCapabilitySearchTool, CognitionGraphemeExamplesTool,
-    CognitionGraphemeModulesInfoTool, CognitionGraphemeModulesOpsTool,
-    CognitionGraphemeModulesSearchTool, CognitionGraphemeRunTool, CognitionMcpDiscoverTool,
-    CognitionMcpInvokeTool, CognitionMcpServersTool, GraphemeExamplesActionInput,
-    GraphemeExamplesInput, GraphemeModulesInfoInput, GraphemeModulesOpsInput,
-    GraphemeModulesSearchInput, GraphemeRunInput, McpDiscoverInput, McpInvokeInput,
-    McpInvokeObject, McpServersInput,
+    CapabilityListInput, CapabilityResolveInput, CapabilitySearchInput,
+    CognitionCapabilityListTool, CognitionCapabilityResolveTool, CognitionCapabilitySearchTool,
+    CognitionGraphemeExamplesTool, CognitionGraphemeModulesInfoTool,
+    CognitionGraphemeModulesOpsTool, CognitionGraphemeModulesSearchTool, CognitionGraphemeRunTool,
+    CognitionMcpDiscoverTool, CognitionMcpInvokeTool, CognitionMcpServersTool,
+    GraphemeExamplesActionInput, GraphemeExamplesInput, GraphemeModulesInfoInput,
+    GraphemeModulesOpsInput, GraphemeModulesSearchInput, GraphemeRunInput, McpDiscoverInput,
+    McpInvokeInput, McpInvokeObject, McpServersInput,
 };
 use crate::typed_tools::{
     CompatOption, ExternalJson, ToolId, TypedTool, medousa_tool, serialize_output,
@@ -249,7 +249,10 @@ pub fn register_capability_tools(
 #[medousa_tool(id = CAPABILITY_ID)]
 impl CognitionCapabilityTool {
     /// Find or run a capability, MCP tool, or Grapheme module. action is a typed name (capability.find, grapheme.invoke, …). Fetch fields with cognition_schema types=[...].
-    async fn invoke_typed(&self, action: CapabilityAction) -> stasis::prelude::Result<ExternalJson> {
+    async fn invoke_typed(
+        &self,
+        action: CapabilityAction,
+    ) -> stasis::prelude::Result<ExternalJson> {
         Ok(ExternalJson::new(dispatch(self, action).await?))
     }
 }
@@ -427,15 +430,13 @@ impl McpInvoke {
 impl GraphemeInvoke {
     async fn execute(self, tool: &CognitionCapabilityTool) -> stasis::prelude::Result<Value> {
         if let Some(template) = self.template {
-            let output = CognitionGraphemeTemplateRunTool::new(
-                tool.runtime.clone(),
-                tool.event_tx.clone(),
-            )
-            .invoke_typed(GraphemeTemplateRunInput {
-                template: Some(template),
-                params: self.params.map(BridgeObject::from_value),
-            })
-            .await?;
+            let output =
+                CognitionGraphemeTemplateRunTool::new(tool.runtime.clone(), tool.event_tx.clone())
+                    .invoke_typed(GraphemeTemplateRunInput {
+                        template: Some(template),
+                        params: self.params.map(BridgeObject::from_value),
+                    })
+                    .await?;
             return serialize_output(CognitionGraphemeTemplateRunTool::tool_id(), output);
         }
         if present(self.script.as_deref()) {
@@ -501,8 +502,7 @@ mod tests {
 
     #[test]
     fn advertised_schema_is_action_enum_only() {
-        let schema =
-            serde_json::to_value(schemars::schema_for!(CapabilityAction)).expect("schema");
+        let schema = serde_json::to_value(schemars::schema_for!(CapabilityAction)).expect("schema");
         let props = schema["properties"].as_object().expect("properties");
         assert_eq!(props.len(), 1);
         assert!(props.contains_key("action"));

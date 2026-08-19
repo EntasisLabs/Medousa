@@ -170,10 +170,8 @@ pub(crate) async fn apply_settings(
         .web_search_preferred_provider
         .trim()
         .to_string();
-    let web_search_try_fallbacks = super::parse_bool_with_default(
-        &state.settings_draft.web_search_try_fallbacks,
-        true,
-    );
+    let web_search_try_fallbacks =
+        super::parse_bool_with_default(&state.settings_draft.web_search_try_fallbacks, true);
     let provider = if state.settings_draft.provider.trim().is_empty() {
         super::resolve_llm_provider(None)
     } else {
@@ -345,8 +343,7 @@ pub(crate) async fn finalize_settings_apply_if_ready(
             state.settings.retry_runtime_max_retries =
                 snapshot.retry_runtime_max_retries.to_string();
             state.settings.retry_runtime_max_rounds = snapshot.retry_runtime_max_rounds.to_string();
-            state.settings.host_bus_max_tool_rounds =
-                snapshot.host_bus_max_tool_rounds.to_string();
+            state.settings.host_bus_max_tool_rounds = snapshot.host_bus_max_tool_rounds.to_string();
             state.settings.host_turn_bus_mode = snapshot.host_turn_bus_mode.clone();
             state.settings.activation_tool_intent_max_rounds =
                 snapshot.activation_tool_intent_max_rounds.to_string();
@@ -368,8 +365,7 @@ pub(crate) async fn finalize_settings_apply_if_ready(
                 format!("{:.2}", snapshot.verifier_min_claim_support_strength);
             state.settings.web_search_preferred_provider =
                 snapshot.web_search_preferred_provider.clone();
-            state.settings.web_search_try_fallbacks =
-                snapshot.web_search_try_fallbacks.to_string();
+            state.settings.web_search_try_fallbacks = snapshot.web_search_try_fallbacks.to_string();
             state.stage_routing = snapshot.stage_routing.clone();
             state.settings.api_key = snapshot.api_key.clone();
             state.provider_model = format!("{}:{}", snapshot.provider, snapshot.model);
@@ -424,8 +420,7 @@ pub(crate) async fn finalize_settings_apply_if_ready(
             defaults.max_text_only_stuck_continues = Some(snapshot.max_text_only_stuck_continues);
             defaults.classifier_restricted_max_tool_rounds =
                 Some(snapshot.classifier_restricted_max_tool_rounds);
-            defaults.verifier_min_citation_coverage =
-                Some(snapshot.verifier_min_citation_coverage);
+            defaults.verifier_min_citation_coverage = Some(snapshot.verifier_min_citation_coverage);
             defaults.verifier_min_avg_support_strength =
                 Some(snapshot.verifier_min_avg_support_strength);
             defaults.verifier_min_supported_claim_ratio =

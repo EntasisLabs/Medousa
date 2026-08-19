@@ -597,12 +597,22 @@ fn record_palette_usage(state: &mut TuiState, command: &str) {
         0.0,
         1.0,
     ));
-    defaults.web_search_preferred_provider =
-        if state.settings.web_search_preferred_provider.trim().is_empty() {
-            None
-        } else {
-            Some(state.settings.web_search_preferred_provider.trim().to_string())
-        };
+    defaults.web_search_preferred_provider = if state
+        .settings
+        .web_search_preferred_provider
+        .trim()
+        .is_empty()
+    {
+        None
+    } else {
+        Some(
+            state
+                .settings
+                .web_search_preferred_provider
+                .trim()
+                .to_string(),
+        )
+    };
     defaults.web_search_try_fallbacks = Some(parse_bool_with_default(
         &state.settings.web_search_try_fallbacks,
         true,

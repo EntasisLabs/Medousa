@@ -25,8 +25,8 @@ use uuid::Uuid;
 use medousa::{
     TuiPlatformBuildConfig, TuiPlatformMode, TuiRuntime, build_tui_platform,
     events::TuiEvent,
-    resolve_daemon_url, resolve_llm_base_url, resolve_llm_model,
-    resolve_llm_provider, resolve_tui_platform_mode,
+    resolve_daemon_url, resolve_llm_base_url, resolve_llm_model, resolve_llm_provider,
+    resolve_tui_platform_mode,
     session::{
         ApiKeyStorageBackend, ConversationTurn, SessionHistorySummary,
         detect_tui_api_key_storage_backend, load_history, load_last_session_id, load_tui_api_key,
@@ -38,60 +38,66 @@ use medousa::{
     tui::editor_buffer::TextBuffer,
     tui::settings::{
         RuntimeSettings, cycle_backend, cycle_host_turn_bus_mode, cycle_tool_call_mode,
-        cycle_web_search_provider,
-        env_overrides_validation_errors,
-        parse_bool_with_default, parse_env_overrides, parse_f32_with_bounds,
-        parse_usize_with_bounds, resolve_backend_name, resolve_bool_arg, resolve_f32_arg,
-        resolve_theme_id_name, resolve_tool_call_mode_name, resolve_usize_arg,
-        settings_validation_errors,
+        cycle_web_search_provider, env_overrides_validation_errors, parse_bool_with_default,
+        parse_env_overrides, parse_f32_with_bounds, parse_usize_with_bounds, resolve_backend_name,
+        resolve_bool_arg, resolve_f32_arg, resolve_theme_id_name, resolve_tool_call_mode_name,
+        resolve_usize_arg, settings_validation_errors,
     },
 };
 #[path = "medousa_tui/agent_runtime.rs"]
 mod agent_runtime;
-#[path = "medousa_tui/tui_stderr_guard.rs"]
-mod tui_stderr_guard;
 #[path = "medousa_tui/budget_slash_services.rs"]
 mod budget_slash_services;
-#[path = "medousa_tui/cli_helpers.rs"]
-mod cli_helpers;
 #[path = "medousa_tui/cli_args.rs"]
 mod cli_args;
+#[path = "medousa_tui/cli_helpers.rs"]
+mod cli_helpers;
 #[path = "medousa_tui/command_preview_ui.rs"]
 mod command_preview_ui;
+#[path = "medousa_tui/connection_runtime.rs"]
+mod connection_runtime;
 #[path = "medousa_tui/daemon_commands.rs"]
 mod daemon_commands;
-#[path = "medousa_tui/history_services.rs"]
-mod history_services;
-#[path = "medousa_tui/session_name_services.rs"]
-mod session_name_services;
 #[path = "medousa_tui/editor_runtime.rs"]
 mod editor_runtime;
 #[path = "medousa_tui/event_reducer.rs"]
 mod event_reducer;
+#[path = "medousa_tui/forge_runtime.rs"]
+mod forge_runtime;
+#[path = "medousa_tui/history_services.rs"]
+mod history_services;
 #[path = "medousa_tui/input_router.rs"]
 mod input_router;
 #[path = "medousa_tui/markdown_cache.rs"]
 mod markdown_cache;
+#[path = "medousa_tui/notes_runtime.rs"]
+mod notes_runtime;
 #[path = "medousa_tui/perf.rs"]
 mod perf;
-#[path = "medousa_tui/settings_runtime.rs"]
-mod settings_runtime;
+#[path = "medousa_tui/session_name_services.rs"]
+mod session_name_services;
 #[path = "medousa_tui/settings_rows.rs"]
 mod settings_rows;
+#[path = "medousa_tui/settings_runtime.rs"]
+mod settings_runtime;
 #[path = "medousa_tui/settings_ui.rs"]
 mod settings_ui;
-#[path = "medousa_tui/slash_command_services.rs"]
-mod slash_command_services;
 #[path = "medousa_tui/slash_command_artifact_services.rs"]
 mod slash_command_artifact_services;
+#[path = "medousa_tui/slash_command_services.rs"]
+mod slash_command_services;
 #[path = "medousa_tui/slash_command_stage_services.rs"]
 mod slash_command_stage_services;
 #[path = "medousa_tui/slash_commands.rs"]
 mod slash_commands;
+#[path = "medousa_tui/terminal_runtime.rs"]
+mod terminal_runtime;
 #[path = "medousa_tui/theme_ui.rs"]
 mod theme_ui;
 #[path = "medousa_tui/tui_presentation.rs"]
 mod tui_presentation;
+#[path = "medousa_tui/tui_stderr_guard.rs"]
+mod tui_stderr_guard;
 #[path = "medousa_tui/ui_helpers.rs"]
 mod ui_helpers;
 #[path = "medousa_tui/ui_render.rs"]
@@ -100,14 +106,6 @@ mod ui_render;
 mod workers;
 #[path = "medousa_tui/workspace_runtime.rs"]
 mod workspace_runtime;
-#[path = "medousa_tui/notes_runtime.rs"]
-mod notes_runtime;
-#[path = "medousa_tui/forge_runtime.rs"]
-mod forge_runtime;
-#[path = "medousa_tui/terminal_runtime.rs"]
-mod terminal_runtime;
-#[path = "medousa_tui/connection_runtime.rs"]
-mod connection_runtime;
 
 use agent_runtime::{start_prompt_run, stop_active_generation};
 use editor_runtime::{load_editor_file, run_editor_source_via_runtime, save_editor_buffer};
@@ -121,8 +119,8 @@ use perf::{
     mark_ui_activity, note_frame_rendered,
 };
 use settings_runtime::{
-    apply_settings, finalize_settings_apply_if_ready,
-    handle_runtime_env_key_event, handle_settings_key_event, next_ui_wake_delay,
+    apply_settings, finalize_settings_apply_if_ready, handle_runtime_env_key_event,
+    handle_settings_key_event, next_ui_wake_delay,
 };
 use slash_commands::handle_slash_command;
 use ui_helpers::{
@@ -454,7 +452,9 @@ async fn main() -> Result<()> {
         || std::env::var("MEDOUSA_TUI_LOCAL_RUNTIME")
             .ok()
             .is_some_and(|value| {
-                value == "1" || value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("yes")
+                value == "1"
+                    || value.eq_ignore_ascii_case("true")
+                    || value.eq_ignore_ascii_case("yes")
             });
 
     let resolved_provider = resolve_llm_provider(provider.or(defaults.provider.as_deref()));
@@ -465,9 +465,9 @@ async fn main() -> Result<()> {
         resolve_tool_call_mode_name(tool_call_mode.or(defaults.tool_call_mode.as_deref()));
     let resolved_max_tool_rounds = resolve_usize_arg(
         max_tool_rounds,
-        defaults.max_tool_rounds.unwrap_or(
-            medousa::agent_runtime::turn_loop_settings::DEFAULT_GENERAL_MAX_TOOL_ROUNDS,
-        ),
+        defaults
+            .max_tool_rounds
+            .unwrap_or(medousa::agent_runtime::turn_loop_settings::DEFAULT_GENERAL_MAX_TOOL_ROUNDS),
         medousa::agent_runtime::ROUND_LIMIT_MIN,
         medousa::agent_runtime::ROUND_LIMIT_MAX,
     );
@@ -536,9 +536,7 @@ async fn main() -> Result<()> {
         .host_turn_bus_mode
         .clone()
         .filter(|v| !v.trim().is_empty())
-        .unwrap_or_else(|| {
-            medousa::agent_runtime::default_host_turn_bus_mode_label().to_string()
-        });
+        .unwrap_or_else(|| medousa::agent_runtime::default_host_turn_bus_mode_label().to_string());
     let resolved_activation_tool_intent_max_rounds = resolve_usize_arg(
         None,
         defaults
@@ -549,9 +547,9 @@ async fn main() -> Result<()> {
     );
     let resolved_activation_short_turn_max_tool_rounds = resolve_usize_arg(
         None,
-        defaults.activation_short_turn_max_tool_rounds.unwrap_or(
-            medousa::agent_runtime::DEFAULT_ACTIVATION_SHORT_TURN_MAX_TOOL_ROUNDS,
-        ),
+        defaults
+            .activation_short_turn_max_tool_rounds
+            .unwrap_or(medousa::agent_runtime::DEFAULT_ACTIVATION_SHORT_TURN_MAX_TOOL_ROUNDS),
         medousa::agent_runtime::ROUND_LIMIT_MIN,
         medousa::agent_runtime::ROUND_LIMIT_MAX,
     );
@@ -573,9 +571,9 @@ async fn main() -> Result<()> {
     );
     let resolved_classifier_restricted_max_tool_rounds = resolve_usize_arg(
         None,
-        defaults.classifier_restricted_max_tool_rounds.unwrap_or(
-            medousa::agent_runtime::DEFAULT_CLASSIFIER_RESTRICTED_MAX_TOOL_ROUNDS,
-        ),
+        defaults
+            .classifier_restricted_max_tool_rounds
+            .unwrap_or(medousa::agent_runtime::DEFAULT_CLASSIFIER_RESTRICTED_MAX_TOOL_ROUNDS),
         medousa::agent_runtime::ROUND_LIMIT_MIN,
         medousa::agent_runtime::ROUND_LIMIT_MAX,
     );
@@ -607,10 +605,8 @@ async fn main() -> Result<()> {
         .web_search_preferred_provider
         .clone()
         .unwrap_or_default();
-    let resolved_web_search_try_fallbacks = resolve_bool_arg(
-        None,
-        defaults.web_search_try_fallbacks.unwrap_or(true),
-    );
+    let resolved_web_search_try_fallbacks =
+        resolve_bool_arg(None, defaults.web_search_try_fallbacks.unwrap_or(true));
     let resolved_base_url = resolve_llm_base_url(
         Some(&resolved_provider),
         base_url.or(defaults.base_url.as_deref()),
@@ -677,10 +673,12 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|| Uuid::new_v4().simple().to_string());
     save_last_session_id(&session_id);
 
-    let history = match daemon_commands::daemon_load_session_history(&resolved_daemon_url, &session_id).await {
-        Ok(response) => response.turns,
-        Err(_) => load_history(&session_id),
-    };
+    let history =
+        match daemon_commands::daemon_load_session_history(&resolved_daemon_url, &session_id).await
+        {
+            Ok(response) => response.turns,
+            Err(_) => load_history(&session_id),
+        };
 
     let (event_tx, mut event_rx) = mpsc::channel::<TuiEvent>(256);
     let (worker_cmd_tx, worker_cmd_rx) = mpsc::channel::<WorkerCommand>(32);
@@ -854,10 +852,7 @@ async fn main() -> Result<()> {
         markdown_cache: RefCell::new(HashMap::new()),
         markdown_cache_order: RefCell::new(VecDeque::new()),
         perf_baseline: None,
-        workspace: workspace_runtime::bootstrap_workspace_from_disk(
-            &session_id,
-            &workshop_scope,
-        ),
+        workspace: workspace_runtime::bootstrap_workspace_from_disk(&session_id, &workshop_scope),
         chat_lanes: workspace_runtime::empty_chat_lanes(),
         prefix_active: false,
         turn_sessions: HashMap::new(),
@@ -1102,7 +1097,8 @@ async fn handle_history_key_event(code: KeyCode, state: &mut TuiState) -> EventO
                 state.session_id = selected.session_id.clone();
                 state.session_display_name = selected.display_name.clone();
                 let session_id = state.session_id.clone();
-                state.conversation = history_services::load_history_daemon_first(state, &session_id).await;
+                state.conversation =
+                    history_services::load_history_daemon_first(state, &session_id).await;
                 session_name_services::refresh_session_display_name(state);
                 invalidate_markdown_cache(state);
                 state.thinking_trace.clear();
@@ -1368,13 +1364,13 @@ fn api_key_storage_backend_label() -> &'static str {
 mod tests {
     use super::{
         JobHistoryEntry, ObservabilityFilter, RuntimeSettings, StageRoutingMatrix, TextBuffer,
-        TuiState, UiMode, UiPerfStats, WorkerCommand, load_editor_file,
-        parse_allowed_modules, resolve_editor_run_source, run_editor_source_via_runtime,
-        validate_editor_run_allowlist, write_editor_file,
+        TuiState, UiMode, UiPerfStats, WorkerCommand, load_editor_file, parse_allowed_modules,
+        resolve_editor_run_source, run_editor_source_via_runtime, validate_editor_run_allowlist,
+        write_editor_file,
     };
     use medousa::build_tui_runtime;
-    use medousa::parse_backend;
     use medousa::events::TuiEvent;
+    use medousa::parse_backend;
     use medousa::session::{ConversationTurn, SessionHistorySummary};
     use std::collections::{HashMap, VecDeque};
     use std::path::PathBuf;
@@ -1553,7 +1549,7 @@ mod tests {
             ui_dirty: false,
             pending_agent_chunk_delta: String::new(),
             pending_agent_chunk_count: 0,
-        turn_parts: medousa::turn_parts::TurnPartsAccumulator::default(),
+            turn_parts: medousa::turn_parts::TurnPartsAccumulator::default(),
             pending_paint_since: None,
             perf: UiPerfStats::default(),
             next_worker_request_id: 0,
@@ -1566,10 +1562,7 @@ mod tests {
             markdown_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
             markdown_cache_order: std::cell::RefCell::new(VecDeque::new()),
             perf_baseline: None,
-            workspace: medousa::tui::workspace::WorkspaceShell::bootstrap(
-                "test-session",
-                "Chat",
-            ),
+            workspace: medousa::tui::workspace::WorkspaceShell::bootstrap("test-session", "Chat"),
             chat_lanes: super::workspace_runtime::empty_chat_lanes(),
             prefix_active: false,
             turn_sessions: HashMap::new(),

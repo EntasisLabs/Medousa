@@ -502,7 +502,10 @@ impl<'de> Deserialize<'de> for GraphemeRunInput {
 impl CognitionGraphemeRunTool {
     /// Execute a Grapheme script synchronously and return the result. Grapheme is a typed workflow scripting language. Built-in modules in the 'grapheme/*' namespace are allowed by default (for example core, web). Scripts run sandboxed with guardrails enforced. Example source: import core from "grapheme/core"
     /// query Run { core.echo(message: "hello") { state { current } } }
-    pub(crate) async fn invoke_typed(&self, input: GraphemeRunInput) -> stasis::prelude::Result<ExternalJson> {
+    pub(crate) async fn invoke_typed(
+        &self,
+        input: GraphemeRunInput,
+    ) -> stasis::prelude::Result<ExternalJson> {
         let source = input.source.as_deref().ok_or_else(|| {
             StasisError::PortFailure("cognition_grapheme_run: source is required".to_string())
         })?;
@@ -2378,7 +2381,10 @@ impl<'de> Deserialize<'de> for McpDiscoverInput {
 #[medousa_tool(id = COGNITION_MCP_DISCOVER_ID)]
 impl CognitionMcpDiscoverTool {
     /// Search external MCP tools via the MCP Client gateway.
-    pub(crate) async fn invoke_typed(&self, input: McpDiscoverInput) -> stasis::prelude::Result<ExternalJson> {
+    pub(crate) async fn invoke_typed(
+        &self,
+        input: McpDiscoverInput,
+    ) -> stasis::prelude::Result<ExternalJson> {
         let query = input.query.as_deref().ok_or_else(|| {
             StasisError::PortFailure("cognition.mcp.discover: query is required".to_string())
         })?;
@@ -2501,7 +2507,10 @@ pub struct McpInvokeInput {
 #[medousa_tool(id = COGNITION_MCP_INVOKE_ID)]
 impl CognitionMcpInvokeTool {
     /// Invoke an external MCP tool via the MCP Client gateway.
-    pub(crate) async fn invoke_typed(&self, input: McpInvokeInput) -> stasis::prelude::Result<ExternalJson> {
+    pub(crate) async fn invoke_typed(
+        &self,
+        input: McpInvokeInput,
+    ) -> stasis::prelude::Result<ExternalJson> {
         let server_id = input.server_id.as_deref().ok_or_else(|| {
             StasisError::PortFailure("cognition.mcp.invoke: server_id is required".to_string())
         })?;
@@ -2591,7 +2600,10 @@ pub struct McpServersInput {}
 #[medousa_tool(id = COGNITION_MCP_SERVERS_ID)]
 impl CognitionMcpServersTool {
     /// List MCP servers known to the MCP Client gateway.
-    pub(crate) async fn invoke_typed(&self, _input: McpServersInput) -> stasis::prelude::Result<ExternalJson> {
+    pub(crate) async fn invoke_typed(
+        &self,
+        _input: McpServersInput,
+    ) -> stasis::prelude::Result<ExternalJson> {
         let response =
             self.gateway_client.list_servers().await.map_err(|error| {
                 StasisError::PortFailure(format!("cognition.mcp.servers: {error}"))

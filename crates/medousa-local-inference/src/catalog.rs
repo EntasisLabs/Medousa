@@ -1,7 +1,5 @@
 use super::hardware::HardwareTier;
-pub use medousa_install_support::model_catalog::{
-    builtin_catalog, CatalogFile, CatalogModelEntry,
-};
+pub use medousa_install_support::model_catalog::{CatalogFile, CatalogModelEntry, builtin_catalog};
 
 fn parse_tier(value: &str) -> Option<HardwareTier> {
     match value.trim().to_ascii_uppercase().as_str() {
@@ -21,7 +19,10 @@ fn tier_in_range(entry: &CatalogModelEntry, tier: HardwareTier) -> bool {
     tier >= min
 }
 
-pub fn filter_catalog_for_tier(catalog: &CatalogFile, tier: HardwareTier) -> Vec<CatalogModelEntry> {
+pub fn filter_catalog_for_tier(
+    catalog: &CatalogFile,
+    tier: HardwareTier,
+) -> Vec<CatalogModelEntry> {
     catalog
         .models
         .iter()

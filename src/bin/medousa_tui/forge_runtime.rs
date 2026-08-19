@@ -193,10 +193,7 @@ pub(crate) async fn open_code_work(state: &mut TuiState, work_id: &str, title: &
         focus: CodeFocus::Tree,
     };
     state.code_workspaces.insert(work_id.to_string(), workspace);
-    if state
-        .workspace
-        .open_code_tab_in_active(work_id, ".", title)
-    {
+    if state.workspace.open_code_tab_in_active(work_id, ".", title) {
         state.mode = UiMode::Code;
         super::workspace_runtime::persist_workspace(state);
         super::push_obs(state, format!("✓ code workspace {title}"));
@@ -351,17 +348,13 @@ async fn load_review_workspace(
     let mut files = Vec::new();
     for changed in proj.changed_files.iter().take(24) {
         let enc = urlencoding_path(&changed.path);
-        let file_path =
-            format!("/v1/forge/items/{work_id}/review/file?path={enc}");
+        let file_path = format!("/v1/forge/items/{work_id}/review/file?path={enc}");
         match forge_get::<FileDiff>(daemon_url, &file_path).await {
             Ok(diff) => {
                 let mut additions = 0usize;
                 let mut deletions = 0usize;
                 let mut lines = Vec::new();
-                lines.push(format!(
-                    "── {} ({}) ──",
-                    diff.path, diff.status
-                ));
+                lines.push(format!("── {} ({}) ──", diff.path, diff.status));
                 if diff.binary {
                     lines.push("  (binary — no text preview)".to_string());
                 } else {
@@ -535,7 +528,10 @@ pub(crate) async fn seal_active_code(state: &mut TuiState) {
             .get(&work_id)
             .is_some_and(|ws| ws.dirty)
         {
-            super::push_obs(state, "⚠ save before seal failed — fix and retry".to_string());
+            super::push_obs(
+                state,
+                "⚠ save before seal failed — fix and retry".to_string(),
+            );
             return;
         }
     }
@@ -570,8 +566,7 @@ pub(crate) async fn seal_active_code(state: &mut TuiState) {
         }
         Err(err) => {
             // Retry once with ack_risks when policy demands it.
-            if err.to_ascii_lowercase().contains("ack")
-                || err.to_ascii_lowercase().contains("risk")
+            if err.to_ascii_lowercase().contains("ack") || err.to_ascii_lowercase().contains("risk")
             {
                 match forge_post::<serde_json::Value>(
                     &state.daemon_url,
@@ -798,10 +793,7 @@ pub(crate) async fn restore_active_review_file(state: &mut TuiState) {
                 .unwrap_or_else(|| work_id.clone());
             let _ = open_review_work(state, &work_id, &title).await;
             let _ = open_code_work(state, &work_id, &title).await;
-            super::push_obs(
-                state,
-                format!("✓ restored {} (request changes)", file.path),
-            );
+            super::push_obs(state, format!("✓ restored {} (request changes)", file.path));
         }
         Err(err) => super::push_obs(state, format!("⚠ restore failed: {err}")),
     }
@@ -845,7 +837,10 @@ pub(crate) async fn handle_forge_picker_key(
             EventOutcome::Continue
         }
         KeyCode::Enter => {
-            if let Some(hit) = state.forge_picker_hits.get(state.forge_picker_selected).cloned()
+            if let Some(hit) = state
+                .forge_picker_hits
+                .get(state.forge_picker_selected)
+                .cloned()
             {
                 let title = if hit.title.is_empty() {
                     hit.id.clone()
@@ -934,12 +929,7 @@ pub(crate) async fn handle_code_key(
 
     if focus == CodeFocus::Tree && key.code == KeyCode::Enter {
         let (work_id, path) = focused_code_mut(state)
-            .map(|ws| {
-                (
-                    ws.work_id.clone(),
-                    ws.tree.get(ws.tree_selected).cloned(),
-                )
-            })
+            .map(|ws| (ws.work_id.clone(), ws.tree.get(ws.tree_selected).cloned()))
             .unwrap_or_default();
         if let Some(path) = path {
             open_code_file(state, &work_id, &path).await;
@@ -957,8 +947,7 @@ pub(crate) async fn handle_code_key(
                 ws.tree_scroll = ws.tree_scroll.min(ws.tree_selected as u16);
             }
             KeyCode::Down if !ws.tree.is_empty() => {
-                ws.tree_selected =
-                    (ws.tree_selected + 1).min(ws.tree.len().saturating_sub(1));
+                ws.tree_selected = (ws.tree_selected + 1).min(ws.tree.len().saturating_sub(1));
             }
             _ => {}
         },

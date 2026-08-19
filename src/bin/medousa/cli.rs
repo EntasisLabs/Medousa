@@ -792,8 +792,8 @@ mod tests {
             Some(Commands::SessionStorage(args)) => assert!(!args.apply),
             other => panic!("expected SessionStorage, got {other:?}"),
         }
-        let apply = Cli::try_parse_from(["medousa", "session-storage", "--apply", "--json"])
-            .unwrap();
+        let apply =
+            Cli::try_parse_from(["medousa", "session-storage", "--apply", "--json"]).unwrap();
         match apply.command {
             Some(Commands::SessionStorage(args)) => {
                 assert!(args.apply);

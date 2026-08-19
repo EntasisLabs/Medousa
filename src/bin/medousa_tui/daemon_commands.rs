@@ -4,6 +4,10 @@ use std::sync::Arc;
 use anyhow::Result;
 use medousa_sdk::{HttpTransport, MedousaClient};
 
+use medousa::daemon_api::{
+    TurnBudgetApproveRequest, TurnBudgetDenyRequest, TurnBudgetRequestListResponse,
+    TurnBudgetRequestResponse,
+};
 use medousa::{
     ArtifactCommandRequest, ArtifactCommandResponse, EnqueueAskRequest, EnqueueResponse,
     HealthResponse, InteractiveTurnRequest, InteractiveTurnResponse,
@@ -12,13 +16,10 @@ use medousa::{
     SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameResponse,
     StageRouteCommandRequest, StageRouteCommandResponse,
 };
-use medousa::daemon_api::{
-    TurnBudgetApproveRequest, TurnBudgetDenyRequest, TurnBudgetRequestListResponse,
-    TurnBudgetRequestResponse,
-};
 
 use super::{
-    EventOutcome, TuiState, WorkerCommand, next_worker_request_id, push_obs_alert, queue_worker_command,
+    EventOutcome, TuiState, WorkerCommand, next_worker_request_id, push_obs_alert,
+    queue_worker_command,
 };
 
 pub(crate) fn daemon_client(daemon_url: &str) -> Result<MedousaClient> {
@@ -62,13 +63,8 @@ pub(crate) async fn handle_daemon_command(
                     ),
                 );
             } else {
-                let _ = super::connection_runtime::apply_connection(
-                    state,
-                    next.trim(),
-                    None,
-                    None,
-                )
-                .await;
+                let _ = super::connection_runtime::apply_connection(state, next.trim(), None, None)
+                    .await;
             }
         }
         "health" => {
@@ -218,9 +214,7 @@ pub(crate) async fn daemon_register_recurring_prompt(
         id: None,
         queue: Some("default".to_string()),
         prompt: prompt.to_string(),
-        system_prompt: Some(
-            medousa::agent_runtime::LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT.to_string(),
-        ),
+        system_prompt: Some(medousa::agent_runtime::LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT.to_string()),
         cron_expr: cron_expr.to_string(),
         timezone: Some("UTC".to_string()),
         jitter_seconds: Some(0),

@@ -1,9 +1,9 @@
 //! Validation for environment specs — Frame / Chrome / Content design lock.
 
 use crate::environment::{
-    ComponentDef, ComponentType, EnvironmentSpec, EnvironmentTheme, SurfaceDef, SurfaceKind,
     CHROME_ACTION_OPEN_ACTIVITY, CHROME_ACTION_OPEN_ASK, COMPONENT_SLOT_FAB, COMPONENT_SLOT_HEADER,
-    COMPONENT_SLOT_MAIN, COMPONENT_SLOT_SIDEBAR, SAFETY_SURFACE_RUNTIME, SAFETY_SURFACE_SETTINGS,
+    COMPONENT_SLOT_MAIN, COMPONENT_SLOT_SIDEBAR, ComponentDef, ComponentType, EnvironmentSpec,
+    EnvironmentTheme, SAFETY_SURFACE_RUNTIME, SAFETY_SURFACE_SETTINGS, SurfaceDef, SurfaceKind,
 };
 use crate::environment_icons::is_valid_surface_icon;
 use crate::environment_themes::{is_valid_brand_color, is_valid_color_theme_id};
@@ -100,12 +100,13 @@ pub fn validate_environment_spec(spec: &EnvironmentSpec) -> Vec<String> {
 
     if let Some(chrome) = &spec.shell_chrome
         && let Some(mobile) = &chrome.mobile
-            && let Some(home) = &mobile.default_home
-                && !surface_ids.contains(&home.as_str()) {
-                    errors.push(format!(
-                        "shellChrome.mobile.defaultHome references unknown surface '{home}'"
-                    ));
-                }
+        && let Some(home) = &mobile.default_home
+        && !surface_ids.contains(&home.as_str())
+    {
+        errors.push(format!(
+            "shellChrome.mobile.defaultHome references unknown surface '{home}'"
+        ));
+    }
 
     if let Some(theme) = &spec.theme {
         validate_environment_theme(theme, &mut errors);
@@ -116,17 +117,17 @@ pub fn validate_environment_spec(spec: &EnvironmentSpec) -> Vec<String> {
 
 fn validate_environment_theme(theme: &EnvironmentTheme, errors: &mut Vec<String>) {
     if let Some(id) = &theme.color_theme_id
-        && !is_valid_color_theme_id(id) {
-            errors.push(format!(
-                "theme.colorThemeId '{id}' is invalid — use a known Room palette id"
-            ));
-        }
+        && !is_valid_color_theme_id(id)
+    {
+        errors.push(format!(
+            "theme.colorThemeId '{id}' is invalid — use a known Room palette id"
+        ));
+    }
     if let Some(brand) = &theme.brand_color
-        && !is_valid_brand_color(brand) {
-            errors.push(
-                "theme.brandColor must be a hex color (#RGB or #RRGGBB)".to_string(),
-            );
-        }
+        && !is_valid_brand_color(brand)
+    {
+        errors.push("theme.brandColor must be a hex color (#RGB or #RRGGBB)".to_string());
+    }
 }
 
 fn validate_surface(surface: &SurfaceDef, errors: &mut Vec<String>) {
@@ -143,12 +144,13 @@ fn validate_surface(surface: &SurfaceDef, errors: &mut Vec<String>) {
         ));
     }
     if let Some(mobile_tab) = &surface.mobile_tab
-        && !ALLOWED_MOBILE_TAB_SLUGS.contains(&mobile_tab.as_str()) {
-            errors.push(format!(
-                "surface '{}' mobileTab '{}' is invalid — use home|chat|notes|web",
-                surface.id, mobile_tab
-            ));
-        }
+        && !ALLOWED_MOBILE_TAB_SLUGS.contains(&mobile_tab.as_str())
+    {
+        errors.push(format!(
+            "surface '{}' mobileTab '{}' is invalid — use home|chat|notes|web",
+            surface.id, mobile_tab
+        ));
+    }
     if !is_valid_surface_icon(&surface.icon) {
         errors.push(format!(
             "surface '{}' icon '{}' is not in the allowed icon catalog",
@@ -334,12 +336,13 @@ fn validate_media_embed_component(component: &ComponentDef, errors: &mut Vec<Str
             }
         }
         "apple_music"
-            if !url.contains("embed.music.apple.com/") && !url.contains("music.apple.com/") => {
-                errors.push(format!(
+            if !url.contains("embed.music.apple.com/") && !url.contains("music.apple.com/") =>
+        {
+            errors.push(format!(
                     "media_embed component '{}' apple_music url must be embed.music.apple.com or music.apple.com link",
                     component.id
                 ));
-            }
+        }
         _ => {}
     }
 }
@@ -351,8 +354,8 @@ pub fn is_valid_environment_spec(spec: &EnvironmentSpec) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::environment::{ComponentDef, ComponentType, SurfaceKind, activate_layout_preset};
     use crate::environment_default::default_environment_spec;
-    use crate::environment::{activate_layout_preset, ComponentDef, ComponentType, SurfaceKind};
 
     #[test]
     fn default_spec_is_valid() {
@@ -363,18 +366,17 @@ mod tests {
     #[test]
     fn rejects_unsupported_component_types() {
         let mut spec = default_environment_spec("personal");
-        spec.surfaces
-            .push(crate::environment::SurfaceDef {
-                id: "studio".to_string(),
-                label: "Studio".to_string(),
-                icon: "pen-line".to_string(),
-                kind: SurfaceKind::Custom,
-                builtin_id: None,
-                layout: crate::environment::SurfaceLayout::Dashboard,
-                slots: vec![],
-                mobile_tab: None,
-                layout_root: None,
-            });
+        spec.surfaces.push(crate::environment::SurfaceDef {
+            id: "studio".to_string(),
+            label: "Studio".to_string(),
+            icon: "pen-line".to_string(),
+            kind: SurfaceKind::Custom,
+            builtin_id: None,
+            layout: crate::environment::SurfaceLayout::Dashboard,
+            slots: vec![],
+            mobile_tab: None,
+            layout_root: None,
+        });
         spec.components.push(ComponentDef {
             id: "bad".to_string(),
             component_type: ComponentType::BuiltinPanel,
@@ -387,7 +389,11 @@ mod tests {
             updated_at: None,
         });
         let errors = validate_environment_spec(&spec);
-        assert!(errors.iter().any(|e| e.contains("not rendered in Home Phase 1")));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("not rendered in Home Phase 1"))
+        );
     }
 
     #[test]
@@ -563,9 +569,7 @@ mod tests {
         if let Some(presets) = &mut spec.layout_presets {
             for preset in presets.iter_mut() {
                 if preset.active {
-                    preset
-                        .surfaces
-                        .retain(|id| id != SAFETY_SURFACE_SETTINGS);
+                    preset.surfaces.retain(|id| id != SAFETY_SURFACE_SETTINGS);
                 }
             }
         }

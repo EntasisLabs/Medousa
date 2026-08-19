@@ -186,7 +186,8 @@ pub(crate) async fn handle_key_event(
         if state.mode == UiMode::History {
             state.mode = UiMode::Chat;
         } else {
-            state.history_items = super::history_services::list_history_sessions_daemon_first(state, 200).await;
+            state.history_items =
+                super::history_services::list_history_sessions_daemon_first(state, 200).await;
             state.history_selected = 0;
             state.history_scroll = 0;
             state.history_max_scroll = 0;
@@ -483,28 +484,27 @@ async fn handle_startup_key_event(
                 state.settings_draft.model.push(c);
             }
         }
-        KeyCode::Enter
-            if state.startup_selected == 2 => {
-                let provider = state.settings_draft.provider.trim().to_string();
-                let model = state.settings_draft.model.trim().to_string();
-                if provider.is_empty() || model.is_empty() {
-                    super::push_obs_alert(
-                        state,
-                        "⚠ startup requires a non-empty provider and model".to_string(),
-                    );
-                    return EventOutcome::Continue;
-                }
-
-                state.settings_draft.provider = provider;
-                state.settings_draft.model = model;
-                state.provider_model = format!(
-                    "{}:{}",
-                    state.settings_draft.provider, state.settings_draft.model
+        KeyCode::Enter if state.startup_selected == 2 => {
+            let provider = state.settings_draft.provider.trim().to_string();
+            let model = state.settings_draft.model.trim().to_string();
+            if provider.is_empty() || model.is_empty() {
+                super::push_obs_alert(
+                    state,
+                    "⚠ startup requires a non-empty provider and model".to_string(),
                 );
-                super::apply_settings(state, tui_rt, event_tx).await;
-                state.mode = UiMode::Chat;
                 return EventOutcome::Continue;
             }
+
+            state.settings_draft.provider = provider;
+            state.settings_draft.model = model;
+            state.provider_model = format!(
+                "{}:{}",
+                state.settings_draft.provider, state.settings_draft.model
+            );
+            super::apply_settings(state, tui_rt, event_tx).await;
+            state.mode = UiMode::Chat;
+            return EventOutcome::Continue;
+        }
         _ => {}
     }
 
@@ -711,12 +711,11 @@ fn handle_editor_key_event(key: KeyEvent, state: &mut TuiState) -> EventOutcome 
             state.editor_preferred_col = None;
             edited = true;
         }
-        KeyCode::Char(c)
-            if (key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT) => {
-                state.editor_buffer.insert_char(c);
-                state.editor_preferred_col = None;
-                edited = true;
-            }
+        KeyCode::Char(c) if (key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT) => {
+            state.editor_buffer.insert_char(c);
+            state.editor_preferred_col = None;
+            edited = true;
+        }
         _ => {}
     }
 

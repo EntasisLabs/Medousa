@@ -7,7 +7,6 @@ use ratatui::{
 };
 use ratatui_image::{StatefulImage, protocol::StatefulProtocol};
 
-
 use super::model::{
     BackendChoice, BackgroundServiceOption, ChannelOption, ProviderChoice, WizardState, WizardStep,
 };
@@ -50,14 +49,12 @@ pub(crate) fn render(
         step_index as f64 / step_total as f64
     };
 
-    let title = Paragraph::new(Line::from(vec![
-        Span::styled(
-            state.step_title(),
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ]));
+    let title = Paragraph::new(Line::from(vec![Span::styled(
+        state.step_title(),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )]));
     frame.render_widget(title, sections[0]);
 
     let gauge = Gauge::default()
@@ -184,7 +181,6 @@ fn body_text(state: &WizardState) -> Text<'static> {
             if state.provider_choice == ProviderChoice::Ollama {
                 lines.push(Line::from("Leave blank for Ollama default."));
             } else {
-
                 lines.push(Line::from("Leave blank for provider default."));
             }
         }
@@ -245,7 +241,10 @@ fn body_text(state: &WizardState) -> Text<'static> {
         WizardStep::BackendSurrealWsPassword => {
             lines.push(Line::from("SurrealDB sign-in password (optional):"));
             lines.push(Line::from(""));
-            lines.push(input_line("Password", &mask_secret(&state.surreal_password)));
+            lines.push(input_line(
+                "Password",
+                &mask_secret(&state.surreal_password),
+            ));
             lines.push(Line::from("Saved to product_config.json and keychain."));
         }
         WizardStep::BackendSurrealNamespace => {
@@ -293,8 +292,7 @@ fn body_text(state: &WizardState) -> Text<'static> {
                 lines.push(option_line(
                     focused,
                     &label,
-                    if (state.bootstrap.existing_discord_token
-                        && *option == ChannelOption::Discord)
+                    if (state.bootstrap.existing_discord_token && *option == ChannelOption::Discord)
                         || (state.bootstrap.existing_telegram_token
                             && *option == ChannelOption::Telegram)
                     {
@@ -341,7 +339,10 @@ fn body_text(state: &WizardState) -> Text<'static> {
         WizardStep::DiscordToken => {
             lines.push(Line::from("Add Discord bot token:"));
             lines.push(Line::from(""));
-            lines.push(input_line("Discord token", &mask_secret(&state.discord_token)));
+            lines.push(input_line(
+                "Discord token",
+                &mask_secret(&state.discord_token),
+            ));
             lines.push(Line::from(if state.bootstrap.existing_discord_token {
                 "Keep existing Discord token."
             } else {
@@ -352,7 +353,9 @@ fn body_text(state: &WizardState) -> Text<'static> {
             lines.push(Line::from("Command prefix for Discord messages:"));
             lines.push(Line::from(""));
             lines.push(input_line("Prefix", &state.discord_command_prefix));
-            lines.push(Line::from("Messages starting with this prefix route to Medousa."));
+            lines.push(Line::from(
+                "Messages starting with this prefix route to Medousa.",
+            ));
         }
         WizardStep::DiscordHeartbeat => {
             lines.push(Line::from("Optional heartbeat nudges for Discord:"));
@@ -370,12 +373,17 @@ fn body_text(state: &WizardState) -> Text<'static> {
                     state.discord_heartbeat_channel_ids.trim()
                 },
             ));
-            lines.push(Line::from("Comma-separated channel ids. Space toggles nudges."));
+            lines.push(Line::from(
+                "Comma-separated channel ids. Space toggles nudges.",
+            ));
         }
         WizardStep::TelegramToken => {
             lines.push(Line::from("Add Telegram bot token:"));
             lines.push(Line::from(""));
-            lines.push(input_line("Telegram token", &mask_secret(&state.telegram_token)));
+            lines.push(input_line(
+                "Telegram token",
+                &mask_secret(&state.telegram_token),
+            ));
             lines.push(Line::from(if state.bootstrap.existing_telegram_token {
                 "Keep existing Telegram token."
             } else {
@@ -383,12 +391,15 @@ fn body_text(state: &WizardState) -> Text<'static> {
             }));
         }
         WizardStep::TelegramAllowUserIds => {
-            lines.push(Line::from(
-                "Sender lock — only accept from these user ids:",
-            ));
+            lines.push(Line::from("Sender lock — only accept from these user ids:"));
             lines.push(Line::from(""));
-            lines.push(input_line("Allowed user ids", &state.telegram_allow_user_ids));
-            lines.push(Line::from("Comma-separated numeric ids, e.g. 123456789,987654321."));
+            lines.push(input_line(
+                "Allowed user ids",
+                &state.telegram_allow_user_ids,
+            ));
+            lines.push(Line::from(
+                "Comma-separated numeric ids, e.g. 123456789,987654321.",
+            ));
             lines.push(Line::from("Leave blank to allow all Telegram users."));
         }
         WizardStep::TelegramHeartbeat => {
@@ -407,12 +418,17 @@ fn body_text(state: &WizardState) -> Text<'static> {
                     state.telegram_heartbeat_chat_ids.trim()
                 },
             ));
-            lines.push(Line::from("Comma-separated chat ids. Space toggles nudges."));
+            lines.push(Line::from(
+                "Comma-separated chat ids. Space toggles nudges.",
+            ));
         }
         WizardStep::SlackBotToken => {
             lines.push(Line::from("Slack bot token (xoxb-…):"));
             lines.push(Line::from(""));
-            lines.push(input_line("Bot token", &mask_secret(&state.slack_bot_token)));
+            lines.push(input_line(
+                "Bot token",
+                &mask_secret(&state.slack_bot_token),
+            ));
             lines.push(Line::from(if state.bootstrap.existing_slack_bot_token {
                 "Keep existing bot token when left blank."
             } else {
@@ -422,7 +438,10 @@ fn body_text(state: &WizardState) -> Text<'static> {
         WizardStep::SlackAppToken => {
             lines.push(Line::from("Slack app token for Socket Mode (xapp-…):"));
             lines.push(Line::from(""));
-            lines.push(input_line("App token", &mask_secret(&state.slack_app_token)));
+            lines.push(input_line(
+                "App token",
+                &mask_secret(&state.slack_app_token),
+            ));
             lines.push(Line::from(if state.bootstrap.existing_slack_app_token {
                 "Keep existing app token when left blank."
             } else {
@@ -433,18 +452,27 @@ fn body_text(state: &WizardState) -> Text<'static> {
             lines.push(Line::from("Optional Slack sender allowlist:"));
             lines.push(Line::from(""));
             lines.push(input_line("Allowed user ids", &state.slack_allow_user_ids));
-            lines.push(Line::from("Comma-separated Slack user ids (U…). Blank = all users."));
+            lines.push(Line::from(
+                "Comma-separated Slack user ids (U…). Blank = all users.",
+            ));
         }
         WizardStep::WhatsAppDeliverBind => {
-            lines.push(Line::from("Local deliver endpoint bind (daemon outbox push):"));
+            lines.push(Line::from(
+                "Local deliver endpoint bind (daemon outbox push):",
+            ));
             lines.push(Line::from(""));
             lines.push(input_line("Deliver bind", &state.whatsapp_deliver_bind));
-            lines.push(Line::from("Default 127.0.0.1:7422 — POST /v1/deliver for outbound messages."));
+            lines.push(Line::from(
+                "Default 127.0.0.1:7422 — POST /v1/deliver for outbound messages.",
+            ));
         }
         WizardStep::WhatsAppAllowUserIds => {
             lines.push(Line::from("Optional WhatsApp sender allowlist:"));
             lines.push(Line::from(""));
-            lines.push(input_line("Allowed senders", &state.whatsapp_allow_user_ids));
+            lines.push(input_line(
+                "Allowed senders",
+                &state.whatsapp_allow_user_ids,
+            ));
             lines.push(Line::from(
                 "Comma-separated JIDs or suffixes. Blank = all senders.",
             ));
@@ -491,7 +519,10 @@ fn body_text(state: &WizardState) -> Text<'static> {
                 },
             ));
             lines.push(section_heading("Runtime"));
-            lines.push(summary_line("Backend", &state.backend_choice.as_backend_id()));
+            lines.push(summary_line(
+                "Backend",
+                &state.backend_choice.as_backend_id(),
+            ));
             if state.bootstrap.advanced_mode {
                 lines.push(summary_line("Daemon URL", &state.daemon_url));
             }
@@ -509,7 +540,11 @@ fn body_text(state: &WizardState) -> Text<'static> {
             ));
             lines.push(summary_line(
                 "MCP gateway config",
-                if state.configure_mcp_gateway { "yes" } else { "no" },
+                if state.configure_mcp_gateway {
+                    "yes"
+                } else {
+                    "no"
+                },
             ));
             lines.push(summary_line(
                 "Start MCP gateway",
@@ -525,7 +560,11 @@ fn body_text(state: &WizardState) -> Text<'static> {
             ));
             lines.push(summary_line(
                 "Stasis OpenTelemetry",
-                if state.stasis_otel_enabled { "on" } else { "off" },
+                if state.stasis_otel_enabled {
+                    "on"
+                } else {
+                    "off"
+                },
             ));
             lines.push(section_heading("Channels"));
             lines.push(summary_line(
@@ -560,7 +599,11 @@ fn body_text(state: &WizardState) -> Text<'static> {
             ));
             lines.push(summary_line(
                 "Telegram setup",
-                if state.configure_telegram { "yes" } else { "no" },
+                if state.configure_telegram {
+                    "yes"
+                } else {
+                    "no"
+                },
             ));
             lines.push(summary_line(
                 "Telegram allowed users",
@@ -612,7 +655,11 @@ fn body_text(state: &WizardState) -> Text<'static> {
             ));
             lines.push(summary_line(
                 "WhatsApp setup",
-                if state.configure_whatsapp { "yes" } else { "no" },
+                if state.configure_whatsapp {
+                    "yes"
+                } else {
+                    "no"
+                },
             ));
             if state.configure_whatsapp {
                 lines.push(summary_line(
@@ -709,7 +756,9 @@ fn footer_text(state: &WizardState) -> Text<'static> {
 fn option_line(selected: bool, label: &str, detail: &str) -> Line<'static> {
     let marker = if selected { "▸" } else { " " };
     let marker_style = if selected {
-        Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(Color::Magenta)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::DarkGray)
     };
@@ -736,7 +785,9 @@ fn input_line(label: &str, value: &str) -> Line<'static> {
     Line::from(vec![
         Span::styled(
             format!("{}: ", label),
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::raw(display),
     ])
@@ -748,7 +799,9 @@ fn toggle_line(label: &str, enabled: bool) -> Line<'static> {
         Span::styled(
             check.to_string(),
             if enabled {
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::DarkGray)
             },
@@ -770,7 +823,9 @@ fn summary_line(label: &str, value: &str) -> Line<'static> {
     Line::from(vec![
         Span::styled(
             format!("{}: ", label),
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::raw(value.to_string()),
     ])

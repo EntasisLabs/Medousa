@@ -84,11 +84,7 @@ pub fn install_starter_gateway_config_if_missing() -> Result<PathBuf> {
             )
         })?;
     }
-    fs::write(&path, STARTER_MCP_GATEWAY_TOML).with_context(|| {
-        format!(
-            "failed to write MCP gateway config {}",
-            path.display()
-        )
-    })?;
+    fs::write(&path, STARTER_MCP_GATEWAY_TOML)
+        .with_context(|| format!("failed to write MCP gateway config {}", path.display()))?;
     Ok(path)
 }

@@ -29,7 +29,11 @@ pub struct ApiErrorEnvelope {
 }
 
 impl ApiErrorEnvelope {
-    pub fn new(code: impl Into<String>, message: impl Into<String>, request_id: impl Into<String>) -> Self {
+    pub fn new(
+        code: impl Into<String>,
+        message: impl Into<String>,
+        request_id: impl Into<String>,
+    ) -> Self {
         Self {
             schema_version: API_ERROR_SCHEMA_VERSION,
             code: code.into(),

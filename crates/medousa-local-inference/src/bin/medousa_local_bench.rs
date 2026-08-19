@@ -602,13 +602,15 @@ mod tests {
 
     #[test]
     fn rejects_zero_sweep_bounds() {
-        assert!(parse_args(vec![
-            "--model-id".into(),
-            "gemma-4-e2b-it-qat".into(),
-            "--context".into(),
-            "0".into(),
-        ])
-        .is_err());
+        assert!(
+            parse_args(vec![
+                "--model-id".into(),
+                "gemma-4-e2b-it-qat".into(),
+                "--context".into(),
+                "0".into(),
+            ])
+            .is_err()
+        );
     }
 
     #[test]

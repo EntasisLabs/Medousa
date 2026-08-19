@@ -29,11 +29,26 @@ pub(crate) async fn handle_slash_command(
                 state,
                 "  /settings open provider, model, and routing".to_string(),
             );
-            push_obs_alert(state, "  /usage    context window / token breakdown".to_string());
-            push_obs_alert(state, "  /notes    open vault library picker (Ctrl+; o)".to_string());
-            push_obs_alert(state, "  /code     open Forge code desk (Ctrl+; f)".to_string());
-            push_obs_alert(state, "  /review   open Forge review desk (Ctrl+; r)".to_string());
-            push_obs_alert(state, "  /seal     seal focused code lease → review (Ctrl+E)".to_string());
+            push_obs_alert(
+                state,
+                "  /usage    context window / token breakdown".to_string(),
+            );
+            push_obs_alert(
+                state,
+                "  /notes    open vault library picker (Ctrl+; o)".to_string(),
+            );
+            push_obs_alert(
+                state,
+                "  /code     open Forge code desk (Ctrl+; f)".to_string(),
+            );
+            push_obs_alert(
+                state,
+                "  /review   open Forge review desk (Ctrl+; r)".to_string(),
+            );
+            push_obs_alert(
+                state,
+                "  /seal     seal focused code lease → review (Ctrl+E)".to_string(),
+            );
             push_obs_alert(
                 state,
                 "  /terminal open workshop shell pane (Ctrl+; t / T)".to_string(),
@@ -64,11 +79,8 @@ pub(crate) async fn handle_slash_command(
             let rest = parts.collect::<Vec<_>>().join(" ");
             let rest = rest.trim();
             if rest.is_empty() {
-                forge_runtime::open_forge_picker(
-                    state,
-                    forge_runtime::ForgePickerTarget::Code,
-                )
-                .await;
+                forge_runtime::open_forge_picker(state, forge_runtime::ForgePickerTarget::Code)
+                    .await;
             } else {
                 let _ = forge_runtime::open_code_work(state, rest, rest).await;
             }
@@ -77,11 +89,8 @@ pub(crate) async fn handle_slash_command(
             let rest = parts.collect::<Vec<_>>().join(" ");
             let rest = rest.trim();
             if rest.is_empty() {
-                forge_runtime::open_forge_picker(
-                    state,
-                    forge_runtime::ForgePickerTarget::Review,
-                )
-                .await;
+                forge_runtime::open_forge_picker(state, forge_runtime::ForgePickerTarget::Review)
+                    .await;
             } else {
                 let _ = forge_runtime::open_review_work(state, rest, rest).await;
             }
@@ -147,12 +156,15 @@ pub(crate) async fn handle_slash_command(
                                 .unwrap_or(label.as_str())
                         ),
                     ),
-                    Err(err) => push_obs_alert(state, format!("⚠ could not set session name: {err}")),
+                    Err(err) => {
+                        push_obs_alert(state, format!("⚠ could not set session name: {err}"))
+                    }
                 }
             }
         }
         "/history" => {
-            state.history_items = history_services::list_history_sessions_daemon_first(state, 200).await;
+            state.history_items =
+                history_services::list_history_sessions_daemon_first(state, 200).await;
             state.history_selected = 0;
             state.history_scroll = 0;
             state.history_max_scroll = 0;
@@ -288,8 +300,10 @@ pub(crate) async fn handle_slash_command(
         }
         "/stage-routes" | "/stage-route-set" | "/stage-route-reset" => {
             let args = parts.collect::<Vec<_>>();
-            return slash_command_stage_services::handle_stage_route_family_command(cmd, args, state)
-                .await;
+            return slash_command_stage_services::handle_stage_route_family_command(
+                cmd, args, state,
+            )
+            .await;
         }
         "/save" => {
             let path_raw = parts.collect::<Vec<_>>().join(" ");
@@ -393,25 +407,23 @@ pub(crate) async fn handle_slash_command(
             let trailing_args = parts.collect::<Vec<_>>();
             return slash_command_services::handle_perf_command(sub, &trailing_args, state);
         }
-        "/usage" => {
-            match &state.last_context_usage {
-                Some(report) => {
-                    for line in medousa::agent_runtime::context_usage::format_context_usage_text(report)
-                        .lines()
-                    {
-                        if line.is_empty() {
-                            push_obs_alert(state, String::new());
-                        } else {
-                            push_obs_alert(state, line.to_string());
-                        }
+        "/usage" => match &state.last_context_usage {
+            Some(report) => {
+                for line in
+                    medousa::agent_runtime::context_usage::format_context_usage_text(report).lines()
+                {
+                    if line.is_empty() {
+                        push_obs_alert(state, String::new());
+                    } else {
+                        push_obs_alert(state, line.to_string());
                     }
                 }
-                None => push_obs_alert(
-                    state,
-                    "No context usage snapshot yet — send a message first.".to_string(),
-                ),
             }
-        }
+            None => push_obs_alert(
+                state,
+                "No context usage snapshot yet — send a message first.".to_string(),
+            ),
+        },
         "/daemon" => {
             return handle_daemon_command(&mut parts, state).await;
         }
@@ -423,22 +435,17 @@ pub(crate) async fn handle_slash_command(
         "/watch" => {
             return handle_watch_command(&mut parts, state);
         }
-        "/skills" => {
-            match medousa::skill_ingest::format_skill_manuscripts_list() {
-                Ok(list) => push_obs_alert(state, list),
-                Err(err) => push_obs_alert(state, format!("⚠ could not list skills: {err:#}")),
-            }
-        }
+        "/skills" => match medousa::skill_ingest::format_skill_manuscripts_list() {
+            Ok(list) => push_obs_alert(state, list),
+            Err(err) => push_obs_alert(state, format!("⚠ could not list skills: {err:#}")),
+        },
         "/skill" => {
             let args = parts.collect::<Vec<_>>().join(" ");
             match medousa::skill_ingest::parse_skill_command_args(&args)
                 .and_then(|parsed| medousa::skill_ingest::build_skill_run_ingest_prompt(&parsed))
             {
                 Ok(prompt) => {
-                    push_obs_alert(
-                        state,
-                        "◈ skill run queued via research worker".to_string(),
-                    );
+                    push_obs_alert(state, "◈ skill run queued via research worker".to_string());
                     start_prompt_run(state, tui_rt, event_tx, prompt, true).await;
                 }
                 Err(err) => push_obs_alert(state, format!("⚠ skill run failed: {err:#}")),

@@ -1392,6 +1392,11 @@ fn strip_orphaned_tool_responses(messages: &mut Vec<ChatMessage>) {
 }
 
 fn bounded_chat_message(message: &ChatMessage) -> ChatMessage {
+    let keep_tool_turn_reasoning = message
+        .content
+        .parts()
+        .iter()
+        .any(ContentPart::is_tool_call);
     let parts = message
         .content
         .parts()
@@ -1428,8 +1433,12 @@ fn bounded_chat_message(message: &ChatMessage) -> ChatMessage {
             ContentPart::ThoughtSignature(signature) => {
                 Some(ContentPart::ThoughtSignature(truncate(signature, 8_000)))
             }
-            // Durable checkpoints never retain private reasoning or binary/custom
-            // payloads. The normalized placeholder keeps message ordering stable.
+            // Tool-call turns must keep verbatim thinking-mode CoT so DeepSeek
+            // resume does not 400. Reasoning-only assistant turns are not
+            // required on later requests and stay omitted from durable storage.
+            ContentPart::ReasoningContent(text) if keep_tool_turn_reasoning => {
+                Some(ContentPart::ReasoningContent(text.clone()))
+            }
             ContentPart::ReasoningContent(_) => None,
             ContentPart::Binary(_) => Some(ContentPart::Text(
                 "[binary content omitted from durable Coder checkpoint]".into(),
@@ -1852,6 +1861,25 @@ mod tests {
                 .all(|part| !matches!(part, ContentPart::ReasoningContent(_)))
         );
         assert!(bounded.content.size() <= MAX_MESSAGE_PART_CHARS);
+    }
+
+    #[test]
+    fn transcript_bounding_keeps_tool_call_reasoning_content() {
+        let message = ChatMessage::assistant(MessageContent::from_parts(vec![
+            ContentPart::ReasoningContent("I should inspect the file first.".into()),
+            ContentPart::ToolCall(ToolCall {
+                call_id: "call_keep".into(),
+                fn_name: "cognition_workshop_query".into(),
+                fn_arguments: json!({ "action": "workshop.status" }),
+                thought_signatures: None,
+            }),
+        ]));
+        let bounded = bounded_chat_message(&message);
+        assert_eq!(
+            bounded.content.joined_reasoning_content().as_deref(),
+            Some("I should inspect the file first.")
+        );
+        assert!(bounded.content.contains_tool_call());
     }
 
     #[test]

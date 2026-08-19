@@ -8,7 +8,12 @@ pub enum ChallengeReason {
     EmptyResults,
 }
 
-pub fn detect_challenge(url: &str, status: u16, body: &str, parsed_result_count: usize) -> Option<ChallengeReason> {
+pub fn detect_challenge(
+    url: &str,
+    status: u16,
+    body: &str,
+    parsed_result_count: usize,
+) -> Option<ChallengeReason> {
     let url_lower = url.to_ascii_lowercase();
     if url_lower.contains("/sorry")
         || url_lower.contains("captcha")

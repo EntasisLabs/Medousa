@@ -27,9 +27,9 @@ pub fn run_iroh(args: &[String]) -> Result<()> {
         Some("workshop") | Some("serve") => run_workshop(args),
         Some("curl") | Some("get") => run_curl(args),
         Some("ticket") => run_ticket(args),
-        Some(other) => bail!(
-            "unknown iroh subcommand '{other}'. run 'medousa iroh --help' for usage"
-        ),
+        Some(other) => {
+            bail!("unknown iroh subcommand '{other}'. run 'medousa iroh --help' for usage")
+        }
     }
 }
 
@@ -125,5 +125,7 @@ fn print_iroh_help() {
     println!("  medousa iroh ticket [--upstream <url>]   # print ticket and exit");
     println!();
     println!("Requires build with --features iroh-transport");
-    println!("Iroh gateway is on by default when built with iroh-transport (opt out: MEDOUSA_IROH=0)");
+    println!(
+        "Iroh gateway is on by default when built with iroh-transport (opt out: MEDOUSA_IROH=0)"
+    );
 }

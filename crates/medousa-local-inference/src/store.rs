@@ -1,4 +1,4 @@
 pub use medousa_install_support::model_download::{
-    local_repo_if_installed, DownloadPhase, InstalledModelRecord, ModelDownloadProgress,
-    ModelStore, MODEL_STORE,
+    DownloadPhase, InstalledModelRecord, MODEL_STORE, ModelDownloadProgress, ModelStore,
+    local_repo_if_installed,
 };

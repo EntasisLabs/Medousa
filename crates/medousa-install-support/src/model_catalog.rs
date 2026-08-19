@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 pub use medousa_types::local::CatalogModelEntry;
+use serde::{Deserialize, Serialize};
 
 const BUILTIN_CATALOG_JSON: &str = include_str!("catalog/v2.json");
 
@@ -24,6 +24,11 @@ mod tests {
         let catalog = builtin_catalog();
         assert_eq!(catalog.catalog_version, "2");
         assert_eq!(catalog.family_default, "gemma-4");
-        assert!(catalog.models.iter().any(|entry| entry.id == "gemma-4-12b-it"));
+        assert!(
+            catalog
+                .models
+                .iter()
+                .any(|entry| entry.id == "gemma-4-12b-it")
+        );
     }
 }

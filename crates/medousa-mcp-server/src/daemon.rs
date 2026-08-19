@@ -45,9 +45,9 @@ impl DaemonClient {
         if let Some(token) = &self.bearer {
             req = req.bearer_auth(token);
         }
-        let response = req.send().map_err(|err| {
-            format!("daemon GET {path} failed ({url}): {err}")
-        })?;
+        let response = req
+            .send()
+            .map_err(|err| format!("daemon GET {path} failed ({url}): {err}"))?;
         let status = response.status();
         let text = response.text().unwrap_or_default();
         if !status.is_success() {
@@ -88,11 +88,7 @@ impl DaemonClient {
         self.get_json(&path)
     }
 
-    pub fn calendar_list(
-        &self,
-        from: Option<&str>,
-        to: Option<&str>,
-    ) -> Result<Value, String> {
+    pub fn calendar_list(&self, from: Option<&str>, to: Option<&str>) -> Result<Value, String> {
         let mut path = "/v1/calendar/events?".to_string();
         let mut parts = Vec::new();
         if let Some(from) = from.map(str::trim).filter(|v| !v.is_empty()) {
@@ -165,9 +161,9 @@ impl DaemonClient {
         if let Some(token) = &self.bearer {
             req = req.bearer_auth(token);
         }
-        let response = req.send().map_err(|err| {
-            format!("daemon POST {path} failed ({url}): {err}")
-        })?;
+        let response = req
+            .send()
+            .map_err(|err| format!("daemon POST {path} failed ({url}): {err}"))?;
         let status = response.status();
         let text = response.text().unwrap_or_default();
         if !status.is_success() {
@@ -188,14 +184,9 @@ fn urlencoding_path(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len());
     for byte in raw.bytes() {
         match byte {
-            b'A'..=b'Z'
-            | b'a'..=b'z'
-            | b'0'..=b'9'
-            | b'-'
-            | b'_'
-            | b'.'
-            | b'~'
-            | b'/' => out.push(byte as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
+                out.push(byte as char)
+            }
             _ => out.push_str(&format!("%{byte:02X}")),
         }
     }

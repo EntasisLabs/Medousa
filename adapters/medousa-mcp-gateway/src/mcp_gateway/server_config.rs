@@ -81,12 +81,7 @@ impl McpGatewayFullConfig {
     pub fn from_env_and_args(args: &[String]) -> Self {
         let file = load_gateway_file_config();
         let mut config = Self {
-            bind: file
-                .gateway
-                .bind
-                .clone()
-                .trim()
-                .to_string(),
+            bind: file.gateway.bind.clone().trim().to_string(),
             gateway_token: super::config::resolve_mcp_gateway_token(),
             admin_token: super::config::resolve_mcp_gateway_admin_token(),
             invokes_enabled: !args.iter().any(|arg| arg == "--invokes-disabled"),
@@ -129,7 +124,10 @@ fn load_gateway_file_config() -> McpGatewayFileConfig {
     };
 
     toml::from_str(&raw).unwrap_or_else(|error| {
-        eprintln!("medousa-mcp-gateway: failed to parse {}: {error}", path.display());
+        eprintln!(
+            "medousa-mcp-gateway: failed to parse {}: {error}",
+            path.display()
+        );
         McpGatewayFileConfig {
             gateway: GatewaySection::default(),
             servers: Vec::new(),
@@ -183,4 +181,3 @@ fn find_arg_value(args: &[String], flag: &str) -> Option<String> {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
 }
-

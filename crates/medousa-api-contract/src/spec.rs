@@ -242,10 +242,7 @@ impl OperationSpec {
                 "every operation requires at least one success response",
             ));
         }
-        if !self.bootstrap_public
-            && self.trust_group != "preview"
-            && self.capabilities.is_empty()
-        {
+        if !self.bootstrap_public && self.trust_group != "preview" && self.capabilities.is_empty() {
             return Err(ContractError::invalid(
                 "protected route requires a capability",
             ));
@@ -296,7 +293,11 @@ impl OperationSpec {
     }
 
     pub fn with_path_parameters(mut self) -> Self {
-        if self.parameters.iter().any(|p| p.location == ParameterLocation::Path) {
+        if self
+            .parameters
+            .iter()
+            .any(|p| p.location == ParameterLocation::Path)
+        {
             return self;
         }
         for name in path_parameters(&self.path) {
@@ -381,7 +382,12 @@ mod tests {
         spec.bootstrap_public = false;
         spec.trust_group = "portal".into();
         spec.capabilities.clear();
-        assert!(spec.validate().unwrap_err().to_string().contains("capability"));
+        assert!(
+            spec.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("capability")
+        );
     }
 
     #[test]

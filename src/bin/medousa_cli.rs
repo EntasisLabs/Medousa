@@ -7,38 +7,33 @@ use clap::Parser;
 
 #[path = "medousa_cli/cli.rs"]
 mod cli;
-use medousa::identity_memory::resolve_identity_user_id;
 use medousa::engine_context::{
-    EngineExecutionLane, compile_default_lane_prompt,
-    default_policy_profile_for_lane,
+    EngineExecutionLane, compile_default_lane_prompt, default_policy_profile_for_lane,
 };
+use medousa::identity_memory::resolve_identity_user_id;
 use medousa::{
     AdapterDeliveryOutcome, DaemonStatsResponse, EnqueueReportRequest, EnqueueResponse,
-    HealthResponse, IngestRequest, IngestResponse, fetch_job_result, wait_for_ask_delivery,
-    default_delivery_timeout,
-    HeartbeatStatusResponse,
-    IdentityContextRequest,
-    JobReportResponse,
-    RegisterRecurringPromptRequest, RegisterRecurringResponse, build_runtime, parse_backend,
-    process_once, publish_pending, resolve_daemon_url, resolve_llm_base_url, resolve_llm_provider,
-    resolve_llm_target,
+    HealthResponse, HeartbeatStatusResponse, IdentityContextRequest, IngestRequest, IngestResponse,
+    JobReportResponse, RegisterRecurringPromptRequest, RegisterRecurringResponse, build_runtime,
+    default_delivery_timeout, fetch_job_result, parse_backend, process_once, publish_pending,
+    resolve_daemon_url, resolve_llm_base_url, resolve_llm_provider, resolve_llm_target,
+    wait_for_ask_delivery,
 };
 use reqwest::Client;
 use serde_json::{Value, json};
-use tokio::time::{Instant, sleep};
 use stasis::application::orchestration::runtime_job_payloads::{
     AgentSessionJobPayload, AgentSessionParticipantPayload, AgentToolCallMode, PromptJobPayload,
 };
 use stasis::application::orchestration::runtime_workflow_job_builder::RuntimeWorkflowJobBuilder;
 use stasis::ports::outbound::memory::identity_memory_models::{
     CommitEntityUpdateRequest, CommitEntityUpdateResponse, GetIdentityContextResponse,
-    IdentityEntityType,
-    ListEntityHistoryRequest, ListEntityHistoryResponse, ProposeEntityUpdateRequest,
-    ProposeEntityUpdateResponse, RollbackEntityVersionRequest, RollbackEntityVersionResponse,
-    UpdateSource,
+    IdentityEntityType, ListEntityHistoryRequest, ListEntityHistoryResponse,
+    ProposeEntityUpdateRequest, ProposeEntityUpdateResponse, RollbackEntityVersionRequest,
+    RollbackEntityVersionResponse, UpdateSource,
 };
 use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
 use stasis::prelude::RuntimeComposition;
+use tokio::time::{Instant, sleep};
 
 fn with_cmd(cmd: &str, rest: Vec<String>) -> Vec<String> {
     let mut out = vec![cmd.to_string()];
@@ -47,10 +42,7 @@ fn with_cmd(cmd: &str, rest: Vec<String>) -> Vec<String> {
 }
 
 fn cli_daemon_client(daemon_url: &str) -> Result<Client> {
-    medousa::local_daemon_auth::async_client(
-        daemon_url,
-        medousa_local_credential::CLI_LOCAL_NAME,
-    )
+    medousa::local_daemon_auth::async_client(daemon_url, medousa_local_credential::CLI_LOCAL_NAME)
 }
 
 #[tokio::main]
@@ -291,12 +283,9 @@ async fn run_daemon_first_run(daemon_url: &str, args: &[String]) -> Result<()> {
     println!("next step: open Medousa and chat, or trigger a report from the CLI");
     println!(
         "  medousa-cli daemon-report \"{}\" --daemon-url {} --poll-timeout-ms 30000",
-        report_query,
-        daemon_url
+        report_query, daemon_url
     );
-    println!(
-        "offline brain: open Medousa welcome wizard, or: medousa models probe"
-    );
+    println!("offline brain: open Medousa welcome wizard, or: medousa models probe");
     println!(
         "safety posture interactive_profile={} scheduled_profile={}",
         default_policy_profile_for_lane(EngineExecutionLane::Interactive),
@@ -343,13 +332,9 @@ async fn run_daemon_ask(daemon_url: &str, args: &[String]) -> Result<()> {
             return Ok(());
         }
 
-        let delivery_outcome = wait_for_ask_delivery(
-            &client,
-            daemon_url,
-            &payload,
-            default_delivery_timeout(),
-        )
-        .await?;
+        let delivery_outcome =
+            wait_for_ask_delivery(&client, daemon_url, &payload, default_delivery_timeout())
+                .await?;
 
         match delivery_outcome {
             AdapterDeliveryOutcome::StreamError { message } => {
@@ -409,7 +394,9 @@ async fn run_daemon_report(daemon_url: &str, args: &[String]) -> Result<()> {
         query: query.to_string(),
         policy_profile: Some(
             find_arg_value(args, "--policy-profile")
-                .unwrap_or(default_policy_profile_for_lane(EngineExecutionLane::Interactive))
+                .unwrap_or(default_policy_profile_for_lane(
+                    EngineExecutionLane::Interactive,
+                ))
                 .to_string(),
         ),
         model_hint: find_arg_value(args, "--model-hint").map(ToString::to_string),
@@ -417,10 +404,8 @@ async fn run_daemon_report(daemon_url: &str, args: &[String]) -> Result<()> {
             .and_then(|raw| raw.parse::<u32>().ok())
             .or(Some(2)),
         identity_user_id: find_arg_value(args, "--identity-user-id").map(ToString::to_string),
-        identity_persona_id: find_arg_value(args, "--identity-persona-id")
-            .map(ToString::to_string),
-        identity_channel_id: find_arg_value(args, "--identity-channel-id")
-            .map(ToString::to_string),
+        identity_persona_id: find_arg_value(args, "--identity-persona-id").map(ToString::to_string),
+        identity_channel_id: find_arg_value(args, "--identity-channel-id").map(ToString::to_string),
     };
 
     let response = client
@@ -506,7 +491,10 @@ async fn query_daemon_job_report(
         .send()
         .await?
         .error_for_status()?;
-    response.json::<JobReportResponse>().await.map_err(Into::into)
+    response
+        .json::<JobReportResponse>()
+        .await
+        .map_err(Into::into)
 }
 
 fn print_daemon_report(report: &JobReportResponse) {
@@ -577,9 +565,7 @@ async fn run_daemon_watch_add(
         id: None,
         queue: Some("default".to_string()),
         prompt: prompt.to_string(),
-        system_prompt: Some(
-            medousa::agent_runtime::LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT.to_string(),
-        ),
+        system_prompt: Some(medousa::agent_runtime::LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT.to_string()),
         cron_expr: cron_expr.to_string(),
         timezone: Some(timezone.to_string()),
         jitter_seconds: Some(0),
@@ -1058,7 +1044,12 @@ fn parse_identity_entity_type(raw: &str) -> Result<IdentityEntityType> {
 }
 
 fn parse_update_source(raw: Option<&str>) -> Result<UpdateSource> {
-    match raw.unwrap_or("model_inferred").trim().to_ascii_lowercase().as_str() {
+    match raw
+        .unwrap_or("model_inferred")
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "user_direct" | "user" => Ok(UpdateSource::UserDirect),
         "model_inferred" | "model" => Ok(UpdateSource::ModelInferred),
         "system_event" | "system" => Ok(UpdateSource::SystemEvent),
@@ -1151,10 +1142,7 @@ fn print_identity_context_summary(payload: &GetIdentityContextResponse) {
     if let Some(persona) = payload.persona.as_ref() {
         println!(
             "persona id={} status={} version={} updated_at={}",
-            persona.persona_id,
-            persona.status,
-            persona.version,
-            persona.updated_at,
+            persona.persona_id, persona.status, persona.version, persona.updated_at,
         );
     } else {
         println!("persona missing");
@@ -1163,11 +1151,7 @@ fn print_identity_context_summary(payload: &GetIdentityContextResponse) {
     if let Some(user) = payload.user.as_ref() {
         println!(
             "user id={} timezone={} status={} version={} updated_at={}",
-            user.user_id,
-            user.timezone,
-            user.status,
-            user.version,
-            user.updated_at,
+            user.user_id, user.timezone, user.status, user.version, user.updated_at,
         );
     } else {
         println!("user missing");
@@ -1308,22 +1292,17 @@ fn print_identity_proposal_summary(
 
     println!(
         "review: cargo run -p medousa --bin medousa_cli -- daemon-identity-review {} {} --daemon-url {}",
-        entity_type_token,
-        entity_id,
-        daemon_url,
+        entity_type_token, entity_id, daemon_url,
     );
     if let Some(first_proposal_id) = payload.proposal_ids.first() {
         println!(
             "commit: cargo run -p medousa --bin medousa_cli -- daemon-identity-commit {} <expected_version> --daemon-url {}",
-            first_proposal_id,
-            daemon_url,
+            first_proposal_id, daemon_url,
         );
     }
     println!(
         "rollback template: cargo run -p medousa --bin medousa_cli -- daemon-identity-rollback {} {} <target_version> --reason \"manual continuity rollback\" --approver medousa-cli --daemon-url {}",
-        entity_type_token,
-        entity_id,
-        daemon_url,
+        entity_type_token, entity_id, daemon_url,
     );
 }
 
@@ -1338,11 +1317,13 @@ fn print_identity_commit_summary(payload: &CommitEntityUpdateResponse) {
     );
     println!(
         "identity commit receipt_id={:?} transition_event_id={:?}",
-        payload.receipt_id,
-        payload.transition_event_id,
+        payload.receipt_id, payload.transition_event_id,
     );
     if let Some(rationale) = payload.rationale.as_deref() {
-        println!("identity commit rationale={}", single_line_summary(rationale, 180));
+        println!(
+            "identity commit rationale={}",
+            single_line_summary(rationale, 180)
+        );
     }
     if let Some(sttp_node) = payload.sttp_bridge_node.as_deref() {
         println!("identity commit sttp_bridge_node={}", sttp_node);
@@ -1444,15 +1425,11 @@ fn print_identity_history_review(
     if include_guidance {
         println!(
             "explain: cargo run -p medousa --bin medousa_cli -- daemon-identity-explain {} {} --daemon-url {}",
-            entity_type_token,
-            entity_id,
-            daemon_url,
+            entity_type_token, entity_id, daemon_url,
         );
         println!(
             "rollback template: cargo run -p medousa --bin medousa_cli -- daemon-identity-rollback {} {} <target_version> --reason \"manual continuity rollback\" --approver medousa-cli --daemon-url {}",
-            entity_type_token,
-            entity_id,
-            daemon_url,
+            entity_type_token, entity_id, daemon_url,
         );
     }
 }
@@ -1465,17 +1442,14 @@ fn print_identity_history_explain(
 ) {
     println!(
         "identity explain entity_type={} entity_id={}",
-        entity_type_token,
-        entity_id,
+        entity_type_token, entity_id,
     );
 
     if payload.proposals.is_empty() && payload.transitions.is_empty() {
         println!("no identity change records found for this entity");
         println!(
             "propose first change: cargo run -p medousa --bin medousa_cli -- daemon-identity-update {} {} '{{\"status\":\"active\"}}' --reason \"initial continuity baseline\" --daemon-url {}",
-            entity_type_token,
-            entity_id,
-            daemon_url,
+            entity_type_token, entity_id, daemon_url,
         );
         return;
     }
@@ -1535,27 +1509,24 @@ fn print_identity_history_explain(
 
     println!(
         "audit trail: cargo run -p medousa --bin medousa_cli -- daemon-identity-review {} {} --daemon-url {}",
-        entity_type_token,
-        entity_id,
-        daemon_url,
+        entity_type_token, entity_id, daemon_url,
     );
     println!(
         "reversible path: cargo run -p medousa --bin medousa_cli -- daemon-identity-rollback {} {} <target_version> --reason \"manual continuity rollback\" --approver medousa-cli --daemon-url {}",
-        entity_type_token,
-        entity_id,
-        daemon_url,
+        entity_type_token, entity_id, daemon_url,
     );
 }
 
 fn print_identity_rollback_summary(payload: &RollbackEntityVersionResponse) {
     println!(
         "identity rollback rolled_back={} new_version={:?} rollback_receipt_id={:?}",
-        payload.rolled_back,
-        payload.new_version,
-        payload.rollback_receipt_id,
+        payload.rolled_back, payload.new_version, payload.rollback_receipt_id,
     );
     if let Some(rationale) = payload.rationale.as_deref() {
-        println!("identity rollback rationale={}", single_line_summary(rationale, 180));
+        println!(
+            "identity rollback rationale={}",
+            single_line_summary(rationale, 180)
+        );
     }
 }
 
@@ -1571,9 +1542,7 @@ async fn run_llm(
     let identity_user_id = resolve_identity_user_id(None);
     let payload = PromptJobPayload {
         user_prompt: compile_lane_prompt(EngineExecutionLane::Interactive, prompt),
-        system_prompt: Some(
-            medousa::agent_runtime::LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT.to_string(),
-        ),
+        system_prompt: Some(medousa::agent_runtime::LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT.to_string()),
         policy_profile: Some(
             default_policy_profile_for_lane(EngineExecutionLane::Interactive).to_string(),
         ),
@@ -1697,9 +1666,7 @@ fn print_usage() {
     println!("  medousa-cli daemon-health [--daemon-url <url>]");
     println!("  medousa-cli daemon-stats [--daemon-url <url>]");
     println!("  medousa-cli daemon-heartbeat-status [--daemon-url <url>]");
-    println!(
-        "  medousa-cli daemon-first-run [--daemon-url <url>] [--report-query <query>]"
-    );
+    println!("  medousa-cli daemon-first-run [--daemon-url <url>] [--report-query <query>]");
     println!(
         "  medousa-cli daemon-ask <prompt> [--no-wait] [--identity-user-id <id>] [--identity-channel-id <id>] [--daemon-url <url>]"
     );
@@ -1737,9 +1704,9 @@ fn print_usage() {
     println!(
         "  medousa-cli daemon-identity-rollback <entity_type> <entity_id> <target_version> [--reason <text>] [--approver <id>] [--raw] [--daemon-url <url>]"
     );
-    println!("  identity workflow: daemon-identity-inspect -> daemon-identity-update -> daemon-identity-review -> daemon-identity-rollback (if needed)");
     println!(
-        "  recommended first run: daemon-first-run -> daemon-report (citation-first)"
+        "  identity workflow: daemon-identity-inspect -> daemon-identity-update -> daemon-identity-review -> daemon-identity-rollback (if needed)"
     );
+    println!("  recommended first run: daemon-first-run -> daemon-report (citation-first)");
     println!("  note: ask uses workflow.stasis.agent_session through Stasis runtime orchestration");
 }

@@ -35,10 +35,7 @@ impl StdioMcpSession {
             .spawn()
             .with_context(|| format!("failed to spawn MCP server command '{command}'"))?;
 
-        let stdin = child
-            .stdin
-            .take()
-            .context("MCP server stdin unavailable")?;
+        let stdin = child.stdin.take().context("MCP server stdin unavailable")?;
         let stdout = child
             .stdout
             .take()
@@ -110,10 +107,7 @@ impl StdioMcpSession {
         if let Some(error) = response.get("error") {
             bail!("MCP tools/call error: {error}");
         }
-        Ok(response
-            .get("result")
-            .cloned()
-            .unwrap_or_else(|| json!({})))
+        Ok(response.get("result").cloned().unwrap_or_else(|| json!({})))
     }
 
     fn next_id(&mut self) -> u64 {
@@ -124,15 +118,12 @@ impl StdioMcpSession {
 
     async fn send_request(&mut self, payload: &Value) -> Result<()> {
         let line = serde_json::to_string(payload)?;
-        timeout(
-            self.request_timeout,
-            async {
-                self.stdin.write_all(line.as_bytes()).await?;
-                self.stdin.write_all(b"\n").await?;
-                self.stdin.flush().await?;
-                Ok::<(), std::io::Error>(())
-            },
-        )
+        timeout(self.request_timeout, async {
+            self.stdin.write_all(line.as_bytes()).await?;
+            self.stdin.write_all(b"\n").await?;
+            self.stdin.flush().await?;
+            Ok::<(), std::io::Error>(())
+        })
         .await
         .context("MCP request timed out")??;
         Ok(())

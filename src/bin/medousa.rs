@@ -11,8 +11,8 @@ use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use crossterm::style::Stylize;
 use medousa::session::{
-    load_discord_bot_token, load_slack_app_token, load_slack_bot_token, load_telegram_bot_token,
-    load_surreal_password, load_tui_api_key, load_tui_defaults, save_discord_bot_token,
+    load_discord_bot_token, load_slack_app_token, load_slack_bot_token, load_surreal_password,
+    load_telegram_bot_token, load_tui_api_key, load_tui_defaults, save_discord_bot_token,
     save_slack_app_token, save_slack_bot_token, save_surreal_password, save_telegram_bot_token,
     save_tui_api_key, save_tui_defaults,
 };
@@ -86,9 +86,7 @@ fn main() -> Result<()> {
         Some(cli::Commands::IdentityRemember(args)) => run_identity_remember(&args.to_legacy()),
         Some(cli::Commands::IdentityProfiles(args)) => run_identity_profiles(&args.rest),
         Some(cli::Commands::ManuscriptList) => run_manuscript_list(),
-        Some(cli::Commands::ManuscriptValidate { id }) => {
-            run_manuscript_validate(&[id])
-        }
+        Some(cli::Commands::ManuscriptValidate { id }) => run_manuscript_validate(&[id]),
         Some(cli::Commands::ManuscriptInstall { path, project }) => {
             let mut legacy = vec![path];
             if project {
@@ -214,7 +212,10 @@ fn run_onboard(args: &[String]) -> Result<()> {
             discord_token: None,
             discord_command_prefix: product_config.discord.command_prefix.clone(),
             discord_heartbeat_nudges_enabled: product_config.discord.heartbeat_nudges_enabled,
-            discord_heartbeat_channel_ids: if product_config.discord.heartbeat_channel_ids.is_empty()
+            discord_heartbeat_channel_ids: if product_config
+                .discord
+                .heartbeat_channel_ids
+                .is_empty()
             {
                 None
             } else {
@@ -434,7 +435,8 @@ fn run_onboard(args: &[String]) -> Result<()> {
     }
 
     let daemon_bind = if selected.daemon_bind.trim().is_empty() {
-        daemon_bind_from_url(&selected.daemon_url).unwrap_or_else(|| DEFAULT_DAEMON_BIND.to_string())
+        daemon_bind_from_url(&selected.daemon_url)
+            .unwrap_or_else(|| DEFAULT_DAEMON_BIND.to_string())
     } else {
         selected.daemon_bind.trim().to_string()
     };
@@ -547,7 +549,10 @@ fn run_onboard(args: &[String]) -> Result<()> {
     medousa::sync_profile_daemon_backend(&mut profile.daemon_backend, &product_config, &defaults);
     save_onboard_profile(&profile)?;
 
-    println!("{}", "[ok] Saved defaults, product config, and startup profile.".green());
+    println!(
+        "{}",
+        "[ok] Saved defaults, product config, and startup profile.".green()
+    );
 
     let daemon_launch_backend = medousa::resolve_daemon_launch_backend(
         None,
@@ -633,8 +638,11 @@ fn run_onboard(args: &[String]) -> Result<()> {
         if is_bind_reachable(mcp_bind) {
             println!(
                 "{}",
-                format!("[ok] MCP gateway already running at {}", medousa::DEFAULT_MCP_GATEWAY_URL)
-                    .green()
+                format!(
+                    "[ok] MCP gateway already running at {}",
+                    medousa::DEFAULT_MCP_GATEWAY_URL
+                )
+                .green()
             );
         } else {
             start_mcp_gateway_background()?;
@@ -695,7 +703,8 @@ fn run_onboard(args: &[String]) -> Result<()> {
             _ => {
                 println!(
                     "{}",
-                    "[warn] Slack adapter start requested, but bot/app tokens are missing.".yellow()
+                    "[warn] Slack adapter start requested, but bot/app tokens are missing."
+                        .yellow()
                 );
             }
         }
@@ -844,9 +853,7 @@ fn run_discord(args: &[String]) -> Result<()> {
         .map(ToString::to_string)
         .or_else(load_discord_bot_token)
         .ok_or_else(|| {
-            anyhow!(
-                "discord token missing. run medousa setup and enable Discord, or pass --token"
-            )
+            anyhow!("discord token missing. run medousa setup and enable Discord, or pass --token")
         })?;
 
     let mut passthrough = drop_flag_value_pair(args, "--daemon-url");
@@ -933,9 +940,7 @@ fn run_slack(args: &[String]) -> Result<()> {
         let mut command = Command::new(&adapter.program);
         command.args(&adapter.pre_args);
         command.args(args);
-        let status = command
-            .status()
-            .context("failed to launch medousa_slack")?;
+        let status = command.status().context("failed to launch medousa_slack")?;
         return if status.success() {
             Ok(())
         } else {
@@ -959,9 +964,7 @@ fn run_slack(args: &[String]) -> Result<()> {
         .map(ToString::to_string)
         .or_else(load_slack_bot_token)
         .ok_or_else(|| {
-            anyhow!(
-                "slack bot token missing. pass --bot-token or set MEDOUSA_SLACK_BOT_TOKEN"
-            )
+            anyhow!("slack bot token missing. pass --bot-token or set MEDOUSA_SLACK_BOT_TOKEN")
         })?;
     let app_token = find_arg_value(args, "--app-token")
         .map(str::trim)
@@ -969,9 +972,7 @@ fn run_slack(args: &[String]) -> Result<()> {
         .map(ToString::to_string)
         .or_else(load_slack_app_token)
         .ok_or_else(|| {
-            anyhow!(
-                "slack app token missing. pass --app-token or set MEDOUSA_SLACK_APP_TOKEN"
-            )
+            anyhow!("slack app token missing. pass --app-token or set MEDOUSA_SLACK_APP_TOKEN")
         })?;
 
     let mut passthrough = drop_flag_value_pair(args, "--daemon-url");
@@ -986,9 +987,7 @@ fn run_slack(args: &[String]) -> Result<()> {
     command.arg("--app-token").arg(app_token);
     command.args(&passthrough);
 
-    let status = command
-        .status()
-        .context("failed to launch medousa_slack")?;
+    let status = command.status().context("failed to launch medousa_slack")?;
     if status.success() {
         Ok(())
     } else {
@@ -1072,16 +1071,16 @@ fn run_status(_args: &[String]) -> Result<()> {
     let tcp = is_bind_reachable(&plan.bind);
     let healthy = daemon_http_healthy(&plan.health_url);
     println!("medousa status");
-    println!("engine_process={}", if daemon_running { "running" } else { "stopped" });
+    println!(
+        "engine_process={}",
+        if daemon_running { "running" } else { "stopped" }
+    );
     println!("bind={}", plan.bind);
     println!("health_url={}", plan.health_url);
     println!("tcp_reachable={tcp}");
     println!("http_healthy={healthy}");
     println!("backend={backend}");
-    println!(
-        "data_dir={}",
-        medousa::paths::medousa_data_dir().display()
-    );
+    println!("data_dir={}", medousa::paths::medousa_data_dir().display());
     if let Ok(workshop) = env::var("MEDOUSA_WORKSHOP_ID") {
         let trimmed = workshop.trim();
         if !trimmed.is_empty() {
@@ -1118,11 +1117,8 @@ fn run_stop(args: &[String]) -> Result<()> {
 }
 
 fn run_session_storage(apply: bool, json: bool) -> Result<()> {
-    let report = medousa::session_migration::inventory(
-        &medousa::paths::medousa_data_dir(),
-        apply,
-    )
-    .map_err(anyhow::Error::msg)?;
+    let report = medousa::session_migration::inventory(&medousa::paths::medousa_data_dir(), apply)
+        .map_err(anyhow::Error::msg)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
@@ -1138,7 +1134,9 @@ fn run_session_storage(apply: bool, json: bool) -> Result<()> {
             medousa::session_migration::record_path(&medousa::paths::medousa_data_dir()).display(),
         );
         if report.quarantined > 0 {
-            println!("action=inspect the JSON report; quarantined entries were not followed or changed");
+            println!(
+                "action=inspect the JSON report; quarantined entries were not followed or changed"
+            );
         } else if !apply && report.planned > 0 {
             println!("next=medousa session-storage --apply");
         }
@@ -1234,10 +1232,7 @@ fn run_doctor(args: &[String]) -> Result<()> {
                 .display()
         );
         if let Some(vision) = medousa::inference_profiles::vision_target(&defaults) {
-            println!(
-                "vision_profile={}:{}",
-                vision.provider, vision.model
-            );
+            println!("vision_profile={}:{}", vision.provider, vision.model);
         } else {
             println!("vision_profile=(unset — required for image attachments)");
         }
@@ -1247,10 +1242,7 @@ fn run_doctor(args: &[String]) -> Result<()> {
     }
     println!(
         "provider={} model={} base_url={} backend={}",
-        defaults
-            .provider
-            .as_deref()
-            .unwrap_or("(unset)"),
+        defaults.provider.as_deref().unwrap_or("(unset)"),
         defaults.model.as_deref().unwrap_or("(unset)"),
         defaults.base_url.as_deref().unwrap_or("(unset)"),
         backend_name,
@@ -1261,14 +1253,16 @@ fn run_doctor(args: &[String]) -> Result<()> {
         &product_config,
         &defaults,
     );
-    let surreal_settings =
-        medousa::resolve_surreal_connection_settings(&product_config, &defaults);
+    let surreal_settings = medousa::resolve_surreal_connection_settings(&product_config, &defaults);
     println!(
         "daemon_url={} bind={} tcp_reachable={} http_health={}",
         daemon_url, daemon_bind, daemon_tcp_reachable, daemon_http.label
     );
     println!("daemon_launch_backend={launch_backend}");
-    println!("{}", medousa::runtime::stasis_otel::stasis_otel_status_line());
+    println!(
+        "{}",
+        medousa::runtime::stasis_otel::stasis_otel_status_line()
+    );
     println!(
         "daemon_otel_note=surreal-ws daemon path does not attach OTLP today; hang is usually Surreal connect or schema bootstrap (watch stderr for medousa-daemon: connecting… lines)"
     );
@@ -1279,9 +1273,10 @@ fn run_doctor(args: &[String]) -> Result<()> {
         println!("surreal_endpoint_product_config={endpoint}");
     }
     if profile.daemon_backend.as_deref() != Some(launch_backend.as_str())
-        && let Some(stale) = profile.daemon_backend.as_deref() {
-            println!("surreal_endpoint_onboard_profile_stale={stale}");
-        }
+        && let Some(stale) = profile.daemon_backend.as_deref()
+    {
+        println!("surreal_endpoint_onboard_profile_stale={stale}");
+    }
     for (label, key) in [
         ("env", "MEDOUSA_SURREAL_ENDPOINT"),
         ("env", "STASIS_SURREAL_ENDPOINT"),
@@ -1303,7 +1298,10 @@ fn run_doctor(args: &[String]) -> Result<()> {
         println!(
             "daemon_recovery=Run: medousa start daemon-restart  (stops wedged medousa_daemon and starts a fresh one)"
         );
-        println!("dashboard_url={} (available when http_health=ok)", daemon_dashboard_url(&daemon_url));
+        println!(
+            "dashboard_url={} (available when http_health=ok)",
+            daemon_dashboard_url(&daemon_url)
+        );
     } else if daemon_http.healthy {
         println!("dashboard_url={}", daemon_dashboard_url(&daemon_url));
     }
@@ -1328,10 +1326,7 @@ fn run_doctor(args: &[String]) -> Result<()> {
             );
         }
     }
-    println!(
-        "response_depth={}",
-        product_config.tui.response_depth_mode
-    );
+    println!("response_depth={}", product_config.tui.response_depth_mode);
     println!(
         "api_key={}",
         if load_tui_api_key().is_some() {
@@ -1449,7 +1444,7 @@ fn run_doctor(args: &[String]) -> Result<()> {
         }
     );
     println!(
-        "recurring_delivery=Phase 2: use cognition_runtime_query resource=recurring view=doctor or view=list in TUI/agent; delivery modes: explicit | current_channel | linked_channel | product_default"
+        "recurring_delivery=Phase 2: use cognition_runtime_query action=recurring.doctor or action=recurring.list in TUI/agent; delivery modes: explicit | current_channel | linked_channel | product_default"
     );
 
     let mcp_gateway_url = medousa::resolve_mcp_gateway_url(None);
@@ -1523,12 +1518,13 @@ fn run_doctor(args: &[String]) -> Result<()> {
             }
         }
         if daemon_http.healthy
-            && let Ok(capabilities) = fetch_capabilities(&daemon_url) {
-                println!(
-                    "capability_catalog_count={}",
-                    capabilities.capabilities.len()
-                );
-            }
+            && let Ok(capabilities) = fetch_capabilities(&daemon_url)
+        {
+            println!(
+                "capability_catalog_count={}",
+                capabilities.capabilities.len()
+            );
+        }
     } else if medousa::gateway_auth_configured() && !policy_token_configured {
         println!(
             "{}",
@@ -1577,7 +1573,9 @@ fn run_doctor(args: &[String]) -> Result<()> {
                 continuations.last_resume_child_job_id,
             );
         } else {
-            println!("continuation_status=unavailable (daemon did not return /v1/continuations/status)");
+            println!(
+                "continuation_status=unavailable (daemon did not return /v1/continuations/status)"
+            );
         }
     }
 
@@ -1597,10 +1595,7 @@ fn run_doctor(args: &[String]) -> Result<()> {
         openshell.gateway_reachable,
         openshell.readyz_ok,
         if openshell.cli_installed {
-            openshell
-                .cli_version
-                .as_deref()
-                .unwrap_or("installed")
+            openshell.cli_version.as_deref().unwrap_or("installed")
         } else {
             "missing"
         },
@@ -1735,10 +1730,9 @@ fn run_identity_export(args: &[String]) -> Result<()> {
 fn run_identity_remember(args: &[String]) -> Result<()> {
     let kind = find_arg_value(args, "--kind")
         .ok_or_else(|| anyhow!("missing --kind preference|person|note"))?;
-    let subject = find_arg_value(args, "--subject")
-        .ok_or_else(|| anyhow!("missing --subject"))?;
-    let statement = find_arg_value(args, "--statement")
-        .ok_or_else(|| anyhow!("missing --statement"))?;
+    let subject = find_arg_value(args, "--subject").ok_or_else(|| anyhow!("missing --subject"))?;
+    let statement =
+        find_arg_value(args, "--statement").ok_or_else(|| anyhow!("missing --statement"))?;
     let source_raw = find_arg_value(args, "--source").unwrap_or("user_direct");
     let user_id = find_arg_value(args, "--user-id")
         .map(str::to_string)
@@ -1790,7 +1784,14 @@ fn run_identity_remember(args: &[String]) -> Result<()> {
             }
             "note" => {
                 writer
-                    .remember_note(&user_id, subject, statement, source, 1.0, "cli identity-remember")
+                    .remember_note(
+                        &user_id,
+                        subject,
+                        statement,
+                        source,
+                        1.0,
+                        "cli identity-remember",
+                    )
                     .await
             }
             other => Err(stasis::domain::errors::StasisError::PortFailure(format!(
@@ -1861,7 +1862,9 @@ fn run_identity_profiles(args: &[String]) -> Result<()> {
                 .get(1)
                 .map(String::as_str)
                 .or_else(|| find_arg_value(args, "--slug"))
-                .ok_or_else(|| anyhow!("missing slug: medousa identity-profiles create <slug> [display_name]"))?;
+                .ok_or_else(|| {
+                    anyhow!("missing slug: medousa identity-profiles create <slug> [display_name]")
+                })?;
             let display_name = args
                 .get(2)
                 .cloned()
@@ -1953,9 +1956,9 @@ fn run_identity_profiles(args: &[String]) -> Result<()> {
             }
         }
         "import" => {
-            let path = args
-                .get(1)
-                .ok_or_else(|| anyhow!("missing file: medousa identity-profiles import <file.json>"))?;
+            let path = args.get(1).ok_or_else(|| {
+                anyhow!("missing file: medousa identity-profiles import <file.json>")
+            })?;
             let raw = std::fs::read_to_string(path)
                 .with_context(|| format!("read import file {path}"))?;
             let bundle: medousa::profile_portability::ProfileExportBundle =
@@ -1995,8 +1998,14 @@ fn run_manuscript_list() -> Result<()> {
     let entries = medousa::identity_manuscript::list_manuscripts()?;
     if entries.is_empty() {
         println!("no manuscripts found");
-        println!("  project: {}", medousa::identity_manuscript::project_manuscripts_dir().display());
-        println!("  user: {}", medousa::identity_manuscript::user_manuscripts_dir().display());
+        println!(
+            "  project: {}",
+            medousa::identity_manuscript::project_manuscripts_dir().display()
+        );
+        println!(
+            "  user: {}",
+            medousa::identity_manuscript::user_manuscripts_dir().display()
+        );
         return Ok(());
     }
     for entry in entries {
@@ -2055,10 +2064,7 @@ fn run_manuscript_validate(args: &[String]) -> Result<()> {
                 .openshell_policy_template
                 .as_deref()
                 .unwrap_or("(unset)"),
-            context
-                .openshell_sandbox_from
-                .as_deref()
-                .unwrap_or("base"),
+            context.openshell_sandbox_from.as_deref().unwrap_or("base"),
             context.openshell_allow_scheduled
         );
     }
@@ -2076,12 +2082,13 @@ fn run_openshell_probe(args: &[String]) -> Result<()> {
 
     if !skip_grapheme {
         println!("openshell-probe h6 grapheme --version (sandbox_from={sandbox_from})");
-        let receipt = medousa::openshell_sandbox_run::probe_grapheme_in_sandbox(
-            sandbox_from,
-            policy,
-        )
-        .map_err(anyhow::Error::msg)?;
-        println!("h6_ok sandbox={} exit={:?}", receipt.sandbox_name, receipt.exit_code);
+        let receipt =
+            medousa::openshell_sandbox_run::probe_grapheme_in_sandbox(sandbox_from, policy)
+                .map_err(anyhow::Error::msg)?;
+        println!(
+            "h6_ok sandbox={} exit={:?}",
+            receipt.sandbox_name, receipt.exit_code
+        );
         let version_line = receipt
             .stdout
             .lines()
@@ -2098,9 +2105,7 @@ fn run_openshell_probe(args: &[String]) -> Result<()> {
     let script = find_arg_value(args, "--script").unwrap_or("scripts/echo.sh");
 
     if let Some(manuscript_id) = manuscript_id {
-        println!(
-            "openshell-probe h7 skill script={script} manuscript={manuscript_id}"
-        );
+        println!("openshell-probe h7 skill script={script} manuscript={manuscript_id}");
         let receipt = medousa::openshell_sandbox_run::probe_skill_script_in_sandbox(
             manuscript_id,
             script,
@@ -2108,7 +2113,10 @@ fn run_openshell_probe(args: &[String]) -> Result<()> {
             policy,
         )
         .map_err(anyhow::Error::msg)?;
-        println!("h7_ok sandbox={} exit={:?}", receipt.sandbox_name, receipt.exit_code);
+        println!(
+            "h7_ok sandbox={} exit={:?}",
+            receipt.sandbox_name, receipt.exit_code
+        );
         println!("stdout={}", receipt.stdout.trim());
         return Ok(());
     }
@@ -2203,10 +2211,7 @@ fn fetch_mcp_gateway_health(gateway_url: &str) -> Result<medousa::McpGatewayHeal
     Ok(response.json()?)
 }
 
-fn cli_daemon_client(
-    daemon_url: &str,
-    timeout: Duration,
-) -> Result<reqwest::blocking::Client> {
+fn cli_daemon_client(daemon_url: &str, timeout: Duration) -> Result<reqwest::blocking::Client> {
     medousa::local_daemon_auth::blocking_client_with_timeout(
         daemon_url,
         medousa_local_credential::CLI_LOCAL_NAME,
@@ -2257,13 +2262,15 @@ fn product_config_from_wizard(selected: &onboard_wizard::WizardOutput) -> Produc
     } else {
         selected.daemon_bind.trim().to_string()
     };
-    config.telegram.allowed_user_ids = parse_u64_csv(
-        selected.telegram_allow_user_ids.as_deref().unwrap_or(""),
-    )
-    .unwrap_or_default();
+    config.telegram.allowed_user_ids =
+        parse_u64_csv(selected.telegram_allow_user_ids.as_deref().unwrap_or(""))
+            .unwrap_or_default();
     config.telegram.heartbeat_nudges_enabled = selected.telegram_heartbeat_nudges_enabled;
     config.telegram.heartbeat_chat_ids = parse_i64_csv(
-        selected.telegram_heartbeat_chat_ids.as_deref().unwrap_or(""),
+        selected
+            .telegram_heartbeat_chat_ids
+            .as_deref()
+            .unwrap_or(""),
     );
     config.discord.command_prefix = if selected.discord_command_prefix.trim().is_empty() {
         "!".to_string()
@@ -2272,20 +2279,21 @@ fn product_config_from_wizard(selected: &onboard_wizard::WizardOutput) -> Produc
     };
     config.discord.heartbeat_nudges_enabled = selected.discord_heartbeat_nudges_enabled;
     config.discord.heartbeat_channel_ids = parse_u64_csv(
-        selected.discord_heartbeat_channel_ids.as_deref().unwrap_or(""),
+        selected
+            .discord_heartbeat_channel_ids
+            .as_deref()
+            .unwrap_or(""),
     )
     .unwrap_or_default();
-    config.slack.allowed_user_ids = parse_string_csv(
-        selected.slack_allow_user_ids.as_deref().unwrap_or(""),
-    );
+    config.slack.allowed_user_ids =
+        parse_string_csv(selected.slack_allow_user_ids.as_deref().unwrap_or(""));
     config.whatsapp.deliver_bind = if selected.whatsapp_deliver_bind.trim().is_empty() {
         config.whatsapp.deliver_bind
     } else {
         selected.whatsapp_deliver_bind.trim().to_string()
     };
-    config.whatsapp.allowed_user_ids = parse_string_csv(
-        selected.whatsapp_allow_user_ids.as_deref().unwrap_or(""),
-    );
+    config.whatsapp.allowed_user_ids =
+        parse_string_csv(selected.whatsapp_allow_user_ids.as_deref().unwrap_or(""));
     config.tui.response_depth_mode = selected.tui_response_depth_mode.clone();
     config.surreal.endpoint = if selected.surreal_endpoint.trim().is_empty() {
         None
@@ -2320,13 +2328,16 @@ fn product_config_from_wizard(selected: &onboard_wizard::WizardOutput) -> Produc
         .trim()
         .is_empty()
     {
-        config.daemon.deliver_webhook_token =
-            Some(uuid::Uuid::new_v4().simple().to_string());
+        config.daemon.deliver_webhook_token = Some(uuid::Uuid::new_v4().simple().to_string());
     }
     config
 }
 
-fn resolve_daemon_bind(args: &[String], profile: &OnboardProfile, product: &ProductConfig) -> String {
+fn resolve_daemon_bind(
+    args: &[String],
+    profile: &OnboardProfile,
+    product: &ProductConfig,
+) -> String {
     find_arg_value(args, "--bind")
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -2506,7 +2517,8 @@ fn probe_daemon_http(daemon_url: &str) -> DaemonHttpProbe {
         Err(err) if err.is_timeout() => DaemonHttpProbe {
             healthy: false,
             label: "timeout",
-            detail: "GET /health timed out (daemon likely wedged on Surreal or startup)".to_string(),
+            detail: "GET /health timed out (daemon likely wedged on Surreal or startup)"
+                .to_string(),
         },
         Err(err) => DaemonHttpProbe {
             healthy: false,
@@ -2669,9 +2681,10 @@ fn ensure_daemon_running(backend: &str, plan: &DaemonLaunchPlan) -> Result<()> {
 
     if is_medousa_daemon_process_running() {
         if wait_for_bind_reachable(&plan.bind, Duration::from_secs(15))
-            && daemon_http_healthy(&plan.health_url) {
-                return Ok(());
-            }
+            && daemon_http_healthy(&plan.health_url)
+        {
+            return Ok(());
+        }
         return Err(anyhow!(
             "medousa_daemon is running but not healthy at {} — check {}",
             plan.health_url,
@@ -2735,7 +2748,11 @@ fn start_daemon_background(backend: &str, plan: &DaemonLaunchPlan) -> Result<()>
     }
     println!(
         "{}",
-        format!("[info] medousa_daemon --backend {backend} --bind {}", plan.bind).blue()
+        format!(
+            "[info] medousa_daemon --backend {backend} --bind {}",
+            plan.bind
+        )
+        .blue()
     );
     if let Some(mobile_url) = &plan.mobile_url {
         println!(
@@ -2743,7 +2760,10 @@ fn start_daemon_background(backend: &str, plan: &DaemonLaunchPlan) -> Result<()>
             format!("[info] Public stream URL base: {mobile_url}").blue()
         );
     }
-    println!("{}", medousa::runtime::stasis_otel::stasis_otel_status_line());
+    println!(
+        "{}",
+        medousa::runtime::stasis_otel::stasis_otel_status_line()
+    );
     let pid = medousa::service_launch::spawn_command_background(command, &log)
         .with_context(|| format!("failed to spawn medousa_daemon using {}", daemon.program))?;
     println!(
@@ -2801,10 +2821,7 @@ fn start_whatsapp_background(
     session_db_path: Option<&str>,
 ) -> Result<()> {
     apply_adapter_env(&load_product_config());
-    let mut extra_args = vec![
-        "--deliver-bind".to_string(),
-        deliver_bind.to_string(),
-    ];
+    let mut extra_args = vec!["--deliver-bind".to_string(), deliver_bind.to_string()];
     if let Some(path) = session_db_path.filter(|value| !value.trim().is_empty()) {
         extra_args.push("--session-db".to_string());
         extra_args.push(path.trim().to_string());
@@ -2847,7 +2864,11 @@ fn start_adapter_background(
     Ok(())
 }
 
-fn launch_tui_process(daemon_url: &str, args: &[String], force_backend: Option<&str>) -> Result<()> {
+fn launch_tui_process(
+    daemon_url: &str,
+    args: &[String],
+    force_backend: Option<&str>,
+) -> Result<()> {
     let tui = resolve_component_command("medousa_tui")?;
     let mut command = Command::new(&tui.program);
     command.args(&tui.pre_args);
@@ -3004,8 +3025,8 @@ fn start_mcp_gateway_background() -> Result<()> {
     let log = medousa::service_launch::BackgroundLog::new(mcp_gateway_log_path());
     let mut command = Command::new(&gateway.program);
     command.args(&gateway.pre_args);
-    let pid = medousa::service_launch::spawn_command_background(command, &log)
-        .with_context(|| {
+    let pid =
+        medousa::service_launch::spawn_command_background(command, &log).with_context(|| {
             format!(
                 "failed to spawn medousa_mcp_gateway using {}",
                 gateway.program
@@ -3176,11 +3197,7 @@ fn start_slack_service(daemon_url: &str) -> Result<()> {
 }
 
 fn start_whatsapp_service(daemon_url: &str, product_config: &ProductConfig) -> Result<()> {
-    start_whatsapp_background(
-        daemon_url,
-        &product_config.whatsapp.deliver_bind,
-        None,
-    )?;
+    start_whatsapp_background(daemon_url, &product_config.whatsapp.deliver_bind, None)?;
     println!("{}", "[ok] WhatsApp adapter started in background.".green());
     Ok(())
 }
@@ -3192,7 +3209,9 @@ fn print_start_help() {
     println!("These commands are for developers and troubleshooting.");
     println!();
     println!("USAGE:");
-    println!("  medousa start <service> [--backend <name>] [--bind <host:port>] [--public] [--inference] [--daemon-url <url>]");
+    println!(
+        "  medousa start <service> [--backend <name>] [--bind <host:port>] [--public] [--inference] [--daemon-url <url>]"
+    );
     println!();
     println!("FLAGS:");
     println!("  --inference   Spawn medousa_local for private Gemma brain (alias: --local-engine)");
@@ -3208,10 +3227,7 @@ fn print_start_help() {
     println!("  whatsapp        WhatsApp adapter");
     println!("  all             Engine + gateway + any configured adapters");
     println!();
-    println!(
-        "Logs: {}/logs/<service>.log",
-        medousa_data_dir().display()
-    );
+    println!("Logs: {}/logs/<service>.log", medousa_data_dir().display());
     println!();
     println!("EXAMPLES:");
     println!("  medousa start daemon --inference     # offline / private brain (power users)");
@@ -3254,8 +3270,9 @@ fn load_onboard_profile() -> OnboardProfile {
 fn save_onboard_profile(profile: &OnboardProfile) -> Result<()> {
     let path = onboard_profile_path();
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create onboard profile dir {}", parent.display()))?;
+        fs::create_dir_all(parent).with_context(|| {
+            format!("failed to create onboard profile dir {}", parent.display())
+        })?;
     }
     let raw = serde_json::to_string_pretty(profile).context("failed to encode onboard profile")?;
     fs::write(&path, raw)
@@ -3285,22 +3302,33 @@ fn run_workspace(args: &[String]) -> Result<()> {
                 .get(1)
                 .filter(|value| !value.starts_with("--"))
                 .ok_or_else(|| anyhow!("usage: medousa workspace cancel <card-id>"))?;
-            ("POST".to_string(), format!("/v1/workspace/cards/{card_id}/cancel"), None)
+            (
+                "POST".to_string(),
+                format!("/v1/workspace/cards/{card_id}/cancel"),
+                None,
+            )
         }
         "retry" => {
             let card_id = args
                 .get(1)
                 .filter(|value| !value.starts_with("--"))
                 .ok_or_else(|| anyhow!("usage: medousa workspace retry <card-id>"))?;
-            ("POST".to_string(), format!("/v1/workspace/cards/{card_id}/retry"), None)
+            (
+                "POST".to_string(),
+                format!("/v1/workspace/cards/{card_id}/retry"),
+                None,
+            )
         }
         "link-vault" => {
             let card_id = args
                 .get(1)
                 .filter(|value| !value.starts_with("--"))
-                .ok_or_else(|| anyhow!("usage: medousa workspace link-vault <card-id> --path <vault-path>"))?;
-            let vault_path = find_arg_value(args, "--path")
-                .ok_or_else(|| anyhow!("usage: medousa workspace link-vault <card-id> --path <vault-path>"))?;
+                .ok_or_else(|| {
+                    anyhow!("usage: medousa workspace link-vault <card-id> --path <vault-path>")
+                })?;
+            let vault_path = find_arg_value(args, "--path").ok_or_else(|| {
+                anyhow!("usage: medousa workspace link-vault <card-id> --path <vault-path>")
+            })?;
             let payload = serde_json::json!({ "vault_path": vault_path });
             (
                 "POST".to_string(),
@@ -3405,7 +3433,9 @@ fn run_workspace(args: &[String]) -> Result<()> {
             .with_context(|| format!("GET {url} failed"))?
     };
     let status = response.status();
-    let body = response.text().context("failed to read workspace response")?;
+    let body = response
+        .text()
+        .context("failed to read workspace response")?;
     if !status.is_success() {
         return Err(anyhow!("workspace request failed ({status}): {body}"));
     }
@@ -3508,11 +3538,7 @@ fn run_vault(args: &[String]) -> Result<()> {
             } else {
                 format!("?{}", query.join("&"))
             };
-            (
-                "GET".to_string(),
-                format!("/v1/vault/notes{suffix}"),
-                None,
-            )
+            ("GET".to_string(), format!("/v1/vault/notes{suffix}"), None)
         }
         "read" => {
             let note_path = args
@@ -3529,7 +3555,9 @@ fn run_vault(args: &[String]) -> Result<()> {
             let note_path = args
                 .get(1)
                 .filter(|value| !value.starts_with("--"))
-                .ok_or_else(|| anyhow!("usage: medousa vault write <path> [--content <text>|--stdin]"))?;
+                .ok_or_else(|| {
+                    anyhow!("usage: medousa vault write <path> [--content <text>|--stdin]")
+                })?;
             let content = if has_flag(args, "--stdin") {
                 let mut buf = String::new();
                 std::io::stdin().read_to_string(&mut buf)?;
@@ -3537,7 +3565,9 @@ fn run_vault(args: &[String]) -> Result<()> {
             } else {
                 find_arg_value(args, "--content")
                     .map(str::to_string)
-                    .ok_or_else(|| anyhow!("usage: medousa vault write <path> --content <markdown>"))?
+                    .ok_or_else(|| {
+                        anyhow!("usage: medousa vault write <path> --content <markdown>")
+                    })?
             };
             let payload = serde_json::json!({ "path": note_path, "content": content });
             (
@@ -3556,11 +3586,7 @@ fn run_vault(args: &[String]) -> Result<()> {
             if let Some(limit) = find_arg_value(args, "--limit") {
                 suffix.push_str(&format!("&limit={limit}"));
             }
-            (
-                "GET".to_string(),
-                format!("/v1/vault/search{suffix}"),
-                None,
-            )
+            ("GET".to_string(), format!("/v1/vault/search{suffix}"), None)
         }
         "delete" => {
             let note_path = args
@@ -3597,7 +3623,9 @@ fn run_vault(args: &[String]) -> Result<()> {
                     .header("content-type", "application/json")
                     .body(payload);
             }
-            request.send().with_context(|| format!("POST {url} failed"))?
+            request
+                .send()
+                .with_context(|| format!("POST {url} failed"))?
         }
         "DELETE" => client
             .delete(&url)
@@ -3652,7 +3680,9 @@ fn print_help() {
     println!("Everyday chat → open the Medousa app. This CLI is for operators and automation.");
     println!();
     println!("Lifecycle (run the engine):");
-    println!("  medousa start <service>     daemon, mcp-gateway, discord, telegram, slack, whatsapp, all");
+    println!(
+        "  medousa start <service>     daemon, mcp-gateway, discord, telegram, slack, whatsapp, all"
+    );
     println!("  medousa stop [--local-engine]   Graceful engine shutdown");
     println!("  medousa status              Engine bind, health, data dir");
     println!("  medousa daemon [--backend <name>] [--bind <host:port>] [--public]");

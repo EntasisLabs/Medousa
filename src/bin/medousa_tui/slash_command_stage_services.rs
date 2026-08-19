@@ -87,9 +87,7 @@ async fn execute_stage_route_command_via_daemon(
 ) -> Result<StageRouteCommandResponse, String> {
     daemon_stage_route_command(daemon_url, &request)
         .await
-        .map_err(|err| {
-            format!("daemon error: {}", truncate_error(&err.to_string(), 200))
-        })
+        .map_err(|err| format!("daemon error: {}", truncate_error(&err.to_string(), 200)))
 }
 
 fn truncate_error(value: &str, max_chars: usize) -> String {

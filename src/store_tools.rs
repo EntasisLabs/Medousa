@@ -28,7 +28,9 @@ use crate::public_api::{COGNITION_STORE_READ, COGNITION_STORE_WRITE};
 use crate::schema_api::{
     TypedActionSchema, advertised_object_schema, string_enum_schema, typed_action_schema,
 };
-use crate::typed_tools::{CompatOption, ExternalJson, ToolId, TypedTool, medousa_tool, serialize_output};
+use crate::typed_tools::{
+    CompatOption, ExternalJson, ToolId, TypedTool, medousa_tool, serialize_output,
+};
 use crate::vault_tools::{
     CognitionVaultDeleteTool, CognitionVaultGrepTool, CognitionVaultListTool,
     CognitionVaultMoveTool, CognitionVaultReadTool, CognitionVaultSearchTool,
@@ -400,8 +402,16 @@ pub fn store_type_schemas() -> Vec<TypedActionSchema> {
             "vault.search",
             "Search vault notes; path set = in-file grep",
         ),
-        typed_action_schema::<ArtifactsList>(STORE_READ_ID, "artifacts.list", "List HTML artifacts"),
-        typed_action_schema::<ArtifactsRead>(STORE_READ_ID, "artifacts.read", "Read an HTML artifact"),
+        typed_action_schema::<ArtifactsList>(
+            STORE_READ_ID,
+            "artifacts.list",
+            "List HTML artifacts",
+        ),
+        typed_action_schema::<ArtifactsRead>(
+            STORE_READ_ID,
+            "artifacts.read",
+            "Read an HTML artifact",
+        ),
         typed_action_schema::<ArtifactsSearch>(
             STORE_READ_ID,
             "artifacts.search",
@@ -450,7 +460,11 @@ pub fn store_type_schemas() -> Vec<TypedActionSchema> {
             "code.write",
             "Write or patch a file in the bound worktree",
         ),
-        typed_action_schema::<ScriptsWrite>(STORE_WRITE_ID, "scripts.write", "Save a Grapheme script"),
+        typed_action_schema::<ScriptsWrite>(
+            STORE_WRITE_ID,
+            "scripts.write",
+            "Save a Grapheme script",
+        ),
     ]
 }
 
@@ -494,7 +508,10 @@ impl CognitionStoreReadTool {
 #[medousa_tool(id = STORE_WRITE_ID)]
 impl CognitionStoreWriteTool {
     /// Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.write, artifacts.write, …). Fetch fields with cognition_schema types=[...].
-    async fn invoke_typed(&self, action: StoreWriteAction) -> stasis::prelude::Result<ExternalJson> {
+    async fn invoke_typed(
+        &self,
+        action: StoreWriteAction,
+    ) -> stasis::prelude::Result<ExternalJson> {
         Ok(ExternalJson::new(dispatch_write(self, action).await?))
     }
 }

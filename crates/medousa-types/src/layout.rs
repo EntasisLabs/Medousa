@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::environment::{ComponentDef, SurfaceDef, SurfaceKind, COMPONENT_SLOT_MAIN};
+use crate::environment::{COMPONENT_SLOT_MAIN, ComponentDef, SurfaceDef, SurfaceKind};
 
 pub const MAX_LAYOUT_DEPTH: usize = 8;
 pub const MAX_LAYOUT_NODES: usize = 32;
@@ -121,13 +121,12 @@ pub fn resolve_layout_root(surface: &SurfaceDef, components: &[ComponentDef]) ->
         })
         .map(|component| component.id.clone())
         .collect::<Vec<_>>();
-    let distribution = if surface.layout == crate::environment::SurfaceLayout::Dashboard
-        && main_ids.len() > 1
-    {
-        StackDistribution::FillEqually
-    } else {
-        StackDistribution::Start
-    };
+    let distribution =
+        if surface.layout == crate::environment::SurfaceLayout::Dashboard && main_ids.len() > 1 {
+            StackDistribution::FillEqually
+        } else {
+            StackDistribution::Start
+        };
     LayoutNode::VStack {
         spacing: StackSpacing::Md,
         align: StackAlign::Start,
@@ -139,10 +138,7 @@ pub fn resolve_layout_root(surface: &SurfaceDef, components: &[ComponentDef]) ->
     }
 }
 
-pub fn validate_layout_tree(
-    surface: &SurfaceDef,
-    components: &[ComponentDef],
-) -> Vec<String> {
+pub fn validate_layout_tree(surface: &SurfaceDef, components: &[ComponentDef]) -> Vec<String> {
     let mut errors = Vec::new();
     if surface.layout_root.is_none() {
         return errors;
@@ -204,10 +200,20 @@ fn validate_layout_node(
                 ));
             }
             for child in children {
-                validate_layout_node(surface, components, child, depth + 1, seen, node_count, errors);
+                validate_layout_node(
+                    surface,
+                    components,
+                    child,
+                    depth + 1,
+                    seen,
+                    node_count,
+                    errors,
+                );
             }
         }
-        LayoutNode::Grid { columns, children, .. } => {
+        LayoutNode::Grid {
+            columns, children, ..
+        } => {
             if *columns == 0 || *columns > MAX_GRID_COLUMNS {
                 errors.push(format!(
                     "surface '{}' grid columns must be 1..={MAX_GRID_COLUMNS}",
@@ -221,7 +227,15 @@ fn validate_layout_node(
                 ));
             }
             for child in children {
-                validate_layout_node(surface, components, child, depth + 1, seen, node_count, errors);
+                validate_layout_node(
+                    surface,
+                    components,
+                    child,
+                    depth + 1,
+                    seen,
+                    node_count,
+                    errors,
+                );
             }
         }
         LayoutNode::Component { id, flex } => {
@@ -233,12 +247,13 @@ fn validate_layout_node(
                 return;
             }
             if let Some(flex) = flex
-                && *flex > MAX_COMPONENT_FLEX {
-                    errors.push(format!(
-                        "surface '{}' component '{id}' flex must be 0..={MAX_COMPONENT_FLEX}",
-                        surface.id
-                    ));
-                }
+                && *flex > MAX_COMPONENT_FLEX
+            {
+                errors.push(format!(
+                    "surface '{}' component '{id}' flex must be 0..={MAX_COMPONENT_FLEX}",
+                    surface.id
+                ));
+            }
             if !seen.insert(id.clone()) {
                 errors.push(format!(
                     "surface '{}' layout references component '{id}' more than once",
@@ -267,19 +282,17 @@ fn validate_layout_node(
         }
         LayoutNode::Slot { id, flex } => {
             if id.trim().is_empty() {
-                errors.push(format!(
-                    "surface '{}' layout slot requires id",
-                    surface.id
-                ));
+                errors.push(format!("surface '{}' layout slot requires id", surface.id));
                 return;
             }
             if let Some(flex) = flex
-                && *flex > MAX_COMPONENT_FLEX {
-                    errors.push(format!(
-                        "surface '{}' slot '{id}' flex must be 0..={MAX_COMPONENT_FLEX}",
-                        surface.id
-                    ));
-                }
+                && *flex > MAX_COMPONENT_FLEX
+            {
+                errors.push(format!(
+                    "surface '{}' slot '{id}' flex must be 0..={MAX_COMPONENT_FLEX}",
+                    surface.id
+                ));
+            }
             if !seen.insert(format!("slot:{id}")) {
                 errors.push(format!(
                     "surface '{}' layout references slot '{id}' more than once",
@@ -376,21 +389,24 @@ mod tests {
             ]
         });
         let node: LayoutNode = serde_json::from_value(json).expect("h_stack alias");
-        assert_eq!(node, LayoutNode::HStack {
-            spacing: StackSpacing::Md,
-            align: StackAlign::Start,
-            distribution: StackDistribution::FillEqually,
-            children: vec![
-                LayoutNode::Component {
-                    id: "adhd-guide-tetris".to_string(),
-                    flex: Some(1),
-                },
-                LayoutNode::Component {
-                    id: "adhd-guide-original".to_string(),
-                    flex: Some(1),
-                },
-            ],
-        });
+        assert_eq!(
+            node,
+            LayoutNode::HStack {
+                spacing: StackSpacing::Md,
+                align: StackAlign::Start,
+                distribution: StackDistribution::FillEqually,
+                children: vec![
+                    LayoutNode::Component {
+                        id: "adhd-guide-tetris".to_string(),
+                        flex: Some(1),
+                    },
+                    LayoutNode::Component {
+                        id: "adhd-guide-original".to_string(),
+                        flex: Some(1),
+                    },
+                ],
+            }
+        );
 
         let hstack: LayoutNode = serde_json::from_value(serde_json::json!({
             "type": "hstack",

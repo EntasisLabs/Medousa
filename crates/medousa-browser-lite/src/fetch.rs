@@ -76,10 +76,7 @@ fn html_to_markdown_lite(html: &str, max_chars: usize) -> String {
         .ok()
         .map(|re| re.replace_all(&text, " ").to_string())
         .unwrap_or(text);
-    let collapsed = text
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if collapsed.len() <= max_chars {
         collapsed
     } else {

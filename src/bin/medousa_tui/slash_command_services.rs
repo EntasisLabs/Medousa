@@ -33,7 +33,8 @@ pub(crate) async fn handle_new_session_command(
     super::workspace_runtime::rebind_focused_session(state);
     push_obs_alert(state, format!("✓ new session {}", &state.session_id[..8]));
 
-    if let Ok(new_rt) = build_tui_platform(build_tui_platform_config(state), event_tx.clone()).await {
+    if let Ok(new_rt) = build_tui_platform(build_tui_platform_config(state), event_tx.clone()).await
+    {
         *tui_rt = new_rt;
     } else {
         push_obs_alert(state, "⚠ new session runtime rebind failed".to_string());
@@ -49,7 +50,10 @@ pub(crate) async fn handle_model_command(
     let request = build_runtime_config_request(
         state,
         RuntimeConfigCommandSpec::Model {
-            args: args.into_iter().map(ToString::to_string).collect::<Vec<_>>(),
+            args: args
+                .into_iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
         },
     );
 
@@ -120,7 +124,8 @@ pub(crate) async fn apply_runtime_config_response(
         state.settings_draft.verifier_min_citation_coverage = policy.min_citation_coverage;
         state.settings_draft.verifier_min_avg_support_strength = policy.min_avg_support_strength;
         state.settings_draft.verifier_min_supported_claim_ratio = policy.min_supported_claim_ratio;
-        state.settings_draft.verifier_min_claim_support_strength = policy.min_claim_support_strength;
+        state.settings_draft.verifier_min_claim_support_strength =
+            policy.min_claim_support_strength;
     }
 
     if response.should_persist_depth_defaults {
@@ -145,9 +150,7 @@ pub(crate) async fn execute_runtime_config_command_via_daemon(
 ) -> Result<RuntimeConfigCommandResponse, String> {
     daemon_runtime_config_command(daemon_url, &request)
         .await
-        .map_err(|err| {
-            format!("daemon error: {}", truncate_error(&err.to_string(), 200))
-        })
+        .map_err(|err| format!("daemon error: {}", truncate_error(&err.to_string(), 200)))
 }
 
 pub(crate) fn handle_perf_command(

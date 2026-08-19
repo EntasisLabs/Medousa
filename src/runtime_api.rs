@@ -36,9 +36,9 @@ use crate::schema_api::{
 use crate::tools::{
     CognitionGraphemePromoteLastRunToRecurringTool, CognitionGraphemePromoteToJobTool,
     CognitionGraphemePromoteToRecurringTool, CognitionJobEnqueueTool,
-    CognitionRuntimeJobStatusTool, CognitionRuntimeRecurringPreviewTool, GraphemePromoteLastRunInput,
-    GraphemePromoteToJobInput, GraphemePromoteToRecurringInput, JobEnqueueInput,
-    RuntimeJobStatusInput, RuntimeRecurringPreviewInput,
+    CognitionRuntimeJobStatusTool, CognitionRuntimeRecurringPreviewTool,
+    GraphemePromoteLastRunInput, GraphemePromoteToJobInput, GraphemePromoteToRecurringInput,
+    JobEnqueueInput, RuntimeJobStatusInput, RuntimeRecurringPreviewInput,
 };
 use crate::typed_tools::{
     CompatOption, ExternalJson, ToolId, TypedTool, medousa_tool, serialize_output,
@@ -355,7 +355,11 @@ pub fn runtime_type_schemas() -> Vec<TypedActionSchema> {
     vec![
         typed_action_schema::<JobList>(QUERY_ID, "job.list", "List durable jobs"),
         typed_action_schema::<JobStatus>(QUERY_ID, "job.status", "Status for one job"),
-        typed_action_schema::<RecurringList>(QUERY_ID, "recurring.list", "List recurring schedules"),
+        typed_action_schema::<RecurringList>(
+            QUERY_ID,
+            "recurring.list",
+            "List recurring schedules",
+        ),
         typed_action_schema::<RecurringDoctor>(
             QUERY_ID,
             "recurring.doctor",
@@ -366,7 +370,11 @@ pub fn runtime_type_schemas() -> Vec<TypedActionSchema> {
             "recurring.preview",
             "Preview upcoming cron fire times",
         ),
-        typed_action_schema::<WorkflowStatus>(QUERY_ID, "workflow.status", "Status for one workflow"),
+        typed_action_schema::<WorkflowStatus>(
+            QUERY_ID,
+            "workflow.status",
+            "Status for one workflow",
+        ),
         typed_action_schema::<DeliveryStatus>(
             QUERY_ID,
             "delivery.status",
@@ -383,7 +391,11 @@ pub fn runtime_type_schemas() -> Vec<TypedActionSchema> {
             "recurring.register",
             "Register a cron schedule (script, last run, or job_type+payload_ref)",
         ),
-        typed_action_schema::<RecurringPause>(MUTATE_ID, "recurring.pause", "Pause a recurring schedule"),
+        typed_action_schema::<RecurringPause>(
+            MUTATE_ID,
+            "recurring.pause",
+            "Pause a recurring schedule",
+        ),
         typed_action_schema::<RecurringCancel>(
             MUTATE_ID,
             "recurring.cancel",
@@ -637,11 +649,12 @@ impl JobEnqueue {
 
 impl JobCancel {
     async fn execute(self, tool: &CognitionRuntimeMutateTool) -> stasis::prelude::Result<Value> {
-        let output = CognitionRuntimeJobsCancelTool::new(tool.runtime.clone(), tool.event_tx.clone())
-            .invoke_typed(RuntimeJobsCancelInput {
-                job_id: Some(self.job_id),
-            })
-            .await?;
+        let output =
+            CognitionRuntimeJobsCancelTool::new(tool.runtime.clone(), tool.event_tx.clone())
+                .invoke_typed(RuntimeJobsCancelInput {
+                    job_id: Some(self.job_id),
+                })
+                .await?;
         serialize_output(CognitionRuntimeJobsCancelTool::tool_id(), output)
     }
 }
@@ -835,8 +848,8 @@ mod tests {
 
     #[test]
     fn job_list_deserializes_from_action_only() {
-        let query: RuntimeQueryAction = serde_json::from_value(json!({ "action": "job.list" }))
-            .expect("job list");
+        let query: RuntimeQueryAction =
+            serde_json::from_value(json!({ "action": "job.list" })).expect("job list");
         match query {
             RuntimeQueryAction::JobList(JobList {
                 state,
@@ -878,8 +891,7 @@ mod tests {
 
     #[test]
     fn advertised_schemas_are_action_enums_only() {
-        let query =
-            serde_json::to_value(schemars::schema_for!(RuntimeQueryAction)).expect("query");
+        let query = serde_json::to_value(schemars::schema_for!(RuntimeQueryAction)).expect("query");
         let mutate =
             serde_json::to_value(schemars::schema_for!(RuntimeMutateAction)).expect("mutate");
         for schema in [&query, &mutate] {
@@ -916,6 +928,9 @@ mod tests {
             .expect("job.enqueue");
         assert_eq!(enqueue.tool, MUTATE_ID);
         assert!(enqueue.parameters["properties"]["script"].is_object());
-        assert_eq!(enqueue.parameters["properties"]["action"]["const"], "job.enqueue");
+        assert_eq!(
+            enqueue.parameters["properties"]["action"]["const"],
+            "job.enqueue"
+        );
     }
 }

@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::future::Future;
 use std::sync::Arc;
 
-use genai::chat::{ChatMessage, ChatRequest, ToolCall, ToolResponse};
+use genai::chat::{ChatMessage, ChatRequest, ChatRole, ContentPart, MessageContent, ToolResponse};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
@@ -442,8 +442,9 @@ impl MedousaToolLoopPipeline {
                     tool_rounds_remaining,
                 );
                 sync_scratch_snapshot(completion_gate.as_deref_mut(), &turn_ctx.scratchpad);
-                let messages =
+                let mut messages =
                     turn_ctx.build_model_messages(shared_inputs.system_prompt.as_deref());
+                ensure_assistant_tool_turn_reasoning(&mut messages);
                 let chat_request = ChatRequest::new(messages).with_tools(tools.clone());
                 let response = match chunk_tx {
                     Some(tx) => {
@@ -515,6 +516,7 @@ impl MedousaToolLoopPipeline {
                     .map(|value| value.trim().to_string())
                     .filter(|value| !value.is_empty());
                 let reasoning_content = response.reasoning_content.clone();
+                let assistant_content = response.content.clone();
                 let tool_calls = response.into_tool_calls();
 
                 if tool_calls.is_empty() {
@@ -759,7 +761,7 @@ impl MedousaToolLoopPipeline {
                     .tool_lane
                     .messages
                     .push(assistant_tool_round_message(
-                        tool_calls.clone(),
+                        assistant_content,
                         reasoning_content,
                     ));
 
@@ -1932,13 +1934,48 @@ fn is_serde_json_completion_error(err: &StasisError) -> bool {
 /// Replay an assistant tool-call turn, including thinking-mode `reasoning_content`.
 ///
 /// DeepSeek V4 (and Kimi) require that field on later requests once the original
-/// turn used tools. `ChatMessage::from(tool_calls)` alone drops it.
+/// turn used tools. Rebuilding from `ChatMessage::from(tool_calls)` alone drops
+/// both the CoT and any assistant preamble text. Empty string is intentional when
+/// no CoT was returned — the field must still be present on tool-call turns.
 fn assistant_tool_round_message(
-    tool_calls: Vec<ToolCall>,
+    content: MessageContent,
     reasoning_content: Option<String>,
 ) -> ChatMessage {
-    ChatMessage::from(tool_calls)
-        .with_reasoning_content(Some(reasoning_content.unwrap_or_default()))
+    let reasoning = reasoning_content
+        .filter(|text| !text.is_empty())
+        .or_else(|| {
+            content
+                .joined_reasoning_content()
+                .filter(|text| !text.is_empty())
+        })
+        .unwrap_or_default();
+    let parts: Vec<ContentPart> = content
+        .parts()
+        .iter()
+        .filter(|part| !part.is_reasoning_content())
+        .cloned()
+        .collect();
+    ChatMessage::assistant(MessageContent::from_parts(parts))
+        .with_reasoning_content(Some(reasoning))
+}
+
+/// Providers that require thinking-mode CoT on tool turns (DeepSeek, Kimi) 400 if
+/// an assistant tool-call message omits `reasoning_content` entirely. Keep the
+/// field present on every such message before the request leaves the tool loop.
+fn ensure_assistant_tool_turn_reasoning(messages: &mut [ChatMessage]) {
+    for message in messages.iter_mut() {
+        if message.role != ChatRole::Assistant {
+            continue;
+        }
+        let parts = message.content.parts();
+        if !parts.iter().any(ContentPart::is_tool_call) {
+            continue;
+        }
+        if parts.iter().any(ContentPart::is_reasoning_content) {
+            continue;
+        }
+        message.content.push(ContentPart::ReasoningContent(String::new()));
+    }
 }
 
 /// Outcome of a chat completion that may have hit malformed provider tool-call JSON.
@@ -2027,12 +2064,13 @@ fn sanitize_tool_name_for_model(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        MALFORMED_TOOL_JSON_GUIDANCE, assistant_tool_round_message, is_serde_json_completion_error,
+        MALFORMED_TOOL_JSON_GUIDANCE, assistant_tool_round_message,
+        ensure_assistant_tool_turn_reasoning, is_serde_json_completion_error,
         recoverable_tool_error_value, tool_output_from_invoke, tool_round_budget_exhausted_message,
     };
     use crate::agent_runtime::turn_completion_fsm::TurnCompletionProfile;
     use crate::turn_control_tools::finish_turn_from_invocations;
-    use genai::chat::{ContentPart, ToolCall};
+    use genai::chat::{ChatMessage, ContentPart, MessageContent, ToolCall};
     use serde_json::json;
     use stasis::domain::errors::StasisError;
 
@@ -2057,14 +2095,18 @@ mod tests {
     #[test]
     fn assistant_tool_round_replays_reasoning_content() {
         let message = assistant_tool_round_message(
-            vec![ToolCall {
-                call_id: "call-1".into(),
-                fn_name: "cognition_workshop_query".into(),
-                fn_arguments: json!({ "action": "workshop.status" }),
-                thought_signatures: None,
-            }],
+            MessageContent::from_parts(vec![
+                ContentPart::Text("checking status".into()),
+                ContentPart::ToolCall(ToolCall {
+                    call_id: "call-1".into(),
+                    fn_name: "cognition_workshop_query".into(),
+                    fn_arguments: json!({ "action": "workshop.status" }),
+                    thought_signatures: None,
+                }),
+            ]),
             Some("I should check worker status first.".into()),
         );
+        assert_eq!(message.content.first_text(), Some("checking status"));
         assert!(message.content.contains_tool_call());
         assert_eq!(
             message.content.joined_reasoning_content().as_deref(),
@@ -2076,6 +2118,39 @@ mod tests {
                 .parts()
                 .iter()
                 .any(|part| matches!(part, ContentPart::ReasoningContent(_)))
+        );
+    }
+
+    #[test]
+    fn assistant_tool_round_keeps_empty_reasoning_field() {
+        let message = assistant_tool_round_message(
+            MessageContent::from_parts(vec![ContentPart::ToolCall(ToolCall {
+                call_id: "call-empty".into(),
+                fn_name: "cognition_workshop_query".into(),
+                fn_arguments: json!({ "action": "workshop.status" }),
+                thought_signatures: None,
+            })]),
+            None,
+        );
+        assert_eq!(
+            message.content.joined_reasoning_content().as_deref(),
+            Some("")
+        );
+    }
+
+    #[test]
+    fn ensure_tool_turn_reasoning_fills_missing_field() {
+        let mut messages = vec![ChatMessage::from(vec![ToolCall {
+            call_id: "call-missing".into(),
+            fn_name: "cognition_workshop_query".into(),
+            fn_arguments: json!({ "action": "workshop.status" }),
+            thought_signatures: None,
+        }])];
+        assert!(messages[0].content.joined_reasoning_content().is_none());
+        ensure_assistant_tool_turn_reasoning(&mut messages);
+        assert_eq!(
+            messages[0].content.joined_reasoning_content().as_deref(),
+            Some("")
         );
     }
 

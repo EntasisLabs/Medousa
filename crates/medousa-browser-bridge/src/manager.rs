@@ -5,16 +5,16 @@ use medousa_browser_lite::fetch_url_markdown;
 use once_cell::sync::Lazy;
 use uuid::Uuid;
 
-use crate::model::{
-    BrowserControl, BrowserSnapshot, BrowserTab, TabGroup, TabOpenedBy,
-};
+use crate::model::{BrowserControl, BrowserSnapshot, BrowserTab, TabGroup, TabOpenedBy};
 
-static GROUPS: Lazy<Mutex<HashMap<String, TabGroup>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+static GROUPS: Lazy<Mutex<HashMap<String, TabGroup>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
 fn tab_label_from_url(url: &str) -> String {
     let trimmed = url.trim();
-    if let Some(rest) = trimmed.strip_prefix("https://").or_else(|| trimmed.strip_prefix("http://")) {
+    if let Some(rest) = trimmed
+        .strip_prefix("https://")
+        .or_else(|| trimmed.strip_prefix("http://"))
+    {
         let host = rest.split('/').next().unwrap_or(rest);
         if !host.is_empty() {
             return host.to_string();
@@ -174,7 +174,10 @@ impl TabGroupManager {
         Some(group.clone())
     }
 
-    pub fn snapshot_active_tab(tab_group_id: &str, max_chars: usize) -> Result<BrowserSnapshot, String> {
+    pub fn snapshot_active_tab(
+        tab_group_id: &str,
+        max_chars: usize,
+    ) -> Result<BrowserSnapshot, String> {
         let group = Self::get_group(tab_group_id)
             .ok_or_else(|| format!("tab group not found: {tab_group_id}"))?;
         let tab = group
