@@ -85,6 +85,16 @@ credential through the platform credential store or an owner-only file under
 the Medousa data directory. It is attached by the Tauri/native transport, never
 exposed to the webview JavaScript runtime.
 
+Daemon-owned secrets (provider API keys, messaging bot tokens, Surreal password,
+ChatGPT OAuth envelopes, APNs keys, and local-auth bearer material) use a single
+OS keyring service, `com.entasislabs.medousa.secrets.daemon`, with typed
+`v1/{installation_id}/…` accounts and an opaque owner-only file fallback.
+Client-only pairing session tokens use
+`com.entasislabs.medousa.secrets.client`. First-party Settings UIs write
+daemon-owned material through generated `/v1/integrations*` (and ChatGPT OAuth)
+HTTP ops that never return secret values. On first write, Keychain may prompt
+twice (daemon service + client service), then stop.
+
 Other same-user native clients may enroll for their own named local capability.
 Credentials are individually revocable and rotatable. File permissions are a
 defense in depth and enrollment mechanism, not the request authentication

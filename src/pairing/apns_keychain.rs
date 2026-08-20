@@ -1,21 +1,10 @@
-//! macOS Keychain / platform secret store for the APNs Auth Key (.p8 PEM).
+//! Platform secret store for the APNs Auth Key (.p8 PEM).
 
-use anyhow::{Context, Result};
-
-const APNS_KEY_SERVICE: &str = "medousa.apns";
-const APNS_KEY_ACCOUNT: &str = "auth_key";
-
-pub fn apns_key_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
-    keyring::Entry::new(APNS_KEY_SERVICE, APNS_KEY_ACCOUNT)
-}
+use anyhow::Result;
+use medousa_types::secrets::IntegrationSecretSlot;
 
 pub fn load_apns_key_pem() -> Option<String> {
-    let entry = apns_key_keyring_entry().ok()?;
-    entry
-        .get_password()
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+    crate::integration_connection::load_kind_secret("apns", IntegrationSecretSlot::AuthKey)
 }
 
 pub fn store_apns_key_pem(pem: &str) -> Result<()> {
@@ -23,21 +12,24 @@ pub fn store_apns_key_pem(pem: &str) -> Result<()> {
     if trimmed.is_empty() {
         anyhow::bail!("APNs key PEM is empty");
     }
-    let entry = apns_key_keyring_entry().context("open keychain entry for APNs key")?;
-    entry
-        .set_password(trimmed)
-        .context("store APNs key in keychain")?;
+    crate::integration_connection::save_kind_secret(
+        "apns",
+        IntegrationSecretSlot::AuthKey,
+        Some(trimmed),
+    );
     Ok(())
 }
 
 pub fn delete_apns_key_pem() -> Result<()> {
-    let entry = apns_key_keyring_entry().context("open keychain entry for APNs key")?;
-    match entry.delete_password() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(err) => Err(err).context("delete APNs key from keychain"),
-    }
+    crate::integration_connection::save_kind_secret("apns", IntegrationSecretSlot::AuthKey, None);
+    Ok(())
 }
 
 pub fn keychain_available() -> bool {
-    apns_key_keyring_entry().is_ok()
+    true
+}
+
+/// Legacy probe kept for callers that only check whether a keyring backend exists.
+pub fn apns_key_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
+    keyring::Entry::new("medousa.apns", "auth_key")
 }

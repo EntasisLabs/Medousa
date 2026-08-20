@@ -1,5 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ChannelId, ProductConfigSummary } from "$lib/types/messaging";
+import {
+  integrationSecretConfigured,
+  patchIntegrationBaseUrl,
+  resolveSecretTarget,
+  upsertIntegrationSecret,
+} from "$lib/integrationsClient";
 
 export async function loadProductConfigSummary(): Promise<ProductConfigSummary> {
   return invoke<ProductConfigSummary>("messaging_load_product_config_summary");
@@ -49,6 +55,14 @@ export async function saveWhatsAppConfig(config: {
 }
 
 export async function messagingSecretStatus(secretId: string): Promise<boolean> {
+  const target = resolveSecretTarget(secretId);
+  if (target && "slot" in target) {
+    try {
+      return await integrationSecretConfigured(target.kind, target.slot);
+    } catch {
+      // Fall through to local status when the workshop HTTP path is unavailable.
+    }
+  }
   return invoke<boolean>("messaging_secret_status", { secretId });
 }
 
@@ -56,6 +70,19 @@ export async function messagingSaveSecret(
   secretId: string,
   value: string | null,
 ): Promise<void> {
+  const target = resolveSecretTarget(secretId);
+  if (target) {
+    try {
+      if ("baseUrl" in target) {
+        await patchIntegrationBaseUrl(target.kind, value);
+        return;
+      }
+      await upsertIntegrationSecret(target.kind, target.slot, value);
+      return;
+    } catch {
+      // Fall through to local typed store (co-located / onboard before socket).
+    }
+  }
   await invoke("messaging_save_secret", {
     secretId,
     value: value?.trim() ? value.trim() : null,
@@ -63,10 +90,11 @@ export async function messagingSaveSecret(
 }
 
 export async function messagingClearSecret(secretId: string): Promise<void> {
-  await invoke("messaging_clear_secret", { secretId });
+  await messagingSaveSecret(secretId, null);
 }
 
 export async function messagingReadSecret(secretId: string): Promise<string | null> {
+  // Secret values are never returned over daemon HTTP; local co-located read only.
   return invoke<string | null>("messaging_read_secret", { secretId });
 }
 

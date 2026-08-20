@@ -76,6 +76,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::local_credential_handlers::surface().inventory())
         .expect("duplicate local credential route policy");
     inventory
+        .extend(crate::integration_handlers::surface().inventory())
+        .expect("duplicate integration route policy");
+    inventory
         .extend(crate::inference_profiles_handlers::surface().inventory())
         .expect("duplicate inference profiles route policy");
     inventory

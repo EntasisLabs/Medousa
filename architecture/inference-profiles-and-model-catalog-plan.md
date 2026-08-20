@@ -236,12 +236,18 @@ Cross-provider fallbacks require **one key per provider**, not one key remapped 
 ```json
 {
   "api_keys": {
-    "openai": { "secret_ref": "keyring:medousa.providers.openai" },
-    "anthropic": { "secret_ref": "keyring:medousa.providers.anthropic" },
-    "openrouter": { "secret_ref": "file:secrets/api_key_openrouter" }
+    "openai": { "connection_kind": "openai", "slot": "api_key" },
+    "anthropic": { "connection_kind": "anthropic", "slot": "api_key" },
+    "openrouter": { "connection_kind": "openrouter", "slot": "api_key" }
   }
 }
 ```
+
+Provider secrets are keyed by Surreal/file `integration_connection` UUID rows and
+stored under `com.entasislabs.medousa.secrets.daemon` as
+`v1/{installation_id}/integration/{connection_id}/api_key` (opaque file fallback
+via H02 `storage_key()`). Clients never see keyring account strings; they call
+`/v1/integrations*` with `connection_id` + `slot`.
 
 | Piece | Change |
 |-------|--------|

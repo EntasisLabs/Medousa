@@ -3630,7 +3630,6 @@ dependencies = [
  "futures-util",
  "gdk",
  "gtk",
- "keyring",
  "libc",
  "medousa-browser-bridge",
  "medousa-browser-lite",
@@ -3641,6 +3640,7 @@ dependencies = [
  "medousa-local-inference",
  "medousa-sdk",
  "medousa-sdk-iroh",
+ "medousa-secrets",
  "medousa-types",
  "objc2",
  "objc2-app-kit",
@@ -3726,6 +3726,8 @@ dependencies = [
  "arc-swap",
  "base64 0.22.1",
  "keyring",
+ "medousa-secrets",
+ "medousa-types",
  "rand 0.8.6",
  "serde",
  "serde_json",
@@ -3787,6 +3789,19 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "medousa-secrets"
+version = "0.9.1"
+dependencies = [
+ "anyhow",
+ "keyring",
+ "medousa-types",
+ "serde",
+ "serde_json",
+ "uuid",
+ "zeroize",
 ]
 
 [[package]]
