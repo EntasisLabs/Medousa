@@ -181,7 +181,7 @@
           </button>
           {#if createOpen}
             <div
-              class="absolute right-0 top-full z-30 mt-1 min-w-[11rem] rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl"
+              class="absolute right-0 top-full z-30 mt-1 min-w-[14rem] rounded-[var(--menu-radius,0.7rem)] border border-surface-500/50 bg-surface-900 p-[var(--menu-panel-pad,0.3rem)] shadow-xl"
               role="menu"
               tabindex="-1"
               onclick={(event) => event.stopPropagation()}

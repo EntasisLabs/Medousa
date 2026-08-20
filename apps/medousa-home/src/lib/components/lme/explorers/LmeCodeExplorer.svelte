@@ -502,7 +502,7 @@
     if (!createBtnEl) return;
     createPlacement = placeDockPopover(createBtnEl, {
       preferUp: false,
-      width: 196,
+      width: 220,
       maxHeight: 280,
     });
   }

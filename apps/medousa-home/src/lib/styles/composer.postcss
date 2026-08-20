@@ -54,7 +54,14 @@
   }
 
   .composer-plus-menu-item {
-    @apply flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-surface-200 transition hover:bg-surface-800/70;
+    @apply flex w-full items-center text-left transition hover:bg-surface-800/70;
+    gap: var(--menu-row-gap, 0.55rem);
+    padding: var(--menu-row-pad-y, 0.45rem) var(--menu-row-pad-x, 0.55rem);
+    font-size: var(--menu-label-size, var(--chrome-xs, 11px));
+    font-weight: var(--menu-label-weight, 500);
+    letter-spacing: var(--menu-label-tracking, -0.01em);
+    color: rgb(var(--color-surface-200));
+    border-radius: var(--menu-row-radius, 0.45rem);
   }
 
   .composer-plus-menu-dot {
@@ -379,16 +386,17 @@
   }
 
   .composer-model-panel {
-    @apply absolute bottom-full left-0 z-50 mb-2 w-[21rem] rounded-xl;
+    @apply absolute bottom-full left-0 z-50 mb-2 w-[26rem] rounded-xl;
     border: 1px solid rgb(var(--color-surface-600) / 0.32);
     background: rgb(var(--color-surface-900));
     box-shadow:
       0 12px 32px rgb(0 0 0 / 0.32),
       0 0 0 1px rgb(0 0 0 / 0.12);
+    padding-block: 0.15rem;
   }
 
   .composer-model-panel-search {
-    @apply border-b border-surface-700/35 px-3 py-2.5;
+    @apply border-b border-surface-700/35 px-4 py-3;
   }
 
   .composer-model-source {
@@ -449,7 +457,7 @@
   }
 
   .composer-model-provider-strip {
-    @apply flex gap-1 overflow-x-auto border-b border-surface-700/35 px-3 py-2;
+    @apply flex gap-1.5 overflow-x-auto border-b border-surface-700/35 px-4 py-3;
     scrollbar-width: none;
   }
 
@@ -458,7 +466,7 @@
   }
 
   .composer-model-provider-option {
-    @apply inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] text-content-quiet transition-colors;
+    @apply inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] text-content-quiet transition-colors;
   }
 
   .composer-model-provider-option:hover {
@@ -480,15 +488,20 @@
   }
 
   .composer-model-search-input {
-    @apply min-w-0 flex-1 border-0 bg-transparent text-[13px] text-surface-100 placeholder:text-content-quiet focus:outline-none;
+    @apply min-w-0 flex-1 border-0 bg-transparent font-normal text-surface-200 placeholder:text-content-tertiary focus:outline-none;
+    font-size: var(--menu-label-size, var(--chrome-xs, 11px));
+    letter-spacing: var(--menu-label-tracking, -0.01em);
   }
 
   .composer-model-list {
-    @apply max-h-64 overflow-y-auto py-1;
+    @apply max-h-64 overflow-y-auto px-1.5 py-2;
   }
 
   .composer-model-list-item {
-    @apply flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors;
+    @apply flex w-full items-center text-left transition-colors;
+    gap: var(--menu-row-gap, 0.55rem);
+    padding: var(--menu-row-pad-y, 0.45rem) var(--menu-row-pad-x, 0.55rem);
+    border-radius: var(--menu-row-radius, 0.45rem);
   }
 
   .composer-model-list-item:hover {
@@ -500,7 +513,10 @@
   }
 
   .composer-model-list-name {
-    @apply min-w-0 flex-1 truncate text-[13px] text-surface-100;
+    @apply min-w-0 flex-1 truncate text-surface-200;
+    font-size: var(--menu-label-size, var(--chrome-xs, 11px));
+    font-weight: var(--menu-label-weight, 500);
+    letter-spacing: var(--menu-label-tracking, -0.01em);
   }
 
   .composer-model-row-copy {
@@ -508,20 +524,24 @@
   }
 
   .composer-model-row-name {
-    @apply truncate text-[13px] text-surface-100;
+    @apply truncate text-surface-200;
+    font-size: var(--menu-label-size, var(--chrome-xs, 11px));
+    font-weight: var(--menu-label-weight, 500);
+    letter-spacing: var(--menu-label-tracking, -0.01em);
   }
 
   .composer-model-row-meta {
-    @apply truncate text-[11px] leading-tight text-content-quiet;
+    @apply truncate leading-snug text-content-tertiary;
+    font-size: var(--menu-meta-size, 10px);
   }
 
   .composer-model-row-cap {
-    @apply shrink-0 rounded-full px-1.5 py-0.5 text-[10px] text-content-tertiary;
+    @apply shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-normal text-content-tertiary;
     background: rgb(var(--color-surface-800) / 0.6);
   }
 
   .composer-model-list-tier {
-    @apply ml-1.5 text-[12px] text-content-quiet;
+    @apply ml-1.5 text-[10px] font-normal text-content-tertiary;
   }
 
   .composer-model-list-check {
@@ -553,7 +573,7 @@
   }
 
   .composer-model-panel-footer {
-    @apply flex w-full items-center justify-between gap-2 rounded-b-xl border-t border-surface-700/35 px-3 py-2.5 text-left text-[12px] text-content-quiet transition hover:bg-surface-800/45 hover:text-content-secondary;
+    @apply flex w-full items-center justify-between gap-2 rounded-b-xl border-t border-surface-700/35 px-4 py-3 text-left text-[11px] text-content-quiet transition hover:bg-surface-800/45 hover:text-content-secondary;
   }
 
   .composer-skill-pills {

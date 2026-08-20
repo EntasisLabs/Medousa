@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     BookOpen,
+    Code2,
     Columns3,
     Ellipsis,
     FileDown,
@@ -309,6 +310,7 @@
         label: readingPaletteLabel
           ? `Reading: ${readingPaletteLabel}`
           : "Reading palette",
+        icon: BookOpen,
         dividerBefore: true,
         onClick: () => {
           onCycleReadingPalette();
@@ -322,6 +324,7 @@
         label: hideLiveMarkdownSyntax
           ? "Show markdown marks"
           : "Hide markdown marks",
+        icon: Code2,
         onClick: () => {
           onToggleHideLiveMarkdownSyntax();
         },
@@ -332,6 +335,7 @@
       rows.push({
         id: "paper-width",
         label: paperWidthLabel ? `Paper: ${paperWidthLabel}` : "Paper width",
+        icon: Columns3,
         onClick: () => {
           onCyclePaperWidth();
         },
@@ -556,7 +560,7 @@
             <span class="vault-editor-overflow__icon" aria-hidden="true">
               {#if item.icon}
                 {@const Icon = item.icon}
-                <Icon size={14} strokeWidth={1.75} />
+                <Icon size={14} strokeWidth={1.5} />
               {/if}
             </span>
             <span class="vault-editor-overflow__label">{item.label}</span>

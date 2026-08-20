@@ -4,6 +4,7 @@ export type NoteBuffer = {
   path: string;
   content: string;
   baselineContent: string;
+  /** If-Match token: opaque note_version when available, else digest content_hash. */
   contentHash: string | null;
   title: string;
   dirty: boolean;

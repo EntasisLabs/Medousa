@@ -73,8 +73,8 @@
     // Prefer below from the top action row; still below when hosted in the rail popover.
     createPlacement = placeDockPopover(createBtnEl, {
       preferUp: false,
-      width: 196,
-      maxHeight: 320,
+      width: 220,
+      maxHeight: 360,
     });
   }
 
@@ -243,7 +243,7 @@
                 void vault.createDailyNote();
               }}
             >
-              <Calendar size={14} strokeWidth={2} />
+              <Calendar size={14} strokeWidth={1.5} />
               Daily note
             </button>
             <button
@@ -256,7 +256,7 @@
                 void vault.createWeeklyReview();
               }}
             >
-              <CalendarRange size={14} strokeWidth={2} />
+              <CalendarRange size={14} strokeWidth={1.5} />
               Weekly review
             </button>
             <button
@@ -269,7 +269,7 @@
               }}
             >
               <span class="inline-flex items-center gap-2">
-                <FilePlus size={14} strokeWidth={2} />
+                <FilePlus size={14} strokeWidth={1.5} />
                 New note
               </span>
               <kbd class="vault-kbd">{formatShortcut("N")}</kbd>
@@ -283,7 +283,7 @@
                 vault.openNewGroupDialog();
               }}
             >
-              <FolderPlus size={14} strokeWidth={2} />
+              <FolderPlus size={14} strokeWidth={1.5} />
               New group
             </button>
             {#if canUseLocalVaultFilesystem()}
@@ -297,7 +297,7 @@
                   void vault.openLooseMarkdownFile();
                 }}
               >
-                <FileText size={14} strokeWidth={2} />
+                <FileText size={14} strokeWidth={1.5} />
                 Open markdown file…
               </button>
             {/if}

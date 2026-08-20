@@ -1380,56 +1380,49 @@ export class ShellTabsStore {
     this.persist();
   }
 
+  /**
+   * Split and move the active tab into the new pane (workshop default).
+   * Cloning into both panes remains available via `retainActiveInSplit`.
+   */
   splitActive(direction: SplitDirection): boolean {
-    if (countLeaves(this.splitRoot) >= MAX_SHELL_PANES) {
-      return false;
-    }
+    return this.moveActiveToNewSplit(direction);
+  }
+
+  /** Split and move the active tab into the new pane. */
+  moveActiveToNewSplit(direction: SplitDirection): boolean {
+    return this.#splitWithSeed(direction, "move");
+  }
+
+  /** Split and retain (clone) the active tab in both panes — VS Code Split Editor. */
+  retainActiveInSplit(direction: SplitDirection): boolean {
+    return this.#splitWithSeed(direction, "retain");
+  }
+
+  #splitWithSeed(direction: SplitDirection, mode: "move" | "retain"): boolean {
+    if (countLeaves(this.splitRoot) >= MAX_SHELL_PANES) return false;
     const fromGroupId = this.activeGroupId;
     const seed = this.activeTab;
     const newGroupId = newSplitId("group");
     const result = splitLeaf(this.splitRoot, fromGroupId, direction, newGroupId);
     if (!result) return false;
-
     this.splitRoot = result.root;
     this.groups = [...this.groups, { id: newGroupId, tabIds: [], activeTabId: null }];
-
-    if (seed) {
-      // Retain the current editor in both groups (VS Code Split Editor).
-      // Moving a tab into a new pane remains moveTab / splitGroupWithTab.
+    if (!seed) {
+      this.activeGroupId = newGroupId;
+      this.persist();
+      return true;
+    }
+    if (mode === "move") {
+      this.moveTab(seed.id, newGroupId);
+      void this.activate(seed.id);
+    } else {
       const retained = this.retainTabInGroup(seed, newGroupId);
       this.activeGroupId = newGroupId;
       if (retained) {
         this.patchGroup(newGroupId, { activeTabId: retained });
         void this.activate(retained);
       }
-    } else {
-      this.activeGroupId = newGroupId;
-      // Empty pane stays empty — ShellPane shows “Open something from the rail.”
-      // Do not seed Workspace/Code placeholders.
     }
-    this.persist();
-    return true;
-  }
-
-  /**
-   * Split and move the active tab into the new pane (drag-to-split semantics).
-   * Prefer `splitActive` when the editor should stay visible in both groups.
-   */
-  moveActiveToNewSplit(direction: SplitDirection): boolean {
-    if (countLeaves(this.splitRoot) >= MAX_SHELL_PANES) {
-      return false;
-    }
-    const fromGroupId = this.activeGroupId;
-    const seed = this.activeTab;
-    if (!seed) return this.splitActive(direction);
-    const newGroupId = newSplitId("group");
-    const result = splitLeaf(this.splitRoot, fromGroupId, direction, newGroupId);
-    if (!result) return false;
-
-    this.splitRoot = result.root;
-    this.groups = [...this.groups, { id: newGroupId, tabIds: [], activeTabId: null }];
-    this.moveTab(seed.id, newGroupId);
-    void this.activate(seed.id);
     this.persist();
     return true;
   }
@@ -1696,7 +1689,13 @@ export class ShellTabsStore {
       );
       if (!existing) {
         if (!presentedLmeIds.has(lme.tabId)) {
-          this.openLme(lme.tabId, { activate: false, title: lme.title });
+          // Activate when this is the LME focus so ShellTabHost sync does not
+          // leave the new note as a background chip ahead of mirrorLmeTab.
+          const shouldActivate = lme.tabId === ports().lme.activeTabId();
+          this.openLme(lme.tabId, {
+            activate: shouldActivate,
+            title: lme.title,
+          });
           presentedLmeIds.add(lme.tabId);
         }
       } else if (existing.title !== (lme.title?.trim() || existing.title)) {
