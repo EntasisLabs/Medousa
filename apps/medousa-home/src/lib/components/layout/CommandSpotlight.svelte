@@ -30,14 +30,25 @@
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import SpotlightWorkspacePreview from "./SpotlightWorkspacePreview.svelte";
   import {
-    ArrowUpRight,
+    Bot,
+    Boxes,
+    BriefcaseBusiness,
     FileText,
+    FlaskConical,
+    FolderOpen,
+    GitBranch,
     Globe2,
     House,
     LayoutPanelTop,
     MessageSquare,
+    PanelRightOpen,
+    Pin,
     Play,
+    Plus,
+    Search,
+    Settings,
     TerminalSquare,
+    Zap,
   } from "@lucide/svelte";
   import type { Component } from "svelte";
 
@@ -63,6 +74,7 @@
   let previewText = $state<string | null>(null);
   let previewTitle = $state<string | null>(null);
   let resultsEl = $state<HTMLDivElement | null>(null);
+  let highlightNavigation = $state<"keyboard" | "pointer" | "data">("data");
   const notesMode = $derived(commandSpotlight.mode === "notes");
   const promptStep = $derived(commandSpotlight.promptStep);
 
@@ -79,6 +91,12 @@
   const flatCommands = $derived(groups.flatMap((group) => group.commands));
   const activeCommand = $derived(flatCommands[highlightIndex] ?? null);
   const activePreviewKind = $derived(activeCommand?.preview?.kind ?? "fallback");
+  const activeGroup = $derived(
+    activeCommand
+      ? groups.find((group) => group.commands.some((command) => command.id === activeCommand.id)) ??
+          null
+      : null,
+  );
 
   const scopeTabs = $derived([
     { id: "home", label: "Home" },
@@ -103,6 +121,11 @@
       zoomedGroupId: shellTabs.zoomedGroupId,
     };
   });
+
+  const hasRichStage = $derived(
+    Boolean(selectedDesktopLayout) || activePreviewKind !== "fallback",
+  );
+  const showStage = $derived(hasRichStage || activeCommand?.risk === "attention");
 
   const activeWorkspaceTabId = $derived(
     activeCommand?.id.startsWith("spotlight-tab:")
@@ -133,14 +156,93 @@
     return tab.kind === "chat" ? "Chat" : tab.kind[0]!.toUpperCase() + tab.kind.slice(1);
   }
 
-  function iconForCommand(command: WorkshopCommand): Component {
+  function iconForCommand(command: WorkshopCommand): Component | null {
+    const identity = `${command.id} ${command.label} ${command.keywords ?? ""}`.toLowerCase();
     if (command.id.startsWith("spotlight-pane:")) return LayoutPanelTop;
     if (command.preview?.kind === "note") return FileText;
     if (command.preview?.kind === "chat") return MessageSquare;
     if (command.preview?.kind === "script") return Play;
-    if (command.keywords?.includes("terminal")) return TerminalSquare;
-    if (command.id.includes("browser") || command.keywords?.includes(" web ")) return Globe2;
-    return ArrowUpRight;
+    if (identity.includes("terminal")) return TerminalSquare;
+    if (identity.includes("settings")) return Settings;
+    if (identity.includes("agent")) return Bot;
+    if (identity.includes("automation")) return Zap;
+    if (identity.includes("artifact")) return Boxes;
+    if (identity.includes("test")) return FlaskConical;
+    if (
+      identity.includes("git") ||
+      identity.includes("changes") ||
+      identity.includes("blame") ||
+      identity.includes("fetch") ||
+      identity.includes("pull") ||
+      identity.includes("push") ||
+      identity.includes("sync") ||
+      identity.includes("review")
+    ) {
+      return GitBranch;
+    }
+    if (
+      identity.includes("panel") ||
+      identity.includes("split") ||
+      identity.includes("preview") ||
+      identity.includes("toolbar")
+    ) {
+      return PanelRightOpen;
+    }
+    if (identity.includes("browser") || identity.includes(" web ")) return Globe2;
+    if (identity.includes("search") || identity.includes("find")) return Search;
+    if (identity.includes("file") || identity.includes("folder")) return FolderOpen;
+    if (identity.includes("work") || identity.includes("task") || identity.includes("kanban")) {
+      return BriefcaseBusiness;
+    }
+    if (identity.includes("pin")) return Pin;
+    if (identity.includes("new ") || identity.includes("create")) return Plus;
+    return null;
+  }
+
+  function executionVerb(command: WorkshopCommand): string {
+    if (command.prompt) return "Continue";
+    if (command.id.startsWith("spotlight-tab:") || command.id.startsWith("spotlight-pane:")) {
+      return "Focus";
+    }
+    const first = command.label.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+    const verbs: Record<string, string> = {
+      change: "Change",
+      check: "Check",
+      clear: "Clear",
+      create: "Create",
+      edit: "Edit",
+      export: "Export",
+      fetch: "Fetch",
+      hide: "Hide",
+      new: "Create",
+      open: "Open",
+      pin: "Pin",
+      pull: "Pull",
+      push: "Push",
+      remove: "Remove",
+      rename: "Rename",
+      reset: "Reset",
+      resume: "Resume",
+      run: "Run",
+      search: "Search",
+      seal: "Seal",
+      show: "Show",
+      switch: "Switch",
+      sync: "Sync",
+      toggle: "Toggle",
+      zoom: "Zoom",
+    };
+    return verbs[first] ?? (command.section === "go" || command.section === "open" ? "Open" : "Run");
+  }
+
+  function executionLabel(command: WorkshopCommand): string {
+    const verb = executionVerb(command);
+    const first = command.label.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+    if (verb === "Create" && first === "new") {
+      return `Create ${command.label.trim().slice(4)}`;
+    }
+    if (first === verb.toLowerCase()) return command.label;
+    return `${verb} ${command.label}`;
   }
 
   function previewForTab(tab: ShellTab): CommandPreview | undefined {
@@ -461,9 +563,18 @@
 
   function selectScope(scopeId: string) {
     if (scopeId === selectedScopeId) return;
+    highlightNavigation = "data";
     selectedScopeId = scopeId;
     highlightIndex = 0;
     requestAnimationFrame(() => inputEl?.focus());
+  }
+
+  function focusCommand(commandId: string) {
+    const index = flatCommands.findIndex((command) => command.id === commandId);
+    if (index >= 0) {
+      highlightNavigation = "pointer";
+      highlightIndex = index;
+    }
   }
 
   function moveScope(delta: number) {
@@ -519,11 +630,13 @@
 
     if (event.key === "ArrowDown") {
       event.preventDefault();
+      highlightNavigation = "keyboard";
       highlightIndex = (highlightIndex + 1) % flatCommands.length;
       return;
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
+      highlightNavigation = "keyboard";
       highlightIndex = (highlightIndex - 1 + flatCommands.length) % flatCommands.length;
       return;
     }
@@ -542,12 +655,12 @@
     return index + itemIndex;
   }
 
-  function queueScrollActiveRow() {
+  function queueScrollActiveRow(block: ScrollLogicalPosition) {
     requestAnimationFrame(() => {
       const row = resultsEl?.querySelector<HTMLElement>(
         `[data-spotlight-index="${highlightIndex}"]`,
       );
-      row?.scrollIntoView({ block: "nearest" });
+      row?.scrollIntoView({ block });
     });
   }
 
@@ -555,7 +668,7 @@
     if (!commandSpotlight.open) return;
     void highlightIndex;
     void groups;
-    queueScrollActiveRow();
+    queueScrollActiveRow(highlightNavigation === "keyboard" ? "center" : "nearest");
   });
 
   const prefixHint = $derived(parseSpotlightQuery(query).mode);
@@ -576,7 +689,8 @@
   >
     <div
       class="command-spotlight-panel"
-      class:command-spotlight-panel-wide={Boolean(activeCommand)}
+      class:command-spotlight-panel-contextual={showStage && !hasRichStage}
+      class:command-spotlight-panel-rich={showStage && hasRichStage}
       role="dialog"
       aria-modal="true"
       aria-label="Command spotlight"
@@ -599,6 +713,10 @@
           class="command-spotlight-input"
           {placeholder}
           bind:value={query}
+          oninput={() => {
+            highlightNavigation = "data";
+            highlightIndex = 0;
+          }}
           disabled={busy}
         />
         {#if prefixHint !== "default"}
@@ -616,24 +734,33 @@
 
       {#if !promptStep}
         <nav class="command-spotlight-scopes" aria-label="Workshop scopes">
-          {#each scopeTabs as scope (scope.id)}
-            <button
-              type="button"
-              class="command-spotlight-scope"
+          <span class="command-spotlight-scopes-label">Search in</span>
+          <div class="command-spotlight-scope-list" role="tablist" aria-label="Workspaces">
+            {#each scopeTabs as scope (scope.id)}
+              <button
+                type="button"
+                role="tab"
+                class="command-spotlight-scope"
               class:command-spotlight-scope-active={scope.id === selectedScopeId}
-              aria-current={scope.id === selectedScopeId ? "page" : undefined}
+              aria-selected={scope.id === selectedScopeId}
               onclick={() => selectScope(scope.id)}
             >
-              {#if scope.id === "home"}
-                <House size={13} strokeWidth={1.7} />
-              {/if}
-              <span>{scope.label}</span>
-            </button>
-          {/each}
+                <span class="command-spotlight-scope-content">
+                  {#if scope.id === "home"}
+                    <House size={12} strokeWidth={1.7} />
+                  {/if}
+                  <span>{scope.label}</span>
+                </span>
+              </button>
+            {/each}
+          </div>
         </nav>
       {/if}
 
-      <div class="command-spotlight-body">
+      <div
+        class="command-spotlight-body"
+        class:command-spotlight-body-rich={hasRichStage}
+      >
         <div class="command-spotlight-results" bind:this={resultsEl}>
           {#each groups as group, sectionIndex (group.id)}
             <div class="command-spotlight-section-label">{group.label}</div>
@@ -648,11 +775,16 @@
                     class:command-spotlight-row-active={rowIndex === highlightIndex}
                     data-spotlight-index={rowIndex}
                     disabled={busy}
-                    onmouseenter={() => (highlightIndex = rowIndex)}
+                    onmouseenter={() => {
+                      highlightNavigation = "pointer";
+                      highlightIndex = rowIndex;
+                    }}
                     onclick={() => void runCommand(command)}
                   >
                     <span class="command-spotlight-row-icon" aria-hidden="true">
-                      <CommandIcon size={14} strokeWidth={1.6} />
+                      {#if CommandIcon}
+                        <CommandIcon size={14} strokeWidth={1.6} />
+                      {/if}
                     </span>
                     <span class="command-spotlight-row-copy">
                       <span class="command-spotlight-row-title">{command.label}</span>
@@ -664,7 +796,11 @@
                       {#if command.risk === "attention"}
                         <span class="command-spotlight-attention">Needs attention</span>
                       {/if}
-                      {#if command.hint}
+                      {#if rowIndex === highlightIndex}
+                        <span class="command-spotlight-row-run">
+                          <span>↵</span> {executionVerb(command)}
+                        </span>
+                      {:else if command.hint}
                         <span class="command-spotlight-hint">{command.hint}</span>
                       {/if}
                     </span>
@@ -677,8 +813,22 @@
           {/each}
         </div>
 
-        {#if activeCommand}
+        {#if activeCommand && showStage}
+          {@const ActiveIcon = iconForCommand(activeCommand)}
           <aside class="command-spotlight-preview" aria-label="Preview">
+            <header class="command-spotlight-stage-header">
+              <div class="command-spotlight-stage-kicker">
+                {#if ActiveIcon}
+                  <ActiveIcon size={13} strokeWidth={1.6} />
+                {/if}
+                <span>{activeGroup?.label ?? "Workshop"}</span>
+              </div>
+              <h2>{activeCommand.label}</h2>
+              {#if activeCommand.subtitle}
+                <p>{activeCommand.subtitle}</p>
+              {/if}
+            </header>
+
             {#if activePreviewKind === "chat" && chatPreviewCommands.length > 0}
               <div class="command-spotlight-preview-tabs" role="tablist" aria-label="Recent chats">
                 {#each chatPreviewCommands as command (command.id)}
@@ -688,47 +838,54 @@
                     aria-selected={command.id === activeCommand.id}
                     class="command-spotlight-preview-tab"
                     class:command-spotlight-preview-tab-active={command.id === activeCommand.id}
-                    onclick={() => {
-                      const index = flatCommands.findIndex((entry) => entry.id === command.id);
-                      if (index >= 0) highlightIndex = index;
-                    }}
+                    onclick={() => focusCommand(command.id)}
                   >
                     {command.label.replace(/^Open chat:\s*/, "")}
                   </button>
                 {/each}
               </div>
-            {:else if previewTitle}
-              <p class="command-spotlight-preview-title">{previewTitle}</p>
             {/if}
 
-            {#if selectedDesktopLayout && activePreviewKind === "fallback"}
-              <div class="command-spotlight-workspace-preview">
-                <SpotlightWorkspacePreview
-                  layout={selectedDesktopLayout}
-                  selectedTabId={activeWorkspaceTabId}
-                />
-              </div>
-            {:else if activePreviewKind === "note" && previewText}
-              <div class="command-spotlight-preview-markdown">
-                <MarkdownContent content={previewText} titleByPath={vault.labelByPathMap} />
-              </div>
-            {:else if activePreviewKind === "chat"}
-              <div class="command-spotlight-chat-preview">
-                <div class="command-spotlight-chat-meta">
-                  <MessageSquare size={13} strokeWidth={1.6} />
-                  <span>{previewTitle}</span>
+            <div class="command-spotlight-stage-content">
+              {#if selectedDesktopLayout && activePreviewKind === "fallback"}
+                <div class="command-spotlight-workspace-preview">
+                  <SpotlightWorkspacePreview
+                    layout={selectedDesktopLayout}
+                    selectedTabId={activeWorkspaceTabId}
+                  />
                 </div>
-                <p>{previewText}</p>
-              </div>
-            {:else}
-              <pre class="command-spotlight-preview-body">{previewText}</pre>
-            {/if}
+              {:else if activePreviewKind === "note" && previewText}
+                <div class="command-spotlight-preview-markdown">
+                  <MarkdownContent content={previewText} titleByPath={vault.labelByPathMap} />
+                </div>
+              {:else if activePreviewKind === "chat"}
+                <div class="command-spotlight-chat-preview">
+                  <div class="command-spotlight-chat-meta">
+                    <MessageSquare size={13} strokeWidth={1.6} />
+                    <span>Recent conversation</span>
+                  </div>
+                  <p>{previewText}</p>
+                </div>
+              {:else if activePreviewKind !== "fallback"}
+                <pre class="command-spotlight-preview-body">{previewText}</pre>
+              {:else if activeCommand.risk === "attention"}
+                <div class="command-spotlight-stage-warning">
+                  <span>Needs attention</span>
+                  <p>Review this action before running it in the current workspace.</p>
+                </div>
+              {/if}
+            </div>
+
+            <div class="command-spotlight-stage-action">
+              <span class="command-spotlight-stage-return">↵</span>
+              <span>{executionLabel(activeCommand)}</span>
+            </div>
           </aside>
         {/if}
       </div>
 
       <footer class="command-spotlight-footer">
-        <span>↑↓ Move · ⌃←→ Workspace · ↵ Focus · esc Close</span>
+        <span>↑↓ Navigate · ↵ Run · esc Close</span>
         <span class="command-spotlight-kbd">{formatShortcut("K")}</span>
       </footer>
     </div>

@@ -145,7 +145,7 @@
   }
 
   .spotlight-layout-pane--selected {
-    box-shadow: inset 0 0 0 1px rgb(var(--theme-focus) / 0.55);
+    background: rgb(var(--theme-card-hover) / 0.32);
   }
 
   .spotlight-layout-tabs {
@@ -164,7 +164,7 @@
     align-items: center;
     overflow: hidden;
     padding: 0 0.55rem;
-    border-bottom: 1px solid transparent;
+    border-radius: 0.3rem;
     color: rgb(var(--theme-text-tertiary));
     font-size: 0.625rem;
     text-overflow: ellipsis;
@@ -172,7 +172,7 @@
   }
 
   .spotlight-layout-tab--active {
-    border-bottom-color: rgb(var(--theme-focus));
+    background: rgb(var(--theme-card-hover) / 0.78);
     color: rgb(var(--theme-text));
   }
 
@@ -199,7 +199,7 @@
   }
 
   .spotlight-layout-kind {
-    color: rgb(var(--theme-focus));
+    color: rgb(var(--theme-text-tertiary));
     font-size: 0.56rem;
     letter-spacing: 0.12em;
     text-transform: uppercase;
