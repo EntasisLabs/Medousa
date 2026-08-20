@@ -2812,6 +2812,12 @@
       }
     }
   },
+  "ConnectionId": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ConnectionId",
+    "description": "Stable UUID for one integration connection row.",
+    "type": "string"
+  },
   "CreateAgentSessionRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "CreateAgentSessionRequest",
@@ -3137,6 +3143,32 @@
       }
     }
   },
+  "CreateIntegrationConnectionRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreateIntegrationConnectionRequest",
+    "type": "object",
+    "required": [
+      "kind"
+    ],
+    "properties": {
+      "base_url": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "kind": {
+        "description": "Catalog slug (`openai`, `discord`, …).",
+        "type": "string"
+      },
+      "label": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
   "DecideAgentModeProposalRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "DecideAgentModeProposalRequest",
@@ -3146,6 +3178,19 @@
     ],
     "properties": {
       "accept": {
+        "type": "boolean"
+      }
+    }
+  },
+  "DeleteIntegrationConnectionResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DeleteIntegrationConnectionResponse",
+    "type": "object",
+    "required": [
+      "deleted"
+    ],
+    "properties": {
+      "deleted": {
         "type": "boolean"
       }
     }
@@ -9517,6 +9562,279 @@
       }
     }
   },
+  "InstallationId": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "InstallationId",
+    "description": "Durable installation identity persisted in `{dataDir}/installation.json`.\n\nUUID v4 hyphenated grammar (same as pairing / credential ids). Cannot live in Surreal because Surreal's password is itself keyed by this id.",
+    "type": "string"
+  },
+  "IntegrationConnection": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "IntegrationConnection",
+    "description": "Durable integration connection record (metadata + slot presence).",
+    "type": "object",
+    "required": [
+      "connection_id",
+      "created_at",
+      "kind",
+      "updated_at"
+    ],
+    "properties": {
+      "base_url": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "connection_id": {
+        "$ref": "#/definitions/ConnectionId"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "kind": {
+        "description": "Catalog / routing slug (`openai`, `discord`, `chatgpt`, `apns`, …).",
+        "type": "string"
+      },
+      "label": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "secrets": {
+        "default": {
+          "api_key": false,
+          "app_token": false,
+          "auth_key": false,
+          "bot_token": false,
+          "oauth_bundle": false
+        },
+        "allOf": [
+          {
+            "$ref": "#/definitions/IntegrationSecretStatus"
+          }
+        ]
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "definitions": {
+      "ConnectionId": {
+        "description": "Stable UUID for one integration connection row.",
+        "type": "string"
+      },
+      "IntegrationSecretStatus": {
+        "description": "Slot-presence map — configured bools only, never secret values.",
+        "type": "object",
+        "properties": {
+          "api_key": {
+            "default": false,
+            "type": "boolean"
+          },
+          "app_token": {
+            "default": false,
+            "type": "boolean"
+          },
+          "auth_key": {
+            "default": false,
+            "type": "boolean"
+          },
+          "bot_token": {
+            "default": false,
+            "type": "boolean"
+          },
+          "oauth_bundle": {
+            "default": false,
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
+  "IntegrationConnectionListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "IntegrationConnectionListResponse",
+    "type": "object",
+    "required": [
+      "connections"
+    ],
+    "properties": {
+      "connections": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/IntegrationConnection"
+        }
+      }
+    },
+    "definitions": {
+      "ConnectionId": {
+        "description": "Stable UUID for one integration connection row.",
+        "type": "string"
+      },
+      "IntegrationConnection": {
+        "description": "Durable integration connection record (metadata + slot presence).",
+        "type": "object",
+        "required": [
+          "connection_id",
+          "created_at",
+          "kind",
+          "updated_at"
+        ],
+        "properties": {
+          "base_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "connection_id": {
+            "$ref": "#/definitions/ConnectionId"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "kind": {
+            "description": "Catalog / routing slug (`openai`, `discord`, `chatgpt`, `apns`, …).",
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "secrets": {
+            "default": {
+              "api_key": false,
+              "app_token": false,
+              "auth_key": false,
+              "bot_token": false,
+              "oauth_bundle": false
+            },
+            "allOf": [
+              {
+                "$ref": "#/definitions/IntegrationSecretStatus"
+              }
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "IntegrationSecretStatus": {
+        "description": "Slot-presence map — configured bools only, never secret values.",
+        "type": "object",
+        "properties": {
+          "api_key": {
+            "default": false,
+            "type": "boolean"
+          },
+          "app_token": {
+            "default": false,
+            "type": "boolean"
+          },
+          "auth_key": {
+            "default": false,
+            "type": "boolean"
+          },
+          "bot_token": {
+            "default": false,
+            "type": "boolean"
+          },
+          "oauth_bundle": {
+            "default": false,
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
+  "IntegrationSecretSlot": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "IntegrationSecretSlot",
+    "description": "Secret slot on an integration connection (never carries values on the wire).",
+    "type": "string",
+    "enum": [
+      "api_key",
+      "oauth_bundle",
+      "bot_token",
+      "app_token",
+      "auth_key"
+    ]
+  },
+  "IntegrationSecretStatus": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "IntegrationSecretStatus",
+    "description": "Slot-presence map — configured bools only, never secret values.",
+    "type": "object",
+    "properties": {
+      "api_key": {
+        "default": false,
+        "type": "boolean"
+      },
+      "app_token": {
+        "default": false,
+        "type": "boolean"
+      },
+      "auth_key": {
+        "default": false,
+        "type": "boolean"
+      },
+      "bot_token": {
+        "default": false,
+        "type": "boolean"
+      },
+      "oauth_bundle": {
+        "default": false,
+        "type": "boolean"
+      }
+    }
+  },
+  "IntegrationSecretWriteResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "IntegrationSecretWriteResponse",
+    "type": "object",
+    "required": [
+      "configured",
+      "connection_id",
+      "slot"
+    ],
+    "properties": {
+      "configured": {
+        "type": "boolean"
+      },
+      "connection_id": {
+        "$ref": "#/definitions/ConnectionId"
+      },
+      "slot": {
+        "$ref": "#/definitions/IntegrationSecretSlot"
+      }
+    },
+    "definitions": {
+      "ConnectionId": {
+        "description": "Stable UUID for one integration connection row.",
+        "type": "string"
+      },
+      "IntegrationSecretSlot": {
+        "description": "Secret slot on an integration connection (never carries values on the wire).",
+        "type": "string",
+        "enum": [
+          "api_key",
+          "oauth_bundle",
+          "bot_token",
+          "app_token",
+          "auth_key"
+        ]
+      }
+    }
+  },
   "InteractiveTurnRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "InteractiveTurnRequest",
@@ -11825,6 +12143,17 @@
       }
     }
   },
+  "LocalClientKind": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "LocalClientKind",
+    "description": "First-party local-auth client kinds (matches `medousa-local-credential` names).",
+    "type": "string",
+    "enum": [
+      "home-local",
+      "medousa-cli",
+      "medousa-tui"
+    ]
+  },
   "LocalDeviceTelemetrySnapshot": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "LocalDeviceTelemetrySnapshot",
@@ -12986,6 +13315,31 @@
       },
       "phase": {
         "type": "string"
+      }
+    }
+  },
+  "PatchIntegrationConnectionRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PatchIntegrationConnectionRequest",
+    "type": "object",
+    "properties": {
+      "base_url": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "kind": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "label": {
+        "type": [
+          "string",
+          "null"
+        ]
       }
     }
   },
@@ -17996,6 +18350,20 @@
         "type": "string"
       },
       "timezone": {
+        "type": "string"
+      }
+    }
+  },
+  "UpsertIntegrationSecretRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "UpsertIntegrationSecretRequest",
+    "type": "object",
+    "required": [
+      "value"
+    ],
+    "properties": {
+      "value": {
+        "description": "Secret material. Never echoed in responses.",
         "type": "string"
       }
     }

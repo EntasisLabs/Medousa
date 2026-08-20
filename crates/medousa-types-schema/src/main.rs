@@ -290,6 +290,44 @@ fn main() {
     export_type!(schemas, CalendarImportResponse, "CalendarImportResponse");
     export_type!(schemas, CalendarExportResponse, "CalendarExportResponse");
 
+    // Integrations / secrets (status + metadata only — never secret values)
+    export_type!(schemas, InstallationId, "InstallationId");
+    export_type!(schemas, ConnectionId, "ConnectionId");
+    export_type!(schemas, LocalClientKind, "LocalClientKind");
+    export_type!(schemas, IntegrationSecretSlot, "IntegrationSecretSlot");
+    export_type!(schemas, IntegrationSecretStatus, "IntegrationSecretStatus");
+    export_type!(schemas, IntegrationConnection, "IntegrationConnection");
+    export_type!(
+        schemas,
+        IntegrationConnectionListResponse,
+        "IntegrationConnectionListResponse"
+    );
+    export_type!(
+        schemas,
+        CreateIntegrationConnectionRequest,
+        "CreateIntegrationConnectionRequest"
+    );
+    export_type!(
+        schemas,
+        PatchIntegrationConnectionRequest,
+        "PatchIntegrationConnectionRequest"
+    );
+    export_type!(
+        schemas,
+        UpsertIntegrationSecretRequest,
+        "UpsertIntegrationSecretRequest"
+    );
+    export_type!(
+        schemas,
+        DeleteIntegrationConnectionResponse,
+        "DeleteIntegrationConnectionResponse"
+    );
+    export_type!(
+        schemas,
+        IntegrationSecretWriteResponse,
+        "IntegrationSecretWriteResponse"
+    );
+
     // Agents (hot-swappable runtimes)
     export_type!(schemas, AgentRuntimeInfo, "AgentRuntimeInfo");
     export_type!(

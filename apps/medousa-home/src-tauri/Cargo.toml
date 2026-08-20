@@ -33,7 +33,6 @@ uuid = { version = "1", features = ["v4"] }
 urlencoding = "2"
 dirs = "6"
 toml = "0.8"
-keyring = "2.3"
 base64 = "0.22"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand = "0.8"
@@ -41,6 +40,7 @@ sha2 = "0.10"
 bytes = "1"
 url = "2"
 medousa-types = { path = "../../../crates/medousa-types" }
+medousa-secrets = { path = "../../../crates/medousa-secrets" }
 medousa-sdk = { path = "../../../crates/medousa-sdk", default-features = false, features = ["async", "sse"] }
 medousa-sdk-iroh = { path = "../../../crates/medousa-sdk-iroh", default-features = false, features = ["async", "sse"] }
 medousa-iroh-http = { path = "../../../crates/medousa-iroh-http" }

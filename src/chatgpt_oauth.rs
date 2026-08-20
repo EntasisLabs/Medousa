@@ -102,55 +102,55 @@ trait CredentialStore: Send + Sync {
 struct DaemonCredentialStore;
 
 impl DaemonCredentialStore {
-    fn path() -> std::path::PathBuf {
-        crate::session::medousa_data_dir()
-            .join("secrets")
-            .join("chatgpt_oauth.json")
-    }
-
-    fn entry() -> Result<keyring::Entry, keyring::Error> {
-        #[cfg(test)]
-        crate::test_env::refuse_host_keyring()?;
-        keyring::Entry::new(CREDENTIAL_SERVICE, CREDENTIAL_ACCOUNT)
+    fn load_raw() -> Option<String> {
+        crate::integration_connection::load_kind_secret(
+            "chatgpt",
+            medousa_types::secrets::IntegrationSecretSlot::OauthBundle,
+        )
     }
 }
 
 impl CredentialStore for DaemonCredentialStore {
     fn load(&self) -> Result<Option<CredentialEnvelope>, OAuthError> {
-        let raw = Self::entry()
-            .ok()
-            .and_then(|entry| entry.get_password().ok())
-            .filter(|value| !value.trim().is_empty())
-            .or_else(|| std::fs::read_to_string(Self::path()).ok());
-        raw.map(|value| {
-            serde_json::from_str(&value).map_err(|_| OAuthError::StoredCredentialsInvalid)
-        })
-        .transpose()
+        Self::load_raw()
+            .map(|value| {
+                serde_json::from_str(&value).map_err(|_| OAuthError::StoredCredentialsInvalid)
+            })
+            .transpose()
     }
 
     fn save(&self, credentials: &CredentialEnvelope) -> Result<(), OAuthError> {
         let serialized =
             serde_json::to_string(credentials).map_err(|_| OAuthError::StoredCredentialsInvalid)?;
-        if Self::entry()
+        crate::integration_connection::save_kind_secret(
+            "chatgpt",
+            medousa_types::secrets::IntegrationSecretSlot::OauthBundle,
+            Some(&serialized),
+        );
+        let _ = keyring::Entry::new(CREDENTIAL_SERVICE, CREDENTIAL_ACCOUNT)
             .ok()
-            .is_some_and(|entry| entry.set_password(&serialized).is_ok())
-        {
-            let _ = std::fs::remove_file(Self::path());
-            return Ok(());
-        }
-        crate::session::atomic_write(&Self::path(), serialized.as_bytes())
-            .map_err(|_| OAuthError::CredentialStorage)
+            .map(|entry| entry.delete_password());
+        let legacy = crate::session::medousa_data_dir()
+            .join("secrets")
+            .join("chatgpt_oauth.json");
+        let _ = std::fs::remove_file(legacy);
+        Ok(())
     }
 
     fn delete(&self) -> Result<(), OAuthError> {
-        if let Ok(entry) = Self::entry() {
-            let _ = entry.delete_password();
-        }
-        match std::fs::remove_file(Self::path()) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(_) => Err(OAuthError::CredentialStorage),
-        }
+        crate::integration_connection::save_kind_secret(
+            "chatgpt",
+            medousa_types::secrets::IntegrationSecretSlot::OauthBundle,
+            None,
+        );
+        let _ = keyring::Entry::new(CREDENTIAL_SERVICE, CREDENTIAL_ACCOUNT)
+            .ok()
+            .map(|entry| entry.delete_password());
+        let legacy = crate::session::medousa_data_dir()
+            .join("secrets")
+            .join("chatgpt_oauth.json");
+        let _ = std::fs::remove_file(legacy);
+        Ok(())
     }
 }
 

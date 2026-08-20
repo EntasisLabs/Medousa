@@ -17,7 +17,7 @@ pub struct IdentifierError {
 }
 
 impl IdentifierError {
-    fn new(kind: &'static str, reason: &'static str) -> Self {
+    pub(crate) fn new(kind: &'static str, reason: &'static str) -> Self {
         Self { kind, reason }
     }
 }
@@ -38,11 +38,11 @@ impl StorageAuthorityKey {
         &self.0
     }
 
-    fn derive(prefix: &'static str, domain: &'static str, value: &str) -> Self {
+    pub(crate) fn derive(prefix: &'static str, domain: &'static str, value: &str) -> Self {
         Self::derive_many(prefix, domain, &[value])
     }
 
-    fn derive_many(prefix: &'static str, domain: &'static str, values: &[&str]) -> Self {
+    pub(crate) fn derive_many(prefix: &'static str, domain: &'static str, values: &[&str]) -> Self {
         let mut digest = Sha256::new();
         digest.update(b"medousa-storage-authority\0");
         digest.update((domain.len() as u64).to_be_bytes());

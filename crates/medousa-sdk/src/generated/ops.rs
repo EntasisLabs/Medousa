@@ -1416,6 +1416,55 @@ pub const INGEST_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const INTEGRATIONS_GET: Operation = Operation {
+    id: "integrations.get",
+    method: "GET",
+    path: "/v1/integrations",
+    streaming: false,
+};
+
+pub const INTEGRATIONS_POST: Operation = Operation {
+    id: "integrations.post",
+    method: "POST",
+    path: "/v1/integrations",
+    streaming: false,
+};
+
+pub const INTEGRATIONS_BY_CONNECTION_ID_GET: Operation = Operation {
+    id: "integrations.by_connection_id.get",
+    method: "GET",
+    path: "/v1/integrations/{connection_id}",
+    streaming: false,
+};
+
+pub const INTEGRATIONS_BY_CONNECTION_ID_PATCH: Operation = Operation {
+    id: "integrations.by_connection_id.patch",
+    method: "PATCH",
+    path: "/v1/integrations/{connection_id}",
+    streaming: false,
+};
+
+pub const INTEGRATIONS_BY_CONNECTION_ID_DELETE: Operation = Operation {
+    id: "integrations.by_connection_id.delete",
+    method: "DELETE",
+    path: "/v1/integrations/{connection_id}",
+    streaming: false,
+};
+
+pub const INTEGRATIONS_BY_CONNECTION_ID_SECRETS_BY_SLOT_PUT: Operation = Operation {
+    id: "integrations.by_connection_id.secrets.by_slot.put",
+    method: "PUT",
+    path: "/v1/integrations/{connection_id}/secrets/{slot}",
+    streaming: false,
+};
+
+pub const INTEGRATIONS_BY_CONNECTION_ID_SECRETS_BY_SLOT_DELETE: Operation = Operation {
+    id: "integrations.by_connection_id.secrets.by_slot.delete",
+    method: "DELETE",
+    path: "/v1/integrations/{connection_id}/secrets/{slot}",
+    streaming: false,
+};
+
 pub const INTERACTIVE_TURN_BY_TURN_ID_STREAM_GET: Operation = Operation {
     id: "interactive.turn.by_turn_id.stream.get",
     method: "GET",
@@ -2885,6 +2934,13 @@ pub static ALL: &[Operation] = &[
     IDENTITY_UPDATE_PROPOSE_POST,
     INGEST_BY_STREAM_ID_STREAM_GET,
     INGEST_POST,
+    INTEGRATIONS_GET,
+    INTEGRATIONS_POST,
+    INTEGRATIONS_BY_CONNECTION_ID_GET,
+    INTEGRATIONS_BY_CONNECTION_ID_PATCH,
+    INTEGRATIONS_BY_CONNECTION_ID_DELETE,
+    INTEGRATIONS_BY_CONNECTION_ID_SECRETS_BY_SLOT_PUT,
+    INTEGRATIONS_BY_CONNECTION_ID_SECRETS_BY_SLOT_DELETE,
     INTERACTIVE_TURN_BY_TURN_ID_STREAM_GET,
     INTERACTIVE_TURN_POST,
     JOBS_ASK_POST,

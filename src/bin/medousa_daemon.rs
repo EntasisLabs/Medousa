@@ -330,6 +330,8 @@ async fn main() -> Result<()> {
     let pairing_enabled = medousa::pairing::pairing_enabled_from_env();
     medousa::peer_scope::validate_listener_security(addr, pairing_enabled)
         .map_err(anyhow::Error::msg)?;
+    let _ = medousa::integration_connection::ensure_secrets_bootstrapped()
+        .context("failed to bootstrap installation id / secret migration")?;
     let local_credentials = Arc::new(
         medousa_local_credential::provision_first_party(&medousa::paths::medousa_data_dir())
             .context("failed to provision first-party local daemon credentials")?,
@@ -774,6 +776,7 @@ async fn main() -> Result<()> {
             operation_lock: Arc::new(tokio::sync::Mutex::new(())),
         },
     ));
+    declared = declared.merge(medousa::integration_handlers::surface().with_state(()));
     let preview = medousa::daemon::forge_preview::forge_preview_surface().with_state(state.clone());
     if let Some((pairing_bootstrap, pairing_protected)) = pairing_routers {
         bootstrap = bootstrap.merge(pairing_bootstrap);

@@ -104,7 +104,7 @@
           },
           "uses_native_turns": {
             "default": false,
-            "description": "Native Medousa turns use `/v1/turns` — not `/v1/agents/sessions`.",
+            "description": "Native Medousa turns use `/v1/turns` \u2014 not `/v1/agents/sessions`.",
             "type": "boolean"
           }
         },
@@ -227,7 +227,7 @@
         "properties": {
           "action": {
             "default": "display",
-            "description": "RFC 5545 ACTION — currently always `display`.",
+            "description": "RFC 5545 ACTION \u2014 currently always `display`.",
             "type": "string"
           },
           "trigger_minutes_before": {
@@ -1115,7 +1115,7 @@
             "type": "string"
           },
           {
-            "description": "Native Liquid scene pinned to a custom surface. `config.scene` holds an opaque scene payload (`{ ops: [...] }`) the daemon never interprets — the client decodes + renders it via the Liquid SceneRenderer.",
+            "description": "Native Liquid scene pinned to a custom surface. `config.scene` holds an opaque scene payload (`{ ops: [...] }`) the daemon never interprets \u2014 the client decodes + renders it via the Liquid SceneRenderer.",
             "enum": [
               "scene"
             ],
@@ -1166,7 +1166,7 @@
             ]
           },
           "estimator": {
-            "description": "`chars / 4` — documented estimator; not tokenizer-exact.",
+            "description": "`chars / 4` \u2014 documented estimator; not tokenizer-exact.",
             "type": "string"
           },
           "layers": {
@@ -2901,7 +2901,7 @@
           },
           "voice_preset_id": {
             "default": null,
-            "description": "Composer voice stance — short appendix block (not a manuscript specialty).",
+            "description": "Composer voice stance \u2014 short appendix block (not a manuscript specialty).",
             "type": [
               "string",
               "null"
@@ -3184,7 +3184,7 @@
                 "type": "null"
               }
             ],
-            "description": "Color theme for this layout — copied onto `EnvironmentSpec.theme` on activate."
+            "description": "Color theme for this layout \u2014 copied onto `EnvironmentSpec.theme` on activate."
           }
         },
         "required": [
@@ -4227,7 +4227,7 @@
         "type": "object"
       },
       "StreamUiScene": {
-        "description": "Liquid UI scene channel payload — a batch of model-authored scene ops for one turn. `ops` are forwarded verbatim as opaque JSON (the client decodes and validates them into typed `SceneOp`s); the daemon never inspects their shape.",
+        "description": "Liquid UI scene channel payload \u2014 a batch of model-authored scene ops for one turn. `ops` are forwarded verbatim as opaque JSON (the client decodes and validates them into typed `SceneOp`s); the daemon never inspects their shape.",
         "properties": {
           "ops": {
             "description": "Ordered scene operations, opaque JSON validated client-side.",
@@ -5597,7 +5597,7 @@
           },
           "channel_surface": {
             "default": null,
-            "description": "Adapter surface: telegram, discord, slack, home-desktop, home-ios, tui, api, …",
+            "description": "Adapter surface: telegram, discord, slack, home-desktop, home-ios, tui, api, \u2026",
             "type": [
               "string",
               "null"
@@ -5615,7 +5615,7 @@
           },
           "supports_ui_artifacts": {
             "default": false,
-            "description": "When true, the connected client can render sandboxed HTML UI artifacts (`cognition_ui_present`). Channel adapters and clients set this — the daemon does not infer it from channel name.",
+            "description": "When true, the connected client can render sandboxed HTML UI artifacts (`cognition_ui_present`). Channel adapters and clients set this \u2014 the daemon does not infer it from channel name.",
             "type": "boolean"
           },
           "user_id": {
@@ -6029,7 +6029,7 @@
           },
           "session_id": {
             "default": null,
-            "description": "Chat session id for workshop linking tags (`chat:…`, `session`, `profile:…`).",
+            "description": "Chat session id for workshop linking tags (`chat:\u2026`, `session`, `profile:\u2026`).",
             "type": [
               "string",
               "null"
@@ -6133,7 +6133,7 @@
         "type": "string"
       },
       "WorkerProgressDto": {
-        "description": "Streaming slice of a worker's live transcript — the `live_*` fields of `WorkCardDetail`, pushed instead of polled.",
+        "description": "Streaming slice of a worker's live transcript \u2014 the `live_*` fields of `WorkCardDetail`, pushed instead of polled.",
         "properties": {
           "column": {
             "$ref": "#/components/schemas/WorkBoardColumn"
@@ -27756,6 +27756,449 @@
           "feature_profile": "core",
           "rate_limit_class": "read",
           "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/integrations": {
+      "get": {
+        "operationId": "integrations.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "INTEGRATIONS_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "integrations.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      },
+      "post": {
+        "operationId": "integrations.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "INTEGRATIONS_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "integrations.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 4096,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "INTEGRATIONS_POSTRequest",
+                "x-medousa-opaque": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/integrations/{connection_id}": {
+      "get": {
+        "operationId": "integrations.by_connection_id.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "INTEGRATIONS_BY_CONNECTION_ID_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      },
+      "patch": {
+        "operationId": "integrations.by_connection_id.patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "INTEGRATIONS_BY_CONNECTION_ID_PATCHResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.patch"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.patch"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.patch"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 4096,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "INTEGRATIONS_BY_CONNECTION_ID_PATCHRequest",
+                "x-medousa-opaque": true
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "integrations.by_connection_id.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "INTEGRATIONS_BY_CONNECTION_ID_DELETEResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.delete"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.delete"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.delete"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/integrations/{connection_id}/secrets/{slot}": {
+      "put": {
+        "operationId": "integrations.by_connection_id.secrets.by_slot.put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "slot",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "INTEGRATIONS_BY_CONNECTION_ID_SECRETS_BY_SLOT_PUTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.secrets.by_slot.put"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.secrets.by_slot.put"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.secrets.by_slot.put"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "INTEGRATIONS_BY_CONNECTION_ID_SECRETS_BY_SLOT_PUTRequest",
+                "x-medousa-opaque": true
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "integrations.by_connection_id.secrets.by_slot.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "slot",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "INTEGRATIONS_BY_CONNECTION_ID_SECRETS_BY_SLOT_DELETEResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.secrets.by_slot.delete"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.secrets.by_slot.delete"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.secrets.by_slot.delete"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
         }
       }
     }

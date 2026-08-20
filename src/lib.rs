@@ -116,6 +116,8 @@ pub mod inference_profiles;
 pub mod inference_profiles_handlers;
 pub mod inference_router;
 pub mod install;
+pub mod integration_connection;
+pub mod integration_handlers;
 pub mod layout_tools;
 pub mod local_credential_handlers;
 pub mod local_daemon_auth;

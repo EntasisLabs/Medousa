@@ -77,6 +77,13 @@ an active pairing ceremony, and scoped preview URLs, daemon routes require a
 named local-app or paired bearer. First-party native clients load their own
 credential from the platform keyring or owner-only data-directory file.
 
+OS Keychain: Medousa uses two services —
+`com.entasislabs.medousa.secrets.daemon` (engine-owned material) and
+`com.entasislabs.medousa.secrets.client` (pairing session tokens). On first
+write after upgrade, expect **two** Keychain prompts, then silence. Legacy
+services such as `medousa.providers` / `medousa.discord` are migrated and
+deleted on daemon start.
+
 **Tauri app (desktop dev):**
 
 | Variable | Purpose |

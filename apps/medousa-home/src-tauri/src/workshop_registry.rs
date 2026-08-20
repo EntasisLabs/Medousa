@@ -333,7 +333,10 @@ pub fn ensure_migrated() -> Result<WorkshopRegistry, String> {
         let workshop_id = paired_workshop_id(&legacy.workshop_device_id);
         let credentials_path = pairing_credentials_abs_path(&workshop_id)?;
         move_legacy_pairing_file(&credentials_path)?;
-        crate::pairing_client::migrate_legacy_session_token(&legacy.workshop_device_id);
+        crate::pairing_client::migrate_legacy_session_token(
+            &legacy.workshop_device_id,
+            &legacy.pairing_id,
+        );
 
         let url = normalize_url(&legacy.daemon_url);
         let label = if legacy.daemon_url.trim().is_empty() {

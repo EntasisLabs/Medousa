@@ -21,6 +21,7 @@ mod daemon;
 mod daemon_service;
 mod external_desk;
 mod files;
+mod integration_secrets;
 #[cfg(target_os = "ios")]
 mod home_widget;
 #[cfg(not(target_os = "ios"))]

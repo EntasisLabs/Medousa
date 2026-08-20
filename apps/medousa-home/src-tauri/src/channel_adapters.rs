@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use crate::messaging::product_config::ProductConfigSummary;
-use crate::messaging::secrets;
+use crate::integration_secrets;
 
 const DEFAULT_DAEMON_URL: &str = "http://127.0.0.1:7419";
 
@@ -285,21 +285,21 @@ fn start_adapter(
 
     match channel {
         "telegram" => {
-            let token = secrets::load_secret_value("telegram_bot_token")?
+            let token = integration_secrets::load_bot_token("telegram")
                 .ok_or_else(|| "Telegram bot token is missing.".to_string())?;
             apply_telegram_env(&mut command, summary);
             command.arg("--token").arg(token);
         }
         "discord" => {
-            let token = secrets::load_secret_value("discord_bot_token")?
+            let token = integration_secrets::load_bot_token("discord")
                 .ok_or_else(|| "Discord bot token is missing.".to_string())?;
             apply_discord_env(&mut command, summary);
             command.arg("--token").arg(token);
         }
         "slack" => {
-            let bot_token = secrets::load_secret_value("slack_bot_token")?
+            let bot_token = integration_secrets::load_bot_token("slack")
                 .ok_or_else(|| "Slack bot token is missing.".to_string())?;
-            let app_token = secrets::load_secret_value("slack_app_token")?
+            let app_token = integration_secrets::load_app_token("slack")
                 .ok_or_else(|| "Slack app token is missing.".to_string())?;
             apply_slack_env(&mut command, summary);
             command.arg("--bot-token").arg(bot_token);
