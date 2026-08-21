@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::session::{AuthorityId, ConversationTurn, SessionHistorySummary};
+use crate::session::{AuthorityId, ConversationTurn, SessionHistorySummary, TranscriptEntry};
 use crate::stage_routing::StageRoutingMatrix;
 use crate::turn::HostTurnContext;
 
@@ -421,7 +421,7 @@ pub struct SessionTranscriptSearchResponse {
 pub struct SessionHistoryResponse {
     pub authority_id: AuthorityId,
     pub session_id: String,
-    pub turns: Vec<ConversationTurn>,
+    pub turns: Vec<TranscriptEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

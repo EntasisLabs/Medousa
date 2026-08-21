@@ -309,6 +309,25 @@ pub struct ExecutionRef {
     pub execution_id: ExecutionId,
 }
 
+/// One immutable transcript payload at an ordered position in a session.
+/// Session authority and session id are carried by the enclosing history
+/// response; callers can combine them with these coordinates into a
+/// `TranscriptEntryRef`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct TranscriptEntry {
+    pub entry_id: TranscriptEntryId,
+    #[cfg_attr(feature = "json-schema", schemars(range(min = 1)))]
+    pub entry_seq: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caused_by: Option<ExecutionRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<TranscriptEntryRef>,
+    pub content_digest: String,
+    #[serde(flatten)]
+    pub turn: ConversationTurn,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ConversationTurn {
@@ -528,5 +547,28 @@ mod tests {
         assert_eq!(first, second);
         assert_ne!(first.as_str(), installation.as_str());
         assert!(first.as_str().starts_with("auth_"));
+    }
+
+    #[test]
+    fn transcript_entry_keeps_legacy_turn_fields_flat_on_the_wire() {
+        let entry = TranscriptEntry {
+            entry_id: TranscriptEntryId::parse(format!("ent_{}", "c".repeat(32))).unwrap(),
+            entry_seq: 2,
+            caused_by: None,
+            source: None,
+            content_digest: "sha256:abc".to_string(),
+            turn: ConversationTurn::plain(
+                "user",
+                "hello".to_string(),
+                Utc::now(),
+                Vec::new(),
+                None,
+            ),
+        };
+        let value = serde_json::to_value(&entry).unwrap();
+        assert_eq!(value["role"], "user");
+        assert_eq!(value["content"], "hello");
+        assert_eq!(value["entry_seq"], 2);
+        assert!(value.get("turn").is_none());
     }
 }

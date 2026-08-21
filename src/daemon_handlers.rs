@@ -202,7 +202,7 @@ pub async fn get_session_history(
 ) -> Result<Json<SessionHistoryResponse>, (StatusCode, String)> {
     let session_id = validated_session_id(session_id)?;
 
-    let turns = crate::session::load_history(&session_id);
+    let turns = crate::session::load_transcript_entries(&session_id);
     let authority_id = crate::workshop_authority::current()
         .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?
         .clone();

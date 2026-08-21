@@ -1254,6 +1254,27 @@ class SessionHistorySummary(MedousaModel):
     verification_runs: int = Field(..., ge=0)
 
 
+class ExecutionRef(MedousaModel):
+    authority_id: AuthorityId
+    execution_id: ExecutionId
+    session_id: SessionId
+
+
+class SessionRef(MedousaModel):
+    authority_id: AuthorityId
+    session_id: SessionId
+
+
+class TranscriptEntryId(RootModel[str]):
+    root: str = Field(..., title='TranscriptEntryId')
+
+
+class TranscriptEntryRef(MedousaModel):
+    entry_id: TranscriptEntryId
+    entry_seq: int = Field(..., ge=1)
+    session: SessionRef
+
+
 class SessionTranscriptSearchHit(MedousaModel):
     display_name: str | None = None
     excerpt: str
@@ -1300,15 +1321,6 @@ class StageRouteCommandSpec(
 class CodeProjectSource(Enum):
     blank = 'blank'
     repository = 'repository'
-
-
-class SessionRef(MedousaModel):
-    authority_id: AuthorityId
-    session_id: SessionId
-
-
-class TranscriptEntryId(RootModel[str]):
-    root: str = Field(..., title='TranscriptEntryId')
 
 
 class TurnBudgetRequestRecord(MedousaModel):
@@ -2138,12 +2150,6 @@ class EnvironmentValidateResponse(MedousaModel):
     valid: bool
 
 
-class ExecutionRef(MedousaModel):
-    authority_id: AuthorityId
-    execution_id: ExecutionId
-    session_id: SessionId
-
-
 class FeedListResponse(MedousaModel):
     feeds: list[FeedListEntry]
 
@@ -2595,12 +2601,6 @@ class StartSessionCodeProjectRequest(MedousaModel):
     title: str
 
 
-class TranscriptEntryRef(MedousaModel):
-    entry_id: TranscriptEntryId
-    entry_seq: int = Field(..., ge=1)
-    session: SessionRef
-
-
 class TurnBudgetApproveRequest(MedousaModel):
     extra_rounds: int | None = Field(None, ge=0)
     resolved_by: str | None = None
@@ -2923,6 +2923,25 @@ class TurnPart(
     root: TurnPart1 | TurnPart2 | TurnPart3 | TurnPart4 | TurnPart5 | TurnPart6 | TurnPart7 | TurnPart8 | TurnPart9 | TurnPart10
 
 
+class TranscriptEntry(MedousaModel):
+    answer_state: str | None = None
+    caused_by: ExecutionRef | None = None
+    content: str
+    content_digest: str
+    entry_id: TranscriptEntryId
+    entry_seq: int = Field(..., ge=1)
+    parts: list[TurnPart] | None = None
+    role: str
+    slice_summary: TurnSliceSummary | None = None
+    source: TranscriptEntryRef | None = None
+    speaker_profile_id: str | None = Field(
+        None,
+        description='Shared-room human speaker (`user:alice`). Absent on assistant turns / personal chats.',
+    )
+    timestamp: AwareDatetime
+    tool_names: list[str]
+
+
 class TurnStreamEventV210(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -3137,6 +3156,12 @@ class RuntimeConfigCommandRequest(MedousaModel):
     draft_provider: str
 
 
+class SessionHistoryResponse(MedousaModel):
+    authority_id: AuthorityId
+    session_id: str
+    turns: list[TranscriptEntry]
+
+
 class TurnStreamEnvelopeV2(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -3232,12 +3257,6 @@ class LocalBenchmarkManifest(MedousaModel):
 
 class SessionAppendTurnRequest(MedousaModel):
     turn: ConversationTurn
-
-
-class SessionHistoryResponse(MedousaModel):
-    authority_id: AuthorityId
-    session_id: str
-    turns: list[ConversationTurn]
 
 
 class LayoutPreset(MedousaModel):

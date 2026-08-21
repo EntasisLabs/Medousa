@@ -52,6 +52,7 @@ fn main() {
     export_type!(schemas, ExecutionId, "ExecutionId");
     export_type!(schemas, SessionRef, "SessionRef");
     export_type!(schemas, TranscriptEntryRef, "TranscriptEntryRef");
+    export_type!(schemas, TranscriptEntry, "TranscriptEntry");
     export_type!(schemas, ExecutionRef, "ExecutionRef");
     export_type!(
         schemas,

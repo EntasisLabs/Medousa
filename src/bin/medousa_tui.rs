@@ -676,7 +676,7 @@ async fn main() -> Result<()> {
     let history =
         match daemon_commands::daemon_load_session_history(&resolved_daemon_url, &session_id).await
         {
-            Ok(response) => response.turns,
+            Ok(response) => response.turns.into_iter().map(|entry| entry.turn).collect(),
             Err(_) => load_history(&session_id),
         };
 

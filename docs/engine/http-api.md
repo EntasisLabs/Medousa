@@ -143,6 +143,12 @@ for the protocol and surface-scoping rules.
 | DELETE | `/v1/sessions/{session_id}` | `SessionDeleteResponse` | `sessions().delete` |
 | GET | `/v1/session-deletions/{deletion_id}` | `SessionDeleteResponse` | `http().get` |
 | POST | `/v1/sessions/{session_id}/turns` | `SessionAppendTurnRequest` | `sessions().append_turn` |
+
+`SessionHistoryResponse.turns` contains `TranscriptEntry` records. Existing
+turn fields remain flat for compatible renderers; each record also carries a
+durable `entry_id`, one-based session `entry_seq`, `content_digest`, and
+optional execution/source provenance. Use `(authority_id, session_id,
+entry_id, entry_seq)` when addressing a committed transcript occurrence.
 | GET | `/v1/sessions/{session_id}/turns` | turn list | `http().get` |
 | GET | `/v1/sessions/{session_id}/active-turn` | active turn ticket | `http().get` |
 | POST | `/v1/sessions/{session_id}/active-turn` | cancel active turn | `http().post` |

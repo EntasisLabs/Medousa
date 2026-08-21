@@ -1,6 +1,6 @@
 # Conversation context addressing, derivation, and replication
 
-> **Status:** Design locked; implementation not started (2026-08-21)
+> **Status:** Design locked; implementation in progress (2026-08-21)
 >
 > **First proof:** Fork a personal chat from any committed transcript entry into a
 > new session and open it in a new Medousa tab.
@@ -415,21 +415,21 @@ keys.
 
 ### Phase 0 — contract and authority identity
 
-- [ ] Add typed `AuthorityId`, `TranscriptEntryId`, `ContextManifestId`, and
+- [x] Add typed `AuthorityId`, `TranscriptEntryId`, `ContextManifestId`, and
   `DerivationId` contracts.
-- [ ] Define a stable daemon-owned authority identity and expose it through
+- [x] Define a stable daemon-owned authority identity and expose it through
   workshop/session API context.
-- [ ] Define canonical entry serialization and digest version.
-- [ ] Add schema and contract tests for coordinate validation.
+- [x] Define canonical entry serialization and digest version.
+- [x] Add schema and contract tests for coordinate validation.
 
 ### Phase 1 — durable transcript coordinates
 
-- [ ] Add immutable entry storage plus session-entry bindings in Surreal.
-- [ ] Extend the file backend with equivalent id/sequence semantics.
-- [ ] Allocate contiguous `entry_seq` ranges atomically on batch append.
+- [x] Add immutable entry storage plus session-entry bindings in Surreal.
+- [x] Extend the file backend with equivalent id/sequence semantics.
+- [x] Allocate contiguous `entry_seq` ranges atomically on batch append.
 - [ ] Persist `caused_by.execution_id` from interactive and worker paths.
-- [ ] Return entry references from history APIs.
-- [ ] Backfill existing history restartably.
+- [x] Return entry references from history APIs.
+- [x] Backfill existing history restartably.
 - [ ] Add concurrency, duplicate, digest-conflict, and migration tests.
 
 ### Phase 2 — context manifests and derivation

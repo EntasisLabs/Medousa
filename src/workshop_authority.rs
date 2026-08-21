@@ -7,7 +7,7 @@
 use std::sync::OnceLock;
 
 use medousa_types::secrets::InstallationId;
-use medousa_types::session::AuthorityId;
+use medousa_types::session::{AuthorityId, ExecutionId, ExecutionRef, SessionId};
 
 static WORKSHOP_AUTHORITY_ID: OnceLock<AuthorityId> = OnceLock::new();
 
@@ -29,6 +29,14 @@ pub fn current() -> Result<&'static AuthorityId, String> {
     WORKSHOP_AUTHORITY_ID
         .get()
         .ok_or_else(|| "workshop authority is not initialized".to_string())
+}
+
+pub fn execution_ref(session_id: &str, execution_id: &str) -> Result<ExecutionRef, String> {
+    Ok(ExecutionRef {
+        authority_id: current()?.clone(),
+        session_id: SessionId::parse(session_id).map_err(|error| error.to_string())?,
+        execution_id: ExecutionId::parse(execution_id).map_err(|error| error.to_string())?,
+    })
 }
 
 #[cfg(test)]

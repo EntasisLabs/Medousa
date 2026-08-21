@@ -39,6 +39,19 @@ export interface SessionHistoryResponse {
 }
 
 export interface SessionTurn {
+  entry_id?: string;
+  entry_seq?: number;
+  content_digest?: string;
+  caused_by?: {
+    authority_id: string;
+    session_id: string;
+    execution_id: string;
+  } | null;
+  source?: {
+    session: { authority_id: string; session_id: string };
+    entry_id: string;
+    entry_seq: number;
+  } | null;
   role: string;
   content: string;
   timestamp: string;

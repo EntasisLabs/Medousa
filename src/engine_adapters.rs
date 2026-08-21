@@ -54,7 +54,8 @@ impl TurnStorePort for SessionTurnStore {
         if self.turn_exists(session_id, turn_id).await? {
             return Ok(UpsertOutcome::AlreadyPresent);
         }
-        crate::session_writer::persist_turn(session_id, turn, None)
+        let caused_by = crate::workshop_authority::execution_ref(session_id, turn_id).ok();
+        crate::session_writer::persist_turn_with_execution(session_id, turn, None, caused_by)
             .await
             .map_err(|error| StoreError(error.to_string()))?;
         mark_recovery_ledger(session_id, turn_id);

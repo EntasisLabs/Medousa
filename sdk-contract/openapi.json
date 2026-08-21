@@ -222,6 +222,9 @@
         ],
         "type": "object"
       },
+      "AuthorityId": {
+        "type": "string"
+      },
       "CalendarAlarm": {
         "description": "Display alarm relative to event start (VALARM projection).",
         "properties": {
@@ -2047,6 +2050,29 @@
         "title": "EnvironmentValidateResponse",
         "type": "object"
       },
+      "ExecutionId": {
+        "description": "Durable execution identity. Legacy execution ids predate a generated prefix, so validation accepts bounded visible ASCII.",
+        "type": "string"
+      },
+      "ExecutionRef": {
+        "properties": {
+          "authority_id": {
+            "$ref": "#/components/schemas/AuthorityId"
+          },
+          "execution_id": {
+            "$ref": "#/components/schemas/ExecutionId"
+          },
+          "session_id": {
+            "$ref": "#/components/schemas/SessionId"
+          }
+        },
+        "required": [
+          "authority_id",
+          "execution_id",
+          "session_id"
+        ],
+        "type": "object"
+      },
       "FeedEvent": {
         "properties": {
           "emittedAtUtc": {
@@ -3732,17 +3758,21 @@
       },
       "SessionHistoryResponse": {
         "properties": {
+          "authority_id": {
+            "$ref": "#/components/schemas/AuthorityId"
+          },
           "session_id": {
             "type": "string"
           },
           "turns": {
             "items": {
-              "$ref": "#/components/schemas/ConversationTurn"
+              "$ref": "#/components/schemas/TranscriptEntry"
             },
             "type": "array"
           }
         },
         "required": [
+          "authority_id",
           "session_id",
           "turns"
         ],
@@ -3831,6 +3861,25 @@
           "session_id",
           "turns",
           "verification_runs"
+        ],
+        "type": "object"
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "properties": {
+          "authority_id": {
+            "$ref": "#/components/schemas/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/components/schemas/SessionId"
+          }
+        },
+        "required": [
+          "authority_id",
+          "session_id"
         ],
         "type": "object"
       },
@@ -4399,6 +4448,124 @@
         "required": [
           "key",
           "value"
+        ],
+        "type": "object"
+      },
+      "TranscriptEntry": {
+        "description": "One immutable transcript payload at an ordered position in a session. Session authority and session id are carried by the enclosing history response; callers can combine them with these coordinates into a `TranscriptEntryRef`.",
+        "properties": {
+          "answer_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "caused_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "content_digest": {
+            "type": "string"
+          },
+          "entry_id": {
+            "$ref": "#/components/schemas/TranscriptEntryId"
+          },
+          "entry_seq": {
+            "format": "uint64",
+            "minimum": 1.0,
+            "type": "integer"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/TurnPart"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          },
+          "slice_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TurnSliceSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TranscriptEntryRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "speaker_profile_id": {
+            "description": "Shared-room human speaker (`user:alice`). Absent on assistant turns / personal chats.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timestamp": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "tool_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "content",
+          "content_digest",
+          "entry_id",
+          "entry_seq",
+          "role",
+          "timestamp",
+          "tool_names"
+        ],
+        "type": "object"
+      },
+      "TranscriptEntryId": {
+        "type": "string"
+      },
+      "TranscriptEntryRef": {
+        "properties": {
+          "entry_id": {
+            "$ref": "#/components/schemas/TranscriptEntryId"
+          },
+          "entry_seq": {
+            "format": "uint64",
+            "minimum": 1.0,
+            "type": "integer"
+          },
+          "session": {
+            "$ref": "#/components/schemas/SessionRef"
+          }
+        },
+        "required": [
+          "entry_id",
+          "entry_seq",
+          "session"
         ],
         "type": "object"
       },

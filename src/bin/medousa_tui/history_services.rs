@@ -32,7 +32,7 @@ pub(crate) async fn load_history_daemon_first(
     session_id: &str,
 ) -> Vec<ConversationTurn> {
     match daemon_load_session_history(&state.daemon_url, session_id).await {
-        Ok(response) => response.turns,
+        Ok(response) => response.turns.into_iter().map(|entry| entry.turn).collect(),
         Err(daemon_err) => {
             push_obs_alert(
                 state,

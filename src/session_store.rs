@@ -1,9 +1,13 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::future::IntoFuture;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use async_trait::async_trait;
 use medousa_types::SessionId;
+use medousa_types::session::{
+    ExecutionRef, TranscriptEntry, TranscriptEntryId, TranscriptEntryRef,
+};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use stasis::prelude::RuntimeComposition;
@@ -16,7 +20,8 @@ use crate::session::{ConversationTurn, SessionHistorySummary};
 use crate::turn_parts::TurnPart;
 use crate::turn_slice::TurnSliceSummary;
 
-const SESSION_TURN_TABLE: &str = "session_turn";
+const TRANSCRIPT_ENTRY_TABLE: &str = "transcript_entry";
+const SESSION_ENTRY_TABLE: &str = "session_entry";
 pub const MAX_TRANSCRIPT_SEARCH_QUERY_CHARS: usize = 512;
 
 const SESSION_SCHEMA_STATEMENTS: &[&str] = &[
@@ -36,6 +41,38 @@ const SESSION_SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE INDEX idx_session_turn_timestamp ON TABLE session_turn COLUMNS timestamp",
     "DEFINE ANALYZER medousa_transcript TOKENIZERS BLANK,CLASS,PUNCT FILTERS LOWERCASE",
     "DEFINE INDEX idx_session_turn_search ON TABLE session_turn FIELDS search_text FULLTEXT ANALYZER medousa_transcript BM25 HIGHLIGHTS",
+    "DEFINE TABLE transcript_entry SCHEMAFULL",
+    "DEFINE FIELD entry_id ON TABLE transcript_entry TYPE string",
+    "DEFINE FIELD role ON TABLE transcript_entry TYPE string",
+    "DEFINE FIELD content ON TABLE transcript_entry TYPE string",
+    "DEFINE FIELD timestamp ON TABLE transcript_entry TYPE datetime",
+    "DEFINE FIELD tool_names ON TABLE transcript_entry TYPE array<string>",
+    "DEFINE FIELD answer_state ON TABLE transcript_entry TYPE option<string>",
+    "DEFINE FIELD parts ON TABLE transcript_entry TYPE option<string>",
+    "DEFINE FIELD slice_summary ON TABLE transcript_entry TYPE option<string>",
+    "DEFINE FIELD speaker_profile_id ON TABLE transcript_entry TYPE option<string>",
+    "DEFINE FIELD execution_authority_id ON TABLE transcript_entry TYPE option<string>",
+    "DEFINE FIELD execution_session_id ON TABLE transcript_entry TYPE option<string>",
+    "DEFINE FIELD execution_id ON TABLE transcript_entry TYPE option<string>",
+    "DEFINE FIELD content_digest ON TABLE transcript_entry TYPE string",
+    "DEFINE INDEX idx_transcript_entry_id ON TABLE transcript_entry COLUMNS entry_id UNIQUE",
+    "DEFINE TABLE session_entry SCHEMAFULL",
+    "DEFINE FIELD session_id ON TABLE session_entry TYPE string",
+    "DEFINE FIELD entry_seq ON TABLE session_entry TYPE int",
+    "DEFINE FIELD entry_id ON TABLE session_entry TYPE string",
+    "DEFINE FIELD source_authority_id ON TABLE session_entry TYPE option<string>",
+    "DEFINE FIELD source_session_id ON TABLE session_entry TYPE option<string>",
+    "DEFINE FIELD source_entry_id ON TABLE session_entry TYPE option<string>",
+    "DEFINE FIELD source_entry_seq ON TABLE session_entry TYPE option<int>",
+    "DEFINE FIELD committed_at ON TABLE session_entry TYPE datetime",
+    // Rebuildable search/catalog projection kept beside the binding.
+    "DEFINE FIELD role ON TABLE session_entry TYPE string",
+    "DEFINE FIELD search_text ON TABLE session_entry TYPE option<string>",
+    "DEFINE FIELD timestamp ON TABLE session_entry TYPE datetime",
+    "DEFINE INDEX idx_session_entry_position ON TABLE session_entry COLUMNS session_id, entry_seq UNIQUE",
+    "DEFINE INDEX idx_session_entry_membership ON TABLE session_entry COLUMNS session_id, entry_id UNIQUE",
+    "DEFINE INDEX idx_session_entry_entry_id ON TABLE session_entry COLUMNS entry_id",
+    "DEFINE INDEX idx_session_entry_search ON TABLE session_entry FIELDS search_text FULLTEXT ANALYZER medousa_transcript BM25 HIGHLIGHTS",
 ];
 
 const SESSION_SCHEMA_MIGRATIONS: &[&str] = &[
@@ -86,6 +123,87 @@ struct SessionTurnRecord {
     speaker_profile_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     search_text: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, SurrealValue)]
+struct TranscriptEntryRecord {
+    entry_id: String,
+    role: String,
+    content: String,
+    timestamp: chrono::DateTime<chrono::Utc>,
+    tool_names: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    answer_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parts: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    slice_summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    speaker_profile_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    execution_authority_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    execution_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    execution_id: Option<String>,
+    content_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, SurrealValue)]
+struct SessionEntryRecord {
+    session_id: String,
+    entry_seq: i64,
+    entry_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_authority_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_entry_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_entry_seq: Option<i64>,
+    committed_at: chrono::DateTime<chrono::Utc>,
+    role: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    search_text: Option<String>,
+    timestamp: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TranscriptAppend {
+    pub turn: ConversationTurn,
+    pub caused_by: Option<ExecutionRef>,
+    pub existing_entry_id: Option<TranscriptEntryId>,
+    pub source: Option<TranscriptEntryRef>,
+    pub expected_digest: Option<String>,
+}
+
+impl TranscriptAppend {
+    pub fn native(turn: ConversationTurn, caused_by: Option<ExecutionRef>) -> Self {
+        Self {
+            turn,
+            caused_by,
+            existing_entry_id: None,
+            source: None,
+            expected_digest: None,
+        }
+    }
+}
+
+#[derive(Default)]
+struct SessionCommitLocks {
+    by_session: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+}
+
+impl SessionCommitLocks {
+    fn for_session(&self, session_id: &SessionId) -> Arc<tokio::sync::Mutex<()>> {
+        let mut locks = self.by_session.lock().unwrap();
+        Arc::clone(
+            locks
+                .entry(session_id.to_string())
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))),
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -219,6 +337,188 @@ impl From<&ConversationTurn> for SessionTurnRecord {
     }
 }
 
+fn content_digest(turn: &ConversationTurn) -> Result<String, StoreError> {
+    use sha2::{Digest as _, Sha256};
+
+    let bytes =
+        serde_json::to_vec(turn).map_err(|error| StoreError::Serialization(error.to_string()))?;
+    let mut digest = Sha256::new();
+    digest.update(b"medousa/transcript-entry/v1\0");
+    digest.update(bytes);
+    Ok(format!("sha256:{:x}", digest.finalize()))
+}
+
+fn new_entry_id() -> TranscriptEntryId {
+    TranscriptEntryId::parse(format!("ent_{}", uuid::Uuid::new_v4().simple()))
+        .expect("daemon-generated transcript entry id must be valid")
+}
+
+fn legacy_entry_id(session_id: &SessionId, entry_seq: u64, digest: &str) -> TranscriptEntryId {
+    use sha2::{Digest as _, Sha256};
+
+    let mut hash = Sha256::new();
+    hash.update(b"medousa/legacy-transcript-entry/v1\0");
+    hash.update(session_id.as_str().as_bytes());
+    hash.update(entry_seq.to_be_bytes());
+    hash.update(digest.as_bytes());
+    let encoded = format!("{:x}", hash.finalize());
+    TranscriptEntryId::parse(format!("ent_{}", &encoded[..32]))
+        .expect("derived legacy transcript entry id must be valid")
+}
+
+fn materialize_append(
+    entry_seq: u64,
+    append: &TranscriptAppend,
+) -> Result<TranscriptEntry, StoreError> {
+    let digest = content_digest(&append.turn)?;
+    if append
+        .expected_digest
+        .as_deref()
+        .is_some_and(|expected| expected != digest)
+    {
+        return Err(StoreError::InvalidInput(
+            "transcript entry digest does not match immutable payload".to_string(),
+        ));
+    }
+    Ok(TranscriptEntry {
+        entry_id: append
+            .existing_entry_id
+            .clone()
+            .unwrap_or_else(new_entry_id),
+        entry_seq,
+        caused_by: append.caused_by.clone(),
+        source: append.source.clone(),
+        content_digest: digest,
+        turn: append.turn.clone(),
+    })
+}
+
+fn materialize_legacy_turn(
+    session_id: &SessionId,
+    entry_seq: u64,
+    turn: ConversationTurn,
+) -> Result<TranscriptEntry, StoreError> {
+    let digest = content_digest(&turn)?;
+    Ok(TranscriptEntry {
+        entry_id: legacy_entry_id(session_id, entry_seq, &digest),
+        entry_seq,
+        caused_by: None,
+        source: None,
+        content_digest: digest,
+        turn,
+    })
+}
+
+fn entry_record(entry: &TranscriptEntry) -> TranscriptEntryRecord {
+    TranscriptEntryRecord {
+        entry_id: entry.entry_id.to_string(),
+        role: entry.turn.role.clone(),
+        content: entry.turn.content.clone(),
+        timestamp: entry.turn.timestamp,
+        tool_names: entry.turn.tool_names.clone(),
+        answer_state: entry.turn.answer_state.clone(),
+        parts: parts_to_json(entry.turn.parts.as_deref()),
+        slice_summary: slice_summary_to_json(entry.turn.slice_summary.as_ref()),
+        speaker_profile_id: entry.turn.speaker_profile_id.clone(),
+        execution_authority_id: entry
+            .caused_by
+            .as_ref()
+            .map(|value| value.authority_id.to_string()),
+        execution_session_id: entry
+            .caused_by
+            .as_ref()
+            .map(|value| value.session_id.to_string()),
+        execution_id: entry
+            .caused_by
+            .as_ref()
+            .map(|value| value.execution_id.to_string()),
+        content_digest: entry.content_digest.clone(),
+    }
+}
+
+fn binding_record(session_id: &SessionId, entry: &TranscriptEntry) -> SessionEntryRecord {
+    SessionEntryRecord {
+        session_id: session_id.to_string(),
+        entry_seq: i64::try_from(entry.entry_seq)
+            .expect("transcript entry sequence must fit SurrealDB int"),
+        entry_id: entry.entry_id.to_string(),
+        source_authority_id: entry
+            .source
+            .as_ref()
+            .map(|value| value.session.authority_id.to_string()),
+        source_session_id: entry
+            .source
+            .as_ref()
+            .map(|value| value.session.session_id.to_string()),
+        source_entry_id: entry
+            .source
+            .as_ref()
+            .map(|value| value.entry_id.to_string()),
+        source_entry_seq: entry.source.as_ref().map(|value| {
+            i64::try_from(value.entry_seq).expect("source entry sequence must fit SurrealDB int")
+        }),
+        committed_at: chrono::Utc::now(),
+        role: entry.turn.role.clone(),
+        search_text: turn_search_text(&entry.turn),
+        timestamp: entry.turn.timestamp,
+    }
+}
+
+fn transcript_entry_from_records(
+    entry: TranscriptEntryRecord,
+    binding: SessionEntryRecord,
+) -> Option<TranscriptEntry> {
+    use medousa_types::session::{AuthorityId, ExecutionId, SessionRef};
+
+    let caused_by = match (
+        entry.execution_authority_id,
+        entry.execution_session_id,
+        entry.execution_id,
+    ) {
+        (Some(authority), Some(session), Some(execution)) => Some(ExecutionRef {
+            authority_id: AuthorityId::parse(authority).ok()?,
+            session_id: SessionId::parse(session).ok()?,
+            execution_id: ExecutionId::parse(execution).ok()?,
+        }),
+        _ => None,
+    };
+    let source = match (
+        binding.source_authority_id,
+        binding.source_session_id,
+        binding.source_entry_id,
+        binding.source_entry_seq,
+    ) {
+        (Some(authority), Some(session), Some(entry_id), Some(entry_seq)) => {
+            Some(TranscriptEntryRef {
+                session: SessionRef {
+                    authority_id: AuthorityId::parse(authority).ok()?,
+                    session_id: SessionId::parse(session).ok()?,
+                },
+                entry_id: TranscriptEntryId::parse(entry_id).ok()?,
+                entry_seq: u64::try_from(entry_seq).ok()?,
+            })
+        }
+        _ => None,
+    };
+    Some(TranscriptEntry {
+        entry_id: TranscriptEntryId::parse(entry.entry_id).ok()?,
+        entry_seq: u64::try_from(binding.entry_seq).ok()?,
+        caused_by,
+        source,
+        content_digest: entry.content_digest,
+        turn: ConversationTurn {
+            role: entry.role,
+            content: entry.content,
+            timestamp: entry.timestamp,
+            tool_names: entry.tool_names,
+            answer_state: entry.answer_state,
+            parts: parts_from_json(entry.parts),
+            slice_summary: slice_summary_from_json(entry.slice_summary),
+            speaker_profile_id: entry.speaker_profile_id,
+        },
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommitDurability {
     /// The bytes were accepted by the capability-owned filesystem handle.
@@ -257,12 +557,33 @@ impl std::error::Error for StoreError {}
 
 #[async_trait]
 pub trait SessionStore: Send + Sync + 'static {
-    fn load_history(&self, session_id: &SessionId) -> Vec<ConversationTurn>;
+    fn load_transcript_entries(&self, session_id: &SessionId) -> Vec<TranscriptEntry>;
+
+    fn load_history(&self, session_id: &SessionId) -> Vec<ConversationTurn> {
+        self.load_transcript_entries(session_id)
+            .into_iter()
+            .map(|entry| entry.turn)
+            .collect()
+    }
+
+    async fn append_transcript_batch(
+        &self,
+        session_id: &SessionId,
+        entries: &[TranscriptAppend],
+    ) -> Result<CommitReceipt, StoreError>;
+
     async fn append_turn_batch(
         &self,
         session_id: &SessionId,
         turns: &[ConversationTurn],
-    ) -> Result<CommitReceipt, StoreError>;
+    ) -> Result<CommitReceipt, StoreError> {
+        let entries = turns
+            .iter()
+            .cloned()
+            .map(|turn| TranscriptAppend::native(turn, None))
+            .collect::<Vec<_>>();
+        self.append_transcript_batch(session_id, &entries).await
+    }
 
     async fn append_turn(
         &self,
@@ -296,6 +617,7 @@ fn block_on<F: IntoFuture>(f: F) -> F::Output {
 
 struct FileSessionStore {
     files: Arc<crate::session_storage::SessionFileStore>,
+    commit_locks: Arc<SessionCommitLocks>,
 }
 
 impl FileSessionStore {
@@ -306,22 +628,74 @@ impl FileSessionStore {
     fn at(root: std::path::PathBuf) -> Self {
         Self {
             files: Arc::new(crate::session_storage::SessionFileStore::new(root, "jsonl")),
+            commit_locks: Arc::new(SessionCommitLocks::default()),
         }
+    }
+
+    fn read_entries(
+        files: &crate::session_storage::SessionFileStore,
+        session_id: &SessionId,
+    ) -> Result<(Vec<TranscriptEntry>, bool), StoreError> {
+        let bytes = match files.read(session_id) {
+            Ok(bytes) => bytes,
+            Err(error) if error.is_not_found() => return Ok((Vec::new(), false)),
+            Err(error) => return Err(StoreError::Backend(error.to_string())),
+        };
+        let mut entries = Vec::new();
+        let mut migrated_legacy = false;
+        for line in bytes
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.iter().all(u8::is_ascii_whitespace))
+        {
+            if let Ok(mut entry) = serde_json::from_slice::<TranscriptEntry>(line) {
+                entry.entry_seq = entries.len() as u64 + 1;
+                entries.push(entry);
+                continue;
+            }
+            let turn = serde_json::from_slice::<ConversationTurn>(line)
+                .map_err(|error| StoreError::Serialization(error.to_string()))?;
+            migrated_legacy = true;
+            entries.push(materialize_legacy_turn(
+                session_id,
+                entries.len() as u64 + 1,
+                turn,
+            )?);
+        }
+        Ok((entries, migrated_legacy))
+    }
+
+    fn encode_entries(entries: &[TranscriptEntry]) -> Result<Vec<u8>, StoreError> {
+        let mut bytes = Vec::new();
+        for entry in entries {
+            serde_json::to_writer(&mut bytes, entry)
+                .map_err(|error| StoreError::Serialization(error.to_string()))?;
+            bytes.push(b'\n');
+        }
+        Ok(bytes)
     }
 }
 
 #[async_trait]
 impl SessionStore for FileSessionStore {
-    fn load_history(&self, session_id: &SessionId) -> Vec<ConversationTurn> {
-        crate::session::file_load_history(&self.files, session_id)
+    fn load_transcript_entries(&self, session_id: &SessionId) -> Vec<TranscriptEntry> {
+        let Ok((entries, migrated_legacy)) = Self::read_entries(&self.files, session_id) else {
+            return Vec::new();
+        };
+        if migrated_legacy
+            && let Ok(bytes) = Self::encode_entries(&entries)
+            && let Err(error) = self.files.atomic_write(session_id, &bytes)
+        {
+            tracing::warn!(%session_id, %error, "legacy transcript coordinate backfill failed");
+        }
+        entries
     }
 
-    async fn append_turn_batch(
+    async fn append_transcript_batch(
         &self,
         session_id: &SessionId,
-        turns: &[ConversationTurn],
+        appends: &[TranscriptAppend],
     ) -> Result<CommitReceipt, StoreError> {
-        if turns.is_empty() {
+        if appends.is_empty() {
             return Ok(CommitReceipt {
                 turns: 0,
                 bytes: 0,
@@ -329,25 +703,36 @@ impl SessionStore for FileSessionStore {
             });
         }
 
+        let commit_lock = self.commit_locks.for_session(session_id);
+        let _commit = commit_lock.lock().await;
         let files = Arc::clone(&self.files);
         let session_id = session_id.clone();
-        let turns = turns.to_vec();
+        let appends = appends.to_vec();
         tokio::task::spawn_blocking(move || {
-            let mut bytes = Vec::new();
-            for turn in &turns {
-                serde_json::to_writer(&mut bytes, turn)
-                    .map_err(|error| StoreError::Serialization(error.to_string()))?;
-                bytes.push(b'\n');
+            let (mut entries, migrated_legacy) = Self::read_entries(&files, &session_id)?;
+            let first_seq = entries.len() as u64 + 1;
+            let mut appended = Vec::with_capacity(appends.len());
+            for (offset, append) in appends.iter().enumerate() {
+                appended.push(materialize_append(first_seq + offset as u64, append)?);
             }
-            files
-                .append(&session_id, &bytes)
-                .map_err(|error| StoreError::Backend(error.to_string()))?;
-            for turn in &turns {
-                crate::session_catalog::record_turn_appended_for_id(&session_id, turn);
+            let appended_bytes = Self::encode_entries(&appended)?;
+            if migrated_legacy {
+                entries.extend(appended);
+                let all_bytes = Self::encode_entries(&entries)?;
+                files
+                    .atomic_write(&session_id, &all_bytes)
+                    .map_err(|error| StoreError::Backend(error.to_string()))?;
+            } else {
+                files
+                    .append(&session_id, &appended_bytes)
+                    .map_err(|error| StoreError::Backend(error.to_string()))?;
+            }
+            for append in &appends {
+                crate::session_catalog::record_turn_appended_for_id(&session_id, &append.turn);
             }
             Ok(CommitReceipt {
-                turns: turns.len(),
-                bytes: bytes.len(),
+                turns: appends.len(),
+                bytes: appended_bytes.len(),
                 durability: CommitDurability::FilesystemWrite,
             })
         })
@@ -427,11 +812,15 @@ impl SessionStore for FileSessionStore {
 
 pub struct SurrealSessionStore {
     db: Surreal<Any>,
+    commit_locks: Arc<SessionCommitLocks>,
 }
 
 impl SurrealSessionStore {
     pub fn new(db: Surreal<Any>) -> Self {
-        Self { db }
+        Self {
+            db,
+            commit_locks: Arc::new(SessionCommitLocks::default()),
+        }
     }
 
     pub async fn ensure_schema(&self) -> Result<(), surrealdb::Error> {
@@ -453,47 +842,160 @@ impl SurrealSessionStore {
         for statement in SESSION_SCHEMA_MIGRATIONS {
             db.query(*statement).await?;
         }
+        Self::backfill_legacy_transcripts(db).await?;
+        Ok(())
+    }
+
+    async fn backfill_legacy_transcripts(db: &Surreal<Any>) -> Result<(), surrealdb::Error> {
+        #[derive(Debug, Deserialize, SurrealValue)]
+        struct LegacySession {
+            session_id: String,
+        }
+        #[derive(Debug, Deserialize, SurrealValue)]
+        struct ExistingBinding {
+            #[allow(dead_code)]
+            entry_id: String,
+        }
+
+        let mut response = db
+            .query("SELECT session_id FROM session_turn GROUP BY session_id")
+            .await?;
+        let sessions = response.take::<Vec<LegacySession>>(0)?;
+        for legacy in sessions {
+            let session_id = match SessionId::parse(&legacy.session_id) {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            let mut existing = db
+                .query("SELECT entry_id FROM session_entry WHERE session_id = $session_id LIMIT 1")
+                .bind(("session_id", session_id.to_string()))
+                .await?;
+            if !existing
+                .take::<Vec<ExistingBinding>>(0)
+                .unwrap_or_default()
+                .is_empty()
+            {
+                continue;
+            }
+            let mut legacy_rows = db
+                .query(
+                    "SELECT id, session_id, role, content, timestamp, tool_names, answer_state, parts, \
+                     slice_summary, speaker_profile_id, search_text \
+                     FROM session_turn WHERE session_id = $session_id \
+                     ORDER BY timestamp ASC, id ASC",
+                )
+                .bind(("session_id", session_id.to_string()))
+                .await?;
+            let rows = legacy_rows.take::<Vec<SessionTurnRecord>>(0)?;
+            if rows.is_empty() {
+                continue;
+            }
+            let entries = rows
+                .into_iter()
+                .enumerate()
+                .map(|(index, row)| {
+                    materialize_legacy_turn(&session_id, index as u64 + 1, row.into())
+                        .expect("legacy transcript rows must serialize")
+                })
+                .collect::<Vec<_>>();
+            let entry_records = entries.iter().map(entry_record).collect::<Vec<_>>();
+            let binding_records = entries
+                .iter()
+                .map(|entry| binding_record(&session_id, entry))
+                .collect::<Vec<_>>();
+            db.query(
+                "BEGIN TRANSACTION; \
+                 INSERT INTO transcript_entry $entries; \
+                 INSERT INTO session_entry $bindings; \
+                 COMMIT TRANSACTION;",
+            )
+            .bind(("entries", entry_records))
+            .bind(("bindings", binding_records))
+            .await?
+            .check()?;
+        }
         Ok(())
     }
 }
 
 #[async_trait]
 impl SessionStore for SurrealSessionStore {
-    fn load_history(&self, session_id: &SessionId) -> Vec<ConversationTurn> {
-        let sql = "SELECT session_id, role, content, timestamp, tool_names, answer_state, parts, \
-                    slice_summary, speaker_profile_id \
-                    FROM type::table($table) \
-                    WHERE session_id = $session_id \
-                    ORDER BY timestamp ASC";
+    fn load_transcript_entries(&self, session_id: &SessionId) -> Vec<TranscriptEntry> {
+        let binding_sql = "SELECT session_id, entry_seq, entry_id, source_authority_id, \
+                           source_session_id, source_entry_id, source_entry_seq, committed_at, \
+                           role, search_text, timestamp \
+                           FROM type::table($table) \
+                           WHERE session_id = $session_id \
+                           ORDER BY entry_seq ASC";
         let session_id_owned = session_id.to_string();
         let mut response = match block_on(
             self.db
-                .query(sql)
-                .bind(("table", SESSION_TURN_TABLE))
-                .bind(("session_id", session_id_owned)),
+                .query(binding_sql)
+                .bind(("table", SESSION_ENTRY_TABLE))
+                .bind(("session_id", session_id_owned.clone())),
         ) {
             Ok(r) => r,
             Err(err) => {
-                eprintln!("SurrealSessionStore::load_history query error: {err}");
+                eprintln!("SurrealSessionStore::load_transcript_entries query error: {err}");
                 return Vec::new();
             }
         };
-
-        match response.take::<Vec<SessionTurnRecord>>(0) {
-            Ok(records) => records.into_iter().map(ConversationTurn::from).collect(),
+        let bindings = match response.take::<Vec<SessionEntryRecord>>(0) {
+            Ok(records) => records,
             Err(err) => {
-                eprintln!("SurrealSessionStore::load_history deserialize error: {err}");
-                Vec::new()
+                eprintln!("SurrealSessionStore::load_transcript_entries deserialize error: {err}");
+                return Vec::new();
             }
+        };
+        if bindings.is_empty() {
+            return Vec::new();
         }
+        let entry_ids = bindings
+            .iter()
+            .map(|binding| binding.entry_id.clone())
+            .collect::<Vec<_>>();
+        let entry_sql = "SELECT entry_id, role, content, timestamp, tool_names, answer_state, \
+                         parts, slice_summary, speaker_profile_id, execution_authority_id, \
+                         execution_session_id, execution_id, content_digest \
+                         FROM type::table($table) WHERE entry_id IN $entry_ids";
+        let mut entry_response = match block_on(
+            self.db
+                .query(entry_sql)
+                .bind(("table", TRANSCRIPT_ENTRY_TABLE))
+                .bind(("entry_ids", entry_ids)),
+        ) {
+            Ok(response) => response,
+            Err(error) => {
+                eprintln!("SurrealSessionStore::load_transcript_entries payload error: {error}");
+                return Vec::new();
+            }
+        };
+        let records = match entry_response.take::<Vec<TranscriptEntryRecord>>(0) {
+            Ok(records) => records,
+            Err(error) => {
+                eprintln!("SurrealSessionStore::load_transcript_entries payload decode: {error}");
+                return Vec::new();
+            }
+        };
+        let mut by_id = records
+            .into_iter()
+            .map(|record| (record.entry_id.clone(), record))
+            .collect::<HashMap<_, _>>();
+        bindings
+            .into_iter()
+            .filter_map(|binding| {
+                let record = by_id.remove(&binding.entry_id)?;
+                transcript_entry_from_records(record, binding)
+            })
+            .collect()
     }
 
-    async fn append_turn_batch(
+    async fn append_transcript_batch(
         &self,
         session_id: &SessionId,
-        turns: &[ConversationTurn],
+        appends: &[TranscriptAppend],
     ) -> Result<CommitReceipt, StoreError> {
-        if turns.is_empty() {
+        if appends.is_empty() {
             return Ok(CommitReceipt {
                 turns: 0,
                 bytes: 0,
@@ -501,15 +1003,39 @@ impl SessionStore for SurrealSessionStore {
             });
         }
 
-        let records = turns
+        let commit_lock = self.commit_locks.for_session(session_id);
+        let _commit = commit_lock.lock().await;
+        #[derive(Debug, Deserialize, SurrealValue)]
+        struct HeadSequence {
+            entry_seq: i64,
+        }
+        let mut head_response = self
+            .db
+            .query("SELECT entry_seq FROM session_entry WHERE session_id = $session_id ORDER BY entry_seq DESC LIMIT 1")
+            .bind(("session_id", session_id.to_string()))
+            .await
+            .map_err(|error| StoreError::Backend(error.to_string()))?;
+        let head = head_response
+            .take::<Vec<HeadSequence>>(0)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?
+            .into_iter()
+            .next()
+            .map(|row| row.entry_seq)
+            .unwrap_or(0);
+        let head = u64::try_from(head).map_err(|_| {
+            StoreError::Serialization("negative transcript entry sequence in storage".to_string())
+        })?;
+        let entries = appends
             .iter()
-            .map(|turn| {
-                let mut record = SessionTurnRecord::from(turn);
-                record.session_id = session_id.to_string();
-                record
-            })
+            .enumerate()
+            .map(|(offset, append)| materialize_append(head + offset as u64 + 1, append))
+            .collect::<Result<Vec<_>, _>>()?;
+        let entry_records = entries.iter().map(entry_record).collect::<Vec<_>>();
+        let binding_records = entries
+            .iter()
+            .map(|entry| binding_record(session_id, entry))
             .collect::<Vec<_>>();
-        let bytes = records
+        let bytes = entry_records
             .iter()
             .map(|record| serde_json::to_vec(record).map(|value| value.len()))
             .collect::<Result<Vec<_>, _>>()
@@ -519,43 +1045,88 @@ impl SessionStore for SurrealSessionStore {
 
         let response = self
             .db
-            .query("INSERT INTO session_turn $data")
-            .bind(("data", records))
+            .query(
+                "BEGIN TRANSACTION; \
+                 INSERT INTO transcript_entry $entries; \
+                 INSERT INTO session_entry $bindings; \
+                 COMMIT TRANSACTION;",
+            )
+            .bind(("entries", entry_records))
+            .bind(("bindings", binding_records))
             .await
             .map_err(|error| StoreError::Backend(error.to_string()))?;
         response
             .check()
             .map_err(|error| StoreError::Backend(error.to_string()))?;
 
-        for turn in turns {
-            crate::session_catalog::record_turn_appended_for_id(session_id, turn);
+        for append in appends {
+            crate::session_catalog::record_turn_appended_for_id(session_id, &append.turn);
         }
         Ok(CommitReceipt {
-            turns: turns.len(),
+            turns: appends.len(),
             bytes,
             durability: CommitDurability::DatabaseCommit,
         })
     }
 
     fn delete_session(&self, session_id: &SessionId) -> Result<(), String> {
-        let sql = "DELETE type::table($table) WHERE session_id = $session_id";
+        #[derive(Debug, Deserialize, SurrealValue)]
+        struct EntryIdRow {
+            entry_id: String,
+        }
+        let mut inventory = block_on(
+            self.db
+                .query("SELECT entry_id FROM session_entry WHERE session_id = $session_id")
+                .bind(("session_id", session_id.to_string())),
+        )
+        .map_err(|error| error.to_string())?;
+        let entry_ids = inventory
+            .take::<Vec<EntryIdRow>>(0)
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .map(|row| row.entry_id)
+            .collect::<Vec<_>>();
+        let sql = "BEGIN TRANSACTION; \
+                   DELETE session_entry WHERE session_id = $session_id; \
+                   DELETE session_turn WHERE session_id = $session_id; \
+                   COMMIT TRANSACTION;";
         let response = block_on(
             self.db
                 .query(sql)
-                .bind(("table", SESSION_TURN_TABLE))
                 .bind(("session_id", session_id.to_string())),
         )
         .map_err(|error| error.to_string())?;
         response.check().map_err(|error| error.to_string())?;
+        for entry_id in entry_ids {
+            let mut references = block_on(
+                self.db
+                    .query("SELECT entry_id FROM session_entry WHERE entry_id = $entry_id LIMIT 1")
+                    .bind(("entry_id", entry_id.clone())),
+            )
+            .map_err(|error| error.to_string())?;
+            if references
+                .take::<Vec<EntryIdRow>>(0)
+                .map_err(|error| error.to_string())?
+                .is_empty()
+            {
+                block_on(
+                    self.db
+                        .query("DELETE transcript_entry WHERE entry_id = $entry_id")
+                        .bind(("entry_id", entry_id)),
+                )
+                .map_err(|error| error.to_string())?
+                .check()
+                .map_err(|error| error.to_string())?;
+            }
+        }
         let mut verify = block_on(
             self.db
-                .query("SELECT * FROM type::table($table) WHERE session_id = $session_id LIMIT 1")
-                .bind(("table", SESSION_TURN_TABLE))
+                .query("SELECT entry_id FROM session_entry WHERE session_id = $session_id LIMIT 1")
                 .bind(("session_id", session_id.to_string())),
         )
         .map_err(|error| error.to_string())?;
         if !verify
-            .take::<Vec<SessionTurnRecord>>(0)
+            .take::<Vec<EntryIdRow>>(0)
             .map_err(|error| error.to_string())?
             .is_empty()
         {
@@ -597,7 +1168,7 @@ impl SessionStore for SurrealSessionStore {
         let mut response = block_on(
             self.db
                 .query(sql)
-                .bind(("table", SESSION_TURN_TABLE))
+                .bind(("table", SESSION_ENTRY_TABLE))
                 .bind(("session_ids", session_ids.to_vec()))
                 .bind(("query", query.to_string()))
                 .bind(("limit", limit as i64)),
@@ -635,7 +1206,7 @@ impl SessionStore for SurrealSessionStore {
         let mut response = match block_on(
             self.db
                 .query(sql)
-                .bind(("table", SESSION_TURN_TABLE))
+                .bind(("table", SESSION_ENTRY_TABLE))
                 .bind(("limit", limit.max(1) as i64)),
         ) {
             Ok(r) => r,
@@ -687,7 +1258,7 @@ impl SessionStore for SurrealSessionStore {
 
     fn has_persisted_sessions(&self) -> bool {
         let sql = "SELECT count() AS total FROM type::table($table) GROUP ALL";
-        let mut response = match block_on(self.db.query(sql).bind(("table", SESSION_TURN_TABLE))) {
+        let mut response = match block_on(self.db.query(sql).bind(("table", SESSION_ENTRY_TABLE))) {
             Ok(response) => response,
             Err(_) => return false,
         };
@@ -707,38 +1278,14 @@ impl SessionStore for SurrealSessionStore {
 
 impl SurrealSessionStore {
     fn preview_for_session(&self, session_id: &str) -> Option<String> {
-        let sql = "SELECT role, content, parts FROM type::table($table) \
-                   WHERE session_id = $session_id \
-                   ORDER BY timestamp DESC \
-                   LIMIT 8";
-        let mut response = block_on(
-            self.db
-                .query(sql)
-                .bind(("table", SESSION_TURN_TABLE))
-                .bind(("session_id", session_id.to_string())),
-        )
-        .ok()?;
-
-        #[derive(Debug, Deserialize, SurrealValue)]
-        struct TurnPreviewRow {
-            role: String,
-            content: String,
-            parts: Option<String>,
-        }
-
-        let rows: Vec<TurnPreviewRow> = response.take(0).ok()?;
-        for row in rows {
-            let turn = ConversationTurn {
-                role: row.role,
-                content: row.content,
-                timestamp: chrono::Utc::now(),
-                tool_names: Vec::new(),
-                answer_state: None,
-                parts: parts_from_json(row.parts),
-                slice_summary: None,
-                speaker_profile_id: None,
-            };
-            if let Some(preview) = crate::session_catalog::preview_from_turn(&turn) {
+        let session_id = SessionId::parse(session_id).ok()?;
+        for entry in self
+            .load_transcript_entries(&session_id)
+            .into_iter()
+            .rev()
+            .take(8)
+        {
+            if let Some(preview) = crate::session_catalog::preview_from_turn(&entry.turn) {
                 return Some(preview);
             }
         }
@@ -778,6 +1325,7 @@ pub fn delete_session_transcript(session_id: &SessionId) -> Result<(), String> {
 mod tests {
     use super::*;
     use chrono::Utc;
+    use medousa_types::session::{AuthorityId, ExecutionId};
 
     fn turn(content: &str) -> ConversationTurn {
         ConversationTurn {
@@ -808,9 +1356,114 @@ mod tests {
         assert!(receipt.bytes > 0);
 
         let reopened = FileSessionStore::at(root.clone());
-        let history = reopened.load_history(&session_id);
-        assert_eq!(history.len(), 2);
-        assert_eq!(history[1].content, "two");
+        let entries = reopened.load_transcript_entries(&session_id);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].entry_seq, 1);
+        assert_eq!(entries[1].entry_seq, 2);
+        assert_ne!(entries[0].entry_id, entries[1].entry_id);
+        assert_eq!(entries[1].turn.content, "two");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn file_entries_preserve_execution_causation_after_restart() {
+        let root = std::env::temp_dir().join(format!(
+            "medousa-session-causation-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let session_id = SessionId::parse("causation-reload").unwrap();
+        let caused_by = ExecutionRef {
+            authority_id: AuthorityId::parse(format!("auth_{}", "a".repeat(64))).unwrap(),
+            session_id: session_id.clone(),
+            execution_id: ExecutionId::parse("turn-42").unwrap(),
+        };
+        let store = FileSessionStore::at(root.clone());
+        store
+            .append_transcript_batch(
+                &session_id,
+                &[TranscriptAppend::native(
+                    turn("caused output"),
+                    Some(caused_by.clone()),
+                )],
+            )
+            .await
+            .unwrap();
+
+        let reopened = FileSessionStore::at(root.clone());
+        let entries = reopened.load_transcript_entries(&session_id);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].caused_by, Some(caused_by));
+        assert!(entries[0].content_digest.starts_with("sha256:"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn file_legacy_rows_receive_restart_stable_coordinates() {
+        let root = std::env::temp_dir().join(format!(
+            "medousa-session-legacy-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let session_id = SessionId::parse("legacy-reload").unwrap();
+        let store = FileSessionStore::at(root.clone());
+        let mut bytes = serde_json::to_vec(&turn("legacy one")).unwrap();
+        bytes.push(b'\n');
+        bytes.extend(serde_json::to_vec(&turn("legacy two")).unwrap());
+        bytes.push(b'\n');
+        store.files.atomic_write(&session_id, &bytes).unwrap();
+
+        let first = store.load_transcript_entries(&session_id);
+        let reopened = FileSessionStore::at(root.clone());
+        let second = reopened.load_transcript_entries(&session_id);
+        assert_eq!(first.len(), 2);
+        assert_eq!(first[0].entry_seq, 1);
+        assert_eq!(first[1].entry_seq, 2);
+        assert_eq!(first[0].entry_id, second[0].entry_id);
+        assert_eq!(first[1].entry_id, second[1].entry_id);
+
+        let stored = store.files.read(&session_id).unwrap();
+        let first_line = stored.split(|byte| *byte == b'\n').next().unwrap();
+        let migrated: TranscriptEntry = serde_json::from_slice(first_line).unwrap();
+        assert_eq!(migrated.entry_id, first[0].entry_id);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn file_concurrent_batches_allocate_contiguous_sequences() {
+        let root = std::env::temp_dir().join(format!(
+            "medousa-session-concurrent-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let session_id = SessionId::parse("concurrent-sequences").unwrap();
+        let store = Arc::new(FileSessionStore::at(root.clone()));
+        let mut tasks = Vec::new();
+        for index in 0..12 {
+            let store = Arc::clone(&store);
+            let session_id = session_id.clone();
+            tasks.push(tokio::spawn(async move {
+                store
+                    .append_turn(&session_id, &turn(&format!("turn {index}")))
+                    .await
+                    .unwrap();
+            }));
+        }
+        for task in tasks {
+            task.await.unwrap();
+        }
+
+        let entries = store.load_transcript_entries(&session_id);
+        assert_eq!(entries.len(), 12);
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.entry_seq)
+                .collect::<Vec<_>>(),
+            (1..=12).collect::<Vec<_>>()
+        );
+        let ids = entries
+            .iter()
+            .map(|entry| entry.entry_id.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(ids.len(), 12);
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -902,5 +1555,79 @@ mod tests {
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].session_id, visible_id.as_str());
         assert!(hits[0].excerpt.contains("Phoenix transcript sentinel"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn surreal_entries_round_trip_coordinates_and_causation() {
+        let db = surrealdb::engine::any::connect("mem://").await.unwrap();
+        db.use_ns("session-coordinate-tests")
+            .use_db(uuid::Uuid::new_v4().simple().to_string())
+            .await
+            .unwrap();
+        SurrealSessionStore::ensure_schema_for_db(&db)
+            .await
+            .unwrap();
+        let store = SurrealSessionStore::new(db);
+        let session_id = SessionId::parse("surreal-coordinates").unwrap();
+        let caused_by = ExecutionRef {
+            authority_id: AuthorityId::parse(format!("auth_{}", "b".repeat(64))).unwrap(),
+            session_id: session_id.clone(),
+            execution_id: ExecutionId::parse("surreal-turn-1").unwrap(),
+        };
+        store
+            .append_transcript_batch(
+                &session_id,
+                &[
+                    TranscriptAppend::native(turn("one"), Some(caused_by.clone())),
+                    TranscriptAppend::native(turn("two"), None),
+                ],
+            )
+            .await
+            .unwrap();
+
+        let entries = store.load_transcript_entries(&session_id);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].entry_seq, 1);
+        assert_eq!(entries[1].entry_seq, 2);
+        assert_eq!(entries[0].caused_by, Some(caused_by));
+        assert_eq!(entries[1].turn.content, "two");
+        assert_ne!(entries[0].entry_id, entries[1].entry_id);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn surreal_legacy_rows_backfill_once_with_stable_coordinates() {
+        let db = surrealdb::engine::any::connect("mem://").await.unwrap();
+        db.use_ns("session-legacy-tests")
+            .use_db(uuid::Uuid::new_v4().simple().to_string())
+            .await
+            .unwrap();
+        SurrealSessionStore::ensure_schema_for_db(&db)
+            .await
+            .unwrap();
+        let session_id = SessionId::parse("surreal-legacy").unwrap();
+        let mut legacy = SessionTurnRecord::from(&turn("legacy surreal turn"));
+        legacy.session_id = session_id.to_string();
+        db.query("INSERT INTO session_turn $turn")
+            .bind(("turn", legacy))
+            .await
+            .unwrap()
+            .check()
+            .unwrap();
+
+        SurrealSessionStore::ensure_schema_for_db(&db)
+            .await
+            .unwrap();
+        let store = SurrealSessionStore::new(db.clone());
+        let first = store.load_transcript_entries(&session_id);
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].entry_seq, 1);
+        assert_eq!(first[0].turn.content, "legacy surreal turn");
+
+        SurrealSessionStore::ensure_schema_for_db(&db)
+            .await
+            .unwrap();
+        let second = store.load_transcript_entries(&session_id);
+        assert_eq!(second.len(), 1);
+        assert_eq!(second[0].entry_id, first[0].entry_id);
     }
 }
