@@ -430,6 +430,13 @@ export class CodeTasksController {
     await this.runInvocation(this.lastInvocation);
   }
 
+  clearOutput() {
+    this.liveStdout = "";
+    this.liveStderr = "";
+    this.liveLocations = [];
+    this.outputTruncated = false;
+  }
+
   async runInvocation(invocation: { taskId: string; testId?: string }) {
     if (this.running || this.preparing) return;
     const task = this.projectTasks.find((candidate) => candidate.id === invocation.taskId);
@@ -453,7 +460,12 @@ export class CodeTasksController {
     this.preparing = false;
     this.running = true;
     this.result = null;
-    this.toggleOutput(true);
+    // Long-running apps need a visible control surface. Short verification
+    // stays quiet unless the user already opened Output; failures promote
+    // their matcher diagnostics into Problems at the workbench layer.
+    if (task?.long_running || task?.background || task?.kind === "run") {
+      this.toggleOutput(true);
+    }
     try {
       const lease = await this.#deps.ensureLease();
       this.run = await startProjectTaskRun(

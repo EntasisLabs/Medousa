@@ -389,8 +389,12 @@ draft requires the undertaking's live lease and is bounded to 2 MiB per draft,
 surface recovery conflicts instead of silently applying stale text. The optional
 `layout` object restores contextual Code regions (`context_panel`, `terminal`,
 `tests`, `search`, `changes`, `output`) plus `primary_task`, `active_run`, and up
-to 12 `recent_runs` independently of Home shell desktops; pane geometry and
-group tab strips remain shell-owned.
+to 12 `recent_runs` independently of Home shell desktops. The additive
+`bottom_panel` field records the mutually exclusive feedback channel
+(`problems`, `output`, `tests`, or `terminal`); older boolean fields remain a
+compatibility fallback. Home presents matcher locations from the selected task
+snapshot as run-provenanced Problems without replacing language diagnostics.
+Pane geometry and group tab strips remain shell-owned.
 
 ### Errors
 

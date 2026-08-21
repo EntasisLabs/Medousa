@@ -328,7 +328,7 @@ and documentation updates. Status legend: `⬜ pending`, `🔄 active`,
 | HCW-1 | Project command bar, shared Run commands, and save-before-run | 🔄 |
 | HCW-2 | Nested task catalog and useful language/ecosystem providers | 🔄 |
 | HCW-3 | Project run service, ordered output, listing, and reconnect | 🔄 |
-| HCW-4 | Unified bottom panel and task-backed Problems | ⬜ |
+| HCW-4 | Unified bottom panel and task-backed Problems | 🔄 |
 | HCW-5 | Interactive task PTY attach and durable background-service UX | ⬜ |
 | HCW-6 | Editor command consolidation and human coding preferences | ⬜ |
 | HCW-7 | Thin structured testing improvements and final dogfood | ⬜ |
@@ -365,6 +365,14 @@ and documentation updates. Status legend: `⬜ pending`, `🔄 active`,
   legacy-daemon fallback. The listing envelope also reports retention limits
   and cumulative registry eviction. HCW-3 stays active for multi-run
   presentation and reconnect integration/soak coverage.
+- **2026-08-21 — HCW-4 feedback-surface foundation.** Consolidated Problems,
+  Output, Tests, and Terminal behind one persisted channel host; promoted
+  matcher locations into run-provenanced Problems without replacing LSP
+  diagnostics; added clear, copy, rerun, stop, command, and location actions;
+  and published task state in the Code status surface. Short successful checks
+  remain quiet when Output was closed, while failed matched builds open
+  Problems. HCW-4 stays active for broader matcher fixtures and interaction
+  smoke coverage.
 
 ### HCW-0 — Truth and measurement
 

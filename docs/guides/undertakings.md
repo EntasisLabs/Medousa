@@ -231,7 +231,8 @@ and check commands; an explicit selection remains the project default.
   a check runs, shows **ready** for background/dev servers, lists clickable
   problem locations, and offers **Open in Browser** for detected loopback URLs
   (direct on a co-located workshop; tokenized private proxy when remote).
-  Spotlight **Output** toggles the panel; runs open it automatically.
+  Spotlight **Output** toggles the panel. Long-running applications open it
+  automatically; short successful checks stay quiet when it was closed.
 - Safe entries from `.vscode/tasks.json` (`npm` / `shell` / `process`) merge into
   the project command list with optional problem-matcher patterns and background
   readiness. Dependency graphs and the full VS Code matcher catalog are not
@@ -246,6 +247,12 @@ and check commands; an explicit selection remains the project default.
   from its next ordered event. After completion, use the Output header to switch
   among retained recent runs. Output visibility and active/recent references
   restore with the project; older workshops fall back to the last saved run.
+- Problems, Output, Tests, and Terminal share one feedback panel, so opening a
+  channel replaces the visible channel instead of stacking another dock. Task
+  matcher locations appear in Problems with their run identity while language
+  diagnostics remain independent. Failed matched builds open navigable
+  Problems. Output includes clear, copy, exact rerun, stop, and command-reveal
+  actions.
 - Completed checks are written into Forge command evidence. Review uses the
   latest completed result to say whether verification passed; cancelled runs
   are preserved as activity but do not pretend the revision failed.

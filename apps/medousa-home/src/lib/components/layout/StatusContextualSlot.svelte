@@ -171,6 +171,15 @@
     </button>
     <span class="status-contextual-sep" aria-hidden="true">·</span>
     <span class="status-contextual-item">{codeStatus.control}</span>
+    {#if codeStatus.execution}
+      <span class="status-contextual-sep" aria-hidden="true">·</span>
+      <button
+        type="button"
+        class="status-contextual-action max-w-48 truncate"
+        title={codeStatus.execution}
+        onclick={() => window.dispatchEvent(new CustomEvent("medousa-code-command", { detail: "workbench.action.output.toggleOutput" }))}
+      >{codeStatus.execution}</button>
+    {/if}
     {#if codeStatus.saving || codeStatus.saveWhisper || codeStatus.dirty}
       <span class="status-contextual-sep" aria-hidden="true">·</span>
       <span class="status-contextual-whisper">

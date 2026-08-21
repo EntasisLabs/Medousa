@@ -345,13 +345,11 @@
     getWorkId: () => workId,
     persistTestsOpen: (open) => {
       if (!workId) return;
-      codeWorkbenchState.setTestsOpen(workId, open);
-      codeWorkspace.scheduleLayoutPersist(workId);
+      setFeedbackPanel(open ? "tests" : null);
     },
     persistOutputOpen: (open) => {
       if (!workId) return;
-      codeWorkbenchState.setOutputOpen(workId, open);
-      codeWorkspace.scheduleLayoutPersist(workId);
+      setFeedbackPanel(open ? "output" : null);
     },
     persistSelectedTask: (taskId) => {
       if (!workId) return;
@@ -394,7 +392,53 @@
         problems.setDocumentProblems(editor?.getProblems() ?? []);
       });
     },
+    onProblemsSelected: (selected) => {
+      if (selected) setFeedbackPanel("problems");
+      else if (feedbackPanel === "problems") setFeedbackPanel(null);
+    },
   });
+  const feedbackPanel = $derived.by(() => {
+    if (terminalDockOpen) return "terminal" as const;
+    if (tasks.testsOpen) return "tests" as const;
+    if (tasks.outputOpen) return "output" as const;
+    if (problems.panel === "problems") return "problems" as const;
+    return null;
+  });
+  let lastFailedRunPresented = "";
+
+  function setFeedbackPanel(
+    panel: "problems" | "output" | "tests" | "terminal" | null,
+    persist = true,
+  ) {
+    tasks.restoreOutputOpen(panel === "output");
+    tasks.restoreTestsOpen(panel === "tests");
+    terminalDockOpen = panel === "terminal";
+    if (panel === "problems") problems.restorePanel("problems");
+    else if (problems.panel === "problems") problems.restorePanel(null);
+    if (!persist || !workId) return;
+    codeWorkbenchState.setBottomPanel(workId, panel);
+    codeWorkspace.scheduleLayoutPersist(workId);
+  }
+
+  async function selectFeedbackPanel(
+    panel: "problems" | "output" | "tests" | "terminal",
+  ) {
+    if (panel === "problems") {
+      if (problems.panel !== "problems") await problems.showProblems();
+      else setFeedbackPanel("problems");
+      return;
+    }
+    if (panel === "output") {
+      tasks.toggleOutput(true);
+      return;
+    }
+    if (panel === "tests") {
+      if (!tasks.testsOpen) await tasks.toggleTests();
+      else setFeedbackPanel("tests");
+      return;
+    }
+    await toggleTerminalDock(true);
+  }
   const quick = new CodeQuickOpenController({
     getWorkId: () => workId,
     getLspClient: () => lspClient,
@@ -567,22 +611,14 @@
   async function toggleTerminalDock(forceOpen?: boolean) {
     const next = forceOpen === true ? true : forceOpen === false ? false : !terminalDockOpen;
     if (!next) {
-      terminalDockOpen = false;
-      if (workId) {
-        codeWorkbenchState.setTerminalOpen(workId, false);
-        codeWorkspace.scheduleLayoutPersist(workId);
-      }
+      setFeedbackPanel(null);
       return;
     }
     if (!detail || !terminalAvailable) {
       surfaceError = "Terminal is not available for this project yet.";
       return;
     }
-    terminalDockOpen = true;
-    if (workId) {
-      codeWorkbenchState.setTerminalOpen(workId, true);
-      codeWorkspace.scheduleLayoutPersist(workId);
-    }
+    setFeedbackPanel("terminal");
     if (dockSessionId) return;
     dockBusy = true;
     surfaceError = null;
@@ -592,11 +628,7 @@
       if (!sessionId) surfaceError = "Could not open a workshop shell for this project.";
     } catch (err) {
       surfaceError = err instanceof Error ? err.message : String(err);
-      terminalDockOpen = false;
-      if (workId) {
-        codeWorkbenchState.setTerminalOpen(workId, false);
-        codeWorkspace.scheduleLayoutPersist(workId);
-      }
+      setFeedbackPanel(null);
     } finally {
       dockBusy = false;
     }
@@ -617,11 +649,7 @@
 
   async function popOutTerminal() {
     if (!detail) return;
-    terminalDockOpen = false;
-    if (workId) {
-      codeWorkbenchState.setTerminalOpen(workId, false);
-      codeWorkspace.scheduleLayoutPersist(workId);
-    }
+    setFeedbackPanel(null);
     await openTrackedTerminal(detail, { activate: true });
   }
 
@@ -1441,6 +1469,30 @@
     });
   });
 
+  /** Keep matcher diagnostics scoped to the selected run; LSP problems stay intact. */
+  $effect(() => {
+    const run = tasks.run;
+    if (!run) {
+      problems.setTaskRun(null);
+      return;
+    }
+    const result = run.result ?? tasks.result;
+    problems.setTaskRun({
+      runId: run.run_id,
+      taskLabel: run.task.label,
+      success: result?.success ?? null,
+      locations: tasks.liveLocations,
+    });
+    if (
+      result?.success === false &&
+      tasks.liveLocations.length > 0 &&
+      lastFailedRunPresented !== run.run_id
+    ) {
+      lastFailedRunPresented = run.run_id;
+      void selectFeedbackPanel("problems");
+    }
+  });
+
   $effect(() => {
     if (!interactive || !workId) return;
     const lease =
@@ -1649,6 +1701,11 @@
       saving: busy,
       saveWhisper: save.saveWhisper,
       control: statusControlLabel,
+      execution: tasks.running
+        ? `${tasks.run?.task.label ?? "Task"} · ${tasks.run?.state === "ready" ? "ready" : "running"}`
+        : tasks.result
+          ? `${tasks.result.task.label} · ${tasks.result.success ? "passed" : "failed"}`
+          : null,
       languageState: lspStatus.phase === "failed"
         ? "failed"
         : lspStatus.phase === "reconnecting"
@@ -1785,16 +1842,15 @@
       await codeWorkspace.hydrate(id);
       if (workId !== id) return;
       const layout = codeWorkbenchState.layoutFor(id);
-      problems.restorePanel(layout.context_panel);
-      tasks.restoreTestsOpen(layout.tests);
-      tasks.restoreOutputOpen(layout.output || tasks.running);
+      problems.restorePanel(layout.context_panel === "problems" ? null : layout.context_panel);
+      const restoredFeedback = tasks.running ? "output" : layout.bottom_panel;
+      setFeedbackPanel(restoredFeedback, false);
       tasks.restoreSelectedTask(layout.primary_task);
       tasks.restoreRunRefs(layout.active_run, layout.recent_runs);
       void tasks.hydrateTaskRuns(id);
       searchOpen = layout.search;
       changes.restoreOpen(layout.changes);
-      if (layout.terminal) void toggleTerminalDock(true);
-      else terminalDockOpen = false;
+      if (restoredFeedback === "terminal") void toggleTerminalDock(true);
       if (layout.changes) void changes.refresh();
     })();
   });
@@ -1939,7 +1995,6 @@
     bind:comparingTabId
     onUseProjectVersion={useProjectVersion}
     onKeepDraft={keepDraft}
-    bind:terminalDockOpen
     {dockSessionId}
     workspaceRoot={workspaceRoot ?? context?.worktree ?? null}
     terminalTitle={detail?.title?.trim() || "Terminal"}
@@ -1947,6 +2002,9 @@
     {dockBusy}
     onToggleTerminal={(forceOpen) => void toggleTerminalDock(forceOpen)}
     onPopOutTerminal={() => void popOutTerminal()}
+    {feedbackPanel}
+    onSelectFeedbackPanel={(panel) => void selectFeedbackPanel(panel)}
+    onCloseFeedbackPanel={() => setFeedbackPanel(null)}
   />
 
 </section>

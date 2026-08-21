@@ -19,6 +19,8 @@ export type CodeContextPanel =
   | "language"
   | null;
 
+export type CodeBottomPanel = "problems" | "output" | "tests" | "terminal" | null;
+
 /**
  * Project-scoped Code layout. Shell owns pane geometry and group tab strips;
  * this store owns which optional Code regions are open for a work item.
@@ -30,6 +32,8 @@ export type CodeWorkbenchLayout = {
   search: boolean;
   changes: boolean;
   output: boolean;
+  /** Selected channel in the unified feedback surface. */
+  bottom_panel: CodeBottomPanel;
   /** User-selected project command. Stable task id from the daemon catalog. */
   primary_task: string | null;
   active_run: string | null;
@@ -43,6 +47,7 @@ export const DEFAULT_CODE_WORKBENCH_LAYOUT: CodeWorkbenchLayout = {
   search: false,
   changes: false,
   output: false,
+  bottom_panel: null,
   primary_task: null,
   active_run: null,
   recent_runs: [],
@@ -56,6 +61,7 @@ const CONTEXT_PANELS = new Set<string>([
   "references",
   "language",
 ]);
+const BOTTOM_PANELS = new Set<string>(["problems", "output", "tests", "terminal"]);
 
 export function normalizeCodeWorkbenchLayout(
   value: unknown,
@@ -65,6 +71,17 @@ export function normalizeCodeWorkbenchLayout(
   }
   const raw = value as Record<string, unknown>;
   const panel = raw.context_panel;
+  const rawBottomPanel = raw.bottom_panel;
+  const legacyBottomPanel: CodeBottomPanel =
+    raw.terminal === true
+      ? "terminal"
+      : raw.tests === true
+        ? "tests"
+        : raw.output === true
+          ? "output"
+          : panel === "problems"
+            ? "problems"
+            : null;
   return {
     context_panel:
       panel === null || (typeof panel === "string" && CONTEXT_PANELS.has(panel))
@@ -75,6 +92,11 @@ export function normalizeCodeWorkbenchLayout(
     search: raw.search === true,
     changes: raw.changes === true,
     output: raw.output === true,
+    bottom_panel:
+      rawBottomPanel === null ||
+      (typeof rawBottomPanel === "string" && BOTTOM_PANELS.has(rawBottomPanel))
+        ? (rawBottomPanel as CodeBottomPanel)
+        : legacyBottomPanel,
     primary_task:
       typeof raw.primary_task === "string" && raw.primary_task.trim()
         ? raw.primary_task.trim().slice(0, 160)
@@ -207,6 +229,22 @@ class CodeWorkbenchState {
 
   setOutputOpen(workId: string, open: boolean) {
     this.patchLayout(workId, { output: open });
+  }
+
+  setBottomPanel(workId: string, panel: CodeBottomPanel) {
+    const current = this.layoutFor(workId);
+    this.patchLayout(workId, {
+      bottom_panel: panel,
+      output: panel === "output",
+      tests: panel === "tests",
+      terminal: panel === "terminal",
+      context_panel:
+        panel === "problems"
+          ? "problems"
+          : current.context_panel === "problems"
+            ? null
+            : current.context_panel,
+    });
   }
 
   setPrimaryTask(workId: string, taskId: string | null) {

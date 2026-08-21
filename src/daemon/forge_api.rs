@@ -2694,6 +2694,8 @@ struct CodeWorkspaceLayout {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     output: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    bottom_panel: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     primary_task: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     active_run: Option<String>,
@@ -3432,6 +3434,14 @@ async fn save_workspace_state(
                     match panel {
                         "problems" | "outline" | "references" | "language" => {}
                         _ => layout.context_panel = None,
+                    }
+                }
+                if let Some(layout) = body.state.layout.as_mut()
+                    && let Some(panel) = layout.bottom_panel.as_deref()
+                {
+                    match panel {
+                        "problems" | "output" | "tests" | "terminal" => {}
+                        _ => layout.bottom_panel = None,
                     }
                 }
                 if let Some(layout) = body.state.layout.as_mut()
@@ -11362,6 +11372,7 @@ mod source_tests {
                 search: false,
                 changes: false,
                 output: true,
+                bottom_panel: Some("output".into()),
                 primary_task: Some("cargo-run".into()),
                 active_run: Some("run-2".into()),
                 recent_runs: vec!["run-2".into(), "run-1".into()],
@@ -11374,6 +11385,7 @@ mod source_tests {
         assert_eq!(encoded["layout"]["terminal"], true);
         assert_eq!(encoded["layout"]["primary_task"], "cargo-run");
         assert_eq!(encoded["layout"]["active_run"], "run-2");
+        assert_eq!(encoded["layout"]["bottom_panel"], "output");
         assert_eq!(encoded["layout"]["recent_runs"][1], "run-1");
         assert!(encoded["layout"].get("tests").is_none());
     }

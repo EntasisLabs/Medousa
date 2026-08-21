@@ -25,6 +25,7 @@ describe("codeWorkbenchState", () => {
       search: false,
       changes: false,
       output: false,
+      bottom_panel: null,
       primary_task: null,
       active_run: null,
       recent_runs: [],
@@ -43,6 +44,7 @@ describe("codeWorkbenchState", () => {
       search: false,
       changes: false,
       output: false,
+      bottom_panel: "terminal",
       primary_task: null,
       active_run: null,
       recent_runs: [],
@@ -59,6 +61,7 @@ describe("codeWorkbenchState", () => {
       search: false,
       changes: false,
       output: false,
+      bottom_panel: "terminal",
       primary_task: null,
       active_run: null,
       recent_runs: [],
@@ -72,11 +75,21 @@ describe("codeWorkbenchState", () => {
     codeWorkbenchState.setPrimaryTask("work-1", "npm-dev");
     expect(codeWorkbenchState.layoutFor("work-1").primary_task).toBe("npm-dev");
     codeWorkbenchState.setOutputOpen("work-1", true);
+    codeWorkbenchState.setBottomPanel("work-1", "output");
     codeWorkbenchState.setTaskRuns("work-1", "run-2", ["run-2", "run-1"]);
     expect(codeWorkbenchState.layoutFor("work-1")).toMatchObject({
       output: true,
+      bottom_panel: "output",
       active_run: "run-2",
       recent_runs: ["run-2", "run-1"],
+    });
+    codeWorkbenchState.setBottomPanel("work-1", "problems");
+    expect(codeWorkbenchState.layoutFor("work-1")).toMatchObject({
+      bottom_panel: "problems",
+      context_panel: "problems",
+      output: false,
+      tests: false,
+      terminal: false,
     });
   });
 

@@ -7,13 +7,14 @@
   interface Props {
     tasks: CodeTasksController;
     onOpenLocation: (path: string, line: number) => void;
+    mode?: "output" | "tests";
   }
 
-  let { tasks, onOpenLocation }: Props = $props();
+  let { tasks, onOpenLocation, mode = "output" }: Props = $props();
 </script>
 
-{#if tasks.outputOpen}
-  <div class="flex max-h-52 shrink-0 flex-col border-t border-surface-500/30 bg-surface-950/80">
+{#if mode === "output"}
+  <div class="flex max-h-52 shrink-0 flex-col bg-surface-950/80">
     <div class="flex items-center justify-between gap-2 border-b border-surface-500/20 px-2.5 py-1">
       <span class="text-chrome-xs font-medium uppercase tracking-[0.06em] text-content-quiet">
         {#if tasks.run}Task: {tasks.run.task.label}{:else}Output{/if}
@@ -67,7 +68,7 @@
     {/if}
   </div>
 {/if}
-{#if tasks.result}
+{#if mode === "output" && tasks.result}
   <div class="shrink-0 border-t {tasks.result.success ? 'border-emerald-500/25 bg-emerald-950/20 text-emerald-200' : 'border-rose-500/30 bg-rose-950/25 text-rose-200'}">
     <button type="button" class="flex w-full items-center justify-between gap-2 px-2.5 py-1 text-left text-chrome-xs" title="Repeat this exact command" onclick={() => void tasks.rerunLast()}>
       <span>{tasks.result.success ? "Passed" : "Needs attention"} · {tasks.result.task.label}</span>
@@ -81,8 +82,8 @@
     {/each}
   </div>
 {/if}
-{#if tasks.testsOpen}
-  <div class="max-h-44 shrink-0 overflow-y-auto border-t border-surface-500/25 bg-surface-950/90">
+{#if mode === "tests"}
+  <div class="max-h-44 shrink-0 overflow-y-auto bg-surface-950/90">
     <div class="sticky top-0 flex items-center justify-between bg-surface-950 px-2.5 py-1 text-chrome-xs uppercase tracking-wider text-content-quiet"><span>Project tests</span><span>{tasks.projectTests.length}</span></div>
     {#if tasks.projectTests.length === 0}
       <p class="px-3 py-3 text-chrome-sm text-content-quiet">No individual tests were discovered. The project test command still works.</p>

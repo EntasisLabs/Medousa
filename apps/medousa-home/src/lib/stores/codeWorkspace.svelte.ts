@@ -558,6 +558,7 @@ class CodeWorkspaceStore {
             search: layout.search,
             changes: layout.changes,
             output: layout.output,
+            bottom_panel: layout.bottom_panel,
             primary_task: layout.primary_task,
             active_run: layout.active_run,
             recent_runs: layout.recent_runs,

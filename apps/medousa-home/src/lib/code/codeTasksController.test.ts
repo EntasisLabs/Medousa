@@ -43,10 +43,11 @@ function createController(overrides?: { prepareRun?: () => Promise<boolean> }) {
   const ensureLease = vi.fn(async () => ({ leaseId: "lease-1", generation: 3 }));
   const refreshDetail = vi.fn(async () => {});
   const onError = vi.fn();
+  const persistOutputOpen = vi.fn();
   const controller = new CodeTasksController({
     getWorkId: () => "work-1",
     persistTestsOpen: vi.fn(),
-    persistOutputOpen: vi.fn(),
+    persistOutputOpen,
     persistSelectedTask,
     persistRunRefs: vi.fn(),
     prepareRun: overrides?.prepareRun ?? vi.fn(async () => true),
@@ -56,7 +57,7 @@ function createController(overrides?: { prepareRun?: () => Promise<boolean> }) {
   });
   controller.projectTasks = [checkTask];
   controller.selectedTaskId = checkTask.id;
-  return { controller, persistSelectedTask, ensureLease, refreshDetail, onError };
+  return { controller, persistSelectedTask, persistOutputOpen, ensureLease, refreshDetail, onError };
 }
 
 describe("CodeTasksController", () => {
@@ -121,6 +122,15 @@ describe("CodeTasksController", () => {
         test_id: test.id,
       },
     );
+  });
+
+  it("keeps a short successful verification quiet when Output was closed", async () => {
+    const { controller, persistOutputOpen } = createController();
+
+    await controller.runDetected();
+
+    expect(controller.outputOpen).toBe(false);
+    expect(persistOutputOpen).not.toHaveBeenCalled();
   });
 
   it("persists an explicitly selected project task", () => {

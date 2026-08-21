@@ -437,6 +437,7 @@ export type ForgeCodeWorkspaceState = {
     search?: boolean;
     changes?: boolean;
     output?: boolean;
+    bottom_panel?: "problems" | "output" | "tests" | "terminal" | null;
     primary_task?: string | null;
     active_run?: string | null;
     recent_runs?: string[];

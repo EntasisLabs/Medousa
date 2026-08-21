@@ -5,8 +5,7 @@
   import CodeWorkspaceSearch from "$lib/components/code/CodeWorkspaceSearch.svelte";
   import CodeChangesPanel from "$lib/components/code/CodeChangesPanel.svelte";
   import CodeContextSidePanel from "$lib/components/code/CodeContextSidePanel.svelte";
-  import CodeTasksOutput from "$lib/components/code/CodeTasksOutput.svelte";
-  import CodeTerminalDock from "$lib/components/work/CodeTerminalDock.svelte";
+  import CodeFeedbackPanel from "$lib/components/code/CodeFeedbackPanel.svelte";
   import EmptyState from "$lib/components/ui/EmptyState.svelte";
   import type { CodeChangesController } from "$lib/code/codeChangesController.svelte";
   import type { CodeProblemsController } from "$lib/code/codeProblemsController.svelte";
@@ -20,7 +19,7 @@
   } from "$lib/code/codeDocumentService";
   import type { CodeDocumentSymbol, CodeLanguageMatrixEntry } from "$lib/code/codingEngineClient";
   import type { CodeLanguageNavigationKind } from "$lib/code/codeLanguageNavigation";
-  import { codeWorkbenchState } from "$lib/code/codeWorkbenchState.svelte";
+  import type { CodeBottomPanel } from "$lib/code/codeWorkbenchState.svelte";
   import { codeWorkspace, type CodeDocumentTab } from "$lib/stores/codeWorkspace.svelte";
 
   type EditorSelection = {
@@ -86,7 +85,6 @@
     comparingTabId: string | null;
     onUseProjectVersion: (tab: CodeDocumentTab) => void;
     onKeepDraft: (tab: CodeDocumentTab) => void;
-    terminalDockOpen: boolean;
     dockSessionId: string | null;
     workspaceRoot: string | null;
     terminalTitle: string;
@@ -94,6 +92,9 @@
     dockBusy: boolean;
     onToggleTerminal: (forceOpen?: boolean) => void | Promise<void>;
     onPopOutTerminal: () => void | Promise<void>;
+    feedbackPanel: CodeBottomPanel;
+    onSelectFeedbackPanel: (panel: Exclude<CodeBottomPanel, null>) => void | Promise<void>;
+    onCloseFeedbackPanel: () => void;
   }
 
   let {
@@ -148,7 +149,6 @@
     comparingTabId = $bindable(),
     onUseProjectVersion,
     onKeepDraft,
-    terminalDockOpen = $bindable(),
     dockSessionId,
     workspaceRoot,
     terminalTitle,
@@ -156,6 +156,9 @@
     dockBusy,
     onToggleTerminal,
     onPopOutTerminal,
+    feedbackPanel,
+    onSelectFeedbackPanel,
+    onCloseFeedbackPanel,
   }: Props = $props();
 </script>
 
@@ -255,7 +258,6 @@
     }}
     onRestartLanguage={onRestartLanguage}
   />
-  <CodeTasksOutput {tasks} onOpenLocation={(path, line) => void onOpenLocation(path, line)} />
   {#if searchOpen}
     <CodeWorkspaceSearch
       {workId}
@@ -361,20 +363,18 @@
     </div>
   </div>
 {/if}
-<CodeTerminalDock
-  open={terminalDockOpen}
-  sessionId={dockSessionId}
+<CodeFeedbackPanel
+  active={feedbackPanel}
+  {problems}
+  {tasks}
   {workId}
-  worktreeRoot={workspaceRoot}
-  title={terminalTitle}
-  onClose={() => {
-    terminalDockOpen = false;
-    if (workId) {
-      codeWorkbenchState.setTerminalOpen(workId, false);
-      codeWorkspace.scheduleLayoutPersist(workId);
-    }
-  }}
-  onPopOut={() => void onPopOutTerminal()}
+  terminalSessionId={dockSessionId}
+  {workspaceRoot}
+  {terminalTitle}
+  onSelect={onSelectFeedbackPanel}
+  onClose={onCloseFeedbackPanel}
+  onOpenLocation={(path, line) => void onOpenLocation(path, line)}
+  {onPopOutTerminal}
 />
 
 <style>
