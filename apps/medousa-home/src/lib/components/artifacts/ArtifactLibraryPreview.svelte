@@ -39,6 +39,11 @@
   const uiArtifact = $derived.by(() =>
     artifact ? artifactSummaryToUi(artifact) : null,
   );
+  const sourceLabel = $derived(
+    artifact && sessionTitle.trim() && sessionTitle.trim() !== artifact.session_id
+      ? sessionTitle.trim()
+      : "Created by Medousa",
+  );
 </script>
 
 <div class="artifact-library-preview flex h-full min-h-0 min-w-0 flex-1 flex-col">
@@ -49,12 +54,12 @@
   {:else}
     <header class="artifact-library-preview-header">
       <div class="min-w-0">
-        <h2 class="truncate text-sm font-semibold text-surface-100">{artifact.label}</h2>
-        <p class="truncate text-xs text-content-quiet">
+        <h2 class="artifact-library-preview-title">{artifact.label}</h2>
+        <p class="artifact-library-preview-source">
           {#if exportStatus}
             <span class="text-content-link">{exportStatus}</span>
           {:else}
-            {sessionTitle}
+            {sourceLabel}
           {/if}
         </p>
       </div>
@@ -81,7 +86,7 @@
           type="button"
           class="artifact-library-action artifact-library-action-primary"
           onclick={() => {
-            panelOpen = true;
+            fullscreenOpen = true;
           }}
         >
           <Expand size={14} aria-hidden="true" />
@@ -132,9 +137,31 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    min-height: 3.25rem;
     gap: 0.75rem;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-surface-600) 40%, transparent);
-    padding: 0.75rem 1rem;
+    border-bottom: 1px solid rgb(var(--theme-border) / 0.28);
+    padding: 0.55rem 0.85rem;
+  }
+
+  .artifact-library-preview-title,
+  .artifact-library-preview-source {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .artifact-library-preview-title {
+    margin: 0;
+    color: rgb(var(--theme-text));
+    font-size: 0.8125rem;
+    font-weight: 550;
+    letter-spacing: -0.01em;
+  }
+
+  .artifact-library-preview-source {
+    margin: 0.12rem 0 0;
+    color: rgb(var(--theme-text-quiet));
+    font-size: 0.625rem;
   }
 
   .artifact-library-preview-body {
@@ -142,26 +169,33 @@
     min-height: 0;
     flex: 1 1 auto;
     flex-direction: column;
-    padding: 0.75rem 1rem 1rem;
+    padding: 0.65rem 0.85rem 0.85rem;
   }
 
   .artifact-library-action {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-500) 65%, transparent);
-    border-radius: 999px;
-    padding: 0.35rem 0.65rem;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: rgb(var(--color-surface-100));
-    background: color-mix(in srgb, var(--color-surface-700) 72%, var(--color-surface-900));
+    gap: 0.32rem;
+    min-height: 1.75rem;
+    border: 1px solid transparent;
+    border-radius: 0.4rem;
+    padding: 0.3rem 0.5rem !important;
+    font-size: 0.65625rem;
+    font-weight: 500;
+    color: rgb(var(--theme-text-secondary));
+    background: transparent;
     cursor: pointer;
+    transition: background 130ms ease, color 130ms ease, border-color 130ms ease;
+  }
+
+  .artifact-library-action:hover {
+    color: rgb(var(--theme-text));
+    background: rgb(var(--shell-pane-muted-bg) / 0.55);
   }
 
   .artifact-library-action-primary {
-    color: rgb(var(--color-surface-50));
-    border-color: color-mix(in srgb, var(--color-primary-400) 55%, transparent);
-    background: rgb(var(--color-primary-600));
+    color: rgb(var(--theme-text-secondary));
+    border-color: rgb(var(--theme-border) / 0.32);
+    background: rgb(var(--shell-pane-muted-bg) / 0.32);
   }
 </style>
