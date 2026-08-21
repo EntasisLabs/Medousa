@@ -2207,6 +2207,13 @@ pub const SESSIONS_BY_SESSION_ID_WORKSHOP_STEER_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const SESSIONS_DERIVE_POST: Operation = Operation {
+    id: "sessions.derive.post",
+    method: "POST",
+    path: "/v1/sessions/derive",
+    streaming: false,
+};
+
 pub const SESSIONS_GET: Operation = Operation {
     id: "sessions.get",
     method: "GET",
@@ -3054,6 +3061,7 @@ pub static ALL: &[Operation] = &[
     SESSIONS_BY_SESSION_ID_TURNS_GET,
     SESSIONS_BY_SESSION_ID_TURNS_POST,
     SESSIONS_BY_SESSION_ID_WORKSHOP_STEER_POST,
+    SESSIONS_DERIVE_POST,
     SESSIONS_GET,
     SESSIONS_POST,
     SESSIONS_SEARCH_GET,

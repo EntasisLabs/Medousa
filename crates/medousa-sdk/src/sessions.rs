@@ -2,9 +2,10 @@
 use medousa_types::{
     ActiveSessionTurnResponse, AgentModeProposalListResponse, AgentModeProposalResponse,
     AgentModeScope, CancelActiveSessionTurnResponse, DecideAgentModeProposalRequest,
-    SessionActiveTurnsResponse, SessionAgentModeResponse, SessionAppendTurnRequest,
-    SessionAppendTurnResponse, SessionCodeBindingResponse, SessionCodeProjectResponse,
-    SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
+    DeriveSessionRequest, DeriveSessionResponse, SessionActiveTurnsResponse,
+    SessionAgentModeResponse, SessionAppendTurnRequest, SessionAppendTurnResponse,
+    SessionCodeBindingResponse, SessionCodeProjectResponse, SessionDeleteQuery,
+    SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
     SessionSetDisplayNameRequest, SessionSetDisplayNameResponse, SessionTranscriptSearchResponse,
     SetSessionAgentModeRequest, SetSessionCodeBindingRequest, StartSessionCodeProjectRequest,
 };
@@ -63,6 +64,26 @@ impl SessionsApi<'_> {
             .client
             .transport()
             .get_json(self.client.base_url(), &path)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn derive(
+        &self,
+        request: &DeriveSessionRequest,
+        idempotency_key: &str,
+    ) -> Result<DeriveSessionResponse, crate::SdkError> {
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let value = self
+            .client
+            .transport()
+            .post_json_with_headers(
+                self.client.base_url(),
+                ops::SESSIONS_DERIVE_POST.path,
+                body,
+                vec![("Idempotency-Key", idempotency_key.to_string())],
+            )
             .await?;
         decode(value).await
     }

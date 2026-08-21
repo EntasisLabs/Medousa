@@ -13,6 +13,7 @@ pub mod channel_delivery;
 pub mod channel_session_store;
 pub mod chat_history_tools;
 pub mod comms;
+pub mod context_derivation;
 pub mod context_pack;
 pub mod engine_adapters;
 pub mod engine_recovery;

@@ -4751,6 +4751,22 @@
       "trust_group": "portal"
     },
     {
+      "body_limit": 1048576,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "sessions.derive.post",
+      "path": "/v1/sessions/derive",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
       "body_limit": 1024,
       "bootstrap_public": false,
       "browser_policy": "native_only",

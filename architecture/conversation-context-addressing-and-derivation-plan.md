@@ -430,16 +430,16 @@ keys.
 - [ ] Persist `caused_by.execution_id` from interactive and worker paths.
 - [x] Return entry references from history APIs.
 - [x] Backfill existing history restartably.
-- [ ] Add concurrency, duplicate, digest-conflict, and migration tests.
+- [x] Add concurrency, duplicate, digest-conflict, and migration tests.
 
 ### Phase 2 — context manifests and derivation
 
-- [ ] Add context selection resolution and authorization.
-- [ ] Add atomic `derive_session` with idempotency.
-- [ ] Persist derivation records and source occurrence mappings.
-- [ ] Update deletion inventory and orphan-entry garbage-collection rules.
-- [ ] Expose Rust/Python SDK methods and generated transport bindings.
-- [ ] Document the integrator contract.
+- [x] Add context selection resolution and authorization.
+- [x] Add atomic `derive_session` with idempotency.
+- [x] Persist derivation records and source occurrence mappings.
+- [x] Update deletion inventory and orphan-entry garbage-collection rules.
+- [x] Expose Rust/Python SDK methods and generated transport bindings.
+- [x] Document the integrator contract.
 
 ### Phase 3 — fork proof
 

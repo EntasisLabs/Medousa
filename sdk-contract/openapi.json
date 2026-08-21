@@ -1126,6 +1126,36 @@
           }
         ]
       },
+      "ContextManifest": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "manifest_id": {
+            "$ref": "#/components/schemas/ContextManifestId"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ResolvedConversationRange"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "created_at",
+          "created_by",
+          "manifest_id",
+          "sources"
+        ],
+        "type": "object"
+      },
+      "ContextManifestId": {
+        "type": "string"
+      },
       "ContextUsageLayer": {
         "description": "One slice of the prompt/context budget (Cursor-style context usage UI).",
         "properties": {
@@ -1200,6 +1230,32 @@
           "tool_count",
           "total_chars",
           "total_tokens_estimate"
+        ],
+        "type": "object"
+      },
+      "ConversationRangeSelection": {
+        "description": "One committed contiguous range selected from a session. The lower bound is exclusive and the upper bound is inclusive; omitting `after_entry_seq` selects from the beginning of the session.",
+        "properties": {
+          "after_entry_seq": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "session": {
+            "$ref": "#/components/schemas/SessionRef"
+          },
+          "through_entry_seq": {
+            "format": "uint64",
+            "minimum": 1.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session",
+          "through_entry_seq"
         ],
         "type": "object"
       },
@@ -1546,6 +1602,86 @@
           "navVisible",
           "surfaceId"
         ],
+        "type": "object"
+      },
+      "DerivationId": {
+        "type": "string"
+      },
+      "DeriveSessionRequest": {
+        "properties": {
+          "intent": {
+            "description": "Descriptive audit metadata such as `fork`, `work_context`, or `worker_context`; it does not select a different persistence path.",
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationRangeSelection"
+            },
+            "type": "array"
+          },
+          "target": {
+            "$ref": "#/components/schemas/DeriveSessionTarget"
+          }
+        },
+        "required": [
+          "intent",
+          "sources",
+          "target"
+        ],
+        "title": "DeriveSessionRequest",
+        "type": "object"
+      },
+      "DeriveSessionResponse": {
+        "properties": {
+          "authority_id": {
+            "$ref": "#/components/schemas/AuthorityId"
+          },
+          "catalog": {
+            "type": "string"
+          },
+          "derivation": {
+            "$ref": "#/components/schemas/SessionDerivation"
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reused": {
+            "description": "True when this idempotency key had already committed the same request.",
+            "type": "boolean"
+          },
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "authority_id",
+          "catalog",
+          "derivation",
+          "reused",
+          "session_id"
+        ],
+        "title": "DeriveSessionResponse",
+        "type": "object"
+      },
+      "DeriveSessionTarget": {
+        "properties": {
+          "catalog": {
+            "description": "Phase 1 accepts `single` only. The field is explicit so shared/export policy can evolve without changing the derivation primitive.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "DesktopNavStyle": {
@@ -3502,6 +3638,21 @@
         "title": "ModelDownloadProgress",
         "type": "object"
       },
+      "ResolvedConversationRange": {
+        "properties": {
+          "selection": {
+            "$ref": "#/components/schemas/ConversationRangeSelection"
+          },
+          "selection_digest": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "selection",
+          "selection_digest"
+        ],
+        "type": "object"
+      },
       "SessionAgentModeResponse": {
         "properties": {
           "effective_mode": {
@@ -3732,6 +3883,49 @@
         "required": [
           "deleted",
           "surface"
+        ],
+        "type": "object"
+      },
+      "SessionDerivation": {
+        "description": "Audit record for materializing a context manifest as a new logical session. `intent` is descriptive metadata; all intents share this persistence path.",
+        "properties": {
+          "caused_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "derivation_id": {
+            "$ref": "#/components/schemas/DerivationId"
+          },
+          "intent": {
+            "type": "string"
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/ContextManifest"
+          },
+          "target_session": {
+            "$ref": "#/components/schemas/SessionRef"
+          }
+        },
+        "required": [
+          "created_at",
+          "created_by",
+          "derivation_id",
+          "intent",
+          "manifest",
+          "target_session"
         ],
         "type": "object"
       },
@@ -23399,6 +23593,75 @@
         },
         "x-medousa-policy": {
           "body_limit": 262144,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/sessions/derive": {
+      "post": {
+        "operationId": "sessions.derive.post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeriveSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeriveSessionResponse"
+                }
+              }
+            },
+            "description": "sessions.derive.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.derive.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.derive.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1048576,
           "bootstrap_public": false,
           "browser_policy": "native_only",
           "capabilities": [

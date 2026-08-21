@@ -13,32 +13,32 @@ use medousa_types::{
     ComponentRuntimeEventsTailResponse, ComponentRuntimeProbeResult, ComponentStoreDeleteResponse,
     ComponentStoreGetResponse, ComponentStoreListResponse, ComponentStoreSetRequest,
     ComponentStoreSetResponse, DecideAgentModeProposalRequest, DeleteRecurringResponse,
-    EnqueueAskRequest, EnqueuePromptRequest, EnqueueReportRequest, EnqueueResponse,
-    EnvironmentPendingResponse, EnvironmentProposeResponse, EnvironmentSpecPutRequest,
-    EnvironmentSpecResponse, EnvironmentStatusResponse, EnvironmentValidateRequest,
-    EnvironmentValidateResponse, FeedLatestGoodQuery, FeedLatestGoodResponse, FeedListResponse,
-    FeedReadRequest, FeedTailQuery, FeedTailResponse, HealthResponse, IngestRequest,
-    IngestResponse, InteractiveTurnRequest, InteractiveTurnResponse, JobReportResponse,
-    JobResultResponse, LocalCatalogResponse, LocalEngineStatus, LocalHardwareResponse,
-    LocalModelDownloadRequest, LocalModelDownloadResponse, LocalModelsResponse,
-    McpGatewayStatusResponse, ModelDownloadProgress, RecurringDeliveryResponse, RecurringListQuery,
-    RecurringListResponse, RecurringRunsQuery, RecurringRunsResponse,
-    RegisterRecurringPromptRequest, RegisterRecurringResponse, RuntimeConfigCommandRequest,
-    RuntimeConfigCommandResponse, SessionActiveTurnsResponse, SessionAgentModeResponse,
-    SessionAppendTurnRequest, SessionAppendTurnResponse, SessionCodeBindingResponse,
-    SessionCodeProjectResponse, SessionDeleteQuery, SessionDeleteResponse,
-    SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameRequest,
-    SessionSetDisplayNameResponse, SessionTranscriptSearchResponse, SetSessionAgentModeRequest,
-    SetSessionCodeBindingRequest, StageRouteCommandRequest, StageRouteCommandResponse,
-    StartSessionCodeProjectRequest, TurnBudgetApproveRequest, TurnBudgetDenyRequest,
-    TurnBudgetRequestListResponse, TurnBudgetRequestRecord, TurnBudgetRequestResponse,
-    UpdateRecurringRequest, UpdateRecurringResponse, VaultAddRootRequest, VaultBacklinksQuery,
-    VaultBacklinksResponse, VaultDeleteResponse, VaultNoteContentResponse, VaultNotesListResponse,
-    VaultNotesQuery, VaultRootsResponse, VaultSearchQuery, VaultSearchResponse,
-    VaultSetActiveRootRequest, VaultTagsListResponse, VaultTagsQuery, VaultWriteRequest,
-    VaultWriteResponse, WorkCardDetail, WorkspaceCardActionResponse, WorkspaceCardsQuery,
-    WorkspaceCardsResponse, WorkspaceFeedQuery, WorkspaceFeedResponse, WorkspaceLinkVaultRequest,
-    WorkspaceSnapshot, WorkspaceSnapshotQuery,
+    DeriveSessionRequest, DeriveSessionResponse, EnqueueAskRequest, EnqueuePromptRequest,
+    EnqueueReportRequest, EnqueueResponse, EnvironmentPendingResponse, EnvironmentProposeResponse,
+    EnvironmentSpecPutRequest, EnvironmentSpecResponse, EnvironmentStatusResponse,
+    EnvironmentValidateRequest, EnvironmentValidateResponse, FeedLatestGoodQuery,
+    FeedLatestGoodResponse, FeedListResponse, FeedReadRequest, FeedTailQuery, FeedTailResponse,
+    HealthResponse, IngestRequest, IngestResponse, InteractiveTurnRequest, InteractiveTurnResponse,
+    JobReportResponse, JobResultResponse, LocalCatalogResponse, LocalEngineStatus,
+    LocalHardwareResponse, LocalModelDownloadRequest, LocalModelDownloadResponse,
+    LocalModelsResponse, McpGatewayStatusResponse, ModelDownloadProgress,
+    RecurringDeliveryResponse, RecurringListQuery, RecurringListResponse, RecurringRunsQuery,
+    RecurringRunsResponse, RegisterRecurringPromptRequest, RegisterRecurringResponse,
+    RuntimeConfigCommandRequest, RuntimeConfigCommandResponse, SessionActiveTurnsResponse,
+    SessionAgentModeResponse, SessionAppendTurnRequest, SessionAppendTurnResponse,
+    SessionCodeBindingResponse, SessionCodeProjectResponse, SessionDeleteQuery,
+    SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
+    SessionSetDisplayNameRequest, SessionSetDisplayNameResponse, SessionTranscriptSearchResponse,
+    SetSessionAgentModeRequest, SetSessionCodeBindingRequest, StageRouteCommandRequest,
+    StageRouteCommandResponse, StartSessionCodeProjectRequest, TurnBudgetApproveRequest,
+    TurnBudgetDenyRequest, TurnBudgetRequestListResponse, TurnBudgetRequestRecord,
+    TurnBudgetRequestResponse, UpdateRecurringRequest, UpdateRecurringResponse,
+    VaultAddRootRequest, VaultBacklinksQuery, VaultBacklinksResponse, VaultDeleteResponse,
+    VaultNoteContentResponse, VaultNotesListResponse, VaultNotesQuery, VaultRootsResponse,
+    VaultSearchQuery, VaultSearchResponse, VaultSetActiveRootRequest, VaultTagsListResponse,
+    VaultTagsQuery, VaultWriteRequest, VaultWriteResponse, WorkCardDetail,
+    WorkspaceCardActionResponse, WorkspaceCardsQuery, WorkspaceCardsResponse, WorkspaceFeedQuery,
+    WorkspaceFeedResponse, WorkspaceLinkVaultRequest, WorkspaceSnapshot, WorkspaceSnapshotQuery,
 };
 
 #[cfg(feature = "blocking")]
@@ -109,6 +109,29 @@ impl SyncHttp {
         let body = serde_json::to_value(body).map_err(|e| SdkError::Serde(e.to_string()))?;
         let value = self.request(reqwest::Method::POST, path, Some(body))?;
         serde_json::from_value(value).map_err(Into::into)
+    }
+
+    fn post_with_header<T: serde::de::DeserializeOwned, B: serde::Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+        header: (&'static str, &str),
+    ) -> Result<T, SdkError> {
+        let response = self
+            .client
+            .post(self.url(path))
+            .header(header.0, header.1)
+            .json(body)
+            .send()
+            .map_err(|error| SdkError::Http(error.to_string()))?;
+        let status = response.status();
+        let text = response
+            .text()
+            .map_err(|error| SdkError::Http(error.to_string()))?;
+        if !status.is_success() {
+            return Err(SdkError::Http(format!("{status}: {text}")));
+        }
+        serde_json::from_str(&text).map_err(Into::into)
     }
 
     fn post_empty<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T, SdkError> {
@@ -492,6 +515,18 @@ impl BlockingSessionsApi<'_> {
             &ops::SESSIONS_BY_SESSION_ID_HISTORY_GET,
             &[("session_id", session_id)],
         )?)
+    }
+
+    pub fn derive(
+        &self,
+        request: &DeriveSessionRequest,
+        idempotency_key: &str,
+    ) -> Result<DeriveSessionResponse, SdkError> {
+        self.http.post_with_header(
+            ops::SESSIONS_DERIVE_POST.path,
+            request,
+            ("Idempotency-Key", idempotency_key),
+        )
     }
 
     pub fn set_display_name(

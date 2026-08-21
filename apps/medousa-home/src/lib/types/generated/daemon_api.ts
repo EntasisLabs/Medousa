@@ -310,6 +310,75 @@ export interface SessionTranscriptSearchResponse {
   query: string;
 }
 
+export type AuthorityId = string;
+
+export type SessionId = string;
+
+export interface SessionRef {
+  authority_id: AuthorityId;
+  session_id: SessionId;
+}
+
+export interface ConversationRangeSelection {
+  after_entry_seq?: number | null;
+  session: SessionRef;
+  through_entry_seq: number;
+}
+
+export interface DeriveSessionTarget {
+  catalog?: string | null;
+  display_name?: string | null;
+}
+
+export interface DeriveSessionRequest {
+  intent: string;
+  sources: ConversationRangeSelection[];
+  target: DeriveSessionTarget;
+}
+
+export type ContextManifestId = string;
+
+export interface ResolvedConversationRange {
+  selection: ConversationRangeSelection;
+  selection_digest: string;
+}
+
+export interface ContextManifest {
+  created_at: string;
+  created_by: string;
+  manifest_id: ContextManifestId;
+  sources: ResolvedConversationRange[];
+}
+
+export type DerivationId = string;
+
+export type ExecutionId = string;
+
+export interface ExecutionRef {
+  authority_id: AuthorityId;
+  execution_id: ExecutionId;
+  session_id: SessionId;
+}
+
+export interface SessionDerivation {
+  caused_by?: ExecutionRef | null;
+  created_at: string;
+  created_by: string;
+  derivation_id: DerivationId;
+  intent: string;
+  manifest: ContextManifest;
+  target_session: SessionRef;
+}
+
+export interface DeriveSessionResponse {
+  authority_id: AuthorityId;
+  catalog: string;
+  derivation: SessionDerivation;
+  display_name?: string | null;
+  reused: boolean;
+  session_id: string;
+}
+
 export type CodeProjectSource = "blank" | "repository";
 
 export interface StartSessionCodeProjectRequest {

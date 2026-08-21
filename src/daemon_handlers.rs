@@ -1,6 +1,6 @@
 use axum::Json;
 use axum::extract::{Extension, Path as AxumPath, Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use std::sync::Arc;
 
 fn validated_session_id(session_id: String) -> Result<String, (StatusCode, String)> {
@@ -14,12 +14,13 @@ use stasis::ports::outbound::memory::memory_operations::MemoryOperations;
 use crate::daemon_api::{
     AgentModeListResponse, AgentModeProposalListResponse, AgentModeProposalResponse,
     AgentModeScope, AgentModeTransitionPolicy, CreateSessionRequest, CreateSessionResponse,
-    DecideAgentModeProposalRequest, SessionAgentModeResponse, SessionAppendTurnRequest,
-    SessionAppendTurnResponse, SessionCodeBindingResponse, SessionDeleteQuery,
-    SessionDeleteResponse, SessionHistoryListRequest, SessionHistoryListResponse,
-    SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
-    SessionTranscriptSearchHit, SessionTranscriptSearchRequest, SessionTranscriptSearchResponse,
-    SetSessionAgentModeRequest, SetSessionCodeBindingRequest,
+    DecideAgentModeProposalRequest, DeriveSessionRequest, DeriveSessionResponse,
+    SessionAgentModeResponse, SessionAppendTurnRequest, SessionAppendTurnResponse,
+    SessionCodeBindingResponse, SessionDeleteQuery, SessionDeleteResponse,
+    SessionHistoryListRequest, SessionHistoryListResponse, SessionHistoryResponse,
+    SessionSetDisplayNameRequest, SessionSetDisplayNameResponse, SessionTranscriptSearchHit,
+    SessionTranscriptSearchRequest, SessionTranscriptSearchResponse, SetSessionAgentModeRequest,
+    SetSessionCodeBindingRequest,
 };
 use crate::shared_session_catalog::SessionCatalogKind;
 use crate::turn_ticket::TurnTicketRegistry;
@@ -195,6 +196,42 @@ pub async fn create_session(
             }))
         }
     }
+}
+
+pub async fn derive_session(
+    Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
+    headers: HeaderMap,
+    Json(request): Json<DeriveSessionRequest>,
+) -> Result<Json<DeriveSessionResponse>, (StatusCode, String)> {
+    let idempotency_key = headers
+        .get("idempotency-key")
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                "Idempotency-Key header is required".to_string(),
+            )
+        })?
+        .to_str()
+        .map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                "Idempotency-Key header is invalid".to_string(),
+            )
+        })?;
+    crate::context_derivation::derive_session(&principal, request, idempotency_key)
+        .await
+        .map(Json)
+        .map_err(|error| {
+            let status = match error.kind {
+                crate::context_derivation::DerivationErrorKind::Invalid => StatusCode::BAD_REQUEST,
+                crate::context_derivation::DerivationErrorKind::Forbidden => StatusCode::FORBIDDEN,
+                crate::context_derivation::DerivationErrorKind::Conflict => StatusCode::CONFLICT,
+                crate::context_derivation::DerivationErrorKind::Internal => {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                }
+            };
+            (status, error.message)
+        })
 }
 
 pub async fn get_session_history(

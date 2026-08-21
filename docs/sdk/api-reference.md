@@ -95,6 +95,7 @@ this generic HTTP client rather than a dedicated typed SDK accessor. See the
 |--------|------|-------|
 | `list(limit)` | `GET /v1/sessions?limit=` | `SessionHistoryListResponse` |
 | `search_transcripts(query, limit)` | `GET /v1/sessions/search?q=&limit=` | `SessionTranscriptSearchResponse` |
+| `derive(request, idempotency_key)` | `POST /v1/sessions/derive` | `DeriveSessionResponse` |
 | `history(session_id)` | `GET /v1/sessions/{id}/history` | `SessionHistoryResponse` |
 | `set_display_name(session_id, name)` | `PUT /v1/sessions/{id}/name` | `SessionSetDisplayNameRequest` |
 | `agent_mode(session_id)` | `GET /v1/sessions/{id}/agent-mode` | `SessionAgentModeResponse` |
@@ -117,6 +118,12 @@ History methods return `TranscriptEntry` items in
 legacy turn fields remain top-level. `entry_id` and one-based `entry_seq`
 provide durable transcript coordinates; `caused_by` and `source` carry
 execution and derivation provenance when known.
+
+`derive` is the generic context-materialization primitive used by fork, bounded
+worker context, and future work-context flows. Source ranges are ordered and
+contain committed transcript coordinates. The SDK sends `idempotency_key` as
+the required `Idempotency-Key` header; retain the same key when retrying an
+uncertain request outcome.
 
 `delete` is complete only when `response.status == "complete"` and
 `response.deleted` is true. Retry the same session ID for

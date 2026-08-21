@@ -2823,10 +2823,159 @@
     "description": "Stable UUID for one integration connection row.",
     "type": "string"
   },
+  "ContextManifest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ContextManifest",
+    "type": "object",
+    "required": [
+      "created_at",
+      "created_by",
+      "manifest_id",
+      "sources"
+    ],
+    "properties": {
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "manifest_id": {
+        "$ref": "#/definitions/ContextManifestId"
+      },
+      "sources": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ResolvedConversationRange"
+        }
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ContextManifestId": {
+        "type": "string"
+      },
+      "ConversationRangeSelection": {
+        "description": "One committed contiguous range selected from a session. The lower bound is exclusive and the upper bound is inclusive; omitting `after_entry_seq` selects from the beginning of the session.",
+        "type": "object",
+        "required": [
+          "session",
+          "through_entry_seq"
+        ],
+        "properties": {
+          "after_entry_seq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "through_entry_seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1.0
+          }
+        }
+      },
+      "ResolvedConversationRange": {
+        "type": "object",
+        "required": [
+          "selection",
+          "selection_digest"
+        ],
+        "properties": {
+          "selection": {
+            "$ref": "#/definitions/ConversationRangeSelection"
+          },
+          "selection_digest": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      }
+    }
+  },
   "ContextManifestId": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "ContextManifestId",
     "type": "string"
+  },
+  "ConversationRangeSelection": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ConversationRangeSelection",
+    "description": "One committed contiguous range selected from a session. The lower bound is exclusive and the upper bound is inclusive; omitting `after_entry_seq` selects from the beginning of the session.",
+    "type": "object",
+    "required": [
+      "session",
+      "through_entry_seq"
+    ],
+    "properties": {
+      "after_entry_seq": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "session": {
+        "$ref": "#/definitions/SessionRef"
+      },
+      "through_entry_seq": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 1.0
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      }
+    }
   },
   "CreateAgentSessionRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -3226,6 +3375,319 @@
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "DerivationId",
     "type": "string"
+  },
+  "DeriveSessionRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DeriveSessionRequest",
+    "type": "object",
+    "required": [
+      "intent",
+      "sources",
+      "target"
+    ],
+    "properties": {
+      "intent": {
+        "description": "Descriptive audit metadata such as `fork`, `work_context`, or `worker_context`; it does not select a different persistence path.",
+        "type": "string"
+      },
+      "sources": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ConversationRangeSelection"
+        }
+      },
+      "target": {
+        "$ref": "#/definitions/DeriveSessionTarget"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ConversationRangeSelection": {
+        "description": "One committed contiguous range selected from a session. The lower bound is exclusive and the upper bound is inclusive; omitting `after_entry_seq` selects from the beginning of the session.",
+        "type": "object",
+        "required": [
+          "session",
+          "through_entry_seq"
+        ],
+        "properties": {
+          "after_entry_seq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "through_entry_seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1.0
+          }
+        }
+      },
+      "DeriveSessionTarget": {
+        "type": "object",
+        "properties": {
+          "catalog": {
+            "description": "Phase 1 accepts `single` only. The field is explicit so shared/export policy can evolve without changing the derivation primitive.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      }
+    }
+  },
+  "DeriveSessionResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DeriveSessionResponse",
+    "type": "object",
+    "required": [
+      "authority_id",
+      "catalog",
+      "derivation",
+      "reused",
+      "session_id"
+    ],
+    "properties": {
+      "authority_id": {
+        "$ref": "#/definitions/AuthorityId"
+      },
+      "catalog": {
+        "type": "string"
+      },
+      "derivation": {
+        "$ref": "#/definitions/SessionDerivation"
+      },
+      "display_name": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "reused": {
+        "description": "True when this idempotency key had already committed the same request.",
+        "type": "boolean"
+      },
+      "session_id": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ContextManifest": {
+        "type": "object",
+        "required": [
+          "created_at",
+          "created_by",
+          "manifest_id",
+          "sources"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "manifest_id": {
+            "$ref": "#/definitions/ContextManifestId"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ResolvedConversationRange"
+            }
+          }
+        }
+      },
+      "ContextManifestId": {
+        "type": "string"
+      },
+      "ConversationRangeSelection": {
+        "description": "One committed contiguous range selected from a session. The lower bound is exclusive and the upper bound is inclusive; omitting `after_entry_seq` selects from the beginning of the session.",
+        "type": "object",
+        "required": [
+          "session",
+          "through_entry_seq"
+        ],
+        "properties": {
+          "after_entry_seq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "through_entry_seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1.0
+          }
+        }
+      },
+      "DerivationId": {
+        "type": "string"
+      },
+      "ExecutionId": {
+        "description": "Durable execution identity. Legacy execution ids predate a generated prefix, so validation accepts bounded visible ASCII.",
+        "type": "string"
+      },
+      "ExecutionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "execution_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "execution_id": {
+            "$ref": "#/definitions/ExecutionId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      },
+      "ResolvedConversationRange": {
+        "type": "object",
+        "required": [
+          "selection",
+          "selection_digest"
+        ],
+        "properties": {
+          "selection": {
+            "$ref": "#/definitions/ConversationRangeSelection"
+          },
+          "selection_digest": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionDerivation": {
+        "description": "Audit record for materializing a context manifest as a new logical session. `intent` is descriptive metadata; all intents share this persistence path.",
+        "type": "object",
+        "required": [
+          "created_at",
+          "created_by",
+          "derivation_id",
+          "intent",
+          "manifest",
+          "target_session"
+        ],
+        "properties": {
+          "caused_by": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ExecutionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "derivation_id": {
+            "$ref": "#/definitions/DerivationId"
+          },
+          "intent": {
+            "type": "string"
+          },
+          "manifest": {
+            "$ref": "#/definitions/ContextManifest"
+          },
+          "target_session": {
+            "$ref": "#/definitions/SessionRef"
+          }
+        }
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      }
+    }
+  },
+  "DeriveSessionTarget": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DeriveSessionTarget",
+    "type": "object",
+    "properties": {
+      "catalog": {
+        "description": "Phase 1 accepts `single` only. The field is explicit so shared/export policy can evolve without changing the derivation primitive.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "display_name": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
   },
   "EnqueueAskRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -13734,6 +14196,73 @@
       }
     }
   },
+  "ResolvedConversationRange": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ResolvedConversationRange",
+    "type": "object",
+    "required": [
+      "selection",
+      "selection_digest"
+    ],
+    "properties": {
+      "selection": {
+        "$ref": "#/definitions/ConversationRangeSelection"
+      },
+      "selection_digest": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ConversationRangeSelection": {
+        "description": "One committed contiguous range selected from a session. The lower bound is exclusive and the upper bound is inclusive; omitting `after_entry_seq` selects from the beginning of the session.",
+        "type": "object",
+        "required": [
+          "session",
+          "through_entry_seq"
+        ],
+        "properties": {
+          "after_entry_seq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "through_entry_seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1.0
+          }
+        }
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      }
+    }
+  },
   "RuntimeConfigCommandRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "RuntimeConfigCommandRequest",
@@ -14890,6 +15419,172 @@
           },
           "surface": {
             "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "SessionDerivation": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SessionDerivation",
+    "description": "Audit record for materializing a context manifest as a new logical session. `intent` is descriptive metadata; all intents share this persistence path.",
+    "type": "object",
+    "required": [
+      "created_at",
+      "created_by",
+      "derivation_id",
+      "intent",
+      "manifest",
+      "target_session"
+    ],
+    "properties": {
+      "caused_by": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ExecutionRef"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "derivation_id": {
+        "$ref": "#/definitions/DerivationId"
+      },
+      "intent": {
+        "type": "string"
+      },
+      "manifest": {
+        "$ref": "#/definitions/ContextManifest"
+      },
+      "target_session": {
+        "$ref": "#/definitions/SessionRef"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ContextManifest": {
+        "type": "object",
+        "required": [
+          "created_at",
+          "created_by",
+          "manifest_id",
+          "sources"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "manifest_id": {
+            "$ref": "#/definitions/ContextManifestId"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ResolvedConversationRange"
+            }
+          }
+        }
+      },
+      "ContextManifestId": {
+        "type": "string"
+      },
+      "ConversationRangeSelection": {
+        "description": "One committed contiguous range selected from a session. The lower bound is exclusive and the upper bound is inclusive; omitting `after_entry_seq` selects from the beginning of the session.",
+        "type": "object",
+        "required": [
+          "session",
+          "through_entry_seq"
+        ],
+        "properties": {
+          "after_entry_seq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "through_entry_seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1.0
+          }
+        }
+      },
+      "DerivationId": {
+        "type": "string"
+      },
+      "ExecutionId": {
+        "description": "Durable execution identity. Legacy execution ids predate a generated prefix, so validation accepts bounded visible ASCII.",
+        "type": "string"
+      },
+      "ExecutionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "execution_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "execution_id": {
+            "$ref": "#/definitions/ExecutionId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      },
+      "ResolvedConversationRange": {
+        "type": "object",
+        "required": [
+          "selection",
+          "selection_digest"
+        ],
+        "properties": {
+          "selection": {
+            "$ref": "#/definitions/ConversationRangeSelection"
+          },
+          "selection_digest": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
           }
         }
       }

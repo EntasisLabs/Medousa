@@ -337,6 +337,25 @@ class ComponentRuntimeEvent(MedousaModel):
     stack: str | None = None
 
 
+class AuthorityId(RootModel[str]):
+    root: str = Field(..., title='AuthorityId')
+
+
+class ContextManifestId(RootModel[str]):
+    root: str = Field(..., title='ContextManifestId')
+
+
+class SessionId(RootModel[str]):
+    root: str = Field(
+        ..., description='Canonical chat session identifier. Construction never normalizes input.'
+    )
+
+
+class SessionRef(MedousaModel):
+    authority_id: AuthorityId
+    session_id: SessionId
+
+
 class TurnSurfaceContext(MedousaModel):
     channel_id: str | None = None
     channel_surface: str | None = Field(
@@ -366,6 +385,32 @@ class AgentSessionConfigOption(MedousaModel):
     name: str
     options: list[AgentSessionConfigChoice] | None = None
     type: str
+
+
+class DeriveSessionTarget(MedousaModel):
+    catalog: str | None = Field(
+        None,
+        description='Phase 1 accepts `single` only. The field is explicit so shared/export policy can evolve without changing the derivation primitive.',
+    )
+    display_name: str | None = None
+
+
+class DerivationId(RootModel[str]):
+    root: str = Field(..., title='DerivationId')
+
+
+class ExecutionId(RootModel[str]):
+    root: str = Field(
+        ...,
+        description='Durable execution identity. Legacy execution ids predate a generated prefix, so validation accepts bounded visible ASCII.',
+        title='ExecutionId',
+    )
+
+
+class ExecutionRef(MedousaModel):
+    authority_id: AuthorityId
+    execution_id: ExecutionId
+    session_id: SessionId
 
 
 class ActivityRailMode(Enum):
@@ -570,24 +615,6 @@ class ComponentRuntimeProbeRequest(MedousaModel):
 class FeedRef(MedousaModel):
     ref_id: str
     ref_type: str
-
-
-class AuthorityId(RootModel[str]):
-    root: str = Field(..., title='AuthorityId')
-
-
-class ExecutionId(RootModel[str]):
-    root: str = Field(
-        ...,
-        description='Durable execution identity. Legacy execution ids predate a generated prefix, so validation accepts bounded visible ASCII.',
-        title='ExecutionId',
-    )
-
-
-class SessionId(RootModel[str]):
-    root: str = Field(
-        ..., description='Canonical chat session identifier. Construction never normalizes input.'
-    )
 
 
 class FeedListEntry(MedousaModel):
@@ -1252,17 +1279,6 @@ class SessionHistorySummary(MedousaModel):
     session_id: str
     turns: int = Field(..., ge=0)
     verification_runs: int = Field(..., ge=0)
-
-
-class ExecutionRef(MedousaModel):
-    authority_id: AuthorityId
-    execution_id: ExecutionId
-    session_id: SessionId
-
-
-class SessionRef(MedousaModel):
-    authority_id: AuthorityId
-    session_id: SessionId
 
 
 class TranscriptEntryId(RootModel[str]):
@@ -2031,10 +2047,6 @@ class ComponentStoreSetResponse(MedousaModel):
     updatedAtUtc: AwareDatetime
 
 
-class ContextManifestId(RootModel[str]):
-    root: str = Field(..., title='ContextManifestId')
-
-
 class CreateAgentSessionRequest(MedousaModel):
     args: list[str] | None = None
     code_context: CodeIntentContext | None = None
@@ -2089,10 +2101,6 @@ class DeleteIntegrationConnectionResponse(MedousaModel):
 class DeleteRecurringResponse(MedousaModel):
     deleted: bool
     recurring_id: str
-
-
-class DerivationId(RootModel[str]):
-    root: str = Field(..., title='DerivationId')
 
 
 class EnqueueAskRequest(MedousaModel):
@@ -2796,6 +2804,34 @@ class AgentPermissionRequestRecord(MedousaModel):
     updated_at_utc: AwareDatetime
 
 
+class ConversationRangeSelection(MedousaModel):
+    after_entry_seq: int | None = Field(None, ge=0)
+    session: SessionRef
+    through_entry_seq: int = Field(..., ge=1)
+
+
+class ResolvedConversationRange(MedousaModel):
+    selection: ConversationRangeSelection
+    selection_digest: str
+
+
+class ContextManifest(MedousaModel):
+    created_at: AwareDatetime
+    created_by: str
+    manifest_id: ContextManifestId
+    sources: list[ResolvedConversationRange]
+
+
+class SessionDerivation(MedousaModel):
+    caused_by: ExecutionRef | None = None
+    created_at: AwareDatetime
+    created_by: str
+    derivation_id: DerivationId
+    intent: str
+    manifest: ContextManifest
+    target_session: SessionRef
+
+
 class ComponentDef(MedousaModel):
     config: Any | None = None
     feeds: list[str] | None = []
@@ -3074,6 +3110,26 @@ class AgentPermissionRequestListResponse(MedousaModel):
 
 class AgentPermissionResolveResponse(MedousaModel):
     request: AgentPermissionRequestRecord
+
+
+class DeriveSessionRequest(MedousaModel):
+    intent: str = Field(
+        ...,
+        description='Descriptive audit metadata such as `fork`, `work_context`, or `worker_context`; it does not select a different persistence path.',
+    )
+    sources: list[ConversationRangeSelection]
+    target: DeriveSessionTarget
+
+
+class DeriveSessionResponse(MedousaModel):
+    authority_id: AuthorityId
+    catalog: str
+    derivation: SessionDerivation
+    display_name: str | None = None
+    reused: bool = Field(
+        ..., description='True when this idempotency key had already committed the same request.'
+    )
+    session_id: str
 
 
 class FeedStreamEvent(MedousaModel):

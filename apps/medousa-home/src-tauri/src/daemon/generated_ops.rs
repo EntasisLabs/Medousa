@@ -632,6 +632,8 @@ pub enum DaemonOperation {
     SessionsBySessionIdTurnsPost,
     #[serde(rename = "sessions.by_session_id.workshop.steer.post")]
     SessionsBySessionIdWorkshopSteerPost,
+    #[serde(rename = "sessions.derive.post")]
+    SessionsDerivePost,
     #[serde(rename = "sessions.get")]
     SessionsGet,
     #[serde(rename = "sessions.post")]
@@ -1103,6 +1105,7 @@ impl DaemonOperation {
             Self::SessionsBySessionIdTurnsGet => "sessions.by_session_id.turns.get",
             Self::SessionsBySessionIdTurnsPost => "sessions.by_session_id.turns.post",
             Self::SessionsBySessionIdWorkshopSteerPost => "sessions.by_session_id.workshop.steer.post",
+            Self::SessionsDerivePost => "sessions.derive.post",
             Self::SessionsGet => "sessions.get",
             Self::SessionsPost => "sessions.post",
             Self::SessionsSearchGet => "sessions.search.get",

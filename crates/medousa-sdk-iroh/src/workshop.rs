@@ -240,6 +240,24 @@ impl Transport for WorkshopTransport {
         Box::pin(async move { self.request_json("POST", &path, Some(body)).await })
     }
 
+    fn post_json_with_headers<'a>(
+        &'a self,
+        _base_url: &'a str,
+        path: &'a str,
+        body: serde_json::Value,
+        headers: Vec<(&'static str, String)>,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
+        let mut transport = self.clone();
+        for (key, value) in headers {
+            transport
+                .config
+                .extra_headers
+                .insert(key.to_string(), value);
+        }
+        let path = path.to_string();
+        Box::pin(async move { transport.request_json("POST", &path, Some(body)).await })
+    }
+
     fn delete_json<'a>(
         &'a self,
         _base_url: &'a str,

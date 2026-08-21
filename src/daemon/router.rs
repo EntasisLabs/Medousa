@@ -616,6 +616,15 @@ pub fn build_workshop_surface() -> DeclaredRouter<AppState> {
             get(crate::daemon_handlers::search_session_transcripts),
         )
         .route(
+            workshop_mutation_policy(
+                axum::http::Method::POST,
+                "/v1/sessions/derive",
+                Capability::WorkshopInteract,
+                1024 * 1024,
+            ),
+            post(crate::daemon_handlers::derive_session),
+        )
+        .route(
             workshop_read_policy("/v1/sessions/{session_id}/history"),
             get(crate::daemon_handlers::get_session_history),
         )

@@ -673,6 +673,7 @@ fn run_home() {
             daemon::turn_budget::turn_budget_list,
             daemon::session::session_list,
             daemon::session::session_create,
+            daemon::session::session_derive,
             daemon::shared_mode::shared_mode_status,
             daemon::shared_mode::shared_mode_set,
             daemon::session::session_set_display_name,

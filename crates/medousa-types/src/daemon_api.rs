@@ -2,7 +2,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::session::{AuthorityId, ConversationTurn, SessionHistorySummary, TranscriptEntry};
+use crate::session::{
+    AuthorityId, ConversationRangeSelection, ConversationTurn, SessionDerivation,
+    SessionHistorySummary, TranscriptEntry,
+};
 use crate::stage_routing::StageRoutingMatrix;
 use crate::turn::HostTurnContext;
 
@@ -362,6 +365,40 @@ pub struct CreateSessionResponse {
     pub member_profile_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_profile_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct DeriveSessionTarget {
+    /// Phase 1 accepts `single` only. The field is explicit so shared/export
+    /// policy can evolve without changing the derivation primitive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct DeriveSessionRequest {
+    pub sources: Vec<ConversationRangeSelection>,
+    /// Descriptive audit metadata such as `fork`, `work_context`, or
+    /// `worker_context`; it does not select a different persistence path.
+    pub intent: String,
+    pub target: DeriveSessionTarget,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct DeriveSessionResponse {
+    pub authority_id: AuthorityId,
+    pub session_id: String,
+    pub catalog: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    pub derivation: SessionDerivation,
+    /// True when this idempotency key had already committed the same request.
+    pub reused: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

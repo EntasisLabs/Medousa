@@ -6,6 +6,8 @@ from medousa._decode import decode
 from medousa._ops import op_path, op_path_query
 from medousa.client import MedousaClient
 from medousa.types import (
+    DeriveSessionRequest,
+    DeriveSessionResponse,
     SessionAppendTurnRequest,
     SessionAppendTurnResponse,
     SessionDeleteResponse,
@@ -48,6 +50,19 @@ class SessionsApi:
             op_path("sessions.by_session_id.history.get", session_id=session_id),
         )
         return decode(SessionHistoryResponse, value)
+
+    async def derive(
+        self,
+        request: DeriveSessionRequest,
+        idempotency_key: str,
+    ) -> DeriveSessionResponse:
+        value = await self._client.transport.post_json_with_headers(
+            self._client.base_url,
+            op_path("sessions.derive.post"),
+            request.model_dump(mode="json"),
+            {"Idempotency-Key": idempotency_key},
+        )
+        return decode(DeriveSessionResponse, value)
 
     async def set_display_name(
         self,

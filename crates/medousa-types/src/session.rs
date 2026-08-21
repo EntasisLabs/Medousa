@@ -328,6 +328,50 @@ pub struct TranscriptEntry {
     pub turn: ConversationTurn,
 }
 
+/// One committed contiguous range selected from a session. The lower bound is
+/// exclusive and the upper bound is inclusive; omitting `after_entry_seq`
+/// selects from the beginning of the session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ConversationRangeSelection {
+    pub session: SessionRef,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after_entry_seq: Option<u64>,
+    #[cfg_attr(feature = "json-schema", schemars(range(min = 1)))]
+    pub through_entry_seq: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ResolvedConversationRange {
+    pub selection: ConversationRangeSelection,
+    pub selection_digest: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ContextManifest {
+    pub manifest_id: ContextManifestId,
+    pub sources: Vec<ResolvedConversationRange>,
+    pub created_by: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Audit record for materializing a context manifest as a new logical session.
+/// `intent` is descriptive metadata; all intents share this persistence path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SessionDerivation {
+    pub derivation_id: DerivationId,
+    pub target_session: SessionRef,
+    pub manifest: ContextManifest,
+    pub intent: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caused_by: Option<ExecutionRef>,
+    pub created_by: String,
+    pub created_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ConversationTurn {

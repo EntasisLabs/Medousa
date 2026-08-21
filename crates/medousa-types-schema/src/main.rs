@@ -56,6 +56,21 @@ fn main() {
     export_type!(schemas, ExecutionRef, "ExecutionRef");
     export_type!(
         schemas,
+        ConversationRangeSelection,
+        "ConversationRangeSelection"
+    );
+    export_type!(
+        schemas,
+        ResolvedConversationRange,
+        "ResolvedConversationRange"
+    );
+    export_type!(schemas, ContextManifest, "ContextManifest");
+    export_type!(schemas, SessionDerivation, "SessionDerivation");
+    export_type!(schemas, DeriveSessionTarget, "DeriveSessionTarget");
+    export_type!(schemas, DeriveSessionRequest, "DeriveSessionRequest");
+    export_type!(schemas, DeriveSessionResponse, "DeriveSessionResponse");
+    export_type!(
+        schemas,
         SessionHistoryListResponse,
         "SessionHistoryListResponse"
     );

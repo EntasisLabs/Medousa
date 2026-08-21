@@ -3,8 +3,8 @@
 use axum::http::Method;
 
 use medousa_api_contract::{
-    Audience, ContractRegistry, FeatureProfile, HttpMethod, OperationSpec, ResponseSpec, SchemaRef,
-    Stability, StreamTransport, stable_operation_id,
+    Audience, ContractRegistry, FeatureProfile, HttpMethod, OperationSpec, ParameterLocation,
+    ParameterSpec, ResponseSpec, SchemaRef, Stability, StreamTransport, stable_operation_id,
 };
 
 use crate::daemon::contract_bindings::{json_body, stream_binding, stream_spec, wire_binding};
@@ -111,6 +111,14 @@ pub fn operation_from_policy(policy: &RoutePolicy, profile: FeatureProfile) -> O
             status: 403,
             media_type: "application/json".into(),
             schema: SchemaRef::named("ApiErrorEnvelope"),
+        });
+    }
+    if operation_id == "sessions.derive.post" {
+        spec.parameters.push(ParameterSpec {
+            name: "Idempotency-Key".to_string(),
+            location: ParameterLocation::Header,
+            required: true,
+            schema: SchemaRef::named("string"),
         });
     }
     spec = spec.with_path_parameters();
@@ -348,12 +356,12 @@ mod tests {
     fn production_profiles_match_declared_counts() {
         let without_pairing = production_registry(false);
         let with_pairing = production_registry(true);
-        assert_eq!(without_pairing.len(), 370);
-        assert_eq!(with_pairing.len(), 382);
+        assert_eq!(without_pairing.len(), 379);
+        assert_eq!(with_pairing.len(), 391);
         let artifacts = artifacts(&with_pairing);
         let inventory: serde_json::Value =
             serde_json::from_str(&artifacts.route_inventory_json).unwrap();
-        assert_eq!(inventory["operations"].as_array().unwrap().len(), 382);
+        assert_eq!(inventory["operations"].as_array().unwrap().len(), 391);
         assert!(artifacts.openapi_json.contains("\"openapi\": \"3.2.0\""));
     }
 

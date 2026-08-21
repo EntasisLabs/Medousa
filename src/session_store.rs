@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use async_trait::async_trait;
 use medousa_types::SessionId;
 use medousa_types::session::{
-    ExecutionRef, TranscriptEntry, TranscriptEntryId, TranscriptEntryRef,
+    ExecutionRef, SessionDerivation, TranscriptEntry, TranscriptEntryId, TranscriptEntryRef,
 };
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -73,6 +73,24 @@ const SESSION_SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE INDEX idx_session_entry_membership ON TABLE session_entry COLUMNS session_id, entry_id UNIQUE",
     "DEFINE INDEX idx_session_entry_entry_id ON TABLE session_entry COLUMNS entry_id",
     "DEFINE INDEX idx_session_entry_search ON TABLE session_entry FIELDS search_text FULLTEXT ANALYZER medousa_transcript BM25 HIGHLIGHTS",
+    "DEFINE TABLE context_manifest SCHEMAFULL",
+    "DEFINE FIELD manifest_id ON TABLE context_manifest TYPE string",
+    "DEFINE FIELD manifest_json ON TABLE context_manifest TYPE string",
+    "DEFINE FIELD created_by ON TABLE context_manifest TYPE string",
+    "DEFINE FIELD created_at ON TABLE context_manifest TYPE datetime",
+    "DEFINE INDEX idx_context_manifest_id ON TABLE context_manifest COLUMNS manifest_id UNIQUE",
+    "DEFINE TABLE session_derivation SCHEMAFULL",
+    "DEFINE FIELD derivation_id ON TABLE session_derivation TYPE string",
+    "DEFINE FIELD target_session_id ON TABLE session_derivation TYPE string",
+    "DEFINE FIELD manifest_id ON TABLE session_derivation TYPE string",
+    "DEFINE FIELD idempotency_key_digest ON TABLE session_derivation TYPE string",
+    "DEFINE FIELD request_digest ON TABLE session_derivation TYPE string",
+    "DEFINE FIELD derivation_json ON TABLE session_derivation TYPE string",
+    "DEFINE FIELD created_by ON TABLE session_derivation TYPE string",
+    "DEFINE FIELD created_at ON TABLE session_derivation TYPE datetime",
+    "DEFINE INDEX idx_session_derivation_id ON TABLE session_derivation COLUMNS derivation_id UNIQUE",
+    "DEFINE INDEX idx_session_derivation_target ON TABLE session_derivation COLUMNS target_session_id UNIQUE",
+    "DEFINE INDEX idx_session_derivation_idempotency ON TABLE session_derivation COLUMNS created_by, idempotency_key_digest UNIQUE",
 ];
 
 const SESSION_SCHEMA_MIGRATIONS: &[&str] = &[
@@ -176,6 +194,47 @@ pub struct TranscriptAppend {
     pub existing_entry_id: Option<TranscriptEntryId>,
     pub source: Option<TranscriptEntryRef>,
     pub expected_digest: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DerivationCommitRequest {
+    pub derivation: SessionDerivation,
+    pub idempotency_key_digest: String,
+    pub request_digest: String,
+    pub entries: Vec<TranscriptAppend>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DerivationCommitOutcome {
+    pub derivation: SessionDerivation,
+    pub reused: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct DerivationLookup {
+    pub derivation: SessionDerivation,
+    pub idempotency_key_digest: String,
+    pub request_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, SurrealValue)]
+struct StoredDerivationRecord {
+    derivation_id: String,
+    target_session_id: String,
+    manifest_id: String,
+    idempotency_key_digest: String,
+    request_digest: String,
+    derivation_json: String,
+    created_by: String,
+    created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, SurrealValue)]
+struct StoredContextManifestRecord {
+    manifest_id: String,
+    manifest_json: String,
+    created_by: String,
+    created_at: chrono::DateTime<chrono::Utc>,
 }
 
 impl TranscriptAppend {
@@ -519,6 +578,65 @@ fn transcript_entry_from_records(
     })
 }
 
+fn stored_derivation_record(
+    request: &DerivationCommitRequest,
+) -> Result<StoredDerivationRecord, StoreError> {
+    let derivation = &request.derivation;
+    Ok(StoredDerivationRecord {
+        derivation_id: derivation.derivation_id.to_string(),
+        target_session_id: derivation.target_session.session_id.to_string(),
+        manifest_id: derivation.manifest.manifest_id.to_string(),
+        idempotency_key_digest: request.idempotency_key_digest.clone(),
+        request_digest: request.request_digest.clone(),
+        derivation_json: serde_json::to_string(derivation)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        created_by: derivation.created_by.clone(),
+        created_at: derivation.created_at,
+    })
+}
+
+fn decode_stored_derivation(
+    record: &StoredDerivationRecord,
+) -> Result<SessionDerivation, StoreError> {
+    serde_json::from_str(&record.derivation_json)
+        .map_err(|error| StoreError::Serialization(error.to_string()))
+}
+
+fn derivation_lookup(record: &StoredDerivationRecord) -> Result<DerivationLookup, StoreError> {
+    Ok(DerivationLookup {
+        derivation: decode_stored_derivation(record)?,
+        idempotency_key_digest: record.idempotency_key_digest.clone(),
+        request_digest: record.request_digest.clone(),
+    })
+}
+
+fn reused_derivation(
+    record: &StoredDerivationRecord,
+    request: &DerivationCommitRequest,
+) -> Result<DerivationCommitOutcome, StoreError> {
+    if record.idempotency_key_digest != request.idempotency_key_digest
+        || record.request_digest != request.request_digest
+    {
+        return Err(StoreError::InvalidInput(
+            "idempotency key was already used for another derivation request".to_string(),
+        ));
+    }
+    Ok(DerivationCommitOutcome {
+        derivation: decode_stored_derivation(record)?,
+        reused: true,
+    })
+}
+
+fn derivation_entries_match(existing: &[TranscriptEntry], expected: &[TranscriptEntry]) -> bool {
+    existing.len() == expected.len()
+        && existing.iter().zip(expected).all(|(left, right)| {
+            left.entry_id == right.entry_id
+                && left.entry_seq == right.entry_seq
+                && left.content_digest == right.content_digest
+                && left.source == right.source
+        })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommitDurability {
     /// The bytes were accepted by the capability-owned filesystem handle.
@@ -572,6 +690,16 @@ pub trait SessionStore: Send + Sync + 'static {
         entries: &[TranscriptAppend],
     ) -> Result<CommitReceipt, StoreError>;
 
+    async fn materialize_derivation(
+        &self,
+        request: &DerivationCommitRequest,
+    ) -> Result<DerivationCommitOutcome, StoreError>;
+
+    fn load_derivation(
+        &self,
+        target_session_id: &SessionId,
+    ) -> Result<Option<DerivationLookup>, StoreError>;
+
     async fn append_turn_batch(
         &self,
         session_id: &SessionId,
@@ -617,7 +745,9 @@ fn block_on<F: IntoFuture>(f: F) -> F::Output {
 
 struct FileSessionStore {
     files: Arc<crate::session_storage::SessionFileStore>,
+    derivations: Arc<crate::session_storage::SessionFileStore>,
     commit_locks: Arc<SessionCommitLocks>,
+    derivation_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl FileSessionStore {
@@ -627,8 +757,13 @@ impl FileSessionStore {
 
     fn at(root: std::path::PathBuf) -> Self {
         Self {
+            derivations: Arc::new(crate::session_storage::SessionFileStore::new(
+                root.join("derivations"),
+                "json",
+            )),
             files: Arc::new(crate::session_storage::SessionFileStore::new(root, "jsonl")),
             commit_locks: Arc::new(SessionCommitLocks::default()),
+            derivation_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -740,8 +875,99 @@ impl SessionStore for FileSessionStore {
         .map_err(|error| StoreError::Worker(error.to_string()))?
     }
 
+    async fn materialize_derivation(
+        &self,
+        request: &DerivationCommitRequest,
+    ) -> Result<DerivationCommitOutcome, StoreError> {
+        let _derivation = self.derivation_lock.lock().await;
+        let files = Arc::clone(&self.files);
+        let derivations = Arc::clone(&self.derivations);
+        let request = request.clone();
+        tokio::task::spawn_blocking(move || {
+            let target = &request.derivation.target_session.session_id;
+            match derivations.read(target) {
+                Ok(bytes) => {
+                    let record = serde_json::from_slice::<StoredDerivationRecord>(&bytes)
+                        .map_err(|error| StoreError::Serialization(error.to_string()))?;
+                    return reused_derivation(&record, &request);
+                }
+                Err(error) if error.is_not_found() => {}
+                Err(error) => return Err(StoreError::Backend(error.to_string())),
+            }
+
+            let mut seen = std::collections::HashSet::new();
+            let entries = request
+                .entries
+                .iter()
+                .enumerate()
+                .map(|(offset, append)| {
+                    if append.existing_entry_id.is_none() || append.source.is_none() {
+                        return Err(StoreError::InvalidInput(
+                            "derived entries require immutable ids and source coordinates"
+                                .to_string(),
+                        ));
+                    }
+                    let entry = materialize_append(offset as u64 + 1, append)?;
+                    if !seen.insert(entry.entry_id.clone()) {
+                        return Err(StoreError::InvalidInput(
+                            "a derivation cannot bind the same transcript entry twice".to_string(),
+                        ));
+                    }
+                    Ok(entry)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            if entries.is_empty() {
+                return Err(StoreError::InvalidInput(
+                    "a derivation requires at least one committed entry".to_string(),
+                ));
+            }
+
+            let (existing, _) = Self::read_entries(&files, target)?;
+            if existing.is_empty() {
+                files
+                    .atomic_write(target, &Self::encode_entries(&entries)?)
+                    .map_err(|error| StoreError::Backend(error.to_string()))?;
+            } else if !derivation_entries_match(&existing, &entries) {
+                return Err(StoreError::InvalidInput(
+                    "derived target session already contains different history".to_string(),
+                ));
+            }
+
+            let record = stored_derivation_record(&request)?;
+            let bytes = serde_json::to_vec(&record)
+                .map_err(|error| StoreError::Serialization(error.to_string()))?;
+            derivations
+                .atomic_write(target, &bytes)
+                .map_err(|error| StoreError::Backend(error.to_string()))?;
+            Ok(DerivationCommitOutcome {
+                derivation: request.derivation,
+                reused: false,
+            })
+        })
+        .await
+        .map_err(|error| StoreError::Worker(error.to_string()))?
+    }
+
+    fn load_derivation(
+        &self,
+        target_session_id: &SessionId,
+    ) -> Result<Option<DerivationLookup>, StoreError> {
+        match self.derivations.read(target_session_id) {
+            Ok(bytes) => {
+                let record = serde_json::from_slice::<StoredDerivationRecord>(&bytes)
+                    .map_err(|error| StoreError::Serialization(error.to_string()))?;
+                derivation_lookup(&record).map(Some)
+            }
+            Err(error) if error.is_not_found() => Ok(None),
+            Err(error) => Err(StoreError::Backend(error.to_string())),
+        }
+    }
+
     fn delete_session(&self, session_id: &SessionId) -> Result<(), String> {
         self.files
+            .remove(session_id)
+            .map_err(|error| error.to_string())?;
+        self.derivations
             .remove(session_id)
             .map_err(|error| error.to_string())?;
         if self
@@ -813,6 +1039,7 @@ impl SessionStore for FileSessionStore {
 pub struct SurrealSessionStore {
     db: Surreal<Any>,
     commit_locks: Arc<SessionCommitLocks>,
+    derivation_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl SurrealSessionStore {
@@ -820,6 +1047,7 @@ impl SurrealSessionStore {
         Self {
             db,
             commit_locks: Arc::new(SessionCommitLocks::default()),
+            derivation_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -1069,10 +1297,154 @@ impl SessionStore for SurrealSessionStore {
         })
     }
 
+    async fn materialize_derivation(
+        &self,
+        request: &DerivationCommitRequest,
+    ) -> Result<DerivationCommitOutcome, StoreError> {
+        let _derivation = self.derivation_lock.lock().await;
+        let target = &request.derivation.target_session.session_id;
+        let mut existing_response = self
+            .db
+            .query(
+                "SELECT derivation_id, target_session_id, manifest_id, \
+                 idempotency_key_digest, request_digest, derivation_json, created_by, created_at \
+                 FROM session_derivation WHERE target_session_id = $target_session_id LIMIT 1",
+            )
+            .bind(("target_session_id", target.to_string()))
+            .await
+            .map_err(|error| StoreError::Backend(error.to_string()))?;
+        if let Some(record) = existing_response
+            .take::<Vec<StoredDerivationRecord>>(0)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?
+            .into_iter()
+            .next()
+        {
+            return reused_derivation(&record, request);
+        }
+
+        let mut seen = std::collections::HashSet::new();
+        let entries = request
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(offset, append)| {
+                if append.existing_entry_id.is_none() || append.source.is_none() {
+                    return Err(StoreError::InvalidInput(
+                        "derived entries require immutable ids and source coordinates".to_string(),
+                    ));
+                }
+                let entry = materialize_append(offset as u64 + 1, append)?;
+                if !seen.insert(entry.entry_id.clone()) {
+                    return Err(StoreError::InvalidInput(
+                        "a derivation cannot bind the same transcript entry twice".to_string(),
+                    ));
+                }
+                Ok(entry)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if entries.is_empty() {
+            return Err(StoreError::InvalidInput(
+                "a derivation requires at least one committed entry".to_string(),
+            ));
+        }
+
+        #[derive(Debug, Deserialize, SurrealValue)]
+        struct EntryIdRow {
+            entry_id: String,
+        }
+        let entry_ids = entries
+            .iter()
+            .map(|entry| entry.entry_id.to_string())
+            .collect::<Vec<_>>();
+        let mut payload_response = self
+            .db
+            .query("SELECT entry_id FROM transcript_entry WHERE entry_id IN $entry_ids")
+            .bind(("entry_ids", entry_ids.clone()))
+            .await
+            .map_err(|error| StoreError::Backend(error.to_string()))?;
+        let available = payload_response
+            .take::<Vec<EntryIdRow>>(0)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?
+            .into_iter()
+            .map(|row| row.entry_id)
+            .collect::<std::collections::HashSet<_>>();
+        if entry_ids
+            .iter()
+            .any(|entry_id| !available.contains(entry_id))
+        {
+            return Err(StoreError::InvalidInput(
+                "a selected transcript payload is no longer available".to_string(),
+            ));
+        }
+
+        let record = stored_derivation_record(request)?;
+        let manifest = &request.derivation.manifest;
+        let manifest_record = StoredContextManifestRecord {
+            manifest_id: manifest.manifest_id.to_string(),
+            manifest_json: serde_json::to_string(manifest)
+                .map_err(|error| StoreError::Serialization(error.to_string()))?,
+            created_by: manifest.created_by.clone(),
+            created_at: manifest.created_at,
+        };
+        let bindings = entries
+            .iter()
+            .map(|entry| binding_record(target, entry))
+            .collect::<Vec<_>>();
+        let response = self
+            .db
+            .query(
+                "BEGIN TRANSACTION; \
+                 INSERT INTO context_manifest $manifests; \
+                 INSERT INTO session_derivation $derivations; \
+                 INSERT INTO session_entry $bindings; \
+                 COMMIT TRANSACTION;",
+            )
+            .bind(("manifests", vec![manifest_record]))
+            .bind(("derivations", vec![record]))
+            .bind(("bindings", bindings))
+            .await
+            .map_err(|error| StoreError::Backend(error.to_string()))?;
+        response
+            .check()
+            .map_err(|error| StoreError::Backend(error.to_string()))?;
+        Ok(DerivationCommitOutcome {
+            derivation: request.derivation.clone(),
+            reused: false,
+        })
+    }
+
+    fn load_derivation(
+        &self,
+        target_session_id: &SessionId,
+    ) -> Result<Option<DerivationLookup>, StoreError> {
+        let mut response = block_on(
+            self.db
+                .query(
+                    "SELECT derivation_id, target_session_id, manifest_id, \
+                     idempotency_key_digest, request_digest, derivation_json, created_by, created_at \
+                     FROM session_derivation WHERE target_session_id = $target_session_id LIMIT 1",
+                )
+                .bind(("target_session_id", target_session_id.to_string())),
+        )
+        .map_err(|error| StoreError::Backend(error.to_string()))?;
+        response
+            .take::<Vec<StoredDerivationRecord>>(0)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?
+            .into_iter()
+            .next()
+            .as_ref()
+            .map(derivation_lookup)
+            .transpose()
+    }
+
     fn delete_session(&self, session_id: &SessionId) -> Result<(), String> {
         #[derive(Debug, Deserialize, SurrealValue)]
         struct EntryIdRow {
             entry_id: String,
+        }
+        #[derive(Debug, Deserialize, SurrealValue)]
+        struct ManifestIdRow {
+            manifest_id: String,
         }
         let mut inventory = block_on(
             self.db
@@ -1086,14 +1458,31 @@ impl SessionStore for SurrealSessionStore {
             .into_iter()
             .map(|row| row.entry_id)
             .collect::<Vec<_>>();
+        let mut derivation_inventory = block_on(
+            self.db
+                .query(
+                    "SELECT manifest_id FROM session_derivation WHERE target_session_id = $session_id",
+                )
+                .bind(("session_id", session_id.to_string())),
+        )
+        .map_err(|error| error.to_string())?;
+        let manifest_ids = derivation_inventory
+            .take::<Vec<ManifestIdRow>>(0)
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .map(|row| row.manifest_id)
+            .collect::<Vec<_>>();
         let sql = "BEGIN TRANSACTION; \
                    DELETE session_entry WHERE session_id = $session_id; \
                    DELETE session_turn WHERE session_id = $session_id; \
+                   DELETE session_derivation WHERE target_session_id = $session_id; \
+                   DELETE context_manifest WHERE manifest_id IN $manifest_ids; \
                    COMMIT TRANSACTION;";
         let response = block_on(
             self.db
                 .query(sql)
-                .bind(("session_id", session_id.to_string())),
+                .bind(("session_id", session_id.to_string()))
+                .bind(("manifest_ids", manifest_ids)),
         )
         .map_err(|error| error.to_string())?;
         response.check().map_err(|error| error.to_string())?;
@@ -1325,7 +1714,10 @@ pub fn delete_session_transcript(session_id: &SessionId) -> Result<(), String> {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use medousa_types::session::{AuthorityId, ExecutionId};
+    use medousa_types::session::{
+        AuthorityId, ContextManifest, ContextManifestId, ConversationRangeSelection, DerivationId,
+        ExecutionId, ResolvedConversationRange, SessionDerivation, SessionRef,
+    };
 
     fn turn(content: &str) -> ConversationTurn {
         ConversationTurn {
@@ -1337,6 +1729,64 @@ mod tests {
             parts: None,
             slice_summary: None,
             speaker_profile_id: None,
+        }
+    }
+
+    fn test_authority(hex: char) -> AuthorityId {
+        AuthorityId::parse(format!("auth_{}", hex.to_string().repeat(64))).unwrap()
+    }
+
+    fn derivation_request(
+        authority: &AuthorityId,
+        source_session_id: &SessionId,
+        target_session_id: &SessionId,
+        source_entry: &TranscriptEntry,
+    ) -> DerivationCommitRequest {
+        let source_session = SessionRef {
+            authority_id: authority.clone(),
+            session_id: source_session_id.clone(),
+        };
+        let source = TranscriptEntryRef {
+            session: source_session.clone(),
+            entry_id: source_entry.entry_id.clone(),
+            entry_seq: source_entry.entry_seq,
+        };
+        let created_at = Utc::now();
+        let manifest = ContextManifest {
+            manifest_id: ContextManifestId::parse(format!("ctx_{}", "c".repeat(32))).unwrap(),
+            sources: vec![ResolvedConversationRange {
+                selection: ConversationRangeSelection {
+                    session: source_session,
+                    after_entry_seq: None,
+                    through_entry_seq: source_entry.entry_seq,
+                },
+                selection_digest: "sha256:selection".to_string(),
+            }],
+            created_by: "profile:user:test".to_string(),
+            created_at,
+        };
+        DerivationCommitRequest {
+            derivation: SessionDerivation {
+                derivation_id: DerivationId::parse(format!("drv_{}", "d".repeat(32))).unwrap(),
+                target_session: SessionRef {
+                    authority_id: authority.clone(),
+                    session_id: target_session_id.clone(),
+                },
+                manifest,
+                intent: "fork".to_string(),
+                caused_by: None,
+                created_by: "profile:user:test".to_string(),
+                created_at,
+            },
+            idempotency_key_digest: "sha256:idempotency".to_string(),
+            request_digest: "sha256:request".to_string(),
+            entries: vec![TranscriptAppend {
+                turn: source_entry.turn.clone(),
+                caused_by: source_entry.caused_by.clone(),
+                existing_entry_id: Some(source_entry.entry_id.clone()),
+                source: Some(source),
+                expected_digest: Some(source_entry.content_digest.clone()),
+            }],
         }
     }
 
@@ -1464,6 +1914,56 @@ mod tests {
             .map(|entry| entry.entry_id.as_str())
             .collect::<std::collections::HashSet<_>>();
         assert_eq!(ids.len(), 12);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn file_derivation_is_idempotent_and_survives_source_deletion() {
+        let root = std::env::temp_dir().join(format!(
+            "medousa-session-derive-file-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let store = FileSessionStore::at(root.clone());
+        let source_id = SessionId::parse("derive-file-source").unwrap();
+        let target_id = SessionId::parse("derive-file-target").unwrap();
+        store
+            .append_turn(&source_id, &turn("selected source"))
+            .await
+            .unwrap();
+        let source = store.load_transcript_entries(&source_id).remove(0);
+        let request = derivation_request(&test_authority('a'), &source_id, &target_id, &source);
+
+        let bad_target_id = SessionId::parse("derive-file-digest-conflict").unwrap();
+        let mut digest_conflict = request.clone();
+        digest_conflict.derivation.target_session.session_id = bad_target_id.clone();
+        digest_conflict.entries[0].expected_digest = Some("sha256:not-the-payload".to_string());
+        assert!(matches!(
+            store.materialize_derivation(&digest_conflict).await,
+            Err(StoreError::InvalidInput(_))
+        ));
+        assert!(store.load_transcript_entries(&bad_target_id).is_empty());
+
+        let first = store.materialize_derivation(&request).await.unwrap();
+        assert!(!first.reused);
+        let target = store.load_transcript_entries(&target_id);
+        assert_eq!(target.len(), 1);
+        assert_eq!(target[0].entry_id, source.entry_id);
+        assert_eq!(target[0].source.as_ref().unwrap().entry_seq, 1);
+
+        let replay = store.materialize_derivation(&request).await.unwrap();
+        assert!(replay.reused);
+        let mut conflict = request.clone();
+        conflict.request_digest = "sha256:different".to_string();
+        assert!(matches!(
+            store.materialize_derivation(&conflict).await,
+            Err(StoreError::InvalidInput(_))
+        ));
+
+        store.delete_session(&source_id).unwrap();
+        assert_eq!(store.load_transcript_entries(&target_id).len(), 1);
+        assert!(store.load_derivation(&target_id).unwrap().is_some());
+        store.delete_session(&target_id).unwrap();
+        assert!(store.load_derivation(&target_id).unwrap().is_none());
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -1629,5 +2129,43 @@ mod tests {
         let second = store.load_transcript_entries(&session_id);
         assert_eq!(second.len(), 1);
         assert_eq!(second[0].entry_id, first[0].entry_id);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn surreal_derivation_reuses_payload_and_retains_target_after_source_delete() {
+        let db = surrealdb::engine::any::connect("mem://").await.unwrap();
+        db.use_ns("session-derivation-tests")
+            .use_db(uuid::Uuid::new_v4().simple().to_string())
+            .await
+            .unwrap();
+        SurrealSessionStore::ensure_schema_for_db(&db)
+            .await
+            .unwrap();
+        let store = SurrealSessionStore::new(db);
+        let source_id = SessionId::parse("derive-surreal-source").unwrap();
+        let target_id = SessionId::parse("derive-surreal-target").unwrap();
+        store
+            .append_turn(&source_id, &turn("shared immutable payload"))
+            .await
+            .unwrap();
+        let source = store.load_transcript_entries(&source_id).remove(0);
+        let request = derivation_request(&test_authority('b'), &source_id, &target_id, &source);
+
+        assert!(!store.materialize_derivation(&request).await.unwrap().reused);
+        assert!(store.materialize_derivation(&request).await.unwrap().reused);
+        let target = store.load_transcript_entries(&target_id);
+        assert_eq!(target.len(), 1);
+        assert_eq!(target[0].entry_id, source.entry_id);
+        assert_eq!(
+            target[0].source.as_ref().unwrap().session.session_id,
+            source_id
+        );
+
+        store.delete_session(&source_id).unwrap();
+        let retained = store.load_transcript_entries(&target_id);
+        assert_eq!(retained.len(), 1);
+        assert_eq!(retained[0].turn.content, "shared immutable payload");
+        store.delete_session(&target_id).unwrap();
+        assert!(store.load_derivation(&target_id).unwrap().is_none());
     }
 }

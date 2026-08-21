@@ -17,6 +17,8 @@ import type {
   SessionCodeBindingResponse,
   SessionCodeProjectResponse,
   StartSessionCodeProjectRequest,
+  DeriveSessionRequest,
+  DeriveSessionResponse,
 } from "$lib/types/generated/daemon_api";
 import type { MediaRef, MediaUploadResponse } from "$lib/types/media";
 import type { StageRoutingMatrix } from "$lib/types/runtime";
@@ -82,6 +84,16 @@ export async function createSession(
     memberProfileIds: options?.memberProfileIds,
     agentProfileId: options?.agentProfileId,
     displayName: options?.displayName,
+  });
+}
+
+export async function deriveSession(
+  request: DeriveSessionRequest,
+  idempotencyKey: string,
+): Promise<DeriveSessionResponse> {
+  return invoke<DeriveSessionResponse>("session_derive", {
+    request,
+    idempotencyKey,
   });
 }
 

@@ -26,6 +26,10 @@ class Transport(Protocol):
 
     async def post_json(self, base_url: str, path: str, body: Any) -> Any: ...
 
+    async def post_json_with_headers(
+        self, base_url: str, path: str, body: Any, headers: dict[str, str]
+    ) -> Any: ...
+
     async def put_json(self, base_url: str, path: str, body: Any) -> Any: ...
 
     async def patch_json(self, base_url: str, path: str, body: Any) -> Any: ...
@@ -88,6 +92,18 @@ class HttpTransport:
             return {}
         return response.json()
 
+    async def post_json_with_headers(
+        self, base_url: str, path: str, body: Any, headers: dict[str, str]
+    ) -> Any:
+        client = await self._client_or_create()
+        response = await client.post(
+            f"{base_url.rstrip('/')}{normalize_path(path)}",
+            json=body,
+            headers=headers,
+        )
+        self._raise_for_status(response)
+        return response.json() if response.content else {}
+
     async def put_json(self, base_url: str, path: str, body: Any) -> Any:
         client = await self._client_or_create()
         response = await client.put(
@@ -125,9 +141,7 @@ class HttpTransport:
     async def stream_sse(self, base_url: str, path: str) -> httpx.Response:
         return await self.stream_sse_with_accept(base_url, path, "text/event-stream")
 
-    async def stream_sse_with_accept(
-        self, base_url: str, path: str, accept: str
-    ) -> httpx.Response:
+    async def stream_sse_with_accept(self, base_url: str, path: str, accept: str) -> httpx.Response:
         client = await self._client_or_create()
         request = client.build_request(
             "GET",
@@ -163,6 +177,13 @@ class WorkshopTransport(HttpTransport):
         response = await self._request("POST", url, json=body)
         return response.json() if response.content else {}
 
+    async def post_json_with_headers(
+        self, base_url: str, path: str, body: Any, headers: dict[str, str]
+    ) -> Any:
+        url = f"{base_url.rstrip('/')}{normalize_path(path)}"
+        response = await self._request("POST", url, json=body, headers=headers)
+        return response.json() if response.content else {}
+
     async def put_json(self, base_url: str, path: str, body: Any) -> Any:
         url = f"{base_url.rstrip('/')}{normalize_path(path)}"
         response = await self._request("PUT", url, json=body)
@@ -186,9 +207,7 @@ class WorkshopTransport(HttpTransport):
     async def stream_sse(self, base_url: str, path: str) -> httpx.Response:
         return await self.stream_sse_with_accept(base_url, path, "text/event-stream")
 
-    async def stream_sse_with_accept(
-        self, base_url: str, path: str, accept: str
-    ) -> httpx.Response:
+    async def stream_sse_with_accept(self, base_url: str, path: str, accept: str) -> httpx.Response:
         url = f"{base_url.rstrip('/')}{normalize_path(path)}"
         client = await self._client_or_create()
         response = await client.send(

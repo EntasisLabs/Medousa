@@ -1,11 +1,12 @@
 use crate::daemon::types::{
     ActiveSessionTurnResponse, AgentModeId, AgentModeListResponse, AgentModeProposalListResponse,
     AgentModeProposalResponse, AgentModeScope, AgentModeTransitionPolicy,
-    CancelActiveSessionTurnResponse, CodeIntentContext, MediaRef, SessionAgentModeResponse,
-    SessionCodeBindingResponse, SessionCodeProjectResponse, SessionDeleteQuery,
-    SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
-    SessionSetDisplayNameResponse, SetSessionAgentModeRequest, StageRoutingMatrix,
-    StartSessionCodeProjectRequest, TurnSurfaceContext,
+    CancelActiveSessionTurnResponse, CodeIntentContext, DeriveSessionRequest,
+    DeriveSessionResponse, MediaRef, SessionAgentModeResponse, SessionCodeBindingResponse,
+    SessionCodeProjectResponse, SessionDeleteQuery, SessionDeleteResponse,
+    SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameResponse,
+    SetSessionAgentModeRequest, StageRoutingMatrix, StartSessionCodeProjectRequest,
+    TurnSurfaceContext,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -59,6 +60,19 @@ pub async fn session_create(
         },
     )
     .await
+}
+
+#[tauri::command]
+pub async fn session_derive(
+    state: State<'_, DaemonState>,
+    request: DeriveSessionRequest,
+    idempotency_key: String,
+) -> Result<DeriveSessionResponse, String> {
+    client(&state)
+        .sessions()
+        .derive(&request, idempotency_key.trim())
+        .await
+        .map_err(sdk_error)
 }
 
 #[tauri::command]

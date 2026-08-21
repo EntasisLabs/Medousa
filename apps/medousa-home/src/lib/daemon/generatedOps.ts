@@ -323,6 +323,7 @@ export const OPERATIONS = {
   "sessions.by_session_id.turns.get": { id: "sessions.by_session_id.turns.get", method: "GET", path: "/v1/sessions/{session_id}/turns", streaming: false },
   "sessions.by_session_id.turns.post": { id: "sessions.by_session_id.turns.post", method: "POST", path: "/v1/sessions/{session_id}/turns", streaming: false },
   "sessions.by_session_id.workshop.steer.post": { id: "sessions.by_session_id.workshop.steer.post", method: "POST", path: "/v1/sessions/{session_id}/workshop/steer", streaming: false },
+  "sessions.derive.post": { id: "sessions.derive.post", method: "POST", path: "/v1/sessions/derive", streaming: false },
   "sessions.get": { id: "sessions.get", method: "GET", path: "/v1/sessions", streaming: false },
   "sessions.post": { id: "sessions.post", method: "POST", path: "/v1/sessions", streaming: false },
   "sessions.search.get": { id: "sessions.search.get", method: "GET", path: "/v1/sessions/search", streaming: false },
