@@ -60,7 +60,7 @@
           {#if command}<button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-content-quiet hover:bg-surface-800" aria-pressed={commandRevealed} onclick={() => (commandRevealed = !commandRevealed)}>Command</button>{/if}
           <button type="button" class="rounded p-1 text-content-quiet hover:bg-surface-800 hover:text-content-secondary" aria-label="Copy output" title="Copy output" onclick={() => void copyOutput()}><Copy size={11} /></button>
           <button type="button" class="rounded p-1 text-content-quiet hover:bg-surface-800 hover:text-content-secondary" aria-label="Clear output" title="Clear output" onclick={() => tasks.clearOutput()}><Trash2 size={11} /></button>
-          {#if tasks.running}<button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-rose-200 hover:bg-rose-500/10" onclick={() => void tasks.stopDetected()}>Stop</button>
+          {#if tasks.running}<button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-rose-200 hover:bg-rose-500/10" onclick={() => void tasks.stopDetected()}>{tasks.run?.state === "stopping" ? "Force stop" : "Stop"}</button>
           {:else if tasks.result}<button type="button" class="rounded p-1 text-content-quiet hover:bg-surface-800 hover:text-content-secondary" aria-label="Rerun task" title="Rerun task" onclick={() => void tasks.rerunLast()}><RotateCcw size={11} /></button>{/if}
         {:else if active === "terminal"}
           <SquareTerminal size={11} class="text-content-quiet" />

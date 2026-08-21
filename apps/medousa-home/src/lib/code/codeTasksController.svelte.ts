@@ -24,6 +24,8 @@ import {
 import { resolveTaskPreviewOpenUrl } from "$lib/code/taskPreviewUrl";
 import { openInBrowser } from "$lib/utils/openInBrowser";
 import { deferCodeWorkspaceWork } from "$lib/utils/codeWorkspaceTrace";
+import { shellTabs } from "$lib/stores/shellTabs.svelte";
+import { browser } from "$lib/stores/browser.svelte";
 
 export type CodeTaskLocation = {
   path: string;
@@ -393,7 +395,7 @@ export class CodeTasksController {
   }
 
   runStillActive(run: ProjectTaskRun): boolean {
-    if (run.state === "running" || run.state === "ready") return true;
+    if (run.state === "running" || run.state === "ready" || run.state === "stopping") return true;
     // Cancel flips state before the process exits and final result lands.
     if (run.state === "cancelled" && !run.result) return true;
     return false;
@@ -491,13 +493,14 @@ export class CodeTasksController {
     }
   }
 
-  async openPreview() {
+  async openPreview(besideCode = false) {
     if (!(this.readyUrl || this.run?.ready_url) || this.previewOpening) return;
     this.previewOpening = true;
     this.#deps.onError("");
     try {
       if (!this.run) throw new Error("No task run is available");
       const workId = this.#deps.getWorkId();
+      const sourceGroupId = shellTabs.activeGroupId;
       const { url } = await resolveTaskPreviewOpenUrl(workId, {
         ...this.run,
         ready_url: this.readyUrl ?? this.run.ready_url,
@@ -507,6 +510,17 @@ export class CodeTasksController {
         workCardId: workId,
         title: this.run.task.label,
       });
+      if (besideCode) {
+        const browserTab = browser.activeTab;
+        if (browserTab) {
+          const shellTabId = shellTabs.openWeb(browserTab.id, {
+            activate: false,
+            groupId: sourceGroupId,
+            title: this.run.task.label,
+          });
+          if (shellTabId) shellTabs.splitGroupWithTab(sourceGroupId, shellTabId, "right");
+        }
+      }
     } catch (err) {
       this.#deps.onError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -531,12 +545,21 @@ export class CodeTasksController {
     }
   }
 
-  async stopDetected() {
-    if (!this.run || (this.run.state !== "running" && this.run.state !== "ready")) {
+  async stopDetected(force = false) {
+    if (
+      !this.run ||
+      (this.run.state !== "running" &&
+        this.run.state !== "ready" &&
+        this.run.state !== "stopping")
+    ) {
       return;
     }
     try {
-      this.run = await cancelProjectTaskRun(this.#deps.getWorkId(), this.run.run_id);
+      this.run = await cancelProjectTaskRun(
+        this.#deps.getWorkId(),
+        this.run.run_id,
+        force || this.run.state === "stopping",
+      );
     } catch (err) {
       this.#deps.onError(err instanceof Error ? err.message : String(err));
     }

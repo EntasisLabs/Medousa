@@ -970,6 +970,9 @@ export type ProjectTaskRun = {
   locations?: ProjectTaskLocation[];
   /** Loopback URL when a background task reports ready. */
   ready_url?: string | null;
+  session_id?: string | null;
+  attach_path?: string | null;
+  preview_path?: string | null;
 };
 
 export type ProjectTaskRunSummary = {
@@ -984,6 +987,9 @@ export type ProjectTaskRunSummary = {
   output_truncated: boolean;
   next_seq: number;
   ready_url?: string | null;
+  session_id?: string | null;
+  attach_path?: string | null;
+  preview_path?: string | null;
 };
 
 export type ProjectTaskRunList = {
@@ -1136,8 +1142,9 @@ export async function getProjectTaskRuns(
   );
 }
 
-export async function cancelProjectTaskRun(workId: string, runId: string): Promise<ProjectTaskRun> {
-  return forgeFetch(operationPath("forge.items.by_work_id.task_runs.by_run_id.delete", { work_id: workId, run_id: runId }), {
+export async function cancelProjectTaskRun(workId: string, runId: string, force = false): Promise<ProjectTaskRun> {
+  const path = operationPath("forge.items.by_work_id.task_runs.by_run_id.delete", { work_id: workId, run_id: runId });
+  return forgeFetch(`${path}${force ? "?force=true" : ""}`, {
     method: "DELETE",
   });
 }

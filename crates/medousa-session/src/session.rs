@@ -50,6 +50,8 @@ pub struct SessionMeta {
     pub root_kind: SessionRootKind,
     #[serde(default)]
     pub work_id: Option<String>,
+    /// Empty for an interactive login shell; otherwise the directly hosted command.
+    pub argv: Vec<String>,
     #[serde(skip)]
     pub created_at: Instant,
     #[serde(skip)]
@@ -61,6 +63,7 @@ struct PtyHandles {
     writer: Mutex<Box<dyn Write + Send>>,
     kill: Mutex<Box<dyn portable_pty::ChildKiller + Send>>,
     exited: Arc<AtomicBool>,
+    exit_code: Arc<Mutex<Option<i32>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -103,6 +106,18 @@ impl Session {
         cols: u16,
         rows: u16,
     ) -> anyhow::Result<Arc<Self>> {
+        Self::spawn_command_with_size(session_id, cwd, root_kind, work_id, Vec::new(), cols, rows)
+    }
+
+    pub fn spawn_command_with_size(
+        session_id: SessionId,
+        cwd: PathBuf,
+        root_kind: SessionRootKind,
+        work_id: Option<String>,
+        argv: Vec<String>,
+        cols: u16,
+        rows: u16,
+    ) -> anyhow::Result<Arc<Self>> {
         std::fs::create_dir_all(&cwd)?;
         let cwd = cwd.canonicalize().unwrap_or(cwd);
         let size = normalized_pty_size(cols, rows);
@@ -110,17 +125,26 @@ impl Session {
         let pty_system = native_pty_system();
         let pair = pty_system.openpty(size)?;
 
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| {
-            if cfg!(windows) {
-                "cmd.exe".into()
-            } else {
-                "/bin/sh".into()
+        let mut cmd = if let Some(program) = argv.first() {
+            let mut command = CommandBuilder::new(program);
+            for arg in &argv[1..] {
+                command.arg(arg);
             }
-        });
-        let mut cmd = CommandBuilder::new(shell.clone());
-        if !cfg!(windows) && (shell.ends_with("zsh") || shell.ends_with("bash")) {
-            cmd.arg("-l");
-        }
+            command
+        } else {
+            let shell = std::env::var("SHELL").unwrap_or_else(|_| {
+                if cfg!(windows) {
+                    "cmd.exe".into()
+                } else {
+                    "/bin/sh".into()
+                }
+            });
+            let mut command = CommandBuilder::new(shell.clone());
+            if !cfg!(windows) && (shell.ends_with("zsh") || shell.ends_with("bash")) {
+                command.arg("-l");
+            }
+            command
+        };
         cmd.cwd(&cwd);
         cmd.env("TERM", "xterm-256color");
 
@@ -129,8 +153,14 @@ impl Session {
 
         let exited = Arc::new(AtomicBool::new(false));
         let exited_reader = Arc::clone(&exited);
+        let exit_code = Arc::new(Mutex::new(None));
+        let exit_code_reader = Arc::clone(&exit_code);
         std::thread::spawn(move || {
-            let _ = child.wait();
+            if let Ok(status) = child.wait()
+                && let Ok(mut code) = exit_code_reader.lock()
+            {
+                *code = Some(status.exit_code() as i32);
+            }
             exited_reader.store(true, Ordering::SeqCst);
         });
 
@@ -177,6 +207,7 @@ impl Session {
                 cwd,
                 root_kind,
                 work_id,
+                argv,
                 created_at: Instant::now(),
                 last_activity: Arc::new(RwLock::new(Instant::now())),
             },
@@ -187,6 +218,7 @@ impl Session {
                 writer: Mutex::new(writer),
                 kill: Mutex::new(killer),
                 exited,
+                exit_code,
             },
         }))
     }
@@ -234,6 +266,10 @@ impl Session {
 
     pub fn exited(&self) -> bool {
         self.pty.exited.load(Ordering::SeqCst)
+    }
+
+    pub fn exit_code(&self) -> Option<i32> {
+        self.pty.exit_code.lock().ok().and_then(|code| *code)
     }
 
     pub fn kill(&self) {
@@ -289,6 +325,30 @@ impl SessionManager {
         let cwd = cwd.unwrap_or_else(|| self.default_workspace.clone());
         let id = SessionId::new();
         let session = Session::spawn_with_size(id.clone(), cwd, root_kind, work_id, cols, rows)?;
+        self.sessions.write().await.insert(id, Arc::clone(&session));
+        Ok(session)
+    }
+
+    pub async fn create_command_with_size(
+        &self,
+        root_kind: SessionRootKind,
+        cwd: Option<PathBuf>,
+        work_id: Option<String>,
+        argv: Vec<String>,
+        cols: u16,
+        rows: u16,
+    ) -> anyhow::Result<Arc<Session>> {
+        let cwd = cwd.unwrap_or_else(|| self.default_workspace.clone());
+        let id = SessionId::new();
+        let session = Session::spawn_command_with_size(
+            id.clone(),
+            cwd,
+            root_kind,
+            work_id,
+            argv,
+            cols,
+            rows,
+        )?;
         self.sessions.write().await.insert(id, Arc::clone(&session));
         Ok(session)
     }
@@ -406,5 +466,44 @@ mod tests {
         session.kill();
         assert_eq!(size.cols, 156);
         assert_eq!(size.rows, 61);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn hosts_a_command_directly_in_one_pty() {
+        let dir = tempfile::tempdir().unwrap();
+        let mgr = SessionManager::new(dir.path().to_path_buf());
+        let argv = vec![
+            "/bin/sh".to_string(),
+            "-c".to_string(),
+            "printf task-ready".to_string(),
+        ];
+        let session = mgr
+            .create_command_with_size(
+                SessionRootKind::Forge,
+                None,
+                Some("work-1".into()),
+                argv.clone(),
+                100,
+                30,
+            )
+            .await
+            .unwrap();
+
+        for _ in 0..50 {
+            if session.exited() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        let output = session
+            .output_snapshot()
+            .into_iter()
+            .flat_map(|chunk| chunk.bytes)
+            .collect::<Vec<_>>();
+        assert_eq!(session.meta.argv, argv);
+        assert_eq!(session.exit_code(), Some(0));
+        assert!(String::from_utf8_lossy(&output).contains("task-ready"));
     }
 }

@@ -26,7 +26,10 @@ export async function resolveTaskPreviewOpenUrl(
   if (isCoLocatedWorkshop()) {
     return { url: readyUrl, via: "direct" };
   }
-  const preview = await createProjectTaskRunPreview(workId, run.run_id);
+  const retainedPath = run.preview_path?.trim();
+  const preview = retainedPath
+    ? { preview_path: retainedPath }
+    : await createProjectTaskRunPreview(workId, run.run_id);
   const base = (await getDaemonUrl()).replace(/\/$/, "");
   if (!isHttpDaemonBase(base)) {
     throw new Error(

@@ -84,6 +84,14 @@ describe("CodeTasksController", () => {
       registry_evicted_count: 0,
     });
     api.getProjectTasks.mockResolvedValue([checkTask]);
+    api.cancelProjectTaskRun.mockImplementation(
+      (_workId: string, _runId: string, force: boolean) => Promise.resolve({
+        run_id: "run-1",
+        work_id: "work-1",
+        state: force ? "cancelled" : "stopping",
+        task: checkTask,
+      }),
+    );
   });
 
   it("does not start a task when saving dirty buffers is blocked", async () => {
@@ -131,6 +139,23 @@ describe("CodeTasksController", () => {
 
     expect(controller.outputOpen).toBe(false);
     expect(persistOutputOpen).not.toHaveBeenCalled();
+  });
+
+  it("offers graceful stop before force stop", async () => {
+    const { controller } = createController();
+    controller.run = {
+      run_id: "run-1",
+      work_id: "work-1",
+      state: "running",
+      task: checkTask,
+    };
+    controller.running = true;
+
+    await controller.stopDetected();
+    await controller.stopDetected();
+
+    expect(api.cancelProjectTaskRun).toHaveBeenNthCalledWith(1, "work-1", "run-1", false);
+    expect(api.cancelProjectTaskRun).toHaveBeenNthCalledWith(2, "work-1", "run-1", true);
   });
 
   it("persists an explicitly selected project task", () => {

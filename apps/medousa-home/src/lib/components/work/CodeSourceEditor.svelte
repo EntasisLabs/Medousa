@@ -619,6 +619,12 @@
       return;
     }
     setFeedbackPanel("terminal");
+    const runSessionId = tasks.run?.session_id?.trim();
+    if (runSessionId) {
+      dockSessionId = runSessionId;
+      undertakings.bindTerminal(runSessionId);
+      return;
+    }
     if (dockSessionId) return;
     dockBusy = true;
     surfaceError = null;
@@ -649,7 +655,17 @@
 
   async function popOutTerminal() {
     if (!detail) return;
+    const runSessionId = tasks.run?.session_id?.trim();
     setFeedbackPanel(null);
+    if (runSessionId) {
+      undertakings.bindTerminal(runSessionId);
+      shellTabs.openTerminal(runSessionId, {
+        activate: true,
+        title: `Task · ${tasks.run?.task.label ?? detail.title}`,
+        workId,
+      });
+      return;
+    }
     await openTrackedTerminal(detail, { activate: true });
   }
 
@@ -1702,7 +1718,7 @@
       saveWhisper: save.saveWhisper,
       control: statusControlLabel,
       execution: tasks.running
-        ? `${tasks.run?.task.label ?? "Task"} · ${tasks.run?.state === "ready" ? "ready" : "running"}`
+        ? `${tasks.run?.task.label ?? "Task"} · ${tasks.run?.state === "ready" ? "ready" : tasks.run?.state === "stopping" ? "stopping" : "running"}`
         : tasks.result
           ? `${tasks.result.task.label} · ${tasks.result.success ? "passed" : "failed"}`
           : null,

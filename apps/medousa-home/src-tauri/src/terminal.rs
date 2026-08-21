@@ -349,6 +349,15 @@ async fn run_terminal_transport<S>(
                                         },
                                     );
                                 }
+                                Some("exit") => {
+                                    let code = value
+                                        .get("exit_code")
+                                        .and_then(|value| value.as_i64());
+                                    break Some(code.map_or_else(
+                                        || "Task process exited".to_string(),
+                                        |code| format!("Task process exited with code {code}"),
+                                    ));
+                                }
                                 _ => {}
                             }
                         }

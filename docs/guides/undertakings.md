@@ -256,9 +256,13 @@ and check commands; an explicit selection remains the project default.
 - Completed checks are written into Forge command evidence. Review uses the
   latest completed result to say whether verification passed; cancelled runs
   are preserved as activity but do not pretend the revision failed.
-- Attachment of task runs to interactive PTY Terminal sessions and full OSC shell
-  integration remain later work. Terminal stays the interactive escape hatch with
-  find, path links, session switching, and run-selection.
+- Interactive and background commands run directly in one workshop PTY. Open
+  the Terminal channel to type into that same task process; hiding, reopening,
+  moving, or popping out the pane only detaches and does not restart the task.
+  Stop first sends an interrupt and changes to **Force stop** if the process
+  remains alive. Ready applications offer **Open Preview** and **Open Beside
+  Code** through Medousa's Web surface. Full OSC shell integration remains
+  later work.
 
 ## What each surface does
 

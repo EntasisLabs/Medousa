@@ -84,7 +84,7 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | GET | `/v1/forge/items/{id}/tasks` | Manifest-derived checks plus safe `.vscode/tasks.json` entries |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/runs` | Start a named, cancellable project run |
 | GET | `/v1/forge/items/{id}/task-runs?limit=…` | List bounded active/recent run summaries for reconnect hydration |
-| GET/DELETE | `/v1/forge/items/{id}/task-runs/{run_id}` | Poll or cancel a project run (includes live bounded `stdout`/`stderr`, `locations`, readiness `state`) |
+| GET/DELETE | `/v1/forge/items/{id}/task-runs/{run_id}` | Poll or gracefully stop a project run (includes live bounded output, locations, readiness, and PTY attach state); `?force=true` force-stops |
 | GET (SSE) | `/v1/forge/items/{id}/task-runs/{run_id}/events?since=…` | Stream task output chunks, incremental locations, readiness, and terminal state (`?since=` replay) |
 | POST | `/v1/forge/items/{id}/task-runs/{run_id}/preview` | Mint a tokenized private preview path for a ready run |
 | ANY | `/v1/forge/preview/{token}/…` | Reverse-proxy to workshop `127.0.0.1:{port}` (token-gated; no public app bind) |
@@ -188,6 +188,15 @@ terminal limit/TTL, and a monotonic daemon-registry eviction count. Home fetches
 the exact selected snapshot, resumes SSE from `next_seq`,
 and falls back to a persisted active/recent run reference when connected to an
 older daemon without the collection route.
+
+Interactive, background, and long-running tasks are hosted directly in one
+`medousa-session` PTY rather than launched once for Output and again for
+Terminal. Their run snapshots and summaries include `session_id` and the
+daemon-relative `attach_path`; every Home Terminal attachment is a peer on that
+same workshop process. Cancellation first publishes `stopping` and sends an
+interrupt. Repeating Stop with `?force=true` kills the hosted process. A ready
+run also retains its tokenized `preview_path` alongside `ready_url` for Web
+reattach; preview grants outlive the bounded run-registry TTL.
 
 When readiness fires, the daemon may extract a loopback URL (`localhost` /
 `127.0.0.1` / `0.0.0.0`) into `ready_url` and mint a short-lived preview token.

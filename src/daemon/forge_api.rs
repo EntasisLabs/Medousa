@@ -13,6 +13,7 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{delete, get, patch, post, put};
+use base64::Engine as _;
 use medousa_forge::adapter::{ScriptAdapter, export_bundle};
 use medousa_forge::error::ForgeError;
 use medousa_forge::forge::{Forge, SealOptions};
@@ -1960,8 +1961,8 @@ async fn list_items(
     Query(query): Query<ListItemsQuery>,
 ) -> ApiResult<axum::response::Response> {
     use axum::response::IntoResponse;
-    let forge = forge(&state);
     let paginated = query.limit.is_some() || query.cursor.is_some();
+    let forge = forge(&state);
     let result = admit_forge_canary(
         &state,
         medousa_forge::execution::ExecutionClass::StoreIo,
@@ -6472,6 +6473,14 @@ struct ProjectTaskRun {
     /// Loopback URL detected when a long-running task became ready.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ready_url: Option<String>,
+    /// Shared workshop PTY session for interactive/background commands.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    attach_path: Option<String>,
+    /// Tokenized Browser path retained with the ready run snapshot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    preview_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -6490,6 +6499,12 @@ struct ProjectTaskRunSummary {
     next_seq: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     ready_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attach_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    preview_path: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -6519,6 +6534,9 @@ impl From<ProjectTaskRun> for ProjectTaskRunSummary {
             output_truncated: run.output_truncated,
             next_seq: run.next_seq,
             ready_url: run.ready_url,
+            session_id: run.session_id,
+            attach_path: run.attach_path,
+            preview_path: run.preview_path,
         }
     }
 }
@@ -6646,11 +6664,15 @@ static PROJECT_TASK_MEMORY: LazyLock<Arc<tokio::sync::Semaphore>> = LazyLock::ne
         PROJECT_TASK_GLOBAL_MEMORY_BYTES,
     ))
 });
-static PROJECT_TASK_CHILDREN: LazyLock<
-    tokio::sync::RwLock<
-        std::collections::HashMap<String, Arc<tokio::sync::Mutex<tokio::process::Child>>>,
-    >,
+enum ProjectTaskProcess {
+    Child(Arc<tokio::sync::Mutex<tokio::process::Child>>),
+    Session { session_id: String },
+}
+
+static PROJECT_TASK_PROCESSES: LazyLock<
+    tokio::sync::RwLock<std::collections::HashMap<String, Arc<ProjectTaskProcess>>>,
 > = LazyLock::new(|| tokio::sync::RwLock::new(std::collections::HashMap::new()));
+static PROJECT_TASK_START_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static PROJECT_TASK_EVICTED_COUNT: AtomicU64 = AtomicU64::new(0);
 
 fn prune_project_task_runs(
@@ -6900,7 +6922,13 @@ async fn publish_task_output(run_id: &str, stream: &str, text: &str) {
     };
     if became_ready {
         if let (true, Some(url)) = (!work_id.is_empty(), ready_url.as_ref()) {
-            let _ = crate::daemon::forge_preview::mint_preview_grant(&work_id, run_id, url).await;
+            if let Some(token) =
+                crate::daemon::forge_preview::mint_preview_grant(&work_id, run_id, url).await
+                && let Some(handle) = PROJECT_TASK_RUNS.read().await.get(run_id).cloned()
+            {
+                handle.store.lock().await.run.preview_path =
+                    Some(crate::daemon::forge_preview::preview_path_for_token(&token));
+            }
         }
         publish_task_state(run_id, "ready", None).await;
     }
@@ -6986,6 +7014,194 @@ async fn pump_task_stderr(run_id: String, mut reader: tokio::process::ChildStder
             }
             Err(_) => break,
         }
+    }
+}
+
+async fn finish_project_task_run(
+    state: AppState,
+    item: WorkItem,
+    lease: ExecutionLease,
+    root: PathBuf,
+    working_root: PathBuf,
+    task: ProjectTask,
+    run_id: String,
+    started: std::time::Instant,
+    exit_code: Option<i32>,
+) {
+    // Give pipe/PTY pumps a moment to publish final bytes before sealing evidence.
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    let (stdout, stderr, output_truncated, prior_locations, problem_re) = {
+        let handle = PROJECT_TASK_RUNS.read().await.get(&run_id).cloned();
+        if let Some(handle) = handle {
+            let store = handle.store.lock().await;
+            (
+                store.stdout.materialize(),
+                store.stderr.materialize(),
+                store.run.output_truncated,
+                store.run.locations.clone(),
+                store.problem_re.clone(),
+            )
+        } else {
+            (String::new(), String::new(), false, Vec::new(), None)
+        }
+    };
+    let mut locations = prior_locations;
+    merge_task_locations(
+        &mut locations,
+        parse_output_locations_with_matcher(
+            &root,
+            &working_root,
+            &format!("{stdout}\n{stderr}"),
+            problem_re.as_ref(),
+        ),
+    );
+    let result = ProjectTaskResult {
+        task: task.clone(),
+        success: exit_code == Some(0),
+        exit_code,
+        stdout,
+        stderr,
+        truncated: output_truncated,
+        duration_ms: started.elapsed().as_millis(),
+        locations,
+    };
+    let cancelled = if let Some(handle) = PROJECT_TASK_RUNS.read().await.get(&run_id).cloned() {
+        let store = handle.store.lock().await;
+        matches!(store.run.state.as_str(), "stopping" | "cancelled")
+    } else {
+        false
+    };
+    let _ = forge(&state).append_command_log(
+        &lease,
+        &serde_json::json!({
+            "kind": if cancelled { "project_task_cancelled" } else { "project_task" },
+            "run_id": run_id,
+            "task": result.task,
+            "success": result.success,
+            "exit_code": result.exit_code,
+            "duration_ms": result.duration_ms,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "truncated": result.truncated,
+            "locations": result.locations,
+        }),
+    );
+    let final_state = if cancelled {
+        "cancelled"
+    } else if result.success {
+        "passed"
+    } else {
+        "failed"
+    };
+    publish_task_state(&run_id, final_state, Some(result)).await;
+    PROJECT_TASK_PROCESSES.write().await.remove(&run_id);
+    publish_item(&state, &item, "task_finished");
+}
+
+async fn pump_project_task_session(
+    state: AppState,
+    item: WorkItem,
+    lease: ExecutionLease,
+    root: PathBuf,
+    working_root: PathBuf,
+    task: ProjectTask,
+    run_id: String,
+    session_id: String,
+) {
+    use futures_util::StreamExt;
+    use tokio_tungstenite::tungstenite::Message;
+
+    let started = std::time::Instant::now();
+    let mut after_sequence = 0_u64;
+    loop {
+        let host = state.shell_sessions.clone().unwrap_or_default();
+        let info = crate::daemon::shell_session_host::ensure_shell_session_host(&host).await;
+        if !info.available {
+            publish_task_output(&run_id, "stderr", &format!("{}\n", info.message)).await;
+            finish_project_task_run(
+                state,
+                item,
+                lease,
+                root,
+                working_root,
+                task,
+                run_id,
+                started,
+                Some(1),
+            )
+            .await;
+            return;
+        }
+        let ws_base = info.url.replacen("http", "ws", 1);
+        let url = format!(
+            "{ws_base}/v1/sessions/shell/{}?after_sequence={after_sequence}",
+            urlencoding::encode(&session_id)
+        );
+        let Ok((mut ws, _)) = tokio_tungstenite::connect_async(&url).await else {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            continue;
+        };
+        let mut exited = None;
+        while let Some(message) = ws.next().await {
+            let Ok(Message::Text(text)) = message else {
+                continue;
+            };
+            let Ok(frame) = serde_json::from_str::<serde_json::Value>(&text) else {
+                continue;
+            };
+            match frame.get("type").and_then(serde_json::Value::as_str) {
+                Some("stdout") => {
+                    if let Some(sequence) =
+                        frame.get("sequence").and_then(serde_json::Value::as_u64)
+                    {
+                        after_sequence = after_sequence.max(sequence);
+                    }
+                    if let Some(encoded) = frame.get("data").and_then(serde_json::Value::as_str)
+                        && let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(encoded)
+                    {
+                        publish_task_output(&run_id, "stdout", &String::from_utf8_lossy(&bytes))
+                            .await;
+                    }
+                }
+                Some("ready") => {
+                    if let Some(sequence) =
+                        frame.get("sequence").and_then(serde_json::Value::as_u64)
+                    {
+                        after_sequence = after_sequence.max(sequence);
+                    }
+                }
+                Some("exit") => {
+                    exited = frame
+                        .get("exit_code")
+                        .and_then(serde_json::Value::as_i64)
+                        .and_then(|code| i32::try_from(code).ok());
+                    break;
+                }
+                _ => {}
+            }
+        }
+        if exited.is_some() {
+            finish_project_task_run(
+                state,
+                item,
+                lease,
+                root,
+                working_root,
+                task,
+                run_id,
+                started,
+                exited,
+            )
+            .await;
+            return;
+        }
+        if project_task_run_snapshot(&run_id)
+            .await
+            .is_none_or(|run| task_run_is_terminal(&run))
+        {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     }
 }
 
@@ -8373,11 +8589,10 @@ async fn start_project_task_run(
         },
     )
     .await?;
-    let forge = forge(&state);
     let run_id = format!("run-{}", uuid::Uuid::new_v4());
     let ready_re = compile_ready_pattern(&task);
     let problem_re = compile_problem_pattern(&task);
-    let run = ProjectTaskRun {
+    let mut run = ProjectTaskRun {
         run_id: run_id.clone(),
         work_id: work_id.clone(),
         state: "running".into(),
@@ -8392,29 +8607,13 @@ async fn start_project_task_run(
         next_seq: 0,
         locations: Vec::new(),
         ready_url: None,
+        session_id: None,
+        attach_path: None,
+        preview_path: None,
     };
-    let memory_permit = Arc::clone(&PROJECT_TASK_MEMORY)
-        .try_acquire_many_owned(PROJECT_TASK_RUN_MEMORY_RESERVATION)
-        .map_err(|_| {
-            request_error(
-                StatusCode::TOO_MANY_REQUESTS,
-                "Project task memory budget is exhausted; wait for an earlier run to expire",
-            )
-        })?;
-    let mut child = background_tokio_command(&task.argv[0])
-        .args(&task.argv[1..])
-        .current_dir(&working_root)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|err| {
-            request_error(
-                StatusCode::BAD_REQUEST,
-                format!("Could not run {}: {err}", task.label),
-            )
-        })?;
-    let (tx, _) = tokio::sync::broadcast::channel(256);
+    // Serialize admission through process creation so a rejected registry slot
+    // can never leak an already-hosted PTY command.
+    let _start_guard = PROJECT_TASK_START_LOCK.lock().await;
     {
         let mut runs = PROJECT_TASK_RUNS.write().await;
         prune_project_task_runs(&mut runs);
@@ -8424,6 +8623,53 @@ async fn start_project_task_run(
                 "Project task run registry is full; wait for a terminal run to expire",
             ));
         }
+    }
+    let memory_permit = Arc::clone(&PROJECT_TASK_MEMORY)
+        .try_acquire_many_owned(PROJECT_TASK_RUN_MEMORY_RESERVATION)
+        .map_err(|_| {
+            request_error(
+                StatusCode::TOO_MANY_REQUESTS,
+                "Project task memory budget is exhausted; wait for an earlier run to expire",
+            )
+        })?;
+    let hosted_in_session = task.interactive || task.background || task.long_running;
+    let session_id = if hosted_in_session {
+        let session_id = crate::daemon::shell_session_host::create_project_task_session(
+            &state,
+            &work_id,
+            &working_root,
+            &task.argv,
+        )
+        .await
+        .map_err(|(status, message)| request_error(status, message))?;
+        run.session_id = Some(session_id.clone());
+        run.attach_path = Some(format!("/v1/sessions/shell/{session_id}"));
+        Some(session_id)
+    } else {
+        None
+    };
+    let mut child = if hosted_in_session {
+        None
+    } else {
+        Some(
+            background_tokio_command(&task.argv[0])
+                .args(&task.argv[1..])
+                .current_dir(&working_root)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .kill_on_drop(true)
+                .spawn()
+                .map_err(|err| {
+                    request_error(
+                        StatusCode::BAD_REQUEST,
+                        format!("Could not run {}: {err}", task.label),
+                    )
+                })?,
+        )
+    };
+    let (tx, _) = tokio::sync::broadcast::channel(256);
+    {
+        let mut runs = PROJECT_TASK_RUNS.write().await;
         runs.insert(
             run_id.clone(),
             Arc::new(ProjectTaskRunHandle {
@@ -8444,94 +8690,60 @@ async fn start_project_task_run(
             }),
         );
     }
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
-    if let Some(stdout) = stdout {
-        tokio::spawn(pump_task_stream(run_id.clone(), "stdout", stdout));
-    }
-    if let Some(stderr) = stderr {
-        tokio::spawn(pump_task_stderr(run_id.clone(), stderr));
-    }
-    let child = Arc::new(tokio::sync::Mutex::new(child));
-    PROJECT_TASK_CHILDREN
-        .write()
-        .await
-        .insert(run_id.clone(), Arc::clone(&child));
-    let state_for_run = state.clone();
-    let run_id_for_task = run_id.clone();
-    tokio::spawn(async move {
-        let started = std::time::Instant::now();
-        loop {
-            let status = { child.lock().await.try_wait().ok().flatten() };
-            if let Some(status) = status {
-                // Give stream pumps a moment to flush final bytes.
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                let (stdout, stderr, output_truncated, prior_locations, problem_re) = {
-                    let handle = PROJECT_TASK_RUNS
-                        .read()
-                        .await
-                        .get(&run_id_for_task)
-                        .cloned();
-                    if let Some(handle) = handle {
-                        let store = handle.store.lock().await;
-                        (
-                            store.stdout.materialize(),
-                            store.stderr.materialize(),
-                            store.run.output_truncated,
-                            store.run.locations.clone(),
-                            store.problem_re.clone(),
-                        )
-                    } else {
-                        (String::new(), String::new(), false, Vec::new(), None)
-                    }
-                };
-                let mut locations = prior_locations;
-                merge_task_locations(
-                    &mut locations,
-                    parse_output_locations_with_matcher(
-                        &root,
-                        &working_root,
-                        &format!("{stdout}\n{stderr}"),
-                        problem_re.as_ref(),
-                    ),
-                );
-                let result = ProjectTaskResult {
-                    task: task.clone(),
-                    success: status.success(),
-                    exit_code: status.code(),
-                    stdout,
-                    stderr,
-                    truncated: output_truncated,
-                    duration_ms: started.elapsed().as_millis(),
-                    locations,
-                };
-                let handle = PROJECT_TASK_RUNS
-                    .read()
-                    .await
-                    .get(&run_id_for_task)
-                    .cloned();
-                let cancelled = if let Some(handle) = handle {
-                    let store = handle.store.lock().await;
-                    matches!(store.run.state.as_str(), "cancelled")
-                } else {
-                    false
-                };
-                let _ = forge.append_command_log(&lease, &serde_json::json!({"kind":if cancelled {"project_task_cancelled"} else {"project_task"},"run_id":run_id_for_task,"task":result.task,"success":result.success,"exit_code":result.exit_code,"duration_ms":result.duration_ms,"stdout":result.stdout,"stderr":result.stderr,"truncated":result.truncated,"locations":result.locations}));
-                let final_state = if cancelled {
-                    "cancelled"
-                } else if result.success {
-                    "passed"
-                } else {
-                    "failed"
-                };
-                publish_task_state(&run_id_for_task, final_state, Some(result)).await;
-                PROJECT_TASK_CHILDREN.write().await.remove(&run_id_for_task);
-                publish_item(&state_for_run, &item, "task_finished");
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    if let Some(session_id) = session_id {
+        PROJECT_TASK_PROCESSES.write().await.insert(
+            run_id.clone(),
+            Arc::new(ProjectTaskProcess::Session {
+                session_id: session_id.clone(),
+            }),
+        );
+        tokio::spawn(pump_project_task_session(
+            state,
+            item,
+            lease,
+            root,
+            working_root,
+            task,
+            run_id,
+            session_id,
+        ));
+    } else if let Some(mut child) = child.take() {
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+        if let Some(stdout) = stdout {
+            tokio::spawn(pump_task_stream(run_id.clone(), "stdout", stdout));
         }
-    });
+        if let Some(stderr) = stderr {
+            tokio::spawn(pump_task_stderr(run_id.clone(), stderr));
+        }
+        let child = Arc::new(tokio::sync::Mutex::new(child));
+        PROJECT_TASK_PROCESSES.write().await.insert(
+            run_id.clone(),
+            Arc::new(ProjectTaskProcess::Child(Arc::clone(&child))),
+        );
+        tokio::spawn(async move {
+            let started = std::time::Instant::now();
+            loop {
+                let status = { child.lock().await.try_wait().ok().flatten() };
+                if let Some(status) = status {
+                    finish_project_task_run(
+                        state,
+                        item,
+                        lease,
+                        root,
+                        working_root,
+                        task,
+                        run_id,
+                        started,
+                        status.code(),
+                    )
+                    .await;
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        });
+    }
     Ok(Json(run))
 }
 
@@ -8637,8 +8849,37 @@ async fn create_task_run_preview(
     }))
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct CancelProjectTaskRunQuery {
+    #[serde(default)]
+    force: bool,
+}
+
+#[cfg(unix)]
+fn signal_project_child(child: &mut tokio::process::Child, force: bool) -> std::io::Result<()> {
+    let pid = child
+        .id()
+        .ok_or_else(|| std::io::Error::other("project process has no pid"))?;
+    let signal = if force { libc::SIGKILL } else { libc::SIGINT };
+    // Project children are process-group leaders so descendants receive the
+    // same graceful/force signal as the command itself.
+    let result = unsafe { libc::kill(-(pid as i32), signal) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(not(unix))]
+fn signal_project_child(child: &mut tokio::process::Child, _force: bool) -> std::io::Result<()> {
+    child.start_kill()
+}
+
 async fn cancel_project_task_run(
+    State(state): State<AppState>,
     Path((work_id, run_id)): Path<(String, String)>,
+    Query(query): Query<CancelProjectTaskRunQuery>,
 ) -> ApiResult<Json<ProjectTaskRun>> {
     if project_task_run_snapshot(&run_id)
         .await
@@ -8649,19 +8890,38 @@ async fn cancel_project_task_run(
             "Project run was not found",
         ));
     }
-    let child = PROJECT_TASK_CHILDREN
+    let process = PROJECT_TASK_PROCESSES
         .read()
         .await
         .get(&run_id)
         .cloned()
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project run is no longer active"))?;
-    child.lock().await.start_kill().map_err(|err| {
-        request_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Could not stop project run: {err}"),
-        )
-    })?;
-    publish_task_state(&run_id, "cancelled", None).await;
+    match process.as_ref() {
+        ProjectTaskProcess::Child(child) => {
+            let mut child = child.lock().await;
+            signal_project_child(&mut child, query.force).map_err(|err| {
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Could not stop project run: {err}"),
+                )
+            })?;
+        }
+        ProjectTaskProcess::Session { session_id } => {
+            crate::daemon::shell_session_host::signal_project_task_session(
+                &state,
+                session_id,
+                if query.force { "kill" } else { "interrupt" },
+            )
+            .await
+            .map_err(|(status, message)| request_error(status, message))?;
+        }
+    }
+    publish_task_state(
+        &run_id,
+        if query.force { "cancelled" } else { "stopping" },
+        None,
+    )
+    .await;
     let run = project_task_run_snapshot(&run_id)
         .await
         .filter(|run| run.work_id == work_id)
@@ -8991,7 +9251,10 @@ fn background_tokio_command(program: impl AsRef<OsStr>) -> tokio::process::Comma
 
 #[cfg(not(windows))]
 fn background_tokio_command(program: impl AsRef<OsStr>) -> tokio::process::Command {
-    tokio::process::Command::new(program)
+    let mut command = tokio::process::Command::new(program);
+    #[cfg(unix)]
+    command.process_group(0);
+    command
 }
 
 fn repository_remote(worktree: &FsPath) -> Option<String> {
@@ -10745,6 +11008,9 @@ mod source_tests {
                 next_seq: 0,
                 locations: Vec::new(),
                 ready_url: None,
+                session_id: None,
+                attach_path: None,
+                preview_path: None,
             },
             repository_root: PathBuf::new(),
             working_root: PathBuf::new(),
@@ -10858,7 +11124,7 @@ mod source_tests {
         let mut run = ProjectTaskRun {
             run_id: "run-1".into(),
             work_id: "work-1".into(),
-            state: "cancelled".into(),
+            state: "stopping".into(),
             task: task.clone(),
             test_id: None,
             started_at: "2026-08-21T00:00:00Z".into(),
@@ -10870,8 +11136,12 @@ mod source_tests {
             next_seq: 1,
             locations: Vec::new(),
             ready_url: None,
+            session_id: Some("session-1".into()),
+            attach_path: Some("/v1/sessions/shell/session-1".into()),
+            preview_path: Some("/v1/forge/preview/token-1/".into()),
         };
         assert!(!task_run_is_terminal(&run));
+        run.state = "cancelled".into();
         run.result = Some(ProjectTaskResult {
             task,
             success: false,
@@ -10889,6 +11159,11 @@ mod source_tests {
         let encoded_summary = serde_json::to_value(summary).unwrap();
         assert!(encoded_summary.get("stdout").is_none());
         assert!(encoded_summary.get("result").is_none());
+        assert_eq!(encoded_summary["session_id"], "session-1");
+        assert_eq!(
+            encoded_summary["preview_path"],
+            "/v1/forge/preview/token-1/"
+        );
         assert!(task_output_event_is_terminal(&ProjectTaskOutputEvent {
             seq: 2,
             run_id: "run-1".into(),

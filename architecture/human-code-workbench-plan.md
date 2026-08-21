@@ -329,7 +329,7 @@ and documentation updates. Status legend: `⬜ pending`, `🔄 active`,
 | HCW-2 | Nested task catalog and useful language/ecosystem providers | 🔄 |
 | HCW-3 | Project run service, ordered output, listing, and reconnect | 🔄 |
 | HCW-4 | Unified bottom panel and task-backed Problems | 🔄 |
-| HCW-5 | Interactive task PTY attach and durable background-service UX | ⬜ |
+| HCW-5 | Interactive task PTY attach and durable background-service UX | 🔄 |
 | HCW-6 | Editor command consolidation and human coding preferences | ⬜ |
 | HCW-7 | Thin structured testing improvements and final dogfood | ⬜ |
 
@@ -373,6 +373,13 @@ and documentation updates. Status legend: `⬜ pending`, `🔄 active`,
   remain quiet when Output was closed, while failed matched builds open
   Problems. HCW-4 stays active for broader matcher fixtures and interaction
   smoke coverage.
+- **2026-08-21 — HCW-5 shared-process foundation.** Added direct-command PTY
+  hosting to `medousa-session` and attached interactive/background Forge runs
+  to that single workshop process by durable session ID. Run snapshots retain
+  attach and tokenized preview paths; Terminal reuses the hosted task PTY;
+  graceful interrupt advances to explicit force stop; and previews can open in
+  Web or beside Code through shell panes. HCW-5 stays active for broader
+  local/remote attach, shell reattach, and process-tree smoke coverage.
 
 ### HCW-0 — Truth and measurement
 

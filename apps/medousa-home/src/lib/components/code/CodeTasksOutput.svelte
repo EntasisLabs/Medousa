@@ -43,10 +43,16 @@
             class="rounded px-1.5 py-0.5 text-chrome-xs text-emerald-200/90 hover:bg-emerald-500/10 disabled:opacity-40"
             disabled={tasks.previewOpening}
             onclick={() => void tasks.openPreview()}
-          >{tasks.previewOpening ? "Opening…" : "Open in Browser"}</button>
+          >{tasks.previewOpening ? "Opening…" : "Open Preview"}</button>
+          <button
+            type="button"
+            class="rounded px-1.5 py-0.5 text-chrome-xs text-emerald-200/90 hover:bg-emerald-500/10 disabled:opacity-40"
+            disabled={tasks.previewOpening}
+            onclick={() => void tasks.openPreview(true)}
+          >Open Beside Code</button>
         {/if}
-        {#if tasks.running && (tasks.run?.state === "running" || tasks.run?.state === "ready")}
-          <button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-rose-200/90 hover:bg-rose-500/10" onclick={() => void tasks.stopDetected()}>Stop</button>
+        {#if tasks.running && (tasks.run?.state === "running" || tasks.run?.state === "ready" || tasks.run?.state === "stopping")}
+          <button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-rose-200/90 hover:bg-rose-500/10" onclick={() => void tasks.stopDetected()}>{tasks.run?.state === "stopping" ? "Force stop" : "Stop"}</button>
         {/if}
         <button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-content-quiet hover:bg-surface-800 hover:text-content-secondary" onclick={() => tasks.toggleOutput(false)}>Hide</button>
       </div>
