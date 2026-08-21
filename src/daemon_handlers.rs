@@ -130,6 +130,9 @@ pub async fn create_session(
     Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
     Json(request): Json<CreateSessionRequest>,
 ) -> Result<Json<CreateSessionResponse>, (StatusCode, String)> {
+    let authority_id = crate::workshop_authority::current()
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?
+        .clone();
     let catalog = SessionCatalogKind::parse(request.catalog.as_deref());
     if request.session_id.is_some() {
         return Err((
@@ -149,6 +152,7 @@ pub async fn create_session(
         SessionCatalogKind::Single => {
             crate::session_catalog::ensure_named_session(&session_id, display_name.clone());
             Ok(Json(CreateSessionResponse {
+                authority_id,
                 session_id,
                 catalog: catalog.as_str().to_string(),
                 display_name,
@@ -182,6 +186,7 @@ pub async fn create_session(
                 let _ = crate::session_meta_store::set_session_display_name(&session_id, name);
             }
             Ok(Json(CreateSessionResponse {
+                authority_id,
                 session_id: row.session_id,
                 catalog: catalog.as_str().to_string(),
                 display_name: row.display_name,
@@ -198,7 +203,14 @@ pub async fn get_session_history(
     let session_id = validated_session_id(session_id)?;
 
     let turns = crate::session::load_history(&session_id);
-    Ok(Json(SessionHistoryResponse { session_id, turns }))
+    let authority_id = crate::workshop_authority::current()
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?
+        .clone();
+    Ok(Json(SessionHistoryResponse {
+        authority_id,
+        session_id,
+        turns,
+    }))
 }
 
 pub async fn append_session_turn(

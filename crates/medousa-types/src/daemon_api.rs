@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::session::{ConversationTurn, SessionHistorySummary};
+use crate::session::{AuthorityId, ConversationTurn, SessionHistorySummary};
 use crate::stage_routing::StageRoutingMatrix;
 use crate::turn::HostTurnContext;
 
@@ -353,6 +353,7 @@ pub struct CreateSessionRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct CreateSessionResponse {
+    pub authority_id: AuthorityId,
     pub session_id: String,
     pub catalog: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -418,6 +419,7 @@ pub struct SessionTranscriptSearchResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SessionHistoryResponse {
+    pub authority_id: AuthorityId,
     pub session_id: String,
     pub turns: Vec<ConversationTurn>,
 }

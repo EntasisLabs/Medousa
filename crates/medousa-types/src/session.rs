@@ -1,14 +1,17 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use sha2::{Digest as _, Sha256};
 use std::fmt;
 use std::str::FromStr;
 
 use crate::inference::InferenceProfilesConfig;
+use crate::secrets::InstallationId;
 use crate::stage_routing::StageRoutingMatrix;
 use crate::turn::TurnPart;
 use crate::turn::TurnSliceSummary;
 
 pub const MAX_SESSION_ID_BYTES: usize = 128;
+pub const MAX_EXECUTION_ID_BYTES: usize = 128;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvalidSessionId {
@@ -129,6 +132,181 @@ fn is_windows_device_name(session_id: &str) -> bool {
             .strip_prefix("COM")
             .or_else(|| upper.strip_prefix("LPT"))
             .is_some_and(|suffix| suffix.len() == 1 && matches!(suffix.as_bytes()[0], b'1'..=b'9'))
+}
+
+macro_rules! prefixed_conversation_id {
+    ($name:ident, $kind:literal, $prefix:literal, $hex_len:literal) => {
+        #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+        #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+        pub struct $name(String);
+
+        impl $name {
+            pub fn parse(
+                value: impl AsRef<str>,
+            ) -> Result<Self, crate::authority_id::IdentifierError> {
+                let value = value.as_ref();
+                let Some(suffix) = value.strip_prefix($prefix) else {
+                    return Err(crate::authority_id::IdentifierError::new(
+                        $kind,
+                        "unsupported_syntax",
+                    ));
+                };
+                if suffix.len() != $hex_len
+                    || !suffix
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+                {
+                    return Err(crate::authority_id::IdentifierError::new(
+                        $kind,
+                        "unsupported_syntax",
+                    ));
+                }
+                Ok(Self(value.to_string()))
+            }
+
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str(self.as_str())
+            }
+        }
+
+        impl AsRef<str> for $name {
+            fn as_ref(&self) -> &str {
+                self.as_str()
+            }
+        }
+
+        impl FromStr for $name {
+            type Err = crate::authority_id::IdentifierError;
+
+            fn from_str(value: &str) -> Result<Self, Self::Err> {
+                Self::parse(value)
+            }
+        }
+
+        impl TryFrom<String> for $name {
+            type Error = crate::authority_id::IdentifierError;
+
+            fn try_from(value: String) -> Result<Self, Self::Error> {
+                Self::parse(value)
+            }
+        }
+
+        impl Serialize for $name {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                serializer.serialize_str(self.as_str())
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let value = String::deserialize(deserializer)?;
+                Self::try_from(value).map_err(serde::de::Error::custom)
+            }
+        }
+    };
+}
+
+prefixed_conversation_id!(AuthorityId, "authority_id", "auth_", 64);
+prefixed_conversation_id!(TranscriptEntryId, "transcript_entry_id", "ent_", 32);
+prefixed_conversation_id!(ContextManifestId, "context_manifest_id", "ctx_", 32);
+prefixed_conversation_id!(DerivationId, "derivation_id", "drv_", 32);
+
+impl AuthorityId {
+    /// Stable logical workshop authority derived from the installation identity.
+    /// Domain separation keeps the installation id itself off ordinary session APIs.
+    pub fn from_installation_id(installation_id: &InstallationId) -> Self {
+        let mut digest = Sha256::new();
+        digest.update(b"medousa/workshop-authority/v1\0");
+        digest.update(installation_id.as_str().as_bytes());
+        Self(format!("auth_{:x}", digest.finalize()))
+    }
+}
+
+/// Durable execution identity. Legacy execution ids predate a generated prefix,
+/// so validation accepts bounded visible ASCII.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ExecutionId(String);
+
+impl ExecutionId {
+    pub fn parse(value: impl AsRef<str>) -> Result<Self, crate::authority_id::IdentifierError> {
+        let value = value.as_ref();
+        if value.is_empty()
+            || value.len() > MAX_EXECUTION_ID_BYTES
+            || !value.bytes().all(|byte| matches!(byte, 0x21..=0x7e))
+        {
+            return Err(crate::authority_id::IdentifierError::new(
+                "execution_id",
+                "unsupported_syntax",
+            ));
+        }
+        Ok(Self(value.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for ExecutionId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl Serialize for ExecutionId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ExecutionId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::parse(value).map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SessionRef {
+    pub authority_id: AuthorityId,
+    pub session_id: SessionId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct TranscriptEntryRef {
+    pub session: SessionRef,
+    pub entry_id: TranscriptEntryId,
+    #[cfg_attr(feature = "json-schema", schemars(range(min = 1)))]
+    pub entry_seq: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ExecutionRef {
+    pub authority_id: AuthorityId,
+    pub session_id: SessionId,
+    pub execution_id: ExecutionId,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -309,5 +487,46 @@ mod tests {
         for encoded in ["\"../outside\"", "\" session\"", "\"nul\""] {
             assert!(serde_json::from_str::<SessionId>(encoded).is_err());
         }
+    }
+
+    #[test]
+    fn conversation_coordinate_ids_validate_and_round_trip() {
+        let authority = AuthorityId::parse(format!("auth_{}", "a".repeat(64))).unwrap();
+        let entry = TranscriptEntryId::parse(format!("ent_{}", "b".repeat(32))).unwrap();
+        let reference = TranscriptEntryRef {
+            session: SessionRef {
+                authority_id: authority,
+                session_id: SessionId::parse("ses_0123456789abcdef").unwrap(),
+            },
+            entry_id: entry,
+            entry_seq: 7,
+        };
+        let encoded = serde_json::to_string(&reference).unwrap();
+        assert_eq!(
+            serde_json::from_str::<TranscriptEntryRef>(&encoded).unwrap(),
+            reference
+        );
+    }
+
+    #[test]
+    fn conversation_coordinate_deserialization_rejects_invalid_ids() {
+        assert!(
+            serde_json::from_str::<AuthorityId>(&format!("\"auth_{}\"", "A".repeat(64))).is_err()
+        );
+        assert!(serde_json::from_str::<TranscriptEntryId>("\"ent_not-hex\"").is_err());
+        assert!(
+            serde_json::from_str::<ContextManifestId>(&format!("\"ctx_{}\"", "0".repeat(31)))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn authority_is_stable_and_domain_separated_from_installation_id() {
+        let installation = InstallationId::parse("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let first = AuthorityId::from_installation_id(&installation);
+        let second = AuthorityId::from_installation_id(&installation);
+        assert_eq!(first, second);
+        assert_ne!(first.as_str(), installation.as_str());
+        assert!(first.as_str().starts_with("auth_"));
     }
 }

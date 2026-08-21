@@ -2,10 +2,10 @@ use crate::daemon::types::{
     ActiveSessionTurnResponse, AgentModeId, AgentModeListResponse, AgentModeProposalListResponse,
     AgentModeProposalResponse, AgentModeScope, AgentModeTransitionPolicy,
     CancelActiveSessionTurnResponse, CodeIntentContext, MediaRef, SessionAgentModeResponse,
-    SessionCodeBindingResponse, SessionDeleteQuery, SessionDeleteResponse,
-    SessionCodeProjectResponse, StartSessionCodeProjectRequest,
-    SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameResponse,
-    SetSessionAgentModeRequest, StageRoutingMatrix, TurnSurfaceContext,
+    SessionCodeBindingResponse, SessionCodeProjectResponse, SessionDeleteQuery,
+    SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
+    SessionSetDisplayNameResponse, SetSessionAgentModeRequest, StageRoutingMatrix,
+    StartSessionCodeProjectRequest, TurnSurfaceContext,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -28,6 +28,8 @@ pub struct CreateSessionRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateSessionResponse {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authority_id: Option<String>,
     pub session_id: String,
     pub catalog: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

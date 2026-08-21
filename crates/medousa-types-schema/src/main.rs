@@ -45,6 +45,14 @@ fn main() {
     export_type!(schemas, ArchiveAskJobResponse, "ArchiveAskJobResponse");
 
     // Sessions
+    export_type!(schemas, AuthorityId, "AuthorityId");
+    export_type!(schemas, TranscriptEntryId, "TranscriptEntryId");
+    export_type!(schemas, ContextManifestId, "ContextManifestId");
+    export_type!(schemas, DerivationId, "DerivationId");
+    export_type!(schemas, ExecutionId, "ExecutionId");
+    export_type!(schemas, SessionRef, "SessionRef");
+    export_type!(schemas, TranscriptEntryRef, "TranscriptEntryRef");
+    export_type!(schemas, ExecutionRef, "ExecutionRef");
     export_type!(
         schemas,
         SessionHistoryListResponse,

@@ -63,6 +63,7 @@ pub mod turn_slice;
 pub mod turn_text_heuristics;
 pub mod turn_worker_notify;
 pub mod typed_tools;
+pub mod workshop_authority;
 /// Re-export slim MCP gateway crate (binary lives in adapters/medousa-mcp-gateway).
 pub use medousa_mcp_gateway::mcp_gateway;
 pub mod artifact_html_lint;

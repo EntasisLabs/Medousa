@@ -66,6 +66,7 @@ export interface CreateSessionOptions {
 }
 
 export interface CreateSessionResponse {
+  authority_id?: string | null;
   session_id: string;
   catalog: string;
   display_name?: string | null;

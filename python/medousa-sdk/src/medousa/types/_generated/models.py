@@ -572,6 +572,24 @@ class FeedRef(MedousaModel):
     ref_type: str
 
 
+class AuthorityId(RootModel[str]):
+    root: str = Field(..., title='AuthorityId')
+
+
+class ExecutionId(RootModel[str]):
+    root: str = Field(
+        ...,
+        description='Durable execution identity. Legacy execution ids predate a generated prefix, so validation accepts bounded visible ASCII.',
+        title='ExecutionId',
+    )
+
+
+class SessionId(RootModel[str]):
+    root: str = Field(
+        ..., description='Canonical chat session identifier. Construction never normalizes input.'
+    )
+
+
 class FeedListEntry(MedousaModel):
     eventCount: int = Field(..., ge=0)
     feedId: str
@@ -1284,6 +1302,15 @@ class CodeProjectSource(Enum):
     repository = 'repository'
 
 
+class SessionRef(MedousaModel):
+    authority_id: AuthorityId
+    session_id: SessionId
+
+
+class TranscriptEntryId(RootModel[str]):
+    root: str = Field(..., title='TranscriptEntryId')
+
+
 class TurnBudgetRequestRecord(MedousaModel):
     channel: str | None = None
     created_at_utc: AwareDatetime
@@ -1992,6 +2019,10 @@ class ComponentStoreSetResponse(MedousaModel):
     updatedAtUtc: AwareDatetime
 
 
+class ContextManifestId(RootModel[str]):
+    root: str = Field(..., title='ContextManifestId')
+
+
 class CreateAgentSessionRequest(MedousaModel):
     args: list[str] | None = None
     code_context: CodeIntentContext | None = None
@@ -2048,6 +2079,10 @@ class DeleteRecurringResponse(MedousaModel):
     recurring_id: str
 
 
+class DerivationId(RootModel[str]):
+    root: str = Field(..., title='DerivationId')
+
+
 class EnqueueAskRequest(MedousaModel):
     additional_manuscript_ids: list[str] | None = Field(
         None, description='Extra manuscript specialties beyond `manuscript_id`.'
@@ -2101,6 +2136,12 @@ class EnvironmentStreamQuery(MedousaModel):
 class EnvironmentValidateResponse(MedousaModel):
     errors: list[str]
     valid: bool
+
+
+class ExecutionRef(MedousaModel):
+    authority_id: AuthorityId
+    execution_id: ExecutionId
+    session_id: SessionId
 
 
 class FeedListResponse(MedousaModel):
@@ -2552,6 +2593,12 @@ class StartSessionCodeProjectRequest(MedousaModel):
     repo_path: str | None = None
     source: CodeProjectSource | None = 'blank'
     title: str
+
+
+class TranscriptEntryRef(MedousaModel):
+    entry_id: TranscriptEntryId
+    entry_seq: int = Field(..., ge=1)
+    session: SessionRef
 
 
 class TurnBudgetApproveRequest(MedousaModel):
@@ -3188,6 +3235,7 @@ class SessionAppendTurnRequest(MedousaModel):
 
 
 class SessionHistoryResponse(MedousaModel):
+    authority_id: AuthorityId
     session_id: str
     turns: list[ConversationTurn]
 

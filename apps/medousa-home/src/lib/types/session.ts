@@ -32,6 +32,8 @@ export interface SessionSummary {
 }
 
 export interface SessionHistoryResponse {
+  /** Stable daemon authority; absent only when connected to a pre-coordinate daemon. */
+  authority_id?: string;
   session_id: string;
   turns: SessionTurn[];
 }

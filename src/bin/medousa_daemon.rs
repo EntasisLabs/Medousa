@@ -330,8 +330,11 @@ async fn main() -> Result<()> {
     let pairing_enabled = medousa::pairing::pairing_enabled_from_env();
     medousa::peer_scope::validate_listener_security(addr, pairing_enabled)
         .map_err(anyhow::Error::msg)?;
-    let _ = medousa::integration_connection::ensure_secrets_bootstrapped()
+    let installation_id = medousa::integration_connection::ensure_secrets_bootstrapped()
         .context("failed to bootstrap installation id / secret migration")?;
+    medousa::workshop_authority::initialize(&installation_id)
+        .map_err(anyhow::Error::msg)
+        .context("failed to initialize workshop authority")?;
     let local_credentials = Arc::new(
         medousa_local_credential::provision_first_party(&medousa::paths::medousa_data_dir())
             .context("failed to provision first-party local daemon credentials")?,

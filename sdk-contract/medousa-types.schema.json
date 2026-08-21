@@ -1690,6 +1690,11 @@
       }
     }
   },
+  "AuthorityId": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AuthorityId",
+    "type": "string"
+  },
   "CalendarDeleteResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "CalendarDeleteResponse",
@@ -2818,6 +2823,11 @@
     "description": "Stable UUID for one integration connection row.",
     "type": "string"
   },
+  "ContextManifestId": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ContextManifestId",
+    "type": "string"
+  },
   "CreateAgentSessionRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "CreateAgentSessionRequest",
@@ -3211,6 +3221,11 @@
         "type": "string"
       }
     }
+  },
+  "DerivationId": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DerivationId",
+    "type": "string"
   },
   "EnqueueAskRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -9103,6 +9118,46 @@
       }
     }
   },
+  "ExecutionId": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExecutionId",
+    "description": "Durable execution identity. Legacy execution ids predate a generated prefix, so validation accepts bounded visible ASCII.",
+    "type": "string"
+  },
+  "ExecutionRef": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExecutionRef",
+    "type": "object",
+    "required": [
+      "authority_id",
+      "execution_id",
+      "session_id"
+    ],
+    "properties": {
+      "authority_id": {
+        "$ref": "#/definitions/AuthorityId"
+      },
+      "execution_id": {
+        "$ref": "#/definitions/ExecutionId"
+      },
+      "session_id": {
+        "$ref": "#/definitions/SessionId"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ExecutionId": {
+        "description": "Durable execution identity. Legacy execution ids predate a generated prefix, so validation accepts bounded visible ASCII.",
+        "type": "string"
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      }
+    }
+  },
   "FeedListResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "FeedListResponse",
@@ -14954,10 +15009,14 @@
     "title": "SessionHistoryResponse",
     "type": "object",
     "required": [
+      "authority_id",
       "session_id",
       "turns"
     ],
     "properties": {
+      "authority_id": {
+        "$ref": "#/definitions/AuthorityId"
+      },
       "session_id": {
         "type": "string"
       },
@@ -14969,6 +15028,9 @@
       }
     },
     "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
       "ConversationTurn": {
         "type": "object",
         "required": [
@@ -15609,6 +15671,32 @@
       }
     }
   },
+  "SessionRef": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SessionRef",
+    "type": "object",
+    "required": [
+      "authority_id",
+      "session_id"
+    ],
+    "properties": {
+      "authority_id": {
+        "$ref": "#/definitions/AuthorityId"
+      },
+      "session_id": {
+        "$ref": "#/definitions/SessionId"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      }
+    }
+  },
   "SessionSetDisplayNameRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "SessionSetDisplayNameRequest",
@@ -16144,6 +16232,61 @@
           "blank",
           "repository"
         ]
+      }
+    }
+  },
+  "TranscriptEntryId": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "TranscriptEntryId",
+    "type": "string"
+  },
+  "TranscriptEntryRef": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "TranscriptEntryRef",
+    "type": "object",
+    "required": [
+      "entry_id",
+      "entry_seq",
+      "session"
+    ],
+    "properties": {
+      "entry_id": {
+        "$ref": "#/definitions/TranscriptEntryId"
+      },
+      "entry_seq": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 1.0
+      },
+      "session": {
+        "$ref": "#/definitions/SessionRef"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      },
+      "TranscriptEntryId": {
+        "type": "string"
       }
     }
   },
