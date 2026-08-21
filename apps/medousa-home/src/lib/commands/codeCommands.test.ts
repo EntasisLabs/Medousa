@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  chordFromKeyboardEvent,
   clearChordOverrides,
+  conflictingCommandForChord,
   effectiveChordFor,
+  eventMatchesCommandChord,
   listRemappableBindings,
   setChordOverride,
 } from "./commandBindings";
@@ -27,6 +30,14 @@ describe("code command registry", () => {
     expect(ids.has("workbench.action.tasks.test")).toBe(true);
     expect(ids.has("workbench.action.tasks.rerunLast")).toBe(true);
     expect(ids.has("workbench.action.tasks.terminate")).toBe(true);
+    expect(ids.has("workbench.action.files.saveAll")).toBe(true);
+    expect(ids.has("editor.action.formatDocument")).toBe(true);
+    expect(ids.has("editor.action.rename")).toBe(true);
+    expect(ids.has("workbench.action.files.newFile")).toBe(true);
+    expect(ids.has("workbench.action.files.newFolder")).toBe(true);
+    expect(ids.has("workbench.action.files.revert")).toBe(true);
+    expect(ids.has("workbench.action.files.revealInExplorer")).toBe(true);
+    expect(ids.has("medousa.code.repairLanguageSupport")).toBe(true);
     expect(effectiveChordFor("workbench.action.findInFiles")).toBe("mod:Shift+F");
 
     const problems = commands.find(
@@ -47,5 +58,24 @@ describe("code command registry", () => {
     expect(row?.overridden).toBe(true);
     clearChordOverrides();
     expect(effectiveChordFor("workbench.action.showCommands")).toBe("mod:Shift+P");
+  });
+
+  it("captures and matches the remappable subset truthfully", () => {
+    const event = {
+      key: ";",
+      metaKey: true,
+      shiftKey: true,
+      ctrlKey: false,
+      altKey: false,
+    } as KeyboardEvent;
+    expect(chordFromKeyboardEvent(event)).toBe("mod:Shift+;");
+    setChordOverride("workbench.action.showCommands", "mod:Shift+;");
+    expect(eventMatchesCommandChord(event, "workbench.action.showCommands")).toBe(true);
+    expect(
+      conflictingCommandForChord(
+        "workbench.action.quickOpen",
+        "mod:Shift+;",
+      ),
+    ).toBe("workbench.action.showCommands");
   });
 });

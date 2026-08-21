@@ -47,6 +47,10 @@
   import CodeRailSwitcher from "$lib/components/lme/explorers/CodeRailSwitcher.svelte";
   import { portLmeDock } from "$lib/utils/lmeDockHost";
   import { ensureRailPopoverOpen } from "$lib/utils/railPopoverChrome";
+  import {
+    codeCommandIdFromEvent,
+    dispatchCodeCommand,
+  } from "$lib/commands/codeCommands";
 
   interface Props {
     onOpenProject?: (workId: string, title: string) => void | Promise<void>;
@@ -323,6 +327,13 @@
   onMount(() => {
     void undertakings.refreshList();
     void loadRepositoryCatalog();
+    const onCodeCommand = (event: Event) => {
+      const id = codeCommandIdFromEvent(event);
+      if (id === "workbench.action.files.newFile") treeRef?.startNewFile();
+      else if (id === "workbench.action.files.newFolder") treeRef?.startNewFolder();
+    };
+    window.addEventListener("medousa-code-command", onCodeCommand);
+    return () => window.removeEventListener("medousa-code-command", onCodeCommand);
   });
 
   $effect(() => {
@@ -725,7 +736,7 @@
                 class="vault-menu-item"
                 onclick={() => {
                   closeMenus();
-                  treeRef?.startNewFile();
+                  dispatchCodeCommand("workbench.action.files.newFile");
                 }}
               >
                 <FilePlus2 size={14} strokeWidth={2} />
@@ -737,7 +748,7 @@
                 class="vault-menu-item"
                 onclick={() => {
                   closeMenus();
-                  treeRef?.startNewFolder();
+                  dispatchCodeCommand("workbench.action.files.newFolder");
                 }}
               >
                 <FolderPlus size={14} strokeWidth={2} />

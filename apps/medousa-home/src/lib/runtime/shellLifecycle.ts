@@ -29,6 +29,7 @@ import { handoffBrowserShell } from "$lib/utils/browserShellHandoff";
 import { WORK_FOCUS_ASK_EVENT } from "$lib/utils/workChromeEvents";
 import { humanBrowserSetMobileShellActive } from "$lib/humanBrowser";
 import { bindRootResource } from "./rootResources";
+import { eventMatchesCommandChord } from "$lib/commands/commandBindings";
 import {
   openCalendarEvent,
   openPeerThread,
@@ -165,7 +166,7 @@ export function startShellRootResources(): () => void {
       commandSpotlight.toggleSpotlight();
       return;
     }
-    if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "p") {
+    if (eventMatchesCommandChord(event, "workbench.action.showCommands")) {
       const target = event.target as HTMLElement | null;
       const typing =
         target &&

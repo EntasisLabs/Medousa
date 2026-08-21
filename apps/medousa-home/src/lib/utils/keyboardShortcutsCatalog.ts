@@ -26,7 +26,7 @@ export type ShortcutCatalogGroup = {
 /**
  * Single reference for binds that already exist in the app.
  * Drive cheat sheet / Spotlight labels / button hover titles from here.
- * A small allowlist can override chords via `commandBindings` (no Settings UI yet).
+ * The shipped remappable subset is exposed under Settings → Preferences → Code.
  */
 export const KEYBOARD_SHORTCUTS_CATALOG: ShortcutCatalogGroup[] = [
   {

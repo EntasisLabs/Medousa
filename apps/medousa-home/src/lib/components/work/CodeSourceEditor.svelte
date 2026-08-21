@@ -41,6 +41,10 @@
     codeWorkbenchState,
   } from "$lib/code/codeWorkbenchState.svelte";
   import { handleCodeEditorWindowKeydown } from "$lib/code/codeEditorWindowKeys";
+  import {
+    codeCommandIdFromEvent,
+    dispatchCodeCommand,
+  } from "$lib/commands/codeCommands";
   import { codeEditorViewRegistry } from "$lib/code/codeEditorViewRegistry";
   import type { CodeLanguageNavigationKind } from "$lib/code/codeLanguageNavigation";
   import { containingSymbolTrail } from "$lib/code/codeDocumentSymbols";
@@ -86,6 +90,7 @@
     writeCodeEditorWordWrap,
     type CodeEditorFontSize,
   } from "$lib/config/codeEditorPreferences";
+  import { readCodeWorkbenchPreferences } from "$lib/config/codeWorkbenchPreferences";
   import { codeEditorFind } from "$lib/stores/codeEditorFind.svelte";
   import { codeEditorStatus } from "$lib/stores/codeEditorStatus.svelte";
 
@@ -179,6 +184,8 @@
   let linePersistTimer: ReturnType<typeof setTimeout> | null = null;
   let projectEventStream: CodeProjectEventStream | null = null;
   let treeRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+  let workbenchPrefsEpoch = $state(0);
   let editorMenuOpen = $state(false);
   let editorMenuX = $state(0);
   let editorMenuY = $state(0);
@@ -361,7 +368,7 @@
       codeWorkbenchState.setTaskRuns(workId, activeRunId, recentRunIds);
       codeWorkspace.scheduleLayoutPersist(workId);
     },
-    prepareRun: () => save.saveAll(),
+    prepareRun: () => prepareRunSave(),
     ensureLease: () => ensureHumanLease(),
     onError: (message) => {
       surfaceError = message || null;
@@ -488,8 +495,31 @@
     setTabError: (tabId, message) => codeWorkspace.setError(tabId, message),
     setActiveFromItem: (item, lease) => undertakings.setActiveFromItem(item, lease),
     refreshDetail: () => undertakings.refreshDetail(),
+    beforeSave: (tab) => formatBeforeSave(tab),
   });
   const busy = $derived(save.busy);
+
+  async function formatBeforeSave(tab: { tabId: string }): Promise<boolean> {
+    const preferences = readCodeWorkbenchPreferences();
+    if (
+      !preferences.formatOnSave ||
+      tab.tabId !== activeTabId ||
+      !canFormat ||
+      languageActionRunning
+    ) {
+      return true;
+    }
+    return runLanguageAction("format");
+  }
+
+  async function prepareRunSave(): Promise<boolean> {
+    const preferences = readCodeWorkbenchPreferences();
+    if (preferences.runSavePolicy === "saveAll") return save.saveAll();
+    const dirtyTabs = tabs.filter((tab) => codeWorkspace.isDirty(tab));
+    if (dirtyTabs.length === 0) return true;
+    surfaceError = `Save or discard ${dirtyTabs.length === 1 ? dirtyTabs[0]!.path : `${dirtyTabs.length} modified files`} before running.`;
+    return false;
+  }
 
   function syncProblems() {
     void tick().then(() => {
@@ -1314,11 +1344,11 @@
   async function runLanguageAction(
     action: "format" | "organize_imports" | "references" | "rename",
     newName?: string,
-  ) {
+  ): Promise<boolean> {
     const client = lspClient;
-    if (!activeTab || !documentUri || !client || languageActionRunning) return;
+    if (!activeTab || !documentUri || !client || languageActionRunning) return false;
     const cursor = editor?.getCursorPosition() ?? { line: 0, character: 0 };
-    if (action === "rename" && !newName?.trim()) return;
+    if (action === "rename" && !newName?.trim()) return false;
     languageActionRunning = true;
     surfaceError = null;
     try {
@@ -1356,15 +1386,17 @@
       if (action === "references") {
         references = Array.isArray(result) ? result : [];
         problems.setPanel("references");
-        return;
+        return true;
       }
-      if (action === "rename" && await reviewWorkspaceEdit(result)) return;
+      if (action === "rename" && await reviewWorkspaceEdit(result)) return true;
       const edits = activeLanguageEdits(result);
       if (edits.length) {
         editor?.applyLanguageEdits(edits);
       } else if (action === "rename") surfaceError = "The language server did not return an editable rename.";
+      return action !== "rename" || edits.length > 0;
     } catch (err) {
       surfaceError = err instanceof Error ? err.message : String(err);
+      return false;
     } finally {
       languageActionRunning = false;
     }
@@ -1437,10 +1469,10 @@
         void runLanguageAction("references");
         break;
       case "rename":
-        beginInlineRename();
+        dispatchCodeCommand("editor.action.rename");
         break;
       case "format":
-        void runLanguageAction("format");
+        dispatchCodeCommand("editor.action.formatDocument");
         break;
       case "organize_imports":
         void runLanguageAction("organize_imports");
@@ -1452,7 +1484,7 @@
         void copyText(activeTab.path);
         break;
       case "reveal":
-        revealInExplorer(activeTab.path);
+        dispatchCodeCommand("workbench.action.files.revealInExplorer");
         break;
     }
   }
@@ -1502,7 +1534,8 @@
     if (
       result?.success === false &&
       tasks.liveLocations.length > 0 &&
-      lastFailedRunPresented !== run.run_id
+      lastFailedRunPresented !== run.run_id &&
+      readCodeWorkbenchPreferences().panelOnFailure
     ) {
       lastFailedRunPresented = run.run_id;
       void selectFeedbackPanel("problems");
@@ -1669,6 +1702,30 @@
 
   $effect(() => {
     const tabId = activeTabId;
+    const draft = activeTab?.draft;
+    void draft;
+    void workbenchPrefsEpoch;
+    if (
+      !interactive ||
+      !tabId ||
+      !dirty ||
+      readCodeWorkbenchPreferences().autosave !== "afterDelay"
+    ) {
+      return;
+    }
+    autosaveTimer = setTimeout(() => {
+      autosaveTimer = null;
+      const current = codeWorkspace.tabs.find((tab) => tab.tabId === tabId) ?? null;
+      if (current && codeWorkspace.isDirty(current)) void save.saveTab(current);
+    }, 1_200);
+    return () => {
+      if (autosaveTimer) clearTimeout(autosaveTimer);
+      autosaveTimer = null;
+    };
+  });
+
+  $effect(() => {
+    const tabId = activeTabId;
     problems.setDocumentProblems([]);
     const initialLine = untrack(() => activeTabLine);
     editorSelection = null;
@@ -1755,8 +1812,9 @@
   $effect(() => {
     if (!interactive) return;
     const onShowProblems = () => void problems.showProblems();
+    const onPreferencesChanged = () => (workbenchPrefsEpoch += 1);
     const onCodeCommand = (event: Event) => {
-      const id = (event as CustomEvent<{ id?: string }>).detail?.id;
+      const id = codeCommandIdFromEvent(event);
       if (!id) return;
       switch (id) {
         case "workbench.action.quickOpen":
@@ -1806,6 +1864,24 @@
         case "workbench.action.tasks.terminate":
           void tasks.stopDetected();
           break;
+        case "workbench.action.files.saveAll":
+          void save.saveAll();
+          break;
+        case "editor.action.formatDocument":
+          void runLanguageAction("format");
+          break;
+        case "editor.action.rename":
+          beginInlineRename();
+          break;
+        case "workbench.action.files.revert":
+          void reload();
+          break;
+        case "workbench.action.files.revealInExplorer":
+          if (activeTab) revealInExplorer(activeTab.path);
+          break;
+        case "medousa.code.repairLanguageSupport":
+          void repairLanguageSupport();
+          break;
         case "workbench.action.findInFiles":
           toggleSearch(true);
           break;
@@ -1844,9 +1920,11 @@
     };
     window.addEventListener("medousa-code-show-problems", onShowProblems);
     window.addEventListener("medousa-code-command", onCodeCommand);
+    window.addEventListener("medousa-code-preferences-changed", onPreferencesChanged);
     return () => {
       window.removeEventListener("medousa-code-show-problems", onShowProblems);
       window.removeEventListener("medousa-code-command", onCodeCommand);
+      window.removeEventListener("medousa-code-preferences-changed", onPreferencesChanged);
     };
   });
 
@@ -1888,6 +1966,7 @@
   onDestroy(() => {
     if (linePersistTimer) clearTimeout(linePersistTimer);
     if (treeRefreshTimer) clearTimeout(treeRefreshTimer);
+    if (autosaveTimer) clearTimeout(autosaveTimer);
     projectEventStream?.teardown();
     projectEventStream = null;
     changes.dispose();
@@ -1931,7 +2010,7 @@
     onShowOutline={() => void showOutline()}
     {onToggleWorld}
     {worldOpen}
-    onReload={() => void reload()}
+    onReload={() => dispatchCodeCommand("workbench.action.files.revert")}
     {wordWrap}
     onToggleWordWrap={toggleWordWrap}
     {showLineNumbers}
@@ -1944,12 +2023,15 @@
     {canFormat}
     {canCodeAction}
     {languageActionRunning}
-    onLanguageAction={(action) => void runLanguageAction(action)}
+    onLanguageAction={(action) => {
+      if (action === "format") dispatchCodeCommand("editor.action.formatDocument");
+      else void runLanguageAction(action);
+    }}
     onRestartLanguage={restartLanguageServer}
     onShowLanguageLogs={() => void showLanguageLogs()}
     {lspError}
     {repairingLanguage}
-    onRepairLanguage={() => void repairLanguageSupport()}
+    onRepairLanguage={() => dispatchCodeCommand("medousa.code.repairLanguageSupport")}
     {projectMenu}
     onNavigate={(direction) => void navigate(direction)}
     onPathSegment={onBreadcrumbPath}
@@ -1982,8 +2064,11 @@
     {canRename}
     {editable}
     {languageActionRunning}
-    onLanguageAction={(action) => void runLanguageAction(action)}
-    onBeginRename={() => beginInlineRename()}
+    onLanguageAction={(action) => {
+      if (action === "format") dispatchCodeCommand("editor.action.formatDocument");
+      else void runLanguageAction(action);
+    }}
+    onBeginRename={() => dispatchCodeCommand("editor.action.rename")}
     onCursorChanged={handleCursorChanged}
     onProblemsChanged={syncProblems}
     onContextMenu={onEditorContextMenu}
@@ -2097,13 +2182,15 @@
       closeQuickOpen: () => quick.close(),
       navigate: (direction) => void navigate(direction),
       reopenClosedTab: () => void reopenClosedTab(),
-      saveAll: () => void save.saveAll(),
+      saveAll: () => dispatchCodeCommand("workbench.action.files.saveAll"),
       saveActive: () => { if (activeTab) void save.saveTab(activeTab); },
       canSaveShortcut: canInvokeCodeSaveShortcut({ editable, canBeginEdit }),
-      toggleTerminal: () => void toggleTerminalDock(),
-      openSearch: () => toggleSearch(true),
+      toggleTerminal: () => dispatchCodeCommand("workbench.action.terminal.toggleTerminal"),
+      openSearch: () => dispatchCodeCommand("workbench.action.findInFiles"),
       showOutline: () => void showOutline(),
-      beginRename: () => beginInlineRename(),
+      beginRename: () => dispatchCodeCommand("editor.action.rename"),
+      formatDocument: () => dispatchCodeCommand("editor.action.formatDocument"),
+      canFormat,
       clearProblemsPanel: () => problems.setPanel(null),
     });
   }}

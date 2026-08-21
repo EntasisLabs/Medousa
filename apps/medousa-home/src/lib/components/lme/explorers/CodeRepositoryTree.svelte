@@ -45,6 +45,7 @@
     traceCodeWorkspaceEnd,
     traceCodeWorkspaceStart,
   } from "$lib/utils/codeWorkspaceTrace";
+  import { dispatchCodeCommand } from "$lib/commands/codeCommands";
 
   interface Props {
     workId: string;
@@ -614,20 +615,14 @@
           class="rounded p-1 text-content-quiet hover:bg-surface-800 hover:text-surface-200"
           aria-label="New file"
           title="New file"
-          onclick={() => {
-            creatingFolder = false;
-            creatingPath = !creatingPath;
-          }}
+          onclick={() => dispatchCodeCommand("workbench.action.files.newFile")}
         ><FilePlus2 size={12} /></button>
         <button
           type="button"
           class="rounded p-1 text-content-quiet hover:bg-surface-800 hover:text-surface-200"
           aria-label="New folder"
           title="New folder"
-          onclick={() => {
-            creatingPath = false;
-            creatingFolder = !creatingFolder;
-          }}
+          onclick={() => dispatchCodeCommand("workbench.action.files.newFolder")}
         ><FolderPlus size={12} /></button>
       </div>
     {/if}

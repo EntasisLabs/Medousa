@@ -330,7 +330,7 @@ and documentation updates. Status legend: `⬜ pending`, `🔄 active`,
 | HCW-3 | Project run service, ordered output, listing, and reconnect | 🔄 |
 | HCW-4 | Unified bottom panel and task-backed Problems | 🔄 |
 | HCW-5 | Interactive task PTY attach and durable background-service UX | 🔄 |
-| HCW-6 | Editor command consolidation and human coding preferences | ⬜ |
+| HCW-6 | Editor command consolidation and human coding preferences | 🔄 |
 | HCW-7 | Thin structured testing improvements and final dogfood | ⬜ |
 
 ### Implementation checkpoints
@@ -380,6 +380,14 @@ and documentation updates. Status legend: `⬜ pending`, `🔄 active`,
   graceful interrupt advances to explicit force stop; and previews can open in
   Web or beside Code through shell panes. HCW-5 stays active for broader
   local/remote attach, shell reattach, and process-tree smoke coverage.
+- **2026-08-21 — HCW-6 command/preference foundation.** Added shared Save All,
+  Format, Rename, New File, New Folder, Revert, Reveal, and language-repair
+  identities; routed editor, Explorer, keyboard, and Spotlight entry points
+  through those commands; made the bounded remappable shortcut subset visible
+  and executable from Settings; and added format-on-save, autosave, safe run
+  preflight, and panel-on-failure preferences. The project-specific primary
+  task remains in daemon-backed Code workspace state. HCW-6 stays active for
+  broader interaction smoke coverage across every mouse/keyboard entry point.
 
 ### HCW-0 — Truth and measurement
 

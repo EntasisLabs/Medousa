@@ -1,5 +1,7 @@
 /** Keyboard shortcuts owned by the Code source editor window handler. */
 
+import { eventMatchesCommandChord } from "$lib/commands/commandBindings";
+
 export type CodeEditorWindowKeyContext = {
   interactive: boolean;
   refactorOpen: boolean;
@@ -11,6 +13,7 @@ export type CodeEditorWindowKeyContext = {
   editable: boolean;
   canBeginEdit: boolean;
   canRename: boolean;
+  canFormat: boolean;
   hasActiveTab: boolean;
   isActiveDirty: boolean;
   problemsPanelOpen: boolean;
@@ -26,6 +29,7 @@ export type CodeEditorWindowKeyContext = {
   openSearch: () => void;
   showOutline: () => void;
   beginRename: () => void;
+  formatDocument: () => void;
   clearProblemsPanel: () => void;
 };
 
@@ -41,18 +45,22 @@ export function handleCodeEditorWindowKeydown(
     }
     return;
   }
-  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
+  if (eventMatchesCommandChord(event, "workbench.action.quickOpen")) {
     event.preventDefault();
     void ctx.showQuickOpen();
   }
-  if (event.altKey && !event.metaKey && !event.ctrlKey) {
-    if (event.key === "ArrowLeft" && ctx.canNavigate(-1)) {
-      event.preventDefault();
-      void ctx.navigate(-1);
-    } else if (event.key === "ArrowRight" && ctx.canNavigate(1)) {
-      event.preventDefault();
-      void ctx.navigate(1);
-    }
+  if (
+    eventMatchesCommandChord(event, "workbench.action.navigateBack") &&
+    ctx.canNavigate(-1)
+  ) {
+    event.preventDefault();
+    void ctx.navigate(-1);
+  } else if (
+    eventMatchesCommandChord(event, "workbench.action.navigateForward") &&
+    ctx.canNavigate(1)
+  ) {
+    event.preventDefault();
+    void ctx.navigate(1);
   }
   if (event.key === "Escape" && ctx.quickOpen) ctx.closeQuickOpen();
   if (event.defaultPrevented) return;
@@ -63,7 +71,7 @@ export function handleCodeEditorWindowKeydown(
     void ctx.reopenClosedTab();
     return;
   }
-  if (command && event.shiftKey && event.key.toLowerCase() === "s") {
+  if (eventMatchesCommandChord(event, "workbench.action.files.saveAll")) {
     event.preventDefault();
     if (ctx.canSaveShortcut) void ctx.saveAll();
     return;
@@ -75,12 +83,12 @@ export function handleCodeEditorWindowKeydown(
     }
     return;
   }
-  if (command && event.key === "`") {
+  if (eventMatchesCommandChord(event, "workbench.action.terminal.toggleTerminal")) {
     event.preventDefault();
     void ctx.toggleTerminal();
     return;
   }
-  if (command && event.shiftKey && event.key.toLowerCase() === "f") {
+  if (eventMatchesCommandChord(event, "workbench.action.findInFiles")) {
     event.preventDefault();
     ctx.openSearch();
     return;
@@ -89,7 +97,22 @@ export function handleCodeEditorWindowKeydown(
     event.preventDefault();
     void ctx.showOutline();
   }
-  if (event.key === "F2" && ctx.canRename && ctx.editable && ctx.hasActiveTab) {
+  if (
+    eventMatchesCommandChord(event, "editor.action.formatDocument") &&
+    ctx.canFormat &&
+    ctx.editable &&
+    ctx.hasActiveTab
+  ) {
+    event.preventDefault();
+    ctx.formatDocument();
+    return;
+  }
+  if (
+    eventMatchesCommandChord(event, "editor.action.rename") &&
+    ctx.canRename &&
+    ctx.editable &&
+    ctx.hasActiveTab
+  ) {
     event.preventDefault();
     ctx.beginRename();
     return;

@@ -115,9 +115,13 @@ a private Code IDE chrome.
   they are not permanent chrome across Chat or Notes.
   `Cmd/Ctrl+Shift+P` opens Spotlight in command mode (`>`). Code actions also
   appear under familiar VS Code names (Quick Open, Search, Changes, Problems,
-  Output, Terminal, Tests, Run Project, Build Project, and Test Project).
-  A small allowlist of chords can be overridden in storage; a Settings keybinding
-  editor is not shipped yet.
+  Output, Terminal, Tests, Run Project, Build Project, Test Project, Save All,
+  Format Document, Rename Symbol, New File, New Folder, Revert, Reveal in
+  Explorer, and Repair Language Support). Editor menus, Explorer buttons,
+  keyboard shortcuts, and Spotlight dispatch those shared commands.
+  Settings → Preferences → Code exposes the bounded shortcut subset that is
+  actually remappable. Focus a shortcut and press its replacement; conflicts
+  are rejected and each override can be reset independently.
 - The Code explorer lists tracked and unignored repository files. `Cmd/Ctrl+P`
   opens Quick Open with fuzzy path matching: type a file name, `@` plus a name
   for project symbols, or `:` plus a number to jump to a line. `Cmd/Ctrl+Shift+F`
@@ -137,6 +141,11 @@ a private Code IDE chrome.
 - New file and New folder are available in the repository explorer. Nested
   parents are created as needed. Rename and delete work on the selected file or
   folder (folder ops apply one guarded multi-file transaction).
+- Settings → Preferences → Code also owns bounded human-workbench behavior:
+  optional format-on-save for the active language-aware file, optional 1.2
+  second autosave, save-all or require-clean run preflight, and whether failed
+  task matchers open Problems. The selected primary task remains scoped to the
+  project and is changed from the Code command bar.
 - Open files become project-scoped shell tabs with independent unsaved drafts.
   Cursor targets and protected draft recovery survive view changes and app
   restarts. If the file changed outside Medousa, the recovered draft remains
@@ -251,8 +260,8 @@ and check commands; an explicit selection remains the project default.
   channel replaces the visible channel instead of stacking another dock. Task
   matcher locations appear in Problems with their run identity while language
   diagnostics remain independent. Failed matched builds open navigable
-  Problems. Output includes clear, copy, exact rerun, stop, and command-reveal
-  actions.
+  Problems unless **Panel on failure** is disabled in Code preferences. Output
+  includes clear, copy, exact rerun, stop, and command-reveal actions.
 - Completed checks are written into Forge command evidence. Review uses the
   latest completed result to say whether verification passed; cancelled runs
   are preserved as activity but do not pretend the revision failed.

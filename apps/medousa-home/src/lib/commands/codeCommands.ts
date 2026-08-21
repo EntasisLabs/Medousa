@@ -11,6 +11,12 @@ import type { WorkshopCommand, WorkshopCommandContext } from "./types";
 
 export type CodeCommandDetail = { id: string };
 
+export function codeCommandIdFromEvent(event: Event): string | null {
+  const detail = (event as CustomEvent<CodeCommandDetail | string>).detail;
+  if (typeof detail === "string") return detail.trim() || null;
+  return detail?.id?.trim() || null;
+}
+
 export function dispatchCodeCommand(id: string) {
   if (typeof window === "undefined") return;
   window.dispatchEvent(
@@ -269,6 +275,115 @@ export function buildCodeCommands(): WorkshopCommand[] {
       run: (ctx) => {
         ctx.navigate("code");
         dispatchCodeCommand("workbench.action.tasks.terminate");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.files.saveAll",
+      section: "do",
+      label: "Save All Files",
+      subtitle: `${chordHint("workbench.action.files.saveAll", "Mod+Shift+S")} — save every modified project file`,
+      keywords: "save all files dirty modified editor vscode",
+      aliases: ["Save All", "File: Save All", "workbench.action.files.saveAll"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.action.files.saveAll");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "editor.action.formatDocument",
+      section: "do",
+      label: "Format Document",
+      subtitle: `${chordHint("editor.action.formatDocument", "Shift+Alt+F")} — use the active language formatter`,
+      keywords: "format document editor language vscode",
+      aliases: ["Format Document", "Editor: Format Document", "editor.action.formatDocument"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("editor.action.formatDocument");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "editor.action.rename",
+      section: "do",
+      label: "Rename Symbol",
+      subtitle: `${chordHint("editor.action.rename", "F2")} — preview a language-aware rename`,
+      keywords: "rename symbol refactor editor vscode f2",
+      aliases: ["Rename Symbol", "Editor: Rename Symbol", "editor.action.rename"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("editor.action.rename");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.files.newFile",
+      section: "do",
+      label: "New Project File",
+      subtitle: "Create a file in the governed project Explorer",
+      keywords: "new create file explorer project vscode",
+      aliases: ["New File", "File: New File", "workbench.action.files.newFile"],
+      verb: "create",
+      run: (ctx) => {
+        ctx.navigate("code");
+        lmeWorkspace.setExplorerMode("code");
+        dispatchCodeCommand("workbench.action.files.newFile");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.files.newFolder",
+      section: "do",
+      label: "New Project Folder",
+      subtitle: "Create a folder in the governed project Explorer",
+      keywords: "new create folder directory explorer project vscode",
+      aliases: ["New Folder", "File: New Folder", "workbench.action.files.newFolder"],
+      verb: "create",
+      run: (ctx) => {
+        ctx.navigate("code");
+        lmeWorkspace.setExplorerMode("code");
+        dispatchCodeCommand("workbench.action.files.newFolder");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.files.revert",
+      section: "do",
+      label: "Revert Active File",
+      subtitle: "Reload the project version after confirming dirty changes",
+      keywords: "revert reload discard file editor vscode",
+      aliases: ["Revert File", "Reload File", "File: Revert File", "workbench.action.files.revert"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.action.files.revert");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.files.revealInExplorer",
+      section: "go",
+      label: "Reveal Active File in Explorer",
+      subtitle: "Select the current file in the project tree",
+      keywords: "reveal active file explorer tree vscode",
+      aliases: ["Reveal in Explorer", "File: Reveal in Explorer", "workbench.action.files.revealInExplorer"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        lmeWorkspace.setExplorerMode("code");
+        dispatchCodeCommand("workbench.action.files.revealInExplorer");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "medousa.code.repairLanguageSupport",
+      section: "do",
+      label: "Repair Language Support",
+      subtitle: "Install or restart the active project language tooling",
+      keywords: "repair language server lsp install package editor",
+      aliases: ["Repair Language Support", "Language: Repair Support"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("medousa.code.repairLanguageSupport");
         ctx.callbacks.close();
       },
     },
