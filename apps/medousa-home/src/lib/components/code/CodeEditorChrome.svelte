@@ -252,9 +252,11 @@
             <button
               type="button"
               class="code-run-button"
-              disabled={agentHasControl || busy || tasks.preparing || !tasks.selectedTask}
+              disabled={agentHasControl || busy || tasks.preparing || !tasks.selectedTask || !tasks.taskAvailable(tasks.selectedTask)}
               title={agentHasControl
                 ? `Resume editing before running ${tasks.selectedTask?.label ?? "this command"}`
+                : !tasks.taskAvailable(tasks.selectedTask)
+                  ? tasks.taskRepair(tasks.selectedTask) ?? `${tasks.selectedTask?.label ?? "Command"} is unavailable`
                 : tasks.selectedTask
                   ? `Run ${tasks.selectedTask.label}: ${tasks.selectedTask.argv.join(" ")}`
                   : "No project command selected"}
@@ -271,7 +273,7 @@
             onchange={(event) => tasks.selectTask(event.currentTarget.value)}
           >
             {#each tasks.projectTasks as task (task.id)}
-              <option value={task.id}>{task.label}{#if task.root && task.root !== "."} · {task.root}{/if}{#if task.long_running} · background{/if}</option>
+              <option value={task.id} disabled={task.available === false}>{task.label}{#if task.root && task.root !== "."} · {task.root}{/if}{#if task.available === false} · unavailable{/if}{#if task.long_running} · background{/if}</option>
             {/each}
           </select>
         </div>
@@ -408,7 +410,7 @@
               <span class="code-chrome-menu-field-label">Project command</span>
               <select class="code-chrome-menu-select" aria-label="Project command" bind:value={tasks.selectedTaskId}>
                 {#each tasks.projectTasks as task (task.id)}
-                  <option value={task.id}>{task.label}{#if task.root && task.root !== "."} · {task.root}{/if}{#if task.long_running} · background{/if}{#if task.provider === "vscode-tasks"} · tasks.json{/if}</option>
+                  <option value={task.id} disabled={task.available === false}>{task.label}{#if task.root && task.root !== "."} · {task.root}{/if}{#if task.available === false} · unavailable{/if}{#if task.long_running} · background{/if}{#if task.provider === "vscode-tasks"} · tasks.json{/if}</option>
                 {/each}
               </select>
             </label>

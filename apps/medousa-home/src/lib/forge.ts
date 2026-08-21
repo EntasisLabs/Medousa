@@ -901,13 +901,25 @@ export type ProviderRepositoryCapabilities = {
 };
 
 export type ProjectTask = {
+  version?: number;
   id: string;
   label: string;
   kind: "verify" | "test" | "build" | "run" | string;
   argv: string[];
   provider: string;
+  source?: "detected" | "vscode-task" | string;
   /** Repository-relative working directory; absent on older daemons means project root. */
   root?: string;
+  interactive?: boolean;
+  background?: boolean;
+  default_rank?: number;
+  available?: boolean;
+  requirements?: Array<{
+    kind: string;
+    name: string;
+    available: boolean;
+    repair?: string | null;
+  }>;
   long_running?: boolean;
   ready_pattern?: string | null;
   problem_matcher?: {

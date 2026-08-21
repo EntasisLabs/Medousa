@@ -350,6 +350,15 @@ and documentation updates. Status legend: `⬜ pending`, `🔄 active`,
   active for requirement-health metadata, Cargo examples/bins, Python and .NET
   application entry points, contextual ranking, and the full acceptance
   fixture matrix.
+- **2026-08-21 — HCW-2 descriptor/provider pass.** Versioned the additive task
+  descriptor with source, background, ranking, and executable/package
+  requirement health; rejected unhealthy runs before save/lease work; and
+  exposed repair guidance in Home. Added explicit Cargo bin/example
+  configurations, Python module plus uv/Poetry script entry points, runnable
+  .NET project commands,
+  and healthy provider-ranked defaults without overriding the saved user
+  selection. HCW-2 remains active for repository acceptance fixtures and
+  local/remote catalog smoke coverage.
 
 ### HCW-0 — Truth and measurement
 

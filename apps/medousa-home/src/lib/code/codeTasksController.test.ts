@@ -116,4 +116,40 @@ describe("CodeTasksController", () => {
     expect(controller.selectedTaskId).toBe(checkTask.id);
     expect(persistSelectedTask).toHaveBeenCalledWith(checkTask.id);
   });
+
+  it("ranks healthy provider recommendations above catalog order", () => {
+    const { controller } = createController();
+    const build = { ...checkTask, id: "cargo-build", kind: "build", default_rank: 300 };
+    const run = { ...checkTask, id: "cargo-run", kind: "run", default_rank: 450 };
+    const unavailableDev = {
+      ...checkTask,
+      id: "npm-dev",
+      kind: "run",
+      default_rank: 500,
+      available: false,
+    };
+
+    expect(controller.defaultTask([build, unavailableDev, run])?.id).toBe("cargo-run");
+  });
+
+  it("surfaces executable repair before save or lease work", async () => {
+    const prepareRun = vi.fn(async () => true);
+    const { controller, ensureLease, onError } = createController({ prepareRun });
+    controller.projectTasks = [{
+      ...checkTask,
+      available: false,
+      requirements: [{
+        kind: "executable",
+        name: "cargo",
+        available: false,
+        repair: "Install cargo on the workshop machine.",
+      }],
+    }];
+
+    await controller.runDetected();
+
+    expect(onError).toHaveBeenCalledWith("Install cargo on the workshop machine.");
+    expect(prepareRun).not.toHaveBeenCalled();
+    expect(ensureLease).not.toHaveBeenCalled();
+  });
 });

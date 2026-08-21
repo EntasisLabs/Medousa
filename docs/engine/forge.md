@@ -164,6 +164,15 @@ canonicalizes the selected root, rejects absolute/traversing/symlink escapes,
 and reports output locations relative to the repository even though the process
 runs from the nested directory.
 
+The additive descriptor contract is currently `version: 1`. It also reports
+`source`, `interactive`, `background`, `default_rank`, aggregate `available`,
+and structured `requirements` entries. Executable requirements name missing
+workshop-host commands; JavaScript package requirements also detect absent
+installed dependencies at the nearest lockfile root. Both provide exact repair
+copy. Run routes revalidate health and return a conflict before starting an
+unavailable task. Older clients can continue using the original fields, and
+Home treats absent health fields from older daemons as available.
+
 `GET …/task-runs/{run_id}` also returns bounded live `stdout`/`stderr`,
 `output_truncated`, `locations`, `ready_url` (when a background task becomes
 ready), and `next_seq` while the process is still running (and after exit for

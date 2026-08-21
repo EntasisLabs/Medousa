@@ -80,6 +80,24 @@ export class CodeTasksController {
     );
   }
 
+  taskAvailable(task: ProjectTask | null | undefined): boolean {
+    return task?.available !== false;
+  }
+
+  taskRepair(task: ProjectTask | null | undefined): string | null {
+    return task?.requirements?.find((requirement) => !requirement.available)?.repair ?? null;
+  }
+
+  defaultTask(tasks = this.projectTasks): ProjectTask | null {
+    return (
+      [...tasks]
+        .filter((task) => this.taskAvailable(task))
+        .sort((left, right) => (right.default_rank ?? 0) - (left.default_rank ?? 0))[0] ??
+      tasks[0] ??
+      null
+    );
+  }
+
   restoreTestsOpen(open: boolean) {
     this.testsOpen = open;
   }
@@ -233,9 +251,14 @@ export class CodeTasksController {
   }
 
   async runKind(kind: "run" | "build" | "test" | "verify") {
-    const task = this.projectTasks.find((candidate) => candidate.kind === kind);
+    const candidates = this.projectTasks.filter((candidate) => candidate.kind === kind);
+    const task = this.defaultTask(candidates);
     if (!task) {
       this.#deps.onError(`No ${kind} command was detected for this project.`);
+      return;
+    }
+    if (!this.taskAvailable(task)) {
+      this.#deps.onError(this.taskRepair(task) ?? `${task.label} is unavailable.`);
       return;
     }
     if (this.running || this.preparing) return;
@@ -250,6 +273,11 @@ export class CodeTasksController {
 
   async runInvocation(invocation: { taskId: string; testId?: string }) {
     if (this.running || this.preparing) return;
+    const task = this.projectTasks.find((candidate) => candidate.id === invocation.taskId);
+    if (task && !this.taskAvailable(task)) {
+      this.#deps.onError(this.taskRepair(task) ?? `${task.label} is unavailable.`);
+      return;
+    }
     const workId = this.#deps.getWorkId();
     this.#deps.onError("");
     this.preparing = true;
@@ -389,11 +417,7 @@ export class CodeTasksController {
             return;
           }
           if (!loaded.some((task) => task.id === this.selectedTaskId)) {
-            this.selectedTaskId =
-              loaded.find((task) => task.kind === "run")?.id ??
-              loaded.find((task) => task.kind === "build")?.id ??
-              loaded.find((task) => task.kind === "verify")?.id ??
-              loaded[0]?.id ?? "";
+            this.selectedTaskId = this.defaultTask(loaded)?.id ?? "";
           }
         })
         .catch((err) => {

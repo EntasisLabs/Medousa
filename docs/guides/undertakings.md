@@ -215,6 +215,13 @@ command runs in the directory shown beside its name in the command picker.
 Use a root `.vscode/tasks.json` entry or Terminal when the desired application
 is not detected yet.
 
+Commands whose executable or JavaScript dependencies are missing remain visible
+as **unavailable** instead of failing after a save or lease transition. Hover
+the disabled Run control for the workshop-machine repair instruction, install
+the tool or dependencies at the stated root, and reopen the project to refresh
+the catalog. Medousa prefers a healthy development/run task, then build, test,
+and check commands; an explicit selection remains the project default.
+
 - The project command bar remains available before a file is opened. Choose a
   command and select **Run**; Medousa remembers that selection for the project.
   Run saves every dirty Code buffer first and does not start if a save conflict

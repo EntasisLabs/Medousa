@@ -6307,14 +6307,28 @@ async fn restore_review_file(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ProjectTask {
+    #[serde(default = "default_project_task_version")]
+    version: u8,
     id: String,
     label: String,
     kind: String,
     argv: Vec<String>,
     provider: String,
+    #[serde(default = "default_project_task_source")]
+    source: String,
     /// Repository-relative directory where the command runs.
     #[serde(default = "default_project_task_root")]
     root: String,
+    #[serde(default)]
+    interactive: bool,
+    #[serde(default)]
+    background: bool,
+    #[serde(default)]
+    default_rank: i32,
+    #[serde(default = "default_true")]
+    available: bool,
+    #[serde(default)]
+    requirements: Vec<ProjectTaskRequirement>,
     #[serde(default)]
     long_running: bool,
     /// Optional regex (unanchored) that marks a background task ready.
@@ -6323,6 +6337,27 @@ struct ProjectTask {
     /// Optional VS Code-style problem matcher pattern for this task.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     problem_matcher: Option<ProjectProblemPattern>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ProjectTaskRequirement {
+    kind: String,
+    name: String,
+    available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    repair: Option<String>,
+}
+
+fn default_project_task_version() -> u8 {
+    1
+}
+
+fn default_project_task_source() -> String {
+    "detected".into()
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_project_task_root() -> String {
@@ -6916,6 +6951,35 @@ fn scoped_task_id(base: &str, task_root: &str) -> String {
     )
 }
 
+fn detected_task_default_rank(id: &str, kind: &str) -> i32 {
+    match (kind, id) {
+        ("run", id) if id.ends_with("-dev") || id == "make-dev" => 500,
+        ("run", _) => 450,
+        ("build", _) => 300,
+        ("test", _) => 220,
+        ("verify", _) => 180,
+        _ => 100,
+    }
+}
+
+fn configured_task_default_rank(kind: &str, background: bool) -> i32 {
+    if background {
+        425
+    } else {
+        match kind {
+            "run" => 400,
+            "build" => 280,
+            "test" => 200,
+            "verify" => 160,
+            _ => 90,
+        }
+    }
+}
+
+fn detected_task_is_background(id: &str) -> bool {
+    id.ends_with("-dev") || id.ends_with("-start") || id.ends_with("-serve") || id == "make-dev"
+}
+
 fn add_detected_task(
     tasks: &mut Vec<ProjectTask>,
     task_root: &str,
@@ -6928,13 +6992,28 @@ fn add_detected_task(
         return;
     }
     let argv = argv.into_iter().map(Into::into).collect::<Vec<_>>();
+    let source = if matches!(
+        argv.first().map(String::as_str),
+        Some("npm" | "pnpm" | "yarn" | "bun" | "uv" | "poetry")
+    ) {
+        "package"
+    } else {
+        "detected"
+    };
     tasks.push(ProjectTask {
+        version: default_project_task_version(),
         id: scoped_task_id(id, task_root),
         label: label.into(),
         kind: kind.into(),
         provider: argv.first().cloned().unwrap_or_else(|| "project".into()),
+        source: source.into(),
         argv,
         root: task_root.into(),
+        interactive: false,
+        background: detected_task_is_background(id),
+        default_rank: detected_task_default_rank(id, kind),
+        available: true,
+        requirements: Vec::new(),
         long_running: kind == "run",
         ready_pattern: None,
         problem_matcher: None,
@@ -7022,6 +7101,99 @@ fn package_manager(
     ("npm", "npm")
 }
 
+fn cargo_named_targets(
+    manifest: Option<&toml::Value>,
+    project_root: &FsPath,
+    kind: &str,
+) -> Vec<String> {
+    let mut names = std::collections::BTreeSet::new();
+    if let Some(entries) = manifest
+        .and_then(|value| value.get(kind))
+        .and_then(toml::Value::as_array)
+    {
+        for name in entries
+            .iter()
+            .filter_map(|entry| entry.get("name"))
+            .filter_map(toml::Value::as_str)
+            .filter(|name| npm_script_is_safe(name))
+        {
+            names.insert(name.to_owned());
+        }
+    }
+    let directory = match kind {
+        "bin" => project_root.join("src/bin"),
+        "example" => project_root.join("examples"),
+        _ => return names.into_iter().take(8).collect(),
+    };
+    for entry in std::fs::read_dir(directory)
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let path = entry.path();
+        let name = if path.extension().and_then(OsStr::to_str) == Some("rs") {
+            path.file_stem().and_then(OsStr::to_str)
+        } else if path.is_dir() && path.join("main.rs").is_file() {
+            path.file_name().and_then(OsStr::to_str)
+        } else {
+            None
+        };
+        if let Some(name) = name.filter(|name| npm_script_is_safe(name)) {
+            names.insert(name.to_owned());
+        }
+        if names.len() >= 8 {
+            break;
+        }
+    }
+    names.into_iter().take(8).collect()
+}
+
+fn python_project_scripts(manifest: Option<&toml::Value>) -> Vec<String> {
+    manifest
+        .and_then(|value| value.get("project"))
+        .and_then(|value| value.get("scripts"))
+        .and_then(toml::Value::as_table)
+        .into_iter()
+        .flat_map(|scripts| scripts.keys())
+        .filter(|name| npm_script_is_safe(name))
+        .take(8)
+        .cloned()
+        .collect()
+}
+
+fn preferred_python_executable() -> &'static str {
+    if task_executable_available("python") || !task_executable_available("python3") {
+        "python"
+    } else {
+        "python3"
+    }
+}
+
+fn dotnet_runnable_projects(project_root: &FsPath) -> Vec<String> {
+    std::fs::read_dir(project_root)
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if path.extension().and_then(OsStr::to_str) != Some("csproj") {
+                return None;
+            }
+            let raw = std::fs::read_to_string(&path).ok()?;
+            let runnable = raw.contains("<OutputType>Exe</OutputType>")
+                || raw.contains("<OutputType>WinExe</OutputType>")
+                || raw.contains("Sdk=\"Microsoft.NET.Sdk.Web\"")
+                || raw.contains("Sdk='Microsoft.NET.Sdk.Web'");
+            runnable
+                .then(|| path.file_name()?.to_str().map(str::to_owned))
+                .flatten()
+        })
+        .take(8)
+        .collect()
+}
+
 fn detected_tasks_for_root(
     repository_root: &FsPath,
     task_root: &str,
@@ -7098,6 +7270,26 @@ fn detected_tasks_for_root(
                 "Run project",
                 "run",
                 ["cargo", "run", "--bin", binary],
+            );
+        }
+        for binary in cargo_named_targets(manifest.as_ref(), &project_root, "bin") {
+            add_detected_task(
+                tasks,
+                task_root,
+                &format!("cargo-run-bin-{}", sanitize_task_id_slug(&binary)),
+                &format!("Run binary: {binary}"),
+                "run",
+                vec!["cargo".into(), "run".into(), "--bin".into(), binary],
+            );
+        }
+        for example in cargo_named_targets(manifest.as_ref(), &project_root, "example") {
+            add_detected_task(
+                tasks,
+                task_root,
+                &format!("cargo-run-example-{}", sanitize_task_id_slug(&example)),
+                &format!("Run example: {example}"),
+                "run",
+                vec!["cargo".into(), "run".into(), "--example".into(), example],
             );
         }
     }
@@ -7188,13 +7380,17 @@ fn detected_tasks_for_root(
         }
     }
     if project_root.join("pyproject.toml").is_file() || project_root.join("pytest.ini").is_file() {
+        let python = preferred_python_executable();
+        let manifest = std::fs::read_to_string(project_root.join("pyproject.toml"))
+            .ok()
+            .and_then(|raw| raw.parse::<toml::Value>().ok());
         add_detected_task(
             tasks,
             task_root,
             "python-test",
             "Test",
             "test",
-            ["python", "-m", "pytest"],
+            [python, "-m", "pytest"],
         );
         if project_root.join("main.py").is_file() {
             add_detected_task(
@@ -7203,8 +7399,56 @@ fn detected_tasks_for_root(
                 "python-run",
                 "Run project",
                 "run",
-                ["python", "main.py"],
+                [python, "main.py"],
             );
+        } else if project_root.join("__main__.py").is_file() {
+            add_detected_task(
+                tasks,
+                task_root,
+                "python-run",
+                "Run project",
+                "run",
+                [python, "__main__.py"],
+            );
+        } else if let Some(module) = std::fs::read_dir(&project_root)
+            .ok()
+            .into_iter()
+            .flatten()
+            .flatten()
+            .find_map(|entry| {
+                let path = entry.path();
+                (path.is_dir() && path.join("__main__.py").is_file())
+                    .then(|| path.file_name()?.to_str().map(str::to_owned))
+                    .flatten()
+            })
+        {
+            add_detected_task(
+                tasks,
+                task_root,
+                "python-run",
+                "Run project",
+                "run",
+                vec![python.into(), "-m".into(), module],
+            );
+        }
+        let script_runner = if project_root.join("uv.lock").is_file() {
+            Some("uv")
+        } else if project_root.join("poetry.lock").is_file() {
+            Some("poetry")
+        } else {
+            None
+        };
+        if let Some(runner) = script_runner {
+            for script in python_project_scripts(manifest.as_ref()) {
+                add_detected_task(
+                    tasks,
+                    task_root,
+                    &format!("python-script-{}", sanitize_task_id_slug(&script)),
+                    &format!("Run script: {script}"),
+                    "run",
+                    vec![runner.into(), "run".into(), script],
+                );
+            }
         }
     }
     if project_root.join("Makefile").is_file() {
@@ -7259,6 +7503,23 @@ fn detected_tasks_for_root(
             "test",
             ["dotnet", "test"],
         );
+        let runnable_projects = dotnet_runnable_projects(&project_root);
+        let one_runnable_project = runnable_projects.len() == 1;
+        for project in runnable_projects {
+            let label = if one_runnable_project {
+                "Run project".into()
+            } else {
+                format!("Run {project}")
+            };
+            add_detected_task(
+                tasks,
+                task_root,
+                &format!("dotnet-run-{}", sanitize_task_id_slug(&project)),
+                &label,
+                "run",
+                vec!["dotnet".into(), "run".into(), "--project".into(), project],
+            );
+        }
     }
 }
 
@@ -7502,18 +7763,173 @@ fn configured_project_tasks(root: &FsPath) -> Vec<ProjectTask> {
         }
         let kind = infer_configured_task_kind(label, script_name.as_deref(), background);
         tasks.push(ProjectTask {
+            version: default_project_task_version(),
             id,
             label: label.to_owned(),
             kind: kind.into(),
             argv,
             provider: "vscode-tasks".into(),
+            source: "vscode-task".into(),
             root: ".".into(),
+            interactive: false,
+            background,
+            default_rank: configured_task_default_rank(kind, background),
+            available: true,
+            requirements: Vec::new(),
             long_running: background || kind == "run",
             ready_pattern: configured_task_ready_pattern(item),
             problem_matcher: item.get("problemMatcher").and_then(first_problem_matcher),
         });
     }
     tasks
+}
+
+fn executable_repair(executable: &str) -> String {
+    format!(
+        "Install {executable} on the workshop machine and make it available on PATH, then reload the project commands."
+    )
+}
+
+fn task_executable_available(executable: &str) -> bool {
+    let path = FsPath::new(executable);
+    if path.components().count() > 1 {
+        return path.is_file();
+    }
+    let Some(search_path) = std::env::var_os("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&search_path).any(|directory| {
+        let candidate = directory.join(executable);
+        if candidate.is_file() {
+            return true;
+        }
+        #[cfg(windows)]
+        {
+            return ["exe", "cmd", "bat", "com"].into_iter().any(|extension| {
+                directory
+                    .join(format!("{executable}.{extension}"))
+                    .is_file()
+            });
+        }
+        #[cfg(not(windows))]
+        false
+    })
+}
+
+fn javascript_dependency_requirement(
+    repository_root: &FsPath,
+    task: &ProjectTask,
+) -> Option<ProjectTaskRequirement> {
+    let manager = task.argv.first()?.as_str();
+    if !matches!(manager, "npm" | "pnpm" | "yarn" | "bun") {
+        return None;
+    }
+    let project_root = if task.root == "." {
+        repository_root.to_path_buf()
+    } else {
+        repository_root.join(&task.root)
+    };
+    let package = std::fs::read(project_root.join("package.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())?;
+    let has_dependencies = ["dependencies", "devDependencies", "optionalDependencies"]
+        .into_iter()
+        .any(|key| {
+            package
+                .get(key)
+                .and_then(serde_json::Value::as_object)
+                .is_some_and(|dependencies| !dependencies.is_empty())
+        });
+    if !has_dependencies {
+        return None;
+    }
+    let mut install_root = project_root.as_path();
+    let mut current = Some(project_root.as_path());
+    while let Some(directory) = current {
+        if [
+            "bun.lock",
+            "bun.lockb",
+            "pnpm-lock.yaml",
+            "yarn.lock",
+            "package-lock.json",
+        ]
+        .into_iter()
+        .any(|name| directory.join(name).is_file())
+        {
+            install_root = directory;
+            break;
+        }
+        if directory == repository_root {
+            break;
+        }
+        current = directory
+            .parent()
+            .filter(|parent| parent.starts_with(repository_root));
+    }
+    let available = install_root.join("node_modules").is_dir()
+        || install_root.join(".pnp.cjs").is_file()
+        || install_root.join(".pnp.loader.mjs").is_file();
+    let display_root = install_root
+        .strip_prefix(repository_root)
+        .ok()
+        .filter(|path| !path.as_os_str().is_empty())
+        .map(|path| path.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|| "project root".into());
+    Some(ProjectTaskRequirement {
+        kind: "package".into(),
+        name: "project dependencies".into(),
+        available,
+        repair: (!available).then(|| {
+            format!(
+                "Run `{manager} install` from {display_root} on the workshop machine, then reload the project commands."
+            )
+        }),
+    })
+}
+
+fn annotate_task_requirements(repository_root: &FsPath, tasks: &mut [ProjectTask]) {
+    let mut availability = std::collections::HashMap::<String, bool>::new();
+    for task in tasks {
+        let Some(executable) = task.argv.first().cloned() else {
+            task.available = false;
+            task.requirements = vec![ProjectTaskRequirement {
+                kind: "executable".into(),
+                name: "command".into(),
+                available: false,
+                repair: Some("Choose a task with a configured executable.".into()),
+            }];
+            continue;
+        };
+        let available = *availability
+            .entry(executable.clone())
+            .or_insert_with(|| task_executable_available(&executable));
+        let mut requirements = vec![ProjectTaskRequirement {
+            kind: "executable".into(),
+            name: executable.clone(),
+            available,
+            repair: (!available).then(|| executable_repair(&executable)),
+        }];
+        if let Some(requirement) = javascript_dependency_requirement(repository_root, task) {
+            requirements.push(requirement);
+        }
+        task.available = requirements.iter().all(|requirement| requirement.available);
+        task.requirements = requirements;
+    }
+}
+
+fn unavailable_task_message(task: &ProjectTask) -> Option<String> {
+    if task.available {
+        return None;
+    }
+    task.requirements
+        .iter()
+        .find_map(|requirement| requirement.repair.clone())
+        .or_else(|| {
+            Some(format!(
+                "{} is unavailable on the workshop machine",
+                task.label
+            ))
+        })
 }
 
 fn project_tasks(root: &FsPath) -> Vec<ProjectTask> {
@@ -7534,6 +7950,7 @@ fn project_tasks(root: &FsPath) -> Vec<ProjectTask> {
         }
         tasks.push(task);
     }
+    annotate_task_requirements(root, &mut tasks);
     tasks
 }
 
@@ -7846,6 +8263,9 @@ async fn start_project_task_run(
                             "Project command is no longer available",
                         )
                     })?;
+                if let Some(message) = unavailable_task_message(&task) {
+                    return Err(request_error(StatusCode::CONFLICT, message));
+                }
                 target_project_test(&root, &mut task, test_id.as_deref())?;
                 let working_root = resolve_project_task_root(&root, &task.root)?;
                 Ok((item, lease, root, working_root, task))
@@ -8253,6 +8673,9 @@ async fn run_project_task(
                             "Project command is no longer available",
                         )
                     })?;
+                if let Some(message) = unavailable_task_message(&task) {
+                    return Err(request_error(StatusCode::CONFLICT, message));
+                }
                 let working_root = resolve_project_task_root(&root, &task.root)?;
                 Ok((item, lease, root, working_root, task))
             }
@@ -10135,12 +10558,19 @@ mod source_tests {
 
     fn test_project_task_run_store(run_id: &str) -> ProjectTaskRunStore {
         let task = ProjectTask {
+            version: 1,
             id: "cargo-check".into(),
             label: "Check".into(),
             kind: "verify".into(),
             argv: vec!["cargo".into(), "check".into()],
             provider: "cargo".into(),
+            source: "detected".into(),
             root: ".".into(),
+            interactive: false,
+            background: false,
+            default_rank: 180,
+            available: true,
+            requirements: Vec::new(),
             long_running: false,
             ready_pattern: None,
             problem_matcher: None,
@@ -10250,12 +10680,19 @@ mod source_tests {
     #[test]
     fn task_run_terminal_requires_final_result_after_cancel() {
         let task = ProjectTask {
+            version: 1,
             id: "cargo-check".into(),
             label: "Check".into(),
             kind: "verify".into(),
             argv: vec!["cargo".into(), "check".into()],
             provider: "cargo".into(),
+            source: "detected".into(),
             root: ".".into(),
+            interactive: false,
+            background: false,
+            default_rank: 180,
+            available: true,
+            requirements: Vec::new(),
             long_running: false,
             ready_pattern: None,
             problem_matcher: None,
@@ -11009,8 +11446,13 @@ mod source_tests {
             .expect("nested build task");
         assert_eq!(build.root, "apps/web");
         assert_eq!(build.argv, ["pnpm", "run", "build"]);
+        assert_eq!(build.source, "package");
         assert!(tasks.iter().any(|task| {
-            task.id.starts_with("pnpm-dev@apps-web-") && task.kind == "run" && task.long_running
+            task.id.starts_with("pnpm-dev@apps-web-")
+                && task.kind == "run"
+                && task.background
+                && task.default_rank == 500
+                && task.long_running
         }));
         assert!(
             tasks
@@ -11023,16 +11465,70 @@ mod source_tests {
     fn cargo_tasks_offer_build_and_only_unambiguous_run() {
         let root = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(root.path().join("src")).unwrap();
+        std::fs::create_dir_all(root.path().join("src/bin")).unwrap();
+        std::fs::create_dir_all(root.path().join("examples")).unwrap();
         std::fs::write(
             root.path().join("Cargo.toml"),
             "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
         )
         .unwrap();
         std::fs::write(root.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+        std::fs::write(root.path().join("src/bin/worker.rs"), "fn main() {}\n").unwrap();
+        std::fs::write(root.path().join("examples/hello.rs"), "fn main() {}\n").unwrap();
         let tasks = detected_project_tasks(root.path());
         assert!(tasks.iter().any(|task| task.id == "cargo-build"));
         assert!(tasks.iter().any(|task| {
-            task.id == "cargo-run" && task.kind == "run" && task.argv == ["cargo", "run"]
+            task.id == "cargo-run"
+                && task.kind == "run"
+                && !task.background
+                && task.argv == ["cargo", "run"]
+        }));
+        assert!(tasks.iter().any(|task| {
+            task.id == "cargo-run-bin-worker" && task.argv == ["cargo", "run", "--bin", "worker"]
+        }));
+        assert!(tasks.iter().any(|task| {
+            task.id == "cargo-run-example-hello"
+                && task.argv == ["cargo", "run", "--example", "hello"]
+        }));
+    }
+
+    #[test]
+    fn python_and_dotnet_application_entry_points_are_detected() {
+        let python = tempfile::tempdir().unwrap();
+        std::fs::write(
+            python.path().join("pyproject.toml"),
+            "[project]\nname = \"demo\"\nversion = \"0.1.0\"\n[project.scripts]\nserve = \"demo.cli:main\"\n",
+        )
+        .unwrap();
+        std::fs::write(python.path().join("uv.lock"), "version = 1\n").unwrap();
+        std::fs::create_dir(python.path().join("demo")).unwrap();
+        std::fs::write(python.path().join("demo/__main__.py"), "print('ok')\n").unwrap();
+        let python_tasks = detected_project_tasks(python.path());
+        assert!(python_tasks.iter().any(|task| {
+            task.id == "python-run"
+                && matches!(
+                    task.argv.first().map(String::as_str),
+                    Some("python" | "python3")
+                )
+                && task
+                    .argv
+                    .get(1..)
+                    .is_some_and(|argv| argv == ["-m", "demo"])
+        }));
+        assert!(python_tasks.iter().any(|task| {
+            task.id == "python-script-serve" && task.argv == ["uv", "run", "serve"]
+        }));
+
+        let dotnet = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dotnet.path().join("Demo.csproj"),
+            r#"<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType></PropertyGroup></Project>"#,
+        )
+        .unwrap();
+        let dotnet_tasks = detected_project_tasks(dotnet.path());
+        assert!(dotnet_tasks.iter().any(|task| {
+            task.id == "dotnet-run-demo-csproj"
+                && task.argv == ["dotnet", "run", "--project", "Demo.csproj"]
         }));
     }
 
@@ -11060,9 +11556,80 @@ mod source_tests {
         }))
         .unwrap();
         assert_eq!(task.root, ".");
+        assert_eq!(task.version, 1);
+        assert_eq!(task.source, "detected");
+        assert!(task.available);
         assert_ne!(
             scoped_task_id("npm-build", "apps/web"),
             scoped_task_id("npm-build", "apps_web")
+        );
+    }
+
+    #[test]
+    fn project_task_requirements_include_actionable_missing_executable_health() {
+        let root = tempfile::tempdir().unwrap();
+        let mut task: ProjectTask = serde_json::from_value(serde_json::json!({
+            "id": "missing-check",
+            "label": "Check",
+            "kind": "verify",
+            "argv": ["medousa-definitely-missing-task-command", "check"],
+            "provider": "fixture"
+        }))
+        .unwrap();
+        annotate_task_requirements(root.path(), std::slice::from_mut(&mut task));
+        assert!(!task.available);
+        assert_eq!(
+            task.requirements[0].name,
+            "medousa-definitely-missing-task-command"
+        );
+        assert!(
+            task.requirements[0]
+                .repair
+                .as_deref()
+                .is_some_and(|repair| repair.contains("workshop machine"))
+        );
+    }
+
+    #[test]
+    fn package_task_health_reports_the_correct_install_root() {
+        let root = tempfile::tempdir().unwrap();
+        let app = root.path().join("apps/web");
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::write(
+            root.path().join("pnpm-lock.yaml"),
+            "lockfileVersion: '9.0'\n",
+        )
+        .unwrap();
+        std::fs::write(
+            app.join("package.json"),
+            r#"{"scripts":{"build":"vite build"},"devDependencies":{"vite":"latest"}}"#,
+        )
+        .unwrap();
+        let mut tasks = Vec::new();
+        detected_tasks_for_root(root.path(), "apps/web", &mut tasks);
+        annotate_task_requirements(root.path(), &mut tasks);
+        let build = tasks.iter().find(|task| task.kind == "build").unwrap();
+        let package = build
+            .requirements
+            .iter()
+            .find(|requirement| requirement.kind == "package")
+            .unwrap();
+        assert!(!package.available);
+        assert!(package.repair.as_deref().is_some_and(
+            |repair| repair.contains("pnpm install") && repair.contains("project root")
+        ));
+
+        std::fs::create_dir(root.path().join("node_modules")).unwrap();
+        annotate_task_requirements(root.path(), &mut tasks);
+        assert!(
+            tasks
+                .iter()
+                .find(|task| task.kind == "build")
+                .unwrap()
+                .requirements
+                .iter()
+                .find(|requirement| requirement.kind == "package")
+                .is_some_and(|requirement| requirement.available)
         );
     }
 
