@@ -3,10 +3,13 @@
   import { buildWorkshopCommandContext } from "$lib/commands/context";
   import {
     collectWorkshopCommands,
+    collectWorkshopLensCommands,
     parseSpotlightQuery,
   } from "$lib/commands/collectCommands";
+  import type { SpotlightLens } from "$lib/commands/collectCommands";
   import { jumpPinSlot } from "$lib/commands/pinCommands";
   import { executeWorkshopCommand } from "$lib/commands/runWorkshopCommand";
+  import { buildWorkspaceCommands } from "$lib/commands/registry";
   import { getVaultNote } from "$lib/daemon";
   import { chat } from "$lib/stores/chat.svelte";
   import { connection } from "$lib/stores/connection.svelte";
@@ -70,6 +73,7 @@
   let inputEl = $state<HTMLInputElement | null>(null);
   let promptValue = $state("");
   let selectedScopeId = $state("home");
+  let selectedLens = $state<SpotlightLens>("overview");
   let groups = $state<SpotlightGroup[]>([]);
   let previewText = $state<string | null>(null);
   let previewTitle = $state<string | null>(null);
@@ -103,6 +107,13 @@
     ...shellTabs.desktops.map((desktop) => ({ id: desktop.id, label: desktop.name })),
   ]);
 
+  const lensTabs: Array<{ id: SpotlightLens; label: string }> = [
+    { id: "overview", label: "Overview" },
+    { id: "recent", label: "Recent" },
+    { id: "create", label: "Create" },
+    { id: "actions", label: "Actions" },
+  ];
+
   const selectedDesktop = $derived(
     selectedScopeId === "home"
       ? null
@@ -123,7 +134,7 @@
   });
 
   const hasRichStage = $derived(
-    Boolean(selectedDesktopLayout) || activePreviewKind !== "fallback",
+    Boolean(selectedDesktopLayout && activeCommand) || activePreviewKind !== "fallback",
   );
   const showStage = $derived(hasRichStage || activeCommand?.risk === "attention");
 
@@ -372,6 +383,7 @@
     void lmeWorkspace.tabs;
     void commandSpotlight.mode;
     void selectedScopeId;
+    void selectedLens;
     void query;
     void promptStep;
     void ctx;
@@ -380,6 +392,12 @@
       const layout = selectedDesktopLayout;
       if (selectedScopeId !== "home" && layout) {
         groups = collectDesktopGroups(selectedScopeId, layout, query);
+      } else if (!notesMode && !query.trim()) {
+        groups = collectWorkshopLensCommands(ctx, selectedLens).map((group) => ({
+          id: `${selectedLens}-${group.label}`,
+          label: group.label,
+          commands: group.commands,
+        }));
       } else {
         groups = collectWorkshopCommands(ctx, {
           query,
@@ -403,6 +421,7 @@
     if (!isOpen) {
       query = "";
       selectedScopeId = "home";
+      selectedLens = "overview";
       promptValue = "";
       busy = false;
       previewText = null;
@@ -569,6 +588,19 @@
     requestAnimationFrame(() => inputEl?.focus());
   }
 
+  function selectLens(lens: SpotlightLens) {
+    if (lens === selectedLens) return;
+    highlightNavigation = "data";
+    selectedLens = lens;
+    highlightIndex = 0;
+    requestAnimationFrame(() => inputEl?.focus());
+  }
+
+  function createWorkspace() {
+    const command = buildWorkspaceCommands().find((entry) => entry.id === "workspace-new");
+    if (command) void runCommand(command);
+  }
+
   function focusCommand(commandId: string) {
     const index = flatCommands.findIndex((command) => command.id === commandId);
     if (index >= 0) {
@@ -733,28 +765,59 @@
       {/if}
 
       {#if !promptStep}
-        <nav class="command-spotlight-scopes" aria-label="Workshop scopes">
-          <span class="command-spotlight-scopes-label">Search in</span>
-          <div class="command-spotlight-scope-list" role="tablist" aria-label="Workspaces">
-            {#each scopeTabs as scope (scope.id)}
+        <div class="command-spotlight-navigation">
+          <nav class="command-spotlight-scopes" aria-label="Workshop scopes">
+            <span class="command-spotlight-scopes-label">Search in</span>
+            <div class="command-spotlight-scope-list" role="tablist" aria-label="Workspaces">
+              {#each scopeTabs as scope (scope.id)}
+                <button
+                  type="button"
+                  role="tab"
+                  class="command-spotlight-scope"
+                  class:command-spotlight-scope-active={scope.id === selectedScopeId}
+                  aria-selected={scope.id === selectedScopeId}
+                  onclick={() => selectScope(scope.id)}
+                >
+                  <span class="command-spotlight-scope-content">
+                    {#if scope.id === "home"}
+                      <House size={12} strokeWidth={1.7} />
+                    {/if}
+                    <span>{scope.label}</span>
+                  </span>
+                </button>
+              {/each}
               <button
                 type="button"
-                role="tab"
-                class="command-spotlight-scope"
-              class:command-spotlight-scope-active={scope.id === selectedScopeId}
-              aria-selected={scope.id === selectedScopeId}
-              onclick={() => selectScope(scope.id)}
-            >
-                <span class="command-spotlight-scope-content">
-                  {#if scope.id === "home"}
-                    <House size={12} strokeWidth={1.7} />
-                  {/if}
-                  <span>{scope.label}</span>
-                </span>
+                class="command-spotlight-workspace-add"
+                aria-label="Create workspace"
+                title="Create workspace"
+                onclick={createWorkspace}
+              >
+                <Plus size={13} strokeWidth={1.7} />
               </button>
-            {/each}
-          </div>
-        </nav>
+            </div>
+          </nav>
+
+          {#if selectedScopeId === "home" && !notesMode}
+            {#if query.trim()}
+              <span class="command-spotlight-searching-all">All results</span>
+            {:else}
+              <nav class="command-spotlight-lenses" aria-label="Spotlight categories">
+                {#each lensTabs as lens (lens.id)}
+                  <button
+                    type="button"
+                    class="command-spotlight-lens"
+                    class:command-spotlight-lens-active={lens.id === selectedLens}
+                    aria-current={lens.id === selectedLens ? "page" : undefined}
+                    onclick={() => selectLens(lens.id)}
+                  >
+                    <span class="command-spotlight-lens-content">{lens.label}</span>
+                  </button>
+                {/each}
+              </nav>
+            {/if}
+          {/if}
+        </div>
       {/if}
 
       <div
@@ -775,7 +838,7 @@
                     class:command-spotlight-row-active={rowIndex === highlightIndex}
                     data-spotlight-index={rowIndex}
                     disabled={busy}
-                    onmouseenter={() => {
+                    onmousemove={() => {
                       highlightNavigation = "pointer";
                       highlightIndex = rowIndex;
                     }}

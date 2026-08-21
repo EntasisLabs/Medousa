@@ -35,6 +35,7 @@ import type {
 import { SECTION_LABELS as LABELS, SECTION_ORDER as ORDER } from "./types";
 
 export type SpotlightPrefixMode = "default" | "advanced" | "create" | "run";
+export type SpotlightLens = "overview" | "recent" | "create" | "actions";
 
 export interface CollectCommandsOptions {
   query: string;
@@ -194,6 +195,79 @@ export function collectWorkshopCommands(
 
   const filtered = filterAndSortCommands(dedupeCommandsById(pool), rawQuery, 64);
   return groupCommands(filtered);
+}
+
+function lensGroup(
+  section: CommandSection,
+  label: string,
+  commands: WorkshopCommand[],
+): GroupedCommands | null {
+  return commands.length > 0 ? { section, label, commands } : null;
+}
+
+/** Curated empty-query views. Typing still searches the complete command registry. */
+export function collectWorkshopLensCommands(
+  ctx: WorkshopCommandContext,
+  lens: SpotlightLens,
+): GroupedCommands[] {
+  const suggested = buildSuggestedCommands(ctx);
+  const budgetList = buildBudgetListCommand(ctx);
+  if (budgetList) suggested.push(budgetList);
+
+  const doCommands = [...buildDoCommands(), ...buildPinManageCommands(ctx)];
+
+  if (lens === "overview") {
+    const continueCommands = withNotePreviews(
+      dedupeCommandsById([
+        ...buildPinnedJumpCommands(),
+        ...buildRecentSessionCommands(ctx),
+        ...buildNoteOpenCommands(ctx, "", 3),
+        ...buildWorkCardOpenCommands(ctx, "", 2),
+      ]),
+    ).slice(0, 4);
+    return [
+      lensGroup("suggested", "Suggested", suggested.slice(0, 3)),
+      lensGroup("open", "Continue", continueCommands),
+    ].filter((group): group is GroupedCommands => Boolean(group));
+  }
+
+  if (lens === "recent") {
+    return [
+      lensGroup("open", "Conversations", buildSessionOpenCommands(ctx, "", 3)),
+      lensGroup("open", "Notes", withNotePreviews(buildNoteOpenCommands(ctx, "", 3))),
+      lensGroup("open", "Work", buildWorkCardOpenCommands(ctx, "", 2)),
+      lensGroup("open", "Web", buildBrowserHistoryCommands("", 2)),
+    ].filter((group): group is GroupedCommands => Boolean(group));
+  }
+
+  if (lens === "create") {
+    const coreCreateCommands = doCommands.filter(
+      (command) => command.verb === "create" && !command.id.startsWith("do-create-script-"),
+    );
+    const newWorkspace = buildWorkspaceCommands().find(
+      (command) => command.id === "workspace-new",
+    );
+    return [
+      lensGroup(
+        "do",
+        "Create",
+        dedupeCommandsById([
+          ...(newWorkspace ? [newWorkspace] : []),
+          ...coreCreateCommands,
+        ]),
+      ),
+    ].filter((group): group is GroupedCommands => Boolean(group));
+  }
+
+  const actionPool = dedupeCommandsById([
+    ...doCommands.filter((command) => command.verb !== "create"),
+    ...buildCodeCommands(),
+    ...buildAskCommands(),
+    ...buildTuneCommands(),
+    ...buildPaneCommands(),
+    ...buildAdvancedCommands(),
+  ]);
+  return groupCommands(actionPool);
 }
 
 function buildRunScriptHitsFromCache(query: string): WorkshopCommand[] {

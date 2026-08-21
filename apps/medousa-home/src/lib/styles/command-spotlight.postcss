@@ -89,17 +89,25 @@
     font-size: 0.8125rem;
   }
 
-  .command-spotlight-scopes {
+  .command-spotlight-navigation {
     display: flex;
     min-width: 0;
     height: 3.1rem;
     align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border-bottom: 1px solid rgb(var(--theme-border) / 0.3);
+    padding: 0 0.7rem 0 1rem;
+    box-shadow: inset 0 -1px rgb(var(--theme-border) / 0.22);
+  }
+
+  .command-spotlight-scopes {
+    display: flex;
+    min-width: 0;
+    align-items: center;
     gap: 0.7rem;
     overflow-x: auto;
-    border-bottom: 1px solid rgb(var(--theme-border) / 0.3);
-    padding: 0 1rem;
     scrollbar-width: none;
-    box-shadow: inset 0 -1px rgb(var(--theme-border) / 0.22);
   }
 
   .command-spotlight-scopes::-webkit-scrollbar {
@@ -120,6 +128,71 @@
     min-width: 0;
     align-items: center;
     gap: 0.45rem;
+  }
+
+  .command-spotlight-workspace-add {
+    display: inline-flex;
+    width: 1.8rem;
+    height: 1.8rem;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 0.4rem;
+    background: transparent;
+    padding: 0;
+    color: rgb(var(--theme-text-tertiary));
+  }
+
+  .command-spotlight-workspace-add:hover {
+    box-shadow: inset 0 0 0 3rem rgb(var(--theme-card-hover) / 0.6);
+    color: rgb(var(--theme-text));
+  }
+
+  .command-spotlight-lenses {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.08rem;
+  }
+
+  .command-spotlight-lens {
+    display: inline-flex;
+    height: 1.8rem;
+    align-items: center;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: rgb(var(--theme-text-tertiary));
+    font-size: 0.6875rem;
+  }
+
+  .command-spotlight-lens-content {
+    display: inline-flex;
+    height: 1.8rem;
+    align-items: center;
+    border-radius: 0.4rem;
+    padding: 0 0.58rem;
+  }
+
+  .command-spotlight-lens:hover {
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  .command-spotlight-lens:hover .command-spotlight-lens-content {
+    box-shadow: inset 0 0 0 3rem rgb(var(--theme-card-hover) / 0.42);
+  }
+
+  .command-spotlight-lens-active .command-spotlight-lens-content {
+    box-shadow: inset 0 0 0 3rem rgb(var(--theme-card-hover) / 0.72);
+    color: rgb(var(--theme-text));
+  }
+
+  .command-spotlight-searching-all {
+    flex: 0 0 auto;
+    padding-right: 0.55rem;
+    color: rgb(var(--theme-text-faint));
+    font-size: 0.625rem;
   }
 
   .command-spotlight-scope {
@@ -572,6 +645,19 @@
 
     .command-spotlight-preview {
       display: none;
+    }
+
+    .command-spotlight-navigation {
+      height: auto;
+      min-height: 3.1rem;
+      flex-wrap: wrap;
+      gap: 0.25rem 0.75rem;
+      padding-block: 0.55rem;
+    }
+
+    .command-spotlight-lenses {
+      width: 100%;
+      overflow-x: auto;
     }
 
     .command-spotlight-body {
