@@ -28,6 +28,7 @@ describe("code command registry", () => {
     expect(ids.has("workbench.action.tasks.runPrimary")).toBe(true);
     expect(ids.has("workbench.action.tasks.build")).toBe(true);
     expect(ids.has("workbench.action.tasks.test")).toBe(true);
+    expect(ids.has("testing.runAtCursor")).toBe(true);
     expect(ids.has("workbench.action.tasks.rerunLast")).toBe(true);
     expect(ids.has("workbench.action.tasks.terminate")).toBe(true);
     expect(ids.has("workbench.action.files.saveAll")).toBe(true);

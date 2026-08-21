@@ -132,6 +132,80 @@ describe("CodeTasksController", () => {
     );
   });
 
+  it("runs the nearest named test only for stable providers", async () => {
+    const { controller } = createController();
+    const testTask = { ...checkTask, id: "cargo-test", kind: "test" };
+    controller.projectTasks = [testTask];
+    controller.projectTests = [
+      {
+        id: "cargo-test::src/lib.rs::earlier",
+        label: "earlier",
+        path: "src/lib.rs",
+        line: 20,
+        task_id: testTask.id,
+        provider: "cargo",
+        target_kind: "named",
+      },
+      {
+        id: "npm-test::src/lib.test.ts::nearby",
+        label: "nearby",
+        path: "src/lib.test.ts",
+        line: 22,
+        task_id: "npm-test",
+        provider: "npm",
+        target_kind: "file",
+      },
+      {
+        id: "cargo-test::src/lib.rs::closest",
+        label: "closest",
+        path: "src/lib.rs",
+        line: 44,
+        task_id: testTask.id,
+        provider: "cargo",
+        target_kind: "named",
+      },
+    ];
+
+    await controller.runNearestTest("src/lib.rs", 40);
+
+    expect(api.startProjectTaskRun).toHaveBeenCalledWith(
+      "work-1",
+      testTask.id,
+      expect.objectContaining({ test_id: "cargo-test::src/lib.rs::closest" }),
+    );
+    expect(controller.nearestRunnableTest("src/lib.test.ts", 22)).toBeNull();
+  });
+
+  it("retains the latest result provenance for each discovered test", () => {
+    const { controller } = createController();
+    controller.recentRuns = [
+      {
+        run_id: "new",
+        work_id: "work-1",
+        state: "passed",
+        task: checkTask,
+        test_id: "cargo-test::src/lib.rs::check",
+        started_at: "2026-08-21T02:00:00Z",
+        terminal: true,
+        output_truncated: false,
+        next_seq: 2,
+      },
+      {
+        run_id: "old",
+        work_id: "work-1",
+        state: "failed",
+        task: checkTask,
+        test_id: "cargo-test::src/lib.rs::check",
+        started_at: "2026-08-21T01:00:00Z",
+        terminal: true,
+        output_truncated: false,
+        next_seq: 2,
+      },
+    ];
+
+    expect(controller.latestRunForTest("cargo-test::src/lib.rs::check")?.run_id).toBe("new");
+  });
+
   it("keeps a short successful verification quiet when Output was closed", async () => {
     const { controller, persistOutputOpen } = createController();
 

@@ -222,7 +222,7 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-8A | Forge Changes model and branch/upstream/conflict status | ✅ |
 | HCP-8B | High-fidelity diff, real context expansion, file/hunk actions, and conflict editor | ✅ |
 | HCP-8C | Guarded Git sync/history/blame/checkpoint operations and provider continuity | 🔄 |
-| HCP-9A | Test adapter contract, discovery hierarchy, stable state, and results | ⛔ |
+| HCP-9A | Full test adapter hierarchy remains parked; HCW-7 ships a thin root-aware discovered-test/result subset | ⛔ |
 | HCP-9B | Gutter/Explorer runs, watch, coverage, profiles, and Forge evidence | ⛔ |
 | HCP-10A | Workshop DAP proxy, launch configuration, sessions, and source mapping | ⛔ |
 | HCP-10B | Breakpoints, stepping, stack, variables, watch, console, and debug-test | ⛔ |
@@ -428,6 +428,10 @@ registry or remote-parity needs that stay workshop-owned.
 - A long-running development task displays live output in a named terminal,
   reports background readiness, yields clickable locations and URLs, survives
   pane changes, and stops cleanly.
+- The thin Tests channel assigns source-discovered tests to the nearest
+  compatible nested task root, retains per-test result provenance, and offers
+  a stable Run Nearest Test action for Rust, Python, and Go. Full adapter
+  hierarchy, watch, coverage, and debug remain parked under HCP-9.
 - A service bound on a remote workshop can open in the Home Browser through an
   authenticated private proxy without exposing a public listener by default.
 - Changes shows authoritative branch/upstream/conflict state. Diff context

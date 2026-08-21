@@ -1468,6 +1468,9 @@
       case "references":
         void runLanguageAction("references");
         break;
+      case "run_nearest_test":
+        dispatchCodeCommand("testing.runAtCursor");
+        break;
       case "rename":
         dispatchCodeCommand("editor.action.rename");
         break;
@@ -1855,6 +1858,9 @@
         case "workbench.action.tasks.test":
           void tasks.runKind("test");
           break;
+        case "testing.runAtCursor":
+          if (activeTab) void tasks.runNearestTest(activeTab.path, cursorLine);
+          break;
         case "workbench.action.tasks.verify":
           void tasks.runKind("verify");
           break;
@@ -2150,6 +2156,7 @@
   canTypeDefinition={canTypeDefinition}
   canImplementation={canImplementation}
   canReference={canReference}
+  canRunNearestTest={Boolean(activeTab && tasks.nearestRunnableTest(activeTab.path, cursorLine))}
   canRename={canRename}
   canFormat={canFormat}
   canOrganize={canCodeAction}

@@ -1030,6 +1030,8 @@ export type ProjectTest = {
   path: string;
   line: number;
   task_id: string;
+  provider?: string;
+  target_kind?: "named" | "file" | string;
 };
 
 export type ForgeChangesFile = {

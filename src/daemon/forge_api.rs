@@ -6442,6 +6442,9 @@ struct ProjectTest {
     path: String,
     line: u32,
     task_id: String,
+    provider: String,
+    /// `named` supports a stable named target; `file` narrows only to the file.
+    target_kind: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -7217,13 +7220,16 @@ fn target_project_test(
     root: &FsPath,
     task: &mut ProjectTask,
     test_id: Option<&str>,
-) -> ApiResult<()> {
+) -> ApiResult<Option<String>> {
     let Some(test_id) = test_id else {
-        return Ok(());
+        return Ok(None);
     };
     let test = discover_project_tests(root, std::slice::from_ref(task))
         .into_iter()
-        .find(|test| test.id == test_id && test.task_id == task.id)
+        .find(|test| {
+            let legacy_id = format!("{}::{}", test.path, test.label);
+            (test.id == test_id || legacy_id == test_id) && test.task_id == task.id
+        })
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Test is no longer available"))?;
     let base_id = task.id.split('@').next().unwrap_or(&task.id);
     let task_relative_path = if task.root == "." {
@@ -7252,7 +7258,7 @@ fn target_project_test(
             .extend([package, "-run".into(), format!("^{}$", test.label)]);
     }
     task.label = format!("Test {}", test.label);
-    Ok(())
+    Ok(Some(test.id))
 }
 
 fn scoped_task_id(base: &str, task_root: &str) -> String {
@@ -8412,26 +8418,16 @@ async fn list_project_tasks(
 }
 
 fn discover_project_tests(root: &FsPath, tasks: &[ProjectTask]) -> Vec<ProjectTest> {
-    let Some(task) = tasks
+    let test_tasks = tasks
         .iter()
-        .find(|task| task.kind == "test" || task.id.ends_with("-test"))
-    else {
+        .filter(|task| task.kind == "test" || task.id.ends_with("-test"))
+        .collect::<Vec<_>>();
+    if test_tasks.is_empty() {
         return Vec::new();
-    };
+    }
     let mut tests = Vec::new();
-    let task_prefix = if task.root == "." {
-        None
-    } else {
-        Some(format!("{}/", task.root))
-    };
     let tree = list_source_tree(&WorkId::from("test-discovery".to_string()), root).ok();
     for file in tree.into_iter().flat_map(|tree| tree.files).take(20_000) {
-        if task_prefix
-            .as_ref()
-            .is_some_and(|prefix| !file.path.starts_with(prefix))
-        {
-            continue;
-        }
         let path = root.join(&file.path);
         let extension = path
             .extension()
@@ -8444,10 +8440,32 @@ fn discover_project_tests(root: &FsPath, tasks: &[ProjectTask]) -> Vec<ProjectTe
         ) {
             continue;
         }
+        let Some(task) = test_tasks
+            .iter()
+            .copied()
+            .filter(|task| {
+                let inside_root =
+                    task.root == "." || file.path.starts_with(&format!("{}/", task.root));
+                let supports_language = match extension.as_str() {
+                    "rs" => task.provider == "cargo",
+                    "py" => task.provider == "python",
+                    "go" => task.provider == "go",
+                    "js" | "jsx" | "ts" | "tsx" => {
+                        matches!(task.provider.as_str(), "npm" | "pnpm" | "yarn" | "bun")
+                    }
+                    _ => false,
+                };
+                inside_root && supports_language
+            })
+            .max_by_key(|task| task.root.matches('/').count() + usize::from(task.root != "."))
+        else {
+            continue;
+        };
         let Ok(content) = std::fs::read_to_string(&path) else {
             continue;
         };
         let mut previous_test_attribute = false;
+        let mut name_occurrences = std::collections::HashMap::<String, usize>::new();
         for (index, line) in content.lines().enumerate() {
             let trimmed = line.trim();
             let name = if extension == "rs" && previous_test_attribute {
@@ -8478,12 +8496,25 @@ fn discover_project_tests(root: &FsPath, tasks: &[ProjectTask]) -> Vec<ProjectTe
                     .unwrap_or(&path)
                     .to_string_lossy()
                     .replace('\\', "/");
+                let occurrence = name_occurrences.entry(name.to_string()).or_default();
+                *occurrence += 1;
+                let duplicate_suffix = if *occurrence > 1 {
+                    format!("#{}", *occurrence)
+                } else {
+                    String::new()
+                };
                 tests.push(ProjectTest {
-                    id: format!("{}::{name}", relative),
+                    id: format!("{}::{relative}::{name}{duplicate_suffix}", task.id),
                     label: name.to_string(),
                     path: relative,
                     line: (index + 1) as u32,
                     task_id: task.id.clone(),
+                    provider: task.provider.clone(),
+                    target_kind: if matches!(task.provider.as_str(), "cargo" | "python" | "go") {
+                        "named".into()
+                    } else {
+                        "file".into()
+                    },
                 });
                 if tests.len() >= 2_000 {
                     return tests;
@@ -8547,7 +8578,7 @@ async fn start_project_task_run(
     Json(body): Json<RunProjectTaskRequest>,
 ) -> ApiResult<Json<ProjectTaskRun>> {
     let id = parse_work_id(&work_id)?;
-    let (item, lease, root, working_root, task) = admit_forge_canary(
+    let (item, lease, root, working_root, task, canonical_test_id) = admit_forge_canary(
         &state,
         medousa_forge::execution::ExecutionClass::LocalMutation,
         256 * 1024,
@@ -8582,9 +8613,9 @@ async fn start_project_task_run(
                 if let Some(message) = unavailable_task_message(&task) {
                     return Err(request_error(StatusCode::CONFLICT, message));
                 }
-                target_project_test(&root, &mut task, test_id.as_deref())?;
+                let canonical_test_id = target_project_test(&root, &mut task, test_id.as_deref())?;
                 let working_root = resolve_project_task_root(&root, &task.root)?;
-                Ok((item, lease, root, working_root, task))
+                Ok((item, lease, root, working_root, task, canonical_test_id))
             }
         },
     )
@@ -8597,7 +8628,7 @@ async fn start_project_task_run(
         work_id: work_id.clone(),
         state: "running".into(),
         task: task.clone(),
-        test_id: body.test_id.clone(),
+        test_id: canonical_test_id,
         started_at: chrono::Utc::now().to_rfc3339(),
         finished_at: None,
         result: None,
@@ -12128,6 +12159,103 @@ mod source_tests {
         let tasks = detected_project_tasks(root.path());
         let tests = discover_project_tests(root.path(), &tasks);
         assert!(tests.iter().any(|test| test.label == "intent_stays_clear"));
+        let mut cargo_test = tasks
+            .into_iter()
+            .find(|task| task.kind == "test" && task.provider == "cargo")
+            .unwrap();
+        let canonical = target_project_test(
+            root.path(),
+            &mut cargo_test,
+            Some("lib.rs::intent_stays_clear"),
+        )
+        .unwrap();
+        assert_eq!(
+            canonical.as_deref(),
+            Some("cargo-test::lib.rs::intent_stays_clear")
+        );
+    }
+
+    #[test]
+    fn discovers_tests_with_the_nearest_root_aware_provider() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(
+            Command::new("git")
+                .args(["init", "-q"])
+                .current_dir(root.path())
+                .status()
+                .unwrap()
+                .success()
+        );
+        std::fs::write(
+            root.path().join("Cargo.toml"),
+            "[package]\nname='demo'\nversion='0.1.0'\n",
+        )
+        .unwrap();
+        std::fs::write(root.path().join("lib.rs"), "#[test]\nfn root_test() {}\n").unwrap();
+        std::fs::create_dir_all(root.path().join("apps/web/src")).unwrap();
+        std::fs::write(
+            root.path().join("apps/web/package.json"),
+            r#"{"scripts":{"test":"vitest run"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.path().join("apps/web/src/app.test.ts"),
+            "test('nested web test', () => {});\n",
+        )
+        .unwrap();
+
+        let tasks = detected_project_tasks(root.path());
+        let tests = discover_project_tests(root.path(), &tasks);
+        let rust = tests.iter().find(|test| test.label == "root_test").unwrap();
+        let web = tests
+            .iter()
+            .find(|test| test.label == "nested web test")
+            .unwrap();
+        assert_eq!(rust.provider, "cargo");
+        assert_eq!(rust.target_kind, "named");
+        assert_eq!(web.provider, "npm");
+        assert_eq!(web.target_kind, "file");
+        assert_eq!(
+            tasks
+                .iter()
+                .find(|task| task.id == web.task_id)
+                .map(|task| task.root.as_str()),
+            Some("apps/web")
+        );
+    }
+
+    #[test]
+    fn dogfoods_task_and_test_catalog_against_the_medousa_monorepo() {
+        let root = FsPath::new(env!("CARGO_MANIFEST_DIR"));
+        let tasks = detected_project_tasks(root);
+        assert!(
+            tasks.iter().any(|task| {
+                task.provider == "cargo" && task.kind == "build" && task.root == "."
+            })
+        );
+        let home_test_task = tasks.iter().find(|task| {
+            task.provider == "npm" && task.kind == "test" && task.root == "apps/medousa-home"
+        });
+        assert!(home_test_task.is_some());
+        assert!(tasks.iter().any(|task| {
+            task.provider == "npm"
+                && task.kind == "run"
+                && task.root == "apps/medousa-home"
+                && task.argv.iter().any(|argument| argument == "dev")
+        }));
+
+        let tests = discover_project_tests(root, &tasks);
+        let controller_test = tests
+            .iter()
+            .find(|test| test.path == "apps/medousa-home/src/lib/code/codeTasksController.test.ts");
+        assert_eq!(
+            controller_test.map(|test| test.provider.as_str()),
+            Some("npm")
+        );
+        assert_eq!(
+            controller_test.map(|test| test.task_id.as_str()),
+            home_test_task.map(|task| task.id.as_str())
+        );
     }
 
     #[test]

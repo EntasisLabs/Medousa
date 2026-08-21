@@ -240,6 +240,19 @@ export function buildCodeCommands(): WorkshopCommand[] {
       },
     },
     {
+      id: "testing.runAtCursor",
+      section: "do",
+      label: "Run Nearest Test",
+      subtitle: "Run the nearest addressable Rust, Python, or Go test",
+      keywords: "test nearest cursor focused unit rust python go",
+      aliases: ["Run Nearest Test", "Test: Run Test at Cursor", "testing.runAtCursor"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("testing.runAtCursor");
+        ctx.callbacks.close();
+      },
+    },
+    {
       id: "workbench.action.tasks.verify",
       section: "do",
       label: "Check Project",

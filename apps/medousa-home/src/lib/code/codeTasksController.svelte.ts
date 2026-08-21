@@ -411,6 +411,41 @@ export class CodeTasksController {
     await this.runInvocation({ taskId, testId: test?.id });
   }
 
+  nearestRunnableTest(path: string, line: number): ProjectTest | null {
+    const stableProviders = new Set(["cargo", "python", "go"]);
+    return (
+      this.projectTests
+        .filter(
+          (test) =>
+            test.path === path &&
+            test.target_kind === "named" &&
+            stableProviders.has(test.provider ?? ""),
+        )
+        .sort(
+          (left, right) =>
+            Math.abs(left.line - line) - Math.abs(right.line - line) ||
+            left.line - right.line,
+        )[0] ?? null
+    );
+  }
+
+  async runNearestTest(path: string, line: number) {
+    const test = this.nearestRunnableTest(path, line);
+    if (!test) {
+      this.#deps.onError("No addressable Rust, Python, or Go test was found near the cursor.");
+      return;
+    }
+    await this.runDetected(test);
+  }
+
+  latestRunForTest(testId: string): ProjectTaskRunSummary | null {
+    return (
+      this.recentRuns
+        .filter((run) => run.test_id === testId)
+        .sort((left, right) => right.started_at.localeCompare(left.started_at))[0] ?? null
+    );
+  }
+
   async runKind(kind: "run" | "build" | "test" | "verify") {
     const candidates = this.projectTasks.filter((candidate) => candidate.kind === kind);
     const task = this.defaultTask(candidates);

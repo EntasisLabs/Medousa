@@ -189,6 +189,17 @@ the exact selected snapshot, resumes SSE from `next_seq`,
 and falls back to a persisted active/recent run reference when connected to an
 older daemon without the collection route.
 
+`GET …/tests` assigns each lexical test candidate to the deepest compatible
+test-task root instead of the first repository runner. Entries include the
+stable `task_id`, `provider`, and `target_kind` (`named` for addressable
+Cargo/Python/Go tests, `file` for JavaScript package runners). Test IDs include
+the stable task identity plus repository-relative path and name. Run start
+still accepts the older `path::name` ID and normalizes it to the canonical ID
+in the run snapshot, so retained result provenance and exact rerun survive a
+daemon upgrade. Discovery does not invoke project test collection code;
+framework-native collectors remain deferred where they would execute project
+configuration or imports.
+
 Interactive, background, and long-running tasks are hosted directly in one
 `medousa-session` PTY rather than launched once for Output and again for
 Terminal. Their run snapshots and summaries include `session_id` and the

@@ -331,7 +331,7 @@ and documentation updates. Status legend: `⬜ pending`, `🔄 active`,
 | HCW-4 | Unified bottom panel and task-backed Problems | 🔄 |
 | HCW-5 | Interactive task PTY attach and durable background-service UX | 🔄 |
 | HCW-6 | Editor command consolidation and human coding preferences | 🔄 |
-| HCW-7 | Thin structured testing improvements and final dogfood | ⬜ |
+| HCW-7 | Thin structured testing improvements and final dogfood | 🔄 |
 
 ### Implementation checkpoints
 
@@ -388,6 +388,14 @@ and documentation updates. Status legend: `⬜ pending`, `🔄 active`,
   preflight, and panel-on-failure preferences. The project-specific primary
   task remains in daemon-backed Code workspace state. HCW-6 stays active for
   broader interaction smoke coverage across every mouse/keyboard entry point.
+- **2026-08-21 — HCW-7 thin-testing foundation.** Made discovered tests
+  provider- and nested-root-aware, added canonical stable task/path/name IDs
+  with legacy `path::name` normalization, retained latest per-test run
+  provenance, and exposed Run Nearest Test only for named Cargo, Python, and Go
+  targets. An executable dogfood fixture proves this repository contributes
+  root Cargo build/test tasks plus nested Home check/dev/test tasks without
+  executing project collection code. HCW-7 stays active until the final full
+  acceptance matrix and local/remote interaction audit close.
 
 ### HCW-0 — Truth and measurement
 

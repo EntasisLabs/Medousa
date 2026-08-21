@@ -247,7 +247,12 @@ and check commands; an explicit selection remains the project default.
   readiness. Dependency graphs and the full VS Code matcher catalog are not
   imported.
 - **Tests** progressively lists individual Rust, Python, JavaScript/TypeScript,
-  and Go tests. Open one at its definition or run only that test.
+  and Go tests under the nearest compatible nested-project runner. Open one at
+  its definition, run it, and see the latest retained passed/failed state beside
+  it. **Run Nearest Test** is available from Spotlight and the editor context
+  menu for addressable Rust, Python, and Go providers. JavaScript package
+  runners currently narrow to the file, so Medousa does not mislabel them as a
+  stable nearest named-test action.
 - The latest result stays beside Code with a one-click exact rerun, including
   the same targeted test when one was selected. Compiler, test, and stack-trace
   locations open the referenced project file and line.

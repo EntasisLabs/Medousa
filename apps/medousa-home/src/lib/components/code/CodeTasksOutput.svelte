@@ -95,9 +95,16 @@
       <p class="px-3 py-3 text-chrome-sm text-content-quiet">No individual tests were discovered. The project test command still works.</p>
     {:else}
       {#each tasks.projectTests as test (test.id)}
+        {@const recent = tasks.latestRunForTest(test.id)}
         <div class="flex items-center border-t border-surface-500/15">
-          <button type="button" class="min-w-0 flex-1 truncate px-3 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800/60" onclick={() => onOpenLocation(test.path, test.line)}>{test.label}<span class="ml-2 font-mono text-chrome-xs text-content-faint">{test.path}:{test.line}</span></button>
-          <button type="button" class="mr-2 rounded px-1.5 py-0.5 text-chrome-xs text-content-link hover:bg-surface-800 disabled:opacity-40" disabled={tasks.running} onclick={() => void tasks.runDetected(test)}>Run</button>
+          <button type="button" class="min-w-0 flex-1 truncate px-3 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800/60" onclick={() => onOpenLocation(test.path, test.line)}>{test.label}<span class="ml-2 font-mono text-chrome-xs text-content-faint">{test.provider ?? "test"} · {test.path}:{test.line}</span></button>
+          {#if recent}
+            <span
+              class="mr-1 text-chrome-xs {recent.state === 'passed' ? 'text-emerald-300/85' : recent.state === 'failed' ? 'text-rose-300/85' : 'text-content-quiet'}"
+              title={`Last run ${recent.started_at}`}
+            >{recent.state}</span>
+          {/if}
+          <button type="button" class="mr-2 rounded px-1.5 py-0.5 text-chrome-xs text-content-link hover:bg-surface-800 disabled:opacity-40" disabled={tasks.running} onclick={() => void tasks.runDetected(test)}>{recent ? "Rerun" : "Run"}</button>
         </div>
       {/each}
     {/if}
