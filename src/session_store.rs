@@ -17,6 +17,7 @@ use crate::turn_parts::TurnPart;
 use crate::turn_slice::TurnSliceSummary;
 
 const SESSION_TURN_TABLE: &str = "session_turn";
+pub const MAX_TRANSCRIPT_SEARCH_QUERY_CHARS: usize = 512;
 
 const SESSION_SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE TABLE session_turn SCHEMAFULL",
@@ -30,14 +31,19 @@ const SESSION_SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE FIELD parts ON TABLE session_turn TYPE option<string>",
     "DEFINE FIELD slice_summary ON TABLE session_turn TYPE option<string>",
     "DEFINE FIELD speaker_profile_id ON TABLE session_turn TYPE option<string>",
+    "DEFINE FIELD search_text ON TABLE session_turn TYPE option<string>",
     "DEFINE INDEX idx_session_turn_session_id ON TABLE session_turn COLUMNS session_id",
     "DEFINE INDEX idx_session_turn_timestamp ON TABLE session_turn COLUMNS timestamp",
+    "DEFINE ANALYZER medousa_transcript TOKENIZERS BLANK,CLASS,PUNCT FILTERS LOWERCASE",
+    "DEFINE INDEX idx_session_turn_search ON TABLE session_turn FIELDS search_text FULLTEXT ANALYZER medousa_transcript BM25 HIGHLIGHTS",
 ];
 
 const SESSION_SCHEMA_MIGRATIONS: &[&str] = &[
     "DEFINE FIELD OVERWRITE parts ON TABLE session_turn TYPE option<string>",
     "DEFINE FIELD OVERWRITE slice_summary ON TABLE session_turn TYPE option<string>",
     "DEFINE FIELD OVERWRITE speaker_profile_id ON TABLE session_turn TYPE option<string>",
+    "DEFINE FIELD OVERWRITE search_text ON TABLE session_turn TYPE option<string>",
+    "UPDATE session_turn SET search_text = content WHERE search_text = NONE OR search_text = NULL",
 ];
 
 /// Initialize the session store based on the runtime composition.
@@ -78,6 +84,81 @@ struct SessionTurnRecord {
     slice_summary: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     speaker_profile_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    search_text: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TranscriptSearchMatch {
+    pub session_id: String,
+    pub role: String,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub excerpt: String,
+}
+
+fn turn_search_text(turn: &ConversationTurn) -> Option<String> {
+    if !matches!(turn.role.as_str(), "user" | "assistant" | "agent") {
+        return None;
+    }
+    let content = turn.content.trim();
+    if !content.is_empty() {
+        return Some(content.to_string());
+    }
+    let text = turn
+        .parts
+        .as_deref()?
+        .iter()
+        .filter_map(|part| match part {
+            TurnPart::Text { markdown } | TurnPart::Progress { markdown } => Some(markdown.trim()),
+            TurnPart::Handoff { text, .. } => Some(text.trim()),
+            _ => None,
+        })
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    (!text.is_empty()).then_some(text)
+}
+
+fn transcript_excerpt(text: &str, query: &str) -> String {
+    const EXCERPT_CHARS: usize = 420;
+    const LEADING_CONTEXT_CHARS: usize = 90;
+
+    let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let lower = collapsed.to_ascii_lowercase();
+    let needle = query.to_ascii_lowercase();
+    let start = lower
+        .find(&needle)
+        .map(|byte| {
+            collapsed[..byte]
+                .chars()
+                .count()
+                .saturating_sub(LEADING_CONTEXT_CHARS)
+        })
+        .unwrap_or(0);
+    let excerpt = collapsed
+        .chars()
+        .skip(start)
+        .take(EXCERPT_CHARS)
+        .collect::<String>();
+    if start > 0 {
+        format!("…{excerpt}")
+    } else {
+        excerpt
+    }
+}
+
+fn validate_transcript_search(query: &str) -> Result<(), StoreError> {
+    if query.trim().is_empty() {
+        return Err(StoreError::InvalidInput(
+            "transcript search query cannot be empty".to_string(),
+        ));
+    }
+    if query.chars().count() > MAX_TRANSCRIPT_SEARCH_QUERY_CHARS {
+        return Err(StoreError::InvalidInput(format!(
+            "transcript search query exceeds {MAX_TRANSCRIPT_SEARCH_QUERY_CHARS} characters"
+        )));
+    }
+    Ok(())
 }
 
 fn parts_to_json(parts: Option<&[TurnPart]>) -> Option<String> {
@@ -133,6 +214,7 @@ impl From<&ConversationTurn> for SessionTurnRecord {
             parts: parts_to_json(turn.parts.as_deref()),
             slice_summary: slice_summary_to_json(turn.slice_summary.as_ref()),
             speaker_profile_id: turn.speaker_profile_id.clone(),
+            search_text: turn_search_text(turn),
         }
     }
 }
@@ -192,6 +274,12 @@ pub trait SessionStore: Send + Sync + 'static {
     }
     fn delete_session(&self, session_id: &SessionId) -> Result<(), String>;
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary>;
+    fn search_transcripts(
+        &self,
+        session_ids: &[String],
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<TranscriptSearchMatch>, StoreError>;
     fn build_backfill_summaries(&self, limit: usize) -> Vec<SessionHistorySummary>;
     fn has_persisted_sessions(&self) -> bool;
 }
@@ -283,6 +371,45 @@ impl SessionStore for FileSessionStore {
 
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary> {
         crate::session_catalog::list_sessions(limit)
+    }
+
+    fn search_transcripts(
+        &self,
+        session_ids: &[String],
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<TranscriptSearchMatch>, StoreError> {
+        validate_transcript_search(query)?;
+        let needle = query.to_ascii_lowercase();
+        let mut hits = session_ids
+            .iter()
+            .flat_map(|session_id| {
+                let needle = needle.clone();
+                let parsed = SessionId::parse(session_id).ok();
+                parsed
+                    .map(|id| self.load_history(&id))
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(move |turn| {
+                        let text = turn_search_text(&turn)?;
+                        text.to_ascii_lowercase()
+                            .contains(&needle)
+                            .then(|| TranscriptSearchMatch {
+                                session_id: session_id.clone(),
+                                role: if turn.role == "agent" {
+                                    "assistant".to_string()
+                                } else {
+                                    turn.role
+                                },
+                                timestamp: turn.timestamp,
+                                excerpt: transcript_excerpt(&text, query),
+                            })
+                    })
+            })
+            .collect::<Vec<_>>();
+        hits.sort_by(|left, right| right.timestamp.cmp(&left.timestamp));
+        hits.truncate(limit);
+        Ok(hits)
     }
 
     fn build_backfill_summaries(&self, limit: usize) -> Vec<SessionHistorySummary> {
@@ -439,6 +566,62 @@ impl SessionStore for SurrealSessionStore {
 
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary> {
         crate::session_catalog::list_sessions(limit)
+    }
+
+    fn search_transcripts(
+        &self,
+        session_ids: &[String],
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<TranscriptSearchMatch>, StoreError> {
+        validate_transcript_search(query)?;
+        if session_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        #[derive(Debug, Clone, Serialize, Deserialize, SurrealValue)]
+        struct SearchRow {
+            session_id: String,
+            role: String,
+            search_text: Option<String>,
+            timestamp: chrono::DateTime<chrono::Utc>,
+        }
+
+        let sql = "SELECT session_id, role, search_text, timestamp \
+                   FROM type::table($table) \
+                   WHERE session_id IN $session_ids \
+                     AND role IN ['user', 'assistant', 'agent'] \
+                     AND search_text @@ $query \
+                   ORDER BY timestamp DESC \
+                   LIMIT $limit";
+        let mut response = block_on(
+            self.db
+                .query(sql)
+                .bind(("table", SESSION_TURN_TABLE))
+                .bind(("session_ids", session_ids.to_vec()))
+                .bind(("query", query.to_string()))
+                .bind(("limit", limit as i64)),
+        )
+        .map_err(|error| StoreError::Backend(error.to_string()))?;
+        let rows = response
+            .take::<Vec<SearchRow>>(0)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|row| {
+                let text = row.search_text?;
+                Some(TranscriptSearchMatch {
+                    session_id: row.session_id,
+                    role: if row.role == "agent" {
+                        "assistant".to_string()
+                    } else {
+                        row.role
+                    },
+                    timestamp: row.timestamp,
+                    excerpt: transcript_excerpt(&text, query),
+                })
+            })
+            .collect())
     }
 
     fn build_backfill_summaries(&self, limit: usize) -> Vec<SessionHistorySummary> {
@@ -646,5 +829,78 @@ mod tests {
             .unwrap_err();
         assert!(matches!(error, StoreError::Backend(_)));
         std::fs::remove_file(parent).unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn file_search_returns_visible_matching_turns_newest_first() {
+        let root = std::env::temp_dir().join(format!(
+            "medousa-session-search-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let first_id = SessionId::parse("search-first").unwrap();
+        let second_id = SessionId::parse("search-second").unwrap();
+        let store = FileSessionStore::at(root.clone());
+        let mut older = turn("The phoenix project ships tomorrow");
+        older.timestamp = Utc::now() - chrono::Duration::minutes(1);
+        let newer = turn("A newer Phoenix project update");
+        store.append_turn(&first_id, &older).await.unwrap();
+        store.append_turn(&second_id, &newer).await.unwrap();
+
+        let hits = store
+            .search_transcripts(
+                &[first_id.to_string(), second_id.to_string()],
+                "phoenix project",
+                10,
+            )
+            .unwrap();
+
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].session_id, second_id.as_str());
+        assert_eq!(hits[0].role, "assistant");
+        assert!(hits[0].excerpt.contains("Phoenix project"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn transcript_search_rejects_unbounded_queries() {
+        let query = "x".repeat(MAX_TRANSCRIPT_SEARCH_QUERY_CHARS + 1);
+        assert!(matches!(
+            validate_transcript_search(&query),
+            Err(StoreError::InvalidInput(_))
+        ));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn surreal_search_uses_full_text_index_and_session_scope() {
+        let db = surrealdb::engine::any::connect("mem://").await.unwrap();
+        db.use_ns("session-search-tests")
+            .use_db(uuid::Uuid::new_v4().simple().to_string())
+            .await
+            .unwrap();
+        SurrealSessionStore::ensure_schema_for_db(&db)
+            .await
+            .unwrap();
+        SurrealSessionStore::ensure_schema_for_db(&db)
+            .await
+            .unwrap();
+        let store = SurrealSessionStore::new(db);
+        let visible_id = SessionId::parse("visible-search").unwrap();
+        let hidden_id = SessionId::parse("hidden-search").unwrap();
+        store
+            .append_turn(&visible_id, &turn("Phoenix transcript sentinel"))
+            .await
+            .unwrap();
+        store
+            .append_turn(&hidden_id, &turn("Phoenix hidden sentinel"))
+            .await
+            .unwrap();
+
+        let hits = store
+            .search_transcripts(&[visible_id.to_string()], "phoenix", 10)
+            .unwrap();
+
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].session_id, visible_id.as_str());
+        assert!(hits[0].excerpt.contains("Phoenix transcript sentinel"));
     }
 }

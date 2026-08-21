@@ -13,6 +13,7 @@ from medousa.types import (
     SessionHistoryResponse,
     SessionSetDisplayNameRequest,
     SessionSetDisplayNameResponse,
+    SessionTranscriptSearchResponse,
 )
 
 
@@ -26,6 +27,20 @@ class SessionsApi:
             op_path_query("sessions.get", [("limit", str(limit))]),
         )
         return decode(SessionHistoryListResponse, value)
+
+    async def search_transcripts(
+        self,
+        query: str,
+        limit: int = 20,
+    ) -> SessionTranscriptSearchResponse:
+        value = await self._client.transport.get_json(
+            self._client.base_url,
+            op_path_query(
+                "sessions.search.get",
+                [("q", query), ("limit", str(limit))],
+            ),
+        )
+        return decode(SessionTranscriptSearchResponse, value)
 
     async def history(self, session_id: str) -> SessionHistoryResponse:
         value = await self._client.transport.get_json(

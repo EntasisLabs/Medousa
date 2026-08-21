@@ -297,6 +297,19 @@ export interface SessionCodeBindingResponse {
   work_id?: string | null;
 }
 
+export interface SessionTranscriptSearchHit {
+  display_name?: string | null;
+  excerpt: string;
+  role: string;
+  session_id: string;
+  timestamp: string;
+}
+
+export interface SessionTranscriptSearchResponse {
+  hits: SessionTranscriptSearchHit[];
+  query: string;
+}
+
 export type CodeProjectSource = "blank" | "repository";
 
 export interface StartSessionCodeProjectRequest {

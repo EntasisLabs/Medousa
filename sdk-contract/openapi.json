@@ -3862,6 +3862,55 @@
         "title": "SessionSetDisplayNameResponse",
         "type": "object"
       },
+      "SessionTranscriptSearchHit": {
+        "properties": {
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "excerpt": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "excerpt",
+          "role",
+          "session_id",
+          "timestamp"
+        ],
+        "type": "object"
+      },
+      "SessionTranscriptSearchResponse": {
+        "properties": {
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/SessionTranscriptSearchHit"
+            },
+            "type": "array"
+          },
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "hits",
+          "query"
+        ],
+        "title": "SessionTranscriptSearchResponse",
+        "type": "object"
+      },
       "SetSessionAgentModeRequest": {
         "properties": {
           "expires_at_utc": {
@@ -23191,6 +23240,56 @@
           "credential_scheme": "bearer",
           "feature_profile": "core",
           "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/sessions/search": {
+      "get": {
+        "operationId": "sessions.search.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionTranscriptSearchResponse"
+                }
+              }
+            },
+            "description": "sessions.search.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.search.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.search.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
           "trust_group": "portal"
         }
       }

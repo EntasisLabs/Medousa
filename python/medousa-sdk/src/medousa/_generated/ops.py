@@ -328,6 +328,7 @@ OPERATIONS: dict[str, Operation] = {
     "sessions.by_session_id.workshop.steer.post": Operation("sessions.by_session_id.workshop.steer.post", "POST", "/v1/sessions/{session_id}/workshop/steer", False),
     "sessions.get": Operation("sessions.get", "GET", "/v1/sessions", False),
     "sessions.post": Operation("sessions.post", "POST", "/v1/sessions", False),
+    "sessions.search.get": Operation("sessions.search.get", "GET", "/v1/sessions/search", False),
     "sessions.shell.by_id.get": Operation("sessions.shell.by_id.get", "GET", "/v1/sessions/shell/{id}", False),
     "sessions.shell.by_id.signal.post": Operation("sessions.shell.by_id.signal.post", "POST", "/v1/sessions/shell/{id}/signal", False),
     "sessions.shell.get": Operation("sessions.shell.get", "GET", "/v1/sessions/shell", False),

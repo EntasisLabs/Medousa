@@ -390,6 +390,33 @@ pub struct SessionHistoryListResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SessionTranscriptSearchRequest {
+    /// Text to search across user- and assistant-visible transcript prose.
+    pub q: String,
+    /// Maximum matching turns to return (default 20, maximum 100).
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SessionTranscriptSearchHit {
+    pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    pub role: String,
+    pub timestamp: DateTime<Utc>,
+    pub excerpt: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SessionTranscriptSearchResponse {
+    pub query: String,
+    pub hits: Vec<SessionTranscriptSearchHit>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SessionHistoryResponse {
     pub session_id: String,
     pub turns: Vec<ConversationTurn>,

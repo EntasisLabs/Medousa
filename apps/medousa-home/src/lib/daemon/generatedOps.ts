@@ -325,6 +325,7 @@ export const OPERATIONS = {
   "sessions.by_session_id.workshop.steer.post": { id: "sessions.by_session_id.workshop.steer.post", method: "POST", path: "/v1/sessions/{session_id}/workshop/steer", streaming: false },
   "sessions.get": { id: "sessions.get", method: "GET", path: "/v1/sessions", streaming: false },
   "sessions.post": { id: "sessions.post", method: "POST", path: "/v1/sessions", streaming: false },
+  "sessions.search.get": { id: "sessions.search.get", method: "GET", path: "/v1/sessions/search", streaming: false },
   "sessions.shell.by_id.get": { id: "sessions.shell.by_id.get", method: "GET", path: "/v1/sessions/shell/{id}", streaming: false },
   "sessions.shell.by_id.signal.post": { id: "sessions.shell.by_id.signal.post", method: "POST", path: "/v1/sessions/shell/{id}/signal", streaming: false },
   "sessions.shell.get": { id: "sessions.shell.get", method: "GET", path: "/v1/sessions/shell", streaming: false },

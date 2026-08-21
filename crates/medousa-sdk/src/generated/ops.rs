@@ -2221,6 +2221,13 @@ pub const SESSIONS_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const SESSIONS_SEARCH_GET: Operation = Operation {
+    id: "sessions.search.get",
+    method: "GET",
+    path: "/v1/sessions/search",
+    streaming: false,
+};
+
 pub const SESSIONS_SHELL_BY_ID_GET: Operation = Operation {
     id: "sessions.shell.by_id.get",
     method: "GET",
@@ -3049,6 +3056,7 @@ pub static ALL: &[Operation] = &[
     SESSIONS_BY_SESSION_ID_WORKSHOP_STEER_POST,
     SESSIONS_GET,
     SESSIONS_POST,
+    SESSIONS_SEARCH_GET,
     SESSIONS_SHELL_BY_ID_GET,
     SESSIONS_SHELL_BY_ID_SIGNAL_POST,
     SESSIONS_SHELL_GET,

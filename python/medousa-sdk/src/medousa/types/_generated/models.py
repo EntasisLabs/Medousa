@@ -583,6 +583,43 @@ class IngestAttachment(MedousaModel):
     kind: str
 
 
+class ConnectionId(RootModel[str]):
+    root: str = Field(
+        ..., description='Stable UUID for one integration connection row.', title='ConnectionId'
+    )
+
+
+class IntegrationSecretStatus(MedousaModel):
+    api_key: bool | None = False
+    app_token: bool | None = False
+    auth_key: bool | None = False
+    bot_token: bool | None = False
+    oauth_bundle: bool | None = False
+
+
+class IntegrationConnection(MedousaModel):
+    base_url: str | None = None
+    connection_id: ConnectionId
+    created_at: AwareDatetime
+    kind: str = Field(
+        ..., description='Catalog / routing slug (`openai`, `discord`, `chatgpt`, `apns`, …).'
+    )
+    label: str | None = None
+    secrets: IntegrationSecretStatus | None = Field(
+        {'api_key': False, 'app_token': False, 'auth_key': False, 'bot_token': False, 'oauth_bundle': False},
+        validate_default=True,
+    )
+    updated_at: AwareDatetime
+
+
+class IntegrationSecretSlot(Enum):
+    api_key = 'api_key'
+    oauth_bundle = 'oauth_bundle'
+    bot_token = 'bot_token'
+    app_token = 'app_token'
+    auth_key = 'auth_key'
+
+
 class HostContextPosition(MedousaModel):
     character: int = Field(..., ge=0)
     line: int = Field(..., ge=0)
@@ -1197,6 +1234,14 @@ class SessionHistorySummary(MedousaModel):
     session_id: str
     turns: int = Field(..., ge=0)
     verification_runs: int = Field(..., ge=0)
+
+
+class SessionTranscriptSearchHit(MedousaModel):
+    display_name: str | None = None
+    excerpt: str
+    role: str
+    session_id: str
+    timestamp: AwareDatetime
 
 
 class Command17(Enum):
@@ -1984,8 +2029,18 @@ class CreateAgentSessionResponse(MedousaModel):
     work_id: str | None = None
 
 
+class CreateIntegrationConnectionRequest(MedousaModel):
+    base_url: str | None = None
+    kind: str = Field(..., description='Catalog slug (`openai`, `discord`, …).')
+    label: str | None = None
+
+
 class DecideAgentModeProposalRequest(MedousaModel):
     accept: bool
+
+
+class DeleteIntegrationConnectionResponse(MedousaModel):
+    deleted: bool
 
 
 class DeleteRecurringResponse(MedousaModel):
@@ -2125,6 +2180,24 @@ class IngestResponse(MedousaModel):
     )
 
 
+class InstallationId(RootModel[str]):
+    root: str = Field(
+        ...,
+        description="Durable installation identity persisted in `{dataDir}/installation.json`.\n\nUUID v4 hyphenated grammar (same as pairing / credential ids). Cannot live in Surreal because Surreal's password is itself keyed by this id.",
+        title='InstallationId',
+    )
+
+
+class IntegrationConnectionListResponse(MedousaModel):
+    connections: list[IntegrationConnection]
+
+
+class IntegrationSecretWriteResponse(MedousaModel):
+    configured: bool
+    connection_id: ConnectionId
+    slot: IntegrationSecretSlot
+
+
 class InteractiveTurnResponse(MedousaModel):
     accepted_at_utc: AwareDatetime
     daemon_notice: str | None = None
@@ -2251,6 +2324,12 @@ class LocalCatalogResponse(MedousaModel):
     tierLabel: str
 
 
+class LocalClientKind(Enum):
+    home_local = 'home-local'
+    medousa_cli = 'medousa-cli'
+    medousa_tui = 'medousa-tui'
+
+
 class LocalEngineStatus(MedousaModel):
     baseUrl: str
     bind: str | None = None
@@ -2290,6 +2369,12 @@ class McpGatewayStatusResponse(MedousaModel):
     message: str
     reachable: bool
     servers: list[McpGatewayServerRuntime]
+
+
+class PatchIntegrationConnectionRequest(MedousaModel):
+    base_url: str | None = None
+    kind: str | None = None
+    label: str | None = None
 
 
 class RecurringDeliveryResponse(MedousaModel):
@@ -2423,6 +2508,11 @@ class SessionSetDisplayNameResponse(MedousaModel):
     session_id: str
 
 
+class SessionTranscriptSearchResponse(MedousaModel):
+    hits: list[SessionTranscriptSearchHit]
+    query: str
+
+
 class SetAgentSessionConfigOptionRequest(MedousaModel):
     config_id: str
     value: Any
@@ -2515,6 +2605,10 @@ class UpdateRecurringResponse(MedousaModel):
     next_run_at_utc: AwareDatetime
     recurring_id: str
     timezone: str
+
+
+class UpsertIntegrationSecretRequest(MedousaModel):
+    value: str = Field(..., description='Secret material. Never echoed in responses.')
 
 
 class VaultAddRootRequest(MedousaModel):

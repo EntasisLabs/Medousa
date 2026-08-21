@@ -612,6 +612,10 @@ pub fn build_workshop_surface() -> DeclaredRouter<AppState> {
             ),
         ])
         .route(
+            workshop_read_policy("/v1/sessions/search"),
+            get(crate::daemon_handlers::search_session_transcripts),
+        )
+        .route(
             workshop_read_policy("/v1/sessions/{session_id}/history"),
             get(crate::daemon_handlers::get_session_history),
         )

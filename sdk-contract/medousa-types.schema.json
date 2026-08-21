@@ -15639,6 +15639,58 @@
       }
     }
   },
+  "SessionTranscriptSearchResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SessionTranscriptSearchResponse",
+    "type": "object",
+    "required": [
+      "hits",
+      "query"
+    ],
+    "properties": {
+      "hits": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/SessionTranscriptSearchHit"
+        }
+      },
+      "query": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "SessionTranscriptSearchHit": {
+        "type": "object",
+        "required": [
+          "excerpt",
+          "role",
+          "session_id",
+          "timestamp"
+        ],
+        "properties": {
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "excerpt": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  },
   "SetAgentSessionConfigOptionRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "SetAgentSessionConfigOptionRequest",

@@ -292,6 +292,7 @@ pub use daemon_api::{
     RuntimeConfigCommandSpec, RuntimeVerifyPolicyState, SessionAppendTurnRequest,
     SessionAppendTurnResponse, SessionHistoryListRequest, SessionHistoryListResponse,
     SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
+    SessionTranscriptSearchHit, SessionTranscriptSearchRequest, SessionTranscriptSearchResponse,
     StageRouteCommandRequest, StageRouteCommandResponse, StageRouteCommandSpec,
     TurnContinuationLineageResponse, TurnSurfaceContext, resolve_daemon_url,
 };

@@ -94,6 +94,7 @@ this generic HTTP client rather than a dedicated typed SDK accessor. See the
 | Method | HTTP | Types |
 |--------|------|-------|
 | `list(limit)` | `GET /v1/sessions?limit=` | `SessionHistoryListResponse` |
+| `search_transcripts(query, limit)` | `GET /v1/sessions/search?q=&limit=` | `SessionTranscriptSearchResponse` |
 | `history(session_id)` | `GET /v1/sessions/{id}/history` | `SessionHistoryResponse` |
 | `set_display_name(session_id, name)` | `PUT /v1/sessions/{id}/name` | `SessionSetDisplayNameRequest` |
 | `agent_mode(session_id)` | `GET /v1/sessions/{id}/agent-mode` | `SessionAgentModeResponse` |

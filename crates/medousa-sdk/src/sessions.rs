@@ -5,8 +5,8 @@ use medousa_types::{
     SessionActiveTurnsResponse, SessionAgentModeResponse, SessionAppendTurnRequest,
     SessionAppendTurnResponse, SessionCodeBindingResponse, SessionCodeProjectResponse,
     SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
-    SessionSetDisplayNameRequest, SessionSetDisplayNameResponse, SetSessionAgentModeRequest,
-    SetSessionCodeBindingRequest, StartSessionCodeProjectRequest,
+    SessionSetDisplayNameRequest, SessionSetDisplayNameResponse, SessionTranscriptSearchResponse,
+    SetSessionAgentModeRequest, SetSessionCodeBindingRequest, StartSessionCodeProjectRequest,
 };
 
 #[cfg(feature = "async")]
@@ -25,6 +25,24 @@ pub struct SessionsApi<'a> {
 impl SessionsApi<'_> {
     pub async fn list(&self, limit: usize) -> Result<SessionHistoryListResponse, crate::SdkError> {
         let path = op_path_query(&ops::SESSIONS_GET, &[], &[("limit", limit.to_string())])?;
+        let value = self
+            .client
+            .transport()
+            .get_json(self.client.base_url(), &path)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn search_transcripts(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<SessionTranscriptSearchResponse, crate::SdkError> {
+        let path = op_path_query(
+            &ops::SESSIONS_SEARCH_GET,
+            &[],
+            &[("q", query.to_string()), ("limit", limit.to_string())],
+        )?;
         let value = self
             .client
             .transport()

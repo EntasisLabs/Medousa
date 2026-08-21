@@ -12,6 +12,7 @@ from medousa.types import (
     SessionHistoryResponse,
     SessionSetDisplayNameRequest,
     SessionSetDisplayNameResponse,
+    SessionTranscriptSearchResponse,
 )
 
 if TYPE_CHECKING:
@@ -28,6 +29,20 @@ class SessionsApiSync:
             op_path_query("sessions.get", [("limit", str(limit))]),
         )
         return decode(SessionHistoryListResponse, value)
+
+    def search_transcripts(
+        self,
+        query: str,
+        limit: int = 20,
+    ) -> SessionTranscriptSearchResponse:
+        value = self._client._transport.get_json(
+            self._client.base_url,
+            op_path_query(
+                "sessions.search.get",
+                [("q", query), ("limit", str(limit))],
+            ),
+        )
+        return decode(SessionTranscriptSearchResponse, value)
 
     def history(self, session_id: str) -> SessionHistoryResponse:
         value = self._client._transport.get_json(

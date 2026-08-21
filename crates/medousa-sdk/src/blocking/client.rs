@@ -28,16 +28,17 @@ use medousa_types::{
     SessionAppendTurnRequest, SessionAppendTurnResponse, SessionCodeBindingResponse,
     SessionCodeProjectResponse, SessionDeleteQuery, SessionDeleteResponse,
     SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameRequest,
-    SessionSetDisplayNameResponse, SetSessionAgentModeRequest, SetSessionCodeBindingRequest,
-    StageRouteCommandRequest, StageRouteCommandResponse, StartSessionCodeProjectRequest,
-    TurnBudgetApproveRequest, TurnBudgetDenyRequest, TurnBudgetRequestListResponse,
-    TurnBudgetRequestRecord, TurnBudgetRequestResponse, UpdateRecurringRequest,
-    UpdateRecurringResponse, VaultAddRootRequest, VaultBacklinksQuery, VaultBacklinksResponse,
-    VaultDeleteResponse, VaultNoteContentResponse, VaultNotesListResponse, VaultNotesQuery,
-    VaultRootsResponse, VaultSearchQuery, VaultSearchResponse, VaultSetActiveRootRequest,
-    VaultTagsListResponse, VaultTagsQuery, VaultWriteRequest, VaultWriteResponse, WorkCardDetail,
-    WorkspaceCardActionResponse, WorkspaceCardsQuery, WorkspaceCardsResponse, WorkspaceFeedQuery,
-    WorkspaceFeedResponse, WorkspaceLinkVaultRequest, WorkspaceSnapshot, WorkspaceSnapshotQuery,
+    SessionSetDisplayNameResponse, SessionTranscriptSearchResponse, SetSessionAgentModeRequest,
+    SetSessionCodeBindingRequest, StageRouteCommandRequest, StageRouteCommandResponse,
+    StartSessionCodeProjectRequest, TurnBudgetApproveRequest, TurnBudgetDenyRequest,
+    TurnBudgetRequestListResponse, TurnBudgetRequestRecord, TurnBudgetRequestResponse,
+    UpdateRecurringRequest, UpdateRecurringResponse, VaultAddRootRequest, VaultBacklinksQuery,
+    VaultBacklinksResponse, VaultDeleteResponse, VaultNoteContentResponse, VaultNotesListResponse,
+    VaultNotesQuery, VaultRootsResponse, VaultSearchQuery, VaultSearchResponse,
+    VaultSetActiveRootRequest, VaultTagsListResponse, VaultTagsQuery, VaultWriteRequest,
+    VaultWriteResponse, WorkCardDetail, WorkspaceCardActionResponse, WorkspaceCardsQuery,
+    WorkspaceCardsResponse, WorkspaceFeedQuery, WorkspaceFeedResponse, WorkspaceLinkVaultRequest,
+    WorkspaceSnapshot, WorkspaceSnapshotQuery,
 };
 
 #[cfg(feature = "blocking")]
@@ -471,6 +472,18 @@ impl BlockingSessionsApi<'_> {
             &ops::SESSIONS_GET,
             &[],
             &[("limit", limit.to_string())],
+        )?)
+    }
+
+    pub fn search_transcripts(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<SessionTranscriptSearchResponse, SdkError> {
+        self.http.get(&op_path_query(
+            &ops::SESSIONS_SEARCH_GET,
+            &[],
+            &[("q", query.to_string()), ("limit", limit.to_string())],
         )?)
     }
 

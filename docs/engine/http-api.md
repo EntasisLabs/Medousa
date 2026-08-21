@@ -128,6 +128,7 @@ for the protocol and surface-scoping rules.
 |--------|------|-------|-----|
 | POST | `/v1/sessions` | `CreateSessionRequest` → daemon-generated `CreateSessionResponse.session_id` | `MedousaClient.createSession` (TypeScript) |
 | GET | `/v1/sessions` | `SessionHistoryListResponse` (`origin_surface`, `has_code_work` on each summary) | `sessions().list` |
+| GET | `/v1/sessions/search?q=&limit=` | Profile-scoped transcript matches with role, timestamp, and excerpt | `sessions().search_transcripts` |
 | GET | `/v1/sessions/{session_id}/history` | `SessionHistoryResponse` | `sessions().history` |
 | PUT | `/v1/sessions/{session_id}/name` | `SessionSetDisplayNameRequest` | `sessions().set_display_name` |
 | GET | `/v1/sessions/{session_id}/agent-mode` | Effective selection and source | `sessions().agent_mode` |
@@ -148,6 +149,9 @@ for the protocol and surface-scoping rules.
 | POST | `/v1/sessions/{session_id}/workshop/steer` | steer one exact bound-workshop generation (`work_id`, `message`) | `http().post` |
 | POST | `/v1/turns` | create turn ticket | `http().post` |
 | GET | `/v1/turns/{turn_id}` | turn ticket | `http().get` |
+
+Transcript search is scoped to sessions visible to the authenticated profile. It indexes
+user/assistant-visible prose only; reasoning traces and raw tool receipts are excluded.
 
 Workshop steering requires the exact `work_id` returned by the bound-workshop
 handoff. A stale generation receives `409 Conflict` and cannot steer a newer

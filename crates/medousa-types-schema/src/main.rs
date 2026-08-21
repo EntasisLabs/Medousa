@@ -53,6 +53,11 @@ fn main() {
     export_type!(schemas, SessionHistoryResponse, "SessionHistoryResponse");
     export_type!(
         schemas,
+        SessionTranscriptSearchResponse,
+        "SessionTranscriptSearchResponse"
+    );
+    export_type!(
+        schemas,
         SessionAppendTurnRequest,
         "SessionAppendTurnRequest"
     );

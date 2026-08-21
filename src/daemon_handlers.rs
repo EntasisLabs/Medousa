@@ -18,6 +18,7 @@ use crate::daemon_api::{
     SessionAppendTurnResponse, SessionCodeBindingResponse, SessionDeleteQuery,
     SessionDeleteResponse, SessionHistoryListRequest, SessionHistoryListResponse,
     SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
+    SessionTranscriptSearchHit, SessionTranscriptSearchRequest, SessionTranscriptSearchResponse,
     SetSessionAgentModeRequest, SetSessionCodeBindingRequest,
 };
 use crate::shared_session_catalog::SessionCatalogKind;
@@ -28,6 +29,66 @@ pub struct SessionDeleteState {
     pub memory_operations: Option<Arc<dyn MemoryOperations>>,
     pub turn_tickets: TurnTicketRegistry,
     pub turn_streams: Option<crate::daemon::turn_stream_registry::TurnStreamRegistry>,
+}
+
+pub async fn search_session_transcripts(
+    Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
+    Query(request): Query<SessionTranscriptSearchRequest>,
+) -> Result<Json<SessionTranscriptSearchResponse>, (StatusCode, String)> {
+    let query = request.q.trim();
+    if query.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "q is required".to_string()));
+    }
+    if query.chars().count() > crate::session_store::MAX_TRANSCRIPT_SEARCH_QUERY_CHARS {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!(
+                "q must be at most {} characters",
+                crate::session_store::MAX_TRANSCRIPT_SEARCH_QUERY_CHARS
+            ),
+        ));
+    }
+    let limit = request.limit.unwrap_or(20).clamp(1, 100);
+    let profile_id = principal
+        .profile_id()
+        .map(str::to_string)
+        .unwrap_or_else(crate::user_profiles::resolve_workshop_identity_user_id);
+    let visible_sessions = crate::session::list_history_sessions_page_for_profile(
+        Some(&profile_id),
+        10_000,
+        None,
+        None,
+    )
+    .sessions
+    .into_iter()
+    .filter(|session| {
+        crate::session_catalog::session_visible_to_profile(&session.session_id, &profile_id)
+    })
+    .collect::<Vec<_>>();
+    let session_ids = visible_sessions
+        .iter()
+        .map(|session| session.session_id.clone())
+        .collect::<Vec<_>>();
+    let display_names = visible_sessions
+        .into_iter()
+        .map(|session| (session.session_id, session.display_name))
+        .collect::<std::collections::HashMap<_, _>>();
+    let hits = crate::session_store::get_session_store()
+        .search_transcripts(&session_ids, query, limit)
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+        .into_iter()
+        .map(|hit| SessionTranscriptSearchHit {
+            display_name: display_names.get(&hit.session_id).cloned().flatten(),
+            session_id: hit.session_id,
+            role: hit.role,
+            timestamp: hit.timestamp,
+            excerpt: hit.excerpt,
+        })
+        .collect();
+    Ok(Json(SessionTranscriptSearchResponse {
+        query: query.to_string(),
+        hits,
+    }))
 }
 
 /// Session history HTTP handlers extracted to library so they can be tested.

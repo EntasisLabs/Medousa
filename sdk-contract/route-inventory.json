@@ -4755,6 +4755,22 @@
       "bootstrap_public": false,
       "browser_policy": "native_only",
       "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "sessions.search.get",
+      "path": "/v1/sessions/search",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
         "admin.execute"
       ],
       "feature_profile": "core",
