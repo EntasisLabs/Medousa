@@ -684,16 +684,216 @@
     @apply flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-surface-100 transition hover:bg-surface-800/80;
   }
 
+  .vault-files-toolbar {
+    @apply flex min-h-10 items-center gap-1 px-2;
+    border-bottom: 1px solid rgb(var(--theme-border) / 0.3);
+  }
+
+  .vault-files-toolbar-identity {
+    @apply flex min-w-0 items-center gap-1.5 text-content-secondary;
+    font-size: 12.5px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+
+  .vault-files-toolbar-count {
+    @apply truncate font-normal text-content-quiet;
+    font-size: 9.5px;
+  }
+
+  .vault-files-toolbar-action {
+    @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-content-tertiary transition-colors disabled:opacity-35;
+    padding: 0 !important;
+  }
+
+  .vault-files-toolbar-action:hover:not(:disabled),
+  .vault-files-toolbar-action-active {
+    @apply text-surface-100;
+    background: rgb(var(--color-surface-800) / 0.62);
+  }
+
+  .vault-files-search {
+    @apply flex h-8 min-w-0 flex-1 items-center gap-2 px-1;
+    display: flex !important;
+  }
+
+  .vault-files-search-icon {
+    @apply shrink-0 text-content-quiet;
+  }
+
+  .vault-files-search-input {
+    @apply min-w-0 flex-1 border-0 bg-transparent text-surface-100 placeholder:text-content-tertiary focus:outline-none;
+    font-size: 12px !important;
+  }
+
+  .vault-external-groups {
+    padding: 0.2rem 0.35rem 0.75rem;
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--theme-border) / 0.45) transparent;
+  }
+
+  .vault-external-group {
+    padding-block: 0.22rem 0.38rem;
+  }
+
+  .vault-external-group + .vault-external-group {
+    border-top: 1px solid rgb(var(--theme-border) / 0.24);
+    padding-top: 0.45rem;
+  }
+
+  .vault-external-group-header {
+    @apply flex min-w-0 items-center gap-0.5;
+  }
+
   .vault-external-pin-row {
-    @apply flex items-center gap-1.5 rounded-container-token px-2 py-1.5 text-left transition hover:bg-surface-700/70;
+    @apply flex min-w-0 flex-1 items-center gap-1.5 rounded-md text-left transition-colors;
+    min-height: 2rem;
+    padding: 0.3rem 0.35rem !important;
+  }
+
+  .vault-external-pin-row:hover {
+    background: rgb(var(--color-surface-800) / 0.46);
+  }
+
+  .vault-external-pin-chevron {
+    @apply flex h-4 w-4 shrink-0 items-center justify-center text-content-quiet;
+  }
+
+  .vault-external-pin-icon {
+    @apply shrink-0 text-content-tertiary;
+  }
+
+  .vault-external-pin-label {
+    @apply min-w-0 flex-1 truncate text-surface-100;
+    font-size: 12.5px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+
+  .vault-external-pin-count {
+    @apply shrink-0 tabular-nums text-content-quiet;
+    font-size: 9.5px;
+  }
+
+  .vault-external-group-more {
+    @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-content-quiet opacity-45 transition-colors;
+    padding: 0 !important;
+  }
+
+  .vault-external-group-header:hover .vault-external-group-more,
+  .vault-external-group-more:hover,
+  .vault-external-group-more-open {
+    @apply text-content-secondary opacity-100;
+    background: rgb(var(--color-surface-800) / 0.58);
+  }
+
+  .vault-external-folder-menu {
+    @apply rounded-lg border p-1 shadow-xl;
+    width: 11rem;
+    border-color: rgb(var(--theme-border) / 0.42);
+    background: rgb(var(--theme-pane) / 0.98);
+  }
+
+  .vault-external-folder-menu-item {
+    @apply flex w-full items-center gap-2 rounded-md text-left text-content-secondary transition-colors disabled:opacity-40;
+    padding: 0.45rem 0.55rem !important;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+  }
+
+  .vault-external-folder-menu-item:hover:not(:disabled) {
+    @apply text-surface-100;
+    background: rgb(var(--color-surface-800) / 0.65);
+  }
+
+  .vault-external-folder-menu-item-remove {
+    @apply text-content-tertiary;
+  }
+
+  .vault-external-group-body {
+    padding: 0.1rem 0.05rem 0 1.15rem;
+  }
+
+  .vault-external-group-status {
+    @apply text-content-quiet;
+    padding: 0.5rem 0.75rem 0.55rem 2.25rem;
+    font-size: 10.5px;
+  }
+
+  .vault-external-recents-label {
+    @apply text-content-quiet;
+    padding: 0.38rem 0.5rem 0.28rem;
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+
+  .vault-external-recents-label span {
+    @apply font-normal;
+    opacity: 0.72;
+  }
+
+  .vault-external-file-list {
+    @apply space-y-px;
+  }
+
+  .vault-external-file-shell {
+    @apply flex min-w-0 items-center gap-0.5 rounded-md transition-colors;
+  }
+
+  .vault-external-file-shell:hover {
+    background: rgb(var(--color-surface-800) / 0.52);
+  }
+
+  .vault-external-file-shell-selected {
+    background: rgb(var(--theme-selection) / 0.13);
+    box-shadow: inset 0 0 0 1px rgb(var(--theme-border) / 0.24);
   }
 
   .vault-external-file-row {
-    @apply block px-2 py-1.5;
+    @apply flex min-w-0 flex-1 items-center gap-2 text-left;
+    min-height: 2.55rem;
+    padding: 0.36rem 0.45rem !important;
+  }
+
+  .vault-external-file-icon {
+    @apply flex h-6 w-6 shrink-0 items-center justify-center rounded text-content-tertiary;
+    background: rgb(var(--color-surface-800) / 0.48);
+  }
+
+  .vault-external-file-copy {
+    @apply flex min-w-0 flex-1 flex-col gap-0.5;
+  }
+
+  .vault-external-file-name {
+    @apply truncate text-surface-100;
+    font-size: 12.5px;
+    font-weight: 450;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+
+  .vault-external-file-meta {
+    @apply truncate text-content-quiet;
+    font-size: 9.5px;
+    line-height: 1.2;
   }
 
   .vault-external-file-link {
-    @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-content-link hover:bg-surface-800/80 hover:text-primary-200;
+    @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-content-tertiary hover:bg-surface-800/80 hover:text-surface-100;
+    padding: 0 !important;
+  }
+
+  .vault-external-group-footer {
+    @apply mt-1 flex w-full items-center justify-between rounded-md text-left text-content-tertiary transition-colors;
+    padding: 0.4rem 0.5rem !important;
+    font-size: 10.5px !important;
+    line-height: 1.2 !important;
+  }
+
+  .vault-external-group-footer:hover {
+    @apply text-content-secondary;
+    background: rgb(var(--color-surface-800) / 0.48);
   }
 
   .vault-linked-file-action {
