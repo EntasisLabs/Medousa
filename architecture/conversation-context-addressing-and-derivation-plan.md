@@ -1,6 +1,6 @@
 # Conversation context addressing, derivation, and replication
 
-> **Status:** Design locked; implementation in progress (2026-08-21)
+> **Status:** Fork proof implemented; explicit stashes next (2026-08-21)
 >
 > **First proof:** Fork a personal chat from any committed transcript entry into a
 > new session and open it in a new Medousa tab.
@@ -443,11 +443,11 @@ keys.
 
 ### Phase 3 — fork proof
 
-- [ ] Add `Fork from here` to committed transcript-entry actions.
-- [ ] Open the derived session in a new workshop tab.
-- [ ] Show restrained source navigation in the derived session.
-- [ ] Add `Fork with draft` as a client composition.
-- [ ] Verify dark/light UI, keyboard navigation, reconnect, and stale-client
+- [x] Add `Fork from here` to committed transcript-entry actions.
+- [x] Open the derived session in a new workshop tab.
+- [x] Show restrained source navigation in the derived session.
+- [x] Add `Fork with draft` as a client composition.
+- [x] Verify dark/light UI, keyboard navigation, reconnect, and stale-client
   capability behavior.
 
 ### Phase 4 — explicit stashes and context extraction

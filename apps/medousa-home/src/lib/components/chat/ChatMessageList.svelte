@@ -6,6 +6,7 @@
    */
   import { Copy, Library, Share2 } from "@lucide/svelte";
   import ChatSubagentRow from "$lib/components/chat/ChatSubagentRow.svelte";
+  import ChatForkMenu from "$lib/components/chat/ChatForkMenu.svelte";
   import ChatUserWhisper from "$lib/components/chat/ChatUserWhisper.svelte";
   import LiquidChatMessage from "$lib/components/chat/LiquidChatMessage.svelte";
   import type { SubagentRow } from "$lib/utils/subagentRows";
@@ -80,6 +81,7 @@
     workerThread ? presentWorkerThreadMessages(messages) : presentChatMessages(messages),
   );
   const beats = $derived(groupChatTurnBeats(painted));
+  let forkingEntryId = $state<string | null>(null);
 
   function retryWorkerSynthesis(workId: string | null | undefined) {
     const trimmed = workId?.trim();
@@ -123,13 +125,36 @@
       toast.show("Couldn’t share", { durationMs: 1600 });
     }
   }
+
+  function canCarryDraft(message: ChatMessage): boolean {
+    return message.transcript?.sessionId === chat.sessionId && Boolean(chat.draft.trim());
+  }
+
+  async function forkFrom(message: ChatMessage, includeDraft: boolean) {
+    const entryId = message.transcript?.entryId;
+    if (!entryId || forkingEntryId) return;
+    forkingEntryId = entryId;
+    try {
+      await chat.forkFromEntry(message, { includeDraft });
+      toast.show(includeDraft ? "Forked with draft" : "Conversation forked", {
+        durationMs: 1700,
+      });
+    } catch (err) {
+      toast.show(err instanceof Error ? err.message : "Couldn’t fork conversation", {
+        durationMs: 2600,
+      });
+    } finally {
+      forkingEntryId = null;
+    }
+  }
 </script>
 
 {#snippet turnActions(assistant: ChatMessage, user: ChatMessage | null = null)}
   {@const showCopy = canCopyAssistantTurn(assistant)}
   {@const showShare = canCopyAssistantTurn(assistant)}
   {@const showSave = onSaveToVault && canSaveAssistantTurn(assistant)}
-  {#if assistant.responseModel || showCopy || showShare || showSave}
+  {@const showFork = Boolean(assistant.transcript?.entryId)}
+  {#if assistant.responseModel || showCopy || showShare || showSave || showFork}
     <div class="chat-turn-actions" class:chat-turn-actions--mobile={mobile}>
       {#if assistant.responseModel}
         <span
@@ -175,6 +200,14 @@
           <Library size={14} strokeWidth={1.75} />
         </button>
       {/if}
+      {#if showFork}
+        <ChatForkMenu
+          hasDraft={canCarryDraft(assistant)}
+          busy={forkingEntryId === assistant.transcript?.entryId}
+          {mobile}
+          onFork={(includeDraft) => forkFrom(assistant, includeDraft)}
+        />
+      {/if}
     </div>
   {/if}
 {/snippet}
@@ -208,6 +241,11 @@
         {scrollRoot}
         forceExpand={shouldForceExpandUserWhisper(painted, beat.user.id)}
         {onSubmitIntent}
+        onFork={beat.user.transcript?.entryId
+          ? (includeDraft) => forkFrom(beat.user, includeDraft)
+          : undefined}
+        forkBusy={forkingEntryId === beat.user.transcript?.entryId}
+        forkHasDraft={canCarryDraft(beat.user)}
       />
       {#if subagentFor(beat.assistant)}
         {@render subagentBeat(subagentFor(beat.assistant)!)}
@@ -239,6 +277,11 @@
         {scrollRoot}
         forceExpand={shouldForceExpandUserWhisper(painted, beat.message.id)}
         {onSubmitIntent}
+        onFork={beat.message.transcript?.entryId
+          ? (includeDraft) => forkFrom(beat.message, includeDraft)
+          : undefined}
+        forkBusy={forkingEntryId === beat.message.transcript?.entryId}
+        forkHasDraft={canCarryDraft(beat.message)}
       />
     </div>
   {:else}

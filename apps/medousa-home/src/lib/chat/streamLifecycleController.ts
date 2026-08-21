@@ -523,7 +523,10 @@ async function reconcileTurnFromHistory(host: ChatStoreHost, turnId: string) {
   try {
     const history = await getSessionHistory(sessionId);
     if (epoch !== host.transcriptEpoch) return;
-    const daemonMessages = mapTurns(history.turns, { sessionId });
+    const daemonMessages = mapTurns(history.turns, {
+      sessionId,
+      authorityId: history.authority_id,
+    });
     host.messages = mergeTranscript(host.messages, daemonMessages);
     host.sanitizeTranscript();
   } catch {
@@ -682,4 +685,3 @@ export function isComposerOpenDuringHandoff(
   const workerLink = workerLinkForTurn(host.workers, turnId);
   return workerLink != null && !workerLink.synthesisDelivered;
 }
-

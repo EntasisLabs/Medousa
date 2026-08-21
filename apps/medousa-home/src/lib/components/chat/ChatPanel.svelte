@@ -4,6 +4,7 @@
   import ChatAsyncToolsHint from "$lib/components/chat/ChatAsyncToolsHint.svelte";
   import ChatChangeReceipt from "$lib/components/chat/ChatChangeReceipt.svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
+  import ChatDerivationNotice from "$lib/components/chat/ChatDerivationNotice.svelte";
   import ChatPresenceDock from "$lib/components/chat/ChatPresenceDock.svelte";
   import ChatScrollChrome from "$lib/components/chat/ChatScrollChrome.svelte";
   import { createAgentSessionController } from "$lib/chat/agentSessionController.svelte";
@@ -180,6 +181,18 @@
       (message) => isChatLaneMessage(message) || message.lane === "worker",
     ),
   );
+  const derivationSource = $derived.by(() =>
+    chatMessages.find((message) => message.transcript?.source)?.transcript?.source ?? null,
+  );
+  const derivationSourceLabel = $derived.by(() => {
+    if (!derivationSource) return "Source conversation";
+    const session = chat.sessions.find(
+      (entry) => entry.session_id === derivationSource.sessionId,
+    );
+    return session
+      ? formatSessionLabel(session)
+      : `Conversation ${derivationSource.sessionId.slice(-8)}`;
+  });
   const subagentRows = $derived(subagentRowsForSession(panelSessionId));
   const subagentRowsByWorkId = $derived(subagentRowMap(panelSessionId));
   const activeSubagentCount = $derived(subagentRows.filter((row) => row.streaming).length);
@@ -689,6 +702,14 @@
     await chat.switchSession(sessionId);
   }
 
+  async function openDerivationSource() {
+    const sourceSessionId = derivationSource?.sessionId;
+    if (!sourceSessionId) return;
+    await chat.switchSession(sourceSessionId);
+    const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
+    shellTabs.openChat(sourceSessionId, { activate: true });
+  }
+
   function continueWhereLeftOff() {
     if (!continueSession) return;
     void resumeSession(continueSession.session_id);
@@ -927,6 +948,12 @@
       {/if}
 
       {#if chatMessages.length > 0}
+        {#if derivationSource}
+          <ChatDerivationNotice
+            sourceLabel={derivationSourceLabel}
+            onOpenSource={openDerivationSource}
+          />
+        {/if}
         <ChatMessageList
           messages={chatMessages}
           sessionId={panelSessionId}

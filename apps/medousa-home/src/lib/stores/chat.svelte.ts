@@ -41,6 +41,7 @@ import {
   currentSessionLabel,
   deleteSession as deleteSessionCtrl,
   ensureSessionHydrated,
+  forkSessionFromEntry,
   hydrateAskThreads,
   isPinned,
   loadPinnedIds,
@@ -464,6 +465,10 @@ export class ChatStore implements ChatStoreHost {
 
   async newSharedRoom(options?: { displayName?: string; memberProfileIds?: string[] }) {
     return newSharedRoom(this, options);
+  }
+
+  async forkFromEntry(message: ChatMessage, options?: { includeDraft?: boolean }) {
+    return forkSessionFromEntry(this, message, options);
   }
 
   async ensureSessionHydrated(options?: { notice?: boolean }) {

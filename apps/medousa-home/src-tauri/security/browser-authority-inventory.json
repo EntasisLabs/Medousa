@@ -172,6 +172,7 @@
     "daemon::session::session_create",
     "daemon::session::session_decide_agent_mode_proposal",
     "daemon::session::session_delete",
+    "daemon::session::session_derive",
     "daemon::session::session_get_active_turn",
     "daemon::session::session_get_agent_mode",
     "daemon::session::session_get_code_binding",

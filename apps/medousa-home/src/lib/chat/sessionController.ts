@@ -4,6 +4,7 @@
  */
 
 import {
+  deriveSession,
   getSessionHistory,
   listSessions,
   deleteSession as daemonDeleteSession,
@@ -96,11 +97,13 @@ export function mapTurns(
     lane?: ChatMessage["lane"];
     askJobId?: string | null;
     sessionId?: string;
+    authorityId?: string;
   },
 ): ChatMessage[] {
   const lane = options?.lane ?? "chat";
   const askJobId = options?.askJobId ?? null;
   const sessionId = options?.sessionId?.trim() || "session";
+  const authorityId = options?.authorityId?.trim() || "";
   return turns.map((turn, index) => {
     const modelReceipt = modelReceiptFromParts(turn.parts ?? null);
     return {
@@ -121,8 +124,98 @@ export function mapTurns(
       speakerProfileId: turn.speaker_profile_id?.trim() || null,
       responseProvider: modelReceipt?.provider ?? null,
       responseModel: modelReceipt?.model ?? null,
+      transcript:
+        authorityId && turn.entry_id && turn.entry_seq
+          ? {
+              authorityId,
+              sessionId,
+              entryId: turn.entry_id,
+              entrySeq: turn.entry_seq,
+              source: turn.source
+                ? {
+                    authorityId: turn.source.session.authority_id,
+                    sessionId: turn.source.session.session_id,
+                    entryId: turn.source.entry_id,
+                    entrySeq: turn.source.entry_seq,
+                  }
+                : null,
+            }
+          : null,
     };
   });
+}
+
+function derivationIdempotencyKey(): string {
+  const suffix = globalThis.crypto?.randomUUID?.() ??
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `home-fork-${suffix}`;
+}
+
+/**
+ * Materialize committed history through one transcript entry as a new personal
+ * session. Draft transfer is deliberately a client composition and never part
+ * of the durable context manifest.
+ */
+export async function forkSessionFromEntry(
+  host: ChatStoreHost,
+  message: ChatMessage,
+  options?: { includeDraft?: boolean },
+): Promise<string> {
+  const coordinate = message.transcript;
+  if (!coordinate?.authorityId || !coordinate.entryId || coordinate.entrySeq < 1) {
+    throw new Error("This message is not committed yet");
+  }
+
+  const includeDraft = options?.includeDraft === true;
+  const sourceDraft =
+    includeDraft && host.sessionId.trim() === coordinate.sessionId
+      ? host.draft
+      : "";
+  if (includeDraft && !sourceDraft.trim()) {
+    throw new Error("There is no draft to carry into the fork");
+  }
+
+  const sourceSession = host.sessions.find(
+    (session) => session.session_id === coordinate.sessionId,
+  );
+  const sourceLabel = sourceSession
+    ? formatSessionLabel(sourceSession)
+    : coordinate.sessionId === host.sessionId
+      ? currentSessionLabel(host)
+      : "Conversation";
+  const displayName = sourceLabel === "New conversation"
+    ? "Forked conversation"
+    : `Fork of ${sourceLabel}`;
+  const result = await deriveSession(
+    {
+      intent: "fork",
+      sources: [
+        {
+          session: {
+            authority_id: coordinate.authorityId,
+            session_id: coordinate.sessionId,
+          },
+          through_entry_seq: coordinate.entrySeq,
+        },
+      ],
+      target: { catalog: "single", display_name: displayName },
+    },
+    derivationIdempotencyKey(),
+  );
+
+  await switchSession(host, result.session_id);
+  if (sourceDraft) {
+    host.draft = sourceDraft;
+    host.flushDraftPersist();
+    host.stashFocusedRuntime();
+  }
+  const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
+  shellTabs.openChat(result.session_id, {
+    activate: true,
+    title: result.display_name ?? displayName,
+  });
+  void refreshSessions(host, { force: true, q: "" });
+  return result.session_id;
 }
 
 export function isPinned(host: ChatStoreHost, sessionId: string): boolean {
@@ -290,7 +383,10 @@ export async function warmBackgroundSession(host: ChatStoreHost, sessionId: stri
     const current =
       host.sessionRuntimes.get(trimmed) ??
       emptySessionRuntime(trimmed, loadDraftForSession(trimmed));
-    current.messages = mapTurns(history.turns, { sessionId: trimmed });
+    current.messages = mapTurns(history.turns, {
+      sessionId: trimmed,
+      authorityId: history.authority_id,
+    });
     current.historyLoading = false;
     current.streamError = null;
     host.sessionRuntimes.set(trimmed, current);
@@ -446,7 +542,10 @@ export async function reconcileOnResume(
     const history = await getSessionHistory(sessionId);
     if (!stillSameSession()) return;
 
-    const daemonMessages = mapTurns(history.turns, { sessionId });
+    const daemonMessages = mapTurns(history.turns, {
+      sessionId,
+      authorityId: history.authority_id,
+    });
     host.messages = mergeTranscript(host.messages, daemonMessages);
     host.sanitizeTranscript();
   } catch (err) {
@@ -479,7 +578,10 @@ export async function reloadCurrentSession(
   try {
     const history = await getSessionHistory(sessionId);
     if (!stillSameSession()) return;
-    host.messages = mapTurns(history.turns, { sessionId });
+    host.messages = mapTurns(history.turns, {
+      sessionId,
+      authorityId: history.authority_id,
+    });
     if (options?.notice !== false && history.turns.length > 0) {
       const count = history.turns.length;
       host.historyNotice = `Restored ${count} turn${count === 1 ? "" : "s"}`;
@@ -555,7 +657,10 @@ export async function switchSession(host: ChatStoreHost, sessionId: string) {
   try {
     const history = await getSessionHistory(trimmed);
     if (host.sessionId !== trimmed || switchEpoch !== host.transcriptEpoch) return;
-    host.messages = mapTurns(history.turns, { sessionId: trimmed });
+    host.messages = mapTurns(history.turns, {
+      sessionId: trimmed,
+      authorityId: history.authority_id,
+    });
     const { workshops } = await import("$lib/stores/workshops.svelte");
     void workshops.saveActiveSession(trimmed);
   } catch (err) {
@@ -612,6 +717,7 @@ export async function hydrateAskThreads(host: ChatStoreHost, cards: WorkCard[]) 
             lane: "ask",
             askJobId: card.id,
             sessionId,
+            authorityId: history.authority_id,
           });
         } catch {
           return [] as ChatMessage[];

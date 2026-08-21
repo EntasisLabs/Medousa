@@ -4,6 +4,7 @@ import { MAX_SHELL_PANES } from "$lib/types/shellTabs";
 
 vi.mock("$lib/daemon", () => ({
   cancelActiveSessionTurn: vi.fn(),
+  deriveSession: vi.fn(),
   getActiveSessionTurn: vi.fn(async () => null),
   getSessionHistory: vi.fn(async () => ({ turns: [] })),
   listSessionTurns: vi.fn(async () => ({ turns: [] })),
@@ -79,6 +80,119 @@ describe("multi-live chat session runtimes", () => {
     store.bootstrapMultiLive();
     expect(chatStreamPool.maxLiveStreams).toBe(MAX_SHELL_PANES);
     expect(chatStreamPool.isLive(store.sessionId)).toBe(true);
+  });
+
+  it("forks a committed prefix and carries the draft only into the target", async () => {
+    const { store } = await loadStore();
+    const { deriveSession, getSessionHistory } = await import("$lib/daemon");
+    const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
+    const committed: ChatMessage = {
+      id: "source:assistant:2",
+      role: "assistant",
+      content: "Committed answer",
+      transcript: {
+        authorityId: "auth_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        sessionId: "source-session",
+        entryId: "ent_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        entrySeq: 2,
+      },
+    };
+    store.sessionId = "source-session";
+    store.messages = [committed];
+    store.draft = "follow this line of thought";
+    store.sessionPristine = false;
+    store.sessions = [
+      {
+        session_id: "source-session",
+        display_name: "Source idea",
+        turns: 2,
+        verification_runs: 0,
+        preview: "Committed answer",
+      },
+    ];
+
+    vi.mocked(deriveSession).mockResolvedValue({
+      authority_id: "auth_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      session_id: "target-session",
+      catalog: "single",
+      display_name: "Fork of Source idea",
+      reused: false,
+      derivation: {},
+    } as never);
+    vi.mocked(getSessionHistory).mockResolvedValue({
+      authority_id: "auth_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      session_id: "target-session",
+      turns: [],
+    });
+
+    await store.forkFromEntry(committed, { includeDraft: true });
+    const { loadDraftForSession } = await import("$lib/chat/draftPersistence");
+
+    expect(deriveSession).toHaveBeenCalledWith(
+      {
+        intent: "fork",
+        sources: [
+          {
+            session: {
+              authority_id: "auth_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              session_id: "source-session",
+            },
+            through_entry_seq: 2,
+          },
+        ],
+        target: { catalog: "single", display_name: "Fork of Source idea" },
+      },
+      expect.stringMatching(/^home-fork-/),
+    );
+    expect(store.sessionId).toBe("target-session");
+    expect(store.draft).toBe("follow this line of thought");
+    expect(loadDraftForSession("source-session")).toBe("follow this line of thought");
+    expect(loadDraftForSession("target-session")).toBe("follow this line of thought");
+    expect(shellTabs.openChat).toHaveBeenCalledWith("target-session", {
+      activate: true,
+      title: "Fork of Source idea",
+    });
+  });
+
+  it("maps committed transcript coordinates and derivation provenance into UI messages", async () => {
+    const { mapTurns } = await import("$lib/chat/sessionController");
+    const messages = mapTurns(
+      [
+        {
+          entry_id: "ent_cccccccccccccccccccccccccccccccc",
+          entry_seq: 4,
+          content_digest: "v1:content",
+          role: "assistant",
+          content: "Derived answer",
+          timestamp: "2026-08-21T12:00:00Z",
+          source: {
+            session: {
+              authority_id: "auth_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              session_id: "source-session",
+            },
+            entry_id: "ent_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            entry_seq: 4,
+          },
+        },
+      ],
+      {
+        authorityId: "auth_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        sessionId: "target-session",
+      },
+    );
+
+    expect(messages[0]?.transcript).toEqual({
+      authorityId: "auth_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      sessionId: "target-session",
+      entryId: "ent_cccccccccccccccccccccccccccccccc",
+      entrySeq: 4,
+      source: {
+        authorityId: "auth_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        sessionId: "source-session",
+        entryId: "ent_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        entrySeq: 4,
+      },
+    });
   });
 
   it("bootstrapMultiLive acquires listed sessions and warms background history", async () => {
