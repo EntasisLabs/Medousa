@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Plus, Search, Users, X } from "@lucide/svelte";
+  import { MessageCircle, Plus, Search, Users, X } from "@lucide/svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { sharedMode } from "$lib/stores/sharedMode.svelte";
   import { ensureRailPopoverOpen } from "$lib/utils/railPopoverChrome";
@@ -97,7 +97,14 @@
     </button>
   </div>
 {:else}
-  <div class="lme-dock-leading-ghost min-w-0 flex-1" aria-hidden="true"></div>
+  {#if variant === "rail-row"}
+    <div class="session-rail-title min-w-0 flex-1">
+      <MessageCircle size={13} strokeWidth={1.75} aria-hidden="true" />
+      <span>Chats</span>
+    </div>
+  {:else}
+    <div class="lme-dock-leading-ghost min-w-0 flex-1" aria-hidden="true"></div>
+  {/if}
 
   <button
     type="button"
