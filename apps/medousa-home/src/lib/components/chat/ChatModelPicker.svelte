@@ -1,9 +1,12 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import {
     ArrowUpRight,
     Check,
     ChevronDown,
+    ChevronLeft,
+    ChevronRight,
+    Eye,
     LoaderCircle,
     LogIn,
     Search,
@@ -82,6 +85,11 @@
   let probeSnapshot = $state<Awaited<ReturnType<typeof probeProviders>> | null>(null);
   let menuEl: HTMLDivElement | undefined = $state();
   let triggerEl: HTMLButtonElement | undefined = $state();
+  let searchInputEl: HTMLInputElement | undefined = $state();
+  let providerViewportEl: HTMLDivElement | undefined = $state();
+  let highlightedKey = $state<string | null>(null);
+  let canScrollProvidersBack = $state(false);
+  let canScrollProvidersForward = $state(false);
   let selectedNativeProvider = $state(runtime.provider);
   let chatGptConnection = $state<ChatGptOAuthConnection | null>(null);
   let chatGptConnectionLoading = $state(false);
@@ -142,6 +150,29 @@
     return option.hint;
   }
 
+  function optionDetail(option: ChatModelPickOption): string | null {
+    const parts: string[] = [];
+    const tier = optionTier(option);
+    const providerLabel = resolveProviderLabel(catalogSnapshot, option.provider);
+    if (
+      tier &&
+      (!search.trim() || !providerLabel.toLowerCase().includes(tier.toLowerCase()))
+    ) {
+      parts.push(tier);
+    }
+    if (option.meta) {
+      const providerPrefix = `${providerLabel} · `;
+      const meta =
+        !search.trim() && option.meta === providerLabel
+          ? null
+          : !search.trim() && option.meta.startsWith(providerPrefix)
+            ? option.meta.slice(providerPrefix.length)
+            : option.meta;
+      if (meta && !parts.includes(meta)) parts.push(meta);
+    }
+    return parts.length > 0 ? parts.join(" · ") : null;
+  }
+
   onMount(() => {
     void bootstrap();
     void refreshChatGptConnection();
@@ -177,6 +208,21 @@
 
   $effect(() => {
     if (agentRuntime === "medousa") selectedNativeProvider = runtime.provider;
+  });
+
+  $effect(() => {
+    if (!open || agentRuntime !== "medousa") return;
+    if (nativeVisibleOptions.some((option) => option.key === highlightedKey)) return;
+    highlightedKey =
+      nativeVisibleOptions.find((option) => option.key === activeKey)?.key ??
+      nativeVisibleOptions[0]?.key ??
+      null;
+  });
+
+  $effect(() => {
+    if (!open || agentRuntime !== "medousa") return;
+    nativeProviderGroups.length;
+    void tick().then(updateProviderScrollState);
   });
 
   function applyCapabilityData(nextOptions: ChatModelPickOption[]): ChatModelPickOption[] {
@@ -277,15 +323,19 @@
     }
   }
 
-  function toggleMenu() {
+  async function toggleMenu() {
     if (disabled || nativeMobileReadonly || runtime.savingControls) return;
     open = !open;
     if (open) {
       search = "";
+      highlightedKey = activeKey;
       if (agentRuntime === "medousa") {
         selectedNativeProvider = runtime.provider;
         void refreshChatGptConnection();
         void refreshLiveModelsForProvider(runtime.provider);
+        await tick();
+        updateProviderScrollState();
+        searchInputEl?.focus();
       }
     }
   }
@@ -306,10 +356,63 @@
     else layout.navigateDesktop("settings");
   }
 
-  function selectNativeProvider(provider: string) {
+  function selectNativeProvider(provider: string, focusProvider = false) {
     selectedNativeProvider = provider;
     search = "";
+    highlightedKey = null;
     void refreshLiveModelsForProvider(provider);
+    void tick().then(() => {
+      scrollSelectedProviderIntoView();
+      if (focusProvider) {
+        const buttons = providerViewportEl?.querySelectorAll<HTMLElement>("[data-provider-id]");
+        Array.from(buttons ?? [])
+          .find((button) => button.dataset.providerId === provider)
+          ?.focus();
+      } else {
+        searchInputEl?.focus();
+      }
+    });
+  }
+
+  function updateProviderScrollState() {
+    const viewport = providerViewportEl;
+    if (!viewport) return;
+    canScrollProvidersBack = viewport.scrollLeft > 2;
+    canScrollProvidersForward =
+      viewport.scrollLeft + viewport.clientWidth < viewport.scrollWidth - 2;
+  }
+
+  function scrollProviderRail(direction: -1 | 1) {
+    const viewport = providerViewportEl;
+    if (!viewport) return;
+    viewport.scrollBy({
+      left: direction * Math.max(140, viewport.clientWidth * 0.72),
+      behavior: "smooth",
+    });
+  }
+
+  function scrollSelectedProviderIntoView() {
+    const buttons = providerViewportEl?.querySelectorAll<HTMLElement>("[data-provider-id]");
+    const active = Array.from(buttons ?? []).find(
+      (button) => button.dataset.providerId === selectedNativeProvider,
+    );
+    active?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    window.setTimeout(updateProviderScrollState, 180);
+  }
+
+  function selectAdjacentProvider(direction: -1 | 1, focusProvider = false) {
+    if (nativeProviderGroups.length === 0) return;
+    const currentIndex = nativeProviderGroups.findIndex(
+      (group) => group.provider === selectedNativeProvider,
+    );
+    const nextIndex = Math.min(
+      nativeProviderGroups.length - 1,
+      Math.max(0, (currentIndex < 0 ? 0 : currentIndex) + direction),
+    );
+    const provider = nativeProviderGroups[nextIndex]?.provider;
+    if (provider && provider !== selectedNativeProvider) {
+      selectNativeProvider(provider, focusProvider);
+    }
   }
 
   function nativeProviderButtonLabel(provider: string, label: string): string {
@@ -326,17 +429,78 @@
     open = false;
   }
 
-  function openMenu() {
+  async function openMenu() {
     if (disabled || runtime.savingControls) return;
     open = !open;
     if (open) {
       search = "";
+      highlightedKey = activeKey;
       if (agentRuntime === "medousa") {
         selectedNativeProvider = runtime.provider;
         void refreshChatGptConnection();
         void refreshLiveModelsForProvider(runtime.provider);
+        await tick();
+        updateProviderScrollState();
+        searchInputEl?.focus();
       }
     }
+  }
+
+  function scrollHighlightedIntoView() {
+    void tick().then(() => {
+      const items = menuEl?.querySelectorAll<HTMLElement>("[data-model-key]");
+      const item = Array.from(items ?? []).find(
+        (candidate) => candidate.dataset.modelKey === highlightedKey,
+      );
+      item?.scrollIntoView({ block: "nearest" });
+    });
+  }
+
+  function handlePickerKeydown(event: KeyboardEvent) {
+    if (agentRuntime !== "medousa") return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      open = false;
+      triggerEl?.focus();
+      return;
+    }
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      const target = event.target as HTMLElement | null;
+      const navigatingProviders =
+        target === searchInputEl ? search.length === 0 : target?.dataset.providerId != null;
+      if (navigatingProviders) {
+        event.preventDefault();
+        selectAdjacentProvider(
+          event.key === "ArrowRight" ? 1 : -1,
+          target?.dataset.providerId != null,
+        );
+      }
+      return;
+    }
+    if (event.key === "Enter" && highlightedKey) {
+      const option = nativeVisibleOptions.find((entry) => entry.key === highlightedKey);
+      if (!option) return;
+      event.preventDefault();
+      void selectOption(option);
+      return;
+    }
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    if (nativeVisibleOptions.length === 0) return;
+    event.preventDefault();
+    const currentIndex = nativeVisibleOptions.findIndex(
+      (option) => option.key === highlightedKey,
+    );
+    const direction = event.key === "ArrowDown" ? 1 : -1;
+    const nextIndex =
+      currentIndex < 0
+        ? direction > 0
+          ? 0
+          : nativeVisibleOptions.length - 1
+        : (currentIndex + direction + nativeVisibleOptions.length) %
+          nativeVisibleOptions.length;
+    highlightedKey = nativeVisibleOptions[nextIndex]?.key ?? null;
+    scrollHighlightedIntoView();
   }
 
   function openModelsSettings() {
@@ -374,38 +538,75 @@
   </button>
 
   {#if open}
-    <div bind:this={menuEl} class="composer-model-panel" role="dialog" aria-label="Choose model">
+    <div
+      bind:this={menuEl}
+      class="composer-model-panel"
+      role="dialog"
+      aria-label="Choose model"
+      tabindex="-1"
+      onkeydown={handlePickerKeydown}
+    >
       {#if !nativeMobileReadonly}
         {#if agentRuntime === "medousa"}
-          <div class="composer-model-provider-strip" role="listbox" aria-label="Choose provider">
-            {#each nativeProviderGroups as group (group.provider)}
-              <button
-                type="button"
-                class="composer-model-provider-option"
-                class:composer-model-provider-option-active={group.provider === selectedNativeProvider}
-                role="option"
-                aria-selected={group.provider === selectedNativeProvider}
-                onclick={() => selectNativeProvider(group.provider)}
-              >
-                {nativeProviderButtonLabel(group.provider, group.label)}
-                {#if group.provider === "openai-codex" && !nativeChatGptReady}
-                  <LogIn size={11} strokeWidth={2} />
-                {/if}
-              </button>
-            {/each}
-          </div>
           <div class="composer-model-panel-search">
             <label class="composer-model-search">
-              <Search size={14} class="composer-model-search-icon" />
+              <Search size={15} class="composer-model-search-icon" />
               <input
+                bind:this={searchInputEl}
                 type="search"
                 class="composer-model-search-input"
-                placeholder="Search models and providers"
+                placeholder="Search models and providers…"
                 bind:value={search}
+                aria-label="Search models and providers"
               />
             </label>
           </div>
-
+          <div class="composer-model-provider-nav">
+            <div
+              bind:this={providerViewportEl}
+              class="composer-model-provider-strip"
+              role="listbox"
+              aria-label="Choose provider"
+              onscroll={updateProviderScrollState}
+            >
+              {#each nativeProviderGroups as group (group.provider)}
+                <button
+                  type="button"
+                  class="composer-model-provider-option"
+                  class:composer-model-provider-option-active={group.provider === selectedNativeProvider}
+                  role="option"
+                  aria-selected={group.provider === selectedNativeProvider}
+                  data-provider-id={group.provider}
+                  onclick={() => selectNativeProvider(group.provider)}
+                >
+                  {nativeProviderButtonLabel(group.provider, group.label)}
+                  {#if group.provider === "openai-codex" && !nativeChatGptReady}
+                    <LogIn size={11} strokeWidth={2} />
+                  {/if}
+                </button>
+              {/each}
+            </div>
+            <div class="composer-model-provider-pager" aria-label="Scroll providers">
+              <button
+                type="button"
+                class="composer-model-provider-page"
+                disabled={!canScrollProvidersBack}
+                aria-label="Previous providers"
+                onclick={() => scrollProviderRail(-1)}
+              >
+                <ChevronLeft size={13} strokeWidth={1.8} />
+              </button>
+              <button
+                type="button"
+                class="composer-model-provider-page"
+                disabled={!canScrollProvidersForward}
+                aria-label="Next providers"
+                onclick={() => scrollProviderRail(1)}
+              >
+                <ChevronRight size={13} strokeWidth={1.8} />
+              </button>
+            </div>
+          </div>
           <ul class="composer-model-list" role="listbox">
             {#if nativeChatGptSelected && chatGptConnectionLoading}
               <li class="composer-model-list-empty">
@@ -433,30 +634,29 @@
               <li class="composer-model-list-empty">No models found for this provider</li>
             {:else}
               {#each nativeVisibleOptions as option (option.key)}
-                {@const tier = optionTier(option)}
+                {@const detail = optionDetail(option)}
                 <li>
                   <button
                     type="button"
                     class="composer-model-list-item {option.key === activeKey
                       ? 'composer-model-list-item-active'
+                      : ''} {option.key === highlightedKey
+                      ? 'composer-model-list-item-highlighted'
                       : ''}"
                     role="option"
                     aria-selected={option.key === activeKey}
+                    data-model-key={option.key}
+                    onmouseenter={() => (highlightedKey = option.key)}
                     onclick={() => void selectOption(option)}
                   >
                     <span class="composer-model-row-copy">
-                      <span class="composer-model-row-name">
-                        {option.label}
-                        {#if tier}
-                          <span class="composer-model-list-tier">{tier}</span>
-                        {/if}
-                      </span>
-                      {#if option.meta}
-                        <span class="composer-model-row-meta">{option.meta}</span>
+                      <span class="composer-model-row-name">{option.label}</span>
+                      {#if detail}
+                        <span class="composer-model-row-meta">{detail}</span>
                       {/if}
                     </span>
                     {#if option.vision}
-                      <span class="composer-model-row-cap">Vision</span>
+                      <span class="composer-model-row-cap"><Eye size={11} /> Vision</span>
                     {/if}
                     {#if option.key === activeKey}
                       <Check size={15} strokeWidth={2.5} class="composer-model-list-check" />
