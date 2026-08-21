@@ -624,6 +624,30 @@ pub fn build_workshop_surface() -> DeclaredRouter<AppState> {
             ),
             post(crate::daemon_handlers::derive_session),
         )
+        .methods([
+            (
+                workshop_read_policy("/v1/prompt-stashes"),
+                get(crate::daemon_handlers::list_prompt_stashes),
+            ),
+            (
+                workshop_mutation_policy(
+                    axum::http::Method::POST,
+                    "/v1/prompt-stashes",
+                    Capability::WorkshopInteract,
+                    256 * 1024,
+                ),
+                post(crate::daemon_handlers::create_prompt_stash),
+            ),
+        ])
+        .route(
+            workshop_mutation_policy(
+                axum::http::Method::DELETE,
+                "/v1/prompt-stashes/{stash_id}",
+                Capability::WorkshopInteract,
+                1024,
+            ),
+            delete(crate::daemon_handlers::delete_prompt_stash),
+        )
         .route(
             workshop_read_policy("/v1/sessions/{session_id}/history"),
             get(crate::daemon_handlers::get_session_history),

@@ -12,22 +12,23 @@ use medousa_types::{
     ComponentRuntimeEventsRequest, ComponentRuntimeEventsResponse,
     ComponentRuntimeEventsTailResponse, ComponentRuntimeProbeResult, ComponentStoreDeleteResponse,
     ComponentStoreGetResponse, ComponentStoreListResponse, ComponentStoreSetRequest,
-    ComponentStoreSetResponse, DecideAgentModeProposalRequest, DeleteRecurringResponse,
-    DeriveSessionRequest, DeriveSessionResponse, EnqueueAskRequest, EnqueuePromptRequest,
-    EnqueueReportRequest, EnqueueResponse, EnvironmentPendingResponse, EnvironmentProposeResponse,
+    ComponentStoreSetResponse, CreatePromptStashRequest, DecideAgentModeProposalRequest,
+    DeletePromptStashResponse, DeleteRecurringResponse, DeriveSessionRequest,
+    DeriveSessionResponse, EnqueueAskRequest, EnqueuePromptRequest, EnqueueReportRequest,
+    EnqueueResponse, EnvironmentPendingResponse, EnvironmentProposeResponse,
     EnvironmentSpecPutRequest, EnvironmentSpecResponse, EnvironmentStatusResponse,
     EnvironmentValidateRequest, EnvironmentValidateResponse, FeedLatestGoodQuery,
     FeedLatestGoodResponse, FeedListResponse, FeedReadRequest, FeedTailQuery, FeedTailResponse,
     HealthResponse, IngestRequest, IngestResponse, InteractiveTurnRequest, InteractiveTurnResponse,
     JobReportResponse, JobResultResponse, LocalCatalogResponse, LocalEngineStatus,
     LocalHardwareResponse, LocalModelDownloadRequest, LocalModelDownloadResponse,
-    LocalModelsResponse, McpGatewayStatusResponse, ModelDownloadProgress,
-    RecurringDeliveryResponse, RecurringListQuery, RecurringListResponse, RecurringRunsQuery,
-    RecurringRunsResponse, RegisterRecurringPromptRequest, RegisterRecurringResponse,
-    RuntimeConfigCommandRequest, RuntimeConfigCommandResponse, SessionActiveTurnsResponse,
-    SessionAgentModeResponse, SessionAppendTurnRequest, SessionAppendTurnResponse,
-    SessionCodeBindingResponse, SessionCodeProjectResponse, SessionDeleteQuery,
-    SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
+    LocalModelsResponse, McpGatewayStatusResponse, ModelDownloadProgress, PromptStash,
+    PromptStashListResponse, RecurringDeliveryResponse, RecurringListQuery, RecurringListResponse,
+    RecurringRunsQuery, RecurringRunsResponse, RegisterRecurringPromptRequest,
+    RegisterRecurringResponse, RuntimeConfigCommandRequest, RuntimeConfigCommandResponse,
+    SessionActiveTurnsResponse, SessionAgentModeResponse, SessionAppendTurnRequest,
+    SessionAppendTurnResponse, SessionCodeBindingResponse, SessionCodeProjectResponse,
+    SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
     SessionSetDisplayNameRequest, SessionSetDisplayNameResponse, SessionTranscriptSearchResponse,
     SetSessionAgentModeRequest, SetSessionCodeBindingRequest, StageRouteCommandRequest,
     StageRouteCommandResponse, StartSessionCodeProjectRequest, TurnBudgetApproveRequest,
@@ -187,6 +188,8 @@ blocking_api!(BlockingRecurringApi);
 #[cfg(feature = "blocking")]
 blocking_api!(BlockingSessionsApi);
 #[cfg(feature = "blocking")]
+blocking_api!(BlockingPromptStashesApi);
+#[cfg(feature = "blocking")]
 blocking_api!(BlockingInteractiveApi);
 #[cfg(feature = "blocking")]
 blocking_api!(BlockingRuntimeApi);
@@ -248,6 +251,10 @@ impl BlockingMedousaClient {
 
     pub fn sessions(&self) -> BlockingSessionsApi<'_> {
         BlockingSessionsApi { http: &self.http }
+    }
+
+    pub fn prompt_stashes(&self) -> BlockingPromptStashesApi<'_> {
+        BlockingPromptStashesApi { http: &self.http }
     }
 
     pub fn interactive(&self) -> BlockingInteractiveApi<'_> {
@@ -706,6 +713,24 @@ impl BlockingSessionsApi<'_> {
         self.http.post_empty(&op_path(
             &ops::SESSIONS_BY_SESSION_ID_ACTIVE_TURN_POST,
             &[("session_id", session_id)],
+        )?)
+    }
+}
+
+#[cfg(feature = "blocking")]
+impl BlockingPromptStashesApi<'_> {
+    pub fn list(&self) -> Result<PromptStashListResponse, SdkError> {
+        self.http.get(ops::PROMPT_STASHES_GET.path)
+    }
+
+    pub fn create(&self, request: &CreatePromptStashRequest) -> Result<PromptStash, SdkError> {
+        self.http.post(ops::PROMPT_STASHES_POST.path, request)
+    }
+
+    pub fn delete(&self, stash_id: &str) -> Result<DeletePromptStashResponse, SdkError> {
+        self.http.delete(&op_path(
+            &ops::PROMPT_STASHES_BY_STASH_ID_DELETE,
+            &[("stash_id", stash_id)],
         )?)
     }
 }

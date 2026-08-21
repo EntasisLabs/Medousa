@@ -387,6 +387,24 @@ class AgentSessionConfigOption(MedousaModel):
     type: str
 
 
+class MediaRef(MedousaModel):
+    kind: str = Field(..., description='image | document | spreadsheet | audio')
+    label: str | None = None
+    media_id: str
+    mime: str
+
+
+class PromptStashDraft(MedousaModel):
+    media_refs: list[MediaRef] | None = None
+    mode: str | None = None
+    model: str | None = None
+    text: str
+
+
+class PromptStashId(RootModel[str]):
+    root: str = Field(..., title='PromptStashId')
+
+
 class DeriveSessionTarget(MedousaModel):
     catalog: str | None = Field(
         None,
@@ -674,13 +692,6 @@ class HostContextSelection(MedousaModel):
     end: HostContextPosition | None = None
     start: HostContextPosition | None = None
     text: str
-
-
-class MediaRef(MedousaModel):
-    kind: str = Field(..., description='image | document | spreadsheet | audio')
-    label: str | None = None
-    media_id: str
-    mime: str
 
 
 class StageRoute(MedousaModel):
@@ -1035,6 +1046,22 @@ class McpGatewayServerRuntime(MedousaModel):
     serverId: str
     title: str
     toolCount: int = Field(..., ge=0)
+
+
+class PromptStash(MedousaModel):
+    context_manifest_id: ContextManifestId | None = Field(
+        None, description='Optional durable context selection resolved by an earlier derivation.'
+    )
+    created_at: AwareDatetime
+    created_by: str
+    draft: PromptStashDraft
+    label: str | None = None
+    source_session: SessionRef | None = Field(
+        None,
+        description='Session in which the explicit stash was created. Navigation hint only; it does not grant access or imply a context selection.',
+    )
+    stash_id: PromptStashId
+    updated_at: AwareDatetime
 
 
 class RecurringDefinitionEntry(MedousaModel):
@@ -2090,12 +2117,24 @@ class CreateIntegrationConnectionRequest(MedousaModel):
     label: str | None = None
 
 
+class CreatePromptStashRequest(MedousaModel):
+    context_manifest_id: ContextManifestId | None = None
+    draft: PromptStashDraft
+    label: str | None = None
+    source_session: SessionRef | None = None
+
+
 class DecideAgentModeProposalRequest(MedousaModel):
     accept: bool
 
 
 class DeleteIntegrationConnectionResponse(MedousaModel):
     deleted: bool
+
+
+class DeletePromptStashResponse(MedousaModel):
+    deleted: bool
+    stash_id: PromptStashId
 
 
 class DeleteRecurringResponse(MedousaModel):
@@ -2430,6 +2469,10 @@ class PatchIntegrationConnectionRequest(MedousaModel):
     base_url: str | None = None
     kind: str | None = None
     label: str | None = None
+
+
+class PromptStashListResponse(MedousaModel):
+    stashes: list[PromptStash]
 
 
 class RecurringDeliveryResponse(MedousaModel):

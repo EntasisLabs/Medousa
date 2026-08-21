@@ -28,6 +28,8 @@ use crate::manuscripts::ManuscriptsApi;
 #[cfg(feature = "async")]
 use crate::mcp_gateway::McpGatewayApi;
 #[cfg(feature = "async")]
+use crate::prompt_stashes::PromptStashesApi;
+#[cfg(feature = "async")]
 use crate::recurring::RecurringApi;
 #[cfg(feature = "async")]
 use crate::runtime::RuntimeApi;
@@ -106,6 +108,11 @@ impl MedousaClient {
     #[cfg(feature = "async")]
     pub fn sessions(&self) -> SessionsApi<'_> {
         SessionsApi { client: self }
+    }
+
+    #[cfg(feature = "async")]
+    pub fn prompt_stashes(&self) -> PromptStashesApi<'_> {
+        PromptStashesApi { client: self }
     }
 
     #[cfg(feature = "async")]

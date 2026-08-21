@@ -379,6 +379,42 @@ export interface DeriveSessionResponse {
   session_id: string;
 }
 
+export type PromptStashId = string;
+
+export interface PromptStashDraft {
+  media_refs?: MediaRef[];
+  mode?: string | null;
+  model?: string | null;
+  text: string;
+}
+
+export interface PromptStash {
+  context_manifest_id?: ContextManifestId | null;
+  created_at: string;
+  created_by: string;
+  draft: PromptStashDraft;
+  label?: string | null;
+  source_session?: SessionRef | null;
+  stash_id: PromptStashId;
+  updated_at: string;
+}
+
+export interface CreatePromptStashRequest {
+  context_manifest_id?: ContextManifestId | null;
+  draft: PromptStashDraft;
+  label?: string | null;
+  source_session?: SessionRef | null;
+}
+
+export interface PromptStashListResponse {
+  stashes: PromptStash[];
+}
+
+export interface DeletePromptStashResponse {
+  deleted: boolean;
+  stash_id: PromptStashId;
+}
+
 export type CodeProjectSource = "blank" | "repository";
 
 export interface StartSessionCodeProjectRequest {

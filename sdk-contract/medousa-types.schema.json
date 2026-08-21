@@ -3328,6 +3328,129 @@
       }
     }
   },
+  "CreatePromptStashRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreatePromptStashRequest",
+    "type": "object",
+    "required": [
+      "draft"
+    ],
+    "properties": {
+      "context_manifest_id": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ContextManifestId"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "draft": {
+        "$ref": "#/definitions/PromptStashDraft"
+      },
+      "label": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "source_session": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/SessionRef"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ContextManifestId": {
+        "type": "string"
+      },
+      "MediaRef": {
+        "description": "Reference to a user file stored locally under medousa/media/ (not inline bytes).",
+        "type": "object",
+        "required": [
+          "kind",
+          "media_id",
+          "mime"
+        ],
+        "properties": {
+          "kind": {
+            "description": "image | document | spreadsheet | audio",
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "media_id": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          }
+        }
+      },
+      "PromptStashDraft": {
+        "description": "User-created composer state. Unlike automatic Home draft recovery, this is explicit, daemon-owned, and portable across clients of the same authority.",
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "media_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/MediaRef"
+            }
+          },
+          "mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      }
+    }
+  },
   "DecideAgentModeProposalRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "DecideAgentModeProposalRequest",
@@ -3351,6 +3474,28 @@
     "properties": {
       "deleted": {
         "type": "boolean"
+      }
+    }
+  },
+  "DeletePromptStashResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DeletePromptStashResponse",
+    "type": "object",
+    "required": [
+      "deleted",
+      "stash_id"
+    ],
+    "properties": {
+      "deleted": {
+        "type": "boolean"
+      },
+      "stash_id": {
+        "$ref": "#/definitions/PromptStashId"
+      }
+    },
+    "definitions": {
+      "PromptStashId": {
+        "type": "string"
       }
     }
   },
@@ -13857,6 +14002,378 @@
           "string",
           "null"
         ]
+      }
+    }
+  },
+  "PromptStash": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PromptStash",
+    "type": "object",
+    "required": [
+      "created_at",
+      "created_by",
+      "draft",
+      "stash_id",
+      "updated_at"
+    ],
+    "properties": {
+      "context_manifest_id": {
+        "description": "Optional durable context selection resolved by an earlier derivation.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ContextManifestId"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "draft": {
+        "$ref": "#/definitions/PromptStashDraft"
+      },
+      "label": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "source_session": {
+        "description": "Session in which the explicit stash was created. Navigation hint only; it does not grant access or imply a context selection.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/SessionRef"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "stash_id": {
+        "$ref": "#/definitions/PromptStashId"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ContextManifestId": {
+        "type": "string"
+      },
+      "MediaRef": {
+        "description": "Reference to a user file stored locally under medousa/media/ (not inline bytes).",
+        "type": "object",
+        "required": [
+          "kind",
+          "media_id",
+          "mime"
+        ],
+        "properties": {
+          "kind": {
+            "description": "image | document | spreadsheet | audio",
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "media_id": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          }
+        }
+      },
+      "PromptStashDraft": {
+        "description": "User-created composer state. Unlike automatic Home draft recovery, this is explicit, daemon-owned, and portable across clients of the same authority.",
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "media_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/MediaRef"
+            }
+          },
+          "mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "PromptStashId": {
+        "type": "string"
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      }
+    }
+  },
+  "PromptStashDraft": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PromptStashDraft",
+    "description": "User-created composer state. Unlike automatic Home draft recovery, this is explicit, daemon-owned, and portable across clients of the same authority.",
+    "type": "object",
+    "required": [
+      "text"
+    ],
+    "properties": {
+      "media_refs": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/MediaRef"
+        }
+      },
+      "mode": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "model": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "text": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "MediaRef": {
+        "description": "Reference to a user file stored locally under medousa/media/ (not inline bytes).",
+        "type": "object",
+        "required": [
+          "kind",
+          "media_id",
+          "mime"
+        ],
+        "properties": {
+          "kind": {
+            "description": "image | document | spreadsheet | audio",
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "media_id": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "PromptStashId": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PromptStashId",
+    "type": "string"
+  },
+  "PromptStashListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PromptStashListResponse",
+    "type": "object",
+    "required": [
+      "stashes"
+    ],
+    "properties": {
+      "stashes": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/PromptStash"
+        }
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ContextManifestId": {
+        "type": "string"
+      },
+      "MediaRef": {
+        "description": "Reference to a user file stored locally under medousa/media/ (not inline bytes).",
+        "type": "object",
+        "required": [
+          "kind",
+          "media_id",
+          "mime"
+        ],
+        "properties": {
+          "kind": {
+            "description": "image | document | spreadsheet | audio",
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "media_id": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          }
+        }
+      },
+      "PromptStash": {
+        "type": "object",
+        "required": [
+          "created_at",
+          "created_by",
+          "draft",
+          "stash_id",
+          "updated_at"
+        ],
+        "properties": {
+          "context_manifest_id": {
+            "description": "Optional durable context selection resolved by an earlier derivation.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ContextManifestId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "draft": {
+            "$ref": "#/definitions/PromptStashDraft"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_session": {
+            "description": "Session in which the explicit stash was created. Navigation hint only; it does not grant access or imply a context selection.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/SessionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stash_id": {
+            "$ref": "#/definitions/PromptStashId"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PromptStashDraft": {
+        "description": "User-created composer state. Unlike automatic Home draft recovery, this is explicit, daemon-owned, and portable across clients of the same authority.",
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "media_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/MediaRef"
+            }
+          },
+          "mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "PromptStashId": {
+        "type": "string"
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
       }
     }
   },

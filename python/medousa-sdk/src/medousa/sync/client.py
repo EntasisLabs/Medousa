@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from medousa.sync.jobs import JobsApiSync
     from medousa.sync.local_models import LocalModelsApiSync
     from medousa.sync.mcp_gateway import McpGatewayApiSync
+    from medousa.sync.prompt_stashes import PromptStashesApiSync
     from medousa.sync.recurring import RecurringApiSync
     from medousa.sync.runtime import RuntimeApiSync
     from medousa.sync.sessions import SessionsApiSync
@@ -70,6 +71,11 @@ class MedousaClientSync:
         from medousa.sync.sessions import SessionsApiSync
 
         return SessionsApiSync(self)
+
+    def prompt_stashes(self) -> PromptStashesApiSync:
+        from medousa.sync.prompt_stashes import PromptStashesApiSync
+
+        return PromptStashesApiSync(self)
 
     def interactive(self) -> InteractiveApiSync:
         from medousa.sync.interactive import InteractiveApiSync

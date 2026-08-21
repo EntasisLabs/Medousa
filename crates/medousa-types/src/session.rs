@@ -222,6 +222,7 @@ prefixed_conversation_id!(AuthorityId, "authority_id", "auth_", 64);
 prefixed_conversation_id!(TranscriptEntryId, "transcript_entry_id", "ent_", 32);
 prefixed_conversation_id!(ContextManifestId, "context_manifest_id", "ctx_", 32);
 prefixed_conversation_id!(DerivationId, "derivation_id", "drv_", 32);
+prefixed_conversation_id!(PromptStashId, "prompt_stash_id", "pst_", 32);
 
 impl AuthorityId {
     /// Stable logical workshop authority derived from the installation identity.

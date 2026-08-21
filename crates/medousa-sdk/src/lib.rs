@@ -34,6 +34,8 @@ mod manuscripts;
 #[cfg(feature = "async")]
 mod mcp_gateway;
 #[cfg(feature = "async")]
+mod prompt_stashes;
+#[cfg(feature = "async")]
 pub mod reconnect;
 #[cfg(all(feature = "async", feature = "sse"))]
 pub mod reconnecting_stream;

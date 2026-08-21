@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::session::{
-    AuthorityId, ConversationRangeSelection, ConversationTurn, SessionDerivation,
-    SessionHistorySummary, TranscriptEntry,
+    AuthorityId, ContextManifestId, ConversationRangeSelection, ConversationTurn, PromptStashId,
+    SessionDerivation, SessionHistorySummary, SessionRef, TranscriptEntry,
 };
 use crate::stage_routing::StageRoutingMatrix;
 use crate::turn::HostTurnContext;
@@ -399,6 +399,64 @@ pub struct DeriveSessionResponse {
     pub derivation: SessionDerivation,
     /// True when this idempotency key had already committed the same request.
     pub reused: bool,
+}
+
+/// User-created composer state. Unlike automatic Home draft recovery, this is
+/// explicit, daemon-owned, and portable across clients of the same authority.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct PromptStashDraft {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub media_refs: Vec<MediaRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct PromptStash {
+    pub stash_id: PromptStashId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    pub draft: PromptStashDraft,
+    /// Optional durable context selection resolved by an earlier derivation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_manifest_id: Option<ContextManifestId>,
+    /// Session in which the explicit stash was created. Navigation hint only;
+    /// it does not grant access or imply a context selection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_session: Option<SessionRef>,
+    pub created_by: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CreatePromptStashRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    pub draft: PromptStashDraft,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_manifest_id: Option<ContextManifestId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_session: Option<SessionRef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct PromptStashListResponse {
+    pub stashes: Vec<PromptStash>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct DeletePromptStashResponse {
+    pub stash_id: PromptStashId,
+    pub deleted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

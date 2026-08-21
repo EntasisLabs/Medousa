@@ -1,8 +1,9 @@
 use crate::daemon::types::{
     ActiveSessionTurnResponse, AgentModeId, AgentModeListResponse, AgentModeProposalListResponse,
     AgentModeProposalResponse, AgentModeScope, AgentModeTransitionPolicy,
-    CancelActiveSessionTurnResponse, CodeIntentContext, DeriveSessionRequest,
-    DeriveSessionResponse, MediaRef, SessionAgentModeResponse, SessionCodeBindingResponse,
+    CancelActiveSessionTurnResponse, CodeIntentContext, CreatePromptStashRequest,
+    DeletePromptStashResponse, DeriveSessionRequest, DeriveSessionResponse, MediaRef, PromptStash,
+    PromptStashListResponse, SessionAgentModeResponse, SessionCodeBindingResponse,
     SessionCodeProjectResponse, SessionDeleteQuery, SessionDeleteResponse,
     SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameResponse,
     SetSessionAgentModeRequest, StageRoutingMatrix, StartSessionCodeProjectRequest,
@@ -299,6 +300,41 @@ pub async fn session_delete(
     client(&state)
         .sessions()
         .delete(trimmed, &query)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn prompt_stash_list(
+    state: State<'_, DaemonState>,
+) -> Result<PromptStashListResponse, String> {
+    client(&state)
+        .prompt_stashes()
+        .list()
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn prompt_stash_create(
+    state: State<'_, DaemonState>,
+    request: CreatePromptStashRequest,
+) -> Result<PromptStash, String> {
+    client(&state)
+        .prompt_stashes()
+        .create(&request)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn prompt_stash_delete(
+    state: State<'_, DaemonState>,
+    stash_id: String,
+) -> Result<DeletePromptStashResponse, String> {
+    client(&state)
+        .prompt_stashes()
+        .delete(stash_id.trim())
         .await
         .map_err(sdk_error)
 }

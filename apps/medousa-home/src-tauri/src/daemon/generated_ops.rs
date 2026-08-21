@@ -550,6 +550,12 @@ pub enum DaemonOperation {
     PeerMessagesPost,
     #[serde(rename = "peer.messages.unread_count.get")]
     PeerMessagesUnreadCountGet,
+    #[serde(rename = "prompt_stashes.by_stash_id.delete")]
+    PromptStashesByStashIdDelete,
+    #[serde(rename = "prompt_stashes.get")]
+    PromptStashesGet,
+    #[serde(rename = "prompt_stashes.post")]
+    PromptStashesPost,
     #[serde(rename = "qr.get")]
     QrGet,
     #[serde(rename = "qr.image.get")]
@@ -792,19 +798,33 @@ impl DaemonOperation {
     pub fn id(self) -> &'static str {
         match self {
             Self::AdminLocalCredentialsByNameDelete => "admin.local_credentials.by_name.delete",
-            Self::AdminLocalCredentialsByNameRotatePost => "admin.local_credentials.by_name.rotate.post",
+            Self::AdminLocalCredentialsByNameRotatePost => {
+                "admin.local_credentials.by_name.rotate.post"
+            }
             Self::AdminLocalCredentialsGet => "admin.local_credentials.get",
             Self::AgentModesGet => "agent_modes.get",
             Self::AgentModesPolicyGet => "agent_modes.policy.get",
             Self::AgentModesPolicyPut => "agent_modes.policy.put",
-            Self::AgentsPermissionRequestsByRequestIdApprovePost => "agents.permission_requests.by_request_id.approve.post",
-            Self::AgentsPermissionRequestsByRequestIdDenyPost => "agents.permission_requests.by_request_id.deny.post",
+            Self::AgentsPermissionRequestsByRequestIdApprovePost => {
+                "agents.permission_requests.by_request_id.approve.post"
+            }
+            Self::AgentsPermissionRequestsByRequestIdDenyPost => {
+                "agents.permission_requests.by_request_id.deny.post"
+            }
             Self::AgentsPermissionRequestsGet => "agents.permission_requests.get",
             Self::AgentsRuntimesGet => "agents.runtimes.get",
-            Self::AgentsSessionsByAgentSessionIdCancelPost => "agents.sessions.by_agent_session_id.cancel.post",
-            Self::AgentsSessionsByAgentSessionIdConfigPost => "agents.sessions.by_agent_session_id.config.post",
-            Self::AgentsSessionsByAgentSessionIdPromptPost => "agents.sessions.by_agent_session_id.prompt.post",
-            Self::AgentsSessionsByAgentSessionIdStreamGet => "agents.sessions.by_agent_session_id.stream.get",
+            Self::AgentsSessionsByAgentSessionIdCancelPost => {
+                "agents.sessions.by_agent_session_id.cancel.post"
+            }
+            Self::AgentsSessionsByAgentSessionIdConfigPost => {
+                "agents.sessions.by_agent_session_id.config.post"
+            }
+            Self::AgentsSessionsByAgentSessionIdPromptPost => {
+                "agents.sessions.by_agent_session_id.prompt.post"
+            }
+            Self::AgentsSessionsByAgentSessionIdStreamGet => {
+                "agents.sessions.by_agent_session_id.stream.get"
+            }
             Self::AgentsSessionsPost => "agents.sessions.post",
             Self::AuthChatgptBeginPost => "auth.chatgpt.begin.post",
             Self::AuthChatgptCompletePost => "auth.chatgpt.complete.post",
@@ -812,10 +832,16 @@ impl DaemonOperation {
             Self::AuthChatgptGet => "auth.chatgpt.get",
             Self::AuthChatgptModelsGet => "auth.chatgpt.models.get",
             Self::AuthChatgptRefreshPost => "auth.chatgpt.refresh.post",
-            Self::BrowserSessionsBySessionIdCompletePost => "browser.sessions.by_session_id.complete.post",
-            Self::BrowserSessionsBySessionIdCompleteActPost => "browser.sessions.by_session_id.complete_act.post",
+            Self::BrowserSessionsBySessionIdCompletePost => {
+                "browser.sessions.by_session_id.complete.post"
+            }
+            Self::BrowserSessionsBySessionIdCompleteActPost => {
+                "browser.sessions.by_session_id.complete_act.post"
+            }
             Self::BrowserSessionsBySessionIdGet => "browser.sessions.by_session_id.get",
-            Self::BrowserSessionsBySessionIdResumePost => "browser.sessions.by_session_id.resume.post",
+            Self::BrowserSessionsBySessionIdResumePost => {
+                "browser.sessions.by_session_id.resume.post"
+            }
             Self::CalendarEventsByUidDelete => "calendar.events.by_uid.delete",
             Self::CalendarEventsByUidPut => "calendar.events.by_uid.put",
             Self::CalendarEventsGet => "calendar.events.get",
@@ -826,7 +852,9 @@ impl DaemonOperation {
             Self::CapabilitiesGet => "capabilities.get",
             Self::CapabilitiesIntentsGet => "capabilities.intents.get",
             Self::CapabilitiesReindexPost => "capabilities.reindex.post",
-            Self::ClientsByClientIdToolsByRequestIdResultPost => "clients.by_client_id.tools.by_request_id.result.post",
+            Self::ClientsByClientIdToolsByRequestIdResultPost => {
+                "clients.by_client_id.tools.by_request_id.result.post"
+            }
             Self::ClientsByClientIdToolsNextGet => "clients.by_client_id.tools.next.get",
             Self::ClientsGet => "clients.get",
             Self::ClientsRegisterPost => "clients.register.post",
@@ -844,16 +872,32 @@ impl DaemonOperation {
             Self::CodeWorkspaceDiagnosticsGet => "code.workspace_diagnostics.get",
             Self::CodeWorkspaceSymbolsGet => "code.workspace_symbols.get",
             Self::CodingEngineGet => "coding_engine.get",
-            Self::ComponentsByComponentIdRuntimeEventsGet => "components.by_component_id.runtime.events.get",
-            Self::ComponentsByComponentIdRuntimeEventsPost => "components.by_component_id.runtime.events.post",
-            Self::ComponentsByComponentIdRuntimeProbeByProbeIdResultPost => "components.by_component_id.runtime.probe.by_probe_id.result.post",
-            Self::ComponentsByComponentIdStoreByKeyDelete => "components.by_component_id.store.by_key.delete",
-            Self::ComponentsByComponentIdStoreByKeyGet => "components.by_component_id.store.by_key.get",
-            Self::ComponentsByComponentIdStoreByKeyPut => "components.by_component_id.store.by_key.put",
+            Self::ComponentsByComponentIdRuntimeEventsGet => {
+                "components.by_component_id.runtime.events.get"
+            }
+            Self::ComponentsByComponentIdRuntimeEventsPost => {
+                "components.by_component_id.runtime.events.post"
+            }
+            Self::ComponentsByComponentIdRuntimeProbeByProbeIdResultPost => {
+                "components.by_component_id.runtime.probe.by_probe_id.result.post"
+            }
+            Self::ComponentsByComponentIdStoreByKeyDelete => {
+                "components.by_component_id.store.by_key.delete"
+            }
+            Self::ComponentsByComponentIdStoreByKeyGet => {
+                "components.by_component_id.store.by_key.get"
+            }
+            Self::ComponentsByComponentIdStoreByKeyPut => {
+                "components.by_component_id.store.by_key.put"
+            }
             Self::ComponentsByComponentIdStoreGet => "components.by_component_id.store.get",
-            Self::ComponentsByComponentIdStoreKeysGet => "components.by_component_id.store.keys.get",
+            Self::ComponentsByComponentIdStoreKeysGet => {
+                "components.by_component_id.store.keys.get"
+            }
             Self::ComponentsByComponentIdStorePut => "components.by_component_id.store.put",
-            Self::ContinuationsLineageByTurnCorrelationIdGet => "continuations.lineage.by_turn_correlation_id.get",
+            Self::ContinuationsLineageByTurnCorrelationIdGet => {
+                "continuations.lineage.by_turn_correlation_id.get"
+            }
             Self::ContinuationsStatusGet => "continuations.status.get",
             Self::DeliverOutboxPost => "deliver.outbox.post",
             Self::DeliverPollByJobIdGet => "deliver.poll.by_job_id.get",
@@ -872,20 +916,32 @@ impl DaemonOperation {
             Self::FeedsByFeedIdTailGet => "feeds.by_feed_id.tail.get",
             Self::FeedsGet => "feeds.get",
             Self::FeedsStreamGet => "feeds.stream.get",
-            Self::ForgeEvidenceByEvidenceIdCommandsGet => "forge.evidence.by_evidence_id.commands.get",
+            Self::ForgeEvidenceByEvidenceIdCommandsGet => {
+                "forge.evidence.by_evidence_id.commands.get"
+            }
             Self::ForgeEvidenceByEvidenceIdPatchGet => "forge.evidence.by_evidence_id.patch.get",
-            Self::ForgeEvidenceByEvidenceIdReceiptsGet => "forge.evidence.by_evidence_id.receipts.get",
+            Self::ForgeEvidenceByEvidenceIdReceiptsGet => {
+                "forge.evidence.by_evidence_id.receipts.get"
+            }
             Self::ForgeItemsByWorkIdApplyPost => "forge.items.by_work_id.apply.post",
             Self::ForgeItemsByWorkIdAttemptsPost => "forge.items.by_work_id.attempts.post",
             Self::ForgeItemsByWorkIdChangesBlameGet => "forge.items.by_work_id.changes.blame.get",
-            Self::ForgeItemsByWorkIdChangesCheckpointPost => "forge.items.by_work_id.changes.checkpoint.post",
-            Self::ForgeItemsByWorkIdChangesConflictPost => "forge.items.by_work_id.changes.conflict.post",
+            Self::ForgeItemsByWorkIdChangesCheckpointPost => {
+                "forge.items.by_work_id.changes.checkpoint.post"
+            }
+            Self::ForgeItemsByWorkIdChangesConflictPost => {
+                "forge.items.by_work_id.changes.conflict.post"
+            }
             Self::ForgeItemsByWorkIdChangesFetchPost => "forge.items.by_work_id.changes.fetch.post",
             Self::ForgeItemsByWorkIdChangesFileGet => "forge.items.by_work_id.changes.file.get",
-            Self::ForgeItemsByWorkIdChangesFileHunkPost => "forge.items.by_work_id.changes.file.hunk.post",
+            Self::ForgeItemsByWorkIdChangesFileHunkPost => {
+                "forge.items.by_work_id.changes.file.hunk.post"
+            }
             Self::ForgeItemsByWorkIdChangesFilePost => "forge.items.by_work_id.changes.file.post",
             Self::ForgeItemsByWorkIdChangesGet => "forge.items.by_work_id.changes.get",
-            Self::ForgeItemsByWorkIdChangesHistoryGet => "forge.items.by_work_id.changes.history.get",
+            Self::ForgeItemsByWorkIdChangesHistoryGet => {
+                "forge.items.by_work_id.changes.history.get"
+            }
             Self::ForgeItemsByWorkIdChangesPullPost => "forge.items.by_work_id.changes.pull.post",
             Self::ForgeItemsByWorkIdChangesPushPost => "forge.items.by_work_id.changes.push.post",
             Self::ForgeItemsByWorkIdChangesSyncPost => "forge.items.by_work_id.changes.sync.post",
@@ -895,42 +951,80 @@ impl DaemonOperation {
             Self::ForgeItemsByWorkIdGet => "forge.items.by_work_id.get",
             Self::ForgeItemsByWorkIdHandoffPost => "forge.items.by_work_id.handoff.post",
             Self::ForgeItemsByWorkIdProjectEventsGet => "forge.items.by_work_id.project_events.get",
-            Self::ForgeItemsByWorkIdProviderCommentsGet => "forge.items.by_work_id.provider.comments.get",
-            Self::ForgeItemsByWorkIdProviderCommentsPost => "forge.items.by_work_id.provider.comments.post",
-            Self::ForgeItemsByWorkIdProviderContextPut => "forge.items.by_work_id.provider.context.put",
+            Self::ForgeItemsByWorkIdProviderCommentsGet => {
+                "forge.items.by_work_id.provider.comments.get"
+            }
+            Self::ForgeItemsByWorkIdProviderCommentsPost => {
+                "forge.items.by_work_id.provider.comments.post"
+            }
+            Self::ForgeItemsByWorkIdProviderContextPut => {
+                "forge.items.by_work_id.provider.context.put"
+            }
             Self::ForgeItemsByWorkIdProviderGet => "forge.items.by_work_id.provider.get",
             Self::ForgeItemsByWorkIdProviderPost => "forge.items.by_work_id.provider.post",
             Self::ForgeItemsByWorkIdProvisionPost => "forge.items.by_work_id.provision.post",
-            Self::ForgeItemsByWorkIdReviewCommentsByCommentIdDelete => "forge.items.by_work_id.review.comments.by_comment_id.delete",
-            Self::ForgeItemsByWorkIdReviewCommentsByCommentIdPatch => "forge.items.by_work_id.review.comments.by_comment_id.patch",
-            Self::ForgeItemsByWorkIdReviewCommentsGet => "forge.items.by_work_id.review.comments.get",
-            Self::ForgeItemsByWorkIdReviewCommentsPost => "forge.items.by_work_id.review.comments.post",
-            Self::ForgeItemsByWorkIdReviewContinueEditingPost => "forge.items.by_work_id.review.continue_editing.post",
+            Self::ForgeItemsByWorkIdReviewCommentsByCommentIdDelete => {
+                "forge.items.by_work_id.review.comments.by_comment_id.delete"
+            }
+            Self::ForgeItemsByWorkIdReviewCommentsByCommentIdPatch => {
+                "forge.items.by_work_id.review.comments.by_comment_id.patch"
+            }
+            Self::ForgeItemsByWorkIdReviewCommentsGet => {
+                "forge.items.by_work_id.review.comments.get"
+            }
+            Self::ForgeItemsByWorkIdReviewCommentsPost => {
+                "forge.items.by_work_id.review.comments.post"
+            }
+            Self::ForgeItemsByWorkIdReviewContinueEditingPost => {
+                "forge.items.by_work_id.review.continue_editing.post"
+            }
             Self::ForgeItemsByWorkIdReviewFileGet => "forge.items.by_work_id.review.file.get",
             Self::ForgeItemsByWorkIdReviewFilePost => "forge.items.by_work_id.review.file.post",
             Self::ForgeItemsByWorkIdReviewGet => "forge.items.by_work_id.review.get",
-            Self::ForgeItemsByWorkIdReviewRequestChangesPost => "forge.items.by_work_id.review.request_changes.post",
+            Self::ForgeItemsByWorkIdReviewRequestChangesPost => {
+                "forge.items.by_work_id.review.request_changes.post"
+            }
             Self::ForgeItemsByWorkIdRunScriptPost => "forge.items.by_work_id.run_script.post",
             Self::ForgeItemsByWorkIdSearchGet => "forge.items.by_work_id.search.get",
-            Self::ForgeItemsByWorkIdSearchReplacePost => "forge.items.by_work_id.search.replace.post",
+            Self::ForgeItemsByWorkIdSearchReplacePost => {
+                "forge.items.by_work_id.search.replace.post"
+            }
             Self::ForgeItemsByWorkIdSourceBatchPut => "forge.items.by_work_id.source.batch.put",
             Self::ForgeItemsByWorkIdSourceDelete => "forge.items.by_work_id.source.delete",
             Self::ForgeItemsByWorkIdSourceGet => "forge.items.by_work_id.source.get",
             Self::ForgeItemsByWorkIdSourcePatch => "forge.items.by_work_id.source.patch",
             Self::ForgeItemsByWorkIdSourcePost => "forge.items.by_work_id.source.post",
             Self::ForgeItemsByWorkIdSourcePut => "forge.items.by_work_id.source.put",
-            Self::ForgeItemsByWorkIdSourceWorkspaceEditPut => "forge.items.by_work_id.source.workspace_edit.put",
-            Self::ForgeItemsByWorkIdTaskRunsByRunIdDelete => "forge.items.by_work_id.task_runs.by_run_id.delete",
-            Self::ForgeItemsByWorkIdTaskRunsByRunIdEventsGet => "forge.items.by_work_id.task_runs.by_run_id.events.get",
-            Self::ForgeItemsByWorkIdTaskRunsByRunIdGet => "forge.items.by_work_id.task_runs.by_run_id.get",
-            Self::ForgeItemsByWorkIdTaskRunsByRunIdPreviewPost => "forge.items.by_work_id.task_runs.by_run_id.preview.post",
-            Self::ForgeItemsByWorkIdTasksByTaskIdRunPost => "forge.items.by_work_id.tasks.by_task_id.run.post",
-            Self::ForgeItemsByWorkIdTasksByTaskIdRunsPost => "forge.items.by_work_id.tasks.by_task_id.runs.post",
+            Self::ForgeItemsByWorkIdSourceWorkspaceEditPut => {
+                "forge.items.by_work_id.source.workspace_edit.put"
+            }
+            Self::ForgeItemsByWorkIdTaskRunsByRunIdDelete => {
+                "forge.items.by_work_id.task_runs.by_run_id.delete"
+            }
+            Self::ForgeItemsByWorkIdTaskRunsByRunIdEventsGet => {
+                "forge.items.by_work_id.task_runs.by_run_id.events.get"
+            }
+            Self::ForgeItemsByWorkIdTaskRunsByRunIdGet => {
+                "forge.items.by_work_id.task_runs.by_run_id.get"
+            }
+            Self::ForgeItemsByWorkIdTaskRunsByRunIdPreviewPost => {
+                "forge.items.by_work_id.task_runs.by_run_id.preview.post"
+            }
+            Self::ForgeItemsByWorkIdTasksByTaskIdRunPost => {
+                "forge.items.by_work_id.tasks.by_task_id.run.post"
+            }
+            Self::ForgeItemsByWorkIdTasksByTaskIdRunsPost => {
+                "forge.items.by_work_id.tasks.by_task_id.runs.post"
+            }
             Self::ForgeItemsByWorkIdTasksGet => "forge.items.by_work_id.tasks.get",
             Self::ForgeItemsByWorkIdTestsGet => "forge.items.by_work_id.tests.get",
             Self::ForgeItemsByWorkIdTreeGet => "forge.items.by_work_id.tree.get",
-            Self::ForgeItemsByWorkIdWorkspaceStateGet => "forge.items.by_work_id.workspace_state.get",
-            Self::ForgeItemsByWorkIdWorkspaceStatePut => "forge.items.by_work_id.workspace_state.put",
+            Self::ForgeItemsByWorkIdWorkspaceStateGet => {
+                "forge.items.by_work_id.workspace_state.get"
+            }
+            Self::ForgeItemsByWorkIdWorkspaceStatePut => {
+                "forge.items.by_work_id.workspace_state.put"
+            }
             Self::ForgeItemsGet => "forge.items.get",
             Self::ForgeItemsPost => "forge.items.post",
             Self::ForgeItemsStartPost => "forge.items.start.post",
@@ -972,7 +1066,9 @@ impl DaemonOperation {
             Self::GraphemeRunPost => "grapheme.run.post",
             Self::GraphemeScriptsByScriptIdDelete => "grapheme.scripts.by_script_id.delete",
             Self::GraphemeScriptsByScriptIdGet => "grapheme.scripts.by_script_id.get",
-            Self::GraphemeScriptsByScriptIdRenamePost => "grapheme.scripts.by_script_id.rename.post",
+            Self::GraphemeScriptsByScriptIdRenamePost => {
+                "grapheme.scripts.by_script_id.rename.post"
+            }
             Self::GraphemeScriptsGet => "grapheme.scripts.get",
             Self::GraphemeScriptsPost => "grapheme.scripts.post",
             Self::HealthGet => "health.get",
@@ -995,8 +1091,12 @@ impl DaemonOperation {
             Self::IntegrationsByConnectionIdDelete => "integrations.by_connection_id.delete",
             Self::IntegrationsByConnectionIdGet => "integrations.by_connection_id.get",
             Self::IntegrationsByConnectionIdPatch => "integrations.by_connection_id.patch",
-            Self::IntegrationsByConnectionIdSecretsBySlotDelete => "integrations.by_connection_id.secrets.by_slot.delete",
-            Self::IntegrationsByConnectionIdSecretsBySlotPut => "integrations.by_connection_id.secrets.by_slot.put",
+            Self::IntegrationsByConnectionIdSecretsBySlotDelete => {
+                "integrations.by_connection_id.secrets.by_slot.delete"
+            }
+            Self::IntegrationsByConnectionIdSecretsBySlotPut => {
+                "integrations.by_connection_id.secrets.by_slot.put"
+            }
             Self::IntegrationsGet => "integrations.get",
             Self::IntegrationsPost => "integrations.post",
             Self::InteractiveTurnByTurnIdStreamGet => "interactive.turn.by_turn_id.stream.get",
@@ -1015,7 +1115,9 @@ impl DaemonOperation {
             Self::LocalEngineStatusGet => "local.engine.status.get",
             Self::LocalHardwareGet => "local.hardware.get",
             Self::LocalModelsByModelIdDelete => "local.models.by_model_id.delete",
-            Self::LocalModelsDownloadByJobIdEventsGet => "local.models.download.by_job_id.events.get",
+            Self::LocalModelsDownloadByJobIdEventsGet => {
+                "local.models.download.by_job_id.events.get"
+            }
             Self::LocalModelsDownloadByJobIdGet => "local.models.download.by_job_id.get",
             Self::LocalModelsDownloadPost => "local.models.download.post",
             Self::LocalModelsGet => "local.models.get",
@@ -1064,6 +1166,9 @@ impl DaemonOperation {
             Self::PeerMessagesGet => "peer.messages.get",
             Self::PeerMessagesPost => "peer.messages.post",
             Self::PeerMessagesUnreadCountGet => "peer.messages.unread_count.get",
+            Self::PromptStashesByStashIdDelete => "prompt_stashes.by_stash_id.delete",
+            Self::PromptStashesGet => "prompt_stashes.get",
+            Self::PromptStashesPost => "prompt_stashes.post",
             Self::QrGet => "qr.get",
             Self::QrImageGet => "qr.image.get",
             Self::QrPngGet => "qr.png.get",
@@ -1092,10 +1197,16 @@ impl DaemonOperation {
             Self::SessionsBySessionIdActiveTurnPost => "sessions.by_session_id.active_turn.post",
             Self::SessionsBySessionIdAgentModeDelete => "sessions.by_session_id.agent_mode.delete",
             Self::SessionsBySessionIdAgentModeGet => "sessions.by_session_id.agent_mode.get",
-            Self::SessionsBySessionIdAgentModeProposalsByProposalIdPut => "sessions.by_session_id.agent_mode.proposals.by_proposal_id.put",
-            Self::SessionsBySessionIdAgentModeProposalsGet => "sessions.by_session_id.agent_mode.proposals.get",
+            Self::SessionsBySessionIdAgentModeProposalsByProposalIdPut => {
+                "sessions.by_session_id.agent_mode.proposals.by_proposal_id.put"
+            }
+            Self::SessionsBySessionIdAgentModeProposalsGet => {
+                "sessions.by_session_id.agent_mode.proposals.get"
+            }
             Self::SessionsBySessionIdAgentModePut => "sessions.by_session_id.agent_mode.put",
-            Self::SessionsBySessionIdCodeBindingDelete => "sessions.by_session_id.code_binding.delete",
+            Self::SessionsBySessionIdCodeBindingDelete => {
+                "sessions.by_session_id.code_binding.delete"
+            }
             Self::SessionsBySessionIdCodeBindingGet => "sessions.by_session_id.code_binding.get",
             Self::SessionsBySessionIdCodeBindingPut => "sessions.by_session_id.code_binding.put",
             Self::SessionsBySessionIdCodeProjectPost => "sessions.by_session_id.code_project.post",
@@ -1104,7 +1215,9 @@ impl DaemonOperation {
             Self::SessionsBySessionIdNamePut => "sessions.by_session_id.name.put",
             Self::SessionsBySessionIdTurnsGet => "sessions.by_session_id.turns.get",
             Self::SessionsBySessionIdTurnsPost => "sessions.by_session_id.turns.post",
-            Self::SessionsBySessionIdWorkshopSteerPost => "sessions.by_session_id.workshop.steer.post",
+            Self::SessionsBySessionIdWorkshopSteerPost => {
+                "sessions.by_session_id.workshop.steer.post"
+            }
             Self::SessionsDerivePost => "sessions.derive.post",
             Self::SessionsGet => "sessions.get",
             Self::SessionsPost => "sessions.post",
@@ -1124,8 +1237,12 @@ impl DaemonOperation {
             Self::SttStatusGet => "stt.status.get",
             Self::SttTranscribePost => "stt.transcribe.post",
             Self::ToolHistorySlicesGet => "tool_history.slices.get",
-            Self::TurnsBudgetRequestsByRequestIdApprovePost => "turns.budget_requests.by_request_id.approve.post",
-            Self::TurnsBudgetRequestsByRequestIdDenyPost => "turns.budget_requests.by_request_id.deny.post",
+            Self::TurnsBudgetRequestsByRequestIdApprovePost => {
+                "turns.budget_requests.by_request_id.approve.post"
+            }
+            Self::TurnsBudgetRequestsByRequestIdDenyPost => {
+                "turns.budget_requests.by_request_id.deny.post"
+            }
             Self::TurnsBudgetRequestsByRequestIdGet => "turns.budget_requests.by_request_id.get",
             Self::TurnsBudgetRequestsGet => "turns.budget_requests.get",
             Self::TurnsByTurnIdGet => "turns.by_turn_id.get",
@@ -1165,7 +1282,9 @@ impl DaemonOperation {
             Self::WorkspaceCardsByCardIdArchivePost => "workspace.cards.by_card_id.archive.post",
             Self::WorkspaceCardsByCardIdCancelPost => "workspace.cards.by_card_id.cancel.post",
             Self::WorkspaceCardsByCardIdGet => "workspace.cards.by_card_id.get",
-            Self::WorkspaceCardsByCardIdLinkVaultPost => "workspace.cards.by_card_id.link_vault.post",
+            Self::WorkspaceCardsByCardIdLinkVaultPost => {
+                "workspace.cards.by_card_id.link_vault.post"
+            }
             Self::WorkspaceCardsByCardIdRetryPost => "workspace.cards.by_card_id.retry.post",
             Self::WorkspaceCardsGet => "workspace.cards.get",
             Self::WorkspaceFeedGet => "workspace.feed.get",

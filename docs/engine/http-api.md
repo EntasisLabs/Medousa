@@ -159,6 +159,20 @@ payloads into a new session, and records source coordinates in the target
 history. Reusing the key with the same request returns the original derivation;
 reusing it with different input returns a conflict. The initial contract allows
 single-user targets only.
+
+### Explicit prompt stashes
+
+| Method | Path | Types | SDK |
+|--------|------|-------|-----|
+| GET | `/v1/prompt-stashes` | `PromptStashListResponse` | `prompt_stashes().list` |
+| POST | `/v1/prompt-stashes` | `CreatePromptStashRequest` → `PromptStash` | `prompt_stashes().create` |
+| DELETE | `/v1/prompt-stashes/{stash_id}` | `DeletePromptStashResponse` | `prompt_stashes().delete` |
+
+Prompt stashes are explicit, profile-scoped, daemon-owned composer state. They
+are separate from Home's private automatic crash-recovery drafts. A stash can
+carry text, uploaded media references, mode/model hints, a source-session
+navigation hint, and an optional context-manifest reference. A manifest or
+source-session reference never grants access by itself.
 | GET | `/v1/sessions/{session_id}/turns` | turn list | `http().get` |
 | GET | `/v1/sessions/{session_id}/active-turn` | active turn ticket | `http().get` |
 | POST | `/v1/sessions/{session_id}/active-turn` | cancel active turn | `http().post` |

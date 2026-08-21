@@ -13,8 +13,9 @@ use stasis::ports::outbound::memory::memory_operations::MemoryOperations;
 
 use crate::daemon_api::{
     AgentModeListResponse, AgentModeProposalListResponse, AgentModeProposalResponse,
-    AgentModeScope, AgentModeTransitionPolicy, CreateSessionRequest, CreateSessionResponse,
-    DecideAgentModeProposalRequest, DeriveSessionRequest, DeriveSessionResponse,
+    AgentModeScope, AgentModeTransitionPolicy, CreatePromptStashRequest, CreateSessionRequest,
+    CreateSessionResponse, DecideAgentModeProposalRequest, DeletePromptStashResponse,
+    DeriveSessionRequest, DeriveSessionResponse, PromptStash, PromptStashListResponse,
     SessionAgentModeResponse, SessionAppendTurnRequest, SessionAppendTurnResponse,
     SessionCodeBindingResponse, SessionDeleteQuery, SessionDeleteResponse,
     SessionHistoryListRequest, SessionHistoryListResponse, SessionHistoryResponse,
@@ -24,6 +25,7 @@ use crate::daemon_api::{
 };
 use crate::shared_session_catalog::SessionCatalogKind;
 use crate::turn_ticket::TurnTicketRegistry;
+use medousa_types::PromptStashId;
 
 #[derive(Clone)]
 pub struct SessionDeleteState {
@@ -232,6 +234,71 @@ pub async fn derive_session(
             };
             (status, error.message)
         })
+}
+
+fn principal_profile_id(principal: &crate::request_principal::RequestPrincipal) -> String {
+    principal
+        .profile_id()
+        .map(str::to_string)
+        .unwrap_or_else(crate::user_profiles::resolve_workshop_identity_user_id)
+}
+
+pub async fn create_prompt_stash(
+    Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
+    Json(request): Json<CreatePromptStashRequest>,
+) -> Result<(StatusCode, Json<PromptStash>), (StatusCode, String)> {
+    let profile_id = principal_profile_id(&principal);
+    if let Some(source) = request.source_session.as_ref() {
+        let authority = crate::workshop_authority::current()
+            .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?;
+        if &source.authority_id != authority
+            || !crate::session_catalog::session_visible_to_profile(
+                source.session_id.as_str(),
+                &profile_id,
+            )
+        {
+            return Err((
+                StatusCode::FORBIDDEN,
+                "source session is not available".to_string(),
+            ));
+        }
+    }
+    let stash = tokio::task::spawn_blocking(move || {
+        crate::prompt_stash::PromptStashStore::daemon_default().create(&profile_id, request)
+    })
+    .await
+    .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+    .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
+    Ok((StatusCode::CREATED, Json(stash)))
+}
+
+pub async fn list_prompt_stashes(
+    Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
+) -> Result<Json<PromptStashListResponse>, (StatusCode, String)> {
+    let profile_id = principal_profile_id(&principal);
+    let stashes = tokio::task::spawn_blocking(move || {
+        crate::prompt_stash::PromptStashStore::daemon_default().list(&profile_id)
+    })
+    .await
+    .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+    .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?;
+    Ok(Json(PromptStashListResponse { stashes }))
+}
+
+pub async fn delete_prompt_stash(
+    Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
+    AxumPath(stash_id): AxumPath<String>,
+) -> Result<Json<DeletePromptStashResponse>, (StatusCode, String)> {
+    let stash_id = PromptStashId::parse(stash_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let profile_id = principal_profile_id(&principal);
+    let response = tokio::task::spawn_blocking(move || {
+        crate::prompt_stash::PromptStashStore::daemon_default().delete(&profile_id, &stash_id)
+    })
+    .await
+    .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+    .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?;
+    Ok(Json(response))
 }
 
 pub async fn get_session_history(

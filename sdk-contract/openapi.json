@@ -1453,6 +1453,44 @@
         "title": "CreateAgentSessionResponse",
         "type": "object"
       },
+      "CreatePromptStashRequest": {
+        "properties": {
+          "context_manifest_id": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContextManifestId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "draft": {
+            "$ref": "#/components/schemas/PromptStashDraft"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "draft"
+        ],
+        "title": "CreatePromptStashRequest",
+        "type": "object"
+      },
       "CustomViewComponentStatus": {
         "properties": {
           "artifactId": {
@@ -1602,6 +1640,22 @@
           "navVisible",
           "surfaceId"
         ],
+        "type": "object"
+      },
+      "DeletePromptStashResponse": {
+        "properties": {
+          "deleted": {
+            "type": "boolean"
+          },
+          "stash_id": {
+            "$ref": "#/components/schemas/PromptStashId"
+          }
+        },
+        "required": [
+          "deleted",
+          "stash_id"
+        ],
+        "title": "DeletePromptStashResponse",
         "type": "object"
       },
       "DerivationId": {
@@ -3636,6 +3690,111 @@
           "phase"
         ],
         "title": "ModelDownloadProgress",
+        "type": "object"
+      },
+      "PromptStash": {
+        "properties": {
+          "context_manifest_id": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContextManifestId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional durable context selection resolved by an earlier derivation."
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "draft": {
+            "$ref": "#/components/schemas/PromptStashDraft"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Session in which the explicit stash was created. Navigation hint only; it does not grant access or imply a context selection."
+          },
+          "stash_id": {
+            "$ref": "#/components/schemas/PromptStashId"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "created_by",
+          "draft",
+          "stash_id",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "PromptStashDraft": {
+        "description": "User-created composer state. Unlike automatic Home draft recovery, this is explicit, daemon-owned, and portable across clients of the same authority.",
+        "properties": {
+          "media_refs": {
+            "items": {
+              "$ref": "#/components/schemas/MediaRef"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      },
+      "PromptStashId": {
+        "type": "string"
+      },
+      "PromptStashListResponse": {
+        "properties": {
+          "stashes": {
+            "items": {
+              "$ref": "#/components/schemas/PromptStash"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "stashes"
+        ],
+        "title": "PromptStashListResponse",
         "type": "object"
       },
       "ResolvedConversationRange": {
@@ -22444,6 +22603,173 @@
           "feature_profile": "core",
           "rate_limit_class": "peer_exchange",
           "trust_group": "peer_exchange"
+        }
+      }
+    },
+    "/v1/prompt-stashes": {
+      "get": {
+        "operationId": "prompt_stashes.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptStashListResponse"
+                }
+              }
+            },
+            "description": "prompt_stashes.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "prompt_stashes.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "prompt_stashes.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      },
+      "post": {
+        "operationId": "prompt_stashes.post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePromptStashRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptStash"
+                }
+              }
+            },
+            "description": "prompt_stashes.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "prompt_stashes.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "prompt_stashes.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 262144,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/prompt-stashes/{stash_id}": {
+      "delete": {
+        "operationId": "prompt_stashes.by_stash_id.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stash_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletePromptStashResponse"
+                }
+              }
+            },
+            "description": "prompt_stashes.by_stash_id.delete"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "prompt_stashes.by_stash_id.delete"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "prompt_stashes.by_stash_id.delete"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
         }
       }
     },

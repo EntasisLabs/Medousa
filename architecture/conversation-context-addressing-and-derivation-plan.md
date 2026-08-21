@@ -452,7 +452,7 @@ keys.
 
 ### Phase 4 — explicit stashes and context extraction
 
-- [ ] Add structured explicit prompt stashes referencing optional manifests.
+- [x] Add structured explicit prompt stashes referencing optional manifests.
 - [ ] Add selected-range and multi-range context creation.
 - [ ] Add `Create work chat from selection` without implicit Forge binding copy.
 - [ ] Surface saved drafts/context in Spotlight without turning it into a data

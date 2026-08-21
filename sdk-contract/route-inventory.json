@@ -4407,6 +4407,54 @@
       ],
       "feature_profile": "core",
       "method": "GET",
+      "operation_id": "prompt_stashes.get",
+      "path": "/v1/prompt-stashes",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 262144,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "prompt_stashes.post",
+      "path": "/v1/prompt-stashes",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "DELETE",
+      "operation_id": "prompt_stashes.by_stash_id.delete",
+      "path": "/v1/prompt-stashes/{stash_id}",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
       "operation_id": "recurring.get",
       "path": "/v1/recurring",
       "rate_limit_class": "read",

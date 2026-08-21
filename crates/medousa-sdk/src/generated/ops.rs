@@ -1920,6 +1920,27 @@ pub const PEER_MESSAGES_UNREAD_COUNT_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const PROMPT_STASHES_BY_STASH_ID_DELETE: Operation = Operation {
+    id: "prompt_stashes.by_stash_id.delete",
+    method: "DELETE",
+    path: "/v1/prompt-stashes/{stash_id}",
+    streaming: false,
+};
+
+pub const PROMPT_STASHES_GET: Operation = Operation {
+    id: "prompt_stashes.get",
+    method: "GET",
+    path: "/v1/prompt-stashes",
+    streaming: false,
+};
+
+pub const PROMPT_STASHES_POST: Operation = Operation {
+    id: "prompt_stashes.post",
+    method: "POST",
+    path: "/v1/prompt-stashes",
+    streaming: false,
+};
+
 pub const QR_GET: Operation = Operation {
     id: "qr.get",
     method: "GET",
@@ -3020,6 +3041,9 @@ pub static ALL: &[Operation] = &[
     PEER_MESSAGES_GET,
     PEER_MESSAGES_POST,
     PEER_MESSAGES_UNREAD_COUNT_GET,
+    PROMPT_STASHES_BY_STASH_ID_DELETE,
+    PROMPT_STASHES_GET,
+    PROMPT_STASHES_POST,
     QR_GET,
     QR_IMAGE_GET,
     QR_PNG_GET,

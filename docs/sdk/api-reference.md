@@ -133,6 +133,22 @@ per-surface results. Raw HTTP clients can query
 
 ---
 
+## `prompt_stashes()`
+
+| Method | HTTP | Types |
+|--------|------|-------|
+| `list()` | `GET /v1/prompt-stashes` | `PromptStashListResponse` |
+| `create(request)` | `POST /v1/prompt-stashes` | `CreatePromptStashRequest` → `PromptStash` |
+| `delete(stash_id)` | `DELETE /v1/prompt-stashes/{id}` | `DeletePromptStashResponse` |
+
+These methods manage user-created composer stashes on the workshop authority.
+They do not expose or replace a client's automatic local draft recovery.
+Structured draft content may include media and mode/model hints; optional
+context references remain subject to session and manifest authorization when
+applied.
+
+---
+
 ## `interactive()`
 
 | Method | HTTP | Types |

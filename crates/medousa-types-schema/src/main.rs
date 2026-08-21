@@ -69,6 +69,20 @@ fn main() {
     export_type!(schemas, DeriveSessionTarget, "DeriveSessionTarget");
     export_type!(schemas, DeriveSessionRequest, "DeriveSessionRequest");
     export_type!(schemas, DeriveSessionResponse, "DeriveSessionResponse");
+    export_type!(schemas, PromptStashId, "PromptStashId");
+    export_type!(schemas, PromptStashDraft, "PromptStashDraft");
+    export_type!(schemas, PromptStash, "PromptStash");
+    export_type!(
+        schemas,
+        CreatePromptStashRequest,
+        "CreatePromptStashRequest"
+    );
+    export_type!(schemas, PromptStashListResponse, "PromptStashListResponse");
+    export_type!(
+        schemas,
+        DeletePromptStashResponse,
+        "DeletePromptStashResponse"
+    );
     export_type!(
         schemas,
         SessionHistoryListResponse,

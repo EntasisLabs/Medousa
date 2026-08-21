@@ -40,6 +40,14 @@ impl MockTransport {
         self
     }
 
+    fn on_delete(mut self, path: &str, value: serde_json::Value) -> Self {
+        self.handlers.insert(
+            ("DELETE".to_string(), path.to_string()),
+            Box::new(move || value.clone()),
+        );
+        self
+    }
+
     fn call_count(&self) -> usize {
         self.calls.lock().expect("calls lock").len()
     }
@@ -288,6 +296,63 @@ async fn mock_transport_routes_health_get() {
     let health = client.health().get().await.expect("health get");
     assert_eq!(health.status, "ok");
     assert_eq!(transport.call_count(), 1);
+}
+
+#[tokio::test]
+async fn mock_transport_routes_prompt_stash_lifecycle() {
+    use medousa_types::{CreatePromptStashRequest, PromptStashDraft};
+
+    let stash = serde_json::json!({
+        "stash_id": "pst_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "label": "Follow up",
+        "draft": { "text": "ask this next" },
+        "created_by": "user:local",
+        "created_at": "2026-08-21T00:00:00Z",
+        "updated_at": "2026-08-21T00:00:00Z"
+    });
+    let transport = Arc::new(
+        MockTransport::new()
+            .on_get(
+                "/v1/prompt-stashes",
+                serde_json::json!({ "stashes": [stash.clone()] }),
+            )
+            .on_post("/v1/prompt-stashes", stash)
+            .on_delete(
+                "/v1/prompt-stashes/pst_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                serde_json::json!({
+                    "stash_id": "pst_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "deleted": true
+                }),
+            ),
+    );
+    let client =
+        medousa_sdk::MedousaClient::with_transport(transport.clone(), "http://127.0.0.1:8080");
+
+    let listed = client.prompt_stashes().list().await.expect("list stashes");
+    assert_eq!(listed.stashes.len(), 1);
+    let created = client
+        .prompt_stashes()
+        .create(&CreatePromptStashRequest {
+            label: Some("Follow up".to_string()),
+            draft: PromptStashDraft {
+                text: "ask this next".to_string(),
+                media_refs: vec![],
+                mode: None,
+                model: None,
+            },
+            context_manifest_id: None,
+            source_session: None,
+        })
+        .await
+        .expect("create stash");
+    assert_eq!(created.label.as_deref(), Some("Follow up"));
+    let deleted = client
+        .prompt_stashes()
+        .delete(created.stash_id.as_str())
+        .await
+        .expect("delete stash");
+    assert!(deleted.deleted);
+    assert_eq!(transport.call_count(), 3);
 }
 
 #[tokio::test]
