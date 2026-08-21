@@ -1,14 +1,5 @@
 <script lang="ts">
-  import {
-    Calendar,
-    CalendarRange,
-    FilePlus,
-    FileText,
-    FolderPlus,
-    Plus,
-    Search,
-    X,
-  } from "@lucide/svelte";
+  import { Plus, Search, X } from "@lucide/svelte";
   import { onMount, tick, untrack } from "svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import VaultGroupPicker from "$lib/components/vault/VaultGroupPicker.svelte";
@@ -17,11 +8,11 @@
   import VaultLibraryBrowseModeBar from "$lib/components/vault/VaultLibraryBrowseModeBar.svelte";
   import VaultRootPicker from "$lib/components/vault/VaultRootPicker.svelte";
   import VaultTree from "$lib/components/vault/VaultTree.svelte";
+  import VaultCreateMenuItems from "$lib/components/vault/VaultCreateMenuItems.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
-  import { formatShortcut } from "$lib/platform";
   import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
   import {
     placeDockPopover,
@@ -29,7 +20,6 @@
   } from "$lib/utils/dockPopoverPlace";
   import { portLmeDock } from "$lib/utils/lmeDockHost";
   import { ensureRailPopoverOpen } from "$lib/utils/railPopoverChrome";
-  import { canUseLocalVaultFilesystem } from "$lib/utils/vaultFilesystem";
 
   let createOpen = $state(false);
   let createBtnEl = $state<HTMLButtonElement | null>(null);
@@ -73,7 +63,7 @@
     // Prefer below from the top action row; still below when hosted in the rail popover.
     createPlacement = placeDockPopover(createBtnEl, {
       preferUp: false,
-      width: 220,
+      width: 244,
       maxHeight: 360,
     });
   }
@@ -222,7 +212,7 @@
         <BodyPortal>
           <div
             bind:this={createMenuEl}
-            class="vault-dock-popover"
+            class="vault-dock-popover vault-create-menu"
             role="menu"
             tabindex="-1"
             style:left="{createPlacement.left}px"
@@ -233,74 +223,7 @@
             onclick={(event) => event.stopPropagation()}
             onkeydown={handleMenuKeydown}
           >
-            <button
-              type="button"
-              role="menuitem"
-              class="vault-menu-item"
-              disabled={vault.saving}
-              onclick={() => {
-                closeMenus();
-                void vault.createDailyNote();
-              }}
-            >
-              <Calendar size={14} strokeWidth={1.5} />
-              Daily note
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              class="vault-menu-item"
-              disabled={vault.saving}
-              onclick={() => {
-                closeMenus();
-                void vault.createWeeklyReview();
-              }}
-            >
-              <CalendarRange size={14} strokeWidth={1.5} />
-              Weekly review
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              class="vault-menu-item w-full justify-between"
-              onclick={() => {
-                closeMenus();
-                vault.openNewNoteDialog();
-              }}
-            >
-              <span class="inline-flex items-center gap-2">
-                <FilePlus size={14} strokeWidth={1.5} />
-                New note
-              </span>
-              <kbd class="vault-kbd">{formatShortcut("N")}</kbd>
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              class="vault-menu-item"
-              onclick={() => {
-                closeMenus();
-                vault.openNewGroupDialog();
-              }}
-            >
-              <FolderPlus size={14} strokeWidth={1.5} />
-              New group
-            </button>
-            {#if canUseLocalVaultFilesystem()}
-              <div class="vault-dock-popover__sep"></div>
-              <button
-                type="button"
-                role="menuitem"
-                class="vault-menu-item"
-                onclick={() => {
-                  closeMenus();
-                  void vault.openLooseMarkdownFile();
-                }}
-              >
-                <FileText size={14} strokeWidth={1.5} />
-                Open markdown file…
-              </button>
-            {/if}
+            <VaultCreateMenuItems onClose={closeMenus} />
           </div>
         </BodyPortal>
       {/if}

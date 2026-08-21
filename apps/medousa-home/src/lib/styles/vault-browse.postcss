@@ -186,6 +186,77 @@
     color: rgb(var(--color-surface-200));
   }
 
+  .vault-create-menu {
+    display: flex;
+    width: 15.25rem;
+    max-width: calc(100vw - 1.5rem);
+    flex-direction: column;
+    gap: 0.1rem;
+    overflow: hidden;
+    border: 1px solid rgb(var(--theme-border) / 0.42);
+    border-radius: var(--menu-radius, 0.75rem);
+    background: rgb(var(--theme-pane) / 0.98);
+    padding: 0.45rem;
+    box-shadow:
+      0 16px 38px rgb(var(--theme-shadow) / 0.34),
+      inset 0 0 0 1px rgb(var(--theme-border) / 0.18);
+    backdrop-filter: blur(16px);
+  }
+
+  .vault-create-menu .vault-menu-item {
+    padding: 0;
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  .vault-create-menu .vault-menu-item:hover {
+    background: transparent;
+  }
+
+  .vault-create-menu__row {
+    display: flex;
+    width: 100%;
+    min-height: 2.125rem;
+    align-items: center;
+    gap: 0.7rem;
+    border-radius: var(--menu-row-radius, 0.45rem);
+    padding: 0 0.7rem;
+  }
+
+  .vault-create-menu .vault-menu-item:hover .vault-create-menu__row {
+    box-shadow: inset 0 0 0 3rem rgb(var(--theme-card-hover) / 0.72);
+    color: rgb(var(--theme-text));
+  }
+
+  .vault-create-menu__row > :where(svg) {
+    width: 0.95rem;
+    height: 0.95rem;
+    flex: 0 0 auto;
+    color: rgb(var(--theme-text-tertiary));
+  }
+
+  .vault-create-menu__label {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    color: inherit;
+    font-size: 0.8125rem;
+    font-weight: 400;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .vault-create-menu__meta {
+    flex: 0 0 auto;
+    color: rgb(var(--theme-text-tertiary));
+    font-size: 0.6875rem;
+  }
+
+  .vault-create-menu__sep {
+    margin: 0.38rem 0.5rem;
+    border-top: 1px solid rgb(var(--theme-border) / 0.3);
+  }
+
   .vault-interact-backdrop {
     position: fixed;
     inset: 0;

@@ -1,22 +1,11 @@
 <script lang="ts">
-  import {
-    Calendar,
-    CalendarRange,
-    FilePlus,
-    FileText,
-    FolderPlus,
-    PanelLeftClose,
-    Search,
-    Trash2,
-    X,
-  } from "@lucide/svelte";
+  import { PanelLeftClose, Search, Trash2, X } from "@lucide/svelte";
   import { tick } from "svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { externalDesk } from "$lib/stores/externalDesk.svelte";
-  import { formatShortcut } from "$lib/platform";
   import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
-  import { canUseLocalVaultFilesystem } from "$lib/utils/vaultFilesystem";
+  import VaultCreateMenuItems from "./VaultCreateMenuItems.svelte";
   import VaultGroupPicker from "./VaultGroupPicker.svelte";
   import VaultRootPicker from "./VaultRootPicker.svelte";
   import VaultLibraryBrowseModeBar from "./VaultLibraryBrowseModeBar.svelte";
@@ -181,80 +170,13 @@
           </button>
           {#if createOpen}
             <div
-              class="absolute right-0 top-full z-30 mt-1 min-w-[14rem] rounded-[var(--menu-radius,0.7rem)] border border-surface-500/50 bg-surface-900 p-[var(--menu-panel-pad,0.3rem)] shadow-xl"
+              class="vault-create-menu absolute right-0 top-full z-30 mt-1"
               role="menu"
               tabindex="-1"
               onclick={(event) => event.stopPropagation()}
               onkeydown={handleMenuKeydown}
             >
-              <button
-                type="button"
-                role="menuitem"
-                class="vault-menu-item"
-                disabled={vault.saving}
-                onclick={() => {
-                  closeMenus();
-                  void vault.createDailyNote();
-                }}
-              >
-                <Calendar size={14} strokeWidth={2} />
-                Daily note
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                class="vault-menu-item"
-                disabled={vault.saving}
-                onclick={() => {
-                  closeMenus();
-                  void vault.createWeeklyReview();
-                }}
-              >
-                <CalendarRange size={14} strokeWidth={2} />
-                Weekly review
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                class="vault-menu-item w-full justify-between"
-                onclick={() => {
-                  closeMenus();
-                  vault.openNewNoteDialog();
-                }}
-              >
-                <span class="inline-flex items-center gap-2">
-                  <FilePlus size={14} strokeWidth={2} />
-                  New note
-                </span>
-                <kbd class="vault-kbd">{formatShortcut("N")}</kbd>
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                class="vault-menu-item"
-                onclick={() => {
-                  closeMenus();
-                  vault.openNewGroupDialog();
-                }}
-              >
-                <FolderPlus size={14} strokeWidth={2} />
-                New group
-              </button>
-              {#if canUseLocalVaultFilesystem()}
-                <div class="my-1 border-t border-surface-500/35"></div>
-                <button
-                  type="button"
-                  role="menuitem"
-                  class="vault-menu-item"
-                  onclick={() => {
-                    closeMenus();
-                    void vault.openLooseMarkdownFile();
-                  }}
-                >
-                  <FileText size={14} strokeWidth={2} />
-                  Open markdown file…
-                </button>
-              {/if}
+              <VaultCreateMenuItems onClose={closeMenus} />
             </div>
           {/if}
         </div>
