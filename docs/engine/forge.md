@@ -135,6 +135,10 @@ renames/deletes recover tab identity, and the language client receives
 `GET /v1/forge/stream` remains the coarse undertaking list channel (work id,
 state, event kind). It does not carry paths or a replay cursor.
 
+All three Forge SSE routes are protected daemon operations. Medousa consumes
+them through the authenticated native stream bridge (including paired-workshop
+routing); a WebView `EventSource` must not connect to these URLs directly.
+
 ### Project task-run output stream
 
 `GET /v1/forge/items/{id}/task-runs/{run_id}/events?since=<seq>` streams live

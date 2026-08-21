@@ -19,11 +19,13 @@ export async function daemonStreamStart(
   id: OperationId,
   pathParams: Record<string, string> = {},
   query?: Record<string, string>,
+  clientHandle?: string,
 ): Promise<string> {
   return invoke<string>("daemon_stream_start", {
     operation: id,
     pathParams,
     query,
+    clientHandle,
   });
 }
 

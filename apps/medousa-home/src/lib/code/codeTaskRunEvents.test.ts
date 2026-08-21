@@ -29,6 +29,9 @@ describe("code task run events", () => {
         }),
       ),
     ).toMatchObject({ seq: 2, kind: "output", text: "ok\n" });
+    expect(
+      parseTaskRunEventPayload({ seq: 3, run_id: "run-1", kind: "output" })?.seq,
+    ).toBe(3);
     expect(parseTaskRunEventPayload("{")).toBeNull();
     expect(parseTaskRunEventPayload(JSON.stringify({ seq: 1 }))).toBeNull();
   });
