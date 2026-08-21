@@ -158,8 +158,10 @@ a private Code IDE chrome.
   the explorer; symbol crumbs jump to the definition line. A slim operator
   strip shows who edits, dirty count, issues, and last verification. The
   status bar shows find/save/open hints, `Ln`/`Col`, indentation, language id,
-  and session ownership. **View** toggles word wrap and line numbers. Saves
-  whisper `Saving…` / timed `Saved`.
+  and session ownership. Language failures stay compact there; select
+  **Language issue** for the full message plus Problems, logs, restart, and
+  repair actions. **View** toggles word wrap and line numbers. Saves whisper
+  `Saving…` / timed `Saved`.
 - File and folder create/rename/delete begin or reuse the editing session and
   remain inside the working copy; rename/delete refuse unsaved open drafts and
   use change-conflict protection.

@@ -14,7 +14,14 @@ use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::{Notify, mpsc};
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{
+        Message,
+        client::IntoClientRequest,
+        http::{HeaderValue, header::AUTHORIZATION},
+    },
+};
 use tokio_util::sync::CancellationToken;
 
 use crate::daemon::DaemonState;
@@ -97,6 +104,33 @@ pub struct TerminalCreateInput {
 fn ws_url_for(daemon_url: &str, path: &str) -> String {
     let base = daemon_url.trim_end_matches('/').replacen("http", "ws", 1);
     format!("{base}{path}")
+}
+
+pub(crate) fn authenticated_ws_request(
+    daemon_url: &str,
+    path: &str,
+) -> Result<tokio_tungstenite::tungstenite::http::Request<()>, String> {
+    let config = crate::workshop_transport::config_from_lan_base(daemon_url);
+    ws_request_with_bearer(daemon_url, path, config.session_token.as_deref())
+}
+
+fn ws_request_with_bearer(
+    daemon_url: &str,
+    path: &str,
+    token: Option<&str>,
+) -> Result<tokio_tungstenite::tungstenite::http::Request<()>, String> {
+    let url = ws_url_for(daemon_url, path);
+    let mut request = url
+        .as_str()
+        .into_client_request()
+        .map_err(|error| error.to_string())?;
+    if let Some(token) = token {
+        let mut value = HeaderValue::from_str(&format!("Bearer {token}"))
+            .map_err(|_| "workshop credential cannot be used for WebSocket authentication")?;
+        value.set_sensitive(true);
+        request.headers_mut().insert(AUTHORIZATION, value);
+    }
+    Ok(request)
 }
 
 async fn daemon_get<T: serde::de::DeserializeOwned>(
@@ -184,11 +218,11 @@ pub async fn terminal_attach(
         .lock()
         .map_err(|_| "daemon url lock")?
         .clone();
-    let url = ws_url_for(
+    let request = authenticated_ws_request(
         &daemon_url,
         &format!("/v1/sessions/shell/{}", urlencoding::encode(&session_id)),
-    );
-    let (websocket, _) = connect_async(&url)
+    )?;
+    let (websocket, _) = connect_async(request)
         .await
         .map_err(|error| error.to_string())?;
 
@@ -462,4 +496,29 @@ pub async fn terminal_detach(
         handle.cancel.cancel();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ws_request_with_bearer;
+    use tokio_tungstenite::tungstenite::http::header::AUTHORIZATION;
+
+    #[test]
+    fn protected_websocket_credential_stays_in_the_authorization_header() {
+        let request = ws_request_with_bearer(
+            "http://127.0.0.1:7419",
+            "/v1/sessions/shell/session-1",
+            Some("home-secret"),
+        )
+        .expect("authenticated websocket request");
+        assert_eq!(
+            request.uri(),
+            "ws://127.0.0.1:7419/v1/sessions/shell/session-1"
+        );
+        assert_eq!(
+            request.headers().get(AUTHORIZATION).unwrap(),
+            "Bearer home-secret"
+        );
+        assert!(!request.uri().to_string().contains("home-secret"));
+    }
 }

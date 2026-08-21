@@ -1896,6 +1896,12 @@
         case "medousa.code.repairLanguageSupport":
           void repairLanguageSupport();
           break;
+        case "medousa.code.showLanguageLogs":
+          void showLanguageLogs();
+          break;
+        case "medousa.code.restartLanguageServer":
+          restartLanguageServer();
+          break;
         case "workbench.action.findInFiles":
           toggleSearch(true);
           break;

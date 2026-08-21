@@ -2,6 +2,7 @@
   import "$lib/styles/status-desktop.postcss";
   import { untrack } from "svelte";
   import { CircleAlert, CircleCheck } from "@lucide/svelte";
+  import CodeStatusPopover from "$lib/components/layout/CodeStatusPopover.svelte";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
@@ -52,9 +53,20 @@
       : null,
   );
 
+  let codeStatusOpen = $state(false);
+  let codeStatusTrigger = $state<HTMLButtonElement | null>(null);
+
   function showCodeProblems() {
     window.dispatchEvent(new CustomEvent("medousa-code-show-problems"));
   }
+
+  function dispatchCodeCommand(id: string) {
+    window.dispatchEvent(new CustomEvent("medousa-code-command", { detail: id }));
+  }
+
+  $effect(() => {
+    if (!showCode) codeStatusOpen = false;
+  });
 
   const noteSummary = $derived(formatVaultNoteStats(vaultNoteStats(vault.content)));
   const saveWhisper = $derived(vault.saveWhisper());
@@ -190,8 +202,10 @@
     {/if}
     {#if codeStatus.languageDetail || codeStatus.languageState !== "ready"}
       <span class="status-contextual-sep" aria-hidden="true">·</span>
-      <span
-        class="status-contextual-item status-contextual-item--detail"
+      <button
+        bind:this={codeStatusTrigger}
+        type="button"
+        class="status-contextual-action status-contextual-language"
         class:text-content-warning={codeStatus.languageState === "editing-only" ||
           codeStatus.languageState === "reconnecting"}
         class:text-content-error={codeStatus.languageState === "failed"}
@@ -203,21 +217,33 @@
               : codeStatus.languageState === "failed"
                 ? "Language failed"
                 : "Editing only")}
+        aria-expanded={codeStatusOpen}
+        aria-haspopup="dialog"
+        onclick={() => (codeStatusOpen = !codeStatusOpen)}
       >
-        {#if codeStatus.languageDetail}
-          {codeStatus.languageDetail}
-        {:else if codeStatus.languageState === "connecting"}
-          Language starting…
-        {:else if codeStatus.languageState === "reconnecting"}
-          Language reconnecting…
-        {:else if codeStatus.languageState === "failed"}
-          Language failed
-        {:else}
-          Editing only
-        {/if}
-      </span>
+        <CircleAlert size={11} strokeWidth={2} aria-hidden="true" />
+        <span>
+          {codeStatus.languageState === "connecting"
+            ? "Language starting"
+            : codeStatus.languageState === "reconnecting"
+              ? "Language reconnecting"
+              : codeStatus.languageState === "ready"
+                ? "Language activity"
+                : "Language issue"}
+        </span>
+      </button>
     {/if}
   </div>
+  <CodeStatusPopover
+    open={codeStatusOpen}
+    triggerEl={codeStatusTrigger}
+    status={codeStatus}
+    onClose={() => (codeStatusOpen = false)}
+    onShowProblems={showCodeProblems}
+    onShowLogs={() => dispatchCodeCommand("medousa.code.showLanguageLogs")}
+    onRestart={() => dispatchCodeCommand("medousa.code.restartLanguageServer")}
+    onRepair={() => dispatchCodeCommand("medousa.code.repairLanguageSupport")}
+  />
 {:else if showVault}
   <div class="status-contextual status-contextual--vault" aria-label="Note status">
     <span class="status-contextual-item truncate">{noteSummary}</span>
@@ -290,14 +316,10 @@
     white-space: nowrap;
   }
 
-  /* Long LSP / language notices absorb squeeze; full text stays on title. */
-  .status-contextual-item--detail {
-    min-width: 0;
-    flex: 1 1 auto;
-    max-width: 16rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .status-contextual-language {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
   }
 
   .status-contextual-item--icon {
