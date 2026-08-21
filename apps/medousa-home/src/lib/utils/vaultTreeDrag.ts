@@ -16,8 +16,8 @@ function dropPrefixAt(x: number, y: number): string | null {
   const element = document.elementFromPoint(x, y)?.closest(DROP_TARGET_SELECTOR) as
     | HTMLElement
     | null;
-  const prefix = element?.dataset.vaultDropPrefix?.trim();
-  return prefix ? prefix : null;
+  if (!element) return null;
+  return element.dataset.vaultDropPrefix?.trim() ?? null;
 }
 
 function highlightDropTarget(prefix: string | null) {
@@ -64,7 +64,7 @@ function completeDrag(
   const source = draggingPath;
   const prefix = dropPrefixAt(x, y);
   cleanupPointerDrag();
-  if (!source || !prefix) return;
+  if (!source || prefix == null) return;
 
   const fileName = source.split("/").pop();
   if (!fileName) return;

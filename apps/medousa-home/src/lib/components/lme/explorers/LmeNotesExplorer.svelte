@@ -178,16 +178,23 @@
       </div>
     {:else}
       <div
-        class="lme-dock-chrome-secondary lme-dock-chrome-secondary--crumb flex min-w-0 items-center gap-0.5"
+        class="lme-notes-crumb lme-dock-chrome-secondary lme-dock-chrome-secondary--crumb flex min-w-0 items-center"
       >
         <VaultRootPicker compact quiet dropUp={false} />
         <span
-          class="nav-rail-dock-crumb-sep shrink-0 px-px text-[11px] font-medium leading-none text-content-quiet"
+          class="lme-notes-crumb__sep nav-rail-dock-crumb-sep shrink-0"
           aria-hidden="true"
         >
           /
         </span>
         <VaultGroupPicker dropUp={false} />
+        <span
+          class="lme-notes-crumb__sep nav-rail-dock-crumb-sep shrink-0"
+          aria-hidden="true"
+        >
+          /
+        </span>
+        <VaultLibraryBrowseModeBar icons flush rail />
       </div>
       <!-- Push action cluster toward `>` once the bar extends. -->
       <div
@@ -227,10 +234,6 @@
           </div>
         </BodyPortal>
       {/if}
-      <div class="lme-dock-chrome-secondary shrink-0">
-        <VaultLibraryBrowseModeBar icons flush rail />
-      </div>
-
       <button
         type="button"
         class="vault-dock-icon-btn {searching ? 'vault-dock-icon-btn-active' : ''}"
