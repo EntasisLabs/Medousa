@@ -436,6 +436,7 @@ export type ForgeCodeWorkspaceState = {
     tests?: boolean;
     search?: boolean;
     changes?: boolean;
+    primary_task?: string | null;
   } | null;
   updated_at?: string | null;
 };
@@ -905,6 +906,8 @@ export type ProjectTask = {
   kind: "verify" | "test" | "build" | "run" | string;
   argv: string[];
   provider: string;
+  /** Repository-relative working directory; absent on older daemons means project root. */
+  root?: string;
   long_running?: boolean;
   ready_pattern?: string | null;
   problem_matcher?: {

@@ -195,6 +195,84 @@ export function buildCodeCommands(): WorkshopCommand[] {
       },
     },
     {
+      id: "workbench.action.tasks.runPrimary",
+      section: "do",
+      label: "Run Project",
+      subtitle: "Run the selected project command",
+      keywords: "run project task start launch play",
+      aliases: ["Run Project", "Tasks: Run Project", "workbench.action.tasks.runTask"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.action.tasks.runPrimary");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.tasks.build",
+      section: "do",
+      label: "Build Project",
+      subtitle: "Run the detected project build",
+      keywords: "build compile project task",
+      aliases: ["Build Project", "Tasks: Run Build Task"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.action.tasks.build");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.tasks.test",
+      section: "do",
+      label: "Test Project",
+      subtitle: "Run the detected project test command",
+      keywords: "test project task unit integration",
+      aliases: ["Test Project", "Tasks: Run Test Task"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.action.tasks.test");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.tasks.verify",
+      section: "do",
+      label: "Check Project",
+      subtitle: "Run the detected project verification command",
+      keywords: "check verify lint project task",
+      aliases: ["Check Project", "Verify Project", "Tasks: Run Verify Task"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.action.tasks.verify");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.tasks.rerunLast",
+      section: "do",
+      label: "Rerun Last Project Command",
+      subtitle: "Repeat the exact previous task or targeted test",
+      keywords: "rerun repeat last task test build",
+      aliases: ["Rerun Last Task", "Tasks: Rerun Last"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.action.tasks.rerunLast");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.tasks.terminate",
+      section: "do",
+      label: "Stop Running Project Command",
+      subtitle: "Stop the active Forge project task",
+      keywords: "stop terminate cancel task process",
+      aliases: ["Stop Task", "Terminate Task", "Tasks: Terminate Task"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.action.tasks.terminate");
+        ctx.callbacks.close();
+      },
+    },
+    {
       id: "workbench.action.findInFiles",
       section: "do",
       label: "Search in Files",

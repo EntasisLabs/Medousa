@@ -1,6 +1,6 @@
 # Roadmap — active work
 
-> **Status:** Living document (updated 2026-08-13)
+> **Status:** Living document (updated 2026-08-21)
 > **Historical plans:** [archive/README.md](archive/README.md)
 
 First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), **centralized agent runtime**, **0.5.0 Vault / Versions / Liquid**, **0.6.0 Shared / Peer mesh / Dynamic + Home polish**, and **0.7.0 Accounts / Liquid depth / Browser act + Languages** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md), [v0.5.0-vault-versions-plan.md](v0.5.0-vault-versions-plan.md), [v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md), [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md), [v0.7.0-plan.md](v0.7.0-plan.md).
@@ -11,12 +11,15 @@ the [2026-08-12 technical critique](repo-wide-technical-critique-2026-08-12.md).
 Gate A security work precedes expansion of public/LAN daemon and embedded
 browser capabilities.
 
-Product work continues with [Home Code workbench parity](home-code-vscode-parity-plan.md),
-the [Mobile Code workspace](mobile-code-workspace-plan.md), Undertakings
-flowstate residual polish, and [Medousa Anywhere](medousa-anywhere-plan.md), but
-must not weaken or bypass hardening release gates.
+Product work continues with the focused
+[Human Code workbench](human-code-workbench-plan.md) remediation over the
+broader [Home Code workbench parity](home-code-vscode-parity-plan.md), the
+[Mobile Code workspace](mobile-code-workspace-plan.md), Undertakings flowstate
+residual polish, and [Medousa Anywhere](medousa-anywhere-plan.md), but must not
+weaken or bypass hardening release gates.
 
 Full active plans: **[hardening/README.md](hardening/README.md)** ·
+**[human-code-workbench-plan.md](human-code-workbench-plan.md)** ·
 **[home-code-vscode-parity-plan.md](home-code-vscode-parity-plan.md)** ·
 **[mobile-code-workspace-plan.md](mobile-code-workspace-plan.md)** ·
 **[v0.7.0-forge-plan.md](v0.7.0-forge-plan.md)** ·
@@ -42,6 +45,9 @@ workspace parity is tracked separately in
 ---
 
 ## Coding engine / LSP Orchestrator
+
+The non-AI edit/build/run loop and project execution composition are tracked by
+the [Human Code workbench plan](human-code-workbench-plan.md).
 
 | Slice | Status |
 |-------|--------|

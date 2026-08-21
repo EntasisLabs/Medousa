@@ -29,6 +29,8 @@ export type CodeWorkbenchLayout = {
   tests: boolean;
   search: boolean;
   changes: boolean;
+  /** User-selected project command. Stable task id from the daemon catalog. */
+  primary_task: string | null;
 };
 
 export const DEFAULT_CODE_WORKBENCH_LAYOUT: CodeWorkbenchLayout = {
@@ -37,6 +39,7 @@ export const DEFAULT_CODE_WORKBENCH_LAYOUT: CodeWorkbenchLayout = {
   tests: false,
   search: false,
   changes: false,
+  primary_task: null,
 };
 
 const HISTORY_CAP = 100;
@@ -65,6 +68,10 @@ export function normalizeCodeWorkbenchLayout(
     tests: raw.tests === true,
     search: raw.search === true,
     changes: raw.changes === true,
+    primary_task:
+      typeof raw.primary_task === "string" && raw.primary_task.trim()
+        ? raw.primary_task.trim().slice(0, 160)
+        : null,
   };
 }
 
@@ -179,6 +186,12 @@ class CodeWorkbenchState {
 
   setChangesOpen(workId: string, open: boolean) {
     this.patchLayout(workId, { changes: open });
+  }
+
+  setPrimaryTask(workId: string, taskId: string | null) {
+    this.patchLayout(workId, {
+      primary_task: taskId?.trim().slice(0, 160) || null,
+    });
   }
 
   record(

@@ -216,7 +216,7 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-6B | Previewed repository replace and complete file/folder operations | ✅ |
 | HCP-6C | Large-file, encoding, binary-preview, and fuzzy Quick Open fallbacks | ✅ |
 | HCP-7A | Streaming execution protocol and bounded output replay | ✅ |
-| HCP-7B | Named task terminals, background readiness, configured tasks, and problem matchers | ✅ |
+| HCP-7B | Streaming/configured tasks shipped; terminal-aware, restorable execution is reopened in the [Human Code workbench plan](human-code-workbench-plan.md) | 🔄 |
 | HCP-7C | Terminal search, profiles, groups, shell integration, file links, and run selection | ✅ |
 | HCP-7D | Remote service detection/proxy and Browser preview handoff | ✅ |
 | HCP-8A | Forge Changes model and branch/upstream/conflict status | ✅ |
@@ -335,11 +335,14 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   `…/task-runs/{id}/events?since=`, bounded live stdout/stderr on poll, and a
   Code Output panel. Migration: none. Compatibility: older Homes keep
   poll-until-exit. Rollback: revert this commit; additive stream route/fields.
-- **HCP-7B — `a91774b5`.** Named Output channels with background readiness,
-  incremental problem locations, and thin `.vscode/tasks.json` import
-  (`npm`/`shell`/`process` + inline matchers). Migration: none. Compatibility:
-  older Homes ignore new task/run fields. Rollback: revert this commit;
-  additive task metadata and UI.
+- **HCP-7B — `a91774b5` (shipped foundation; UX reopened).** Added named
+  Output channels with background readiness, incremental problem locations,
+  and thin `.vscode/tasks.json` import (`npm`/`shell`/`process` + inline
+  matchers). Restorable run ownership, exact rerun, unified
+  Problems/Output/Terminal, and task-to-PTY attachment are tracked by the
+  [Human Code workbench plan](human-code-workbench-plan.md). Migration: none.
+  Compatibility: older Homes ignore new task/run fields. Rollback: revert this
+  commit; additive task metadata and UI.
 - **HCP-7C — `61aef5a5`.** Terminal find, clickable `path:line` links, session
   switching/cwd chrome, and Run Selected Text in Terminal. Migration: none.
   Compatibility: additive xterm addons/UI. Rollback: revert this commit.

@@ -110,10 +110,12 @@ a private Code IDE chrome.
   current file visible in both panes; drag a tab to a pane edge to move it.
   Directional pane focus (`Ctrl+;` then hjkl) follows on-screen geometry.
   Code Back/Forward restores the remembered pane when that group still exists.
-  Problems, Structure, Search, Changes, Tests, and the Terminal dock restore with the project
-  (`workspace-state` layout); they are not permanent chrome across Chat or Notes.
+  Problems, Structure, Search, Changes, Tests, the selected project command,
+  and the Terminal dock restore with the project (`workspace-state` layout);
+  they are not permanent chrome across Chat or Notes.
   `Cmd/Ctrl+Shift+P` opens Spotlight in command mode (`>`). Code actions also
-  appear under familiar VS Code names (Quick Open, Search, Changes, Problems, Output, Terminal, Tests).
+  appear under familiar VS Code names (Quick Open, Search, Changes, Problems,
+  Output, Terminal, Tests, Run Project, Build Project, and Test Project).
   A small allowlist of chords can be overridden in storage; a Settings keybinding
   editor is not shipped yet.
 - The Code explorer lists tracked and unignored repository files. `Cmd/Ctrl+P`
@@ -204,13 +206,20 @@ changes — so decide/approve/finish never forks by author.
 
 ## Run and test
 
-Medousa derives safe project commands from repository manifests instead of
-asking you to type or approve arbitrary command lines. Rust, Go, JavaScript,
-Python, Make, and .NET projects can contribute checks, tests, builds, and
-development processes at the same time, including in mixed repositories.
+Medousa derives safe project commands from manifests at the repository root and
+in bounded nested project roots instead of asking you to approve arbitrary
+command lines. Rust, Go, JavaScript, Python, Make, and .NET projects can
+contribute checks, tests, builds, and development processes. JavaScript roots
+use their bun, pnpm, Yarn, or npm lockfile rather than assuming npm. A nested
+command runs in the directory shown beside its name in the command picker.
+Use a root `.vscode/tasks.json` entry or Terminal when the desired application
+is not detected yet.
 
-- Run, Test, and Build start named project runs. A running command becomes a
-  **Stop** action and can be cancelled without closing the project or Terminal.
+- The project command bar remains available before a file is opened. Choose a
+  command and select **Run**; Medousa remembers that selection for the project.
+  Run saves every dirty Code buffer first and does not start if a save conflict
+  needs attention. A running command becomes a **Stop** action and can be
+  cancelled without closing the project or Terminal.
 - **Output** is the named task channel (`Task: …`). It streams stdout/stderr while
   a check runs, shows **ready** for background/dev servers, lists clickable
   problem locations, and offers **Open in Browser** for detected loopback URLs
@@ -222,8 +231,9 @@ development processes at the same time, including in mixed repositories.
   imported.
 - **Tests** progressively lists individual Rust, Python, JavaScript/TypeScript,
   and Go tests. Open one at its definition or run only that test.
-- The latest result stays beside Code with a one-click rerun. Compiler, test,
-  and stack-trace locations open the referenced project file and line.
+- The latest result stays beside Code with a one-click exact rerun, including
+  the same targeted test when one was selected. Compiler, test, and stack-trace
+  locations open the referenced project file and line.
 - Completed checks are written into Forge command evidence. Review uses the
   latest completed result to say whether verification passed; cancelled runs
   are preserved as activity but do not pretend the revision failed.

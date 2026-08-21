@@ -22,6 +22,11 @@ describe("code command registry", () => {
     expect(ids.has("workbench.action.terminal.focusFind")).toBe(true);
     expect(ids.has("workbench.action.terminal.runSelectedText")).toBe(true);
     expect(ids.has("workbench.action.findInFiles")).toBe(true);
+    expect(ids.has("workbench.action.tasks.runPrimary")).toBe(true);
+    expect(ids.has("workbench.action.tasks.build")).toBe(true);
+    expect(ids.has("workbench.action.tasks.test")).toBe(true);
+    expect(ids.has("workbench.action.tasks.rerunLast")).toBe(true);
+    expect(ids.has("workbench.action.tasks.terminate")).toBe(true);
     expect(effectiveChordFor("workbench.action.findInFiles")).toBe("mod:Shift+F");
 
     const problems = commands.find(

@@ -157,6 +157,12 @@ event includes the final result.
 `.vscode/tasks.json` import (`npm` / `shell` / `process`, optional inline
 problem-matcher `pattern`, background `endsPattern`). Full VS Code matcher
 catalogs, `dependsOn`, and presentation panels are not supported.
+Detected descriptors include a repository-relative `root`; discovery uses the
+Git-visible file set, caps the number/depth of nested roots and tasks, and keeps
+root-level IDs stable. Nested IDs include their root. Before spawning, Forge
+canonicalizes the selected root, rejects absolute/traversing/symlink escapes,
+and reports output locations relative to the repository even though the process
+runs from the nested directory.
 
 `GET …/task-runs/{run_id}` also returns bounded live `stdout`/`stderr`,
 `output_truncated`, `locations`, `ready_url` (when a background task becomes
@@ -365,8 +371,8 @@ draft requires the undertaking's live lease and is bounded to 2 MiB per draft,
 8 MiB total, and 32 tabs. Drafts retain their source digest so clients can
 surface recovery conflicts instead of silently applying stale text. The optional
 `layout` object restores contextual Code regions (`context_panel`, `terminal`,
-`tests`, `search`) independently of Home shell desktops; pane geometry and group
-tab strips remain shell-owned.
+`tests`, `search`, `changes`) plus the selected `primary_task` independently of
+Home shell desktops; pane geometry and group tab strips remain shell-owned.
 
 ### Errors
 

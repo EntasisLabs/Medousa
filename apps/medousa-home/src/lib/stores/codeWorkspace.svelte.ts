@@ -557,6 +557,7 @@ class CodeWorkspaceStore {
             tests: layout.tests,
             search: layout.search,
             changes: layout.changes,
+            primary_task: layout.primary_task,
           },
         },
         lease,

@@ -348,6 +348,12 @@
       codeWorkbenchState.setTestsOpen(workId, open);
       codeWorkspace.scheduleLayoutPersist(workId);
     },
+    persistSelectedTask: (taskId) => {
+      if (!workId) return;
+      codeWorkbenchState.setPrimaryTask(workId, taskId);
+      codeWorkspace.scheduleLayoutPersist(workId);
+    },
+    prepareRun: () => save.saveAll(),
     ensureLease: () => ensureHumanLease(),
     onError: (message) => {
       surfaceError = message || null;
@@ -1698,6 +1704,25 @@
         case "workbench.view.testing":
           void tasks.toggleTests();
           break;
+        case "workbench.action.tasks.runPrimary":
+        case "workbench.action.tasks.runTask":
+          void tasks.runDetected();
+          break;
+        case "workbench.action.tasks.build":
+          void tasks.runKind("build");
+          break;
+        case "workbench.action.tasks.test":
+          void tasks.runKind("test");
+          break;
+        case "workbench.action.tasks.verify":
+          void tasks.runKind("verify");
+          break;
+        case "workbench.action.tasks.rerunLast":
+          void tasks.rerunLast();
+          break;
+        case "workbench.action.tasks.terminate":
+          void tasks.stopDetected();
+          break;
         case "workbench.action.findInFiles":
           toggleSearch(true);
           break;
@@ -1752,6 +1777,7 @@
       const layout = codeWorkbenchState.layoutFor(id);
       problems.restorePanel(layout.context_panel);
       tasks.restoreTestsOpen(layout.tests);
+      tasks.restoreSelectedTask(layout.primary_task);
       searchOpen = layout.search;
       changes.restoreOpen(layout.changes);
       if (layout.terminal) void toggleTerminalDock(true);

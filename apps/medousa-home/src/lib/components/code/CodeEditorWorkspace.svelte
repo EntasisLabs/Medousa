@@ -301,6 +301,11 @@
 
 {:else}
   <div class="flex min-h-0 flex-1 flex-col">
+    {#if surfaceError}
+      <p class="shrink-0 border-b border-amber-500/30 bg-amber-950/25 px-2.5 py-1.5 text-chrome-sm text-amber-100">
+        {humanizeForgeMessage(surfaceError)}
+      </p>
+    {/if}
     <div class="flex min-h-72 flex-1 items-center justify-center p-8">
       {#if needsProvision}
         <EmptyState

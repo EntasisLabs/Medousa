@@ -55,7 +55,7 @@
 {/if}
 {#if tasks.result}
   <div class="shrink-0 border-t {tasks.result.success ? 'border-emerald-500/25 bg-emerald-950/20 text-emerald-200' : 'border-rose-500/30 bg-rose-950/25 text-rose-200'}">
-    <button type="button" class="flex w-full items-center justify-between gap-2 px-2.5 py-1 text-left text-chrome-xs" title="Run this check again" onclick={() => void tasks.runDetected()}>
+    <button type="button" class="flex w-full items-center justify-between gap-2 px-2.5 py-1 text-left text-chrome-xs" title="Repeat this exact command" onclick={() => void tasks.rerunLast()}>
       <span>{tasks.result.success ? "Passed" : "Needs attention"} · {tasks.result.task.label}</span>
       <span class="text-current">Rerun · {(tasks.result.duration_ms / 1000).toFixed(1)}s{tasks.result.exit_code != null ? ` · exit ${tasks.result.exit_code}` : ""}</span>
     </button>

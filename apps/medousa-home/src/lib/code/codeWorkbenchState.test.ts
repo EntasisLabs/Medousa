@@ -24,6 +24,7 @@ describe("codeWorkbenchState", () => {
       tests: false,
       search: false,
       changes: false,
+      primary_task: null,
     });
     expect(
       normalizeCodeWorkbenchLayout({
@@ -38,6 +39,7 @@ describe("codeWorkbenchState", () => {
       tests: false,
       search: false,
       changes: false,
+      primary_task: null,
     });
 
     codeWorkbenchState.applyLayout("work-1", {
@@ -50,6 +52,7 @@ describe("codeWorkbenchState", () => {
       tests: false,
       search: false,
       changes: false,
+      primary_task: null,
     });
     codeWorkbenchState.setTestsOpen("work-1", true);
     expect(codeWorkbenchState.layoutFor("work-1").tests).toBe(true);
@@ -57,6 +60,8 @@ describe("codeWorkbenchState", () => {
     expect(codeWorkbenchState.layoutFor("work-1").search).toBe(true);
     codeWorkbenchState.setChangesOpen("work-1", true);
     expect(codeWorkbenchState.layoutFor("work-1").changes).toBe(true);
+    codeWorkbenchState.setPrimaryTask("work-1", "npm-dev");
+    expect(codeWorkbenchState.layoutFor("work-1").primary_task).toBe("npm-dev");
   });
 
   it("lists group-local Code tabs by composing shell and LME identities", () => {

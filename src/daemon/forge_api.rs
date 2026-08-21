@@ -2686,6 +2686,8 @@ struct CodeWorkspaceLayout {
     search: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     changes: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    primary_task: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -3419,6 +3421,14 @@ async fn save_workspace_state(
                     match panel {
                         "problems" | "outline" | "references" | "language" => {}
                         _ => layout.context_panel = None,
+                    }
+                }
+                if let Some(layout) = body.state.layout.as_mut()
+                    && let Some(task_id) = layout.primary_task.as_mut()
+                {
+                    *task_id = task_id.trim().chars().take(160).collect();
+                    if task_id.is_empty() {
+                        layout.primary_task = None;
                     }
                 }
                 let open_paths = body
@@ -6302,6 +6312,9 @@ struct ProjectTask {
     kind: String,
     argv: Vec<String>,
     provider: String,
+    /// Repository-relative directory where the command runs.
+    #[serde(default = "default_project_task_root")]
+    root: String,
     #[serde(default)]
     long_running: bool,
     /// Optional regex (unanchored) that marks a background task ready.
@@ -6310,6 +6323,10 @@ struct ProjectTask {
     /// Optional VS Code-style problem matcher pattern for this task.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     problem_matcher: Option<ProjectProblemPattern>,
+}
+
+fn default_project_task_root() -> String {
+    ".".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -6411,6 +6428,8 @@ const PROJECT_TASK_RUN_MEMORY_RESERVATION: u32 = 2 * 1024 * 1024;
 const PROJECT_TASK_GLOBAL_MEMORY_BYTES: usize = 64 * 1024 * 1024;
 const PROJECT_TASK_TERMINAL_TTL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 const CONFIGURED_TASK_CAP: usize = 24;
+const DETECTED_PROJECT_ROOT_CAP: usize = 48;
+const DETECTED_PROJECT_TASK_CAP: usize = 256;
 
 #[derive(Default)]
 struct TaskOutputTail {
@@ -6463,7 +6482,8 @@ impl TaskOutputTail {
 
 struct ProjectTaskRunStore {
     run: ProjectTaskRun,
-    root: PathBuf,
+    repository_root: PathBuf,
+    working_root: PathBuf,
     ready_re: Option<regex::Regex>,
     problem_re: Option<(regex::Regex, ProjectProblemPattern)>,
     stdout: TaskOutputTail,
@@ -6612,12 +6632,13 @@ fn merge_task_locations(
 }
 
 fn parse_output_locations_with_matcher(
-    root: &FsPath,
+    repository_root: &FsPath,
+    working_root: &FsPath,
     output: &str,
     matcher: Option<&(regex::Regex, ProjectProblemPattern)>,
 ) -> Vec<ProjectOutputLocation> {
     let Some((re, pattern)) = matcher else {
-        return parse_output_locations(root, output);
+        return parse_output_locations(repository_root, working_root, output);
     };
     let mut locations = Vec::new();
     for line_text in output.lines() {
@@ -6643,22 +6664,11 @@ fn parse_output_locations_with_matcher(
             .map(|m| m.as_str().chars().take(300).collect())
             .unwrap_or_else(|| line_text.trim().chars().take(300).collect());
         let path = std::path::Path::new(raw.trim());
-        let relative = if path.is_absolute() {
-            path.strip_prefix(root).ok()
-        } else {
-            Some(path)
-        };
-        let Some(relative) = relative else {
+        let Some(path) = normalize_output_path(repository_root, working_root, path) else {
             continue;
         };
-        if relative
-            .components()
-            .any(|part| matches!(part, std::path::Component::ParentDir))
-        {
-            continue;
-        }
         locations.push(ProjectOutputLocation {
-            path: relative.to_string_lossy().replace('\\', "/"),
+            path,
             line,
             column,
             message,
@@ -6702,8 +6712,12 @@ async fn publish_task_output(run_id: &str, stream: &str, text: &str) {
         } else {
             store.run.output_truncated |= store.stdout.append(text);
         }
-        let matched =
-            parse_output_locations_with_matcher(&store.root, text, store.problem_re.as_ref());
+        let matched = parse_output_locations_with_matcher(
+            &store.repository_root,
+            &store.working_root,
+            text,
+            store.problem_re.as_ref(),
+        );
         let before = store.run.locations.len();
         merge_task_locations(&mut store.run.locations, matched);
         let new_locations = if store.run.locations.len() > before {
@@ -6860,14 +6874,26 @@ fn target_project_test(
         .into_iter()
         .find(|test| test.id == test_id && test.task_id == task.id)
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Test is no longer available"))?;
-    if task.id == "cargo-test" {
+    let base_id = task.id.split('@').next().unwrap_or(&task.id);
+    let task_relative_path = if task.root == "." {
+        test.path.clone()
+    } else {
+        test.path
+            .strip_prefix(&format!("{}/", task.root))
+            .unwrap_or(&test.path)
+            .to_owned()
+    };
+    if base_id == "cargo-test" {
         task.argv.push(test.label.clone());
-    } else if task.id == "python-test" {
-        task.argv.push(format!("{}::{}", test.path, test.label));
-    } else if task.id == "npm-test" {
-        task.argv.extend(["--".into(), test.path]);
-    } else if task.id == "go-test" {
-        let package = std::path::Path::new(&test.path)
+    } else if base_id == "python-test" {
+        task.argv
+            .push(format!("{}::{}", task_relative_path, test.label));
+    } else if base_id.ends_with("-test")
+        && matches!(task.provider.as_str(), "npm" | "pnpm" | "yarn" | "bun")
+    {
+        task.argv.extend(["--".into(), task_relative_path]);
+    } else if base_id == "go-test" {
+        let package = std::path::Path::new(&task_relative_path)
             .parent()
             .map(|path| format!("./{}", path.display()))
             .unwrap_or_else(|| ".".into());
@@ -6878,29 +6904,243 @@ fn target_project_test(
     Ok(())
 }
 
-fn detected_project_tasks(root: &FsPath) -> Vec<ProjectTask> {
-    let mut tasks = Vec::new();
-    let mut add = |id: &str, label: &str, kind: &str, argv: &[&str]| {
-        tasks.push(ProjectTask {
-            id: id.into(),
-            label: label.into(),
-            kind: kind.into(),
-            argv: argv.iter().map(|part| (*part).to_string()).collect(),
-            provider: argv.first().copied().unwrap_or("project").into(),
-            long_running: kind == "run",
-            ready_pattern: None,
-            problem_matcher: None,
-        });
+fn scoped_task_id(base: &str, task_root: &str) -> String {
+    if task_root == "." {
+        return base.into();
+    }
+    let digest = format!("{:x}", Sha256::digest(task_root.as_bytes()));
+    format!(
+        "{base}@{}-{}",
+        sanitize_task_id_slug(task_root),
+        &digest[..8]
+    )
+}
+
+fn add_detected_task(
+    tasks: &mut Vec<ProjectTask>,
+    task_root: &str,
+    id: &str,
+    label: &str,
+    kind: &str,
+    argv: impl IntoIterator<Item = impl Into<String>>,
+) {
+    if tasks.len() >= DETECTED_PROJECT_TASK_CAP {
+        return;
+    }
+    let argv = argv.into_iter().map(Into::into).collect::<Vec<_>>();
+    tasks.push(ProjectTask {
+        id: scoped_task_id(id, task_root),
+        label: label.into(),
+        kind: kind.into(),
+        provider: argv.first().cloned().unwrap_or_else(|| "project".into()),
+        argv,
+        root: task_root.into(),
+        long_running: kind == "run",
+        ready_pattern: None,
+        problem_matcher: None,
+    });
+}
+
+fn detected_project_roots(root: &FsPath) -> Vec<String> {
+    let mut roots = std::collections::BTreeSet::from([".".to_string()]);
+    let Ok(output) = background_command("git")
+        .args([
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+        ])
+        .current_dir(root)
+        .output()
+    else {
+        return roots.into_iter().collect();
     };
-    if root.join("Cargo.toml").is_file() {
-        add("cargo-check", "Check", "verify", &["cargo", "check"]);
-        add("cargo-test", "Test", "test", &["cargo", "test"]);
+    if !output.status.success() {
+        return roots.into_iter().collect();
     }
-    if root.join("go.mod").is_file() {
-        add("go-test", "Test", "verify", &["go", "test", "./..."]);
+    for raw in output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|raw| !raw.is_empty())
+    {
+        let relative = String::from_utf8_lossy(raw).replace('\\', "/");
+        let path = FsPath::new(&relative);
+        if path.components().count() > 8 {
+            continue;
+        }
+        let file_name = path.file_name().and_then(OsStr::to_str).unwrap_or("");
+        let is_marker = matches!(
+            file_name,
+            "Cargo.toml" | "go.mod" | "package.json" | "pyproject.toml" | "pytest.ini" | "Makefile"
+        ) || matches!(
+            path.extension().and_then(OsStr::to_str),
+            Some("sln" | "csproj")
+        );
+        if !is_marker {
+            continue;
+        }
+        let parent = path.parent().unwrap_or_else(|| FsPath::new(""));
+        let clean = parent.to_string_lossy().trim_matches('/').to_owned();
+        roots.insert(if clean.is_empty() { ".".into() } else { clean });
+        if roots.len() >= DETECTED_PROJECT_ROOT_CAP {
+            break;
+        }
     }
-    if root.join("package.json").is_file() {
-        let scripts = std::fs::read(root.join("package.json"))
+    let mut roots = roots.into_iter().collect::<Vec<_>>();
+    roots.sort_by(|left, right| {
+        left.matches('/')
+            .count()
+            .cmp(&right.matches('/').count())
+            .then(left.cmp(right))
+    });
+    roots
+}
+
+fn package_manager(
+    repository_root: &FsPath,
+    project_root: &FsPath,
+) -> (&'static str, &'static str) {
+    let mut current = Some(project_root);
+    while let Some(directory) = current {
+        if directory.join("bun.lock").is_file() || directory.join("bun.lockb").is_file() {
+            return ("bun", "bun");
+        }
+        if directory.join("pnpm-lock.yaml").is_file() {
+            return ("pnpm", "pnpm");
+        }
+        if directory.join("yarn.lock").is_file() {
+            return ("yarn", "yarn");
+        }
+        if directory == repository_root {
+            break;
+        }
+        current = directory
+            .parent()
+            .filter(|parent| parent.starts_with(repository_root));
+    }
+    ("npm", "npm")
+}
+
+fn detected_tasks_for_root(
+    repository_root: &FsPath,
+    task_root: &str,
+    tasks: &mut Vec<ProjectTask>,
+) {
+    let project_root = if task_root == "." {
+        repository_root.to_path_buf()
+    } else {
+        repository_root.join(task_root)
+    };
+    if project_root.join("Cargo.toml").is_file() {
+        add_detected_task(
+            tasks,
+            task_root,
+            "cargo-build",
+            "Build",
+            "build",
+            ["cargo", "build"],
+        );
+        add_detected_task(
+            tasks,
+            task_root,
+            "cargo-check",
+            "Check",
+            "verify",
+            ["cargo", "check"],
+        );
+        add_detected_task(
+            tasks,
+            task_root,
+            "cargo-test",
+            "Test",
+            "test",
+            ["cargo", "test"],
+        );
+        let manifest = std::fs::read_to_string(project_root.join("Cargo.toml"))
+            .ok()
+            .and_then(|raw| raw.parse::<toml::Value>().ok());
+        let default_run = manifest
+            .as_ref()
+            .and_then(|value| value.get("package"))
+            .and_then(|value| value.get("default-run"))
+            .and_then(toml::Value::as_str);
+        if let Some(binary) = default_run {
+            add_detected_task(
+                tasks,
+                task_root,
+                "cargo-run",
+                "Run project",
+                "run",
+                ["cargo", "run", "--bin", binary],
+            );
+        } else if project_root.join("src/main.rs").is_file() {
+            add_detected_task(
+                tasks,
+                task_root,
+                "cargo-run",
+                "Run project",
+                "run",
+                ["cargo", "run"],
+            );
+        } else if let Some(binary) = manifest
+            .as_ref()
+            .and_then(|value| value.get("bin"))
+            .and_then(toml::Value::as_array)
+            .filter(|bins| bins.len() == 1)
+            .and_then(|bins| bins[0].get("name"))
+            .and_then(toml::Value::as_str)
+        {
+            add_detected_task(
+                tasks,
+                task_root,
+                "cargo-run",
+                "Run project",
+                "run",
+                ["cargo", "run", "--bin", binary],
+            );
+        }
+    }
+    if project_root.join("go.mod").is_file() {
+        add_detected_task(
+            tasks,
+            task_root,
+            "go-build",
+            "Build",
+            "build",
+            ["go", "build", "./..."],
+        );
+        add_detected_task(
+            tasks,
+            task_root,
+            "go-test",
+            "Test",
+            "test",
+            ["go", "test", "./..."],
+        );
+        let has_main = std::fs::read_dir(&project_root)
+            .ok()
+            .into_iter()
+            .flatten()
+            .flatten()
+            .any(|entry| {
+                entry.path().extension().and_then(OsStr::to_str) == Some("go")
+                    && std::fs::read_to_string(entry.path())
+                        .is_ok_and(|raw| raw.lines().any(|line| line.trim() == "package main"))
+            });
+        if has_main {
+            add_detected_task(
+                tasks,
+                task_root,
+                "go-run",
+                "Run project",
+                "run",
+                ["go", "run", "."],
+            );
+        }
+    }
+    if project_root.join("package.json").is_file() {
+        let scripts = std::fs::read(project_root.join("package.json"))
             .ok()
             .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
             .and_then(|value| {
@@ -6910,57 +7150,125 @@ fn detected_project_tasks(root: &FsPath) -> Vec<ProjectTask> {
                     .cloned()
             })
             .unwrap_or_default();
-        if scripts.contains_key("check") {
-            add("npm-check", "Check", "verify", &["npm", "run", "check"]);
+        let (manager, id_prefix) = package_manager(repository_root, &project_root);
+        for (script, label, kind) in [
+            ("build", "Build", "build"),
+            ("check", "Check", "verify"),
+            ("lint", "Lint", "verify"),
+            ("test", "Test", "test"),
+            ("typecheck", "Type check", "verify"),
+        ] {
+            if scripts.contains_key(script) {
+                add_detected_task(
+                    tasks,
+                    task_root,
+                    &format!("{id_prefix}-{script}"),
+                    label,
+                    kind,
+                    [manager, "run", script],
+                );
+            }
         }
-        if scripts.contains_key("test") {
-            add("npm-test", "Test", "test", &["npm", "test"]);
-        }
-        if scripts.contains_key("build") {
-            add("npm-build", "Build", "build", &["npm", "run", "build"]);
-        }
-        if scripts.contains_key("dev") {
-            add(
-                "npm-dev",
-                "Development server",
+        let run_script = ["dev", "start", "serve"]
+            .into_iter()
+            .find(|script| scripts.contains_key(*script));
+        if let Some(script) = run_script {
+            add_detected_task(
+                tasks,
+                task_root,
+                &format!("{id_prefix}-{script}"),
+                if script == "dev" {
+                    "Development server"
+                } else {
+                    "Run project"
+                },
                 "run",
-                &["npm", "run", "dev"],
+                [manager, "run", script],
             );
-        } else if scripts.contains_key("start") {
-            add("npm-start", "Run project", "run", &["npm", "start"]);
         }
     }
-    if root.join("pyproject.toml").is_file() || root.join("pytest.ini").is_file() {
-        add("python-test", "Test", "verify", &["python", "-m", "pytest"]);
+    if project_root.join("pyproject.toml").is_file() || project_root.join("pytest.ini").is_file() {
+        add_detected_task(
+            tasks,
+            task_root,
+            "python-test",
+            "Test",
+            "test",
+            ["python", "-m", "pytest"],
+        );
+        if project_root.join("main.py").is_file() {
+            add_detected_task(
+                tasks,
+                task_root,
+                "python-run",
+                "Run project",
+                "run",
+                ["python", "main.py"],
+            );
+        }
     }
-    if root.join("Makefile").is_file() {
-        let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap_or_default();
+    if project_root.join("Makefile").is_file() {
+        let makefile = std::fs::read_to_string(project_root.join("Makefile")).unwrap_or_default();
         for (target, label, kind) in [
+            ("build", "Build", "build"),
             ("check", "Check", "verify"),
             ("test", "Test", "test"),
-            ("build", "Build", "build"),
+            ("run", "Run project", "run"),
+            ("dev", "Development server", "run"),
         ] {
             if makefile
                 .lines()
                 .any(|line| line.starts_with(&format!("{target}:")))
             {
-                add(&format!("make-{target}"), label, kind, &["make", target]);
+                add_detected_task(
+                    tasks,
+                    task_root,
+                    &format!("make-{target}"),
+                    label,
+                    kind,
+                    ["make", target],
+                );
             }
         }
     }
-    if std::fs::read_dir(root)
+    if std::fs::read_dir(&project_root)
         .ok()
         .into_iter()
         .flatten()
         .flatten()
         .any(|entry| {
             matches!(
-                entry.path().extension().and_then(|value| value.to_str()),
+                entry.path().extension().and_then(OsStr::to_str),
                 Some("sln" | "csproj")
             )
         })
     {
-        add("dotnet-test", "Test", "verify", &["dotnet", "test"]);
+        add_detected_task(
+            tasks,
+            task_root,
+            "dotnet-build",
+            "Build",
+            "build",
+            ["dotnet", "build"],
+        );
+        add_detected_task(
+            tasks,
+            task_root,
+            "dotnet-test",
+            "Test",
+            "test",
+            ["dotnet", "test"],
+        );
+    }
+}
+
+fn detected_project_tasks(root: &FsPath) -> Vec<ProjectTask> {
+    let mut tasks = Vec::new();
+    for task_root in detected_project_roots(root) {
+        detected_tasks_for_root(root, &task_root, &mut tasks);
+        if tasks.len() >= DETECTED_PROJECT_TASK_CAP {
+            break;
+        }
     }
     tasks
 }
@@ -7199,6 +7507,7 @@ fn configured_project_tasks(root: &FsPath) -> Vec<ProjectTask> {
             kind: kind.into(),
             argv,
             provider: "vscode-tasks".into(),
+            root: ".".into(),
             long_running: background || kind == "run",
             ready_pattern: configured_task_ready_pattern(item),
             problem_matcher: item.get("problemMatcher").and_then(first_problem_matcher),
@@ -7215,10 +7524,12 @@ fn project_tasks(root: &FsPath) -> Vec<ProjectTask> {
         .collect::<std::collections::HashSet<_>>();
     let seen_argv = tasks
         .iter()
-        .map(|task| task.argv.clone())
+        .map(|task| (task.root.clone(), task.argv.clone()))
         .collect::<std::collections::HashSet<_>>();
     for task in configured_project_tasks(root) {
-        if !seen_ids.insert(task.id.clone()) || seen_argv.contains(&task.argv) {
+        if !seen_ids.insert(task.id.clone())
+            || seen_argv.contains(&(task.root.clone(), task.argv.clone()))
+        {
             continue;
         }
         tasks.push(task);
@@ -7226,12 +7537,77 @@ fn project_tasks(root: &FsPath) -> Vec<ProjectTask> {
     tasks
 }
 
-fn parse_output_locations(root: &FsPath, output: &str) -> Vec<ProjectOutputLocation> {
+fn resolve_project_task_root(repository_root: &FsPath, task_root: &str) -> ApiResult<PathBuf> {
+    let repository_root = std::fs::canonicalize(repository_root).map_err(|err| {
+        request_error(
+            StatusCode::CONFLICT,
+            format!("Project workspace is unavailable: {err}"),
+        )
+    })?;
+    let relative = FsPath::new(task_root);
+    if relative.is_absolute()
+        || relative.components().any(|part| {
+            matches!(
+                part,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "Project command has an invalid working root",
+        ));
+    }
+    let candidate = std::fs::canonicalize(repository_root.join(relative)).map_err(|err| {
+        request_error(
+            StatusCode::CONFLICT,
+            format!("Project command root is unavailable: {err}"),
+        )
+    })?;
+    if !candidate.starts_with(&repository_root) || !candidate.is_dir() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "Project command root leaves the workspace",
+        ));
+    }
+    Ok(candidate)
+}
+
+fn normalize_output_path(
+    repository_root: &FsPath,
+    working_root: &FsPath,
+    raw: &FsPath,
+) -> Option<String> {
+    let relative = if raw.is_absolute() {
+        raw.strip_prefix(repository_root).ok()?.to_path_buf()
+    } else {
+        working_root
+            .join(raw)
+            .strip_prefix(repository_root)
+            .ok()?
+            .to_path_buf()
+    };
+    if relative
+        .components()
+        .any(|part| matches!(part, Component::ParentDir))
+    {
+        return None;
+    }
+    Some(relative.to_string_lossy().replace('\\', "/"))
+}
+
+fn parse_output_locations(
+    repository_root: &FsPath,
+    working_root: &FsPath,
+    output: &str,
+) -> Vec<ProjectOutputLocation> {
     let mut locations = Vec::new();
     for line_text in output.lines() {
         let Some(token) = line_text
             .split_whitespace()
-            .map(|token| token.trim_matches(|ch: char| matches!(ch, '(' | ')' | '[' | ']' | ',')))
+            .map(|token| {
+                token.trim_matches(|ch: char| matches!(ch, '(' | ')' | '[' | ']' | ',' | ':'))
+            })
             .find(|token| {
                 let mut parts = token.rsplitn(3, ':');
                 parts.next().is_some_and(|part| part.parse::<u32>().is_ok())
@@ -7255,21 +7631,12 @@ fn parse_output_locations(root: &FsPath, output: &str) -> Vec<ProjectOutputLocat
         };
         let raw = raw.trim_start_matches("-->");
         let path = std::path::Path::new(raw);
-        let relative = if path.is_absolute() {
-            path.strip_prefix(root).ok()
-        } else {
-            Some(path)
-        };
-        let Some(relative) = relative else { continue };
-        if relative
-            .components()
-            .any(|part| matches!(part, std::path::Component::ParentDir))
-        {
+        let Some(path) = normalize_output_path(repository_root, working_root, path) else {
             continue;
-        }
+        };
         let message = line_text.trim().chars().take(300).collect();
         locations.push(ProjectOutputLocation {
-            path: relative.to_string_lossy().replace('\\', "/"),
+            path,
             line,
             column,
             message,
@@ -7319,8 +7686,19 @@ fn discover_project_tests(root: &FsPath, tasks: &[ProjectTask]) -> Vec<ProjectTe
         return Vec::new();
     };
     let mut tests = Vec::new();
+    let task_prefix = if task.root == "." {
+        None
+    } else {
+        Some(format!("{}/", task.root))
+    };
     let tree = list_source_tree(&WorkId::from("test-discovery".to_string()), root).ok();
     for file in tree.into_iter().flat_map(|tree| tree.files).take(20_000) {
+        if task_prefix
+            .as_ref()
+            .is_some_and(|prefix| !file.path.starts_with(prefix))
+        {
+            continue;
+        }
         let path = root.join(&file.path);
         let extension = path
             .extension()
@@ -7436,7 +7814,7 @@ async fn start_project_task_run(
     Json(body): Json<RunProjectTaskRequest>,
 ) -> ApiResult<Json<ProjectTaskRun>> {
     let id = parse_work_id(&work_id)?;
-    let (item, lease, root, task) = admit_forge_canary(
+    let (item, lease, root, working_root, task) = admit_forge_canary(
         &state,
         medousa_forge::execution::ExecutionClass::LocalMutation,
         256 * 1024,
@@ -7469,7 +7847,8 @@ async fn start_project_task_run(
                         )
                     })?;
                 target_project_test(&root, &mut task, test_id.as_deref())?;
-                Ok((item, lease, root, task))
+                let working_root = resolve_project_task_root(&root, &task.root)?;
+                Ok((item, lease, root, working_root, task))
             }
         },
     )
@@ -7501,7 +7880,7 @@ async fn start_project_task_run(
         })?;
     let mut child = background_tokio_command(&task.argv[0])
         .args(&task.argv[1..])
-        .current_dir(&root)
+        .current_dir(&working_root)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)
@@ -7527,7 +7906,8 @@ async fn start_project_task_run(
             Arc::new(ProjectTaskRunHandle {
                 store: tokio::sync::Mutex::new(ProjectTaskRunStore {
                     run: run.clone(),
-                    root: root.clone(),
+                    repository_root: root.clone(),
+                    working_root: working_root.clone(),
                     ready_re,
                     problem_re,
                     stdout: TaskOutputTail::default(),
@@ -7587,6 +7967,7 @@ async fn start_project_task_run(
                     &mut locations,
                     parse_output_locations_with_matcher(
                         &root,
+                        &working_root,
                         &format!("{stdout}\n{stderr}"),
                         problem_re.as_ref(),
                     ),
@@ -7841,7 +8222,7 @@ async fn run_project_task(
     Json(body): Json<RunProjectTaskRequest>,
 ) -> ApiResult<Json<ProjectTaskResult>> {
     let id = parse_work_id(&work_id)?;
-    let (item, lease, root, task) = admit_forge_canary(
+    let (item, lease, root, working_root, task) = admit_forge_canary(
         &state,
         medousa_forge::execution::ExecutionClass::LocalMutation,
         256 * 1024,
@@ -7872,14 +8253,15 @@ async fn run_project_task(
                             "Project command is no longer available",
                         )
                     })?;
-                Ok((item, lease, root, task))
+                let working_root = resolve_project_task_root(&root, &task.root)?;
+                Ok((item, lease, root, working_root, task))
             }
         },
     )
     .await?;
     let forge = forge(&state);
     let argv = task.argv.clone();
-    let root_for_command = root.clone();
+    let root_for_command = working_root.clone();
     let started = std::time::Instant::now();
     let (stdout_bytes, stderr_bytes, capture_truncated, status) = state
         .forge_execution
@@ -7909,7 +8291,7 @@ async fn run_project_task(
         String::from_utf8_lossy(&stdout_bytes[..stdout_bytes.len().min(OUTPUT_CAP)]).into_owned();
     let stderr =
         String::from_utf8_lossy(&stderr_bytes[..stderr_bytes.len().min(OUTPUT_CAP)]).into_owned();
-    let locations = parse_output_locations(&root, &format!("{stdout}\n{stderr}"));
+    let locations = parse_output_locations(&root, &working_root, &format!("{stdout}\n{stderr}"));
     let result = ProjectTaskResult {
         task: task.clone(),
         success: status.success(),
@@ -9758,6 +10140,7 @@ mod source_tests {
             kind: "verify".into(),
             argv: vec!["cargo".into(), "check".into()],
             provider: "cargo".into(),
+            root: ".".into(),
             long_running: false,
             ready_pattern: None,
             problem_matcher: None,
@@ -9777,7 +10160,8 @@ mod source_tests {
                 locations: Vec::new(),
                 ready_url: None,
             },
-            root: PathBuf::new(),
+            repository_root: PathBuf::new(),
+            working_root: PathBuf::new(),
             ready_re: None,
             problem_re: None,
             stdout: TaskOutputTail::default(),
@@ -9871,6 +10255,7 @@ mod source_tests {
             kind: "verify".into(),
             argv: vec!["cargo".into(), "check".into()],
             provider: "cargo".into(),
+            root: ".".into(),
             long_running: false,
             ready_pattern: None,
             problem_matcher: None,
@@ -9997,6 +10382,7 @@ mod source_tests {
             },
         );
         let locations = parse_output_locations_with_matcher(
+            &root,
             &root,
             "src/app.ts:10:2: Unexpected token",
             Some(&matcher),
@@ -10381,6 +10767,7 @@ mod source_tests {
                 tests: false,
                 search: false,
                 changes: false,
+                primary_task: Some("cargo-run".into()),
             }),
             updated_at: None,
         };
@@ -10388,6 +10775,7 @@ mod source_tests {
         assert_eq!(encoded["secondary_path"], "src/main.rs");
         assert_eq!(encoded["layout"]["context_panel"], "problems");
         assert_eq!(encoded["layout"]["terminal"], true);
+        assert_eq!(encoded["layout"]["primary_task"], "cargo-run");
         assert!(encoded["layout"].get("tests").is_none());
     }
 
@@ -10591,15 +10979,113 @@ mod source_tests {
     }
 
     #[test]
+    fn project_tasks_include_bounded_nested_roots_and_lockfile_package_managers() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(
+            Command::new("git")
+                .args(["init", "-q"])
+                .current_dir(root.path())
+                .status()
+                .unwrap()
+                .success()
+        );
+        let app = root.path().join("apps/web");
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::write(
+            app.join("package.json"),
+            r#"{"scripts":{"build":"vite build","dev":"vite","lint":"eslint ."}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.path().join("pnpm-lock.yaml"),
+            "lockfileVersion: '9.0'\n",
+        )
+        .unwrap();
+
+        let tasks = detected_project_tasks(root.path());
+        let build = tasks
+            .iter()
+            .find(|task| task.id.starts_with("pnpm-build@apps-web-"))
+            .expect("nested build task");
+        assert_eq!(build.root, "apps/web");
+        assert_eq!(build.argv, ["pnpm", "run", "build"]);
+        assert!(tasks.iter().any(|task| {
+            task.id.starts_with("pnpm-dev@apps-web-") && task.kind == "run" && task.long_running
+        }));
+        assert!(
+            tasks
+                .iter()
+                .any(|task| task.id.starts_with("pnpm-lint@apps-web-"))
+        );
+    }
+
+    #[test]
+    fn cargo_tasks_offer_build_and_only_unambiguous_run() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("src")).unwrap();
+        std::fs::write(
+            root.path().join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        std::fs::write(root.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+        let tasks = detected_project_tasks(root.path());
+        assert!(tasks.iter().any(|task| task.id == "cargo-build"));
+        assert!(tasks.iter().any(|task| {
+            task.id == "cargo-run" && task.kind == "run" && task.argv == ["cargo", "run"]
+        }));
+    }
+
+    #[test]
+    fn project_task_roots_cannot_escape_the_repository() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("apps/web")).unwrap();
+        let nested = resolve_project_task_root(root.path(), "apps/web").unwrap();
+        assert_eq!(
+            nested,
+            std::fs::canonicalize(root.path().join("apps/web")).unwrap()
+        );
+        assert!(resolve_project_task_root(root.path(), "../outside").is_err());
+        assert!(resolve_project_task_root(root.path(), "/tmp").is_err());
+    }
+
+    #[test]
+    fn project_task_root_is_backward_compatible_and_scoped_ids_do_not_alias() {
+        let task: ProjectTask = serde_json::from_value(serde_json::json!({
+            "id": "cargo-check",
+            "label": "Check",
+            "kind": "verify",
+            "argv": ["cargo", "check"],
+            "provider": "cargo"
+        }))
+        .unwrap();
+        assert_eq!(task.root, ".");
+        assert_ne!(
+            scoped_task_id("npm-build", "apps/web"),
+            scoped_task_id("npm-build", "apps_web")
+        );
+    }
+
+    #[test]
     fn project_output_locations_stay_repository_relative() {
         let root = PathBuf::from("/work/project");
         let locations = parse_output_locations(
+            &root,
             &root,
             "error --> src/lib.rs:42:7\nat /work/project/tests/app.test.ts:9:2",
         );
         assert_eq!(locations[0].path, "src/lib.rs");
         assert_eq!(locations[0].line, 42);
         assert_eq!(locations[1].path, "tests/app.test.ts");
+    }
+
+    #[test]
+    fn nested_task_output_locations_are_repository_relative() {
+        let root = PathBuf::from("/work/project");
+        let working = root.join("apps/web");
+        let locations =
+            parse_output_locations(&root, &working, "src/app.ts:12:3: Unexpected token");
+        assert_eq!(locations[0].path, "apps/web/src/app.ts");
     }
 
     #[test]

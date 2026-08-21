@@ -34,6 +34,8 @@ export type CodeTasksLease = { leaseId: string; generation: number };
 export type CodeTasksControllerDeps = {
   getWorkId: () => string;
   persistTestsOpen: (open: boolean) => void;
+  persistSelectedTask: (taskId: string | null) => void;
+  prepareRun: () => Promise<boolean>;
   ensureLease: () => Promise<CodeTasksLease>;
   onError: (message: string) => void;
   onOpenTerminal?: () => void;
@@ -43,6 +45,7 @@ export type CodeTasksControllerDeps = {
 export class CodeTasksController {
   projectTasks = $state<ProjectTask[]>([]);
   selectedTaskId = $state("");
+  preparing = $state(false);
   running = $state(false);
   result = $state<ProjectTaskResult | null>(null);
   run = $state<ProjectTaskRun | null>(null);
@@ -55,9 +58,15 @@ export class CodeTasksController {
   previewOpening = $state(false);
   projectTests = $state<ProjectTest[]>([]);
   testsOpen = $state(false);
+  catalogError = $state<string | null>(null);
+
+  /** Exact prior invocation, including a targeted test, for truthful reruns. */
+  lastInvocation = $state<{ taskId: string; testId?: string } | null>(null);
+  restoredTaskId = $state<string | null>(null);
 
   #eventStream: CodeTaskRunEventStream | null = null;
   #deps: CodeTasksControllerDeps;
+  #boundWorkId = "";
 
   constructor(deps: CodeTasksControllerDeps) {
     this.#deps = deps;
@@ -73,6 +82,21 @@ export class CodeTasksController {
 
   restoreTestsOpen(open: boolean) {
     this.testsOpen = open;
+  }
+
+  restoreSelectedTask(taskId: string | null | undefined) {
+    this.restoredTaskId = taskId?.trim() || null;
+    if (!this.restoredTaskId) return;
+    if (this.projectTasks.some((task) => task.id === this.restoredTaskId)) {
+      this.selectedTaskId = this.restoredTaskId;
+    }
+  }
+
+  selectTask(taskId: string) {
+    if (!this.projectTasks.some((task) => task.id === taskId)) return;
+    this.selectedTaskId = taskId;
+    this.restoredTaskId = taskId;
+    this.#deps.persistSelectedTask(taskId);
   }
 
   toggleOutput(forceOpen?: boolean) {
@@ -199,26 +223,62 @@ export class CodeTasksController {
   }
 
   async runDetected(test?: ProjectTest) {
-    if (!this.selectedTask || this.running) {
+    const taskId = test?.task_id ?? this.selectedTask?.id;
+    if (!taskId) {
       this.#deps.onOpenTerminal?.();
       return;
     }
+    if (this.running || this.preparing) return;
+    await this.runInvocation({ taskId, testId: test?.id });
+  }
+
+  async runKind(kind: "run" | "build" | "test" | "verify") {
+    const task = this.projectTasks.find((candidate) => candidate.kind === kind);
+    if (!task) {
+      this.#deps.onError(`No ${kind} command was detected for this project.`);
+      return;
+    }
+    if (this.running || this.preparing) return;
+    this.selectTask(task.id);
+    await this.runInvocation({ taskId: task.id });
+  }
+
+  async rerunLast() {
+    if (!this.lastInvocation || this.running || this.preparing) return;
+    await this.runInvocation(this.lastInvocation);
+  }
+
+  async runInvocation(invocation: { taskId: string; testId?: string }) {
+    if (this.running || this.preparing) return;
     const workId = this.#deps.getWorkId();
-    this.running = true;
     this.#deps.onError("");
+    this.preparing = true;
+    try {
+      if (!(await this.#deps.prepareRun())) {
+        this.preparing = false;
+        return;
+      }
+    } catch (err) {
+      this.#deps.onError(err instanceof Error ? err.message : String(err));
+      this.preparing = false;
+      return;
+    }
+    this.preparing = false;
+    this.running = true;
     this.result = null;
     this.outputOpen = true;
     try {
       const lease = await this.#deps.ensureLease();
       this.run = await startProjectTaskRun(
         workId,
-        test?.task_id ?? this.selectedTask.id,
+        invocation.taskId,
         {
           lease_id: lease.leaseId,
           generation: lease.generation,
-          test_id: test?.id,
+          test_id: invocation.testId,
         },
       );
+      this.lastInvocation = { ...invocation };
       this.startRunEvents(workId, this.run);
       while (this.runStillActive(this.run)) {
         await new Promise((resolve) => setTimeout(resolve, 350));
@@ -300,9 +360,18 @@ export class CodeTasksController {
   }
 
   bindTaskList(workId: string, prepared: boolean, interactive: boolean): () => void {
+    if (workId !== this.#boundWorkId) {
+      this.#boundWorkId = workId;
+      this.restoredTaskId = null;
+      this.lastInvocation = null;
+      this.result = null;
+      this.run = null;
+      this.resetOutputBuffers();
+    }
     if (!interactive || !workId || !prepared) {
       this.projectTasks = [];
       this.selectedTaskId = "";
+      this.catalogError = null;
       return () => {};
     }
     let cancelled = false;
@@ -311,11 +380,28 @@ export class CodeTasksController {
         .then((loaded) => {
           if (cancelled) return;
           this.projectTasks = loaded;
-          this.selectedTaskId =
-            loaded.find((task) => task.kind === "verify")?.id ?? loaded[0]?.id ?? "";
+          this.catalogError = null;
+          if (
+            this.restoredTaskId &&
+            loaded.some((task) => task.id === this.restoredTaskId)
+          ) {
+            this.selectedTaskId = this.restoredTaskId;
+            return;
+          }
+          if (!loaded.some((task) => task.id === this.selectedTaskId)) {
+            this.selectedTaskId =
+              loaded.find((task) => task.kind === "run")?.id ??
+              loaded.find((task) => task.kind === "build")?.id ??
+              loaded.find((task) => task.kind === "verify")?.id ??
+              loaded[0]?.id ?? "";
+          }
         })
-        .catch(() => {
-          if (!cancelled) this.projectTasks = [];
+        .catch((err) => {
+          if (cancelled) return;
+          this.projectTasks = [];
+          this.selectedTaskId = "";
+          this.catalogError = err instanceof Error ? err.message : String(err);
+          this.#deps.onError(this.catalogError);
         });
     });
     return () => {
