@@ -51,7 +51,8 @@
   }
 
   .composer-plus-menu-panel {
-    @apply min-w-[12.5rem] py-1;
+    @apply min-w-[12.5rem] overflow-y-auto py-1;
+    max-height: min(28rem, calc(100vh - 2rem));
   }
 
   .composer-plus-menu-item {
@@ -63,6 +64,50 @@
     letter-spacing: var(--menu-label-tracking, -0.01em);
     color: rgb(var(--color-surface-200));
     border-radius: var(--menu-row-radius, 0.45rem);
+  }
+
+  .composer-plus-menu-item:disabled {
+    @apply pointer-events-none opacity-40;
+  }
+
+  .composer-plus-menu-divider {
+    @apply mx-2 my-1 border-t border-surface-700/45;
+  }
+
+  .composer-stash-heading {
+    @apply flex items-center justify-between px-2.5 pb-1 pt-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-content-quiet;
+  }
+
+  .composer-stash-row {
+    @apply mx-1 flex min-w-0 items-center rounded-lg transition hover:bg-surface-800/70;
+  }
+
+  .composer-stash-apply {
+    @apply flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-content-secondary;
+  }
+
+  .composer-stash-copy {
+    @apply flex min-w-0 flex-1 flex-col;
+  }
+
+  .composer-stash-label {
+    @apply truncate text-[11px] font-medium leading-4 text-surface-200;
+  }
+
+  .composer-stash-meta {
+    @apply truncate text-[9px] leading-3 text-content-quiet;
+  }
+
+  .composer-stash-delete {
+    @apply mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-content-quiet opacity-0 transition hover:bg-surface-700/70 hover:text-content-error focus-visible:opacity-100 disabled:pointer-events-none disabled:opacity-40;
+  }
+
+  .composer-stash-row:hover .composer-stash-delete {
+    @apply opacity-100;
+  }
+
+  .composer-stash-error {
+    @apply px-2.5 py-1.5 text-[10px] text-content-error;
   }
 
   .composer-plus-menu-dot {

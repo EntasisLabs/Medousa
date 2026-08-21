@@ -426,6 +426,8 @@
           <ComposerPlusMenu
             disabled={blocked}
             showWorkshop={true}
+            mode={agentRuntime}
+            model={`${runtime.provider}:${runtime.model}`}
             onProfile={() => {
               agentOpen = false;
               profileOpen = true;
@@ -558,6 +560,8 @@
       <div bind:this={plusAnchorEl} class="composer-plus-anchor relative shrink-0">
         <ComposerPlusMenu
           disabled={blocked}
+          mode={agentRuntime}
+          model={`${runtime.provider}:${runtime.model}`}
           onProfile={() => {
             agentOpen = false;
             profileOpen = true;

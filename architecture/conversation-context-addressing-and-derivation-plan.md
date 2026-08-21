@@ -1,6 +1,6 @@
 # Conversation context addressing, derivation, and replication
 
-> **Status:** Fork proof implemented; explicit stashes next (2026-08-21)
+> **Status:** Fork proof and explicit stashes implemented; context extraction next (2026-08-21)
 >
 > **First proof:** Fork a personal chat from any committed transcript entry into a
 > new session and open it in a new Medousa tab.

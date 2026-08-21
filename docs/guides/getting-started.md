@@ -87,6 +87,12 @@ To include a screenshot or document, choose **+ → Attach** or drag files onto
 the composer. The files appear as removable chips before you send; each message
 can include up to five attachments.
 
+To put an unfinished prompt aside intentionally, choose **+ → Stash draft**.
+Medousa saves its text and attachments to the connected workshop, then clears
+the composer. Open **+** again and choose the saved prompt under **Prompt
+stashes** to restore it without sending. The trash control removes a stash;
+ordinary per-conversation draft recovery remains private to the app.
+
 ---
 
 ## 4. Orient yourself (desktop)

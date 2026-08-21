@@ -19,6 +19,10 @@ import type {
   StartSessionCodeProjectRequest,
   DeriveSessionRequest,
   DeriveSessionResponse,
+  CreatePromptStashRequest,
+  DeletePromptStashResponse,
+  PromptStash,
+  PromptStashListResponse,
 } from "$lib/types/generated/daemon_api";
 import type { MediaRef, MediaUploadResponse } from "$lib/types/media";
 import type { StageRoutingMatrix } from "$lib/types/runtime";
@@ -95,6 +99,25 @@ export async function deriveSession(
     request,
     idempotencyKey,
   });
+}
+
+export async function listPromptStashes(): Promise<PromptStash[]> {
+  const response = await invoke<PromptStashListResponse>("prompt_stash_list");
+  return response.stashes;
+}
+
+export async function createPromptStash(
+  request: CreatePromptStashRequest,
+): Promise<PromptStash> {
+  return invoke<PromptStash>("prompt_stash_create", {
+    request: invokePlain(request),
+  });
+}
+
+export async function deletePromptStash(
+  stashId: string,
+): Promise<DeletePromptStashResponse> {
+  return invoke<DeletePromptStashResponse>("prompt_stash_delete", { stashId });
 }
 
 export interface SharedModeStatus {
