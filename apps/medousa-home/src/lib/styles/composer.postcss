@@ -8,6 +8,7 @@
 
   .composer-bar-icon-btn {
     @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-content-tertiary transition hover:bg-surface-700/60 hover:text-surface-200 disabled:pointer-events-none disabled:opacity-40;
+    padding: 0 !important;
   }
 
 
@@ -674,18 +675,29 @@
 
   /* Cursor-quiet stacked composer: textarea above, compact footer below */
   .composer-bar.composer-bar-stacked {
-    @apply flex-col items-stretch gap-0.5 px-2 py-1.5;
+    @apply flex-col items-stretch gap-0;
+    padding: 0.38rem 0.45rem 0.32rem !important;
   }
 
   .composer-bar.composer-bar-stacked .composer-bar-stacked-input {
     /* The stacked desktop composer must honor GrowingTextarea's measured
        height. Its shared base class is flex-1, which makes a column flex
        parent shrink the textarea back to its one-line flex basis. */
-    @apply w-full min-w-0 flex-none px-1.5 pt-0.5;
+    @apply w-full min-w-0 flex-none;
+    min-height: 34px !important;
+    padding: 0.32rem 0.65rem 0.2rem !important;
+    font-size: 13.5px !important;
+    line-height: 1.4 !important;
   }
 
   .composer-bar-footer {
-    @apply flex min-w-0 items-center gap-1;
+    @apply flex min-h-8 min-w-0 items-center gap-0.5;
+    padding-inline: 0.05rem;
+  }
+
+  .composer-bar-stacked .composer-bar-icon-btn {
+    height: 1.75rem;
+    width: 1.75rem;
   }
 
   .composer-bar-footer-spacer {
@@ -694,14 +706,17 @@
 
   /* Satellites under the box — quieter than the runtime lead. */
   .composer-turn-controls {
-    @apply relative flex min-w-0 items-center gap-2;
+    @apply relative flex min-w-0 items-center gap-0.5;
   }
 
   .composer-turn-trigger {
-    @apply inline-flex max-w-full items-center gap-1 rounded-md px-1 py-0.5 text-[11px] transition-colors duration-150;
+    @apply inline-flex max-w-full items-center gap-1 rounded-md transition-colors duration-150;
     border: 1px solid transparent;
     background: transparent;
     color: rgb(var(--theme-text-tertiary));
+    font-size: 10.5px !important;
+    line-height: 1.25 !important;
+    padding: 0.25rem 0.32rem !important;
   }
 
   .composer-turn-trigger:hover:not(:disabled),
@@ -736,23 +751,58 @@
   }
 
   .composer-turn-menu {
-    @apply min-w-[11rem] max-w-[14rem];
+    width: min(18.5rem, calc(100vw - 1rem));
+    min-width: min(18.5rem, calc(100vw - 1rem));
+    max-width: min(18.5rem, calc(100vw - 1rem));
+  }
+
+  .composer-turn-menu .composer-anchored-menu-header {
+    padding: 0.62rem 0.7rem 0.56rem !important;
+  }
+
+  .composer-turn-menu-title {
+    @apply font-semibold text-surface-50;
+    font-size: 13px !important;
+    line-height: 1.25 !important;
+    letter-spacing: -0.01em;
+  }
+
+  .composer-turn-menu-description {
+    @apply mt-0.5 truncate text-content-quiet;
+    font-size: 10.5px !important;
+    line-height: 1.3 !important;
   }
 
   .composer-turn-option {
-    @apply flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-content-secondary transition hover:bg-surface-800/70 hover:text-surface-100;
+    @apply flex w-full items-start gap-2.5 rounded-lg text-left text-content-secondary transition hover:bg-surface-800/70 hover:text-surface-100;
+    min-height: 2.8rem;
+    padding: 0.48rem 0.62rem !important;
   }
 
   .composer-turn-option-active {
-    @apply bg-surface-800/55 text-surface-100;
+    @apply text-surface-100;
+    background: rgb(var(--color-surface-800) / 0.55);
+  }
+
+  .composer-turn-option-icon {
+    @apply mt-0.5 shrink-0 text-content-tertiary opacity-70;
+  }
+
+  .composer-turn-option-copy {
+    @apply flex min-w-0 flex-1 flex-col gap-0.5;
   }
 
   .composer-turn-option-label {
-    @apply min-w-0 flex-1 truncate;
+    @apply min-w-0 truncate text-[12.5px] font-medium leading-tight text-surface-100;
+    letter-spacing: -0.01em;
+  }
+
+  .composer-turn-option-description {
+    @apply text-[10.5px] font-normal leading-snug text-content-quiet;
   }
 
   .composer-turn-option-check {
-    @apply shrink-0 text-content-link;
+    @apply mt-0.5 shrink-0 text-content-link;
   }
 
   .composer-bar:focus-within {
@@ -794,6 +844,9 @@
   .composer-bar-input {
     @apply min-h-[36px] max-h-[25rem] flex-1 resize-none border-0 bg-transparent py-2 pl-2.5 pr-1 text-sm leading-[1.35] text-surface-50 shadow-none placeholder:text-content-tertiary focus:border-0 focus:outline-none focus:ring-0;
     -webkit-font-smoothing: antialiased;
+    overflow-x: hidden !important;
+    resize: none !important;
+    scrollbar-width: thin;
   }
 
   .composer-bar-mobile .composer-bar-input {
@@ -806,14 +859,17 @@
   }
 
   .composer-bar-send {
-    @apply mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[15px] font-semibold transition-all duration-200 ease-out;
-    background-color: rgb(var(--color-surface-600) / 0.55);
+    @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[14px] font-semibold transition-all duration-200 ease-out;
+    margin: 0 !important;
+    padding: 0 !important;
+    background-color: rgb(var(--theme-border) / 0.38);
     color: rgb(var(--theme-text-tertiary));
+    box-shadow: inset 0 0 0 1px rgb(var(--theme-border) / 0.18);
   }
 
   .composer-bar-send:disabled {
-    opacity: 0.55;
-    transform: scale(0.94);
+    opacity: 0.68;
+    transform: none;
   }
 
   .composer-bar-send:not(:disabled) {
@@ -831,7 +887,7 @@
 
   .composer-bar-stop,
   .composer-bar-stop:not(:disabled) {
-    background-color: rgb(var(--color-error-500) / 0.9);
+    background-color: rgb(var(--color-error-500) / 0.78);
     color: rgb(var(--color-surface-50));
     box-shadow:
       0 1px 2px rgb(0 0 0 / 0.2),

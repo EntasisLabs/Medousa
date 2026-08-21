@@ -380,15 +380,15 @@
   }
 
   .chat-composer-bar {
-    @apply rounded-2xl px-3 py-1.5;
-    border: 1px solid rgb(var(--color-surface-600) / 0.22);
-    background-color: rgb(var(--color-surface-800) / 0.35);
+    @apply rounded-[20px];
+    border: 1px solid rgb(var(--theme-border) / 0.36);
+    background-color: rgb(var(--theme-pane) / 0.72);
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.03);
   }
 
   .chat-composer-bar:focus-within {
-    border-color: rgb(var(--color-surface-500) / 0.35);
-    background-color: rgb(var(--color-surface-800) / 0.5);
+    border-color: rgb(var(--theme-border) / 0.58);
+    background-color: rgb(var(--theme-pane) / 0.84);
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 0.04),
       0 0 0 3px rgb(var(--color-primary-500) / 0.08);
@@ -418,7 +418,7 @@
   }
 
   .chat-composer-bar.chat-composer-shell {
-    @apply px-1.5 py-1;
+    padding: 0.38rem 0.45rem 0.32rem !important;
   }
 
   .chat-media-parts {
@@ -545,7 +545,9 @@
 
   /* Quiet under-composer runtime row (Cursor-style meta). */
   .chat-runtime-under {
-    @apply mt-1 flex min-h-0 items-center gap-4 px-1;
+    @apply flex min-h-6 items-center gap-1;
+    margin-top: 0.28rem;
+    padding-inline: 0.28rem;
   }
 
   .chat-runtime-picker {
@@ -553,10 +555,13 @@
   }
 
   .chat-runtime-trigger {
-    @apply inline-flex max-w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-[11px] transition-colors duration-150;
+    @apply inline-flex max-w-full items-center gap-1.5 rounded-md transition-colors duration-150;
     border: 1px solid transparent;
     background: transparent;
     color: rgb(var(--theme-text-secondary));
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+    padding: 0.25rem 0.32rem !important;
   }
 
   .chat-runtime-trigger:hover:not(:disabled),
@@ -570,6 +575,12 @@
 
   .chat-runtime-trigger-label {
     @apply truncate font-medium;
+  }
+
+  .chat-runtime-under > .composer-turn-controls {
+    margin-left: 0.1rem;
+    padding-left: 0.35rem;
+    border-left: 1px solid rgb(var(--theme-border) / 0.32);
   }
 
   .chat-runtime-trigger-chevron {

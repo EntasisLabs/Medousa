@@ -58,9 +58,10 @@
     let frame = 0;
     const place = () => {
       if (!menuEl || !activeTrigger) return;
-      placeComposerPopover(activeTrigger, menuEl);
+      const placement = { maxHeightRatio: openMenu === "reasoning" ? 0.62 : 0.5 };
+      placeComposerPopover(activeTrigger, menuEl, placement);
       frame = window.requestAnimationFrame(() => {
-        if (menuEl && activeTrigger) placeComposerPopover(activeTrigger, menuEl);
+        if (menuEl && activeTrigger) placeComposerPopover(activeTrigger, menuEl, placement);
       });
     };
     void tick().then(place);
@@ -187,7 +188,10 @@
         aria-label="Choose voice"
       >
         <header class="composer-anchored-menu-header">
-          <h2 class="text-sm font-semibold text-surface-50">Voice</h2>
+          <div class="min-w-0">
+            <h2 class="composer-turn-menu-title">Voice</h2>
+            <p class="composer-turn-menu-description">How Medousa sounds in this chat</p>
+          </div>
         </header>
         <div class="composer-anchored-menu-body space-y-0.5">
           {#each voiceOptions as option (option.id)}
@@ -201,7 +205,13 @@
               title={option.description}
               onclick={() => void selectVoice(option.id)}
             >
-              <span class="composer-turn-option-label">{option.name}</span>
+              <AudioLines size={14} strokeWidth={1.8} class="composer-turn-option-icon" />
+              <span class="composer-turn-option-copy">
+                <span class="composer-turn-option-label">{option.name}</span>
+                {#if option.description}
+                  <span class="composer-turn-option-description">{option.description}</span>
+                {/if}
+              </span>
               {#if active}
                 <Check size={14} strokeWidth={2} class="composer-turn-option-check" />
               {/if}
@@ -219,7 +229,10 @@
         aria-label="Choose stance"
       >
         <header class="composer-anchored-menu-header">
-          <h2 class="text-sm font-semibold text-surface-50">Stance</h2>
+          <div class="min-w-0">
+            <h2 class="composer-turn-menu-title">Stance</h2>
+            <p class="composer-turn-menu-description">How much detail reaches the answer</p>
+          </div>
         </header>
         <div class="composer-anchored-menu-body space-y-0.5">
           {#each DEPTH_CHARTER_OPTIONS as option (option.id)}
@@ -233,7 +246,11 @@
               title={option.hint}
               onclick={() => void selectDepth(option.id)}
             >
-              <span class="composer-turn-option-label">{option.label}</span>
+              <Compass size={14} strokeWidth={1.8} class="composer-turn-option-icon" />
+              <span class="composer-turn-option-copy">
+                <span class="composer-turn-option-label">{option.label}</span>
+                <span class="composer-turn-option-description">{option.hint}</span>
+              </span>
               {#if active}
                 <Check size={14} strokeWidth={2} class="composer-turn-option-check" />
               {/if}
@@ -251,7 +268,10 @@
         aria-label="Choose reasoning"
       >
         <header class="composer-anchored-menu-header">
-          <h2 class="text-sm font-semibold text-surface-50">Reasoning</h2>
+          <div class="min-w-0">
+            <h2 class="composer-turn-menu-title">Reasoning</h2>
+            <p class="composer-turn-menu-description">How hard the model thinks before answering</p>
+          </div>
         </header>
         <div class="composer-anchored-menu-body space-y-0.5">
           {#each REASONING_EFFORT_OPTIONS as option (option.id)}
@@ -265,7 +285,11 @@
               title={option.hint}
               onclick={() => void selectReasoning(option.id)}
             >
-              <span class="composer-turn-option-label">{option.label}</span>
+              <Brain size={14} strokeWidth={1.8} class="composer-turn-option-icon" />
+              <span class="composer-turn-option-copy">
+                <span class="composer-turn-option-label">{option.label}</span>
+                <span class="composer-turn-option-description">{option.hint}</span>
+              </span>
               {#if active}
                 <Check size={14} strokeWidth={2} class="composer-turn-option-check" />
               {/if}
