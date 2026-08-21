@@ -216,7 +216,7 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-6B | Previewed repository replace and complete file/folder operations | ✅ |
 | HCP-6C | Large-file, encoding, binary-preview, and fuzzy Quick Open fallbacks | ✅ |
 | HCP-7A | Streaming execution protocol and bounded output replay | ✅ |
-| HCP-7B | Streaming/configured tasks shipped; terminal-aware, restorable execution is reopened in the [Human Code workbench plan](human-code-workbench-plan.md) | 🔄 |
+| HCP-7B | Streaming, configured, restorable, terminal-aware execution verified by the [Human Code workbench plan](human-code-workbench-plan.md) | ✅ |
 | HCP-7C | Terminal search, profiles, groups, shell integration, file links, and run selection | ✅ |
 | HCP-7D | Remote service detection/proxy and Browser preview handoff | ✅ |
 | HCP-8A | Forge Changes model and branch/upstream/conflict status | ✅ |

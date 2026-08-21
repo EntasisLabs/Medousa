@@ -9,7 +9,12 @@ import {
   listRemappableBindings,
   setChordOverride,
 } from "./commandBindings";
-import { buildCodeCommands } from "./codeCommands";
+import {
+  buildCodeCommands,
+  buildProjectTaskCommands,
+  parseProjectTaskCommandId,
+  publishProjectTaskCommandCatalog,
+} from "./codeCommands";
 import { scoreCommand } from "./score";
 
 describe("code command registry", () => {
@@ -78,5 +83,27 @@ describe("code command registry", () => {
         "mod:Shift+;",
       ),
     ).toBe("workbench.action.showCommands");
+  });
+
+  it("contributes stable active-project commands for every discovered task", () => {
+    publishProjectTaskCommandCatalog("work/alpha", [
+      {
+        id: "npm-dev@nested",
+        label: "Web dev server",
+        kind: "run",
+        argv: ["npm", "run", "dev"],
+        root: "apps/web",
+        provider: "npm",
+        default_rank: 500,
+      },
+    ]);
+
+    const commands = buildProjectTaskCommands("work/alpha");
+    expect(commands).toHaveLength(1);
+    expect(commands[0]?.label).toBe("Run Task: Web dev server");
+    expect(parseProjectTaskCommandId(commands[0]!.id)).toEqual({
+      workId: "work/alpha",
+      taskId: "npm-dev@nested",
+    });
   });
 });

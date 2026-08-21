@@ -1,6 +1,6 @@
 # Human Code workbench plan
 
-> **Status:** Proposed (2026-08-21)
+> **Status:** Verified (2026-08-21)
 >
 > **Scope:** Desktop Medousa Code, Forge project custody, workshop tasks,
 > Terminal, Problems, and Browser preview
@@ -324,14 +324,14 @@ and documentation updates. Status legend: `⬜ pending`, `🔄 active`,
 
 | Slice | Deliverable | Status |
 |---|---|---|
-| HCW-0 | Truthful contracts, telemetry baseline, and acceptance fixtures | 🔄 |
-| HCW-1 | Project command bar, shared Run commands, and save-before-run | 🔄 |
-| HCW-2 | Nested task catalog and useful language/ecosystem providers | 🔄 |
-| HCW-3 | Project run service, ordered output, listing, and reconnect | 🔄 |
-| HCW-4 | Unified bottom panel and task-backed Problems | 🔄 |
-| HCW-5 | Interactive task PTY attach and durable background-service UX | 🔄 |
-| HCW-6 | Editor command consolidation and human coding preferences | 🔄 |
-| HCW-7 | Thin structured testing improvements and final dogfood | 🔄 |
+| HCW-0 | Truthful contracts, telemetry baseline, and acceptance fixtures | ✅ |
+| HCW-1 | Project command bar, shared Run commands, and save-before-run | ✅ |
+| HCW-2 | Nested task catalog and useful language/ecosystem providers | ✅ |
+| HCW-3 | Project run service, ordered output, listing, and reconnect | ✅ |
+| HCW-4 | Unified bottom panel and task-backed Problems | ✅ |
+| HCW-5 | Interactive task PTY attach and durable background-service UX | ✅ |
+| HCW-6 | Editor command consolidation and human coding preferences | ✅ |
+| HCW-7 | Thin structured testing improvements and final dogfood | ✅ |
 
 ### Implementation checkpoints
 
@@ -396,6 +396,27 @@ and documentation updates. Status legend: `⬜ pending`, `🔄 active`,
   root Cargo build/test tasks plus nested Home check/dev/test tasks without
   executing project collection code. HCW-7 stays active until the final full
   acceptance matrix and local/remote interaction audit close.
+- **2026-08-21 — epic closure.** Added the checked-in polyglot acceptance
+  repository under `tests/fixtures/human-code-workbench`, executable catalog
+  assertions for Cargo/npm/Go/Python/.NET/Make/configured tasks, active-project
+  Spotlight entries for every discovered task, configured-task label/matcher
+  preservation during command deduplication, stable Python provider identity,
+  and direct/proxied preview interaction tests. The focused Forge, session,
+  Home, compatibility-contract, and strict-doc gates below close the residual
+  foundation notes without expanding into a full Testing IDE or debugger.
+
+### Verification baseline
+
+| Behavior | Executable evidence |
+|---|---|
+| Catalog breadth and discovery latency boundary | Polyglot fixture plus Medousa-monorepo catalog tests; bounded 48 roots / 256 tasks |
+| Dirty-buffer time-to-first-run gate | Home controller proves a blocked save performs no lease or process start |
+| Startup and ordered output latency | Run snapshots expose `started_at`; first mixed-stream frame is sequence `0` and replay is cursor-tested |
+| Cancellation | Graceful `stopping` then force `cancelled`, with exactly one terminal result/evidence path |
+| Reconnect and retention | Run-list hydration, legacy-route fallback, replay-gap, TTL/count/byte, and active-run non-eviction tests |
+| Local/remote preview | Co-located direct URL and retained remote proxy-path tests |
+| Interactive reattach | Direct-command PTY plus retained human attach/session cursor tests |
+| Daily-driver dogfood | This Cargo workspace and nested `apps/medousa-home` check/dev/test catalog assertion |
 
 ### HCW-0 — Truth and measurement
 

@@ -44,6 +44,8 @@
   import {
     codeCommandIdFromEvent,
     dispatchCodeCommand,
+    parseProjectTaskCommandId,
+    publishProjectTaskCommandCatalog,
   } from "$lib/commands/codeCommands";
   import { codeEditorViewRegistry } from "$lib/code/codeEditorViewRegistry";
   import type { CodeLanguageNavigationKind } from "$lib/code/codeLanguageNavigation";
@@ -1562,6 +1564,12 @@
   });
 
   $effect(() => {
+    const id = workId;
+    const catalog = tasks.projectTasks;
+    if (id) publishProjectTaskCommandCatalog(id, catalog);
+  });
+
+  $effect(() => {
     const path = activeTabPath;
     if (!interactive || !reviewAvailable || !workId || !path) {
       reviewChangedLines = [];
@@ -1921,6 +1929,10 @@
           tasks.toggleOutput();
           break;
         default:
+          {
+            const target = parseProjectTaskCommandId(id);
+            if (target?.workId === workId) void tasks.runTask(target.taskId);
+          }
           break;
       }
     };

@@ -158,6 +158,10 @@ event includes the final result.
 `.vscode/tasks.json` import (`npm` / `shell` / `process`, optional inline
 problem-matcher `pattern`, background `endsPattern`). Full VS Code matcher
 catalogs, `dependsOn`, and presentation panels are not supported.
+Identical root/argv pairs stay deduplicated. When a safe configured task
+duplicates a detected invocation, Forge retains the compatible detected
+ID/provider but applies the configured label, source, readiness, and problem
+matcher instead of silently erasing that user intent.
 Detected descriptors include a repository-relative `root`; discovery uses the
 Git-visible file set, caps the number/depth of nested roots and tasks, and keeps
 root-level IDs stable. Nested IDs include their root. Before spawning, Forge

@@ -241,6 +241,21 @@ describe("CodeTasksController", () => {
     expect(persistSelectedTask).toHaveBeenCalledWith(checkTask.id);
   });
 
+  it("runs an exact contextual task command and remembers it as primary", async () => {
+    const { controller, persistSelectedTask } = createController();
+    const build = { ...checkTask, id: "cargo-build", kind: "build" };
+    controller.projectTasks = [checkTask, build];
+
+    await controller.runTask(build.id);
+
+    expect(persistSelectedTask).toHaveBeenCalledWith(build.id);
+    expect(api.startProjectTaskRun).toHaveBeenCalledWith(
+      "work-1",
+      build.id,
+      expect.objectContaining({ test_id: undefined }),
+    );
+  });
+
   it("ranks healthy provider recommendations above catalog order", () => {
     const { controller } = createController();
     const build = { ...checkTask, id: "cargo-build", kind: "build", default_rank: 300 };

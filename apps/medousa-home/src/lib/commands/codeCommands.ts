@@ -4,12 +4,79 @@
  */
 
 import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
+import { undertakings } from "$lib/stores/undertakings.svelte";
 import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
+import type { ProjectTask } from "$lib/forge";
 import { formatCatalogKeys } from "$lib/utils/keyboardShortcutsCatalog";
 import { effectiveChordFor } from "./commandBindings";
 import type { WorkshopCommand, WorkshopCommandContext } from "./types";
 
 export type CodeCommandDetail = { id: string };
+
+const projectTaskCatalogs = new Map<string, ProjectTask[]>();
+const PROJECT_TASK_COMMAND_PREFIX = "workbench.action.tasks.runTask:";
+
+export function publishProjectTaskCommandCatalog(
+  workId: string,
+  tasks: ProjectTask[],
+) {
+  if (!workId) return;
+  projectTaskCatalogs.delete(workId);
+  projectTaskCatalogs.set(workId, tasks.map((task) => ({ ...task, argv: [...task.argv] })));
+  while (projectTaskCatalogs.size > 16) {
+    const oldest = projectTaskCatalogs.keys().next().value;
+    if (!oldest) break;
+    projectTaskCatalogs.delete(oldest);
+  }
+}
+
+export function projectTaskCommandId(workId: string, taskId: string): string {
+  return `${PROJECT_TASK_COMMAND_PREFIX}${encodeURIComponent(workId)}:${encodeURIComponent(taskId)}`;
+}
+
+export function parseProjectTaskCommandId(
+  commandId: string,
+): { workId: string; taskId: string } | null {
+  if (!commandId.startsWith(PROJECT_TASK_COMMAND_PREFIX)) return null;
+  const encoded = commandId.slice(PROJECT_TASK_COMMAND_PREFIX.length);
+  const separator = encoded.indexOf(":");
+  if (separator < 1) return null;
+  try {
+    const workId = decodeURIComponent(encoded.slice(0, separator));
+    const taskId = decodeURIComponent(encoded.slice(separator + 1));
+    return workId && taskId ? { workId, taskId } : null;
+  } catch {
+    return null;
+  }
+}
+
+export function buildProjectTaskCommands(workId: string): WorkshopCommand[] {
+  return (projectTaskCatalogs.get(workId) ?? [])
+    .slice()
+    .sort(
+      (left, right) =>
+        (right.default_rank ?? 0) - (left.default_rank ?? 0) ||
+        left.label.localeCompare(right.label),
+    )
+    .map<WorkshopCommand>((task) => {
+      const repair = task.requirements?.find((requirement) => !requirement.available)?.repair;
+      const root = task.root && task.root !== "." ? ` · ${task.root}` : "";
+      return {
+        id: projectTaskCommandId(workId, task.id),
+        section: "do",
+        label: `Run Task: ${task.label}`,
+        subtitle: repair ?? `${task.kind}${root} · ${task.argv.join(" ")}`,
+        keywords: `run task ${task.kind} ${task.provider ?? ""} ${task.label} ${task.root ?? ""}`,
+        aliases: [task.label, `Tasks: Run ${task.label}`],
+        verb: "run",
+        run: (ctx) => {
+          ctx.navigate("code");
+          dispatchCodeCommand(projectTaskCommandId(workId, task.id));
+          ctx.callbacks.close();
+        },
+      };
+    });
+}
 
 export function codeCommandIdFromEvent(event: Event): string | null {
   const detail = (event as CustomEvent<CodeCommandDetail | string>).detail;
@@ -33,7 +100,7 @@ function chordHint(commandId: string, fallback: string): string {
 }
 
 export function buildCodeCommands(): WorkshopCommand[] {
-  return [
+  const commands: WorkshopCommand[] = [
     {
       id: "workbench.action.showCommands",
       section: "do",
@@ -565,4 +632,6 @@ export function buildCodeCommands(): WorkshopCommand[] {
       },
     },
   ];
+  const workId = undertakings.detail?.id ?? undertakings.active?.workId ?? "";
+  return [...commands, ...buildProjectTaskCommands(workId)];
 }

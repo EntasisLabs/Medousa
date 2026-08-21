@@ -7322,12 +7322,18 @@ fn add_detected_task(
     } else {
         "detected"
     };
+    let provider = ["cargo", "go", "python", "make", "dotnet"]
+        .into_iter()
+        .find(|provider| id == *provider || id.starts_with(&format!("{provider}-")))
+        .map(str::to_owned)
+        .or_else(|| argv.first().cloned())
+        .unwrap_or_else(|| "project".into());
     tasks.push(ProjectTask {
         version: default_project_task_version(),
         id: scoped_task_id(id, task_root),
         label: label.into(),
         kind: kind.into(),
-        provider: argv.first().cloned().unwrap_or_else(|| "project".into()),
+        provider,
         source: source.into(),
         argv,
         root: task_root.into(),
@@ -8260,16 +8266,35 @@ fn project_tasks(root: &FsPath) -> Vec<ProjectTask> {
         .iter()
         .map(|task| task.id.clone())
         .collect::<std::collections::HashSet<_>>();
-    let seen_argv = tasks
+    let mut seen_argv = tasks
         .iter()
         .map(|task| (task.root.clone(), task.argv.clone()))
         .collect::<std::collections::HashSet<_>>();
     for task in configured_project_tasks(root) {
-        if !seen_ids.insert(task.id.clone())
-            || seen_argv.contains(&(task.root.clone(), task.argv.clone()))
-        {
+        if !seen_ids.insert(task.id.clone()) {
             continue;
         }
+        let invocation = (task.root.clone(), task.argv.clone());
+        if seen_argv.contains(&invocation) {
+            if let Some(existing) = tasks
+                .iter_mut()
+                .find(|existing| existing.root == task.root && existing.argv == task.argv)
+                && existing.source == "detected"
+            {
+                // Preserve the stable detected id/provider while honoring the
+                // more specific configured label and matcher behavior.
+                existing.label = task.label;
+                existing.source = task.source;
+                existing.interactive = task.interactive;
+                existing.background = task.background;
+                existing.long_running = task.long_running;
+                existing.default_rank = task.default_rank.max(existing.default_rank);
+                existing.ready_pattern = task.ready_pattern;
+                existing.problem_matcher = task.problem_matcher;
+            }
+            continue;
+        }
+        seen_argv.insert(invocation);
         tasks.push(task);
     }
     annotate_task_requirements(root, &mut tasks);
@@ -12255,6 +12280,40 @@ mod source_tests {
         assert_eq!(
             controller_test.map(|test| test.task_id.as_str()),
             home_test_task.map(|task| task.id.as_str())
+        );
+    }
+
+    #[test]
+    fn human_code_workbench_fixture_covers_the_supported_catalog_matrix() {
+        let root =
+            FsPath::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/human-code-workbench");
+        let tasks = project_tasks(&root);
+        let has = |provider: &str, kind: &str, task_root: &str| {
+            tasks.iter().any(|task| {
+                task.provider == provider && task.kind == kind && task.root == task_root
+            })
+        };
+
+        assert!(has("cargo", "build", "."));
+        assert!(has("cargo", "run", "crates/runner"));
+        assert!(has("npm", "run", "apps/web"));
+        assert!(has("npm", "test", "apps/web"));
+        assert!(has("go", "run", "cmd/server"));
+        assert!(has("go", "test", "cmd/server"));
+        assert!(has("python", "run", "services/python"));
+        assert!(has("python", "test", "services/python"));
+        assert!(has("dotnet", "run", "services/dotnet"));
+        assert!(has("make", "build", "tools"));
+        assert!(has("make", "test", "tools"));
+        assert!(tasks.iter().any(|task| {
+            task.source == "vscode-task"
+                && task.label == "Fixture configured check"
+                && task.argv.join(" ") == "cargo check"
+        }));
+        assert!(
+            tasks
+                .iter()
+                .all(|task| { task.root == "." || root.join(&task.root).starts_with(&root) })
         );
     }
 

@@ -122,6 +122,9 @@ a private Code IDE chrome.
   Settings → Preferences → Code exposes the bounded shortcut subset that is
   actually remappable. Focus a shortcut and press its replacement; conflicts
   are rejected and each override can be reset independently.
+  Every detected project configuration also contributes a scoped **Run Task:
+  …** Spotlight entry with its root, command, and repair reason. Selecting one
+  remembers it as that project's primary command.
 - The Code explorer lists tracked and unignored repository files. `Cmd/Ctrl+P`
   opens Quick Open with fuzzy path matching: type a file name, `@` plus a name
   for project symbols, or `:` plus a number to jump to a line. `Cmd/Ctrl+Shift+F`

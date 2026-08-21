@@ -1,0 +1,9 @@
+[project]
+name = "fixture-python-app"
+version = "0.1.0"
+
+[project.scripts]
+fixture-python = "fixture_app:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

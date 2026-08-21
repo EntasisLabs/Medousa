@@ -462,6 +462,16 @@ export class CodeTasksController {
     await this.runInvocation({ taskId: task.id });
   }
 
+  async runTask(taskId: string) {
+    const task = this.projectTasks.find((candidate) => candidate.id === taskId);
+    if (!task) {
+      this.#deps.onError("That project command is no longer available. Refresh tasks and try again.");
+      return;
+    }
+    this.selectTask(task.id);
+    await this.runDetected();
+  }
+
   async rerunLast() {
     if (!this.lastInvocation || this.running || this.preparing) return;
     await this.runInvocation(this.lastInvocation);
