@@ -145,6 +145,7 @@ OPERATIONS: dict[str, Operation] = {
     "forge.items.by_work_id.task_runs.by_run_id.events.get": Operation("forge.items.by_work_id.task_runs.by_run_id.events.get", "GET", "/v1/forge/items/{work_id}/task-runs/{run_id}/events", True),
     "forge.items.by_work_id.task_runs.by_run_id.get": Operation("forge.items.by_work_id.task_runs.by_run_id.get", "GET", "/v1/forge/items/{work_id}/task-runs/{run_id}", False),
     "forge.items.by_work_id.task_runs.by_run_id.preview.post": Operation("forge.items.by_work_id.task_runs.by_run_id.preview.post", "POST", "/v1/forge/items/{work_id}/task-runs/{run_id}/preview", False),
+    "forge.items.by_work_id.task_runs.get": Operation("forge.items.by_work_id.task_runs.get", "GET", "/v1/forge/items/{work_id}/task-runs", False),
     "forge.items.by_work_id.tasks.by_task_id.run.post": Operation("forge.items.by_work_id.tasks.by_task_id.run.post", "POST", "/v1/forge/items/{work_id}/tasks/{task_id}/run", False),
     "forge.items.by_work_id.tasks.by_task_id.runs.post": Operation("forge.items.by_work_id.tasks.by_task_id.runs.post", "POST", "/v1/forge/items/{work_id}/tasks/{task_id}/runs", False),
     "forge.items.by_work_id.tasks.get": Operation("forge.items.by_work_id.tasks.get", "GET", "/v1/forge/items/{work_id}/tasks", False),

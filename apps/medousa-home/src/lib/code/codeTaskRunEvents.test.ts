@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CodeTaskRunEventStream,
   parseTaskRunEventPayload,
   taskRunEventIsTerminal,
 } from "$lib/code/codeTaskRunEvents";
@@ -58,5 +59,14 @@ describe("code task run events", () => {
         },
       }),
     ).toBe(true);
+  });
+
+  it("treats since as the next sequence so event zero is not skipped", () => {
+    const stream = new CodeTaskRunEventStream({ onEvent: () => {} });
+    stream.start("work-1", "run-1", 0);
+    expect(stream.cursor).toBe(0);
+    stream.start("work-1", "run-1", 9);
+    expect(stream.cursor).toBe(9);
+    stream.teardown();
   });
 });

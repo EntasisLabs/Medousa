@@ -142,6 +142,7 @@ export const OPERATIONS = {
   "forge.items.by_work_id.task_runs.by_run_id.events.get": { id: "forge.items.by_work_id.task_runs.by_run_id.events.get", method: "GET", path: "/v1/forge/items/{work_id}/task-runs/{run_id}/events", streaming: true },
   "forge.items.by_work_id.task_runs.by_run_id.get": { id: "forge.items.by_work_id.task_runs.by_run_id.get", method: "GET", path: "/v1/forge/items/{work_id}/task-runs/{run_id}", streaming: false },
   "forge.items.by_work_id.task_runs.by_run_id.preview.post": { id: "forge.items.by_work_id.task_runs.by_run_id.preview.post", method: "POST", path: "/v1/forge/items/{work_id}/task-runs/{run_id}/preview", streaming: false },
+  "forge.items.by_work_id.task_runs.get": { id: "forge.items.by_work_id.task_runs.get", method: "GET", path: "/v1/forge/items/{work_id}/task-runs", streaming: false },
   "forge.items.by_work_id.tasks.by_task_id.run.post": { id: "forge.items.by_work_id.tasks.by_task_id.run.post", method: "POST", path: "/v1/forge/items/{work_id}/tasks/{task_id}/run", streaming: false },
   "forge.items.by_work_id.tasks.by_task_id.runs.post": { id: "forge.items.by_work_id.tasks.by_task_id.runs.post", method: "POST", path: "/v1/forge/items/{work_id}/tasks/{task_id}/runs", streaming: false },
   "forge.items.by_work_id.tasks.get": { id: "forge.items.by_work_id.tasks.get", method: "GET", path: "/v1/forge/items/{work_id}/tasks", streaming: false },

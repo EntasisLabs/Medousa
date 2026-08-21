@@ -940,6 +940,13 @@ pub const FORGE_ITEMS_BY_WORK_ID_TASK_RUNS_BY_RUN_ID_PREVIEW_POST: Operation = O
     streaming: false,
 };
 
+pub const FORGE_ITEMS_BY_WORK_ID_TASK_RUNS_GET: Operation = Operation {
+    id: "forge.items.by_work_id.task_runs.get",
+    method: "GET",
+    path: "/v1/forge/items/{work_id}/task-runs",
+    streaming: false,
+};
+
 pub const FORGE_ITEMS_BY_WORK_ID_TASKS_BY_TASK_ID_RUN_POST: Operation = Operation {
     id: "forge.items.by_work_id.tasks.by_task_id.run.post",
     method: "POST",
@@ -2901,6 +2908,7 @@ pub static ALL: &[Operation] = &[
     FORGE_ITEMS_BY_WORK_ID_TASK_RUNS_BY_RUN_ID_EVENTS_GET,
     FORGE_ITEMS_BY_WORK_ID_TASK_RUNS_BY_RUN_ID_GET,
     FORGE_ITEMS_BY_WORK_ID_TASK_RUNS_BY_RUN_ID_PREVIEW_POST,
+    FORGE_ITEMS_BY_WORK_ID_TASK_RUNS_GET,
     FORGE_ITEMS_BY_WORK_ID_TASKS_BY_TASK_ID_RUN_POST,
     FORGE_ITEMS_BY_WORK_ID_TASKS_BY_TASK_ID_RUNS_POST,
     FORGE_ITEMS_BY_WORK_ID_TASKS_GET,

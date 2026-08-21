@@ -78,11 +78,12 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | POST | `/v1/forge/items/{id}/changes/conflict` | Resolve unmerged path (`ours` / `theirs` / `baseline`) and clear conflict state |
 | GET | `/v1/forge/items/{id}/search?query=…` | Repository search (`literal`/`regex`, case/whole-word, include/exclude globs, `scope=all\|changed`, `limit`, `cursor` pagination; bounded to 500 hits; includes untracked, honors ignore by default) |
 | POST | `/v1/forge/items/{id}/search/replace` | Preview (`dry_run=true`) or apply digest-fenced repository replace; optional `paths` subset and `preconditions` |
-| GET, PUT | `/v1/forge/items/{id}/workspace-state` | Restore/preserve open files, cursor positions, bounded dirty drafts, and contextual Code layout (Problems/Terminal/Tests/Search/Changes) |
+| GET, PUT | `/v1/forge/items/{id}/workspace-state` | Restore/preserve open files, cursor positions, bounded dirty drafts, contextual Code layout, and task/output references |
 | GET | `/v1/forge/items/{id}/review` | Structured outcome, risk, verification, attribution, timeline, comments, and changed-file summary |
 | GET | `/v1/forge/evidence/{evidence_id}/receipts` | Sealed compact Coder evidence provenance (never raw payloads) |
 | GET | `/v1/forge/items/{id}/tasks` | Manifest-derived checks plus safe `.vscode/tasks.json` entries |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/runs` | Start a named, cancellable project run |
+| GET | `/v1/forge/items/{id}/task-runs?limit=…` | List bounded active/recent run summaries for reconnect hydration |
 | GET/DELETE | `/v1/forge/items/{id}/task-runs/{run_id}` | Poll or cancel a project run (includes live bounded `stdout`/`stderr`, `locations`, readiness `state`) |
 | GET (SSE) | `/v1/forge/items/{id}/task-runs/{run_id}/events?since=…` | Stream task output chunks, incremental locations, readiness, and terminal state (`?since=` replay) |
 | POST | `/v1/forge/items/{id}/task-runs/{run_id}/preview` | Mint a tokenized private preview path for a ready run |
@@ -180,6 +181,13 @@ replay). Each stdout/stderr tail caps at 256 KiB. Chunk replay keeps at most 400
 events and 1 MiB. The registry admits at most 128 runs and 64 MiB of run
 reservations, retains at most 64 terminal runs, and expires terminal entries
 after 10 minutes. Active runs are never removed by terminal retention.
+Snapshots also carry `test_id`, `started_at`, and `finished_at`. The collection
+route returns at most 64 summaries (20 by default), newest first, without output
+bodies. Its envelope reports active/terminal/retained counts, truncation, the
+terminal limit/TTL, and a monotonic daemon-registry eviction count. Home fetches
+the exact selected snapshot, resumes SSE from `next_seq`,
+and falls back to a persisted active/recent run reference when connected to an
+older daemon without the collection route.
 
 When readiness fires, the daemon may extract a loopback URL (`localhost` /
 `127.0.0.1` / `0.0.0.0`) into `ready_url` and mint a short-lived preview token.
@@ -380,8 +388,9 @@ draft requires the undertaking's live lease and is bounded to 2 MiB per draft,
 8 MiB total, and 32 tabs. Drafts retain their source digest so clients can
 surface recovery conflicts instead of silently applying stale text. The optional
 `layout` object restores contextual Code regions (`context_panel`, `terminal`,
-`tests`, `search`, `changes`) plus the selected `primary_task` independently of
-Home shell desktops; pane geometry and group tab strips remain shell-owned.
+`tests`, `search`, `changes`, `output`) plus `primary_task`, `active_run`, and up
+to 12 `recent_runs` independently of Home shell desktops; pane geometry and
+group tab strips remain shell-owned.
 
 ### Errors
 

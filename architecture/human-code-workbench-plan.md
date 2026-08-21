@@ -327,7 +327,7 @@ and documentation updates. Status legend: `⬜ pending`, `🔄 active`,
 | HCW-0 | Truthful contracts, telemetry baseline, and acceptance fixtures | 🔄 |
 | HCW-1 | Project command bar, shared Run commands, and save-before-run | 🔄 |
 | HCW-2 | Nested task catalog and useful language/ecosystem providers | 🔄 |
-| HCW-3 | Project run service, ordered output, listing, and reconnect | ⬜ |
+| HCW-3 | Project run service, ordered output, listing, and reconnect | 🔄 |
 | HCW-4 | Unified bottom panel and task-backed Problems | ⬜ |
 | HCW-5 | Interactive task PTY attach and durable background-service UX | ⬜ |
 | HCW-6 | Editor command consolidation and human coding preferences | ⬜ |
@@ -355,10 +355,16 @@ and documentation updates. Status legend: `⬜ pending`, `🔄 active`,
   requirement health; rejected unhealthy runs before save/lease work; and
   exposed repair guidance in Home. Added explicit Cargo bin/example
   configurations, Python module plus uv/Poetry script entry points, runnable
-  .NET project commands,
-  and healthy provider-ranked defaults without overriding the saved user
-  selection. HCW-2 remains active for repository acceptance fixtures and
-  local/remote catalog smoke coverage.
+  .NET project commands, and healthy provider-ranked defaults without
+  overriding the saved user selection. HCW-2 remains active for repository
+  acceptance fixtures and local/remote catalog smoke coverage.
+- **2026-08-21 — HCW-3 reconnect foundation.** Added bounded newest-first run
+  listing, exact timestamped snapshots with targeted-test identity, project
+  hydration of active/recent runs, ordered SSE resume from the next sequence,
+  a recent-run Output selector, and persisted Output/run references with a
+  legacy-daemon fallback. The listing envelope also reports retention limits
+  and cumulative registry eviction. HCW-3 stays active for multi-run
+  presentation and reconnect integration/soak coverage.
 
 ### HCW-0 — Truth and measurement
 

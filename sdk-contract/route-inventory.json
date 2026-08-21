@@ -2322,6 +2322,22 @@
         "admin.execute"
       ],
       "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "forge.items.by_work_id.task_runs.get",
+      "path": "/v1/forge/items/{work_id}/task-runs",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
       "method": "DELETE",
       "operation_id": "forge.items.by_work_id.task_runs.by_run_id.delete",
       "path": "/v1/forge/items/{work_id}/task-runs/{run_id}",

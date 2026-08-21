@@ -6,6 +6,7 @@
 use std::ffi::OsStr;
 use std::path::{Component, Path as FsPath, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 
 use axum::Json;
@@ -338,6 +339,10 @@ pub fn forge_surface() -> DeclaredRouter<AppState> {
         .route(
             forge_post_policy("/v1/forge/items/{work_id}/tasks/{task_id}/runs"),
             post(start_project_task_run),
+        )
+        .route(
+            forge_read_policy("/v1/forge/items/{work_id}/task-runs"),
+            get(list_project_task_runs),
         )
         .methods([
             (
@@ -2686,8 +2691,14 @@ struct CodeWorkspaceLayout {
     search: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     changes: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    output: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     primary_task: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    active_run: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    recent_runs: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -3430,6 +3441,21 @@ async fn save_workspace_state(
                     if task_id.is_empty() {
                         layout.primary_task = None;
                     }
+                }
+                if let Some(layout) = body.state.layout.as_mut() {
+                    if let Some(run_id) = layout.active_run.as_mut() {
+                        *run_id = run_id.trim().chars().take(160).collect();
+                        if run_id.is_empty() {
+                            layout.active_run = None;
+                        }
+                    }
+                    layout.recent_runs = layout
+                        .recent_runs
+                        .iter()
+                        .map(|run_id| run_id.trim().chars().take(160).collect::<String>())
+                        .filter(|run_id| !run_id.is_empty())
+                        .take(12)
+                        .collect();
                 }
                 let open_paths = body
                     .state
@@ -6413,6 +6439,11 @@ struct ProjectTaskRun {
     work_id: String,
     state: String,
     task: ProjectTask,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    test_id: Option<String>,
+    started_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    finished_at: Option<String>,
     result: Option<ProjectTaskResult>,
     /// Bounded live stdout retained while the run is active (and after for replay).
     #[serde(default)]
@@ -6431,6 +6462,55 @@ struct ProjectTaskRun {
     /// Loopback URL detected when a long-running task became ready.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ready_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ProjectTaskRunSummary {
+    run_id: String,
+    work_id: String,
+    state: String,
+    task: ProjectTask,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    test_id: Option<String>,
+    started_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    finished_at: Option<String>,
+    terminal: bool,
+    output_truncated: bool,
+    next_seq: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ready_url: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ProjectTaskRunListResponse {
+    runs: Vec<ProjectTaskRunSummary>,
+    truncated: bool,
+    retained_count: usize,
+    active_count: usize,
+    terminal_count: usize,
+    terminal_limit: usize,
+    terminal_ttl_seconds: u64,
+    registry_evicted_count: u64,
+}
+
+impl From<ProjectTaskRun> for ProjectTaskRunSummary {
+    fn from(run: ProjectTaskRun) -> Self {
+        let terminal = task_run_is_terminal(&run);
+        Self {
+            run_id: run.run_id,
+            work_id: run.work_id,
+            state: run.state,
+            task: run.task,
+            test_id: run.test_id,
+            started_at: run.started_at,
+            finished_at: run.finished_at,
+            terminal,
+            output_truncated: run.output_truncated,
+            next_seq: run.next_seq,
+            ready_url: run.ready_url,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -6561,17 +6641,22 @@ static PROJECT_TASK_CHILDREN: LazyLock<
         std::collections::HashMap<String, Arc<tokio::sync::Mutex<tokio::process::Child>>>,
     >,
 > = LazyLock::new(|| tokio::sync::RwLock::new(std::collections::HashMap::new()));
+static PROJECT_TASK_EVICTED_COUNT: AtomicU64 = AtomicU64::new(0);
 
 fn prune_project_task_runs(
     runs: &mut std::collections::HashMap<String, Arc<ProjectTaskRunHandle>>,
 ) {
     let now = std::time::Instant::now();
     runs.retain(|_, handle| {
-        handle
+        let retain = handle
             .terminal_at
             .lock()
             .expect("project task terminal timestamp")
-            .is_none_or(|terminal| now.duration_since(terminal) < PROJECT_TASK_TERMINAL_TTL)
+            .is_none_or(|terminal| now.duration_since(terminal) < PROJECT_TASK_TERMINAL_TTL);
+        if !retain {
+            PROJECT_TASK_EVICTED_COUNT.fetch_add(1, Ordering::Relaxed);
+        }
+        retain
     });
     let mut terminal = runs
         .iter()
@@ -6586,7 +6671,9 @@ fn prune_project_task_runs(
     terminal.sort_by_key(|(at, _)| *at);
     let overflow = terminal.len().saturating_sub(PROJECT_TASK_TERMINAL_CAP);
     for (_, id) in terminal.into_iter().take(overflow) {
-        runs.remove(&id);
+        if runs.remove(&id).is_some() {
+            PROJECT_TASK_EVICTED_COUNT.fetch_add(1, Ordering::Relaxed);
+        }
     }
 }
 
@@ -6827,6 +6914,9 @@ async fn publish_task_state(run_id: &str, state: &str, result: Option<ProjectTas
         store.run.result = Some(result);
         store.stdout.clear();
         store.stderr.clear();
+    }
+    if task_run_is_terminal(&store.run) && store.run.finished_at.is_none() {
+        store.run.finished_at = Some(chrono::Utc::now().to_rfc3339());
     }
     let seq = store.run.next_seq;
     store.run.next_seq = seq.saturating_add(1);
@@ -8282,6 +8372,9 @@ async fn start_project_task_run(
         work_id: work_id.clone(),
         state: "running".into(),
         task: task.clone(),
+        test_id: body.test_id.clone(),
+        started_at: chrono::Utc::now().to_rfc3339(),
+        finished_at: None,
         result: None,
         stdout: String::new(),
         stderr: String::new(),
@@ -8430,6 +8523,56 @@ async fn start_project_task_run(
         }
     });
     Ok(Json(run))
+}
+
+#[derive(Debug, Deserialize)]
+struct ProjectTaskRunsQuery {
+    #[serde(default = "default_project_task_run_list_limit")]
+    limit: usize,
+}
+
+fn default_project_task_run_list_limit() -> usize {
+    20
+}
+
+async fn list_project_task_runs(
+    Path(work_id): Path<String>,
+    Query(query): Query<ProjectTaskRunsQuery>,
+) -> ApiResult<Json<ProjectTaskRunListResponse>> {
+    let handles = {
+        let mut runs = PROJECT_TASK_RUNS.write().await;
+        prune_project_task_runs(&mut runs);
+        runs.values().cloned().collect::<Vec<_>>()
+    };
+    let mut summaries = Vec::new();
+    for handle in handles {
+        let run = handle.store.lock().await.snapshot();
+        if run.work_id == work_id {
+            summaries.push(ProjectTaskRunSummary::from(run));
+        }
+    }
+    summaries.sort_by(|left, right| {
+        right
+            .started_at
+            .cmp(&left.started_at)
+            .then(right.run_id.cmp(&left.run_id))
+    });
+    let retained_count = summaries.len();
+    let active_count = summaries.iter().filter(|run| !run.terminal).count();
+    let terminal_count = retained_count.saturating_sub(active_count);
+    let limit = query.limit.clamp(1, PROJECT_TASK_TERMINAL_CAP);
+    let truncated = retained_count > limit;
+    summaries.truncate(limit);
+    Ok(Json(ProjectTaskRunListResponse {
+        runs: summaries,
+        truncated,
+        retained_count,
+        active_count,
+        terminal_count,
+        terminal_limit: PROJECT_TASK_TERMINAL_CAP,
+        terminal_ttl_seconds: PROJECT_TASK_TERMINAL_TTL.as_secs(),
+        registry_evicted_count: PROJECT_TASK_EVICTED_COUNT.load(Ordering::Relaxed),
+    }))
 }
 
 async fn get_project_task_run(
@@ -10582,6 +10725,9 @@ mod source_tests {
                 work_id: "work-1".into(),
                 state: "running".into(),
                 task,
+                test_id: None,
+                started_at: "2026-08-21T00:00:00Z".into(),
+                finished_at: None,
                 result: None,
                 stdout: String::new(),
                 stderr: String::new(),
@@ -10647,6 +10793,7 @@ mod source_tests {
     #[test]
     fn terminal_registry_retention_never_evicts_active_runs() {
         let now = std::time::Instant::now();
+        let evicted_before = PROJECT_TASK_EVICTED_COUNT.load(Ordering::Relaxed);
         let mut runs = std::collections::HashMap::new();
         runs.insert(
             "expired".into(),
@@ -10675,6 +10822,7 @@ mod source_tests {
             runs.keys().filter(|id| id.starts_with("terminal-")).count(),
             PROJECT_TASK_TERMINAL_CAP
         );
+        assert!(PROJECT_TASK_EVICTED_COUNT.load(Ordering::Relaxed) > evicted_before);
     }
 
     #[test]
@@ -10702,6 +10850,9 @@ mod source_tests {
             work_id: "work-1".into(),
             state: "cancelled".into(),
             task: task.clone(),
+            test_id: None,
+            started_at: "2026-08-21T00:00:00Z".into(),
+            finished_at: None,
             result: None,
             stdout: String::new(),
             stderr: String::new(),
@@ -10722,6 +10873,12 @@ mod source_tests {
             locations: Vec::new(),
         });
         assert!(task_run_is_terminal(&run));
+        let summary = ProjectTaskRunSummary::from(run.clone());
+        assert!(summary.terminal);
+        assert_eq!(summary.started_at, "2026-08-21T00:00:00Z");
+        let encoded_summary = serde_json::to_value(summary).unwrap();
+        assert!(encoded_summary.get("stdout").is_none());
+        assert!(encoded_summary.get("result").is_none());
         assert!(task_output_event_is_terminal(&ProjectTaskOutputEvent {
             seq: 2,
             run_id: "run-1".into(),
@@ -11204,7 +11361,10 @@ mod source_tests {
                 tests: false,
                 search: false,
                 changes: false,
+                output: true,
                 primary_task: Some("cargo-run".into()),
+                active_run: Some("run-2".into()),
+                recent_runs: vec!["run-2".into(), "run-1".into()],
             }),
             updated_at: None,
         };
@@ -11213,6 +11373,8 @@ mod source_tests {
         assert_eq!(encoded["layout"]["context_panel"], "problems");
         assert_eq!(encoded["layout"]["terminal"], true);
         assert_eq!(encoded["layout"]["primary_task"], "cargo-run");
+        assert_eq!(encoded["layout"]["active_run"], "run-2");
+        assert_eq!(encoded["layout"]["recent_runs"][1], "run-1");
         assert!(encoded["layout"].get("tests").is_none());
     }
 

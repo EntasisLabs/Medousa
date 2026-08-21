@@ -348,9 +348,19 @@
       codeWorkbenchState.setTestsOpen(workId, open);
       codeWorkspace.scheduleLayoutPersist(workId);
     },
+    persistOutputOpen: (open) => {
+      if (!workId) return;
+      codeWorkbenchState.setOutputOpen(workId, open);
+      codeWorkspace.scheduleLayoutPersist(workId);
+    },
     persistSelectedTask: (taskId) => {
       if (!workId) return;
       codeWorkbenchState.setPrimaryTask(workId, taskId);
+      codeWorkspace.scheduleLayoutPersist(workId);
+    },
+    persistRunRefs: (activeRunId, recentRunIds) => {
+      if (!workId) return;
+      codeWorkbenchState.setTaskRuns(workId, activeRunId, recentRunIds);
       codeWorkspace.scheduleLayoutPersist(workId);
     },
     prepareRun: () => save.saveAll(),
@@ -1777,7 +1787,10 @@
       const layout = codeWorkbenchState.layoutFor(id);
       problems.restorePanel(layout.context_panel);
       tasks.restoreTestsOpen(layout.tests);
+      tasks.restoreOutputOpen(layout.output || tasks.running);
       tasks.restoreSelectedTask(layout.primary_task);
+      tasks.restoreRunRefs(layout.active_run, layout.recent_runs);
+      void tasks.hydrateTaskRuns(id);
       searchOpen = layout.search;
       changes.restoreOpen(layout.changes);
       if (layout.terminal) void toggleTerminalDock(true);

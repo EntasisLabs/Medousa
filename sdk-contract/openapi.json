@@ -15223,6 +15223,66 @@
         }
       }
     },
+    "/v1/forge/items/{work_id}/task-runs": {
+      "get": {
+        "operationId": "forge.items.by_work_id.task_runs.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "FORGE_ITEMS_BY_WORK_ID_TASK_RUNS_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "forge.items.by_work_id.task_runs.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "forge.items.by_work_id.task_runs.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "forge.items.by_work_id.task_runs.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
     "/v1/forge/items/{work_id}/task-runs/{run_id}": {
       "delete": {
         "operationId": "forge.items.by_work_id.task_runs.by_run_id.delete",

@@ -29,8 +29,11 @@ export type CodeWorkbenchLayout = {
   tests: boolean;
   search: boolean;
   changes: boolean;
+  output: boolean;
   /** User-selected project command. Stable task id from the daemon catalog. */
   primary_task: string | null;
+  active_run: string | null;
+  recent_runs: string[];
 };
 
 export const DEFAULT_CODE_WORKBENCH_LAYOUT: CodeWorkbenchLayout = {
@@ -39,7 +42,10 @@ export const DEFAULT_CODE_WORKBENCH_LAYOUT: CodeWorkbenchLayout = {
   tests: false,
   search: false,
   changes: false,
+  output: false,
   primary_task: null,
+  active_run: null,
+  recent_runs: [],
 };
 
 const HISTORY_CAP = 100;
@@ -68,10 +74,21 @@ export function normalizeCodeWorkbenchLayout(
     tests: raw.tests === true,
     search: raw.search === true,
     changes: raw.changes === true,
+    output: raw.output === true,
     primary_task:
       typeof raw.primary_task === "string" && raw.primary_task.trim()
         ? raw.primary_task.trim().slice(0, 160)
         : null,
+    active_run:
+      typeof raw.active_run === "string" && raw.active_run.trim()
+        ? raw.active_run.trim().slice(0, 160)
+        : null,
+    recent_runs: Array.isArray(raw.recent_runs)
+      ? raw.recent_runs
+          .filter((runId): runId is string => typeof runId === "string" && Boolean(runId.trim()))
+          .map((runId) => runId.trim().slice(0, 160))
+          .slice(0, 12)
+      : [],
   };
 }
 
@@ -188,9 +205,23 @@ class CodeWorkbenchState {
     this.patchLayout(workId, { changes: open });
   }
 
+  setOutputOpen(workId: string, open: boolean) {
+    this.patchLayout(workId, { output: open });
+  }
+
   setPrimaryTask(workId: string, taskId: string | null) {
     this.patchLayout(workId, {
       primary_task: taskId?.trim().slice(0, 160) || null,
+    });
+  }
+
+  setTaskRuns(workId: string, activeRun: string | null, recentRuns: string[]) {
+    this.patchLayout(workId, {
+      active_run: activeRun?.trim().slice(0, 160) || null,
+      recent_runs: recentRuns
+        .filter((runId) => Boolean(runId.trim()))
+        .map((runId) => runId.trim().slice(0, 160))
+        .slice(0, 12),
     });
   }
 

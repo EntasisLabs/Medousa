@@ -49,7 +49,8 @@ export class CodeTaskRunEventStream {
   private source: EventSource | null = null;
   private workId: string | null = null;
   private runId: string | null = null;
-  private lastSeq = 0;
+  /** Last applied sequence; -1 means no event has been applied yet. */
+  private lastSeq = -1;
   private connecting = false;
   private closed = false;
   private readonly reconnect = new ReconnectScheduler({
@@ -62,7 +63,7 @@ export class CodeTaskRunEventStream {
   }
 
   get cursor(): number {
-    return this.lastSeq;
+    return this.lastSeq + 1;
   }
 
   start(workId: string, runId: string, since = 0) {
@@ -71,7 +72,7 @@ export class CodeTaskRunEventStream {
     this.closed = false;
     this.workId = workId.trim() || null;
     this.runId = runId.trim() || null;
-    this.lastSeq = Math.max(0, since);
+    this.lastSeq = Math.max(-1, since - 1);
     if (this.workId && this.runId) void this.connect();
   }
 
@@ -81,7 +82,7 @@ export class CodeTaskRunEventStream {
     this.reconnect.cancel();
     this.workId = null;
     this.runId = null;
-    this.lastSeq = 0;
+    this.lastSeq = -1;
   }
 
   teardown() {
@@ -111,7 +112,7 @@ export class CodeTaskRunEventStream {
       this.source = null;
     }
     try {
-      const url = await forgeTaskRunEventsUrl(workId, runId, this.lastSeq);
+      const url = await forgeTaskRunEventsUrl(workId, runId, this.lastSeq + 1);
       if (this.workId !== workId || this.runId !== runId || this.closed) {
         this.connecting = false;
         return;

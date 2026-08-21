@@ -241,6 +241,11 @@ and check commands; an explicit selection remains the project default.
 - The latest result stays beside Code with a one-click exact rerun, including
   the same targeted test when one was selected. Compiler, test, and stack-trace
   locations open the referenced project file and line.
+- Active and recent runs belong to the project rather than the mounted editor.
+  Leave Code or reopen Medousa and the Output dock reconnects to the active run
+  from its next ordered event. After completion, use the Output header to switch
+  among retained recent runs. Output visibility and active/recent references
+  restore with the project; older workshops fall back to the last saved run.
 - Completed checks are written into Forge command evidence. Review uses the
   latest completed result to say whether verification passed; cancelled runs
   are preserved as activity but do not pretend the revision failed.

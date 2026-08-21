@@ -3,9 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({
   startProjectTaskRun: vi.fn(),
   getProjectTaskRun: vi.fn(),
+  getProjectTaskRuns: vi.fn(),
   cancelProjectTaskRun: vi.fn(),
   getProjectTasks: vi.fn(),
   getProjectTests: vi.fn(),
+  isMissingForgeRoute: vi.fn((err: unknown) => (err as { status?: number })?.status === 404),
 }));
 
 vi.mock("$lib/code/codeDocumentService", () => api);
@@ -44,7 +46,9 @@ function createController(overrides?: { prepareRun?: () => Promise<boolean> }) {
   const controller = new CodeTasksController({
     getWorkId: () => "work-1",
     persistTestsOpen: vi.fn(),
+    persistOutputOpen: vi.fn(),
     persistSelectedTask,
+    persistRunRefs: vi.fn(),
     prepareRun: overrides?.prepareRun ?? vi.fn(async () => true),
     ensureLease,
     onError,
@@ -68,6 +72,17 @@ describe("CodeTasksController", () => {
       stderr: "",
       locations: [],
     });
+    api.getProjectTaskRuns.mockResolvedValue({
+      runs: [],
+      truncated: false,
+      retained_count: 0,
+      active_count: 0,
+      terminal_count: 0,
+      terminal_limit: 64,
+      terminal_ttl_seconds: 600,
+      registry_evicted_count: 0,
+    });
+    api.getProjectTasks.mockResolvedValue([checkTask]);
   });
 
   it("does not start a task when saving dirty buffers is blocked", async () => {
@@ -151,5 +166,95 @@ describe("CodeTasksController", () => {
     expect(onError).toHaveBeenCalledWith("Install cargo on the workshop machine.");
     expect(prepareRun).not.toHaveBeenCalled();
     expect(ensureLease).not.toHaveBeenCalled();
+  });
+
+  it("hydrates an active daemon run after the Code surface remounts", async () => {
+    const { controller } = createController();
+    const active = {
+      run_id: "run-active",
+      work_id: "work-1",
+      state: "running",
+      task: checkTask,
+      test_id: "src/lib.rs::checks",
+      started_at: "2026-08-21T00:00:00Z",
+      terminal: false,
+      output_truncated: false,
+      next_seq: 4,
+    };
+    api.getProjectTaskRuns.mockResolvedValue({
+      runs: [active],
+      truncated: false,
+      retained_count: 1,
+      active_count: 1,
+      terminal_count: 0,
+      terminal_limit: 64,
+      terminal_ttl_seconds: 600,
+      registry_evicted_count: 0,
+    });
+    api.getProjectTaskRun.mockResolvedValue({
+      ...active,
+      stdout: "building\n",
+      stderr: "",
+      locations: [],
+      result: null,
+    });
+
+    const unbind = controller.bindTaskList("work-1", true, true);
+
+    await vi.waitFor(() => expect(controller.run?.run_id).toBe("run-active"));
+    expect(controller.liveStdout).toBe("building\n");
+    expect(controller.running).toBe(true);
+    expect(controller.lastInvocation).toEqual({
+      taskId: checkTask.id,
+      testId: "src/lib.rs::checks",
+    });
+    unbind();
+    controller.dispose();
+  });
+
+  it("falls back cleanly when an older daemon has no run listing route", async () => {
+    const { controller, onError } = createController();
+    api.getProjectTaskRuns.mockRejectedValue(Object.assign(new Error("missing"), { status: 404 }));
+
+    const unbind = controller.bindTaskList("work-1", true, true);
+
+    await vi.waitFor(() => expect(controller.runListingSupported).toBe(false));
+    expect(onError).not.toHaveBeenCalled();
+    unbind();
+  });
+
+  it("uses a persisted active run reference with a legacy daemon", async () => {
+    const { controller } = createController();
+    api.getProjectTaskRuns.mockRejectedValue(Object.assign(new Error("missing"), { status: 404 }));
+    api.getProjectTaskRun.mockResolvedValue({
+      run_id: "run-saved",
+      work_id: "work-1",
+      state: "passed",
+      task: checkTask,
+      test_id: null,
+      started_at: "2026-08-21T00:00:00Z",
+      finished_at: "2026-08-21T00:00:01Z",
+      result: {
+        task: checkTask,
+        success: true,
+        stdout: "ok\n",
+        stderr: "",
+        truncated: false,
+        duration_ms: 1000,
+        locations: [],
+      },
+      stdout: "ok\n",
+      stderr: "",
+      locations: [],
+      next_seq: 2,
+    });
+    const unbind = controller.bindTaskList("work-1", true, true);
+    controller.restoreRunRefs("run-saved", ["run-saved"]);
+    await controller.hydrateTaskRuns("work-1");
+
+    expect(controller.run?.run_id).toBe("run-saved");
+    expect(controller.result?.success).toBe(true);
+    unbind();
+    controller.dispose();
   });
 });

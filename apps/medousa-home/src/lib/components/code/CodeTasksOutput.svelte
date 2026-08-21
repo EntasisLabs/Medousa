@@ -20,8 +20,22 @@
         {#if tasks.run?.state === "ready"}<span class="normal-case tracking-normal text-emerald-300/90"> · ready</span>
         {:else if tasks.running}<span class="normal-case tracking-normal text-content-link"> · running</span>{/if}
         {#if tasks.outputTruncated}<span class="normal-case tracking-normal text-amber-200/80"> · truncated</span>{/if}
+        {#if tasks.runHistoryTruncated}<span class="normal-case tracking-normal text-amber-200/80"> · more runs retained</span>{/if}
       </span>
       <div class="flex items-center gap-1">
+        {#if tasks.recentRuns.length > 1}
+          <select
+            class="max-w-36 rounded border border-surface-500/30 bg-surface-900 px-1 py-0.5 text-chrome-xs text-content-secondary"
+            aria-label="Recent project runs"
+            value={tasks.run?.run_id ?? ""}
+            disabled={tasks.running}
+            onchange={(event) => void tasks.openRun(event.currentTarget.value)}
+          >
+            {#each tasks.recentRuns as recent (recent.run_id)}
+              <option value={recent.run_id}>{recent.task.label} · {recent.state}</option>
+            {/each}
+          </select>
+        {/if}
         {#if (tasks.readyUrl || tasks.run?.ready_url) && (tasks.run?.state === "ready" || tasks.running)}
           <button
             type="button"

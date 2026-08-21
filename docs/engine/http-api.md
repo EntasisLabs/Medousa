@@ -492,6 +492,7 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | GET | `/v1/forge/items/{id}/tasks` | Detect project commands (manifest + thin tasks.json) |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/run` | Run a detected command and record its result |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/runs` | Start a named, cancellable project run |
+| GET | `/v1/forge/items/{id}/task-runs?limit=…` | List active/recent project-run summaries for reconnect |
 | GET/DELETE | `/v1/forge/items/{id}/task-runs/{run_id}` | Poll or cancel a project run (live bounded output + locations) |
 | GET (SSE) | `/v1/forge/items/{id}/task-runs/{run_id}/events?since=…` | Stream task output, locations, readiness, and terminal state |
 | POST | `/v1/forge/items/{id}/task-runs/{run_id}/preview` | Mint tokenized private preview path |
