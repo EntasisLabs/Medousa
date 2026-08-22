@@ -502,7 +502,7 @@
     padding: 0.25rem;
     border-radius: 0.55rem;
     border: 1px solid color-mix(in srgb, var(--color-surface-600) 50%, transparent);
-    background: color-mix(in srgb, var(--color-surface-900) 96%, transparent);
+    background: color-mix(in srgb, rgb(var(--color-surface-900)) 96%, transparent);
     box-shadow: 0 10px 28px rgb(0 0 0 / 0.35);
   }
 

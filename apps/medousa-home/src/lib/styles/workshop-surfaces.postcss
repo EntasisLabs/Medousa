@@ -250,8 +250,9 @@
     left: 0;
     z-index: 161;
     max-height: min(32rem, calc(100vh - 1rem));
-    background-color: rgb(var(--color-surface-900) / 0.96);
-    backdrop-filter: blur(16px);
+    /* Status popovers sit over dense editors/composers, so their surface must
+       remain fully opaque even when the surrounding shell uses translucency. */
+    background-color: rgb(var(--shell-chrome-bg, var(--color-surface-900)));
     animation: workshop-switcher-in 140ms ease-out;
   }
 
