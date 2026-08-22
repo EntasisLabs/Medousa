@@ -1,5 +1,16 @@
 <script lang="ts">
-  import { ChevronLeft, ChevronRight } from "@lucide/svelte";
+  import {
+    Blocks,
+    Bot,
+    ChevronLeft,
+    ChevronRight,
+    Gauge,
+    Link2,
+    Package,
+    RadioTower,
+    Share2,
+    SlidersHorizontal,
+  } from "@lucide/svelte";
   import type { SettingsSectionId } from "$lib/types/settings";
   import {
     settingsMobileSections,
@@ -10,16 +21,35 @@
   interface Props {
     active: SettingsSectionId;
     mobile?: boolean;
+    variant?: "sidebar" | "rail";
     badges?: Partial<Record<SettingsSectionId, number>>;
     onSelect: (section: SettingsSectionId) => void;
   }
 
-  let { active, mobile = false, badges = {}, onSelect }: Props = $props();
+  let {
+    active,
+    mobile = false,
+    variant = "sidebar",
+    badges = {},
+    onSelect,
+  }: Props = $props();
 
   const entries = $derived(settingsNavEntries());
   const activeGroup = $derived(settingsSectionById(active)?.group ?? null);
   const activeLabel = $derived(settingsSectionById(active)?.label ?? "Settings");
   const activeBadge = $derived(badges[active] ?? 0);
+  const rail = $derived(variant === "rail");
+
+  const sectionIcons = {
+    preferences: SlidersHorizontal,
+    agent: Bot,
+    runtime: Gauge,
+    network: Share2,
+    connections: Link2,
+    packages: Package,
+    mcp: Blocks,
+    basement: RadioTower,
+  } as const;
 
   const pagerSections = $derived(settingsMobileSections());
   const sectionIndex = $derived.by(() => {
@@ -76,7 +106,11 @@
     </button>
   </div>
 {:else}
-  <nav class="settings-nav" aria-label="Settings sections">
+  <nav
+    class="settings-nav"
+    class:settings-nav--rail={rail}
+    aria-label="Settings sections"
+  >
     {#each entries as entry (entry.kind === "group" ? `g-${entry.id}` : entry.section.id)}
       {#if entry.kind === "group"}
         <div
@@ -86,19 +120,33 @@
           {entry.label}
         </div>
       {:else}
+        {@const Icon = sectionIcons[entry.section.id]}
         <button
           type="button"
           class="settings-nav-item {active === entry.section.id ? 'settings-nav-item-active' : ''}"
           aria-current={active === entry.section.id ? "page" : undefined}
+          title={rail ? entry.section.hint : undefined}
           onclick={() => onSelect(entry.section.id)}
         >
-          <span class="flex items-center gap-2 text-sm font-medium">
-            {entry.section.label}
+          {#if rail}
+            <Icon
+              size={14}
+              strokeWidth={1.75}
+              class="settings-nav-item-icon"
+              aria-hidden="true"
+            />
+          {/if}
+          <span class="settings-nav-item-copy">
+            <span class="settings-nav-item-label">{entry.section.label}</span>
             {#if (badges[entry.section.id] ?? 0) > 0}
               <span class="settings-nav-badge">{badges[entry.section.id]}</span>
             {/if}
           </span>
-          <span class="workshop-faint mt-0.5 block text-xs leading-snug">{entry.section.hint}</span>
+          {#if !rail}
+            <span class="workshop-faint mt-0.5 block text-xs leading-snug">
+              {entry.section.hint}
+            </span>
+          {/if}
         </button>
       {/if}
     {/each}
