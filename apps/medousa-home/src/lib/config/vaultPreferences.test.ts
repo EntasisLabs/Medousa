@@ -49,7 +49,7 @@ describe("vault build editor preferences", () => {
   });
 
   it("persists hide-live-syntax and paper width", () => {
-    expect(readVaultHideLiveMarkdownSyntax()).toBe(false);
+    expect(readVaultHideLiveMarkdownSyntax()).toBe(true);
     expect(readVaultPaperWidth()).toBe("wide");
     writeVaultHideLiveMarkdownSyntax(true);
     writeVaultPaperWidth("narrow");

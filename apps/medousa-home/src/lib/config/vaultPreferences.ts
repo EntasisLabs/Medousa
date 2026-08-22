@@ -115,7 +115,7 @@ export function cycleVaultReadingPalette(
 
 /** Live: hide focused heading `#` / `##` widgets (WYSIWYG, no layout shift). */
 export function readVaultHideLiveMarkdownSyntax(): boolean {
-  return readBool(HIDE_LIVE_MARKDOWN_SYNTAX_KEY, false);
+  return readBool(HIDE_LIVE_MARKDOWN_SYNTAX_KEY, true);
 }
 
 export function writeVaultHideLiveMarkdownSyntax(enabled: boolean): void {
