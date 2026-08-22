@@ -2,7 +2,6 @@
   import {
     ArrowLeft,
     ArrowRight,
-    ExternalLink,
     PanelLeft,
     PanelLeftOpen,
   } from "@lucide/svelte";
@@ -11,10 +10,8 @@
   import WindowControls from "$lib/components/layout/WindowControls.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { environment } from "$lib/stores/environment.svelte";
-  import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { titlebarMode, usesUnifiedTitlebar } from "$lib/platform";
   import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
-  import { isTauri, showBrowser, showChatPopout } from "$lib/window";
 
   const mode = $derived(titlebarMode());
   const show = $derived(usesUnifiedTitlebar());
@@ -22,12 +19,6 @@
   const railWidth = $derived(layout.shellSidebarWidth);
   const canNavBack = $derived(layout.canGoRailViewBack);
   const canNavForward = $derived(layout.canGoRailViewForward);
-  const showChatPopoutBtn = $derived(
-    isTauri() && shellTabs.activeTab?.kind === "chat",
-  );
-  const showWebPopoutBtn = $derived(
-    isTauri() && shellTabs.activeTab?.kind === "web",
-  );
 
   function toggleRail() {
     if (railExpanded) {
@@ -128,30 +119,6 @@
       <ShellWorkspaceControl />
     </div>
 
-    <div class="app-titlebar-actions shrink-0">
-      {#if showChatPopoutBtn}
-        <button
-          type="button"
-          class="app-titlebar-btn"
-          title="Pop out chat"
-          aria-label="Pop out chat"
-          onclick={() => void showChatPopout()}
-        >
-          <ExternalLink size={16} />
-        </button>
-      {:else if showWebPopoutBtn}
-        <button
-          type="button"
-          class="app-titlebar-btn"
-          title="Open web window"
-          aria-label="Open web window"
-          onclick={() => void showBrowser()}
-        >
-          <ExternalLink size={16} />
-        </button>
-      {/if}
-    </div>
-
     <WindowControls />
   </header>
 {/if}
@@ -231,14 +198,6 @@
     flex: 1 1 0;
     align-self: stretch;
     min-width: 0.75rem;
-  }
-
-  .app-titlebar-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin-right: 2px;
-    padding-left: 4px;
   }
 
   .app-titlebar-btn {
