@@ -1,8 +1,7 @@
 <script lang="ts">
   import ShellTabNotchMiniLayout from "$lib/components/shell/ShellTabNotchMiniLayout.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
-  import { MAX_SHELL_PANES } from "$lib/types/shellTabs";
-  import { Columns2, Plus, Rows2, Search, SquareX } from "@lucide/svelte";
+  import { Plus, Search } from "@lucide/svelte";
   import { tick } from "svelte";
 
   interface Props {
@@ -19,11 +18,6 @@
   }: Props = $props();
 
   const paneCount = $derived(shellTabs.paneCount);
-  const canSplit = $derived(paneCount < MAX_SHELL_PANES);
-  const canMergePane = $derived(paneCount > 1);
-  const desktopIndex = $derived(
-    Math.max(0, shellTabs.desktops.findIndex((desktop) => desktop.id === shellTabs.activeDesktopId)),
-  );
   let renamingDesktop = $state(false);
   let renameDraft = $state("");
   let renameInputEl = $state<HTMLInputElement | null>(null);
@@ -64,9 +58,8 @@
   onclick={(event) => event.stopPropagation()}
   onkeydown={(event) => event.stopPropagation()}
 >
-  <section class="shell-tab-notch-drawer-toolbar">
+  <header class="shell-tab-notch-drawer-header">
     <div class="shell-tab-notch-drawer-desktop-copy">
-      <span class="shell-tab-notch-drawer-kicker">Desktop {desktopIndex + 1}</span>
       {#if renamingDesktop}
         <input
           bind:this={renameInputEl}
@@ -91,33 +84,24 @@
       {/if}
       <span>{paneCount} pane{paneCount === 1 ? "" : "s"}</span>
     </div>
-    <div class="shell-tab-notch-drawer-toolbar-actions" role="group" aria-label="Desktop and pane actions">
-      <button
-        type="button"
-        class="shell-tab-notch-drawer-quiet-action"
-        title="Search open tabs"
-        aria-label="Search open tabs"
-        onclick={onSearch}
-      >
-        <Search size={14} strokeWidth={1.8} />
-      </button>
-      <span class="shell-tab-notch-drawer-divider" aria-hidden="true"></span>
-      <button type="button" title="Split pane right" aria-label="Split pane right" disabled={!canSplit} onclick={() => shellTabs.splitActive("right")}>
-        <Columns2 size={15} strokeWidth={1.75} />
-      </button>
-      <button type="button" title="Split pane down" aria-label="Split pane down" disabled={!canSplit} onclick={() => shellTabs.splitActive("down")}>
-        <Rows2 size={15} strokeWidth={1.75} />
-      </button>
-      <button
-        type="button"
-        title="Close pane and merge tabs"
-        aria-label="Close pane and merge tabs"
-        disabled={!canMergePane}
-        onclick={() => shellTabs.closeActiveGroup()}
-      >
-        <SquareX size={15} strokeWidth={1.75} />
-      </button>
-      <span class="shell-tab-notch-drawer-divider" aria-hidden="true"></span>
+    <button
+      type="button"
+      class="shell-tab-notch-drawer-quiet-action"
+      title="Search open tabs"
+      aria-label="Search open tabs"
+      onclick={onSearch}
+    >
+      <Search size={14} strokeWidth={1.8} />
+    </button>
+  </header>
+
+  <div class="shell-tab-notch-drawer-stage">
+    <ShellTabNotchMiniLayout node={shellTabs.splitRoot} {onTabSettled} />
+  </div>
+
+  <footer class="shell-tab-notch-drawer-footer">
+    <span>Desktop</span>
+    <div class="shell-tab-notch-drawer-desktop-actions" role="group" aria-label="Desktops">
       {#each shellTabs.desktops as desktop, index (desktop.id)}
         <button
           type="button"
@@ -136,9 +120,5 @@
         onclick={() => shellTabs.createDesktop()}
       ><Plus size={14} strokeWidth={1.8} /></button>
     </div>
-  </section>
-
-  <div class="shell-tab-notch-drawer-stage">
-    <ShellTabNotchMiniLayout node={shellTabs.splitRoot} {onTabSettled} />
-  </div>
+  </footer>
 </div>

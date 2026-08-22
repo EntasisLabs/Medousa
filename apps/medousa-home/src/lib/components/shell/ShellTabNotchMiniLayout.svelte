@@ -3,7 +3,8 @@
   import ShellTabNotchPaneRail from "$lib/components/shell/ShellTabNotchPaneRail.svelte";
   import { shellContextMenu } from "$lib/stores/shellContextMenu.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
-  import type { SplitNode } from "$lib/types/shellTabs";
+  import { MAX_SHELL_PANES, type SplitNode } from "$lib/types/shellTabs";
+  import { Columns2, Rows2, SquareX } from "@lucide/svelte";
 
   interface Props {
     node: SplitNode;
@@ -13,11 +14,14 @@
   let { node, onTabSettled }: Props = $props();
 
   const activeGroupId = $derived(shellTabs.activeGroupId);
+  const canSplit = $derived(shellTabs.paneCount < MAX_SHELL_PANES);
+  const canMergePane = $derived(shellTabs.paneCount > 1);
 </script>
 
 {#if node.type === "group"}
   {@const tabs = shellTabs.tabsForGroup(node.id)}
   {@const active = node.id === activeGroupId}
+  {@const paneIndex = shellTabs.groups.findIndex((group) => group.id === node.id) + 1}
   {@const split =
     shellTabs.tabDropSplitEdge?.groupId === node.id
       ? shellTabs.tabDropSplitEdge.edge
@@ -56,6 +60,43 @@
       shellContextMenu.showPane(event.clientX, event.clientY, node.id);
     }}
   >
+    <div class="shell-tab-notch-pane-chrome">
+      <span>Pane {paneIndex}</span>
+      {#if active}
+        <div class="shell-tab-notch-pane-actions" role="group" aria-label="Active pane actions">
+        <button
+          type="button"
+          title="Split pane right"
+          aria-label="Split pane right"
+          disabled={!canSplit}
+          onclick={(event) => {
+            event.stopPropagation();
+            shellTabs.splitActive("right");
+          }}
+        ><Columns2 size={13} strokeWidth={1.8} /></button>
+        <button
+          type="button"
+          title="Split pane down"
+          aria-label="Split pane down"
+          disabled={!canSplit}
+          onclick={(event) => {
+            event.stopPropagation();
+            shellTabs.splitActive("down");
+          }}
+        ><Rows2 size={13} strokeWidth={1.8} /></button>
+        <button
+          type="button"
+          title="Close pane and merge tabs"
+          aria-label="Close pane and merge tabs"
+          disabled={!canMergePane}
+          onclick={(event) => {
+            event.stopPropagation();
+            shellTabs.closeActiveGroup();
+          }}
+        ><SquareX size={13} strokeWidth={1.8} /></button>
+        </div>
+      {/if}
+    </div>
     <ShellTabNotchPaneRail groupId={node.id} {onTabSettled} />
   </div>
 {:else}
