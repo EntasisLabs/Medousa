@@ -78,12 +78,13 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | POST | `/v1/forge/items/{id}/changes/conflict` | Resolve unmerged path (`ours` / `theirs` / `baseline`) and clear conflict state |
 | GET | `/v1/forge/items/{id}/search?query=…` | Repository search (`literal`/`regex`, case/whole-word, include/exclude globs, `scope=all\|changed`, `limit`, `cursor` pagination; bounded to 500 hits; includes untracked, honors ignore by default) |
 | POST | `/v1/forge/items/{id}/search/replace` | Preview (`dry_run=true`) or apply digest-fenced repository replace; optional `paths` subset and `preconditions` |
-| GET, PUT | `/v1/forge/items/{id}/workspace-state` | Restore/preserve open files, cursor positions, bounded dirty drafts, and contextual Code layout (Problems/Terminal/Tests/Search/Changes) |
+| GET, PUT | `/v1/forge/items/{id}/workspace-state` | Restore/preserve open files, cursor positions, bounded dirty drafts, contextual Code layout, and task/output references |
 | GET | `/v1/forge/items/{id}/review` | Structured outcome, risk, verification, attribution, timeline, comments, and changed-file summary |
 | GET | `/v1/forge/evidence/{evidence_id}/receipts` | Sealed compact Coder evidence provenance (never raw payloads) |
 | GET | `/v1/forge/items/{id}/tasks` | Manifest-derived checks plus safe `.vscode/tasks.json` entries |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/runs` | Start a named, cancellable project run |
-| GET/DELETE | `/v1/forge/items/{id}/task-runs/{run_id}` | Poll or cancel a project run (includes live bounded `stdout`/`stderr`, `locations`, readiness `state`) |
+| GET | `/v1/forge/items/{id}/task-runs?limit=…` | List bounded active/recent run summaries for reconnect hydration |
+| GET/DELETE | `/v1/forge/items/{id}/task-runs/{run_id}` | Poll or gracefully stop a project run (includes live bounded output, locations, readiness, and PTY attach state); `?force=true` force-stops |
 | GET (SSE) | `/v1/forge/items/{id}/task-runs/{run_id}/events?since=…` | Stream task output chunks, incremental locations, readiness, and terminal state (`?since=` replay) |
 | POST | `/v1/forge/items/{id}/task-runs/{run_id}/preview` | Mint a tokenized private preview path for a ready run |
 | ANY | `/v1/forge/preview/{token}/…` | Reverse-proxy to workshop `127.0.0.1:{port}` (token-gated; no public app bind) |
@@ -134,6 +135,10 @@ renames/deletes recover tab identity, and the language client receives
 `GET /v1/forge/stream` remains the coarse undertaking list channel (work id,
 state, event kind). It does not carry paths or a replay cursor.
 
+All three Forge SSE routes are protected daemon operations. Medousa consumes
+them through the authenticated native stream bridge (including paired-workshop
+routing); a WebView `EventSource` must not connect to these URLs directly.
+
 ### Project task-run output stream
 
 `GET /v1/forge/items/{id}/task-runs/{run_id}/events?since=<seq>` streams live
@@ -157,6 +162,25 @@ event includes the final result.
 `.vscode/tasks.json` import (`npm` / `shell` / `process`, optional inline
 problem-matcher `pattern`, background `endsPattern`). Full VS Code matcher
 catalogs, `dependsOn`, and presentation panels are not supported.
+Identical root/argv pairs stay deduplicated. When a safe configured task
+duplicates a detected invocation, Forge retains the compatible detected
+ID/provider but applies the configured label, source, readiness, and problem
+matcher instead of silently erasing that user intent.
+Detected descriptors include a repository-relative `root`; discovery uses the
+Git-visible file set, caps the number/depth of nested roots and tasks, and keeps
+root-level IDs stable. Nested IDs include their root. Before spawning, Forge
+canonicalizes the selected root, rejects absolute/traversing/symlink escapes,
+and reports output locations relative to the repository even though the process
+runs from the nested directory.
+
+The additive descriptor contract is currently `version: 1`. It also reports
+`source`, `interactive`, `background`, `default_rank`, aggregate `available`,
+and structured `requirements` entries. Executable requirements name missing
+workshop-host commands; JavaScript package requirements also detect absent
+installed dependencies at the nearest lockfile root. Both provide exact repair
+copy. Run routes revalidate health and return a conflict before starting an
+unavailable task. Older clients can continue using the original fields, and
+Home treats absent health fields from older daemons as available.
 
 `GET …/task-runs/{run_id}` also returns bounded live `stdout`/`stderr`,
 `output_truncated`, `locations`, `ready_url` (when a background task becomes
@@ -165,6 +189,33 @@ replay). Each stdout/stderr tail caps at 256 KiB. Chunk replay keeps at most 400
 events and 1 MiB. The registry admits at most 128 runs and 64 MiB of run
 reservations, retains at most 64 terminal runs, and expires terminal entries
 after 10 minutes. Active runs are never removed by terminal retention.
+Snapshots also carry `test_id`, `started_at`, and `finished_at`. The collection
+route returns at most 64 summaries (20 by default), newest first, without output
+bodies. Its envelope reports active/terminal/retained counts, truncation, the
+terminal limit/TTL, and a monotonic daemon-registry eviction count. Home fetches
+the exact selected snapshot, resumes SSE from `next_seq`,
+and falls back to a persisted active/recent run reference when connected to an
+older daemon without the collection route.
+
+`GET …/tests` assigns each lexical test candidate to the deepest compatible
+test-task root instead of the first repository runner. Entries include the
+stable `task_id`, `provider`, and `target_kind` (`named` for addressable
+Cargo/Python/Go tests, `file` for JavaScript package runners). Test IDs include
+the stable task identity plus repository-relative path and name. Run start
+still accepts the older `path::name` ID and normalizes it to the canonical ID
+in the run snapshot, so retained result provenance and exact rerun survive a
+daemon upgrade. Discovery does not invoke project test collection code;
+framework-native collectors remain deferred where they would execute project
+configuration or imports.
+
+Interactive, background, and long-running tasks are hosted directly in one
+`medousa-session` PTY rather than launched once for Output and again for
+Terminal. Their run snapshots and summaries include `session_id` and the
+daemon-relative `attach_path`; every Home Terminal attachment is a peer on that
+same workshop process. Cancellation first publishes `stopping` and sends an
+interrupt. Repeating Stop with `?force=true` kills the hosted process. A ready
+run also retains its tokenized `preview_path` alongside `ready_url` for Web
+reattach; preview grants outlive the bounded run-registry TTL.
 
 When readiness fires, the daemon may extract a loopback URL (`localhost` /
 `127.0.0.1` / `0.0.0.0`) into `ready_url` and mint a short-lived preview token.
@@ -365,8 +416,13 @@ draft requires the undertaking's live lease and is bounded to 2 MiB per draft,
 8 MiB total, and 32 tabs. Drafts retain their source digest so clients can
 surface recovery conflicts instead of silently applying stale text. The optional
 `layout` object restores contextual Code regions (`context_panel`, `terminal`,
-`tests`, `search`) independently of Home shell desktops; pane geometry and group
-tab strips remain shell-owned.
+`tests`, `search`, `changes`, `output`) plus `primary_task`, `active_run`, and up
+to 12 `recent_runs` independently of Home shell desktops. The additive
+`bottom_panel` field records the mutually exclusive feedback channel
+(`problems`, `output`, `tests`, or `terminal`); older boolean fields remain a
+compatibility fallback. Home presents matcher locations from the selected task
+snapshot as run-provenanced Problems without replacing language diagnostics.
+Pane geometry and group tab strips remain shell-owned.
 
 ### Errors
 

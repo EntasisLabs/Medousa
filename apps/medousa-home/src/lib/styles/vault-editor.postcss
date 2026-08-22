@@ -255,23 +255,27 @@
     color: rgb(var(--shell-muted, var(--color-surface-400)));
   }
 
-  /* Note overflow (⋯) — Cursor-coherent menu chrome */
+  /* Note overflow (⋯) — same density as titlebar NewTabMenu */
   .vault-editor-overflow {
-    min-width: 14.5rem;
+    min-width: 16rem;
     max-width: min(18rem, calc(100vw - 1.5rem));
-    padding: 0.28rem;
-    border-radius: 0.55rem;
-    border: 1px solid rgb(var(--color-surface-500) / 0.42);
-    background: rgb(var(--color-surface-900) / 0.97);
+    max-height: min(34rem, calc(100vh - 4.5rem));
+    overflow-y: auto;
+    padding: 0.45rem;
+    border-radius: var(--menu-radius, 0.7rem);
+    border: 1px solid rgb(var(--theme-border) / 0.42);
+    background: rgb(var(--theme-pane) / 0.98);
     box-shadow:
-      0 12px 32px rgb(0 0 0 / 0.42),
-      0 0 0 1px rgb(0 0 0 / 0.18);
+      0 16px 38px rgb(var(--theme-shadow) / 0.34),
+      inset 0 0 0 1px rgb(var(--theme-border) / 0.18);
     backdrop-filter: blur(14px);
+    scrollbar-color: rgb(var(--theme-border) / 0.45) transparent;
+    scrollbar-width: thin;
   }
 
   .vault-editor-overflow__sep {
-    margin: 0.28rem 0.35rem;
-    border-top: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.32);
+    margin: 0.38rem 0.5rem;
+    border-top: 1px solid rgb(var(--theme-border) / 0.3);
   }
 
   .vault-editor-overflow__item,
@@ -279,21 +283,43 @@
     display: flex;
     width: 100%;
     align-items: center;
-    gap: 0.55rem;
-    padding: 0.38rem 0.55rem;
-    border-radius: 0.35rem;
+    margin: 0;
+    padding: 0;
+    border-radius: var(--menu-row-radius, 0.45rem);
     text-align: left;
-    font-size: 0.8125rem;
-    line-height: 1.25;
-    color: rgb(var(--shell-fg, var(--color-surface-100)));
+    font: inherit;
+    font-size: var(--menu-label-size, var(--chrome-xs, 11px));
+    font-weight: var(--menu-label-weight, 500);
+    line-height: 1.3;
+    letter-spacing: var(--menu-label-tracking, -0.01em);
+    color: rgb(var(--theme-text-secondary));
     background: transparent;
     border: none;
     cursor: pointer;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
   }
 
   .vault-editor-overflow__item:hover,
   .vault-editor-overflow__toggle:hover {
-    background: rgb(var(--color-surface-700) / 0.72);
+    background: transparent;
+    color: rgb(var(--theme-text));
+  }
+
+  .vault-editor-overflow__content {
+    display: flex;
+    width: 100%;
+    min-height: 2.125rem;
+    align-items: center;
+    gap: 0.7rem;
+    border-radius: var(--menu-row-radius, 0.45rem);
+    padding: 0 0.7rem;
+  }
+
+  .vault-editor-overflow__item:hover .vault-editor-overflow__content,
+  .vault-editor-overflow__toggle:hover .vault-editor-overflow__content {
+    box-shadow: inset 0 0 0 3rem rgb(var(--theme-card-hover) / 0.72);
   }
 
   .vault-editor-overflow__item:disabled {
@@ -303,27 +329,49 @@
 
   .vault-editor-overflow__icon {
     display: inline-flex;
-    width: 1rem;
-    height: 1rem;
+    width: var(--menu-icon, 0.875rem);
+    height: var(--menu-icon, 0.875rem);
     flex-shrink: 0;
     align-items: center;
     justify-content: center;
-    color: rgb(var(--shell-muted, var(--color-surface-400)));
+    color: rgb(var(--theme-text-tertiary));
+  }
+
+  .vault-editor-overflow__item:hover .vault-editor-overflow__icon,
+  .vault-editor-overflow__toggle:hover .vault-editor-overflow__icon {
+    color: rgb(var(--theme-text-secondary));
   }
 
   .vault-editor-overflow__label {
     flex: 1;
     min-width: 0;
+    overflow: hidden;
+    font-size: 0.8125rem;
+    font-weight: 400;
+    line-height: 1.3;
+    letter-spacing: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     text-align: left;
   }
 
   .vault-editor-overflow__shortcut {
     flex-shrink: 0;
-    margin-left: 1.25rem;
-    font-size: 0.75rem;
-    letter-spacing: 0.01em;
-    color: rgb(var(--shell-muted, var(--color-surface-500)));
+    margin-left: 0.75rem;
+    font-size: var(--menu-meta-size, 10px);
+    font-weight: 400;
+    letter-spacing: 0.02em;
+    color: rgb(var(--theme-text-quiet));
     font-variant-numeric: tabular-nums;
+  }
+
+  .vault-editor-overflow__value {
+    flex-shrink: 0;
+    margin-left: 0.75rem;
+    color: rgb(var(--theme-text-tertiary));
+    font-size: var(--menu-meta-size, 0.6875rem);
+    font-weight: 400;
+    text-transform: capitalize;
   }
 
   .vault-editor-overflow__toggle {

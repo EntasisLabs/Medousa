@@ -1,5 +1,14 @@
 <script lang="ts">
-  import { FolderOpen, RefreshCw, Unlink } from "@lucide/svelte";
+  import {
+    ChevronDown,
+    ChevronRight,
+    ChevronUp,
+    Ellipsis,
+    FolderOpen,
+    RefreshCw,
+    Unlink,
+  } from "@lucide/svelte";
+  import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
   import { externalDesk } from "$lib/stores/externalDesk.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { openAttachmentPath } from "$lib/utils/vaultAttachmentPicker";
@@ -17,10 +26,11 @@
 
   let { compact = false, onOpenFile }: Props = $props();
 
-  const RECENT_PEEK = $derived(compact ? 6 : 10);
+  const RECENT_PEEK = $derived(compact ? 4 : 6);
 
   const canLink = $derived(Boolean(vault.selectedPath));
   const coLocated = $derived(isCoLocatedWorkshop());
+  let openRootMenu = $state<string | null>(null);
 
   function visibleFiles(rootPath: string): ExternalFileEntry[] {
     return (externalDesk.entriesByRoot[rootPath] ?? []).filter((entry) => !entry.is_dir);
@@ -76,8 +86,7 @@
     vault.linkExternalFile(entry.path);
   }
 
-  async function handleRefreshRoot(root: PinnedRoot, event: MouseEvent) {
-    event.stopPropagation();
+  async function handleRefreshRoot(root: PinnedRoot) {
     await externalDesk.refreshRoot(root.path);
   }
 </script>
@@ -112,98 +121,125 @@
       </div>
     </div>
   {:else}
-    <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
+    <div class="vault-external-groups min-h-0 flex-1 overflow-y-auto">
       {#each externalDesk.pinnedRoots as root (root.id)}
         {@const expanded = isExpanded(root.id)}
         {@const { entries, total } = filesToShow(root)}
-        <section class="mb-1">
-          <div class="flex items-center gap-0.5">
+        <section class="vault-external-group">
+          <div class="vault-external-group-header">
             <button
               type="button"
-              class="vault-external-pin-row min-w-0 flex-1"
+              class="vault-external-pin-row"
               aria-expanded={expanded}
               title={root.path}
               onclick={() => togglePin(root.id)}
             >
-              <span class="workshop-faint w-4 shrink-0 text-center text-[10px]">
-                {expanded ? "▾" : "▸"}
+              <span class="vault-external-pin-chevron">
+                {#if expanded}
+                  <ChevronDown size={13} strokeWidth={1.8} />
+                {:else}
+                  <ChevronRight size={13} strokeWidth={1.8} />
+                {/if}
               </span>
-              <FolderOpen size={14} strokeWidth={1.75} class="shrink-0 text-content-tertiary" />
-              <span class="min-w-0 flex-1 truncate text-sm font-medium text-surface-100">
-                {root.label}
-              </span>
+              <FolderOpen size={14} strokeWidth={1.75} class="vault-external-pin-icon" />
+              <span class="vault-external-pin-label">{root.label}</span>
               {#if total > 0}
-                <span class="shrink-0 tabular-nums text-[10px] text-content-quiet">{total}</span>
+                <span class="vault-external-pin-count">{total}</span>
               {/if}
             </button>
-            <button
-              type="button"
-              class="vault-toolbar-btn"
-              aria-label="Refresh folder"
-              disabled={externalDesk.loadingRoot === root.path}
-              onclick={(event) => void handleRefreshRoot(root, event)}
+            <OverflowMenu
+              open={openRootMenu === root.id}
+              onOpenChange={(open) => (openRootMenu = open ? root.id : null)}
+              align="right"
+              panelWidth={176}
+              panelClass="vault-external-folder-menu"
             >
-              <RefreshCw size={12} strokeWidth={2} />
-            </button>
-            <button
-              type="button"
-              class="vault-toolbar-btn"
-              aria-label="Remove folder"
-              title="Remove"
-              onclick={(event) => {
-                event.stopPropagation();
-                externalDesk.unpinRoot(root.id);
-              }}
-            >
-              <Unlink size={12} strokeWidth={2} />
-            </button>
+              {#snippet trigger({ open, toggle })}
+                <button
+                  type="button"
+                  class="vault-external-group-more {open ? 'vault-external-group-more-open' : ''}"
+                  aria-label="Folder actions for {root.label}"
+                  title="Folder actions"
+                  aria-haspopup="menu"
+                  aria-expanded={open}
+                  onclick={toggle}
+                >
+                  <Ellipsis size={14} strokeWidth={1.8} />
+                </button>
+              {/snippet}
+              <button
+                type="button"
+                role="menuitem"
+                class="vault-external-folder-menu-item"
+                disabled={externalDesk.loadingRoot === root.path}
+                onclick={() => {
+                  openRootMenu = null;
+                  void handleRefreshRoot(root);
+                }}
+              >
+                <RefreshCw size={13} strokeWidth={1.8} />
+                <span>Refresh folder</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                class="vault-external-folder-menu-item vault-external-folder-menu-item-remove"
+                onclick={() => {
+                  openRootMenu = null;
+                  externalDesk.unpinRoot(root.id);
+                }}
+              >
+                <Unlink size={13} strokeWidth={1.8} />
+                <span>Remove from Files</span>
+              </button>
+            </OverflowMenu>
           </div>
 
           {#if expanded}
             {#if externalDesk.loadingRoot === root.path}
-              <p class="px-6 py-2 text-xs text-content-quiet">Scanning…</p>
+              <p class="vault-external-group-status">Scanning…</p>
             {:else if total === 0}
-              <p class="px-6 py-2 text-xs text-content-quiet">No files in this folder.</p>
+              <p class="vault-external-group-status">No files in this folder.</p>
             {:else}
-              <ul class="mt-0.5 space-y-0.5 pl-3">
+              <div class="vault-external-group-body">
                 {#if !showAll(root.id) && total > RECENT_PEEK}
-                  <li class="px-2 py-1 text-[10px] text-content-quiet">
-                    Recent · {RECENT_PEEK} of {total}
-                  </li>
+                  <p class="vault-external-recents-label">
+                    Recent files <span>· {RECENT_PEEK} of {total}</span>
+                  </p>
                 {/if}
-                {#each entries as entry (entry.path)}
-                  <li>
-                    <ExternalFileRow
-                      {entry}
-                      selected={externalDesk.selectedExternalPath === entry.path}
-                      showLink={canLink}
-                      onOpen={handleOpen}
-                      onLink={handleLink}
-                    />
-                  </li>
-                {/each}
+                <ul class="vault-external-file-list">
+                  {#each entries as entry (entry.path)}
+                    <li>
+                      <ExternalFileRow
+                        {entry}
+                        selected={externalDesk.selectedExternalPath === entry.path}
+                        showLink={canLink}
+                        onOpen={handleOpen}
+                        onLink={handleLink}
+                      />
+                    </li>
+                  {/each}
+                </ul>
                 {#if total > RECENT_PEEK && !showAll(root.id)}
-                  <li class="px-1 pt-0.5">
-                    <button
-                      type="button"
-                      class="w-full rounded-md px-2 py-1.5 text-left text-xs text-content-link hover:bg-surface-800/60 hover:text-primary-200"
-                      onclick={() => setShowAll(root.id, true)}
-                    >
-                      Show all {total} files…
-                    </button>
-                  </li>
+                  <button
+                    type="button"
+                    class="vault-external-group-footer"
+                    onclick={() => setShowAll(root.id, true)}
+                  >
+                    <span>Show {total - RECENT_PEEK} more</span>
+                    <ChevronRight size={12} strokeWidth={1.8} />
+                  </button>
                 {:else if showAll(root.id) && total > RECENT_PEEK}
-                  <li class="px-1 pt-0.5">
-                    <button
-                      type="button"
-                      class="w-full rounded-md px-2 py-1.5 text-left text-xs text-content-quiet hover:bg-surface-800/60 hover:text-content-secondary"
-                      onclick={() => setShowAll(root.id, false)}
-                    >
-                      Show recent only
-                    </button>
-                  </li>
+                  <button
+                    type="button"
+                    class="vault-external-group-footer"
+                    onclick={() => setShowAll(root.id, false)}
+                  >
+                    <span>Show recent only</span>
+                    <ChevronUp size={12} strokeWidth={1.8} />
+                  </button>
                 {/if}
-              </ul>
+              </div>
             {/if}
           {/if}
         </section>

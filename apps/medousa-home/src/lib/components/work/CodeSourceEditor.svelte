@@ -41,6 +41,12 @@
     codeWorkbenchState,
   } from "$lib/code/codeWorkbenchState.svelte";
   import { handleCodeEditorWindowKeydown } from "$lib/code/codeEditorWindowKeys";
+  import {
+    codeCommandIdFromEvent,
+    dispatchCodeCommand,
+    parseProjectTaskCommandId,
+    publishProjectTaskCommandCatalog,
+  } from "$lib/commands/codeCommands";
   import { codeEditorViewRegistry } from "$lib/code/codeEditorViewRegistry";
   import type { CodeLanguageNavigationKind } from "$lib/code/codeLanguageNavigation";
   import { containingSymbolTrail } from "$lib/code/codeDocumentSymbols";
@@ -86,6 +92,7 @@
     writeCodeEditorWordWrap,
     type CodeEditorFontSize,
   } from "$lib/config/codeEditorPreferences";
+  import { readCodeWorkbenchPreferences } from "$lib/config/codeWorkbenchPreferences";
   import { codeEditorFind } from "$lib/stores/codeEditorFind.svelte";
   import { codeEditorStatus } from "$lib/stores/codeEditorStatus.svelte";
 
@@ -179,6 +186,8 @@
   let linePersistTimer: ReturnType<typeof setTimeout> | null = null;
   let projectEventStream: CodeProjectEventStream | null = null;
   let treeRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+  let workbenchPrefsEpoch = $state(0);
   let editorMenuOpen = $state(false);
   let editorMenuX = $state(0);
   let editorMenuY = $state(0);
@@ -345,9 +354,23 @@
     getWorkId: () => workId,
     persistTestsOpen: (open) => {
       if (!workId) return;
-      codeWorkbenchState.setTestsOpen(workId, open);
+      setFeedbackPanel(open ? "tests" : null);
+    },
+    persistOutputOpen: (open) => {
+      if (!workId) return;
+      setFeedbackPanel(open ? "output" : null);
+    },
+    persistSelectedTask: (taskId) => {
+      if (!workId) return;
+      codeWorkbenchState.setPrimaryTask(workId, taskId);
       codeWorkspace.scheduleLayoutPersist(workId);
     },
+    persistRunRefs: (activeRunId, recentRunIds) => {
+      if (!workId) return;
+      codeWorkbenchState.setTaskRuns(workId, activeRunId, recentRunIds);
+      codeWorkspace.scheduleLayoutPersist(workId);
+    },
+    prepareRun: () => prepareRunSave(),
     ensureLease: () => ensureHumanLease(),
     onError: (message) => {
       surfaceError = message || null;
@@ -378,7 +401,53 @@
         problems.setDocumentProblems(editor?.getProblems() ?? []);
       });
     },
+    onProblemsSelected: (selected) => {
+      if (selected) setFeedbackPanel("problems");
+      else if (feedbackPanel === "problems") setFeedbackPanel(null);
+    },
   });
+  const feedbackPanel = $derived.by(() => {
+    if (terminalDockOpen) return "terminal" as const;
+    if (tasks.testsOpen) return "tests" as const;
+    if (tasks.outputOpen) return "output" as const;
+    if (problems.panel === "problems") return "problems" as const;
+    return null;
+  });
+  let lastFailedRunPresented = "";
+
+  function setFeedbackPanel(
+    panel: "problems" | "output" | "tests" | "terminal" | null,
+    persist = true,
+  ) {
+    tasks.restoreOutputOpen(panel === "output");
+    tasks.restoreTestsOpen(panel === "tests");
+    terminalDockOpen = panel === "terminal";
+    if (panel === "problems") problems.restorePanel("problems");
+    else if (problems.panel === "problems") problems.restorePanel(null);
+    if (!persist || !workId) return;
+    codeWorkbenchState.setBottomPanel(workId, panel);
+    codeWorkspace.scheduleLayoutPersist(workId);
+  }
+
+  async function selectFeedbackPanel(
+    panel: "problems" | "output" | "tests" | "terminal",
+  ) {
+    if (panel === "problems") {
+      if (problems.panel !== "problems") await problems.showProblems();
+      else setFeedbackPanel("problems");
+      return;
+    }
+    if (panel === "output") {
+      tasks.toggleOutput(true);
+      return;
+    }
+    if (panel === "tests") {
+      if (!tasks.testsOpen) await tasks.toggleTests();
+      else setFeedbackPanel("tests");
+      return;
+    }
+    await toggleTerminalDock(true);
+  }
   const quick = new CodeQuickOpenController({
     getWorkId: () => workId,
     getLspClient: () => lspClient,
@@ -428,8 +497,31 @@
     setTabError: (tabId, message) => codeWorkspace.setError(tabId, message),
     setActiveFromItem: (item, lease) => undertakings.setActiveFromItem(item, lease),
     refreshDetail: () => undertakings.refreshDetail(),
+    beforeSave: (tab) => formatBeforeSave(tab),
   });
   const busy = $derived(save.busy);
+
+  async function formatBeforeSave(tab: { tabId: string }): Promise<boolean> {
+    const preferences = readCodeWorkbenchPreferences();
+    if (
+      !preferences.formatOnSave ||
+      tab.tabId !== activeTabId ||
+      !canFormat ||
+      languageActionRunning
+    ) {
+      return true;
+    }
+    return runLanguageAction("format");
+  }
+
+  async function prepareRunSave(): Promise<boolean> {
+    const preferences = readCodeWorkbenchPreferences();
+    if (preferences.runSavePolicy === "saveAll") return save.saveAll();
+    const dirtyTabs = tabs.filter((tab) => codeWorkspace.isDirty(tab));
+    if (dirtyTabs.length === 0) return true;
+    surfaceError = `Save or discard ${dirtyTabs.length === 1 ? dirtyTabs[0]!.path : `${dirtyTabs.length} modified files`} before running.`;
+    return false;
+  }
 
   function syncProblems() {
     void tick().then(() => {
@@ -551,21 +643,19 @@
   async function toggleTerminalDock(forceOpen?: boolean) {
     const next = forceOpen === true ? true : forceOpen === false ? false : !terminalDockOpen;
     if (!next) {
-      terminalDockOpen = false;
-      if (workId) {
-        codeWorkbenchState.setTerminalOpen(workId, false);
-        codeWorkspace.scheduleLayoutPersist(workId);
-      }
+      setFeedbackPanel(null);
       return;
     }
     if (!detail || !terminalAvailable) {
       surfaceError = "Terminal is not available for this project yet.";
       return;
     }
-    terminalDockOpen = true;
-    if (workId) {
-      codeWorkbenchState.setTerminalOpen(workId, true);
-      codeWorkspace.scheduleLayoutPersist(workId);
+    setFeedbackPanel("terminal");
+    const runSessionId = tasks.run?.session_id?.trim();
+    if (runSessionId) {
+      dockSessionId = runSessionId;
+      undertakings.bindTerminal(runSessionId);
+      return;
     }
     if (dockSessionId) return;
     dockBusy = true;
@@ -576,11 +666,7 @@
       if (!sessionId) surfaceError = "Could not open a workshop shell for this project.";
     } catch (err) {
       surfaceError = err instanceof Error ? err.message : String(err);
-      terminalDockOpen = false;
-      if (workId) {
-        codeWorkbenchState.setTerminalOpen(workId, false);
-        codeWorkspace.scheduleLayoutPersist(workId);
-      }
+      setFeedbackPanel(null);
     } finally {
       dockBusy = false;
     }
@@ -601,10 +687,16 @@
 
   async function popOutTerminal() {
     if (!detail) return;
-    terminalDockOpen = false;
-    if (workId) {
-      codeWorkbenchState.setTerminalOpen(workId, false);
-      codeWorkspace.scheduleLayoutPersist(workId);
+    const runSessionId = tasks.run?.session_id?.trim();
+    setFeedbackPanel(null);
+    if (runSessionId) {
+      undertakings.bindTerminal(runSessionId);
+      shellTabs.openTerminal(runSessionId, {
+        activate: true,
+        title: `Task · ${tasks.run?.task.label ?? detail.title}`,
+        workId,
+      });
+      return;
     }
     await openTrackedTerminal(detail, { activate: true });
   }
@@ -1254,11 +1346,11 @@
   async function runLanguageAction(
     action: "format" | "organize_imports" | "references" | "rename",
     newName?: string,
-  ) {
+  ): Promise<boolean> {
     const client = lspClient;
-    if (!activeTab || !documentUri || !client || languageActionRunning) return;
+    if (!activeTab || !documentUri || !client || languageActionRunning) return false;
     const cursor = editor?.getCursorPosition() ?? { line: 0, character: 0 };
-    if (action === "rename" && !newName?.trim()) return;
+    if (action === "rename" && !newName?.trim()) return false;
     languageActionRunning = true;
     surfaceError = null;
     try {
@@ -1296,15 +1388,17 @@
       if (action === "references") {
         references = Array.isArray(result) ? result : [];
         problems.setPanel("references");
-        return;
+        return true;
       }
-      if (action === "rename" && await reviewWorkspaceEdit(result)) return;
+      if (action === "rename" && await reviewWorkspaceEdit(result)) return true;
       const edits = activeLanguageEdits(result);
       if (edits.length) {
         editor?.applyLanguageEdits(edits);
       } else if (action === "rename") surfaceError = "The language server did not return an editable rename.";
+      return action !== "rename" || edits.length > 0;
     } catch (err) {
       surfaceError = err instanceof Error ? err.message : String(err);
+      return false;
     } finally {
       languageActionRunning = false;
     }
@@ -1376,11 +1470,14 @@
       case "references":
         void runLanguageAction("references");
         break;
+      case "run_nearest_test":
+        dispatchCodeCommand("testing.runAtCursor");
+        break;
       case "rename":
-        beginInlineRename();
+        dispatchCodeCommand("editor.action.rename");
         break;
       case "format":
-        void runLanguageAction("format");
+        dispatchCodeCommand("editor.action.formatDocument");
         break;
       case "organize_imports":
         void runLanguageAction("organize_imports");
@@ -1392,7 +1489,7 @@
         void copyText(activeTab.path);
         break;
       case "reveal":
-        revealInExplorer(activeTab.path);
+        dispatchCodeCommand("workbench.action.files.revealInExplorer");
         break;
     }
   }
@@ -1425,6 +1522,31 @@
     });
   });
 
+  /** Keep matcher diagnostics scoped to the selected run; LSP problems stay intact. */
+  $effect(() => {
+    const run = tasks.run;
+    if (!run) {
+      problems.setTaskRun(null);
+      return;
+    }
+    const result = run.result ?? tasks.result;
+    problems.setTaskRun({
+      runId: run.run_id,
+      taskLabel: run.task.label,
+      success: result?.success ?? null,
+      locations: tasks.liveLocations,
+    });
+    if (
+      result?.success === false &&
+      tasks.liveLocations.length > 0 &&
+      lastFailedRunPresented !== run.run_id &&
+      readCodeWorkbenchPreferences().panelOnFailure
+    ) {
+      lastFailedRunPresented = run.run_id;
+      void selectFeedbackPanel("problems");
+    }
+  });
+
   $effect(() => {
     if (!interactive || !workId) return;
     const lease =
@@ -1439,6 +1561,12 @@
     const id = workId;
     const prepared = Boolean(context?.worktree);
     return tasks.bindTaskList(id, prepared, interactive);
+  });
+
+  $effect(() => {
+    const id = workId;
+    const catalog = tasks.projectTasks;
+    if (id) publishProjectTaskCommandCatalog(id, catalog);
   });
 
   $effect(() => {
@@ -1585,6 +1713,30 @@
 
   $effect(() => {
     const tabId = activeTabId;
+    const draft = activeTab?.draft;
+    void draft;
+    void workbenchPrefsEpoch;
+    if (
+      !interactive ||
+      !tabId ||
+      !dirty ||
+      readCodeWorkbenchPreferences().autosave !== "afterDelay"
+    ) {
+      return;
+    }
+    autosaveTimer = setTimeout(() => {
+      autosaveTimer = null;
+      const current = codeWorkspace.tabs.find((tab) => tab.tabId === tabId) ?? null;
+      if (current && codeWorkspace.isDirty(current)) void save.saveTab(current);
+    }, 1_200);
+    return () => {
+      if (autosaveTimer) clearTimeout(autosaveTimer);
+      autosaveTimer = null;
+    };
+  });
+
+  $effect(() => {
+    const tabId = activeTabId;
     problems.setDocumentProblems([]);
     const initialLine = untrack(() => activeTabLine);
     editorSelection = null;
@@ -1633,6 +1785,11 @@
       saving: busy,
       saveWhisper: save.saveWhisper,
       control: statusControlLabel,
+      execution: tasks.running
+        ? `${tasks.run?.task.label ?? "Task"} · ${tasks.run?.state === "ready" ? "ready" : tasks.run?.state === "stopping" ? "stopping" : "running"}`
+        : tasks.result
+          ? `${tasks.result.task.label} · ${tasks.result.success ? "passed" : "failed"}`
+          : null,
       languageState: lspStatus.phase === "failed"
         ? "failed"
         : lspStatus.phase === "reconnecting"
@@ -1666,8 +1823,9 @@
   $effect(() => {
     if (!interactive) return;
     const onShowProblems = () => void problems.showProblems();
+    const onPreferencesChanged = () => (workbenchPrefsEpoch += 1);
     const onCodeCommand = (event: Event) => {
-      const id = (event as CustomEvent<{ id?: string }>).detail?.id;
+      const id = codeCommandIdFromEvent(event);
       if (!id) return;
       switch (id) {
         case "workbench.action.quickOpen":
@@ -1697,6 +1855,52 @@
           break;
         case "workbench.view.testing":
           void tasks.toggleTests();
+          break;
+        case "workbench.action.tasks.runPrimary":
+        case "workbench.action.tasks.runTask":
+          void tasks.runDetected();
+          break;
+        case "workbench.action.tasks.build":
+          void tasks.runKind("build");
+          break;
+        case "workbench.action.tasks.test":
+          void tasks.runKind("test");
+          break;
+        case "testing.runAtCursor":
+          if (activeTab) void tasks.runNearestTest(activeTab.path, cursorLine);
+          break;
+        case "workbench.action.tasks.verify":
+          void tasks.runKind("verify");
+          break;
+        case "workbench.action.tasks.rerunLast":
+          void tasks.rerunLast();
+          break;
+        case "workbench.action.tasks.terminate":
+          void tasks.stopDetected();
+          break;
+        case "workbench.action.files.saveAll":
+          void save.saveAll();
+          break;
+        case "editor.action.formatDocument":
+          void runLanguageAction("format");
+          break;
+        case "editor.action.rename":
+          beginInlineRename();
+          break;
+        case "workbench.action.files.revert":
+          void reload();
+          break;
+        case "workbench.action.files.revealInExplorer":
+          if (activeTab) revealInExplorer(activeTab.path);
+          break;
+        case "medousa.code.repairLanguageSupport":
+          void repairLanguageSupport();
+          break;
+        case "medousa.code.showLanguageLogs":
+          void showLanguageLogs();
+          break;
+        case "medousa.code.restartLanguageServer":
+          restartLanguageServer();
           break;
         case "workbench.action.findInFiles":
           toggleSearch(true);
@@ -1731,14 +1935,20 @@
           tasks.toggleOutput();
           break;
         default:
+          {
+            const target = parseProjectTaskCommandId(id);
+            if (target?.workId === workId) void tasks.runTask(target.taskId);
+          }
           break;
       }
     };
     window.addEventListener("medousa-code-show-problems", onShowProblems);
     window.addEventListener("medousa-code-command", onCodeCommand);
+    window.addEventListener("medousa-code-preferences-changed", onPreferencesChanged);
     return () => {
       window.removeEventListener("medousa-code-show-problems", onShowProblems);
       window.removeEventListener("medousa-code-command", onCodeCommand);
+      window.removeEventListener("medousa-code-preferences-changed", onPreferencesChanged);
     };
   });
 
@@ -1750,12 +1960,15 @@
       await codeWorkspace.hydrate(id);
       if (workId !== id) return;
       const layout = codeWorkbenchState.layoutFor(id);
-      problems.restorePanel(layout.context_panel);
-      tasks.restoreTestsOpen(layout.tests);
+      problems.restorePanel(layout.context_panel === "problems" ? null : layout.context_panel);
+      const restoredFeedback = tasks.running ? "output" : layout.bottom_panel;
+      setFeedbackPanel(restoredFeedback, false);
+      tasks.restoreSelectedTask(layout.primary_task);
+      tasks.restoreRunRefs(layout.active_run, layout.recent_runs);
+      void tasks.hydrateTaskRuns(id);
       searchOpen = layout.search;
       changes.restoreOpen(layout.changes);
-      if (layout.terminal) void toggleTerminalDock(true);
-      else terminalDockOpen = false;
+      if (restoredFeedback === "terminal") void toggleTerminalDock(true);
       if (layout.changes) void changes.refresh();
     })();
   });
@@ -1777,6 +1990,7 @@
   onDestroy(() => {
     if (linePersistTimer) clearTimeout(linePersistTimer);
     if (treeRefreshTimer) clearTimeout(treeRefreshTimer);
+    if (autosaveTimer) clearTimeout(autosaveTimer);
     projectEventStream?.teardown();
     projectEventStream = null;
     changes.dispose();
@@ -1820,7 +2034,7 @@
     onShowOutline={() => void showOutline()}
     {onToggleWorld}
     {worldOpen}
-    onReload={() => void reload()}
+    onReload={() => dispatchCodeCommand("workbench.action.files.revert")}
     {wordWrap}
     onToggleWordWrap={toggleWordWrap}
     {showLineNumbers}
@@ -1833,12 +2047,15 @@
     {canFormat}
     {canCodeAction}
     {languageActionRunning}
-    onLanguageAction={(action) => void runLanguageAction(action)}
+    onLanguageAction={(action) => {
+      if (action === "format") dispatchCodeCommand("editor.action.formatDocument");
+      else void runLanguageAction(action);
+    }}
     onRestartLanguage={restartLanguageServer}
     onShowLanguageLogs={() => void showLanguageLogs()}
     {lspError}
     {repairingLanguage}
-    onRepairLanguage={() => void repairLanguageSupport()}
+    onRepairLanguage={() => dispatchCodeCommand("medousa.code.repairLanguageSupport")}
     {projectMenu}
     onNavigate={(direction) => void navigate(direction)}
     onPathSegment={onBreadcrumbPath}
@@ -1871,8 +2088,11 @@
     {canRename}
     {editable}
     {languageActionRunning}
-    onLanguageAction={(action) => void runLanguageAction(action)}
-    onBeginRename={() => beginInlineRename()}
+    onLanguageAction={(action) => {
+      if (action === "format") dispatchCodeCommand("editor.action.formatDocument");
+      else void runLanguageAction(action);
+    }}
+    onBeginRename={() => dispatchCodeCommand("editor.action.rename")}
     onCursorChanged={handleCursorChanged}
     onProblemsChanged={syncProblems}
     onContextMenu={onEditorContextMenu}
@@ -1900,7 +2120,6 @@
     bind:comparingTabId
     onUseProjectVersion={useProjectVersion}
     onKeepDraft={keepDraft}
-    bind:terminalDockOpen
     {dockSessionId}
     workspaceRoot={workspaceRoot ?? context?.worktree ?? null}
     terminalTitle={detail?.title?.trim() || "Terminal"}
@@ -1908,6 +2127,9 @@
     {dockBusy}
     onToggleTerminal={(forceOpen) => void toggleTerminalDock(forceOpen)}
     onPopOutTerminal={() => void popOutTerminal()}
+    {feedbackPanel}
+    onSelectFeedbackPanel={(panel) => void selectFeedbackPanel(panel)}
+    onCloseFeedbackPanel={() => setFeedbackPanel(null)}
   />
 
 </section>
@@ -1952,6 +2174,7 @@
   canTypeDefinition={canTypeDefinition}
   canImplementation={canImplementation}
   canReference={canReference}
+  canRunNearestTest={Boolean(activeTab && tasks.nearestRunnableTest(activeTab.path, cursorLine))}
   canRename={canRename}
   canFormat={canFormat}
   canOrganize={canCodeAction}
@@ -1984,13 +2207,15 @@
       closeQuickOpen: () => quick.close(),
       navigate: (direction) => void navigate(direction),
       reopenClosedTab: () => void reopenClosedTab(),
-      saveAll: () => void save.saveAll(),
+      saveAll: () => dispatchCodeCommand("workbench.action.files.saveAll"),
       saveActive: () => { if (activeTab) void save.saveTab(activeTab); },
       canSaveShortcut: canInvokeCodeSaveShortcut({ editable, canBeginEdit }),
-      toggleTerminal: () => void toggleTerminalDock(),
-      openSearch: () => toggleSearch(true),
+      toggleTerminal: () => dispatchCodeCommand("workbench.action.terminal.toggleTerminal"),
+      openSearch: () => dispatchCodeCommand("workbench.action.findInFiles"),
       showOutline: () => void showOutline(),
-      beginRename: () => beginInlineRename(),
+      beginRename: () => dispatchCodeCommand("editor.action.rename"),
+      formatDocument: () => dispatchCodeCommand("editor.action.formatDocument"),
+      canFormat,
       clearProblemsPanel: () => problems.setPanel(null),
     });
   }}

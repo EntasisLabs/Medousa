@@ -216,13 +216,13 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
 | HCP-6B | Previewed repository replace and complete file/folder operations | ✅ |
 | HCP-6C | Large-file, encoding, binary-preview, and fuzzy Quick Open fallbacks | ✅ |
 | HCP-7A | Streaming execution protocol and bounded output replay | ✅ |
-| HCP-7B | Named task terminals, background readiness, configured tasks, and problem matchers | ✅ |
+| HCP-7B | Streaming, configured, restorable, terminal-aware execution verified by the [Human Code workbench plan](human-code-workbench-plan.md) | ✅ |
 | HCP-7C | Terminal search, profiles, groups, shell integration, file links, and run selection | ✅ |
 | HCP-7D | Remote service detection/proxy and Browser preview handoff | ✅ |
 | HCP-8A | Forge Changes model and branch/upstream/conflict status | ✅ |
 | HCP-8B | High-fidelity diff, real context expansion, file/hunk actions, and conflict editor | ✅ |
 | HCP-8C | Guarded Git sync/history/blame/checkpoint operations and provider continuity | 🔄 |
-| HCP-9A | Test adapter contract, discovery hierarchy, stable state, and results | ⛔ |
+| HCP-9A | Full test adapter hierarchy remains parked; HCW-7 ships a thin root-aware discovered-test/result subset | ⛔ |
 | HCP-9B | Gutter/Explorer runs, watch, coverage, profiles, and Forge evidence | ⛔ |
 | HCP-10A | Workshop DAP proxy, launch configuration, sessions, and source mapping | ⛔ |
 | HCP-10B | Breakpoints, stepping, stack, variables, watch, console, and debug-test | ⛔ |
@@ -335,11 +335,14 @@ The status legend is `⬜ pending`, `🔄 active`, `✅ verified`, and `⛔ bloc
   `…/task-runs/{id}/events?since=`, bounded live stdout/stderr on poll, and a
   Code Output panel. Migration: none. Compatibility: older Homes keep
   poll-until-exit. Rollback: revert this commit; additive stream route/fields.
-- **HCP-7B — `a91774b5`.** Named Output channels with background readiness,
-  incremental problem locations, and thin `.vscode/tasks.json` import
-  (`npm`/`shell`/`process` + inline matchers). Migration: none. Compatibility:
-  older Homes ignore new task/run fields. Rollback: revert this commit;
-  additive task metadata and UI.
+- **HCP-7B — `a91774b5` (shipped foundation; UX reopened).** Added named
+  Output channels with background readiness, incremental problem locations,
+  and thin `.vscode/tasks.json` import (`npm`/`shell`/`process` + inline
+  matchers). Restorable run ownership, exact rerun, unified
+  Problems/Output/Terminal, and task-to-PTY attachment are tracked by the
+  [Human Code workbench plan](human-code-workbench-plan.md). Migration: none.
+  Compatibility: older Homes ignore new task/run fields. Rollback: revert this
+  commit; additive task metadata and UI.
 - **HCP-7C — `61aef5a5`.** Terminal find, clickable `path:line` links, session
   switching/cwd chrome, and Run Selected Text in Terminal. Migration: none.
   Compatibility: additive xterm addons/UI. Rollback: revert this commit.
@@ -425,6 +428,10 @@ registry or remote-parity needs that stay workshop-owned.
 - A long-running development task displays live output in a named terminal,
   reports background readiness, yields clickable locations and URLs, survives
   pane changes, and stops cleanly.
+- The thin Tests channel assigns source-discovered tests to the nearest
+  compatible nested task root, retains per-test result provenance, and offers
+  a stable Run Nearest Test action for Rust, Python, and Go. Full adapter
+  hierarchy, watch, coverage, and debug remain parked under HCP-9.
 - A service bound on a remote workshop can open in the Home Browser through an
   authenticated private proxy without exposing a public listener by default.
 - Changes shows authoritative branch/upstream/conflict state. Diff context

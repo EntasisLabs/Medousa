@@ -11,6 +11,7 @@ struct MockTransport {
     handlers: HashMap<(String, String), Handler>,
     calls: Arc<Mutex<Vec<(String, String)>>>,
     sse_batches: Arc<Mutex<VecDeque<Vec<bytes::Bytes>>>>,
+    request_headers: Arc<Mutex<Vec<Vec<(String, String)>>>>,
 }
 
 impl MockTransport {
@@ -19,6 +20,7 @@ impl MockTransport {
             handlers: HashMap::new(),
             calls: Arc::new(Mutex::new(Vec::new())),
             sse_batches: Arc::new(Mutex::new(VecDeque::new())),
+            request_headers: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -33,6 +35,14 @@ impl MockTransport {
     fn on_post(mut self, path: &str, value: serde_json::Value) -> Self {
         self.handlers.insert(
             ("POST".to_string(), path.to_string()),
+            Box::new(move || value.clone()),
+        );
+        self
+    }
+
+    fn on_delete(mut self, path: &str, value: serde_json::Value) -> Self {
+        self.handlers.insert(
+            ("DELETE".to_string(), path.to_string()),
             Box::new(move || value.clone()),
         );
         self
@@ -80,6 +90,28 @@ impl Transport for MockTransport {
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
         let path = path.to_string();
         Box::pin(async move { self.dispatch("POST", &path) })
+    }
+
+    fn post_json_with_headers<'a>(
+        &'a self,
+        _base_url: &'a str,
+        path: &'a str,
+        _body: serde_json::Value,
+        headers: Vec<(&'static str, String)>,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
+        let path = path.to_string();
+        Box::pin(async move {
+            self.request_headers
+                .lock()
+                .expect("request headers lock")
+                .push(
+                    headers
+                        .into_iter()
+                        .map(|(name, value)| (name.to_string(), value))
+                        .collect(),
+                );
+            self.dispatch("POST", &path)
+        })
     }
 
     fn delete_json<'a>(
@@ -264,6 +296,139 @@ async fn mock_transport_routes_health_get() {
     let health = client.health().get().await.expect("health get");
     assert_eq!(health.status, "ok");
     assert_eq!(transport.call_count(), 1);
+}
+
+#[tokio::test]
+async fn mock_transport_routes_prompt_stash_lifecycle() {
+    use medousa_types::{CreatePromptStashRequest, PromptStashDraft};
+
+    let stash = serde_json::json!({
+        "stash_id": "pst_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "label": "Follow up",
+        "draft": { "text": "ask this next" },
+        "created_by": "user:local",
+        "created_at": "2026-08-21T00:00:00Z",
+        "updated_at": "2026-08-21T00:00:00Z"
+    });
+    let transport = Arc::new(
+        MockTransport::new()
+            .on_get(
+                "/v1/prompt-stashes",
+                serde_json::json!({ "stashes": [stash.clone()] }),
+            )
+            .on_post("/v1/prompt-stashes", stash)
+            .on_delete(
+                "/v1/prompt-stashes/pst_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                serde_json::json!({
+                    "stash_id": "pst_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "deleted": true
+                }),
+            ),
+    );
+    let client =
+        medousa_sdk::MedousaClient::with_transport(transport.clone(), "http://127.0.0.1:8080");
+
+    let listed = client.prompt_stashes().list().await.expect("list stashes");
+    assert_eq!(listed.stashes.len(), 1);
+    let created = client
+        .prompt_stashes()
+        .create(&CreatePromptStashRequest {
+            label: Some("Follow up".to_string()),
+            draft: PromptStashDraft {
+                text: "ask this next".to_string(),
+                media_refs: vec![],
+                mode: None,
+                model: None,
+            },
+            context_manifest_id: None,
+            source_session: None,
+        })
+        .await
+        .expect("create stash");
+    assert_eq!(created.label.as_deref(), Some("Follow up"));
+    let deleted = client
+        .prompt_stashes()
+        .delete(created.stash_id.as_str())
+        .await
+        .expect("delete stash");
+    assert!(deleted.deleted);
+    assert_eq!(transport.call_count(), 3);
+}
+
+#[tokio::test]
+async fn mock_transport_routes_session_derivation_with_idempotency() {
+    let authority = format!("auth_{}", "a".repeat(64));
+    let created_at = "2026-08-21T12:00:00Z";
+    let transport = Arc::new(MockTransport::new().on_post(
+        "/v1/sessions/derive",
+        serde_json::json!({
+            "authority_id": authority,
+            "session_id": "target-session",
+            "catalog": "single",
+            "reused": false,
+            "derivation": {
+                "derivation_id": format!("drv_{}", "d".repeat(32)),
+                "target_session": {
+                    "authority_id": authority,
+                    "session_id": "target-session"
+                },
+                "manifest": {
+                    "manifest_id": format!("ctx_{}", "c".repeat(32)),
+                    "sources": [{
+                        "selection": {
+                            "session": {
+                                "authority_id": authority,
+                                "session_id": "source-session"
+                            },
+                            "through_entry_seq": 2
+                        },
+                        "selection_digest": "sha256:selection"
+                    }],
+                    "created_by": "profile:user:test",
+                    "created_at": created_at
+                },
+                "intent": "fork",
+                "created_by": "profile:user:test",
+                "created_at": created_at
+            }
+        }),
+    ));
+    let client =
+        medousa_sdk::MedousaClient::with_transport(transport.clone(), "http://127.0.0.1:8080");
+    let request = medousa_types::DeriveSessionRequest {
+        sources: vec![medousa_types::ConversationRangeSelection {
+            session: medousa_types::SessionRef {
+                authority_id: medousa_types::AuthorityId::parse(&authority).unwrap(),
+                session_id: medousa_types::SessionId::parse("source-session").unwrap(),
+            },
+            after_entry_seq: None,
+            through_entry_seq: 2,
+        }],
+        intent: "fork".to_string(),
+        target: medousa_types::DeriveSessionTarget {
+            catalog: Some("single".to_string()),
+            display_name: None,
+        },
+    };
+
+    let response = client
+        .sessions()
+        .derive(&request, "derive-rust-sdk-1")
+        .await
+        .expect("derive response");
+
+    assert_eq!(response.session_id, "target-session");
+    assert_eq!(
+        transport
+            .request_headers
+            .lock()
+            .expect("request headers lock")
+            .as_slice(),
+        [vec![(
+            "Idempotency-Key".to_string(),
+            "derive-rust-sdk-1".to_string()
+        )]]
+    );
 }
 
 #[tokio::test]

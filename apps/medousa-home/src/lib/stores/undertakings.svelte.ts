@@ -13,6 +13,10 @@ import {
   forgeStreamUrl,
 } from "$lib/forge";
 import { currentUndertakingGroupId } from "$lib/runtime/undertakingGroupPort";
+import {
+  openDaemonEventStream,
+  type DaemonEventConnection,
+} from "$lib/daemon/daemonEventStream";
 
 export type ActiveUndertakingContext = {
   workId: string;
@@ -52,9 +56,10 @@ function createUndertakingsStore() {
   /** Map shell group id → active context */
   let contexts = $state<Record<string, ActiveUndertakingContext | null>>({});
   let pollTimer: ReturnType<typeof setInterval> | null = null;
-  let eventSource: EventSource | null = null;
+  let eventSource: DaemonEventConnection | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let eventStreamConnecting = false;
+  let eventStreamGeneration = 0;
   let eventRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   let eventRevision = $state(0);
   const pendingEventWorkIds = new Set<string>();
@@ -379,38 +384,38 @@ function createUndertakingsStore() {
   }
 
   async function ensureEventStream() {
-    if (eventSource || eventStreamConnecting || typeof EventSource === "undefined") {
-      if (typeof EventSource === "undefined") startFallbackPolling();
-      return;
-    }
+    if (eventSource || eventStreamConnecting) return;
+    const generation = eventStreamGeneration;
     eventStreamConnecting = true;
+    let source: DaemonEventConnection | null = null;
     try {
-      const source = new EventSource(await forgeStreamUrl());
-      eventSource = source;
-      source.onopen = () => stopPolling();
-      source.addEventListener("forge", (event) => {
-        let workId = "";
-        try {
-          workId = (JSON.parse((event as MessageEvent<string>).data) as { work_id?: string })
-            .work_id ?? "";
-        } catch {
-          return;
-        }
-        scheduleEventRefresh(workId);
+      source = await openDaemonEventStream<{ work_id?: string }>({
+        operation: "forge.stream.get",
+        browserUrl: forgeStreamUrl,
+        browserEvent: "forge",
+        onOpen: stopPolling,
+        onEvent: (event) => scheduleEventRefresh(event.work_id ?? ""),
+        onError: () => {
+          if (generation !== eventStreamGeneration) return;
+          if (source && eventSource === source) eventSource = null;
+          startFallbackPolling();
+          if (reconnectTimer) clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(() => void ensureEventStream(), 5000);
+        },
       });
-      source.onerror = () => {
+      if (source.closed || generation !== eventStreamGeneration) {
         source.close();
-        if (eventSource === source) eventSource = null;
-        startFallbackPolling();
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-        reconnectTimer = setTimeout(() => void ensureEventStream(), 5000);
-      };
+        return;
+      }
+      eventSource = source;
     } catch {
+      source?.close();
+      if (generation !== eventStreamGeneration) return;
       startFallbackPolling();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       reconnectTimer = setTimeout(() => void ensureEventStream(), 5000);
     } finally {
-      eventStreamConnecting = false;
+      if (generation === eventStreamGeneration) eventStreamConnecting = false;
     }
   }
 
@@ -426,6 +431,7 @@ function createUndertakingsStore() {
   }
 
   function resetForWorkshopSwitch() {
+    eventStreamGeneration += 1;
     stopPolling();
     eventSource?.close();
     eventSource = null;

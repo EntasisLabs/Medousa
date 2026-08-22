@@ -10,6 +10,7 @@
   import PeersRailToolbar from "$lib/components/peers/PeersRailToolbar.svelte";
   import PeersShellList from "$lib/components/peers/PeersShellList.svelte";
   import SettingsNav from "$lib/components/settings/SettingsNav.svelte";
+  import SettingsRailToolbar from "$lib/components/settings/SettingsRailToolbar.svelte";
   import WebRailToolbar from "$lib/components/browser/WebRailToolbar.svelte";
   import WebRailList from "$lib/components/browser/WebRailList.svelte";
   import CalendarRailToolbar from "$lib/components/calendar/CalendarRailToolbar.svelte";
@@ -606,9 +607,13 @@
       {#if showView}
         <div class="master-rail-view-body">
           {#if viewSurface === SAFETY_SURFACE_SETTINGS}
-            <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
+            <header class="lme-side-rail-dock">
+              <SettingsRailToolbar />
+            </header>
+            <div class="min-h-0 flex-1 overflow-y-auto py-1">
               <SettingsNav
                 active={settingsNav.activeSection}
+                variant="rail"
                 badges={settingsNavBadges}
                 onSelect={(section) => {
                   settingsNav.setActiveSection(section);
@@ -1011,7 +1016,7 @@
       {:else if popover.surfaceId === "profiles"}
         <YouRailToolbar onAction={() => commitPopoverSurface("profiles")} />
       {:else if popover.surfaceId === SAFETY_SURFACE_SETTINGS}
-        <span class="nav-rail-popover-toolbar-label">Settings</span>
+        <SettingsRailToolbar popover={true} />
       {/if}
     {/snippet}
 
@@ -1032,9 +1037,10 @@
       popover.surfaceId === "code"}
       <LmeSidePanel {onOpenChat} family={lmeFamilyForSurface(popover.surfaceId)} />
     {:else if popover.surfaceId === SAFETY_SURFACE_SETTINGS}
-      <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
+      <div class="min-h-0 flex-1 overflow-y-auto py-1">
         <SettingsNav
           active={settingsNav.activeSection}
+          variant="rail"
           badges={settingsNavBadges}
           onSelect={(section) => {
             settingsNav.setActiveSection(section);

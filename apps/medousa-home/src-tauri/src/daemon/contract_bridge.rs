@@ -11,10 +11,10 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::watch;
 
+use crate::daemon::DaemonState;
 use crate::daemon::generated_ops::DaemonOperation;
 use crate::daemon::sse::stream_sse_json_workshop;
 use crate::daemon::workshop_http;
-use crate::daemon::DaemonState;
 use crate::workshop_transport;
 
 static STREAM_SEQ: AtomicU64 = AtomicU64::new(1);
@@ -52,6 +52,7 @@ pub async fn daemon_stream_start(
     operation: DaemonOperation,
     path_params: HashMap<String, String>,
     query: Option<HashMap<String, String>>,
+    client_handle: Option<String>,
 ) -> Result<String, String> {
     let op = medousa_sdk::generated::ops::by_id(operation.id())
         .ok_or_else(|| format!("unknown operation {}", operation.id()))?;
@@ -59,17 +60,21 @@ pub async fn daemon_stream_start(
         return Err("operation is not a stream".into());
     }
     let path = expand_operation_path(op.path, &path_params, query.as_ref())?;
-    let handle = format!(
-        "{}-{}",
-        operation.id(),
-        STREAM_SEQ.fetch_add(1, Ordering::Relaxed)
-    );
+    let handle = match client_handle {
+        Some(handle) => validate_client_stream_handle(handle)?,
+        None => format!(
+            "{}-{}",
+            operation.id(),
+            STREAM_SEQ.fetch_add(1, Ordering::Relaxed)
+        ),
+    };
     let (tx, rx) = watch::channel(false);
-    state
-        .contract_streams
-        .lock()
-        .expect("contract stream lock")
-        .insert(handle.clone(), tx);
+    let mut streams = state.contract_streams.lock().expect("contract stream lock");
+    if streams.contains_key(&handle) {
+        return Err("daemon stream handle is already active".into());
+    }
+    streams.insert(handle.clone(), tx);
+    drop(streams);
 
     let config = crate::daemon::sdk::transport_config(&state);
     let event_name = format!("daemon-stream://{handle}/event");
@@ -85,6 +90,18 @@ pub async fn daemon_stream_start(
             }
         }
     });
+    Ok(handle)
+}
+
+fn validate_client_stream_handle(handle: String) -> Result<String, String> {
+    let valid = !handle.is_empty()
+        && handle.len() <= 160
+        && handle
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'));
+    if !valid {
+        return Err("invalid daemon stream handle".into());
+    }
     Ok(handle)
 }
 
@@ -127,8 +144,15 @@ pub(crate) fn expand_operation_path(
 
 #[cfg(test)]
 mod tests {
-    use super::expand_operation_path;
+    use super::{expand_operation_path, validate_client_stream_handle};
     use std::collections::HashMap;
+
+    #[test]
+    fn client_stream_handles_are_bounded_and_event_name_safe() {
+        assert!(validate_client_stream_handle("forge.stream-123:4".into()).is_ok());
+        assert!(validate_client_stream_handle("../forge stream".into()).is_err());
+        assert!(validate_client_stream_handle("x".repeat(161)).is_err());
+    }
 
     #[test]
     fn expands_generated_stream_path_and_query() {

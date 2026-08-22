@@ -12,6 +12,10 @@ import {
   DEFAULT_WORKSPACE_BACKOFF,
   ReconnectScheduler,
 } from "$lib/stream/reconnect";
+import {
+  openDaemonEventStream,
+  type DaemonEventConnection,
+} from "$lib/daemon/daemonEventStream";
 
 export type { ForgeProjectEvent, ForgeProjectEventKind };
 
@@ -68,9 +72,11 @@ export function watchedFileChangesForProjectEvent(
   }
 }
 
-export function parseProjectEventPayload(raw: string): ForgeProjectEvent | null {
+export function parseProjectEventPayload(raw: unknown): ForgeProjectEvent | null {
   try {
-    const parsed = JSON.parse(raw) as ForgeProjectEvent;
+    const parsed = (typeof raw === "string"
+      ? JSON.parse(raw)
+      : raw) as ForgeProjectEvent;
     if (
       typeof parsed?.seq !== "number" ||
       typeof parsed?.work_id !== "string" ||
@@ -90,11 +96,10 @@ export type CodeProjectEventHandlers = {
 };
 
 /**
- * EventSource client with `?since=` replay and workspace-style reconnect.
- * Uses browser EventSource against the daemon URL (not forge_request JSON).
+ * Authenticated daemon stream with `?since=` replay and workspace-style reconnect.
  */
 export class CodeProjectEventStream {
-  private source: EventSource | null = null;
+  private source: DaemonEventConnection | null = null;
   private workId: string | null = null;
   private lastSeq = 0;
   private connecting = false;
@@ -151,48 +156,49 @@ export class CodeProjectEventStream {
   private async connect() {
     const id = this.workId;
     if (!id || this.connecting) return;
-    if (typeof EventSource === "undefined") {
-      this.handlers.onUnavailable?.();
-      return;
-    }
     this.connecting = true;
     if (this.source) {
       this.source.close();
       this.source = null;
     }
+    let source: DaemonEventConnection | null = null;
     try {
-      const url = await forgeProjectEventsUrl(id, this.lastSeq);
+      source = await openDaemonEventStream<ForgeProjectEvent>({
+        operation: "forge.items.by_work_id.project_events.get",
+        pathParams: { work_id: id },
+        query: this.lastSeq > 0 ? { since: String(this.lastSeq) } : undefined,
+        browserUrl: () => forgeProjectEventsUrl(id, this.lastSeq),
+        browserEvent: "project",
+        onEvent: (payload) => {
+          const event = parseProjectEventPayload(payload);
+          if (!event || event.work_id !== id) return;
+          if (event.seq <= this.lastSeq) return;
+          this.lastSeq = event.seq;
+          this.reconnect.noteSuccess();
+          this.handlers.onEvent(event);
+        },
+        onOpen: () => {
+          this.connecting = false;
+          this.reconnect.noteSuccess();
+        },
+        onError: () => {
+          this.connecting = false;
+          if (source && this.source === source) this.source = null;
+          if (this.workId !== id) return;
+          this.reconnect.schedule(() => void this.connect());
+        },
+      });
       if (this.workId !== id) {
+        source.close();
         this.connecting = false;
         return;
       }
-      const source = new EventSource(url);
+      if (source.closed) return;
       this.source = source;
-      source.addEventListener("project", (message) => {
-        const event = parseProjectEventPayload(
-          typeof message.data === "string" ? message.data : "",
-        );
-        if (!event || event.work_id !== id) return;
-        if (event.seq <= this.lastSeq) return;
-        this.lastSeq = event.seq;
-        this.reconnect.noteSuccess();
-        this.handlers.onEvent(event);
-      });
-      source.onopen = () => {
-        this.connecting = false;
-        this.reconnect.noteSuccess();
-      };
-      source.onerror = () => {
-        this.connecting = false;
-        if (this.source === source) {
-          source.close();
-          this.source = null;
-        }
-        if (this.workId !== id) return;
-        this.reconnect.schedule(() => void this.connect());
-      };
     } catch {
+      source?.close();
       this.connecting = false;
+      this.handlers.onUnavailable?.();
       if (this.workId === id) {
         this.reconnect.schedule(() => void this.connect());
       }

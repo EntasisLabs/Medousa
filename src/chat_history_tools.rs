@@ -24,6 +24,7 @@ const MAX_READ_TURNS: usize = 40;
 const DEFAULT_READ_CHARS: usize = 12_000;
 const MAX_READ_CHARS: usize = 24_000;
 const MAX_MESSAGE_CHARS: usize = 2_400;
+#[cfg(test)]
 const SEARCH_EXCERPT_CHARS: usize = 420;
 
 pub fn register_chat_history_tools(
@@ -123,6 +124,7 @@ fn bounded_text(text: &str, max_chars: usize) -> String {
     crate::agent_runtime::prompt_prep::truncate_text_for_budget(text, max_chars)
 }
 
+#[cfg(test)]
 fn search_excerpt(text: &str, query: &str) -> String {
     let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
     let lower = collapsed.to_ascii_lowercase();
@@ -234,44 +236,47 @@ impl CognitionChatHistorySearchTool {
         );
         let scanned_sessions = page.sessions.len();
         let mut results = Vec::new();
-
-        for summary in page.sessions {
-            if results.len() >= limit {
-                break;
-            }
-            let Some(query) = query.as_deref() else {
+        if query.is_none() {
+            for summary in page.sessions {
                 results.push(search_match_from_summary(summary, None, None, None));
-                continue;
-            };
-
-            let turns = load_history(&summary.session_id);
-            let mut matched_turn = false;
-            for (index, turn) in turns
-                .iter()
-                .enumerate()
-                .rev()
-                .take(MAX_TURNS_SCANNED_PER_SESSION)
-            {
-                let Some(text) = visible_turn_text(turn) else {
+            }
+        } else if let Some(query_text) = query.as_deref() {
+            let mut summaries = page
+                .sessions
+                .into_iter()
+                .map(|summary| (summary.session_id.clone(), summary))
+                .collect::<std::collections::HashMap<_, _>>();
+            let session_ids = summaries.keys().cloned().collect::<Vec<_>>();
+            let candidate_limit = scan_limit.saturating_mul(MAX_TURNS_SCANNED_PER_SESSION);
+            let transcript_hits = crate::session_store::get_session_store()
+                .search_transcripts(&session_ids, query_text, candidate_limit)
+                .map_err(|error| {
+                    StasisError::PortFailure(format!("{COGNITION_CHAT_HISTORY_SEARCH}: {error}"))
+                })?;
+            for hit in transcript_hits {
+                if results.len() >= limit {
+                    break;
+                }
+                let Some(summary) = summaries.remove(&hit.session_id) else {
                     continue;
                 };
-                if !text
-                    .to_ascii_lowercase()
-                    .contains(&query.to_ascii_lowercase())
-                {
-                    continue;
-                }
                 results.push(search_match_from_summary(
-                    summary.clone(),
-                    Some(index + 1),
-                    Some(display_role(&turn.role)),
-                    Some(search_excerpt(&text, query)),
+                    summary,
+                    None,
+                    Some(hit.role),
+                    Some(hit.excerpt),
                 ));
-                matched_turn = true;
-                break;
             }
-            if !matched_turn && metadata_matches(&summary, query) {
-                results.push(search_match_from_summary(summary, None, None, None));
+
+            if results.len() < limit {
+                let mut metadata_hits = summaries
+                    .into_values()
+                    .filter(|summary| metadata_matches(summary, query_text))
+                    .collect::<Vec<_>>();
+                metadata_hits.sort_by(|left, right| right.last_timestamp.cmp(&left.last_timestamp));
+                for summary in metadata_hits.into_iter().take(limit - results.len()) {
+                    results.push(search_match_from_summary(summary, None, None, None));
+                }
             }
         }
 

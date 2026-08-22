@@ -77,6 +77,11 @@
     @apply flex flex-col gap-1;
   }
 
+  .settings-nav--rail {
+    gap: 0.0625rem;
+    padding: 0.35rem 0.75rem 0.85rem;
+  }
+
   .settings-nav-group {
     @apply px-3 pb-0.5 pt-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-content-quiet;
   }
@@ -89,12 +94,90 @@
     @apply text-content-secondary;
   }
 
+  .settings-nav--rail .settings-nav-group {
+    display: flex;
+    height: 1.75rem;
+    align-items: center;
+    padding: 0 0.5rem;
+    color: rgb(var(--theme-text-quiet));
+    font-size: 0.75rem;
+    font-weight: 450;
+    letter-spacing: -0.006em;
+    line-height: 1.2;
+    text-transform: none;
+  }
+
+  .settings-nav--rail .settings-nav-group:not(:first-child) {
+    margin-top: 0.85rem;
+  }
+
+  .settings-nav--rail .settings-nav-group--active {
+    color: rgb(var(--theme-text-quiet));
+  }
+
   .settings-nav-item {
     @apply rounded-container-token px-3 py-2.5 text-left transition hover:bg-surface-800/80;
   }
 
   .settings-nav-item-active {
     @apply bg-primary-500/10 ring-1 ring-inset ring-primary-500/30;
+  }
+
+  .settings-nav--rail .settings-nav-item {
+    display: flex;
+    min-height: 2.125rem;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    border-radius: 0.45rem;
+    padding: 0.4rem 0.5rem;
+    text-align: left;
+  }
+
+  .settings-nav--rail .settings-nav-item:hover {
+    background: rgb(var(--color-surface-800) / 0.6);
+  }
+
+  .settings-nav--rail .settings-nav-item-active {
+    background: rgb(var(--color-surface-800) / 0.78);
+    box-shadow: none;
+  }
+
+  .settings-nav--rail .settings-nav-item-active:hover {
+    background: rgb(var(--color-surface-800) / 0.92);
+  }
+
+  .settings-nav-item-icon {
+    @apply shrink-0 text-content-quiet;
+    width: 1rem;
+    height: 1rem;
+    color: rgb(var(--theme-text-tertiary));
+    stroke-width: 1.7;
+  }
+
+  .settings-nav-item-active .settings-nav-item-icon {
+    color: rgb(var(--color-surface-200));
+  }
+
+  .settings-nav-item-copy {
+    @apply flex min-w-0 flex-1 items-center gap-2;
+  }
+
+  .settings-nav-item-label {
+    @apply min-w-0 flex-1 truncate text-sm font-medium;
+  }
+
+  .settings-nav--rail .settings-nav-item-label {
+    color: rgb(var(--color-surface-200));
+    font-size: 0.875rem;
+    font-weight: 450;
+    line-height: 1.25;
+    letter-spacing: -0.008em;
+  }
+
+  .settings-nav--rail .settings-nav-item-active .settings-nav-item-label {
+    color: rgb(var(--color-surface-50));
+    font-weight: 500;
   }
 
   .settings-nav-mobile {

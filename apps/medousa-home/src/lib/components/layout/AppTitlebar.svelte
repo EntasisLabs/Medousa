@@ -2,20 +2,16 @@
   import {
     ArrowLeft,
     ArrowRight,
-    ExternalLink,
     PanelLeft,
     PanelLeftOpen,
-    Plus,
   } from "@lucide/svelte";
   import ShellTabNotch from "$lib/components/shell/ShellTabNotch.svelte";
-  import NewTabMenu from "$lib/components/layout/NewTabMenu.svelte";
+  import ShellWorkspaceControl from "$lib/components/shell/ShellWorkspaceControl.svelte";
   import WindowControls from "$lib/components/layout/WindowControls.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { environment } from "$lib/stores/environment.svelte";
-  import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { titlebarMode, usesUnifiedTitlebar } from "$lib/platform";
   import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
-  import { isTauri, showBrowser, showChatPopout } from "$lib/window";
 
   const mode = $derived(titlebarMode());
   const show = $derived(usesUnifiedTitlebar());
@@ -23,12 +19,6 @@
   const railWidth = $derived(layout.shellSidebarWidth);
   const canNavBack = $derived(layout.canGoRailViewBack);
   const canNavForward = $derived(layout.canGoRailViewForward);
-  const showChatPopoutBtn = $derived(
-    isTauri() && shellTabs.activeTab?.kind === "chat",
-  );
-  const showWebPopoutBtn = $derived(
-    isTauri() && shellTabs.activeTab?.kind === "web",
-  );
 
   function toggleRail() {
     if (railExpanded) {
@@ -119,12 +109,6 @@
     </div>
 
     <div class="app-titlebar-tabs min-w-0 flex-1">
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class="app-titlebar-drag"
-        data-tauri-drag-region
-        ondblclick={onDragDblClick}
-      ></div>
       <ShellTabNotch />
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
@@ -132,36 +116,7 @@
         data-tauri-drag-region
         ondblclick={onDragDblClick}
       ></div>
-    </div>
-
-    <div class="app-titlebar-actions shrink-0">
-      <NewTabMenu>
-        <Plus size={16} />
-      </NewTabMenu>
-      <!-- Always reserve the pop-out slot so the centered notch doesn't shift. -->
-      {#if showChatPopoutBtn}
-        <button
-          type="button"
-          class="app-titlebar-btn"
-          title="Pop out chat"
-          aria-label="Pop out chat"
-          onclick={() => void showChatPopout()}
-        >
-          <ExternalLink size={16} />
-        </button>
-      {:else if showWebPopoutBtn}
-        <button
-          type="button"
-          class="app-titlebar-btn"
-          title="Open web window"
-          aria-label="Open web window"
-          onclick={() => void showBrowser()}
-        >
-          <ExternalLink size={16} />
-        </button>
-      {:else}
-        <span class="app-titlebar-btn app-titlebar-btn--ghost" aria-hidden="true"></span>
-      {/if}
+      <ShellWorkspaceControl />
     </div>
 
     <WindowControls />
@@ -173,12 +128,10 @@
    * y on trafficLightPosition moves lights DOWN (I had been lowering y — oops).
    * Bar height centers controls on light midline: y18 + 6 ≈ 24 → ~36–40px bar.
    *
-   * --titlebar-system-chrome mirrors Mac traffic lights ↔ Win/Linux controls so
-   * the centered notch stays optically stable across platforms.
+   * Native and custom chrome keep their own platform-appropriate footprints.
    */
   .app-titlebar {
     --titlebar-height: 40px;
-    --titlebar-system-chrome: 86px;
     display: flex;
     height: var(--titlebar-height);
     flex-shrink: 0;
@@ -203,12 +156,16 @@
     align-items: center;
     gap: 1px;
     box-sizing: border-box;
-    /* Same left footprint as WindowControls on the right (Mac lights / Win spacer). */
-    padding-left: var(--titlebar-system-chrome);
+    padding-left: 4px;
     padding-right: 4px;
     transition:
       background-color 160ms ease,
       width 160ms ease;
+  }
+
+  .app-titlebar--mac .app-titlebar-rail-slot {
+    /* Clear the native traffic lights without mirroring them on the right. */
+    padding-left: 86px;
   }
 
   .app-titlebar-rail-slot--expanded {
@@ -231,29 +188,16 @@
     min-width: 0;
     height: 100%;
     align-items: center;
-    justify-content: center;
-    gap: 0.35rem;
+    justify-content: flex-start;
+    gap: 0.75rem;
     margin-left: 1px;
-    padding: 4px 2px;
+    padding: 4px 8px 4px 6px;
   }
 
   .app-titlebar-drag {
     flex: 1 1 0;
     align-self: stretch;
     min-width: 0.75rem;
-  }
-
-  .app-titlebar-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin-right: 2px;
-    padding-left: 4px;
-  }
-
-  .app-titlebar-btn--ghost {
-    visibility: hidden;
-    pointer-events: none;
   }
 
   .app-titlebar-btn {
@@ -272,8 +216,7 @@
       color 120ms ease;
   }
 
-  /* Slightly larger chrome glyphs than the old 13–14px set. */
-  .app-titlebar :global(svg.lucide) {
+  .app-titlebar-btn :global(svg.lucide) {
     width: 16px;
     height: 16px;
   }

@@ -4,6 +4,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   type Transport,
   LSPClient,
@@ -28,6 +29,7 @@ import {
   OPERATIONS,
 } from "$lib/daemon";
 import type { GraphemeLspWorkspaceResponse } from "$lib/types/grapheme";
+import { isTauri } from "$lib/window";
 
 type CloseableTransport = {
   transport: Transport;
@@ -108,10 +110,135 @@ export function codeLanguageServerEventFromMessage(
   return null;
 }
 
+export function smartEditingUnavailableMessage(language: string, error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error ?? "");
+  if (/\b401\b|unauthori[sz]ed|authentication required/i.test(detail)) {
+    return "Smart editing could not authenticate with this workshop. Reconnect it in Settings → Connection, then try again.";
+  }
+  return detail
+    ? `Smart editing is unavailable for ${language}: ${detail}`
+    : `Smart editing is unavailable for ${language}`;
+}
+
+type NativeLspMessage = { attach_id: number; data: string };
+type NativeLspStatus = {
+  attach_id: number;
+  connected: boolean;
+  code: number;
+  reason: string;
+  clean: boolean;
+};
+
+async function createNativeCloseableWebSocketTransport(
+  path: string,
+  onServerEvent?: (event: CodeLanguageServerEvent) => void,
+): Promise<CloseableTransport> {
+  const handlers: Array<(value: string) => void> = [];
+  let attachId: number | null = null;
+  let expectedClose = false;
+  let closeSettled = false;
+  let outbound = Promise.resolve();
+  let resolveClosed!: (value: CodeLspSocketClose) => void;
+  const closed = new Promise<CodeLspSocketClose>((resolve) => {
+    resolveClosed = resolve;
+  });
+  const listeners: UnlistenFn[] = [];
+  const unlisten = () => {
+    while (listeners.length > 0) listeners.pop()?.();
+  };
+  const settleClosed = (value: CodeLspSocketClose) => {
+    if (closeSettled) return;
+    closeSettled = true;
+    unlisten();
+    resolveClosed(value);
+  };
+
+  listeners.push(
+    await listen<NativeLspMessage>("code-lsp-message", ({ payload }) => {
+      if (payload.attach_id !== attachId) return;
+      const serverEvent = codeLanguageServerEventFromMessage(payload.data);
+      if (serverEvent) onServerEvent?.(serverEvent);
+      for (const handler of handlers) handler(payload.data);
+    }),
+  );
+  listeners.push(
+    await listen<NativeLspStatus>("code-lsp-status", ({ payload }) => {
+      if (payload.attach_id !== attachId || payload.connected) return;
+      handlers.length = 0;
+      settleClosed({
+        expected: expectedClose,
+        code: payload.code || 1006,
+        reason: payload.reason,
+        clean: payload.clean,
+      });
+      void invoke("code_lsp_detach", { attachId: payload.attach_id });
+    }),
+  );
+
+  try {
+    const attached = await invoke<{ attach_id: number }>("code_lsp_attach", { path });
+    attachId = attached.attach_id;
+    await invoke("code_lsp_ready", { attachId });
+  } catch (error) {
+    if (attachId != null) void invoke("code_lsp_detach", { attachId });
+    unlisten();
+    throw error;
+  }
+
+  const transport: Transport = {
+    send(message: string) {
+      const current = attachId;
+      if (current == null || closeSettled) throw new Error("LSP websocket is closed");
+      outbound = outbound
+        .then(async () => {
+          await invoke("code_lsp_send", { attachId: current, message });
+        })
+        .catch((error) => {
+          settleClosed({
+            expected: false,
+            code: 1006,
+            reason: error instanceof Error ? error.message : String(error),
+            clean: false,
+          });
+        });
+    },
+    subscribe(handler: (value: string) => void) {
+      handlers.push(handler);
+    },
+    unsubscribe(handler: (value: string) => void) {
+      const index = handlers.indexOf(handler);
+      if (index >= 0) handlers.splice(index, 1);
+    },
+  };
+
+  return {
+    transport,
+    closed,
+    close() {
+      if (closeSettled) return;
+      expectedClose = true;
+      handlers.length = 0;
+      const current = attachId;
+      attachId = null;
+      if (current != null) void invoke("code_lsp_detach", { attachId: current });
+      settleClosed({
+        expected: true,
+        code: 1000,
+        reason: "workspace released",
+        clean: true,
+      });
+    },
+  };
+}
+
 function createCloseableWebSocketTransport(
   uri: string,
   onServerEvent?: (event: CodeLanguageServerEvent) => void,
+  nativePath?: string,
 ): Promise<CloseableTransport> {
+  if (nativePath && isTauri()) {
+    return createNativeCloseableWebSocketTransport(nativePath, onServerEvent);
+  }
   const handlers: Array<(value: string) => void> = [];
   const socket = new WebSocket(uri);
   let expectedClose = false;
@@ -247,6 +374,7 @@ export async function connectOrchestratorLspClient(options?: ConnectOrchestrator
       const connection = await createCloseableWebSocketTransport(
         wsUrl,
         options?.onServerEvent,
+        path,
       );
       const rootUri = options?.languageRootUri
         ? canonicalCodeDocumentUri(options.languageRootUri)
@@ -291,9 +419,9 @@ export async function connectOrchestratorLspClient(options?: ConnectOrchestrator
         ready,
       };
     }
-  } catch {
+  } catch (error) {
     if (language !== "grapheme") {
-      throw new Error(`Smart editing is unavailable for ${language}`);
+      throw new Error(smartEditingUnavailableMessage(language, error));
     }
     // Grapheme has an in-daemon fallback.
   }
@@ -302,6 +430,7 @@ export async function connectOrchestratorLspClient(options?: ConnectOrchestrator
   const connection = await createCloseableWebSocketTransport(
     wsUrl,
     options?.onServerEvent,
+    OPERATIONS["grapheme.lsp.get"].path,
   );
   const client = new LSPClient({
     rootUri: graphemeWorkspace.root_uri,

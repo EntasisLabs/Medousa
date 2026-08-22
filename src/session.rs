@@ -388,6 +388,13 @@ pub fn load_history(session_id: &str) -> Vec<ConversationTurn> {
     crate::session_store::get_session_store().load_history(&session_id)
 }
 
+pub fn load_transcript_entries(session_id: &str) -> Vec<medousa_types::session::TranscriptEntry> {
+    let Ok(session_id) = crate::session_storage::SessionId::parse(session_id) else {
+        return Vec::new();
+    };
+    crate::session_store::get_session_store().load_transcript_entries(&session_id)
+}
+
 pub async fn append_turn(
     session_id: &str,
     turn: &ConversationTurn,
@@ -418,16 +425,36 @@ pub async fn try_append_turn_batch_with_scratch(
         Option<crate::agent_runtime::turn_context::TurnScratchpad>,
     )],
 ) -> Result<crate::session_store::CommitReceipt, crate::session_store::StoreError> {
+    let entries = turns
+        .iter()
+        .map(|(turn, scratch)| (turn.clone(), scratch.clone(), None))
+        .collect::<Vec<_>>();
+    try_append_transcript_batch_with_scratch(session_id, &entries).await
+}
+
+pub async fn try_append_transcript_batch_with_scratch(
+    session_id: &str,
+    turns: &[(
+        ConversationTurn,
+        Option<crate::agent_runtime::turn_context::TurnScratchpad>,
+        Option<medousa_types::session::ExecutionRef>,
+    )],
+) -> Result<crate::session_store::CommitReceipt, crate::session_store::StoreError> {
     let session_id = crate::session_storage::SessionId::parse(session_id)
         .map_err(|error| crate::session_store::StoreError::InvalidInput(error.to_string()))?;
     let _mutation = crate::session_deletion::acquire_mutation(&session_id)
         .map_err(crate::session_store::StoreError::InvalidInput)?;
     let enriched = turns
         .iter()
-        .map(|(turn, scratch)| crate::turn_slice::ensure_turn_slice_summary(turn, scratch.as_ref()))
+        .map(|(turn, scratch, caused_by)| {
+            crate::session_store::TranscriptAppend::native(
+                crate::turn_slice::ensure_turn_slice_summary(turn, scratch.as_ref()),
+                caused_by.clone(),
+            )
+        })
         .collect::<Vec<_>>();
     crate::session_store::get_session_store()
-        .append_turn_batch(&session_id, &enriched)
+        .append_transcript_batch(&session_id, &enriched)
         .await
 }
 

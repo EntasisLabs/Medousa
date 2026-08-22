@@ -436,6 +436,11 @@ export type ForgeCodeWorkspaceState = {
     tests?: boolean;
     search?: boolean;
     changes?: boolean;
+    output?: boolean;
+    bottom_panel?: "problems" | "output" | "tests" | "terminal" | null;
+    primary_task?: string | null;
+    active_run?: string | null;
+    recent_runs?: string[];
   } | null;
   updated_at?: string | null;
 };
@@ -900,11 +905,25 @@ export type ProviderRepositoryCapabilities = {
 };
 
 export type ProjectTask = {
+  version?: number;
   id: string;
   label: string;
   kind: "verify" | "test" | "build" | "run" | string;
   argv: string[];
   provider: string;
+  source?: "detected" | "vscode-task" | string;
+  /** Repository-relative working directory; absent on older daemons means project root. */
+  root?: string;
+  interactive?: boolean;
+  background?: boolean;
+  default_rank?: number;
+  available?: boolean;
+  requirements?: Array<{
+    kind: string;
+    name: string;
+    available: boolean;
+    repair?: string | null;
+  }>;
   long_running?: boolean;
   ready_pattern?: string | null;
   problem_matcher?: {
@@ -939,6 +958,9 @@ export type ProjectTaskRun = {
   work_id: string;
   state: "running" | "ready" | "passed" | "failed" | "cancelled" | string;
   task: ProjectTask;
+  test_id?: string | null;
+  started_at?: string;
+  finished_at?: string | null;
   result?: ProjectTaskResult | null;
   /** Bounded live stdout (also retained after exit for replay). */
   stdout?: string;
@@ -948,6 +970,37 @@ export type ProjectTaskRun = {
   locations?: ProjectTaskLocation[];
   /** Loopback URL when a background task reports ready. */
   ready_url?: string | null;
+  session_id?: string | null;
+  attach_path?: string | null;
+  preview_path?: string | null;
+};
+
+export type ProjectTaskRunSummary = {
+  run_id: string;
+  work_id: string;
+  state: ProjectTaskRun["state"];
+  task: ProjectTask;
+  test_id?: string | null;
+  started_at: string;
+  finished_at?: string | null;
+  terminal: boolean;
+  output_truncated: boolean;
+  next_seq: number;
+  ready_url?: string | null;
+  session_id?: string | null;
+  attach_path?: string | null;
+  preview_path?: string | null;
+};
+
+export type ProjectTaskRunList = {
+  runs: ProjectTaskRunSummary[];
+  truncated: boolean;
+  retained_count: number;
+  active_count: number;
+  terminal_count: number;
+  terminal_limit: number;
+  terminal_ttl_seconds: number;
+  registry_evicted_count: number;
 };
 
 export type ProjectTaskOutputEvent = {
@@ -977,6 +1030,8 @@ export type ProjectTest = {
   path: string;
   line: number;
   task_id: string;
+  provider?: string;
+  target_kind?: "named" | "file" | string;
 };
 
 export type ForgeChangesFile = {
@@ -1079,8 +1134,19 @@ export async function getProjectTaskRun(workId: string, runId: string): Promise<
   return forgeFetch(operationPath("forge.items.by_work_id.task_runs.by_run_id.get", { work_id: workId, run_id: runId }));
 }
 
-export async function cancelProjectTaskRun(workId: string, runId: string): Promise<ProjectTaskRun> {
-  return forgeFetch(operationPath("forge.items.by_work_id.task_runs.by_run_id.delete", { work_id: workId, run_id: runId }), {
+export async function getProjectTaskRuns(
+  workId: string,
+  limit = 20,
+): Promise<ProjectTaskRunList> {
+  const query = new URLSearchParams({ limit: String(Math.max(1, Math.min(64, limit))) });
+  return forgeFetch(
+    operationPath("forge.items.by_work_id.task_runs.get", { work_id: workId }) + `?${query}`,
+  );
+}
+
+export async function cancelProjectTaskRun(workId: string, runId: string, force = false): Promise<ProjectTaskRun> {
+  const path = operationPath("forge.items.by_work_id.task_runs.by_run_id.delete", { work_id: workId, run_id: runId });
+  return forgeFetch(`${path}${force ? "?force=true" : ""}`, {
     method: "DELETE",
   });
 }

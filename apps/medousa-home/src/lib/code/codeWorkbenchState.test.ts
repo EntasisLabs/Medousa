@@ -24,6 +24,11 @@ describe("codeWorkbenchState", () => {
       tests: false,
       search: false,
       changes: false,
+      output: false,
+      bottom_panel: null,
+      primary_task: null,
+      active_run: null,
+      recent_runs: [],
     });
     expect(
       normalizeCodeWorkbenchLayout({
@@ -38,6 +43,11 @@ describe("codeWorkbenchState", () => {
       tests: false,
       search: false,
       changes: false,
+      output: false,
+      bottom_panel: "terminal",
+      primary_task: null,
+      active_run: null,
+      recent_runs: [],
     });
 
     codeWorkbenchState.applyLayout("work-1", {
@@ -50,6 +60,11 @@ describe("codeWorkbenchState", () => {
       tests: false,
       search: false,
       changes: false,
+      output: false,
+      bottom_panel: "terminal",
+      primary_task: null,
+      active_run: null,
+      recent_runs: [],
     });
     codeWorkbenchState.setTestsOpen("work-1", true);
     expect(codeWorkbenchState.layoutFor("work-1").tests).toBe(true);
@@ -57,6 +72,25 @@ describe("codeWorkbenchState", () => {
     expect(codeWorkbenchState.layoutFor("work-1").search).toBe(true);
     codeWorkbenchState.setChangesOpen("work-1", true);
     expect(codeWorkbenchState.layoutFor("work-1").changes).toBe(true);
+    codeWorkbenchState.setPrimaryTask("work-1", "npm-dev");
+    expect(codeWorkbenchState.layoutFor("work-1").primary_task).toBe("npm-dev");
+    codeWorkbenchState.setOutputOpen("work-1", true);
+    codeWorkbenchState.setBottomPanel("work-1", "output");
+    codeWorkbenchState.setTaskRuns("work-1", "run-2", ["run-2", "run-1"]);
+    expect(codeWorkbenchState.layoutFor("work-1")).toMatchObject({
+      output: true,
+      bottom_panel: "output",
+      active_run: "run-2",
+      recent_runs: ["run-2", "run-1"],
+    });
+    codeWorkbenchState.setBottomPanel("work-1", "problems");
+    expect(codeWorkbenchState.layoutFor("work-1")).toMatchObject({
+      bottom_panel: "problems",
+      context_panel: "problems",
+      output: false,
+      tests: false,
+      terminal: false,
+    });
   });
 
   it("lists group-local Code tabs by composing shell and LME identities", () => {

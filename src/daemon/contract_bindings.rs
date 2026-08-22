@@ -108,6 +108,26 @@ pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
             request: None,
             response: "SessionHistoryListResponse",
         },
+        "sessions.search.get" => WireBinding {
+            request: None,
+            response: "SessionTranscriptSearchResponse",
+        },
+        "sessions.derive.post" => WireBinding {
+            request: Some("DeriveSessionRequest"),
+            response: "DeriveSessionResponse",
+        },
+        "prompt_stashes.get" => WireBinding {
+            request: None,
+            response: "PromptStashListResponse",
+        },
+        "prompt_stashes.post" => WireBinding {
+            request: Some("CreatePromptStashRequest"),
+            response: "PromptStash",
+        },
+        "prompt_stashes.by_stash_id.delete" => WireBinding {
+            request: None,
+            response: "DeletePromptStashResponse",
+        },
         "sessions.by_session_id.history.get" => WireBinding {
             request: None,
             response: "SessionHistoryResponse",

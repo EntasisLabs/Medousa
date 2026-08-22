@@ -26,6 +26,11 @@ export type CodeProblem = {
     character: number;
     message: string;
   }>;
+  /** Diagnostic producer; task diagnostics carry run provenance separately from LSP. */
+  origin: "language" | "task";
+  runId?: string;
+  taskLabel?: string;
+  fresh?: boolean;
 };
 
 export type CodeProblemCounts = {
@@ -148,6 +153,7 @@ export function normalizeCodeWorkspaceProblems(
               }];
             })
           : [],
+        origin: "language",
       });
     }
   }

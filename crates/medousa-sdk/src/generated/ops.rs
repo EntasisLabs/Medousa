@@ -940,6 +940,13 @@ pub const FORGE_ITEMS_BY_WORK_ID_TASK_RUNS_BY_RUN_ID_PREVIEW_POST: Operation = O
     streaming: false,
 };
 
+pub const FORGE_ITEMS_BY_WORK_ID_TASK_RUNS_GET: Operation = Operation {
+    id: "forge.items.by_work_id.task_runs.get",
+    method: "GET",
+    path: "/v1/forge/items/{work_id}/task-runs",
+    streaming: false,
+};
+
 pub const FORGE_ITEMS_BY_WORK_ID_TASKS_BY_TASK_ID_RUN_POST: Operation = Operation {
     id: "forge.items.by_work_id.tasks.by_task_id.run.post",
     method: "POST",
@@ -1416,17 +1423,10 @@ pub const INGEST_POST: Operation = Operation {
     streaming: false,
 };
 
-pub const INTEGRATIONS_GET: Operation = Operation {
-    id: "integrations.get",
-    method: "GET",
-    path: "/v1/integrations",
-    streaming: false,
-};
-
-pub const INTEGRATIONS_POST: Operation = Operation {
-    id: "integrations.post",
-    method: "POST",
-    path: "/v1/integrations",
+pub const INTEGRATIONS_BY_CONNECTION_ID_DELETE: Operation = Operation {
+    id: "integrations.by_connection_id.delete",
+    method: "DELETE",
+    path: "/v1/integrations/{connection_id}",
     streaming: false,
 };
 
@@ -1444,10 +1444,10 @@ pub const INTEGRATIONS_BY_CONNECTION_ID_PATCH: Operation = Operation {
     streaming: false,
 };
 
-pub const INTEGRATIONS_BY_CONNECTION_ID_DELETE: Operation = Operation {
-    id: "integrations.by_connection_id.delete",
+pub const INTEGRATIONS_BY_CONNECTION_ID_SECRETS_BY_SLOT_DELETE: Operation = Operation {
+    id: "integrations.by_connection_id.secrets.by_slot.delete",
     method: "DELETE",
-    path: "/v1/integrations/{connection_id}",
+    path: "/v1/integrations/{connection_id}/secrets/{slot}",
     streaming: false,
 };
 
@@ -1458,10 +1458,17 @@ pub const INTEGRATIONS_BY_CONNECTION_ID_SECRETS_BY_SLOT_PUT: Operation = Operati
     streaming: false,
 };
 
-pub const INTEGRATIONS_BY_CONNECTION_ID_SECRETS_BY_SLOT_DELETE: Operation = Operation {
-    id: "integrations.by_connection_id.secrets.by_slot.delete",
-    method: "DELETE",
-    path: "/v1/integrations/{connection_id}/secrets/{slot}",
+pub const INTEGRATIONS_GET: Operation = Operation {
+    id: "integrations.get",
+    method: "GET",
+    path: "/v1/integrations",
+    streaming: false,
+};
+
+pub const INTEGRATIONS_POST: Operation = Operation {
+    id: "integrations.post",
+    method: "POST",
+    path: "/v1/integrations",
     streaming: false,
 };
 
@@ -1920,6 +1927,27 @@ pub const PEER_MESSAGES_UNREAD_COUNT_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const PROMPT_STASHES_BY_STASH_ID_DELETE: Operation = Operation {
+    id: "prompt_stashes.by_stash_id.delete",
+    method: "DELETE",
+    path: "/v1/prompt-stashes/{stash_id}",
+    streaming: false,
+};
+
+pub const PROMPT_STASHES_GET: Operation = Operation {
+    id: "prompt_stashes.get",
+    method: "GET",
+    path: "/v1/prompt-stashes",
+    streaming: false,
+};
+
+pub const PROMPT_STASHES_POST: Operation = Operation {
+    id: "prompt_stashes.post",
+    method: "POST",
+    path: "/v1/prompt-stashes",
+    streaming: false,
+};
+
 pub const QR_GET: Operation = Operation {
     id: "qr.get",
     method: "GET",
@@ -2207,6 +2235,13 @@ pub const SESSIONS_BY_SESSION_ID_WORKSHOP_STEER_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const SESSIONS_DERIVE_POST: Operation = Operation {
+    id: "sessions.derive.post",
+    method: "POST",
+    path: "/v1/sessions/derive",
+    streaming: false,
+};
+
 pub const SESSIONS_GET: Operation = Operation {
     id: "sessions.get",
     method: "GET",
@@ -2218,6 +2253,13 @@ pub const SESSIONS_POST: Operation = Operation {
     id: "sessions.post",
     method: "POST",
     path: "/v1/sessions",
+    streaming: false,
+};
+
+pub const SESSIONS_SEARCH_GET: Operation = Operation {
+    id: "sessions.search.get",
+    method: "GET",
+    path: "/v1/sessions/search",
     streaming: false,
 };
 
@@ -2866,6 +2908,7 @@ pub static ALL: &[Operation] = &[
     FORGE_ITEMS_BY_WORK_ID_TASK_RUNS_BY_RUN_ID_EVENTS_GET,
     FORGE_ITEMS_BY_WORK_ID_TASK_RUNS_BY_RUN_ID_GET,
     FORGE_ITEMS_BY_WORK_ID_TASK_RUNS_BY_RUN_ID_PREVIEW_POST,
+    FORGE_ITEMS_BY_WORK_ID_TASK_RUNS_GET,
     FORGE_ITEMS_BY_WORK_ID_TASKS_BY_TASK_ID_RUN_POST,
     FORGE_ITEMS_BY_WORK_ID_TASKS_BY_TASK_ID_RUNS_POST,
     FORGE_ITEMS_BY_WORK_ID_TASKS_GET,
@@ -2934,13 +2977,13 @@ pub static ALL: &[Operation] = &[
     IDENTITY_UPDATE_PROPOSE_POST,
     INGEST_BY_STREAM_ID_STREAM_GET,
     INGEST_POST,
-    INTEGRATIONS_GET,
-    INTEGRATIONS_POST,
+    INTEGRATIONS_BY_CONNECTION_ID_DELETE,
     INTEGRATIONS_BY_CONNECTION_ID_GET,
     INTEGRATIONS_BY_CONNECTION_ID_PATCH,
-    INTEGRATIONS_BY_CONNECTION_ID_DELETE,
-    INTEGRATIONS_BY_CONNECTION_ID_SECRETS_BY_SLOT_PUT,
     INTEGRATIONS_BY_CONNECTION_ID_SECRETS_BY_SLOT_DELETE,
+    INTEGRATIONS_BY_CONNECTION_ID_SECRETS_BY_SLOT_PUT,
+    INTEGRATIONS_GET,
+    INTEGRATIONS_POST,
     INTERACTIVE_TURN_BY_TURN_ID_STREAM_GET,
     INTERACTIVE_TURN_POST,
     JOBS_ASK_POST,
@@ -3006,6 +3049,9 @@ pub static ALL: &[Operation] = &[
     PEER_MESSAGES_GET,
     PEER_MESSAGES_POST,
     PEER_MESSAGES_UNREAD_COUNT_GET,
+    PROMPT_STASHES_BY_STASH_ID_DELETE,
+    PROMPT_STASHES_GET,
+    PROMPT_STASHES_POST,
     QR_GET,
     QR_IMAGE_GET,
     QR_PNG_GET,
@@ -3047,8 +3093,10 @@ pub static ALL: &[Operation] = &[
     SESSIONS_BY_SESSION_ID_TURNS_GET,
     SESSIONS_BY_SESSION_ID_TURNS_POST,
     SESSIONS_BY_SESSION_ID_WORKSHOP_STEER_POST,
+    SESSIONS_DERIVE_POST,
     SESSIONS_GET,
     SESSIONS_POST,
+    SESSIONS_SEARCH_GET,
     SESSIONS_SHELL_BY_ID_GET,
     SESSIONS_SHELL_BY_ID_SIGNAL_POST,
     SESSIONS_SHELL_GET,

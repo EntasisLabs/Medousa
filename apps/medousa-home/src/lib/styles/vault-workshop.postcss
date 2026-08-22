@@ -21,13 +21,13 @@
     z-index: 130;
     display: flex;
     flex-direction: column;
-    gap: 0.05rem;
+    gap: 0.1rem;
     overflow-x: hidden;
     overflow-y: auto;
     border: 1px solid rgb(var(--color-surface-600) / 0.28);
-    border-radius: 0.85rem;
+    border-radius: var(--menu-radius, 0.7rem);
     background: rgb(var(--color-surface-850, var(--color-surface-900)) / 0.97);
-    padding: 0.35rem;
+    padding: var(--menu-panel-pad, 0.3rem);
     box-shadow:
       0 10px 28px rgb(0 0 0 / 0.34),
       0 0 0 1px rgb(0 0 0 / 0.08);
@@ -35,7 +35,7 @@
   }
 
   .vault-dock-popover__sep {
-    margin: 0.25rem 0.4rem;
+    margin: var(--menu-sep-margin, 0.2rem 0.4rem);
     border-top: 1px solid rgb(var(--color-surface-500) / 0.22);
   }
 

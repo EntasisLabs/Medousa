@@ -16,12 +16,12 @@ describe("settings nav groups", () => {
     }
   });
 
-  it("shows only the this-host header", () => {
+  it("labels Medousa and the current host without hardcoding an OS", () => {
     const entries = settingsNavEntries();
-    expect(entries[0]).toMatchObject({ kind: "section", section: { id: "preferences" } });
+    expect(entries[0]).toMatchObject({ kind: "group", id: "app", label: "Medousa" });
     const groups = entries.filter((entry) => entry.kind === "group");
-    expect(groups.map((entry) => entry.id)).toEqual(["machine"]);
-    expect(groups.map((entry) => entry.label)).toEqual([thisHostLabel()]);
+    expect(groups.map((entry) => entry.id)).toEqual(["app", "machine"]);
+    expect(groups.map((entry) => entry.label)).toEqual(["Medousa", thisHostLabel()]);
   });
 
   it("clusters app and this-host sections with Sharing / Connection labels", () => {

@@ -128,6 +128,8 @@ for the protocol and surface-scoping rules.
 |--------|------|-------|-----|
 | POST | `/v1/sessions` | `CreateSessionRequest` → daemon-generated `CreateSessionResponse.session_id` | `MedousaClient.createSession` (TypeScript) |
 | GET | `/v1/sessions` | `SessionHistoryListResponse` (`origin_surface`, `has_code_work` on each summary) | `sessions().list` |
+| GET | `/v1/sessions/search?q=&limit=` | Profile-scoped transcript matches with role, timestamp, and excerpt | `sessions().search_transcripts` |
+| POST | `/v1/sessions/derive` | `DeriveSessionRequest` → `DeriveSessionResponse` | `sessions().derive` |
 | GET | `/v1/sessions/{session_id}/history` | `SessionHistoryResponse` | `sessions().history` |
 | PUT | `/v1/sessions/{session_id}/name` | `SessionSetDisplayNameRequest` | `sessions().set_display_name` |
 | GET | `/v1/sessions/{session_id}/agent-mode` | Effective selection and source | `sessions().agent_mode` |
@@ -142,12 +144,44 @@ for the protocol and surface-scoping rules.
 | DELETE | `/v1/sessions/{session_id}` | `SessionDeleteResponse` | `sessions().delete` |
 | GET | `/v1/session-deletions/{deletion_id}` | `SessionDeleteResponse` | `http().get` |
 | POST | `/v1/sessions/{session_id}/turns` | `SessionAppendTurnRequest` | `sessions().append_turn` |
+
+`SessionHistoryResponse.turns` contains `TranscriptEntry` records. Existing
+turn fields remain flat for compatible renderers; each record also carries a
+durable `entry_id`, one-based session `entry_seq`, `content_digest`, and
+optional execution/source provenance. Use `(authority_id, session_id,
+entry_id, entry_seq)` when addressing a committed transcript occurrence.
+
+`POST /v1/sessions/derive` requires an `Idempotency-Key` header. Its ordered
+`sources` select committed ranges with an exclusive `after_entry_seq` and
+inclusive `through_entry_seq`; omitting the lower bound selects from entry 1.
+The daemon freezes each range in a `ContextManifest`, binds the immutable entry
+payloads into a new session, and records source coordinates in the target
+history. Reusing the key with the same request returns the original derivation;
+reusing it with different input returns a conflict. The initial contract allows
+single-user targets only.
+
+### Explicit prompt stashes
+
+| Method | Path | Types | SDK |
+|--------|------|-------|-----|
+| GET | `/v1/prompt-stashes` | `PromptStashListResponse` | `prompt_stashes().list` |
+| POST | `/v1/prompt-stashes` | `CreatePromptStashRequest` → `PromptStash` | `prompt_stashes().create` |
+| DELETE | `/v1/prompt-stashes/{stash_id}` | `DeletePromptStashResponse` | `prompt_stashes().delete` |
+
+Prompt stashes are explicit, profile-scoped, daemon-owned composer state. They
+are separate from Home's private automatic crash-recovery drafts. A stash can
+carry text, uploaded media references, mode/model hints, a source-session
+navigation hint, and an optional context-manifest reference. A manifest or
+source-session reference never grants access by itself.
 | GET | `/v1/sessions/{session_id}/turns` | turn list | `http().get` |
 | GET | `/v1/sessions/{session_id}/active-turn` | active turn ticket | `http().get` |
 | POST | `/v1/sessions/{session_id}/active-turn` | cancel active turn | `http().post` |
 | POST | `/v1/sessions/{session_id}/workshop/steer` | steer one exact bound-workshop generation (`work_id`, `message`) | `http().post` |
 | POST | `/v1/turns` | create turn ticket | `http().post` |
 | GET | `/v1/turns/{turn_id}` | turn ticket | `http().get` |
+
+Transcript search is scoped to sessions visible to the authenticated profile. It indexes
+user/assistant-visible prose only; reasoning traces and raw tool receipts are excluded.
 
 Workshop steering requires the exact `work_id` returned by the bound-workshop
 handoff. A stale generation receives `409 Conflict` and cannot steer a newer
@@ -458,7 +492,8 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | GET | `/v1/forge/items/{id}/tasks` | Detect project commands (manifest + thin tasks.json) |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/run` | Run a detected command and record its result |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/runs` | Start a named, cancellable project run |
-| GET/DELETE | `/v1/forge/items/{id}/task-runs/{run_id}` | Poll or cancel a project run (live bounded output + locations) |
+| GET | `/v1/forge/items/{id}/task-runs?limit=…` | List active/recent project-run summaries for reconnect |
+| GET/DELETE | `/v1/forge/items/{id}/task-runs/{run_id}` | Poll or gracefully stop a project run (live bounded output + locations); repeat DELETE with `?force=true` to force stop |
 | GET (SSE) | `/v1/forge/items/{id}/task-runs/{run_id}/events?since=…` | Stream task output, locations, readiness, and terminal state |
 | POST | `/v1/forge/items/{id}/task-runs/{run_id}/preview` | Mint tokenized private preview path |
 | ANY | `/v1/forge/preview/{token}/…` | Proxy to workshop loopback port |

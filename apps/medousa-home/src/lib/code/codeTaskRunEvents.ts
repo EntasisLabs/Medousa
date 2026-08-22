@@ -12,12 +12,18 @@ import {
   DEFAULT_WORKSPACE_BACKOFF,
   ReconnectScheduler,
 } from "$lib/stream/reconnect";
+import {
+  openDaemonEventStream,
+  type DaemonEventConnection,
+} from "$lib/daemon/daemonEventStream";
 
 export type { ProjectTaskOutputEvent };
 
-export function parseTaskRunEventPayload(raw: string): ProjectTaskOutputEvent | null {
+export function parseTaskRunEventPayload(raw: unknown): ProjectTaskOutputEvent | null {
   try {
-    const parsed = JSON.parse(raw) as ProjectTaskOutputEvent;
+    const parsed = (typeof raw === "string"
+      ? JSON.parse(raw)
+      : raw) as ProjectTaskOutputEvent;
     if (
       typeof parsed?.seq !== "number" ||
       typeof parsed?.run_id !== "string" ||
@@ -46,10 +52,11 @@ export type CodeTaskRunEventHandlers = {
  * Stops after a terminal state event that includes the final result.
  */
 export class CodeTaskRunEventStream {
-  private source: EventSource | null = null;
+  private source: DaemonEventConnection | null = null;
   private workId: string | null = null;
   private runId: string | null = null;
-  private lastSeq = 0;
+  /** Last applied sequence; -1 means no event has been applied yet. */
+  private lastSeq = -1;
   private connecting = false;
   private closed = false;
   private readonly reconnect = new ReconnectScheduler({
@@ -62,7 +69,7 @@ export class CodeTaskRunEventStream {
   }
 
   get cursor(): number {
-    return this.lastSeq;
+    return this.lastSeq + 1;
   }
 
   start(workId: string, runId: string, since = 0) {
@@ -71,7 +78,7 @@ export class CodeTaskRunEventStream {
     this.closed = false;
     this.workId = workId.trim() || null;
     this.runId = runId.trim() || null;
-    this.lastSeq = Math.max(0, since);
+    this.lastSeq = Math.max(-1, since - 1);
     if (this.workId && this.runId) void this.connect();
   }
 
@@ -81,7 +88,7 @@ export class CodeTaskRunEventStream {
     this.reconnect.cancel();
     this.workId = null;
     this.runId = null;
-    this.lastSeq = 0;
+    this.lastSeq = -1;
   }
 
   teardown() {
@@ -101,53 +108,53 @@ export class CodeTaskRunEventStream {
     const workId = this.workId;
     const runId = this.runId;
     if (!workId || !runId || this.connecting || this.closed) return;
-    if (typeof EventSource === "undefined") {
-      this.handlers.onUnavailable?.();
-      return;
-    }
     this.connecting = true;
     if (this.source) {
       this.source.close();
       this.source = null;
     }
+    let source: DaemonEventConnection | null = null;
     try {
-      const url = await forgeTaskRunEventsUrl(workId, runId, this.lastSeq);
+      source = await openDaemonEventStream<ProjectTaskOutputEvent>({
+        operation: "forge.items.by_work_id.task_runs.by_run_id.events.get",
+        pathParams: { work_id: workId, run_id: runId },
+        query: { since: String(this.lastSeq + 1) },
+        browserUrl: () => forgeTaskRunEventsUrl(workId, runId, this.lastSeq + 1),
+        browserEvent: "task",
+        onEvent: (payload) => {
+          const event = parseTaskRunEventPayload(payload);
+          if (!event || event.run_id !== runId) return;
+          if (event.seq <= this.lastSeq) return;
+          this.lastSeq = event.seq;
+          this.reconnect.noteSuccess();
+          this.handlers.onEvent(event);
+          if (taskRunEventIsTerminal(event)) {
+            this.handlers.onTerminal?.(event.result ?? null, event.state ?? null);
+            this.stop();
+          }
+        },
+        onOpen: () => {
+          this.connecting = false;
+          this.reconnect.noteSuccess();
+        },
+        onError: () => {
+          this.connecting = false;
+          if (source && this.source === source) this.source = null;
+          if (this.closed || this.workId !== workId || this.runId !== runId) return;
+          this.reconnect.schedule(() => void this.connect());
+        },
+      });
       if (this.workId !== workId || this.runId !== runId || this.closed) {
+        source.close();
         this.connecting = false;
         return;
       }
-      const source = new EventSource(url);
+      if (source.closed) return;
       this.source = source;
-      source.addEventListener("task", (message) => {
-        const event = parseTaskRunEventPayload(
-          typeof message.data === "string" ? message.data : "",
-        );
-        if (!event || event.run_id !== runId) return;
-        if (event.seq <= this.lastSeq) return;
-        this.lastSeq = event.seq;
-        this.reconnect.noteSuccess();
-        this.handlers.onEvent(event);
-        if (taskRunEventIsTerminal(event)) {
-          this.handlers.onTerminal?.(event.result ?? null, event.state ?? null);
-          this.stop();
-        }
-      });
-      source.onopen = () => {
-        this.connecting = false;
-        this.reconnect.noteSuccess();
-      };
-      source.onerror = () => {
-        this.connecting = false;
-        if (this.source === source) {
-          source.close();
-          this.source = null;
-        }
-        if (this.closed || this.workId !== workId || this.runId !== runId) return;
-        // Server closes the stream after the terminal event; treat clean close as done.
-        this.reconnect.schedule(() => void this.connect());
-      };
     } catch {
+      source?.close();
       this.connecting = false;
+      this.handlers.onUnavailable?.();
       if (!this.closed && this.workId === workId && this.runId === runId) {
         this.reconnect.schedule(() => void this.connect());
       }

@@ -15,6 +15,7 @@ use tokio::sync::{Semaphore, mpsc, oneshot};
 use crate::agent_runtime::turn_context::TurnScratchpad;
 use crate::session::ConversationTurn;
 use crate::session_store::{CommitReceipt, StoreError};
+use medousa_types::session::ExecutionRef;
 
 const QUEUE_CAPACITY: usize = 1024;
 const QUEUE_BYTE_CAPACITY: usize = 8 * 1024 * 1024;
@@ -24,6 +25,7 @@ struct PersistJob {
     session_id: String,
     turn: ConversationTurn,
     scratch: Option<TurnScratchpad>,
+    caused_by: Option<ExecutionRef>,
     _byte_permit: tokio::sync::OwnedSemaphorePermit,
     ack: oneshot::Sender<Result<CommitReceipt, StoreError>>,
 }
@@ -129,9 +131,10 @@ async fn commit_jobs(mut jobs: Vec<PersistJob>) {
         let run = jobs.drain(..run_len).collect::<Vec<_>>();
         let turns = run
             .iter()
-            .map(|job| (job.turn.clone(), job.scratch.clone()))
+            .map(|job| (job.turn.clone(), job.scratch.clone(), job.caused_by.clone()))
             .collect::<Vec<_>>();
-        let result = crate::session::try_append_turn_batch_with_scratch(&session_id, &turns).await;
+        let result =
+            crate::session::try_append_transcript_batch_with_scratch(&session_id, &turns).await;
         WRITER_METRICS
             .queued_messages
             .fetch_sub(run.len(), Ordering::Relaxed);
@@ -195,6 +198,15 @@ pub async fn persist_turn(
     turn: ConversationTurn,
     scratch: Option<TurnScratchpad>,
 ) -> Result<CommitReceipt, StoreError> {
+    persist_turn_with_execution(session_id, turn, scratch, None).await
+}
+
+pub async fn persist_turn_with_execution(
+    session_id: &str,
+    turn: ConversationTurn,
+    scratch: Option<TurnScratchpad>,
+    caused_by: Option<ExecutionRef>,
+) -> Result<CommitReceipt, StoreError> {
     let sender = writer_sender()?;
     let byte_count = estimated_job_bytes(&turn, scratch.as_ref());
     if byte_count > QUEUE_BYTE_CAPACITY {
@@ -213,6 +225,7 @@ pub async fn persist_turn(
             session_id: session_id.to_string(),
             turn,
             scratch,
+            caused_by,
             _byte_permit: byte_permit,
             ack,
         })))

@@ -82,7 +82,7 @@ export const SECTION_LABELS: Record<CommandSection, string> = {
   pinned: "Pinned",
   go: "Go to",
   open: "Open",
-  do: "Do",
+  do: "Actions",
   ask: "Ask Medousa",
   tune: "Tune",
   advanced: "Advanced",

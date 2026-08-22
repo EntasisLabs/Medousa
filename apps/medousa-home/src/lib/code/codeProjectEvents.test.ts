@@ -91,6 +91,9 @@ describe("code project events", () => {
         JSON.stringify(event({ kind: "changed", path: "a.ts", seq: 9 })),
       )?.seq,
     ).toBe(9);
+    expect(
+      parseProjectEventPayload(event({ kind: "snapshot", seq: 10 }))?.seq,
+    ).toBe(10);
     expect(parseProjectEventPayload("{")).toBeNull();
     expect(parseProjectEventPayload(JSON.stringify({ seq: 1 }))).toBeNull();
   });

@@ -78,6 +78,11 @@ export function buildSessionOpenCommands(
     label: `Open chat: ${label}`,
     subtitle: session.session_id.slice(0, 8),
     keywords: `session chat ${label} ${session.session_id}`,
+    preview: {
+      kind: "chat",
+      sessionId: session.session_id,
+      text: session.preview?.trim() || "Open this conversation.",
+    },
     run: async (runCtx) => {
       await runCtx.chat.switchSession(session.session_id);
       runCtx.navigate("chat");

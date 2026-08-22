@@ -7,31 +7,52 @@
   interface Props {
     tasks: CodeTasksController;
     onOpenLocation: (path: string, line: number) => void;
+    mode?: "output" | "tests";
   }
 
-  let { tasks, onOpenLocation }: Props = $props();
+  let { tasks, onOpenLocation, mode = "output" }: Props = $props();
 </script>
 
-{#if tasks.outputOpen}
-  <div class="flex max-h-52 shrink-0 flex-col border-t border-surface-500/30 bg-surface-950/80">
+{#if mode === "output"}
+  <div class="flex max-h-52 shrink-0 flex-col bg-surface-950/80">
     <div class="flex items-center justify-between gap-2 border-b border-surface-500/20 px-2.5 py-1">
       <span class="text-chrome-xs font-medium uppercase tracking-[0.06em] text-content-quiet">
         {#if tasks.run}Task: {tasks.run.task.label}{:else}Output{/if}
         {#if tasks.run?.state === "ready"}<span class="normal-case tracking-normal text-emerald-300/90"> · ready</span>
         {:else if tasks.running}<span class="normal-case tracking-normal text-content-link"> · running</span>{/if}
         {#if tasks.outputTruncated}<span class="normal-case tracking-normal text-amber-200/80"> · truncated</span>{/if}
+        {#if tasks.runHistoryTruncated}<span class="normal-case tracking-normal text-amber-200/80"> · more runs retained</span>{/if}
       </span>
       <div class="flex items-center gap-1">
+        {#if tasks.recentRuns.length > 1}
+          <select
+            class="max-w-36 rounded border border-surface-500/30 bg-surface-900 px-1 py-0.5 text-chrome-xs text-content-secondary"
+            aria-label="Recent project runs"
+            value={tasks.run?.run_id ?? ""}
+            disabled={tasks.running}
+            onchange={(event) => void tasks.openRun(event.currentTarget.value)}
+          >
+            {#each tasks.recentRuns as recent (recent.run_id)}
+              <option value={recent.run_id}>{recent.task.label} · {recent.state}</option>
+            {/each}
+          </select>
+        {/if}
         {#if (tasks.readyUrl || tasks.run?.ready_url) && (tasks.run?.state === "ready" || tasks.running)}
           <button
             type="button"
             class="rounded px-1.5 py-0.5 text-chrome-xs text-emerald-200/90 hover:bg-emerald-500/10 disabled:opacity-40"
             disabled={tasks.previewOpening}
             onclick={() => void tasks.openPreview()}
-          >{tasks.previewOpening ? "Opening…" : "Open in Browser"}</button>
+          >{tasks.previewOpening ? "Opening…" : "Open Preview"}</button>
+          <button
+            type="button"
+            class="rounded px-1.5 py-0.5 text-chrome-xs text-emerald-200/90 hover:bg-emerald-500/10 disabled:opacity-40"
+            disabled={tasks.previewOpening}
+            onclick={() => void tasks.openPreview(true)}
+          >Open Beside Code</button>
         {/if}
-        {#if tasks.running && (tasks.run?.state === "running" || tasks.run?.state === "ready")}
-          <button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-rose-200/90 hover:bg-rose-500/10" onclick={() => void tasks.stopDetected()}>Stop</button>
+        {#if tasks.running && (tasks.run?.state === "running" || tasks.run?.state === "ready" || tasks.run?.state === "stopping")}
+          <button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-rose-200/90 hover:bg-rose-500/10" onclick={() => void tasks.stopDetected()}>{tasks.run?.state === "stopping" ? "Force stop" : "Stop"}</button>
         {/if}
         <button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-content-quiet hover:bg-surface-800 hover:text-content-secondary" onclick={() => tasks.toggleOutput(false)}>Hide</button>
       </div>
@@ -53,9 +74,9 @@
     {/if}
   </div>
 {/if}
-{#if tasks.result}
+{#if mode === "output" && tasks.result}
   <div class="shrink-0 border-t {tasks.result.success ? 'border-emerald-500/25 bg-emerald-950/20 text-emerald-200' : 'border-rose-500/30 bg-rose-950/25 text-rose-200'}">
-    <button type="button" class="flex w-full items-center justify-between gap-2 px-2.5 py-1 text-left text-chrome-xs" title="Run this check again" onclick={() => void tasks.runDetected()}>
+    <button type="button" class="flex w-full items-center justify-between gap-2 px-2.5 py-1 text-left text-chrome-xs" title="Repeat this exact command" onclick={() => void tasks.rerunLast()}>
       <span>{tasks.result.success ? "Passed" : "Needs attention"} · {tasks.result.task.label}</span>
       <span class="text-current">Rerun · {(tasks.result.duration_ms / 1000).toFixed(1)}s{tasks.result.exit_code != null ? ` · exit ${tasks.result.exit_code}` : ""}</span>
     </button>
@@ -67,16 +88,23 @@
     {/each}
   </div>
 {/if}
-{#if tasks.testsOpen}
-  <div class="max-h-44 shrink-0 overflow-y-auto border-t border-surface-500/25 bg-surface-950/90">
+{#if mode === "tests"}
+  <div class="max-h-44 shrink-0 overflow-y-auto bg-surface-950/90">
     <div class="sticky top-0 flex items-center justify-between bg-surface-950 px-2.5 py-1 text-chrome-xs uppercase tracking-wider text-content-quiet"><span>Project tests</span><span>{tasks.projectTests.length}</span></div>
     {#if tasks.projectTests.length === 0}
       <p class="px-3 py-3 text-chrome-sm text-content-quiet">No individual tests were discovered. The project test command still works.</p>
     {:else}
       {#each tasks.projectTests as test (test.id)}
+        {@const recent = tasks.latestRunForTest(test.id)}
         <div class="flex items-center border-t border-surface-500/15">
-          <button type="button" class="min-w-0 flex-1 truncate px-3 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800/60" onclick={() => onOpenLocation(test.path, test.line)}>{test.label}<span class="ml-2 font-mono text-chrome-xs text-content-faint">{test.path}:{test.line}</span></button>
-          <button type="button" class="mr-2 rounded px-1.5 py-0.5 text-chrome-xs text-content-link hover:bg-surface-800 disabled:opacity-40" disabled={tasks.running} onclick={() => void tasks.runDetected(test)}>Run</button>
+          <button type="button" class="min-w-0 flex-1 truncate px-3 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800/60" onclick={() => onOpenLocation(test.path, test.line)}>{test.label}<span class="ml-2 font-mono text-chrome-xs text-content-faint">{test.provider ?? "test"} · {test.path}:{test.line}</span></button>
+          {#if recent}
+            <span
+              class="mr-1 text-chrome-xs {recent.state === 'passed' ? 'text-emerald-300/85' : recent.state === 'failed' ? 'text-rose-300/85' : 'text-content-quiet'}"
+              title={`Last run ${recent.started_at}`}
+            >{recent.state}</span>
+          {/if}
+          <button type="button" class="mr-2 rounded px-1.5 py-0.5 text-chrome-xs text-content-link hover:bg-surface-800 disabled:opacity-40" disabled={tasks.running} onclick={() => void tasks.runDetected(test)}>{recent ? "Rerun" : "Run"}</button>
         </div>
       {/each}
     {/if}

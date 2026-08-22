@@ -27,6 +27,15 @@ EXPORTED_TYPES = [
     "AgentModeProposalListResponse",
     "AgentModeProposalResponse",
     "SessionCodeBindingResponse",
+    "SessionTranscriptSearchResponse",
+    "DeriveSessionRequest",
+    "DeriveSessionResponse",
+    "PromptStashId",
+    "PromptStashDraft",
+    "PromptStash",
+    "CreatePromptStashRequest",
+    "PromptStashListResponse",
+    "DeletePromptStashResponse",
     "StartSessionCodeProjectRequest",
     "SessionCodeProjectResponse",
     "TurnTicketRecord",
@@ -158,6 +167,8 @@ def emit_definition(name: str, schema_root: dict, defs: dict) -> list[str]:
     if schema.get("oneOf") or schema.get("anyOf"):
         variants = schema.get("oneOf") or schema.get("anyOf")
         return [f"export type {name} = " + " | ".join(ts_type(item, defs) for item in variants) + ";"]
+    if schema.get("type") != "object":
+        return [f"export type {name} = {ts_type(schema, defs)};"]
     return emit_interface(name, schema_root, defs)
 
 

@@ -94,6 +94,8 @@ this generic HTTP client rather than a dedicated typed SDK accessor. See the
 | Method | HTTP | Types |
 |--------|------|-------|
 | `list(limit)` | `GET /v1/sessions?limit=` | `SessionHistoryListResponse` |
+| `search_transcripts(query, limit)` | `GET /v1/sessions/search?q=&limit=` | `SessionTranscriptSearchResponse` |
+| `derive(request, idempotency_key)` | `POST /v1/sessions/derive` | `DeriveSessionResponse` |
 | `history(session_id)` | `GET /v1/sessions/{id}/history` | `SessionHistoryResponse` |
 | `set_display_name(session_id, name)` | `PUT /v1/sessions/{id}/name` | `SessionSetDisplayNameRequest` |
 | `agent_mode(session_id)` | `GET /v1/sessions/{id}/agent-mode` | `SessionAgentModeResponse` |
@@ -111,11 +113,39 @@ this generic HTTP client rather than a dedicated typed SDK accessor. See the
 | `active_turn(session_id)` | `GET .../active-turn` | active turn ticket |
 | `cancel_active_turn(session_id)` | `POST .../active-turn` | cancel |
 
+History methods return `TranscriptEntry` items in
+`SessionHistoryResponse.turns`. Role, content, timestamp, parts, and other
+legacy turn fields remain top-level. `entry_id` and one-based `entry_seq`
+provide durable transcript coordinates; `caused_by` and `source` carry
+execution and derivation provenance when known.
+
+`derive` is the generic context-materialization primitive used by fork, bounded
+worker context, and future work-context flows. Source ranges are ordered and
+contain committed transcript coordinates. The SDK sends `idempotency_key` as
+the required `Idempotency-Key` header; retain the same key when retrying an
+uncertain request outcome.
+
 `delete` is complete only when `response.status == "complete"` and
 `response.deleted` is true. Retry the same session ID for
 `retryable_partial`; the daemon reuses `deletion_id` and replaces successful
 per-surface results. Raw HTTP clients can query
 `GET /v1/session-deletions/{deletion_id}`.
+
+---
+
+## `prompt_stashes()`
+
+| Method | HTTP | Types |
+|--------|------|-------|
+| `list()` | `GET /v1/prompt-stashes` | `PromptStashListResponse` |
+| `create(request)` | `POST /v1/prompt-stashes` | `CreatePromptStashRequest` → `PromptStash` |
+| `delete(stash_id)` | `DELETE /v1/prompt-stashes/{id}` | `DeletePromptStashResponse` |
+
+These methods manage user-created composer stashes on the workshop authority.
+They do not expose or replace a client's automatic local draft recovery.
+Structured draft content may include media and mode/model hints; optional
+context references remain subject to session and manifest authorization when
+applied.
 
 ---
 

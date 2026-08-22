@@ -19,10 +19,16 @@ const ARTIFACT_INDEX_FILE: &str = "index.jsonl";
 const ARTIFACT_ALIASES_FILE: &str = "artifact_aliases.json";
 const MAX_ARTIFACT_PAYLOAD_BYTES: u64 = 64 * 1024 * 1024;
 
+#[cfg(test)]
+static ARTIFACT_TEST_ROOT: Lazy<tempfile::TempDir> =
+    Lazy::new(|| tempfile::tempdir().expect("artifact test store"));
+
 static ARTIFACT_FILES: Lazy<crate::session_storage::SessionDirectoryStore> = Lazy::new(|| {
-    crate::session_storage::SessionDirectoryStore::new(
-        crate::paths::medousa_data_dir().join("artifacts"),
-    )
+    #[cfg(test)]
+    let root = ARTIFACT_TEST_ROOT.path().join("artifacts");
+    #[cfg(not(test))]
+    let root = crate::paths::medousa_data_dir().join("artifacts");
+    crate::session_storage::SessionDirectoryStore::new(root)
 });
 
 const ARTIFACT_INDEX_TABLE: &str = "artifact_record";
@@ -433,6 +439,7 @@ pub fn list_ui_artifacts(
     let mut records: Vec<ArtifactRecord> = read_index_records()
         .into_iter()
         .filter(is_ui_html_record)
+        .filter(artifact_payload_exists)
         .filter(|record| session_id.is_none_or(|sid| record.session_id == sid))
         .filter(|record| {
             query.as_ref().is_none_or(|needle| {
@@ -658,9 +665,20 @@ fn load_fetched_from_store(
 ) -> Option<FetchedArtifact> {
     let session_id = crate::session_storage::SessionId::parse(&record.session_id).ok()?;
     let path = artifact_payload_path_for_record(&record);
-    let raw = files
-        .read_limited(&session_id, &path, MAX_ARTIFACT_PAYLOAD_BYTES)
-        .ok()?;
+    let raw = match files.read_limited(&session_id, &path, MAX_ARTIFACT_PAYLOAD_BYTES) {
+        Ok(raw) => raw,
+        Err(_) => {
+            let legacy_path = legacy_artifact_payload_path_for_record(&record)?;
+            let raw = files
+                .read_limited(&session_id, &legacy_path, MAX_ARTIFACT_PAYLOAD_BYTES)
+                .ok()?;
+            // The legacy location is derived exclusively from validated record metadata. Copying
+            // it into the opaque object path restores old presentations without trusting the
+            // persisted `payload_path`, which may contain an absolute or attacker-chosen path.
+            let _ = files.atomic_write(&session_id, &path, &raw);
+            raw
+        }
+    };
     record.payload_path = path.file_name().to_string();
     let mime = if record.content_type.is_empty() {
         if record.direction == "ui" {
@@ -909,7 +927,16 @@ fn append_index_record(record: &ArtifactRecord) -> std::result::Result<(), Strin
 }
 
 fn overwrite_index_records(records: &[ArtifactRecord]) -> std::result::Result<(), String> {
-    artifact_index_store().overwrite_all(records)
+    artifact_index_store().overwrite_all(records)?;
+    if ARTIFACT_INDEX_USES_SURREAL.load(Ordering::Acquire) {
+        let ui_records: Vec<ArtifactRecord> = records
+            .iter()
+            .filter(|record| is_ui_html_record(record))
+            .cloned()
+            .collect();
+        file_overwrite_index_records(&ui_records)?;
+    }
+    Ok(())
 }
 
 fn read_index_records() -> Vec<ArtifactRecord> {
@@ -1083,6 +1110,25 @@ fn artifact_payload_path_for_record(record: &ArtifactRecord) -> StorePath {
     )
 }
 
+fn legacy_artifact_payload_path_for_record(record: &ArtifactRecord) -> Option<StorePath> {
+    let extension = if record.content_type == "text/html" || record.direction == "ui" {
+        "html"
+    } else {
+        "json"
+    };
+    if record.hash64.is_empty() || !record.hash64.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    StorePath::parse(&format!(
+        "{}/{}/{}.{}",
+        slugify_tool_name(&record.tool_name),
+        slugify_tool_name(&record.direction),
+        record.hash64,
+        extension,
+    ))
+    .ok()
+}
+
 fn artifact_payload_identity(record: &ArtifactRecord) -> (String, String) {
     (
         record.session_id.clone(),
@@ -1096,9 +1142,14 @@ fn artifact_payload_exists(record: &ArtifactRecord) -> bool {
     let Ok(session_id) = crate::session_storage::SessionId::parse(&record.session_id) else {
         return false;
     };
-    ARTIFACT_FILES
+    if ARTIFACT_FILES
         .is_file(&session_id, &artifact_payload_path_for_record(record))
         .unwrap_or(false)
+    {
+        return true;
+    }
+    legacy_artifact_payload_path_for_record(record)
+        .is_some_and(|path| ARTIFACT_FILES.is_file(&session_id, &path).unwrap_or(false))
 }
 
 fn artifact_index_path() -> StorePath {
@@ -1219,6 +1270,74 @@ mod tests {
             std::fs::read(&outside).expect("read canary"),
             br#"{"source":"outside"}"#
         );
+    }
+
+    #[test]
+    fn fetch_migrates_legacy_payload_from_metadata_derived_path() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let files = crate::session_storage::SessionDirectoryStore::new(temp.path().join("store"));
+        let session_id = parsed_session_id("test-artifact-legacy-payload");
+        let raw = b"<html><body>Legacy presentation</body></html>";
+        let hash64 = crate::payload_receipt::hash_text(std::str::from_utf8(raw).expect("html"));
+        let record = ArtifactRecord {
+            artifact_id: format!("art:test:cognition_ui_present:ui:{hash64}"),
+            session_id: session_id.as_str().to_string(),
+            tool_name: "cognition_ui_present".to_string(),
+            direction: "ui".to_string(),
+            hash64,
+            byte_size: raw.len(),
+            stored_at_utc: Utc::now(),
+            payload_path: "/ignored/legacy/path.html".to_string(),
+            content_type: "text/html".to_string(),
+            label: Some("Legacy".to_string()),
+            presentation: Some("inline".to_string()),
+            height_px: None,
+            supersedes_artifact_id: None,
+            root_artifact_id: None,
+        };
+        let legacy = legacy_artifact_payload_path_for_record(&record).expect("legacy path");
+        let current = artifact_payload_path_for_record(&record);
+        files
+            .atomic_write(&session_id, &legacy, raw)
+            .expect("write legacy payload");
+        assert!(
+            !files
+                .is_file(&session_id, &current)
+                .expect("current lookup")
+        );
+
+        let fetched = load_fetched_from_store(&files, record).expect("fetch legacy payload");
+
+        assert!(fetched.body.contains("Legacy presentation"));
+        assert!(
+            files
+                .is_file(&session_id, &current)
+                .expect("migrated lookup")
+        );
+    }
+
+    #[test]
+    fn list_ui_artifacts_omits_records_without_payloads() {
+        let session_id = "test-ui-artifact-missing-payload";
+        let record = ArtifactRecord {
+            artifact_id: "art:test:cognition_ui_present:ui:deadbeef".to_string(),
+            session_id: session_id.to_string(),
+            tool_name: "cognition_ui_present".to_string(),
+            direction: "ui".to_string(),
+            hash64: "deadbeef".to_string(),
+            byte_size: 128,
+            stored_at_utc: Utc::now(),
+            payload_path: "/missing/presentation.html".to_string(),
+            content_type: "text/html".to_string(),
+            label: Some("Missing".to_string()),
+            presentation: Some("inline".to_string()),
+            height_px: None,
+            supersedes_artifact_id: None,
+            root_artifact_id: None,
+        };
+        append_index_record(&record).expect("index missing record");
+
+        assert!(list_ui_artifacts(Some(session_id), 10, None).is_empty());
     }
 
     #[test]

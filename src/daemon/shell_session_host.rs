@@ -29,7 +29,7 @@ use crate::grapheme_script::store::GraphemeScriptStore;
 use crate::paths::medousa_data_dir;
 
 const DEFAULT_BIND: &str = "127.0.0.1:7862";
-const EXPECTED_API_REVISION: u32 = 3;
+const EXPECTED_API_REVISION: u32 = 4;
 /// Windows Defender / cold start often exceeds the old 1s probe window.
 const HEALTH_WAIT_ATTEMPTS: u32 = 100;
 const HEALTH_WAIT_INTERVAL_MS: u64 = 50;
@@ -371,6 +371,8 @@ pub struct CreateSessionBody {
     pub work_id: Option<String>,
     #[serde(default)]
     pub cwd: Option<String>,
+    #[serde(default)]
+    pub argv: Option<Vec<String>>,
     /// Optional Forge lease id — enables command-log staging for evidence.
     #[serde(default)]
     pub lease_id: Option<String>,
@@ -410,7 +412,27 @@ async fn create_session(
                 format!("work {wid} is not provisioned (no governed env)"),
             ));
         };
-        cwd = Some(env.worktree.to_string_lossy().into_owned());
+        let worktree = env
+            .worktree
+            .canonicalize()
+            .unwrap_or_else(|_| env.worktree.clone());
+        cwd = if let Some(requested) = body.cwd.as_deref() {
+            let requested = PathBuf::from(requested).canonicalize().map_err(|error| {
+                (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    format!("session cwd is unavailable: {error}"),
+                )
+            })?;
+            if !requested.starts_with(&worktree) {
+                return Err((
+                    axum::http::StatusCode::FORBIDDEN,
+                    "session cwd must stay inside the governed worktree".into(),
+                ));
+            }
+            Some(requested.to_string_lossy().into_owned())
+        } else {
+            Some(worktree.to_string_lossy().into_owned())
+        };
         work_id = Some(wid.to_string());
     }
     let payload = serde_json::json!({
@@ -418,6 +440,7 @@ async fn create_session(
         "cwd": cwd,
         "cols": body.cols,
         "rows": body.rows,
+        "argv": body.argv,
     });
     let mut response = proxy_http(&state, "POST", "/v1/sessions/shell", Some(payload)).await?;
 
@@ -457,6 +480,53 @@ async fn create_session(
     }
 
     Ok(response)
+}
+
+pub async fn create_project_task_session(
+    state: &AppState,
+    work_id: &str,
+    cwd: &std::path::Path,
+    argv: &[String],
+) -> Result<String, (axum::http::StatusCode, String)> {
+    let response = proxy_http(
+        state,
+        "POST",
+        "/v1/sessions/shell",
+        Some(serde_json::json!({
+            "work_id": work_id,
+            "cwd": cwd,
+            "argv": argv,
+            "cols": 100,
+            "rows": 30,
+        })),
+    )
+    .await?;
+    response
+        .0
+        .get("session_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            (
+                axum::http::StatusCode::BAD_GATEWAY,
+                "session host did not return a session id".into(),
+            )
+        })
+}
+
+pub async fn signal_project_task_session(
+    state: &AppState,
+    session_id: &str,
+    signal: &str,
+) -> Result<(), (axum::http::StatusCode, String)> {
+    proxy_http(
+        state,
+        "POST",
+        &format!("/v1/sessions/shell/{session_id}/signal"),
+        Some(serde_json::json!({ "signal": signal })),
+    )
+    .await
+    .map(|_| ())
 }
 
 async fn signal_session(

@@ -1,7 +1,7 @@
 <script lang="ts">
   import "$lib/styles/chat.postcss";
   import { onMount, untrack } from "svelte";
-  import { Plus, Search, Users, X } from "@lucide/svelte";
+  import { ChevronDown, ChevronRight, Plus, Search, Users, X } from "@lucide/svelte";
   import SessionRow from "$lib/components/chat/SessionRow.svelte";
   import { haptic } from "$lib/haptics";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
@@ -12,6 +12,7 @@
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import type { SessionSummary } from "$lib/types/session";
   import { formatSessionLabel } from "$lib/utils/formatSession";
+  import { groupSessionsByRecency } from "$lib/utils/sessionHistoryGroups";
   import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
 
   interface Props {
@@ -40,6 +41,7 @@
   let renameInputEl = $state<HTMLInputElement | null>(null);
   let sheetEl = $state<HTMLDivElement | null>(null);
   let headerEl = $state<HTMLElement | null>(null);
+  let olderCollapsed = $state(true);
 
   const touchActions = $derived(variant === "sheet");
 
@@ -115,6 +117,7 @@
       (session) => !chat.isPinned(session.session_id) && matchesQuery(session),
     ),
   );
+  const recentGroups = $derived(groupSessionsByRecency(recent));
 
   const listEmpty = $derived(pinned.length === 0 && recent.length === 0);
 
@@ -372,7 +375,10 @@
     <ol class="session-sidebar-list {variant === 'sheet' ? 'mobile-chat-history-list' : ''}">
       {#if pinned.length > 0}
         <li class="session-sidebar-section">
-          <p class="session-sidebar-section-title">Pinned</p>
+          <div class="session-sidebar-section-heading">
+            <p class="session-sidebar-section-title">Pinned</p>
+            <span class="session-sidebar-section-count">{pinned.length}</span>
+          </div>
           <ul class="session-sidebar-section-list">
             {#each pinned as session (session.session_id)}
               <li>
@@ -393,25 +399,52 @@
       {/if}
 
       {#if recent.length > 0}
-        <li class="session-sidebar-section">
-          <p class="session-sidebar-section-title">Recent</p>
-          <ul class="session-sidebar-section-list">
-            {#each recent as session (session.session_id)}
-              <li>
-                <SessionRow
-                  {session}
-                  selected={chat.sessionId === session.session_id}
-                  pinned={false}
-                  alwaysShowActions={touchActions}
-                  onSelect={() => void selectSession(session.session_id)}
-                  onRename={() => openRename(session)}
-                  onDelete={() => openDelete(session)}
-                  onTogglePin={() => chat.togglePin(session.session_id)}
-                />
-              </li>
-            {/each}
-          </ul>
-        </li>
+        {#each recentGroups as group (group.id)}
+          {@const collapsed = group.id === "older" && olderCollapsed && !query.trim()}
+          <li class="session-sidebar-section">
+            {#if group.id === "older"}
+              <button
+                type="button"
+                class="session-sidebar-section-heading session-sidebar-section-heading--button"
+                aria-expanded={!collapsed}
+                onclick={() => (olderCollapsed = !olderCollapsed)}
+              >
+                <span class="session-sidebar-section-title">{group.label}</span>
+                <span class="session-sidebar-section-heading__trailing">
+                  <span class="session-sidebar-section-count">{group.sessions.length}</span>
+                  {#if collapsed}
+                    <ChevronRight size={12} strokeWidth={1.75} aria-hidden="true" />
+                  {:else}
+                    <ChevronDown size={12} strokeWidth={1.75} aria-hidden="true" />
+                  {/if}
+                </span>
+              </button>
+            {:else}
+              <div class="session-sidebar-section-heading">
+                <p class="session-sidebar-section-title">{group.label}</p>
+                <span class="session-sidebar-section-count">{group.sessions.length}</span>
+              </div>
+            {/if}
+            {#if !collapsed}
+              <ul class="session-sidebar-section-list">
+                {#each group.sessions as session (session.session_id)}
+                  <li>
+                    <SessionRow
+                      {session}
+                      selected={chat.sessionId === session.session_id}
+                      pinned={false}
+                      alwaysShowActions={touchActions}
+                      onSelect={() => void selectSession(session.session_id)}
+                      onRename={() => openRename(session)}
+                      onDelete={() => openDelete(session)}
+                      onTogglePin={() => chat.togglePin(session.session_id)}
+                    />
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </li>
+        {/each}
       {:else if listEmpty}
         <li class="session-sidebar-empty">
           {#if query.trim()}

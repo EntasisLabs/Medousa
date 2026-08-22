@@ -45,12 +45,55 @@ fn main() {
     export_type!(schemas, ArchiveAskJobResponse, "ArchiveAskJobResponse");
 
     // Sessions
+    export_type!(schemas, AuthorityId, "AuthorityId");
+    export_type!(schemas, TranscriptEntryId, "TranscriptEntryId");
+    export_type!(schemas, ContextManifestId, "ContextManifestId");
+    export_type!(schemas, DerivationId, "DerivationId");
+    export_type!(schemas, ExecutionId, "ExecutionId");
+    export_type!(schemas, SessionRef, "SessionRef");
+    export_type!(schemas, TranscriptEntryRef, "TranscriptEntryRef");
+    export_type!(schemas, TranscriptEntry, "TranscriptEntry");
+    export_type!(schemas, ExecutionRef, "ExecutionRef");
+    export_type!(
+        schemas,
+        ConversationRangeSelection,
+        "ConversationRangeSelection"
+    );
+    export_type!(
+        schemas,
+        ResolvedConversationRange,
+        "ResolvedConversationRange"
+    );
+    export_type!(schemas, ContextManifest, "ContextManifest");
+    export_type!(schemas, SessionDerivation, "SessionDerivation");
+    export_type!(schemas, DeriveSessionTarget, "DeriveSessionTarget");
+    export_type!(schemas, DeriveSessionRequest, "DeriveSessionRequest");
+    export_type!(schemas, DeriveSessionResponse, "DeriveSessionResponse");
+    export_type!(schemas, PromptStashId, "PromptStashId");
+    export_type!(schemas, PromptStashDraft, "PromptStashDraft");
+    export_type!(schemas, PromptStash, "PromptStash");
+    export_type!(
+        schemas,
+        CreatePromptStashRequest,
+        "CreatePromptStashRequest"
+    );
+    export_type!(schemas, PromptStashListResponse, "PromptStashListResponse");
+    export_type!(
+        schemas,
+        DeletePromptStashResponse,
+        "DeletePromptStashResponse"
+    );
     export_type!(
         schemas,
         SessionHistoryListResponse,
         "SessionHistoryListResponse"
     );
     export_type!(schemas, SessionHistoryResponse, "SessionHistoryResponse");
+    export_type!(
+        schemas,
+        SessionTranscriptSearchResponse,
+        "SessionTranscriptSearchResponse"
+    );
     export_type!(
         schemas,
         SessionAppendTurnRequest,

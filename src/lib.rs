@@ -13,6 +13,7 @@ pub mod channel_delivery;
 pub mod channel_session_store;
 pub mod chat_history_tools;
 pub mod comms;
+pub mod context_derivation;
 pub mod context_pack;
 pub mod engine_adapters;
 pub mod engine_recovery;
@@ -34,6 +35,7 @@ pub mod media_store;
 pub mod media_text_extract;
 pub mod media_vision;
 pub mod model_capability_registry;
+pub mod prompt_stash;
 pub mod public_api;
 pub mod recurring_agent_turn;
 pub mod recurring_delivery;
@@ -63,6 +65,7 @@ pub mod turn_slice;
 pub mod turn_text_heuristics;
 pub mod turn_worker_notify;
 pub mod typed_tools;
+pub mod workshop_authority;
 /// Re-export slim MCP gateway crate (binary lives in adapters/medousa-mcp-gateway).
 pub use medousa_mcp_gateway::mcp_gateway;
 pub mod artifact_html_lint;
@@ -292,6 +295,7 @@ pub use daemon_api::{
     RuntimeConfigCommandSpec, RuntimeVerifyPolicyState, SessionAppendTurnRequest,
     SessionAppendTurnResponse, SessionHistoryListRequest, SessionHistoryListResponse,
     SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
+    SessionTranscriptSearchHit, SessionTranscriptSearchRequest, SessionTranscriptSearchResponse,
     StageRouteCommandRequest, StageRouteCommandResponse, StageRouteCommandSpec,
     TurnContinuationLineageResponse, TurnSurfaceContext, resolve_daemon_url,
 };

@@ -6,12 +6,14 @@
 use std::ffi::OsStr;
 use std::path::{Component, Path as FsPath, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{delete, get, patch, post, put};
+use base64::Engine as _;
 use medousa_forge::adapter::{ScriptAdapter, export_bundle};
 use medousa_forge::error::ForgeError;
 use medousa_forge::forge::{Forge, SealOptions};
@@ -338,6 +340,10 @@ pub fn forge_surface() -> DeclaredRouter<AppState> {
         .route(
             forge_post_policy("/v1/forge/items/{work_id}/tasks/{task_id}/runs"),
             post(start_project_task_run),
+        )
+        .route(
+            forge_read_policy("/v1/forge/items/{work_id}/task-runs"),
+            get(list_project_task_runs),
         )
         .methods([
             (
@@ -1955,8 +1961,8 @@ async fn list_items(
     Query(query): Query<ListItemsQuery>,
 ) -> ApiResult<axum::response::Response> {
     use axum::response::IntoResponse;
-    let forge = forge(&state);
     let paginated = query.limit.is_some() || query.cursor.is_some();
+    let forge = forge(&state);
     let result = admit_forge_canary(
         &state,
         medousa_forge::execution::ExecutionClass::StoreIo,
@@ -2686,6 +2692,16 @@ struct CodeWorkspaceLayout {
     search: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     changes: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    output: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bottom_panel: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    primary_task: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    active_run: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    recent_runs: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -3420,6 +3436,37 @@ async fn save_workspace_state(
                         "problems" | "outline" | "references" | "language" => {}
                         _ => layout.context_panel = None,
                     }
+                }
+                if let Some(layout) = body.state.layout.as_mut()
+                    && let Some(panel) = layout.bottom_panel.as_deref()
+                {
+                    match panel {
+                        "problems" | "output" | "tests" | "terminal" => {}
+                        _ => layout.bottom_panel = None,
+                    }
+                }
+                if let Some(layout) = body.state.layout.as_mut()
+                    && let Some(task_id) = layout.primary_task.as_mut()
+                {
+                    *task_id = task_id.trim().chars().take(160).collect();
+                    if task_id.is_empty() {
+                        layout.primary_task = None;
+                    }
+                }
+                if let Some(layout) = body.state.layout.as_mut() {
+                    if let Some(run_id) = layout.active_run.as_mut() {
+                        *run_id = run_id.trim().chars().take(160).collect();
+                        if run_id.is_empty() {
+                            layout.active_run = None;
+                        }
+                    }
+                    layout.recent_runs = layout
+                        .recent_runs
+                        .iter()
+                        .map(|run_id| run_id.trim().chars().take(160).collect::<String>())
+                        .filter(|run_id| !run_id.is_empty())
+                        .take(12)
+                        .collect();
                 }
                 let open_paths = body
                     .state
@@ -6297,11 +6344,28 @@ async fn restore_review_file(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ProjectTask {
+    #[serde(default = "default_project_task_version")]
+    version: u8,
     id: String,
     label: String,
     kind: String,
     argv: Vec<String>,
     provider: String,
+    #[serde(default = "default_project_task_source")]
+    source: String,
+    /// Repository-relative directory where the command runs.
+    #[serde(default = "default_project_task_root")]
+    root: String,
+    #[serde(default)]
+    interactive: bool,
+    #[serde(default)]
+    background: bool,
+    #[serde(default)]
+    default_rank: i32,
+    #[serde(default = "default_true")]
+    available: bool,
+    #[serde(default)]
+    requirements: Vec<ProjectTaskRequirement>,
     #[serde(default)]
     long_running: bool,
     /// Optional regex (unanchored) that marks a background task ready.
@@ -6310,6 +6374,31 @@ struct ProjectTask {
     /// Optional VS Code-style problem matcher pattern for this task.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     problem_matcher: Option<ProjectProblemPattern>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ProjectTaskRequirement {
+    kind: String,
+    name: String,
+    available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    repair: Option<String>,
+}
+
+fn default_project_task_version() -> u8 {
+    1
+}
+
+fn default_project_task_source() -> String {
+    "detected".into()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_project_task_root() -> String {
+    ".".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -6353,6 +6442,9 @@ struct ProjectTest {
     path: String,
     line: u32,
     task_id: String,
+    provider: String,
+    /// `named` supports a stable named target; `file` narrows only to the file.
+    target_kind: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -6361,6 +6453,11 @@ struct ProjectTaskRun {
     work_id: String,
     state: String,
     task: ProjectTask,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    test_id: Option<String>,
+    started_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    finished_at: Option<String>,
     result: Option<ProjectTaskResult>,
     /// Bounded live stdout retained while the run is active (and after for replay).
     #[serde(default)]
@@ -6379,6 +6476,72 @@ struct ProjectTaskRun {
     /// Loopback URL detected when a long-running task became ready.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ready_url: Option<String>,
+    /// Shared workshop PTY session for interactive/background commands.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    attach_path: Option<String>,
+    /// Tokenized Browser path retained with the ready run snapshot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    preview_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ProjectTaskRunSummary {
+    run_id: String,
+    work_id: String,
+    state: String,
+    task: ProjectTask,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    test_id: Option<String>,
+    started_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    finished_at: Option<String>,
+    terminal: bool,
+    output_truncated: bool,
+    next_seq: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ready_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attach_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    preview_path: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ProjectTaskRunListResponse {
+    runs: Vec<ProjectTaskRunSummary>,
+    truncated: bool,
+    retained_count: usize,
+    active_count: usize,
+    terminal_count: usize,
+    terminal_limit: usize,
+    terminal_ttl_seconds: u64,
+    registry_evicted_count: u64,
+}
+
+impl From<ProjectTaskRun> for ProjectTaskRunSummary {
+    fn from(run: ProjectTaskRun) -> Self {
+        let terminal = task_run_is_terminal(&run);
+        Self {
+            run_id: run.run_id,
+            work_id: run.work_id,
+            state: run.state,
+            task: run.task,
+            test_id: run.test_id,
+            started_at: run.started_at,
+            finished_at: run.finished_at,
+            terminal,
+            output_truncated: run.output_truncated,
+            next_seq: run.next_seq,
+            ready_url: run.ready_url,
+            session_id: run.session_id,
+            attach_path: run.attach_path,
+            preview_path: run.preview_path,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -6411,6 +6574,8 @@ const PROJECT_TASK_RUN_MEMORY_RESERVATION: u32 = 2 * 1024 * 1024;
 const PROJECT_TASK_GLOBAL_MEMORY_BYTES: usize = 64 * 1024 * 1024;
 const PROJECT_TASK_TERMINAL_TTL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 const CONFIGURED_TASK_CAP: usize = 24;
+const DETECTED_PROJECT_ROOT_CAP: usize = 48;
+const DETECTED_PROJECT_TASK_CAP: usize = 256;
 
 #[derive(Default)]
 struct TaskOutputTail {
@@ -6463,7 +6628,8 @@ impl TaskOutputTail {
 
 struct ProjectTaskRunStore {
     run: ProjectTaskRun,
-    root: PathBuf,
+    repository_root: PathBuf,
+    working_root: PathBuf,
     ready_re: Option<regex::Regex>,
     problem_re: Option<(regex::Regex, ProjectProblemPattern)>,
     stdout: TaskOutputTail,
@@ -6501,22 +6667,31 @@ static PROJECT_TASK_MEMORY: LazyLock<Arc<tokio::sync::Semaphore>> = LazyLock::ne
         PROJECT_TASK_GLOBAL_MEMORY_BYTES,
     ))
 });
-static PROJECT_TASK_CHILDREN: LazyLock<
-    tokio::sync::RwLock<
-        std::collections::HashMap<String, Arc<tokio::sync::Mutex<tokio::process::Child>>>,
-    >,
+enum ProjectTaskProcess {
+    Child(Arc<tokio::sync::Mutex<tokio::process::Child>>),
+    Session { session_id: String },
+}
+
+static PROJECT_TASK_PROCESSES: LazyLock<
+    tokio::sync::RwLock<std::collections::HashMap<String, Arc<ProjectTaskProcess>>>,
 > = LazyLock::new(|| tokio::sync::RwLock::new(std::collections::HashMap::new()));
+static PROJECT_TASK_START_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+static PROJECT_TASK_EVICTED_COUNT: AtomicU64 = AtomicU64::new(0);
 
 fn prune_project_task_runs(
     runs: &mut std::collections::HashMap<String, Arc<ProjectTaskRunHandle>>,
 ) {
     let now = std::time::Instant::now();
     runs.retain(|_, handle| {
-        handle
+        let retain = handle
             .terminal_at
             .lock()
             .expect("project task terminal timestamp")
-            .is_none_or(|terminal| now.duration_since(terminal) < PROJECT_TASK_TERMINAL_TTL)
+            .is_none_or(|terminal| now.duration_since(terminal) < PROJECT_TASK_TERMINAL_TTL);
+        if !retain {
+            PROJECT_TASK_EVICTED_COUNT.fetch_add(1, Ordering::Relaxed);
+        }
+        retain
     });
     let mut terminal = runs
         .iter()
@@ -6531,7 +6706,9 @@ fn prune_project_task_runs(
     terminal.sort_by_key(|(at, _)| *at);
     let overflow = terminal.len().saturating_sub(PROJECT_TASK_TERMINAL_CAP);
     for (_, id) in terminal.into_iter().take(overflow) {
-        runs.remove(&id);
+        if runs.remove(&id).is_some() {
+            PROJECT_TASK_EVICTED_COUNT.fetch_add(1, Ordering::Relaxed);
+        }
     }
 }
 
@@ -6612,12 +6789,13 @@ fn merge_task_locations(
 }
 
 fn parse_output_locations_with_matcher(
-    root: &FsPath,
+    repository_root: &FsPath,
+    working_root: &FsPath,
     output: &str,
     matcher: Option<&(regex::Regex, ProjectProblemPattern)>,
 ) -> Vec<ProjectOutputLocation> {
     let Some((re, pattern)) = matcher else {
-        return parse_output_locations(root, output);
+        return parse_output_locations(repository_root, working_root, output);
     };
     let mut locations = Vec::new();
     for line_text in output.lines() {
@@ -6643,22 +6821,11 @@ fn parse_output_locations_with_matcher(
             .map(|m| m.as_str().chars().take(300).collect())
             .unwrap_or_else(|| line_text.trim().chars().take(300).collect());
         let path = std::path::Path::new(raw.trim());
-        let relative = if path.is_absolute() {
-            path.strip_prefix(root).ok()
-        } else {
-            Some(path)
-        };
-        let Some(relative) = relative else {
+        let Some(path) = normalize_output_path(repository_root, working_root, path) else {
             continue;
         };
-        if relative
-            .components()
-            .any(|part| matches!(part, std::path::Component::ParentDir))
-        {
-            continue;
-        }
         locations.push(ProjectOutputLocation {
-            path: relative.to_string_lossy().replace('\\', "/"),
+            path,
             line,
             column,
             message,
@@ -6702,8 +6869,12 @@ async fn publish_task_output(run_id: &str, stream: &str, text: &str) {
         } else {
             store.run.output_truncated |= store.stdout.append(text);
         }
-        let matched =
-            parse_output_locations_with_matcher(&store.root, text, store.problem_re.as_ref());
+        let matched = parse_output_locations_with_matcher(
+            &store.repository_root,
+            &store.working_root,
+            text,
+            store.problem_re.as_ref(),
+        );
         let before = store.run.locations.len();
         merge_task_locations(&mut store.run.locations, matched);
         let new_locations = if store.run.locations.len() > before {
@@ -6754,7 +6925,13 @@ async fn publish_task_output(run_id: &str, stream: &str, text: &str) {
     };
     if became_ready {
         if let (true, Some(url)) = (!work_id.is_empty(), ready_url.as_ref()) {
-            let _ = crate::daemon::forge_preview::mint_preview_grant(&work_id, run_id, url).await;
+            if let Some(token) =
+                crate::daemon::forge_preview::mint_preview_grant(&work_id, run_id, url).await
+                && let Some(handle) = PROJECT_TASK_RUNS.read().await.get(run_id).cloned()
+            {
+                handle.store.lock().await.run.preview_path =
+                    Some(crate::daemon::forge_preview::preview_path_for_token(&token));
+            }
         }
         publish_task_state(run_id, "ready", None).await;
     }
@@ -6778,6 +6955,9 @@ async fn publish_task_state(run_id: &str, state: &str, result: Option<ProjectTas
         store.run.result = Some(result);
         store.stdout.clear();
         store.stderr.clear();
+    }
+    if task_run_is_terminal(&store.run) && store.run.finished_at.is_none() {
+        store.run.finished_at = Some(chrono::Utc::now().to_rfc3339());
     }
     let seq = store.run.next_seq;
     store.run.next_seq = seq.saturating_add(1);
@@ -6840,6 +7020,194 @@ async fn pump_task_stderr(run_id: String, mut reader: tokio::process::ChildStder
     }
 }
 
+async fn finish_project_task_run(
+    state: AppState,
+    item: WorkItem,
+    lease: ExecutionLease,
+    root: PathBuf,
+    working_root: PathBuf,
+    task: ProjectTask,
+    run_id: String,
+    started: std::time::Instant,
+    exit_code: Option<i32>,
+) {
+    // Give pipe/PTY pumps a moment to publish final bytes before sealing evidence.
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    let (stdout, stderr, output_truncated, prior_locations, problem_re) = {
+        let handle = PROJECT_TASK_RUNS.read().await.get(&run_id).cloned();
+        if let Some(handle) = handle {
+            let store = handle.store.lock().await;
+            (
+                store.stdout.materialize(),
+                store.stderr.materialize(),
+                store.run.output_truncated,
+                store.run.locations.clone(),
+                store.problem_re.clone(),
+            )
+        } else {
+            (String::new(), String::new(), false, Vec::new(), None)
+        }
+    };
+    let mut locations = prior_locations;
+    merge_task_locations(
+        &mut locations,
+        parse_output_locations_with_matcher(
+            &root,
+            &working_root,
+            &format!("{stdout}\n{stderr}"),
+            problem_re.as_ref(),
+        ),
+    );
+    let result = ProjectTaskResult {
+        task: task.clone(),
+        success: exit_code == Some(0),
+        exit_code,
+        stdout,
+        stderr,
+        truncated: output_truncated,
+        duration_ms: started.elapsed().as_millis(),
+        locations,
+    };
+    let cancelled = if let Some(handle) = PROJECT_TASK_RUNS.read().await.get(&run_id).cloned() {
+        let store = handle.store.lock().await;
+        matches!(store.run.state.as_str(), "stopping" | "cancelled")
+    } else {
+        false
+    };
+    let _ = forge(&state).append_command_log(
+        &lease,
+        &serde_json::json!({
+            "kind": if cancelled { "project_task_cancelled" } else { "project_task" },
+            "run_id": run_id,
+            "task": result.task,
+            "success": result.success,
+            "exit_code": result.exit_code,
+            "duration_ms": result.duration_ms,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "truncated": result.truncated,
+            "locations": result.locations,
+        }),
+    );
+    let final_state = if cancelled {
+        "cancelled"
+    } else if result.success {
+        "passed"
+    } else {
+        "failed"
+    };
+    publish_task_state(&run_id, final_state, Some(result)).await;
+    PROJECT_TASK_PROCESSES.write().await.remove(&run_id);
+    publish_item(&state, &item, "task_finished");
+}
+
+async fn pump_project_task_session(
+    state: AppState,
+    item: WorkItem,
+    lease: ExecutionLease,
+    root: PathBuf,
+    working_root: PathBuf,
+    task: ProjectTask,
+    run_id: String,
+    session_id: String,
+) {
+    use futures_util::StreamExt;
+    use tokio_tungstenite::tungstenite::Message;
+
+    let started = std::time::Instant::now();
+    let mut after_sequence = 0_u64;
+    loop {
+        let host = state.shell_sessions.clone().unwrap_or_default();
+        let info = crate::daemon::shell_session_host::ensure_shell_session_host(&host).await;
+        if !info.available {
+            publish_task_output(&run_id, "stderr", &format!("{}\n", info.message)).await;
+            finish_project_task_run(
+                state,
+                item,
+                lease,
+                root,
+                working_root,
+                task,
+                run_id,
+                started,
+                Some(1),
+            )
+            .await;
+            return;
+        }
+        let ws_base = info.url.replacen("http", "ws", 1);
+        let url = format!(
+            "{ws_base}/v1/sessions/shell/{}?after_sequence={after_sequence}",
+            urlencoding::encode(&session_id)
+        );
+        let Ok((mut ws, _)) = tokio_tungstenite::connect_async(&url).await else {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            continue;
+        };
+        let mut exited = None;
+        while let Some(message) = ws.next().await {
+            let Ok(Message::Text(text)) = message else {
+                continue;
+            };
+            let Ok(frame) = serde_json::from_str::<serde_json::Value>(&text) else {
+                continue;
+            };
+            match frame.get("type").and_then(serde_json::Value::as_str) {
+                Some("stdout") => {
+                    if let Some(sequence) =
+                        frame.get("sequence").and_then(serde_json::Value::as_u64)
+                    {
+                        after_sequence = after_sequence.max(sequence);
+                    }
+                    if let Some(encoded) = frame.get("data").and_then(serde_json::Value::as_str)
+                        && let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(encoded)
+                    {
+                        publish_task_output(&run_id, "stdout", &String::from_utf8_lossy(&bytes))
+                            .await;
+                    }
+                }
+                Some("ready") => {
+                    if let Some(sequence) =
+                        frame.get("sequence").and_then(serde_json::Value::as_u64)
+                    {
+                        after_sequence = after_sequence.max(sequence);
+                    }
+                }
+                Some("exit") => {
+                    exited = frame
+                        .get("exit_code")
+                        .and_then(serde_json::Value::as_i64)
+                        .and_then(|code| i32::try_from(code).ok());
+                    break;
+                }
+                _ => {}
+            }
+        }
+        if exited.is_some() {
+            finish_project_task_run(
+                state,
+                item,
+                lease,
+                root,
+                working_root,
+                task,
+                run_id,
+                started,
+                exited,
+            )
+            .await;
+            return;
+        }
+        if project_task_run_snapshot(&run_id)
+            .await
+            .is_none_or(|run| task_run_is_terminal(&run))
+        {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct RunProjectTaskRequest {
     lease_id: String,
@@ -6852,22 +7220,37 @@ fn target_project_test(
     root: &FsPath,
     task: &mut ProjectTask,
     test_id: Option<&str>,
-) -> ApiResult<()> {
+) -> ApiResult<Option<String>> {
     let Some(test_id) = test_id else {
-        return Ok(());
+        return Ok(None);
     };
     let test = discover_project_tests(root, std::slice::from_ref(task))
         .into_iter()
-        .find(|test| test.id == test_id && test.task_id == task.id)
+        .find(|test| {
+            let legacy_id = format!("{}::{}", test.path, test.label);
+            (test.id == test_id || legacy_id == test_id) && test.task_id == task.id
+        })
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Test is no longer available"))?;
-    if task.id == "cargo-test" {
+    let base_id = task.id.split('@').next().unwrap_or(&task.id);
+    let task_relative_path = if task.root == "." {
+        test.path.clone()
+    } else {
+        test.path
+            .strip_prefix(&format!("{}/", task.root))
+            .unwrap_or(&test.path)
+            .to_owned()
+    };
+    if base_id == "cargo-test" {
         task.argv.push(test.label.clone());
-    } else if task.id == "python-test" {
-        task.argv.push(format!("{}::{}", test.path, test.label));
-    } else if task.id == "npm-test" {
-        task.argv.extend(["--".into(), test.path]);
-    } else if task.id == "go-test" {
-        let package = std::path::Path::new(&test.path)
+    } else if base_id == "python-test" {
+        task.argv
+            .push(format!("{}::{}", task_relative_path, test.label));
+    } else if base_id.ends_with("-test")
+        && matches!(task.provider.as_str(), "npm" | "pnpm" | "yarn" | "bun")
+    {
+        task.argv.extend(["--".into(), task_relative_path]);
+    } else if base_id == "go-test" {
+        let package = std::path::Path::new(&task_relative_path)
             .parent()
             .map(|path| format!("./{}", path.display()))
             .unwrap_or_else(|| ".".into());
@@ -6875,32 +7258,409 @@ fn target_project_test(
             .extend([package, "-run".into(), format!("^{}$", test.label)]);
     }
     task.label = format!("Test {}", test.label);
-    Ok(())
+    Ok(Some(test.id))
 }
 
-fn detected_project_tasks(root: &FsPath) -> Vec<ProjectTask> {
-    let mut tasks = Vec::new();
-    let mut add = |id: &str, label: &str, kind: &str, argv: &[&str]| {
-        tasks.push(ProjectTask {
-            id: id.into(),
-            label: label.into(),
-            kind: kind.into(),
-            argv: argv.iter().map(|part| (*part).to_string()).collect(),
-            provider: argv.first().copied().unwrap_or("project").into(),
-            long_running: kind == "run",
-            ready_pattern: None,
-            problem_matcher: None,
-        });
+fn scoped_task_id(base: &str, task_root: &str) -> String {
+    if task_root == "." {
+        return base.into();
+    }
+    let digest = format!("{:x}", Sha256::digest(task_root.as_bytes()));
+    format!(
+        "{base}@{}-{}",
+        sanitize_task_id_slug(task_root),
+        &digest[..8]
+    )
+}
+
+fn detected_task_default_rank(id: &str, kind: &str) -> i32 {
+    match (kind, id) {
+        ("run", id) if id.ends_with("-dev") || id == "make-dev" => 500,
+        ("run", _) => 450,
+        ("build", _) => 300,
+        ("test", _) => 220,
+        ("verify", _) => 180,
+        _ => 100,
+    }
+}
+
+fn configured_task_default_rank(kind: &str, background: bool) -> i32 {
+    if background {
+        425
+    } else {
+        match kind {
+            "run" => 400,
+            "build" => 280,
+            "test" => 200,
+            "verify" => 160,
+            _ => 90,
+        }
+    }
+}
+
+fn detected_task_is_background(id: &str) -> bool {
+    id.ends_with("-dev") || id.ends_with("-start") || id.ends_with("-serve") || id == "make-dev"
+}
+
+fn add_detected_task(
+    tasks: &mut Vec<ProjectTask>,
+    task_root: &str,
+    id: &str,
+    label: &str,
+    kind: &str,
+    argv: impl IntoIterator<Item = impl Into<String>>,
+) {
+    if tasks.len() >= DETECTED_PROJECT_TASK_CAP {
+        return;
+    }
+    let argv = argv.into_iter().map(Into::into).collect::<Vec<_>>();
+    let source = if matches!(
+        argv.first().map(String::as_str),
+        Some("npm" | "pnpm" | "yarn" | "bun" | "uv" | "poetry")
+    ) {
+        "package"
+    } else {
+        "detected"
     };
-    if root.join("Cargo.toml").is_file() {
-        add("cargo-check", "Check", "verify", &["cargo", "check"]);
-        add("cargo-test", "Test", "test", &["cargo", "test"]);
+    let provider = ["cargo", "go", "python", "make", "dotnet"]
+        .into_iter()
+        .find(|provider| id == *provider || id.starts_with(&format!("{provider}-")))
+        .map(str::to_owned)
+        .or_else(|| argv.first().cloned())
+        .unwrap_or_else(|| "project".into());
+    tasks.push(ProjectTask {
+        version: default_project_task_version(),
+        id: scoped_task_id(id, task_root),
+        label: label.into(),
+        kind: kind.into(),
+        provider,
+        source: source.into(),
+        argv,
+        root: task_root.into(),
+        interactive: false,
+        background: detected_task_is_background(id),
+        default_rank: detected_task_default_rank(id, kind),
+        available: true,
+        requirements: Vec::new(),
+        long_running: kind == "run",
+        ready_pattern: None,
+        problem_matcher: None,
+    });
+}
+
+fn detected_project_roots(root: &FsPath) -> Vec<String> {
+    let mut roots = std::collections::BTreeSet::from([".".to_string()]);
+    let Ok(output) = background_command("git")
+        .args([
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+        ])
+        .current_dir(root)
+        .output()
+    else {
+        return roots.into_iter().collect();
+    };
+    if !output.status.success() {
+        return roots.into_iter().collect();
     }
-    if root.join("go.mod").is_file() {
-        add("go-test", "Test", "verify", &["go", "test", "./..."]);
+    for raw in output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|raw| !raw.is_empty())
+    {
+        let relative = String::from_utf8_lossy(raw).replace('\\', "/");
+        let path = FsPath::new(&relative);
+        if path.components().count() > 8 {
+            continue;
+        }
+        let file_name = path.file_name().and_then(OsStr::to_str).unwrap_or("");
+        let is_marker = matches!(
+            file_name,
+            "Cargo.toml" | "go.mod" | "package.json" | "pyproject.toml" | "pytest.ini" | "Makefile"
+        ) || matches!(
+            path.extension().and_then(OsStr::to_str),
+            Some("sln" | "csproj")
+        );
+        if !is_marker {
+            continue;
+        }
+        let parent = path.parent().unwrap_or_else(|| FsPath::new(""));
+        let clean = parent.to_string_lossy().trim_matches('/').to_owned();
+        roots.insert(if clean.is_empty() { ".".into() } else { clean });
+        if roots.len() >= DETECTED_PROJECT_ROOT_CAP {
+            break;
+        }
     }
-    if root.join("package.json").is_file() {
-        let scripts = std::fs::read(root.join("package.json"))
+    let mut roots = roots.into_iter().collect::<Vec<_>>();
+    roots.sort_by(|left, right| {
+        left.matches('/')
+            .count()
+            .cmp(&right.matches('/').count())
+            .then(left.cmp(right))
+    });
+    roots
+}
+
+fn package_manager(
+    repository_root: &FsPath,
+    project_root: &FsPath,
+) -> (&'static str, &'static str) {
+    let mut current = Some(project_root);
+    while let Some(directory) = current {
+        if directory.join("bun.lock").is_file() || directory.join("bun.lockb").is_file() {
+            return ("bun", "bun");
+        }
+        if directory.join("pnpm-lock.yaml").is_file() {
+            return ("pnpm", "pnpm");
+        }
+        if directory.join("yarn.lock").is_file() {
+            return ("yarn", "yarn");
+        }
+        if directory == repository_root {
+            break;
+        }
+        current = directory
+            .parent()
+            .filter(|parent| parent.starts_with(repository_root));
+    }
+    ("npm", "npm")
+}
+
+fn cargo_named_targets(
+    manifest: Option<&toml::Value>,
+    project_root: &FsPath,
+    kind: &str,
+) -> Vec<String> {
+    let mut names = std::collections::BTreeSet::new();
+    if let Some(entries) = manifest
+        .and_then(|value| value.get(kind))
+        .and_then(toml::Value::as_array)
+    {
+        for name in entries
+            .iter()
+            .filter_map(|entry| entry.get("name"))
+            .filter_map(toml::Value::as_str)
+            .filter(|name| npm_script_is_safe(name))
+        {
+            names.insert(name.to_owned());
+        }
+    }
+    let directory = match kind {
+        "bin" => project_root.join("src/bin"),
+        "example" => project_root.join("examples"),
+        _ => return names.into_iter().take(8).collect(),
+    };
+    for entry in std::fs::read_dir(directory)
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let path = entry.path();
+        let name = if path.extension().and_then(OsStr::to_str) == Some("rs") {
+            path.file_stem().and_then(OsStr::to_str)
+        } else if path.is_dir() && path.join("main.rs").is_file() {
+            path.file_name().and_then(OsStr::to_str)
+        } else {
+            None
+        };
+        if let Some(name) = name.filter(|name| npm_script_is_safe(name)) {
+            names.insert(name.to_owned());
+        }
+        if names.len() >= 8 {
+            break;
+        }
+    }
+    names.into_iter().take(8).collect()
+}
+
+fn python_project_scripts(manifest: Option<&toml::Value>) -> Vec<String> {
+    manifest
+        .and_then(|value| value.get("project"))
+        .and_then(|value| value.get("scripts"))
+        .and_then(toml::Value::as_table)
+        .into_iter()
+        .flat_map(|scripts| scripts.keys())
+        .filter(|name| npm_script_is_safe(name))
+        .take(8)
+        .cloned()
+        .collect()
+}
+
+fn preferred_python_executable() -> &'static str {
+    if task_executable_available("python") || !task_executable_available("python3") {
+        "python"
+    } else {
+        "python3"
+    }
+}
+
+fn dotnet_runnable_projects(project_root: &FsPath) -> Vec<String> {
+    std::fs::read_dir(project_root)
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if path.extension().and_then(OsStr::to_str) != Some("csproj") {
+                return None;
+            }
+            let raw = std::fs::read_to_string(&path).ok()?;
+            let runnable = raw.contains("<OutputType>Exe</OutputType>")
+                || raw.contains("<OutputType>WinExe</OutputType>")
+                || raw.contains("Sdk=\"Microsoft.NET.Sdk.Web\"")
+                || raw.contains("Sdk='Microsoft.NET.Sdk.Web'");
+            runnable
+                .then(|| path.file_name()?.to_str().map(str::to_owned))
+                .flatten()
+        })
+        .take(8)
+        .collect()
+}
+
+fn detected_tasks_for_root(
+    repository_root: &FsPath,
+    task_root: &str,
+    tasks: &mut Vec<ProjectTask>,
+) {
+    let project_root = if task_root == "." {
+        repository_root.to_path_buf()
+    } else {
+        repository_root.join(task_root)
+    };
+    if project_root.join("Cargo.toml").is_file() {
+        add_detected_task(
+            tasks,
+            task_root,
+            "cargo-build",
+            "Build",
+            "build",
+            ["cargo", "build"],
+        );
+        add_detected_task(
+            tasks,
+            task_root,
+            "cargo-check",
+            "Check",
+            "verify",
+            ["cargo", "check"],
+        );
+        add_detected_task(
+            tasks,
+            task_root,
+            "cargo-test",
+            "Test",
+            "test",
+            ["cargo", "test"],
+        );
+        let manifest = std::fs::read_to_string(project_root.join("Cargo.toml"))
+            .ok()
+            .and_then(|raw| raw.parse::<toml::Value>().ok());
+        let default_run = manifest
+            .as_ref()
+            .and_then(|value| value.get("package"))
+            .and_then(|value| value.get("default-run"))
+            .and_then(toml::Value::as_str);
+        if let Some(binary) = default_run {
+            add_detected_task(
+                tasks,
+                task_root,
+                "cargo-run",
+                "Run project",
+                "run",
+                ["cargo", "run", "--bin", binary],
+            );
+        } else if project_root.join("src/main.rs").is_file() {
+            add_detected_task(
+                tasks,
+                task_root,
+                "cargo-run",
+                "Run project",
+                "run",
+                ["cargo", "run"],
+            );
+        } else if let Some(binary) = manifest
+            .as_ref()
+            .and_then(|value| value.get("bin"))
+            .and_then(toml::Value::as_array)
+            .filter(|bins| bins.len() == 1)
+            .and_then(|bins| bins[0].get("name"))
+            .and_then(toml::Value::as_str)
+        {
+            add_detected_task(
+                tasks,
+                task_root,
+                "cargo-run",
+                "Run project",
+                "run",
+                ["cargo", "run", "--bin", binary],
+            );
+        }
+        for binary in cargo_named_targets(manifest.as_ref(), &project_root, "bin") {
+            add_detected_task(
+                tasks,
+                task_root,
+                &format!("cargo-run-bin-{}", sanitize_task_id_slug(&binary)),
+                &format!("Run binary: {binary}"),
+                "run",
+                vec!["cargo".into(), "run".into(), "--bin".into(), binary],
+            );
+        }
+        for example in cargo_named_targets(manifest.as_ref(), &project_root, "example") {
+            add_detected_task(
+                tasks,
+                task_root,
+                &format!("cargo-run-example-{}", sanitize_task_id_slug(&example)),
+                &format!("Run example: {example}"),
+                "run",
+                vec!["cargo".into(), "run".into(), "--example".into(), example],
+            );
+        }
+    }
+    if project_root.join("go.mod").is_file() {
+        add_detected_task(
+            tasks,
+            task_root,
+            "go-build",
+            "Build",
+            "build",
+            ["go", "build", "./..."],
+        );
+        add_detected_task(
+            tasks,
+            task_root,
+            "go-test",
+            "Test",
+            "test",
+            ["go", "test", "./..."],
+        );
+        let has_main = std::fs::read_dir(&project_root)
+            .ok()
+            .into_iter()
+            .flatten()
+            .flatten()
+            .any(|entry| {
+                entry.path().extension().and_then(OsStr::to_str) == Some("go")
+                    && std::fs::read_to_string(entry.path())
+                        .is_ok_and(|raw| raw.lines().any(|line| line.trim() == "package main"))
+            });
+        if has_main {
+            add_detected_task(
+                tasks,
+                task_root,
+                "go-run",
+                "Run project",
+                "run",
+                ["go", "run", "."],
+            );
+        }
+    }
+    if project_root.join("package.json").is_file() {
+        let scripts = std::fs::read(project_root.join("package.json"))
             .ok()
             .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
             .and_then(|value| {
@@ -6910,57 +7670,194 @@ fn detected_project_tasks(root: &FsPath) -> Vec<ProjectTask> {
                     .cloned()
             })
             .unwrap_or_default();
-        if scripts.contains_key("check") {
-            add("npm-check", "Check", "verify", &["npm", "run", "check"]);
+        let (manager, id_prefix) = package_manager(repository_root, &project_root);
+        for (script, label, kind) in [
+            ("build", "Build", "build"),
+            ("check", "Check", "verify"),
+            ("lint", "Lint", "verify"),
+            ("test", "Test", "test"),
+            ("typecheck", "Type check", "verify"),
+        ] {
+            if scripts.contains_key(script) {
+                add_detected_task(
+                    tasks,
+                    task_root,
+                    &format!("{id_prefix}-{script}"),
+                    label,
+                    kind,
+                    [manager, "run", script],
+                );
+            }
         }
-        if scripts.contains_key("test") {
-            add("npm-test", "Test", "test", &["npm", "test"]);
-        }
-        if scripts.contains_key("build") {
-            add("npm-build", "Build", "build", &["npm", "run", "build"]);
-        }
-        if scripts.contains_key("dev") {
-            add(
-                "npm-dev",
-                "Development server",
+        let run_script = ["dev", "start", "serve"]
+            .into_iter()
+            .find(|script| scripts.contains_key(*script));
+        if let Some(script) = run_script {
+            add_detected_task(
+                tasks,
+                task_root,
+                &format!("{id_prefix}-{script}"),
+                if script == "dev" {
+                    "Development server"
+                } else {
+                    "Run project"
+                },
                 "run",
-                &["npm", "run", "dev"],
+                [manager, "run", script],
             );
-        } else if scripts.contains_key("start") {
-            add("npm-start", "Run project", "run", &["npm", "start"]);
         }
     }
-    if root.join("pyproject.toml").is_file() || root.join("pytest.ini").is_file() {
-        add("python-test", "Test", "verify", &["python", "-m", "pytest"]);
+    if project_root.join("pyproject.toml").is_file() || project_root.join("pytest.ini").is_file() {
+        let python = preferred_python_executable();
+        let manifest = std::fs::read_to_string(project_root.join("pyproject.toml"))
+            .ok()
+            .and_then(|raw| raw.parse::<toml::Value>().ok());
+        add_detected_task(
+            tasks,
+            task_root,
+            "python-test",
+            "Test",
+            "test",
+            [python, "-m", "pytest"],
+        );
+        if project_root.join("main.py").is_file() {
+            add_detected_task(
+                tasks,
+                task_root,
+                "python-run",
+                "Run project",
+                "run",
+                [python, "main.py"],
+            );
+        } else if project_root.join("__main__.py").is_file() {
+            add_detected_task(
+                tasks,
+                task_root,
+                "python-run",
+                "Run project",
+                "run",
+                [python, "__main__.py"],
+            );
+        } else if let Some(module) = std::fs::read_dir(&project_root)
+            .ok()
+            .into_iter()
+            .flatten()
+            .flatten()
+            .find_map(|entry| {
+                let path = entry.path();
+                (path.is_dir() && path.join("__main__.py").is_file())
+                    .then(|| path.file_name()?.to_str().map(str::to_owned))
+                    .flatten()
+            })
+        {
+            add_detected_task(
+                tasks,
+                task_root,
+                "python-run",
+                "Run project",
+                "run",
+                vec![python.into(), "-m".into(), module],
+            );
+        }
+        let script_runner = if project_root.join("uv.lock").is_file() {
+            Some("uv")
+        } else if project_root.join("poetry.lock").is_file() {
+            Some("poetry")
+        } else {
+            None
+        };
+        if let Some(runner) = script_runner {
+            for script in python_project_scripts(manifest.as_ref()) {
+                add_detected_task(
+                    tasks,
+                    task_root,
+                    &format!("python-script-{}", sanitize_task_id_slug(&script)),
+                    &format!("Run script: {script}"),
+                    "run",
+                    vec![runner.into(), "run".into(), script],
+                );
+            }
+        }
     }
-    if root.join("Makefile").is_file() {
-        let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap_or_default();
+    if project_root.join("Makefile").is_file() {
+        let makefile = std::fs::read_to_string(project_root.join("Makefile")).unwrap_or_default();
         for (target, label, kind) in [
+            ("build", "Build", "build"),
             ("check", "Check", "verify"),
             ("test", "Test", "test"),
-            ("build", "Build", "build"),
+            ("run", "Run project", "run"),
+            ("dev", "Development server", "run"),
         ] {
             if makefile
                 .lines()
                 .any(|line| line.starts_with(&format!("{target}:")))
             {
-                add(&format!("make-{target}"), label, kind, &["make", target]);
+                add_detected_task(
+                    tasks,
+                    task_root,
+                    &format!("make-{target}"),
+                    label,
+                    kind,
+                    ["make", target],
+                );
             }
         }
     }
-    if std::fs::read_dir(root)
+    if std::fs::read_dir(&project_root)
         .ok()
         .into_iter()
         .flatten()
         .flatten()
         .any(|entry| {
             matches!(
-                entry.path().extension().and_then(|value| value.to_str()),
+                entry.path().extension().and_then(OsStr::to_str),
                 Some("sln" | "csproj")
             )
         })
     {
-        add("dotnet-test", "Test", "verify", &["dotnet", "test"]);
+        add_detected_task(
+            tasks,
+            task_root,
+            "dotnet-build",
+            "Build",
+            "build",
+            ["dotnet", "build"],
+        );
+        add_detected_task(
+            tasks,
+            task_root,
+            "dotnet-test",
+            "Test",
+            "test",
+            ["dotnet", "test"],
+        );
+        let runnable_projects = dotnet_runnable_projects(&project_root);
+        let one_runnable_project = runnable_projects.len() == 1;
+        for project in runnable_projects {
+            let label = if one_runnable_project {
+                "Run project".into()
+            } else {
+                format!("Run {project}")
+            };
+            add_detected_task(
+                tasks,
+                task_root,
+                &format!("dotnet-run-{}", sanitize_task_id_slug(&project)),
+                &label,
+                "run",
+                vec!["dotnet".into(), "run".into(), "--project".into(), project],
+            );
+        }
+    }
+}
+
+fn detected_project_tasks(root: &FsPath) -> Vec<ProjectTask> {
+    let mut tasks = Vec::new();
+    for task_root in detected_project_roots(root) {
+        detected_tasks_for_root(root, &task_root, &mut tasks);
+        if tasks.len() >= DETECTED_PROJECT_TASK_CAP {
+            break;
+        }
     }
     tasks
 }
@@ -7194,11 +8091,19 @@ fn configured_project_tasks(root: &FsPath) -> Vec<ProjectTask> {
         }
         let kind = infer_configured_task_kind(label, script_name.as_deref(), background);
         tasks.push(ProjectTask {
+            version: default_project_task_version(),
             id,
             label: label.to_owned(),
             kind: kind.into(),
             argv,
             provider: "vscode-tasks".into(),
+            source: "vscode-task".into(),
+            root: ".".into(),
+            interactive: false,
+            background,
+            default_rank: configured_task_default_rank(kind, background),
+            available: true,
+            requirements: Vec::new(),
             long_running: background || kind == "run",
             ready_pattern: configured_task_ready_pattern(item),
             problem_matcher: item.get("problemMatcher").and_then(first_problem_matcher),
@@ -7207,31 +8112,266 @@ fn configured_project_tasks(root: &FsPath) -> Vec<ProjectTask> {
     tasks
 }
 
+fn executable_repair(executable: &str) -> String {
+    format!(
+        "Install {executable} on the workshop machine and make it available on PATH, then reload the project commands."
+    )
+}
+
+fn task_executable_available(executable: &str) -> bool {
+    let path = FsPath::new(executable);
+    if path.components().count() > 1 {
+        return path.is_file();
+    }
+    let Some(search_path) = std::env::var_os("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&search_path).any(|directory| {
+        let candidate = directory.join(executable);
+        if candidate.is_file() {
+            return true;
+        }
+        #[cfg(windows)]
+        {
+            return ["exe", "cmd", "bat", "com"].into_iter().any(|extension| {
+                directory
+                    .join(format!("{executable}.{extension}"))
+                    .is_file()
+            });
+        }
+        #[cfg(not(windows))]
+        false
+    })
+}
+
+fn javascript_dependency_requirement(
+    repository_root: &FsPath,
+    task: &ProjectTask,
+) -> Option<ProjectTaskRequirement> {
+    let manager = task.argv.first()?.as_str();
+    if !matches!(manager, "npm" | "pnpm" | "yarn" | "bun") {
+        return None;
+    }
+    let project_root = if task.root == "." {
+        repository_root.to_path_buf()
+    } else {
+        repository_root.join(&task.root)
+    };
+    let package = std::fs::read(project_root.join("package.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())?;
+    let has_dependencies = ["dependencies", "devDependencies", "optionalDependencies"]
+        .into_iter()
+        .any(|key| {
+            package
+                .get(key)
+                .and_then(serde_json::Value::as_object)
+                .is_some_and(|dependencies| !dependencies.is_empty())
+        });
+    if !has_dependencies {
+        return None;
+    }
+    let mut install_root = project_root.as_path();
+    let mut current = Some(project_root.as_path());
+    while let Some(directory) = current {
+        if [
+            "bun.lock",
+            "bun.lockb",
+            "pnpm-lock.yaml",
+            "yarn.lock",
+            "package-lock.json",
+        ]
+        .into_iter()
+        .any(|name| directory.join(name).is_file())
+        {
+            install_root = directory;
+            break;
+        }
+        if directory == repository_root {
+            break;
+        }
+        current = directory
+            .parent()
+            .filter(|parent| parent.starts_with(repository_root));
+    }
+    let available = install_root.join("node_modules").is_dir()
+        || install_root.join(".pnp.cjs").is_file()
+        || install_root.join(".pnp.loader.mjs").is_file();
+    let display_root = install_root
+        .strip_prefix(repository_root)
+        .ok()
+        .filter(|path| !path.as_os_str().is_empty())
+        .map(|path| path.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|| "project root".into());
+    Some(ProjectTaskRequirement {
+        kind: "package".into(),
+        name: "project dependencies".into(),
+        available,
+        repair: (!available).then(|| {
+            format!(
+                "Run `{manager} install` from {display_root} on the workshop machine, then reload the project commands."
+            )
+        }),
+    })
+}
+
+fn annotate_task_requirements(repository_root: &FsPath, tasks: &mut [ProjectTask]) {
+    let mut availability = std::collections::HashMap::<String, bool>::new();
+    for task in tasks {
+        let Some(executable) = task.argv.first().cloned() else {
+            task.available = false;
+            task.requirements = vec![ProjectTaskRequirement {
+                kind: "executable".into(),
+                name: "command".into(),
+                available: false,
+                repair: Some("Choose a task with a configured executable.".into()),
+            }];
+            continue;
+        };
+        let available = *availability
+            .entry(executable.clone())
+            .or_insert_with(|| task_executable_available(&executable));
+        let mut requirements = vec![ProjectTaskRequirement {
+            kind: "executable".into(),
+            name: executable.clone(),
+            available,
+            repair: (!available).then(|| executable_repair(&executable)),
+        }];
+        if let Some(requirement) = javascript_dependency_requirement(repository_root, task) {
+            requirements.push(requirement);
+        }
+        task.available = requirements.iter().all(|requirement| requirement.available);
+        task.requirements = requirements;
+    }
+}
+
+fn unavailable_task_message(task: &ProjectTask) -> Option<String> {
+    if task.available {
+        return None;
+    }
+    task.requirements
+        .iter()
+        .find_map(|requirement| requirement.repair.clone())
+        .or_else(|| {
+            Some(format!(
+                "{} is unavailable on the workshop machine",
+                task.label
+            ))
+        })
+}
+
 fn project_tasks(root: &FsPath) -> Vec<ProjectTask> {
     let mut tasks = detected_project_tasks(root);
     let mut seen_ids = tasks
         .iter()
         .map(|task| task.id.clone())
         .collect::<std::collections::HashSet<_>>();
-    let seen_argv = tasks
+    let mut seen_argv = tasks
         .iter()
-        .map(|task| task.argv.clone())
+        .map(|task| (task.root.clone(), task.argv.clone()))
         .collect::<std::collections::HashSet<_>>();
     for task in configured_project_tasks(root) {
-        if !seen_ids.insert(task.id.clone()) || seen_argv.contains(&task.argv) {
+        if !seen_ids.insert(task.id.clone()) {
             continue;
         }
+        let invocation = (task.root.clone(), task.argv.clone());
+        if seen_argv.contains(&invocation) {
+            if let Some(existing) = tasks
+                .iter_mut()
+                .find(|existing| existing.root == task.root && existing.argv == task.argv)
+                && existing.source == "detected"
+            {
+                // Preserve the stable detected id/provider while honoring the
+                // more specific configured label and matcher behavior.
+                existing.label = task.label;
+                existing.source = task.source;
+                existing.interactive = task.interactive;
+                existing.background = task.background;
+                existing.long_running = task.long_running;
+                existing.default_rank = task.default_rank.max(existing.default_rank);
+                existing.ready_pattern = task.ready_pattern;
+                existing.problem_matcher = task.problem_matcher;
+            }
+            continue;
+        }
+        seen_argv.insert(invocation);
         tasks.push(task);
     }
+    annotate_task_requirements(root, &mut tasks);
     tasks
 }
 
-fn parse_output_locations(root: &FsPath, output: &str) -> Vec<ProjectOutputLocation> {
+fn resolve_project_task_root(repository_root: &FsPath, task_root: &str) -> ApiResult<PathBuf> {
+    let repository_root = std::fs::canonicalize(repository_root).map_err(|err| {
+        request_error(
+            StatusCode::CONFLICT,
+            format!("Project workspace is unavailable: {err}"),
+        )
+    })?;
+    let relative = FsPath::new(task_root);
+    if relative.is_absolute()
+        || relative.components().any(|part| {
+            matches!(
+                part,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "Project command has an invalid working root",
+        ));
+    }
+    let candidate = std::fs::canonicalize(repository_root.join(relative)).map_err(|err| {
+        request_error(
+            StatusCode::CONFLICT,
+            format!("Project command root is unavailable: {err}"),
+        )
+    })?;
+    if !candidate.starts_with(&repository_root) || !candidate.is_dir() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "Project command root leaves the workspace",
+        ));
+    }
+    Ok(candidate)
+}
+
+fn normalize_output_path(
+    repository_root: &FsPath,
+    working_root: &FsPath,
+    raw: &FsPath,
+) -> Option<String> {
+    let relative = if raw.is_absolute() {
+        raw.strip_prefix(repository_root).ok()?.to_path_buf()
+    } else {
+        working_root
+            .join(raw)
+            .strip_prefix(repository_root)
+            .ok()?
+            .to_path_buf()
+    };
+    if relative
+        .components()
+        .any(|part| matches!(part, Component::ParentDir))
+    {
+        return None;
+    }
+    Some(relative.to_string_lossy().replace('\\', "/"))
+}
+
+fn parse_output_locations(
+    repository_root: &FsPath,
+    working_root: &FsPath,
+    output: &str,
+) -> Vec<ProjectOutputLocation> {
     let mut locations = Vec::new();
     for line_text in output.lines() {
         let Some(token) = line_text
             .split_whitespace()
-            .map(|token| token.trim_matches(|ch: char| matches!(ch, '(' | ')' | '[' | ']' | ',')))
+            .map(|token| {
+                token.trim_matches(|ch: char| matches!(ch, '(' | ')' | '[' | ']' | ',' | ':'))
+            })
             .find(|token| {
                 let mut parts = token.rsplitn(3, ':');
                 parts.next().is_some_and(|part| part.parse::<u32>().is_ok())
@@ -7255,21 +8395,12 @@ fn parse_output_locations(root: &FsPath, output: &str) -> Vec<ProjectOutputLocat
         };
         let raw = raw.trim_start_matches("-->");
         let path = std::path::Path::new(raw);
-        let relative = if path.is_absolute() {
-            path.strip_prefix(root).ok()
-        } else {
-            Some(path)
-        };
-        let Some(relative) = relative else { continue };
-        if relative
-            .components()
-            .any(|part| matches!(part, std::path::Component::ParentDir))
-        {
+        let Some(path) = normalize_output_path(repository_root, working_root, path) else {
             continue;
-        }
+        };
         let message = line_text.trim().chars().take(300).collect();
         locations.push(ProjectOutputLocation {
-            path: relative.to_string_lossy().replace('\\', "/"),
+            path,
             line,
             column,
             message,
@@ -7312,12 +8443,13 @@ async fn list_project_tasks(
 }
 
 fn discover_project_tests(root: &FsPath, tasks: &[ProjectTask]) -> Vec<ProjectTest> {
-    let Some(task) = tasks
+    let test_tasks = tasks
         .iter()
-        .find(|task| task.kind == "test" || task.id.ends_with("-test"))
-    else {
+        .filter(|task| task.kind == "test" || task.id.ends_with("-test"))
+        .collect::<Vec<_>>();
+    if test_tasks.is_empty() {
         return Vec::new();
-    };
+    }
     let mut tests = Vec::new();
     let tree = list_source_tree(&WorkId::from("test-discovery".to_string()), root).ok();
     for file in tree.into_iter().flat_map(|tree| tree.files).take(20_000) {
@@ -7333,10 +8465,32 @@ fn discover_project_tests(root: &FsPath, tasks: &[ProjectTask]) -> Vec<ProjectTe
         ) {
             continue;
         }
+        let Some(task) = test_tasks
+            .iter()
+            .copied()
+            .filter(|task| {
+                let inside_root =
+                    task.root == "." || file.path.starts_with(&format!("{}/", task.root));
+                let supports_language = match extension.as_str() {
+                    "rs" => task.provider == "cargo",
+                    "py" => task.provider == "python",
+                    "go" => task.provider == "go",
+                    "js" | "jsx" | "ts" | "tsx" => {
+                        matches!(task.provider.as_str(), "npm" | "pnpm" | "yarn" | "bun")
+                    }
+                    _ => false,
+                };
+                inside_root && supports_language
+            })
+            .max_by_key(|task| task.root.matches('/').count() + usize::from(task.root != "."))
+        else {
+            continue;
+        };
         let Ok(content) = std::fs::read_to_string(&path) else {
             continue;
         };
         let mut previous_test_attribute = false;
+        let mut name_occurrences = std::collections::HashMap::<String, usize>::new();
         for (index, line) in content.lines().enumerate() {
             let trimmed = line.trim();
             let name = if extension == "rs" && previous_test_attribute {
@@ -7367,12 +8521,25 @@ fn discover_project_tests(root: &FsPath, tasks: &[ProjectTask]) -> Vec<ProjectTe
                     .unwrap_or(&path)
                     .to_string_lossy()
                     .replace('\\', "/");
+                let occurrence = name_occurrences.entry(name.to_string()).or_default();
+                *occurrence += 1;
+                let duplicate_suffix = if *occurrence > 1 {
+                    format!("#{}", *occurrence)
+                } else {
+                    String::new()
+                };
                 tests.push(ProjectTest {
-                    id: format!("{}::{name}", relative),
+                    id: format!("{}::{relative}::{name}{duplicate_suffix}", task.id),
                     label: name.to_string(),
                     path: relative,
                     line: (index + 1) as u32,
                     task_id: task.id.clone(),
+                    provider: task.provider.clone(),
+                    target_kind: if matches!(task.provider.as_str(), "cargo" | "python" | "go") {
+                        "named".into()
+                    } else {
+                        "file".into()
+                    },
                 });
                 if tests.len() >= 2_000 {
                     return tests;
@@ -7436,7 +8603,7 @@ async fn start_project_task_run(
     Json(body): Json<RunProjectTaskRequest>,
 ) -> ApiResult<Json<ProjectTaskRun>> {
     let id = parse_work_id(&work_id)?;
-    let (item, lease, root, task) = admit_forge_canary(
+    let (item, lease, root, working_root, task, canonical_test_id) = admit_forge_canary(
         &state,
         medousa_forge::execution::ExecutionClass::LocalMutation,
         256 * 1024,
@@ -7468,21 +8635,27 @@ async fn start_project_task_run(
                             "Project command is no longer available",
                         )
                     })?;
-                target_project_test(&root, &mut task, test_id.as_deref())?;
-                Ok((item, lease, root, task))
+                if let Some(message) = unavailable_task_message(&task) {
+                    return Err(request_error(StatusCode::CONFLICT, message));
+                }
+                let canonical_test_id = target_project_test(&root, &mut task, test_id.as_deref())?;
+                let working_root = resolve_project_task_root(&root, &task.root)?;
+                Ok((item, lease, root, working_root, task, canonical_test_id))
             }
         },
     )
     .await?;
-    let forge = forge(&state);
     let run_id = format!("run-{}", uuid::Uuid::new_v4());
     let ready_re = compile_ready_pattern(&task);
     let problem_re = compile_problem_pattern(&task);
-    let run = ProjectTaskRun {
+    let mut run = ProjectTaskRun {
         run_id: run_id.clone(),
         work_id: work_id.clone(),
         state: "running".into(),
         task: task.clone(),
+        test_id: canonical_test_id,
+        started_at: chrono::Utc::now().to_rfc3339(),
+        finished_at: None,
         result: None,
         stdout: String::new(),
         stderr: String::new(),
@@ -7490,29 +8663,13 @@ async fn start_project_task_run(
         next_seq: 0,
         locations: Vec::new(),
         ready_url: None,
+        session_id: None,
+        attach_path: None,
+        preview_path: None,
     };
-    let memory_permit = Arc::clone(&PROJECT_TASK_MEMORY)
-        .try_acquire_many_owned(PROJECT_TASK_RUN_MEMORY_RESERVATION)
-        .map_err(|_| {
-            request_error(
-                StatusCode::TOO_MANY_REQUESTS,
-                "Project task memory budget is exhausted; wait for an earlier run to expire",
-            )
-        })?;
-    let mut child = background_tokio_command(&task.argv[0])
-        .args(&task.argv[1..])
-        .current_dir(&root)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|err| {
-            request_error(
-                StatusCode::BAD_REQUEST,
-                format!("Could not run {}: {err}", task.label),
-            )
-        })?;
-    let (tx, _) = tokio::sync::broadcast::channel(256);
+    // Serialize admission through process creation so a rejected registry slot
+    // can never leak an already-hosted PTY command.
+    let _start_guard = PROJECT_TASK_START_LOCK.lock().await;
     {
         let mut runs = PROJECT_TASK_RUNS.write().await;
         prune_project_task_runs(&mut runs);
@@ -7522,12 +8679,60 @@ async fn start_project_task_run(
                 "Project task run registry is full; wait for a terminal run to expire",
             ));
         }
+    }
+    let memory_permit = Arc::clone(&PROJECT_TASK_MEMORY)
+        .try_acquire_many_owned(PROJECT_TASK_RUN_MEMORY_RESERVATION)
+        .map_err(|_| {
+            request_error(
+                StatusCode::TOO_MANY_REQUESTS,
+                "Project task memory budget is exhausted; wait for an earlier run to expire",
+            )
+        })?;
+    let hosted_in_session = task.interactive || task.background || task.long_running;
+    let session_id = if hosted_in_session {
+        let session_id = crate::daemon::shell_session_host::create_project_task_session(
+            &state,
+            &work_id,
+            &working_root,
+            &task.argv,
+        )
+        .await
+        .map_err(|(status, message)| request_error(status, message))?;
+        run.session_id = Some(session_id.clone());
+        run.attach_path = Some(format!("/v1/sessions/shell/{session_id}"));
+        Some(session_id)
+    } else {
+        None
+    };
+    let mut child = if hosted_in_session {
+        None
+    } else {
+        Some(
+            background_tokio_command(&task.argv[0])
+                .args(&task.argv[1..])
+                .current_dir(&working_root)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .kill_on_drop(true)
+                .spawn()
+                .map_err(|err| {
+                    request_error(
+                        StatusCode::BAD_REQUEST,
+                        format!("Could not run {}: {err}", task.label),
+                    )
+                })?,
+        )
+    };
+    let (tx, _) = tokio::sync::broadcast::channel(256);
+    {
+        let mut runs = PROJECT_TASK_RUNS.write().await;
         runs.insert(
             run_id.clone(),
             Arc::new(ProjectTaskRunHandle {
                 store: tokio::sync::Mutex::new(ProjectTaskRunStore {
                     run: run.clone(),
-                    root: root.clone(),
+                    repository_root: root.clone(),
+                    working_root: working_root.clone(),
                     ready_re,
                     problem_re,
                     stdout: TaskOutputTail::default(),
@@ -7541,94 +8746,111 @@ async fn start_project_task_run(
             }),
         );
     }
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
-    if let Some(stdout) = stdout {
-        tokio::spawn(pump_task_stream(run_id.clone(), "stdout", stdout));
-    }
-    if let Some(stderr) = stderr {
-        tokio::spawn(pump_task_stderr(run_id.clone(), stderr));
-    }
-    let child = Arc::new(tokio::sync::Mutex::new(child));
-    PROJECT_TASK_CHILDREN
-        .write()
-        .await
-        .insert(run_id.clone(), Arc::clone(&child));
-    let state_for_run = state.clone();
-    let run_id_for_task = run_id.clone();
-    tokio::spawn(async move {
-        let started = std::time::Instant::now();
-        loop {
-            let status = { child.lock().await.try_wait().ok().flatten() };
-            if let Some(status) = status {
-                // Give stream pumps a moment to flush final bytes.
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                let (stdout, stderr, output_truncated, prior_locations, problem_re) = {
-                    let handle = PROJECT_TASK_RUNS
-                        .read()
-                        .await
-                        .get(&run_id_for_task)
-                        .cloned();
-                    if let Some(handle) = handle {
-                        let store = handle.store.lock().await;
-                        (
-                            store.stdout.materialize(),
-                            store.stderr.materialize(),
-                            store.run.output_truncated,
-                            store.run.locations.clone(),
-                            store.problem_re.clone(),
-                        )
-                    } else {
-                        (String::new(), String::new(), false, Vec::new(), None)
-                    }
-                };
-                let mut locations = prior_locations;
-                merge_task_locations(
-                    &mut locations,
-                    parse_output_locations_with_matcher(
-                        &root,
-                        &format!("{stdout}\n{stderr}"),
-                        problem_re.as_ref(),
-                    ),
-                );
-                let result = ProjectTaskResult {
-                    task: task.clone(),
-                    success: status.success(),
-                    exit_code: status.code(),
-                    stdout,
-                    stderr,
-                    truncated: output_truncated,
-                    duration_ms: started.elapsed().as_millis(),
-                    locations,
-                };
-                let handle = PROJECT_TASK_RUNS
-                    .read()
-                    .await
-                    .get(&run_id_for_task)
-                    .cloned();
-                let cancelled = if let Some(handle) = handle {
-                    let store = handle.store.lock().await;
-                    matches!(store.run.state.as_str(), "cancelled")
-                } else {
-                    false
-                };
-                let _ = forge.append_command_log(&lease, &serde_json::json!({"kind":if cancelled {"project_task_cancelled"} else {"project_task"},"run_id":run_id_for_task,"task":result.task,"success":result.success,"exit_code":result.exit_code,"duration_ms":result.duration_ms,"stdout":result.stdout,"stderr":result.stderr,"truncated":result.truncated,"locations":result.locations}));
-                let final_state = if cancelled {
-                    "cancelled"
-                } else if result.success {
-                    "passed"
-                } else {
-                    "failed"
-                };
-                publish_task_state(&run_id_for_task, final_state, Some(result)).await;
-                PROJECT_TASK_CHILDREN.write().await.remove(&run_id_for_task);
-                publish_item(&state_for_run, &item, "task_finished");
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    if let Some(session_id) = session_id {
+        PROJECT_TASK_PROCESSES.write().await.insert(
+            run_id.clone(),
+            Arc::new(ProjectTaskProcess::Session {
+                session_id: session_id.clone(),
+            }),
+        );
+        tokio::spawn(pump_project_task_session(
+            state,
+            item,
+            lease,
+            root,
+            working_root,
+            task,
+            run_id,
+            session_id,
+        ));
+    } else if let Some(mut child) = child.take() {
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+        if let Some(stdout) = stdout {
+            tokio::spawn(pump_task_stream(run_id.clone(), "stdout", stdout));
         }
-    });
+        if let Some(stderr) = stderr {
+            tokio::spawn(pump_task_stderr(run_id.clone(), stderr));
+        }
+        let child = Arc::new(tokio::sync::Mutex::new(child));
+        PROJECT_TASK_PROCESSES.write().await.insert(
+            run_id.clone(),
+            Arc::new(ProjectTaskProcess::Child(Arc::clone(&child))),
+        );
+        tokio::spawn(async move {
+            let started = std::time::Instant::now();
+            loop {
+                let status = { child.lock().await.try_wait().ok().flatten() };
+                if let Some(status) = status {
+                    finish_project_task_run(
+                        state,
+                        item,
+                        lease,
+                        root,
+                        working_root,
+                        task,
+                        run_id,
+                        started,
+                        status.code(),
+                    )
+                    .await;
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        });
+    }
     Ok(Json(run))
+}
+
+#[derive(Debug, Deserialize)]
+struct ProjectTaskRunsQuery {
+    #[serde(default = "default_project_task_run_list_limit")]
+    limit: usize,
+}
+
+fn default_project_task_run_list_limit() -> usize {
+    20
+}
+
+async fn list_project_task_runs(
+    Path(work_id): Path<String>,
+    Query(query): Query<ProjectTaskRunsQuery>,
+) -> ApiResult<Json<ProjectTaskRunListResponse>> {
+    let handles = {
+        let mut runs = PROJECT_TASK_RUNS.write().await;
+        prune_project_task_runs(&mut runs);
+        runs.values().cloned().collect::<Vec<_>>()
+    };
+    let mut summaries = Vec::new();
+    for handle in handles {
+        let run = handle.store.lock().await.snapshot();
+        if run.work_id == work_id {
+            summaries.push(ProjectTaskRunSummary::from(run));
+        }
+    }
+    summaries.sort_by(|left, right| {
+        right
+            .started_at
+            .cmp(&left.started_at)
+            .then(right.run_id.cmp(&left.run_id))
+    });
+    let retained_count = summaries.len();
+    let active_count = summaries.iter().filter(|run| !run.terminal).count();
+    let terminal_count = retained_count.saturating_sub(active_count);
+    let limit = query.limit.clamp(1, PROJECT_TASK_TERMINAL_CAP);
+    let truncated = retained_count > limit;
+    summaries.truncate(limit);
+    Ok(Json(ProjectTaskRunListResponse {
+        runs: summaries,
+        truncated,
+        retained_count,
+        active_count,
+        terminal_count,
+        terminal_limit: PROJECT_TASK_TERMINAL_CAP,
+        terminal_ttl_seconds: PROJECT_TASK_TERMINAL_TTL.as_secs(),
+        registry_evicted_count: PROJECT_TASK_EVICTED_COUNT.load(Ordering::Relaxed),
+    }))
 }
 
 async fn get_project_task_run(
@@ -7683,8 +8905,37 @@ async fn create_task_run_preview(
     }))
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct CancelProjectTaskRunQuery {
+    #[serde(default)]
+    force: bool,
+}
+
+#[cfg(unix)]
+fn signal_project_child(child: &mut tokio::process::Child, force: bool) -> std::io::Result<()> {
+    let pid = child
+        .id()
+        .ok_or_else(|| std::io::Error::other("project process has no pid"))?;
+    let signal = if force { libc::SIGKILL } else { libc::SIGINT };
+    // Project children are process-group leaders so descendants receive the
+    // same graceful/force signal as the command itself.
+    let result = unsafe { libc::kill(-(pid as i32), signal) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(not(unix))]
+fn signal_project_child(child: &mut tokio::process::Child, _force: bool) -> std::io::Result<()> {
+    child.start_kill()
+}
+
 async fn cancel_project_task_run(
+    State(state): State<AppState>,
     Path((work_id, run_id)): Path<(String, String)>,
+    Query(query): Query<CancelProjectTaskRunQuery>,
 ) -> ApiResult<Json<ProjectTaskRun>> {
     if project_task_run_snapshot(&run_id)
         .await
@@ -7695,19 +8946,38 @@ async fn cancel_project_task_run(
             "Project run was not found",
         ));
     }
-    let child = PROJECT_TASK_CHILDREN
+    let process = PROJECT_TASK_PROCESSES
         .read()
         .await
         .get(&run_id)
         .cloned()
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project run is no longer active"))?;
-    child.lock().await.start_kill().map_err(|err| {
-        request_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Could not stop project run: {err}"),
-        )
-    })?;
-    publish_task_state(&run_id, "cancelled", None).await;
+    match process.as_ref() {
+        ProjectTaskProcess::Child(child) => {
+            let mut child = child.lock().await;
+            signal_project_child(&mut child, query.force).map_err(|err| {
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Could not stop project run: {err}"),
+                )
+            })?;
+        }
+        ProjectTaskProcess::Session { session_id } => {
+            crate::daemon::shell_session_host::signal_project_task_session(
+                &state,
+                session_id,
+                if query.force { "kill" } else { "interrupt" },
+            )
+            .await
+            .map_err(|(status, message)| request_error(status, message))?;
+        }
+    }
+    publish_task_state(
+        &run_id,
+        if query.force { "cancelled" } else { "stopping" },
+        None,
+    )
+    .await;
     let run = project_task_run_snapshot(&run_id)
         .await
         .filter(|run| run.work_id == work_id)
@@ -7841,7 +9111,7 @@ async fn run_project_task(
     Json(body): Json<RunProjectTaskRequest>,
 ) -> ApiResult<Json<ProjectTaskResult>> {
     let id = parse_work_id(&work_id)?;
-    let (item, lease, root, task) = admit_forge_canary(
+    let (item, lease, root, working_root, task) = admit_forge_canary(
         &state,
         medousa_forge::execution::ExecutionClass::LocalMutation,
         256 * 1024,
@@ -7872,14 +9142,18 @@ async fn run_project_task(
                             "Project command is no longer available",
                         )
                     })?;
-                Ok((item, lease, root, task))
+                if let Some(message) = unavailable_task_message(&task) {
+                    return Err(request_error(StatusCode::CONFLICT, message));
+                }
+                let working_root = resolve_project_task_root(&root, &task.root)?;
+                Ok((item, lease, root, working_root, task))
             }
         },
     )
     .await?;
     let forge = forge(&state);
     let argv = task.argv.clone();
-    let root_for_command = root.clone();
+    let root_for_command = working_root.clone();
     let started = std::time::Instant::now();
     let (stdout_bytes, stderr_bytes, capture_truncated, status) = state
         .forge_execution
@@ -7909,7 +9183,7 @@ async fn run_project_task(
         String::from_utf8_lossy(&stdout_bytes[..stdout_bytes.len().min(OUTPUT_CAP)]).into_owned();
     let stderr =
         String::from_utf8_lossy(&stderr_bytes[..stderr_bytes.len().min(OUTPUT_CAP)]).into_owned();
-    let locations = parse_output_locations(&root, &format!("{stdout}\n{stderr}"));
+    let locations = parse_output_locations(&root, &working_root, &format!("{stdout}\n{stderr}"));
     let result = ProjectTaskResult {
         task: task.clone(),
         success: status.success(),
@@ -8033,7 +9307,10 @@ fn background_tokio_command(program: impl AsRef<OsStr>) -> tokio::process::Comma
 
 #[cfg(not(windows))]
 fn background_tokio_command(program: impl AsRef<OsStr>) -> tokio::process::Command {
-    tokio::process::Command::new(program)
+    let mut command = tokio::process::Command::new(program);
+    #[cfg(unix)]
+    command.process_group(0);
+    command
 }
 
 fn repository_remote(worktree: &FsPath) -> Option<String> {
@@ -9753,11 +11030,19 @@ mod source_tests {
 
     fn test_project_task_run_store(run_id: &str) -> ProjectTaskRunStore {
         let task = ProjectTask {
+            version: 1,
             id: "cargo-check".into(),
             label: "Check".into(),
             kind: "verify".into(),
             argv: vec!["cargo".into(), "check".into()],
             provider: "cargo".into(),
+            source: "detected".into(),
+            root: ".".into(),
+            interactive: false,
+            background: false,
+            default_rank: 180,
+            available: true,
+            requirements: Vec::new(),
             long_running: false,
             ready_pattern: None,
             problem_matcher: None,
@@ -9769,6 +11054,9 @@ mod source_tests {
                 work_id: "work-1".into(),
                 state: "running".into(),
                 task,
+                test_id: None,
+                started_at: "2026-08-21T00:00:00Z".into(),
+                finished_at: None,
                 result: None,
                 stdout: String::new(),
                 stderr: String::new(),
@@ -9776,8 +11064,12 @@ mod source_tests {
                 next_seq: 0,
                 locations: Vec::new(),
                 ready_url: None,
+                session_id: None,
+                attach_path: None,
+                preview_path: None,
             },
-            root: PathBuf::new(),
+            repository_root: PathBuf::new(),
+            working_root: PathBuf::new(),
             ready_re: None,
             problem_re: None,
             stdout: TaskOutputTail::default(),
@@ -9833,6 +11125,7 @@ mod source_tests {
     #[test]
     fn terminal_registry_retention_never_evicts_active_runs() {
         let now = std::time::Instant::now();
+        let evicted_before = PROJECT_TASK_EVICTED_COUNT.load(Ordering::Relaxed);
         let mut runs = std::collections::HashMap::new();
         runs.insert(
             "expired".into(),
@@ -9861,16 +11154,25 @@ mod source_tests {
             runs.keys().filter(|id| id.starts_with("terminal-")).count(),
             PROJECT_TASK_TERMINAL_CAP
         );
+        assert!(PROJECT_TASK_EVICTED_COUNT.load(Ordering::Relaxed) > evicted_before);
     }
 
     #[test]
     fn task_run_terminal_requires_final_result_after_cancel() {
         let task = ProjectTask {
+            version: 1,
             id: "cargo-check".into(),
             label: "Check".into(),
             kind: "verify".into(),
             argv: vec!["cargo".into(), "check".into()],
             provider: "cargo".into(),
+            source: "detected".into(),
+            root: ".".into(),
+            interactive: false,
+            background: false,
+            default_rank: 180,
+            available: true,
+            requirements: Vec::new(),
             long_running: false,
             ready_pattern: None,
             problem_matcher: None,
@@ -9878,8 +11180,11 @@ mod source_tests {
         let mut run = ProjectTaskRun {
             run_id: "run-1".into(),
             work_id: "work-1".into(),
-            state: "cancelled".into(),
+            state: "stopping".into(),
             task: task.clone(),
+            test_id: None,
+            started_at: "2026-08-21T00:00:00Z".into(),
+            finished_at: None,
             result: None,
             stdout: String::new(),
             stderr: String::new(),
@@ -9887,8 +11192,12 @@ mod source_tests {
             next_seq: 1,
             locations: Vec::new(),
             ready_url: None,
+            session_id: Some("session-1".into()),
+            attach_path: Some("/v1/sessions/shell/session-1".into()),
+            preview_path: Some("/v1/forge/preview/token-1/".into()),
         };
         assert!(!task_run_is_terminal(&run));
+        run.state = "cancelled".into();
         run.result = Some(ProjectTaskResult {
             task,
             success: false,
@@ -9900,6 +11209,17 @@ mod source_tests {
             locations: Vec::new(),
         });
         assert!(task_run_is_terminal(&run));
+        let summary = ProjectTaskRunSummary::from(run.clone());
+        assert!(summary.terminal);
+        assert_eq!(summary.started_at, "2026-08-21T00:00:00Z");
+        let encoded_summary = serde_json::to_value(summary).unwrap();
+        assert!(encoded_summary.get("stdout").is_none());
+        assert!(encoded_summary.get("result").is_none());
+        assert_eq!(encoded_summary["session_id"], "session-1");
+        assert_eq!(
+            encoded_summary["preview_path"],
+            "/v1/forge/preview/token-1/"
+        );
         assert!(task_output_event_is_terminal(&ProjectTaskOutputEvent {
             seq: 2,
             run_id: "run-1".into(),
@@ -9997,6 +11317,7 @@ mod source_tests {
             },
         );
         let locations = parse_output_locations_with_matcher(
+            &root,
             &root,
             "src/app.ts:10:2: Unexpected token",
             Some(&matcher),
@@ -10381,6 +11702,11 @@ mod source_tests {
                 tests: false,
                 search: false,
                 changes: false,
+                output: true,
+                bottom_panel: Some("output".into()),
+                primary_task: Some("cargo-run".into()),
+                active_run: Some("run-2".into()),
+                recent_runs: vec!["run-2".into(), "run-1".into()],
             }),
             updated_at: None,
         };
@@ -10388,6 +11714,10 @@ mod source_tests {
         assert_eq!(encoded["secondary_path"], "src/main.rs");
         assert_eq!(encoded["layout"]["context_panel"], "problems");
         assert_eq!(encoded["layout"]["terminal"], true);
+        assert_eq!(encoded["layout"]["primary_task"], "cargo-run");
+        assert_eq!(encoded["layout"]["active_run"], "run-2");
+        assert_eq!(encoded["layout"]["bottom_panel"], "output");
+        assert_eq!(encoded["layout"]["recent_runs"][1], "run-1");
         assert!(encoded["layout"].get("tests").is_none());
     }
 
@@ -10591,15 +11921,243 @@ mod source_tests {
     }
 
     #[test]
+    fn project_tasks_include_bounded_nested_roots_and_lockfile_package_managers() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(
+            Command::new("git")
+                .args(["init", "-q"])
+                .current_dir(root.path())
+                .status()
+                .unwrap()
+                .success()
+        );
+        let app = root.path().join("apps/web");
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::write(
+            app.join("package.json"),
+            r#"{"scripts":{"build":"vite build","dev":"vite","lint":"eslint ."}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.path().join("pnpm-lock.yaml"),
+            "lockfileVersion: '9.0'\n",
+        )
+        .unwrap();
+
+        let tasks = detected_project_tasks(root.path());
+        let build = tasks
+            .iter()
+            .find(|task| task.id.starts_with("pnpm-build@apps-web-"))
+            .expect("nested build task");
+        assert_eq!(build.root, "apps/web");
+        assert_eq!(build.argv, ["pnpm", "run", "build"]);
+        assert_eq!(build.source, "package");
+        assert!(tasks.iter().any(|task| {
+            task.id.starts_with("pnpm-dev@apps-web-")
+                && task.kind == "run"
+                && task.background
+                && task.default_rank == 500
+                && task.long_running
+        }));
+        assert!(
+            tasks
+                .iter()
+                .any(|task| task.id.starts_with("pnpm-lint@apps-web-"))
+        );
+    }
+
+    #[test]
+    fn cargo_tasks_offer_build_and_only_unambiguous_run() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("src")).unwrap();
+        std::fs::create_dir_all(root.path().join("src/bin")).unwrap();
+        std::fs::create_dir_all(root.path().join("examples")).unwrap();
+        std::fs::write(
+            root.path().join("Cargo.toml"),
+            "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        std::fs::write(root.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+        std::fs::write(root.path().join("src/bin/worker.rs"), "fn main() {}\n").unwrap();
+        std::fs::write(root.path().join("examples/hello.rs"), "fn main() {}\n").unwrap();
+        let tasks = detected_project_tasks(root.path());
+        assert!(tasks.iter().any(|task| task.id == "cargo-build"));
+        assert!(tasks.iter().any(|task| {
+            task.id == "cargo-run"
+                && task.kind == "run"
+                && !task.background
+                && task.argv == ["cargo", "run"]
+        }));
+        assert!(tasks.iter().any(|task| {
+            task.id == "cargo-run-bin-worker" && task.argv == ["cargo", "run", "--bin", "worker"]
+        }));
+        assert!(tasks.iter().any(|task| {
+            task.id == "cargo-run-example-hello"
+                && task.argv == ["cargo", "run", "--example", "hello"]
+        }));
+    }
+
+    #[test]
+    fn python_and_dotnet_application_entry_points_are_detected() {
+        let python = tempfile::tempdir().unwrap();
+        std::fs::write(
+            python.path().join("pyproject.toml"),
+            "[project]\nname = \"demo\"\nversion = \"0.1.0\"\n[project.scripts]\nserve = \"demo.cli:main\"\n",
+        )
+        .unwrap();
+        std::fs::write(python.path().join("uv.lock"), "version = 1\n").unwrap();
+        std::fs::create_dir(python.path().join("demo")).unwrap();
+        std::fs::write(python.path().join("demo/__main__.py"), "print('ok')\n").unwrap();
+        let python_tasks = detected_project_tasks(python.path());
+        assert!(python_tasks.iter().any(|task| {
+            task.id == "python-run"
+                && matches!(
+                    task.argv.first().map(String::as_str),
+                    Some("python" | "python3")
+                )
+                && task
+                    .argv
+                    .get(1..)
+                    .is_some_and(|argv| argv == ["-m", "demo"])
+        }));
+        assert!(python_tasks.iter().any(|task| {
+            task.id == "python-script-serve" && task.argv == ["uv", "run", "serve"]
+        }));
+
+        let dotnet = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dotnet.path().join("Demo.csproj"),
+            r#"<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType></PropertyGroup></Project>"#,
+        )
+        .unwrap();
+        let dotnet_tasks = detected_project_tasks(dotnet.path());
+        assert!(dotnet_tasks.iter().any(|task| {
+            task.id == "dotnet-run-demo-csproj"
+                && task.argv == ["dotnet", "run", "--project", "Demo.csproj"]
+        }));
+    }
+
+    #[test]
+    fn project_task_roots_cannot_escape_the_repository() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("apps/web")).unwrap();
+        let nested = resolve_project_task_root(root.path(), "apps/web").unwrap();
+        assert_eq!(
+            nested,
+            std::fs::canonicalize(root.path().join("apps/web")).unwrap()
+        );
+        assert!(resolve_project_task_root(root.path(), "../outside").is_err());
+        assert!(resolve_project_task_root(root.path(), "/tmp").is_err());
+    }
+
+    #[test]
+    fn project_task_root_is_backward_compatible_and_scoped_ids_do_not_alias() {
+        let task: ProjectTask = serde_json::from_value(serde_json::json!({
+            "id": "cargo-check",
+            "label": "Check",
+            "kind": "verify",
+            "argv": ["cargo", "check"],
+            "provider": "cargo"
+        }))
+        .unwrap();
+        assert_eq!(task.root, ".");
+        assert_eq!(task.version, 1);
+        assert_eq!(task.source, "detected");
+        assert!(task.available);
+        assert_ne!(
+            scoped_task_id("npm-build", "apps/web"),
+            scoped_task_id("npm-build", "apps_web")
+        );
+    }
+
+    #[test]
+    fn project_task_requirements_include_actionable_missing_executable_health() {
+        let root = tempfile::tempdir().unwrap();
+        let mut task: ProjectTask = serde_json::from_value(serde_json::json!({
+            "id": "missing-check",
+            "label": "Check",
+            "kind": "verify",
+            "argv": ["medousa-definitely-missing-task-command", "check"],
+            "provider": "fixture"
+        }))
+        .unwrap();
+        annotate_task_requirements(root.path(), std::slice::from_mut(&mut task));
+        assert!(!task.available);
+        assert_eq!(
+            task.requirements[0].name,
+            "medousa-definitely-missing-task-command"
+        );
+        assert!(
+            task.requirements[0]
+                .repair
+                .as_deref()
+                .is_some_and(|repair| repair.contains("workshop machine"))
+        );
+    }
+
+    #[test]
+    fn package_task_health_reports_the_correct_install_root() {
+        let root = tempfile::tempdir().unwrap();
+        let app = root.path().join("apps/web");
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::write(
+            root.path().join("pnpm-lock.yaml"),
+            "lockfileVersion: '9.0'\n",
+        )
+        .unwrap();
+        std::fs::write(
+            app.join("package.json"),
+            r#"{"scripts":{"build":"vite build"},"devDependencies":{"vite":"latest"}}"#,
+        )
+        .unwrap();
+        let mut tasks = Vec::new();
+        detected_tasks_for_root(root.path(), "apps/web", &mut tasks);
+        annotate_task_requirements(root.path(), &mut tasks);
+        let build = tasks.iter().find(|task| task.kind == "build").unwrap();
+        let package = build
+            .requirements
+            .iter()
+            .find(|requirement| requirement.kind == "package")
+            .unwrap();
+        assert!(!package.available);
+        assert!(package.repair.as_deref().is_some_and(
+            |repair| repair.contains("pnpm install") && repair.contains("project root")
+        ));
+
+        std::fs::create_dir(root.path().join("node_modules")).unwrap();
+        annotate_task_requirements(root.path(), &mut tasks);
+        assert!(
+            tasks
+                .iter()
+                .find(|task| task.kind == "build")
+                .unwrap()
+                .requirements
+                .iter()
+                .find(|requirement| requirement.kind == "package")
+                .is_some_and(|requirement| requirement.available)
+        );
+    }
+
+    #[test]
     fn project_output_locations_stay_repository_relative() {
         let root = PathBuf::from("/work/project");
         let locations = parse_output_locations(
+            &root,
             &root,
             "error --> src/lib.rs:42:7\nat /work/project/tests/app.test.ts:9:2",
         );
         assert_eq!(locations[0].path, "src/lib.rs");
         assert_eq!(locations[0].line, 42);
         assert_eq!(locations[1].path, "tests/app.test.ts");
+    }
+
+    #[test]
+    fn nested_task_output_locations_are_repository_relative() {
+        let root = PathBuf::from("/work/project");
+        let working = root.join("apps/web");
+        let locations =
+            parse_output_locations(&root, &working, "src/app.ts:12:3: Unexpected token");
+        assert_eq!(locations[0].path, "apps/web/src/app.ts");
     }
 
     #[test]
@@ -10626,6 +12184,137 @@ mod source_tests {
         let tasks = detected_project_tasks(root.path());
         let tests = discover_project_tests(root.path(), &tasks);
         assert!(tests.iter().any(|test| test.label == "intent_stays_clear"));
+        let mut cargo_test = tasks
+            .into_iter()
+            .find(|task| task.kind == "test" && task.provider == "cargo")
+            .unwrap();
+        let canonical = target_project_test(
+            root.path(),
+            &mut cargo_test,
+            Some("lib.rs::intent_stays_clear"),
+        )
+        .unwrap();
+        assert_eq!(
+            canonical.as_deref(),
+            Some("cargo-test::lib.rs::intent_stays_clear")
+        );
+    }
+
+    #[test]
+    fn discovers_tests_with_the_nearest_root_aware_provider() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(
+            Command::new("git")
+                .args(["init", "-q"])
+                .current_dir(root.path())
+                .status()
+                .unwrap()
+                .success()
+        );
+        std::fs::write(
+            root.path().join("Cargo.toml"),
+            "[package]\nname='demo'\nversion='0.1.0'\n",
+        )
+        .unwrap();
+        std::fs::write(root.path().join("lib.rs"), "#[test]\nfn root_test() {}\n").unwrap();
+        std::fs::create_dir_all(root.path().join("apps/web/src")).unwrap();
+        std::fs::write(
+            root.path().join("apps/web/package.json"),
+            r#"{"scripts":{"test":"vitest run"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.path().join("apps/web/src/app.test.ts"),
+            "test('nested web test', () => {});\n",
+        )
+        .unwrap();
+
+        let tasks = detected_project_tasks(root.path());
+        let tests = discover_project_tests(root.path(), &tasks);
+        let rust = tests.iter().find(|test| test.label == "root_test").unwrap();
+        let web = tests
+            .iter()
+            .find(|test| test.label == "nested web test")
+            .unwrap();
+        assert_eq!(rust.provider, "cargo");
+        assert_eq!(rust.target_kind, "named");
+        assert_eq!(web.provider, "npm");
+        assert_eq!(web.target_kind, "file");
+        assert_eq!(
+            tasks
+                .iter()
+                .find(|task| task.id == web.task_id)
+                .map(|task| task.root.as_str()),
+            Some("apps/web")
+        );
+    }
+
+    #[test]
+    fn dogfoods_task_and_test_catalog_against_the_medousa_monorepo() {
+        let root = FsPath::new(env!("CARGO_MANIFEST_DIR"));
+        let tasks = detected_project_tasks(root);
+        assert!(
+            tasks.iter().any(|task| {
+                task.provider == "cargo" && task.kind == "build" && task.root == "."
+            })
+        );
+        let home_test_task = tasks.iter().find(|task| {
+            task.provider == "npm" && task.kind == "test" && task.root == "apps/medousa-home"
+        });
+        assert!(home_test_task.is_some());
+        assert!(tasks.iter().any(|task| {
+            task.provider == "npm"
+                && task.kind == "run"
+                && task.root == "apps/medousa-home"
+                && task.argv.iter().any(|argument| argument == "dev")
+        }));
+
+        let tests = discover_project_tests(root, &tasks);
+        let controller_test = tests
+            .iter()
+            .find(|test| test.path == "apps/medousa-home/src/lib/code/codeTasksController.test.ts");
+        assert_eq!(
+            controller_test.map(|test| test.provider.as_str()),
+            Some("npm")
+        );
+        assert_eq!(
+            controller_test.map(|test| test.task_id.as_str()),
+            home_test_task.map(|task| task.id.as_str())
+        );
+    }
+
+    #[test]
+    fn human_code_workbench_fixture_covers_the_supported_catalog_matrix() {
+        let root =
+            FsPath::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/human-code-workbench");
+        let tasks = project_tasks(&root);
+        let has = |provider: &str, kind: &str, task_root: &str| {
+            tasks.iter().any(|task| {
+                task.provider == provider && task.kind == kind && task.root == task_root
+            })
+        };
+
+        assert!(has("cargo", "build", "."));
+        assert!(has("cargo", "run", "crates/runner"));
+        assert!(has("npm", "run", "apps/web"));
+        assert!(has("npm", "test", "apps/web"));
+        assert!(has("go", "run", "cmd/server"));
+        assert!(has("go", "test", "cmd/server"));
+        assert!(has("python", "run", "services/python"));
+        assert!(has("python", "test", "services/python"));
+        assert!(has("dotnet", "run", "services/dotnet"));
+        assert!(has("make", "build", "tools"));
+        assert!(has("make", "test", "tools"));
+        assert!(tasks.iter().any(|task| {
+            task.source == "vscode-task"
+                && task.label == "Fixture configured check"
+                && task.argv.join(" ") == "cargo check"
+        }));
+        assert!(
+            tasks
+                .iter()
+                .all(|task| { task.root == "." || root.join(&task.root).starts_with(&root) })
+        );
     }
 
     #[test]

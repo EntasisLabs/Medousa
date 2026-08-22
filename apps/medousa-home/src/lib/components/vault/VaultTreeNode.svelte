@@ -24,7 +24,6 @@
   } from "$lib/stores/vaultFolderIcons.svelte";
   import VaultTreeNodeView from "./VaultTreeNode.svelte";
   import VaultTreeRecentRows from "./VaultTreeRecentRows.svelte";
-  import VaultKindBadge from "./VaultKindBadge.svelte";
 
   interface Props {
     node: VaultTreeNode;
@@ -96,17 +95,14 @@
           vaultDisplayTitle(node.title ?? node.name, node.path))),
   );
 
-  const countHint = $derived(
-    node.spaceId && node.noteCount !== undefined && node.noteCount > 0
-      ? ` (${node.noteCount})`
-      : "",
-  );
-
   const isNoteLeaf = $derived(Boolean(node.path && !node.isFolder));
   const isPathFolder = $derived(Boolean(node.isFolder && !node.spaceId));
+  const folderCount = $derived(
+    node.isFolder ? (node.noteCount ?? node.children.length) : 0,
+  );
 
   const dropPrefix = $derived.by(() => {
-    if (node.dropPrefix) return node.dropPrefix;
+    if (node.dropPrefix != null) return node.dropPrefix;
     if (node.path && !node.isFolder) {
       const parts = node.path.split("/").filter(Boolean);
       if (parts.length <= 1) return null;
@@ -142,7 +138,7 @@
     node.spaceId != null && activeSpaceFilter === node.spaceId,
   );
 
-  const isDropTarget = $derived(Boolean(onMoveNote && dropPrefix));
+  const isDropTarget = $derived(Boolean(onMoveNote && dropPrefix != null));
 
   const knownPaths = $derived(vault.lookupSnapshot.knownPaths);
 
@@ -227,6 +223,7 @@
   class:vault-tree-node--path-folder={isPathFolder}
   class:vault-tree-node--open={expanded && node.isFolder}
   class:vault-tree-node--space={Boolean(node.spaceId)}
+  class:vault-tree-node--root={depth === 0 && node.isFolder}
 >
   <div
     role="treeitem"
@@ -267,11 +264,11 @@
         <FolderIcon size={14} strokeWidth={1.85} />
       </span>
     {/if}
-    <span class="min-w-0 flex-1 truncate">{label}{countHint}</span>
-    {#if node.path && !node.isFolder}
-      <VaultKindBadge kind={node.kind} path={node.path} compact />
-    {:else if isPathFolder && node.children.length > 0}
-      <span class="vault-tree-folder-count">{node.children.length}</span>
+    <span class="min-w-0 flex-1 truncate">{label}</span>
+    {#if node.isFolder && folderCount > 0}
+      <span class="vault-tree-folder-count" aria-label={`${folderCount} notes`}>
+        {folderCount}
+      </span>
     {/if}
   </div>
 

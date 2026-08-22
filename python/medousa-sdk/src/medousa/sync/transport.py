@@ -42,6 +42,11 @@ class SyncTransport:
         self._raise(response)
         return response.json() if response.content else {}
 
+    def post_json_with_headers(self, base_url: str, path: str, body, headers: dict[str, str]):
+        response = self._client.post(self._url(base_url, path), json=body, headers=headers)
+        self._raise(response)
+        return response.json() if response.content else {}
+
     def put_json(self, base_url: str, path: str, body):
         response = self._client.put(self._url(base_url, path), json=body)
         self._raise(response)

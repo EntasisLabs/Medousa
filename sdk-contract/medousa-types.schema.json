@@ -1690,6 +1690,11 @@
       }
     }
   },
+  "AuthorityId": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AuthorityId",
+    "type": "string"
+  },
   "CalendarDeleteResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "CalendarDeleteResponse",
@@ -2818,6 +2823,160 @@
     "description": "Stable UUID for one integration connection row.",
     "type": "string"
   },
+  "ContextManifest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ContextManifest",
+    "type": "object",
+    "required": [
+      "created_at",
+      "created_by",
+      "manifest_id",
+      "sources"
+    ],
+    "properties": {
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "manifest_id": {
+        "$ref": "#/definitions/ContextManifestId"
+      },
+      "sources": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ResolvedConversationRange"
+        }
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ContextManifestId": {
+        "type": "string"
+      },
+      "ConversationRangeSelection": {
+        "description": "One committed contiguous range selected from a session. The lower bound is exclusive and the upper bound is inclusive; omitting `after_entry_seq` selects from the beginning of the session.",
+        "type": "object",
+        "required": [
+          "session",
+          "through_entry_seq"
+        ],
+        "properties": {
+          "after_entry_seq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "through_entry_seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1.0
+          }
+        }
+      },
+      "ResolvedConversationRange": {
+        "type": "object",
+        "required": [
+          "selection",
+          "selection_digest"
+        ],
+        "properties": {
+          "selection": {
+            "$ref": "#/definitions/ConversationRangeSelection"
+          },
+          "selection_digest": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      }
+    }
+  },
+  "ContextManifestId": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ContextManifestId",
+    "type": "string"
+  },
+  "ConversationRangeSelection": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ConversationRangeSelection",
+    "description": "One committed contiguous range selected from a session. The lower bound is exclusive and the upper bound is inclusive; omitting `after_entry_seq` selects from the beginning of the session.",
+    "type": "object",
+    "required": [
+      "session",
+      "through_entry_seq"
+    ],
+    "properties": {
+      "after_entry_seq": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "session": {
+        "$ref": "#/definitions/SessionRef"
+      },
+      "through_entry_seq": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 1.0
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      }
+    }
+  },
   "CreateAgentSessionRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "CreateAgentSessionRequest",
@@ -3169,6 +3328,129 @@
       }
     }
   },
+  "CreatePromptStashRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreatePromptStashRequest",
+    "type": "object",
+    "required": [
+      "draft"
+    ],
+    "properties": {
+      "context_manifest_id": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ContextManifestId"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "draft": {
+        "$ref": "#/definitions/PromptStashDraft"
+      },
+      "label": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "source_session": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/SessionRef"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ContextManifestId": {
+        "type": "string"
+      },
+      "MediaRef": {
+        "description": "Reference to a user file stored locally under medousa/media/ (not inline bytes).",
+        "type": "object",
+        "required": [
+          "kind",
+          "media_id",
+          "mime"
+        ],
+        "properties": {
+          "kind": {
+            "description": "image | document | spreadsheet | audio",
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "media_id": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          }
+        }
+      },
+      "PromptStashDraft": {
+        "description": "User-created composer state. Unlike automatic Home draft recovery, this is explicit, daemon-owned, and portable across clients of the same authority.",
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "media_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/MediaRef"
+            }
+          },
+          "mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      }
+    }
+  },
   "DecideAgentModeProposalRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "DecideAgentModeProposalRequest",
@@ -3195,6 +3477,28 @@
       }
     }
   },
+  "DeletePromptStashResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DeletePromptStashResponse",
+    "type": "object",
+    "required": [
+      "deleted",
+      "stash_id"
+    ],
+    "properties": {
+      "deleted": {
+        "type": "boolean"
+      },
+      "stash_id": {
+        "$ref": "#/definitions/PromptStashId"
+      }
+    },
+    "definitions": {
+      "PromptStashId": {
+        "type": "string"
+      }
+    }
+  },
   "DeleteRecurringResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "DeleteRecurringResponse",
@@ -3209,6 +3513,324 @@
       },
       "recurring_id": {
         "type": "string"
+      }
+    }
+  },
+  "DerivationId": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DerivationId",
+    "type": "string"
+  },
+  "DeriveSessionRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DeriveSessionRequest",
+    "type": "object",
+    "required": [
+      "intent",
+      "sources",
+      "target"
+    ],
+    "properties": {
+      "intent": {
+        "description": "Descriptive audit metadata such as `fork`, `work_context`, or `worker_context`; it does not select a different persistence path.",
+        "type": "string"
+      },
+      "sources": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ConversationRangeSelection"
+        }
+      },
+      "target": {
+        "$ref": "#/definitions/DeriveSessionTarget"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ConversationRangeSelection": {
+        "description": "One committed contiguous range selected from a session. The lower bound is exclusive and the upper bound is inclusive; omitting `after_entry_seq` selects from the beginning of the session.",
+        "type": "object",
+        "required": [
+          "session",
+          "through_entry_seq"
+        ],
+        "properties": {
+          "after_entry_seq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "through_entry_seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1.0
+          }
+        }
+      },
+      "DeriveSessionTarget": {
+        "type": "object",
+        "properties": {
+          "catalog": {
+            "description": "Phase 1 accepts `single` only. The field is explicit so shared/export policy can evolve without changing the derivation primitive.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      }
+    }
+  },
+  "DeriveSessionResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DeriveSessionResponse",
+    "type": "object",
+    "required": [
+      "authority_id",
+      "catalog",
+      "derivation",
+      "reused",
+      "session_id"
+    ],
+    "properties": {
+      "authority_id": {
+        "$ref": "#/definitions/AuthorityId"
+      },
+      "catalog": {
+        "type": "string"
+      },
+      "derivation": {
+        "$ref": "#/definitions/SessionDerivation"
+      },
+      "display_name": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "reused": {
+        "description": "True when this idempotency key had already committed the same request.",
+        "type": "boolean"
+      },
+      "session_id": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ContextManifest": {
+        "type": "object",
+        "required": [
+          "created_at",
+          "created_by",
+          "manifest_id",
+          "sources"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "manifest_id": {
+            "$ref": "#/definitions/ContextManifestId"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ResolvedConversationRange"
+            }
+          }
+        }
+      },
+      "ContextManifestId": {
+        "type": "string"
+      },
+      "ConversationRangeSelection": {
+        "description": "One committed contiguous range selected from a session. The lower bound is exclusive and the upper bound is inclusive; omitting `after_entry_seq` selects from the beginning of the session.",
+        "type": "object",
+        "required": [
+          "session",
+          "through_entry_seq"
+        ],
+        "properties": {
+          "after_entry_seq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "through_entry_seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1.0
+          }
+        }
+      },
+      "DerivationId": {
+        "type": "string"
+      },
+      "ExecutionId": {
+        "description": "Durable execution identity. Legacy execution ids predate a generated prefix, so validation accepts bounded visible ASCII.",
+        "type": "string"
+      },
+      "ExecutionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "execution_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "execution_id": {
+            "$ref": "#/definitions/ExecutionId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      },
+      "ResolvedConversationRange": {
+        "type": "object",
+        "required": [
+          "selection",
+          "selection_digest"
+        ],
+        "properties": {
+          "selection": {
+            "$ref": "#/definitions/ConversationRangeSelection"
+          },
+          "selection_digest": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionDerivation": {
+        "description": "Audit record for materializing a context manifest as a new logical session. `intent` is descriptive metadata; all intents share this persistence path.",
+        "type": "object",
+        "required": [
+          "created_at",
+          "created_by",
+          "derivation_id",
+          "intent",
+          "manifest",
+          "target_session"
+        ],
+        "properties": {
+          "caused_by": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ExecutionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "derivation_id": {
+            "$ref": "#/definitions/DerivationId"
+          },
+          "intent": {
+            "type": "string"
+          },
+          "manifest": {
+            "$ref": "#/definitions/ContextManifest"
+          },
+          "target_session": {
+            "$ref": "#/definitions/SessionRef"
+          }
+        }
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      }
+    }
+  },
+  "DeriveSessionTarget": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DeriveSessionTarget",
+    "type": "object",
+    "properties": {
+      "catalog": {
+        "description": "Phase 1 accepts `single` only. The field is explicit so shared/export policy can evolve without changing the derivation primitive.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "display_name": {
+        "type": [
+          "string",
+          "null"
+        ]
       }
     }
   },
@@ -9103,6 +9725,46 @@
       }
     }
   },
+  "ExecutionId": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExecutionId",
+    "description": "Durable execution identity. Legacy execution ids predate a generated prefix, so validation accepts bounded visible ASCII.",
+    "type": "string"
+  },
+  "ExecutionRef": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExecutionRef",
+    "type": "object",
+    "required": [
+      "authority_id",
+      "execution_id",
+      "session_id"
+    ],
+    "properties": {
+      "authority_id": {
+        "$ref": "#/definitions/AuthorityId"
+      },
+      "execution_id": {
+        "$ref": "#/definitions/ExecutionId"
+      },
+      "session_id": {
+        "$ref": "#/definitions/SessionId"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ExecutionId": {
+        "description": "Durable execution identity. Legacy execution ids predate a generated prefix, so validation accepts bounded visible ASCII.",
+        "type": "string"
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      }
+    }
+  },
   "FeedListResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "FeedListResponse",
@@ -13343,6 +14005,378 @@
       }
     }
   },
+  "PromptStash": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PromptStash",
+    "type": "object",
+    "required": [
+      "created_at",
+      "created_by",
+      "draft",
+      "stash_id",
+      "updated_at"
+    ],
+    "properties": {
+      "context_manifest_id": {
+        "description": "Optional durable context selection resolved by an earlier derivation.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ContextManifestId"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "draft": {
+        "$ref": "#/definitions/PromptStashDraft"
+      },
+      "label": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "source_session": {
+        "description": "Session in which the explicit stash was created. Navigation hint only; it does not grant access or imply a context selection.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/SessionRef"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "stash_id": {
+        "$ref": "#/definitions/PromptStashId"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ContextManifestId": {
+        "type": "string"
+      },
+      "MediaRef": {
+        "description": "Reference to a user file stored locally under medousa/media/ (not inline bytes).",
+        "type": "object",
+        "required": [
+          "kind",
+          "media_id",
+          "mime"
+        ],
+        "properties": {
+          "kind": {
+            "description": "image | document | spreadsheet | audio",
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "media_id": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          }
+        }
+      },
+      "PromptStashDraft": {
+        "description": "User-created composer state. Unlike automatic Home draft recovery, this is explicit, daemon-owned, and portable across clients of the same authority.",
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "media_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/MediaRef"
+            }
+          },
+          "mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "PromptStashId": {
+        "type": "string"
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      }
+    }
+  },
+  "PromptStashDraft": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PromptStashDraft",
+    "description": "User-created composer state. Unlike automatic Home draft recovery, this is explicit, daemon-owned, and portable across clients of the same authority.",
+    "type": "object",
+    "required": [
+      "text"
+    ],
+    "properties": {
+      "media_refs": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/MediaRef"
+        }
+      },
+      "mode": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "model": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "text": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "MediaRef": {
+        "description": "Reference to a user file stored locally under medousa/media/ (not inline bytes).",
+        "type": "object",
+        "required": [
+          "kind",
+          "media_id",
+          "mime"
+        ],
+        "properties": {
+          "kind": {
+            "description": "image | document | spreadsheet | audio",
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "media_id": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "PromptStashId": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PromptStashId",
+    "type": "string"
+  },
+  "PromptStashListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PromptStashListResponse",
+    "type": "object",
+    "required": [
+      "stashes"
+    ],
+    "properties": {
+      "stashes": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/PromptStash"
+        }
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ContextManifestId": {
+        "type": "string"
+      },
+      "MediaRef": {
+        "description": "Reference to a user file stored locally under medousa/media/ (not inline bytes).",
+        "type": "object",
+        "required": [
+          "kind",
+          "media_id",
+          "mime"
+        ],
+        "properties": {
+          "kind": {
+            "description": "image | document | spreadsheet | audio",
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "media_id": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          }
+        }
+      },
+      "PromptStash": {
+        "type": "object",
+        "required": [
+          "created_at",
+          "created_by",
+          "draft",
+          "stash_id",
+          "updated_at"
+        ],
+        "properties": {
+          "context_manifest_id": {
+            "description": "Optional durable context selection resolved by an earlier derivation.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ContextManifestId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "draft": {
+            "$ref": "#/definitions/PromptStashDraft"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_session": {
+            "description": "Session in which the explicit stash was created. Navigation hint only; it does not grant access or imply a context selection.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/SessionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stash_id": {
+            "$ref": "#/definitions/PromptStashId"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PromptStashDraft": {
+        "description": "User-created composer state. Unlike automatic Home draft recovery, this is explicit, daemon-owned, and portable across clients of the same authority.",
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "media_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/MediaRef"
+            }
+          },
+          "mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "PromptStashId": {
+        "type": "string"
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      }
+    }
+  },
   "RecurringDeliveryResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "RecurringDeliveryResponse",
@@ -13676,6 +14710,73 @@
       },
       "timezone": {
         "type": "string"
+      }
+    }
+  },
+  "ResolvedConversationRange": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ResolvedConversationRange",
+    "type": "object",
+    "required": [
+      "selection",
+      "selection_digest"
+    ],
+    "properties": {
+      "selection": {
+        "$ref": "#/definitions/ConversationRangeSelection"
+      },
+      "selection_digest": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ConversationRangeSelection": {
+        "description": "One committed contiguous range selected from a session. The lower bound is exclusive and the upper bound is inclusive; omitting `after_entry_seq` selects from the beginning of the session.",
+        "type": "object",
+        "required": [
+          "session",
+          "through_entry_seq"
+        ],
+        "properties": {
+          "after_entry_seq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "through_entry_seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1.0
+          }
+        }
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
       }
     }
   },
@@ -14840,6 +15941,172 @@
       }
     }
   },
+  "SessionDerivation": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SessionDerivation",
+    "description": "Audit record for materializing a context manifest as a new logical session. `intent` is descriptive metadata; all intents share this persistence path.",
+    "type": "object",
+    "required": [
+      "created_at",
+      "created_by",
+      "derivation_id",
+      "intent",
+      "manifest",
+      "target_session"
+    ],
+    "properties": {
+      "caused_by": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ExecutionRef"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "created_by": {
+        "type": "string"
+      },
+      "derivation_id": {
+        "$ref": "#/definitions/DerivationId"
+      },
+      "intent": {
+        "type": "string"
+      },
+      "manifest": {
+        "$ref": "#/definitions/ContextManifest"
+      },
+      "target_session": {
+        "$ref": "#/definitions/SessionRef"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ContextManifest": {
+        "type": "object",
+        "required": [
+          "created_at",
+          "created_by",
+          "manifest_id",
+          "sources"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "manifest_id": {
+            "$ref": "#/definitions/ContextManifestId"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ResolvedConversationRange"
+            }
+          }
+        }
+      },
+      "ContextManifestId": {
+        "type": "string"
+      },
+      "ConversationRangeSelection": {
+        "description": "One committed contiguous range selected from a session. The lower bound is exclusive and the upper bound is inclusive; omitting `after_entry_seq` selects from the beginning of the session.",
+        "type": "object",
+        "required": [
+          "session",
+          "through_entry_seq"
+        ],
+        "properties": {
+          "after_entry_seq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "through_entry_seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1.0
+          }
+        }
+      },
+      "DerivationId": {
+        "type": "string"
+      },
+      "ExecutionId": {
+        "description": "Durable execution identity. Legacy execution ids predate a generated prefix, so validation accepts bounded visible ASCII.",
+        "type": "string"
+      },
+      "ExecutionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "execution_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "execution_id": {
+            "$ref": "#/definitions/ExecutionId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      },
+      "ResolvedConversationRange": {
+        "type": "object",
+        "required": [
+          "selection",
+          "selection_digest"
+        ],
+        "properties": {
+          "selection": {
+            "$ref": "#/definitions/ConversationRangeSelection"
+          },
+          "selection_digest": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      }
+    }
+  },
   "SessionHistoryListResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "SessionHistoryListResponse",
@@ -14954,77 +16221,48 @@
     "title": "SessionHistoryResponse",
     "type": "object",
     "required": [
+      "authority_id",
       "session_id",
       "turns"
     ],
     "properties": {
+      "authority_id": {
+        "$ref": "#/definitions/AuthorityId"
+      },
       "session_id": {
         "type": "string"
       },
       "turns": {
         "type": "array",
         "items": {
-          "$ref": "#/definitions/ConversationTurn"
+          "$ref": "#/definitions/TranscriptEntry"
         }
       }
     },
     "definitions": {
-      "ConversationTurn": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ExecutionId": {
+        "description": "Durable execution identity. Legacy execution ids predate a generated prefix, so validation accepts bounded visible ASCII.",
+        "type": "string"
+      },
+      "ExecutionRef": {
         "type": "object",
         "required": [
-          "content",
-          "role",
-          "timestamp",
-          "tool_names"
+          "authority_id",
+          "execution_id",
+          "session_id"
         ],
         "properties": {
-          "answer_state": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
           },
-          "content": {
-            "type": "string"
+          "execution_id": {
+            "$ref": "#/definitions/ExecutionId"
           },
-          "parts": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "$ref": "#/definitions/TurnPart"
-            }
-          },
-          "role": {
-            "type": "string"
-          },
-          "slice_summary": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/TurnSliceSummary"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "speaker_profile_id": {
-            "description": "Shared-room human speaker (`user:alice`). Absent on assistant turns / personal chats.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "tool_names": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
           }
         }
       },
@@ -15204,6 +16442,143 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      },
+      "TranscriptEntry": {
+        "description": "One immutable transcript payload at an ordered position in a session. Session authority and session id are carried by the enclosing history response; callers can combine them with these coordinates into a `TranscriptEntryRef`.",
+        "type": "object",
+        "required": [
+          "content",
+          "content_digest",
+          "entry_id",
+          "entry_seq",
+          "role",
+          "timestamp",
+          "tool_names"
+        ],
+        "properties": {
+          "answer_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "caused_by": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ExecutionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "content_digest": {
+            "type": "string"
+          },
+          "entry_id": {
+            "$ref": "#/definitions/TranscriptEntryId"
+          },
+          "entry_seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1.0
+          },
+          "parts": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/TurnPart"
+            }
+          },
+          "role": {
+            "type": "string"
+          },
+          "slice_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/TurnSliceSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/TranscriptEntryRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "speaker_profile_id": {
+            "description": "Shared-room human speaker (`user:alice`). Absent on assistant turns / personal chats.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tool_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TranscriptEntryId": {
+        "type": "string"
+      },
+      "TranscriptEntryRef": {
+        "type": "object",
+        "required": [
+          "entry_id",
+          "entry_seq",
+          "session"
+        ],
+        "properties": {
+          "entry_id": {
+            "$ref": "#/definitions/TranscriptEntryId"
+          },
+          "entry_seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1.0
+          },
+          "session": {
+            "$ref": "#/definitions/SessionRef"
           }
         }
       },
@@ -15609,6 +16984,32 @@
       }
     }
   },
+  "SessionRef": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SessionRef",
+    "type": "object",
+    "required": [
+      "authority_id",
+      "session_id"
+    ],
+    "properties": {
+      "authority_id": {
+        "$ref": "#/definitions/AuthorityId"
+      },
+      "session_id": {
+        "$ref": "#/definitions/SessionId"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      }
+    }
+  },
   "SessionSetDisplayNameRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "SessionSetDisplayNameRequest",
@@ -15636,6 +17037,58 @@
       },
       "session_id": {
         "type": "string"
+      }
+    }
+  },
+  "SessionTranscriptSearchResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SessionTranscriptSearchResponse",
+    "type": "object",
+    "required": [
+      "hits",
+      "query"
+    ],
+    "properties": {
+      "hits": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/SessionTranscriptSearchHit"
+        }
+      },
+      "query": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "SessionTranscriptSearchHit": {
+        "type": "object",
+        "required": [
+          "excerpt",
+          "role",
+          "session_id",
+          "timestamp"
+        ],
+        "properties": {
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "excerpt": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
       }
     }
   },
@@ -16092,6 +17545,807 @@
           "blank",
           "repository"
         ]
+      }
+    }
+  },
+  "TranscriptEntry": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "TranscriptEntry",
+    "description": "One immutable transcript payload at an ordered position in a session. Session authority and session id are carried by the enclosing history response; callers can combine them with these coordinates into a `TranscriptEntryRef`.",
+    "type": "object",
+    "required": [
+      "content",
+      "content_digest",
+      "entry_id",
+      "entry_seq",
+      "role",
+      "timestamp",
+      "tool_names"
+    ],
+    "properties": {
+      "answer_state": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "caused_by": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ExecutionRef"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "content": {
+        "type": "string"
+      },
+      "content_digest": {
+        "type": "string"
+      },
+      "entry_id": {
+        "$ref": "#/definitions/TranscriptEntryId"
+      },
+      "entry_seq": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 1.0
+      },
+      "parts": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "$ref": "#/definitions/TurnPart"
+        }
+      },
+      "role": {
+        "type": "string"
+      },
+      "slice_summary": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/TurnSliceSummary"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "source": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/TranscriptEntryRef"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "speaker_profile_id": {
+        "description": "Shared-room human speaker (`user:alice`). Absent on assistant turns / personal chats.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "timestamp": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "tool_names": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ExecutionId": {
+        "description": "Durable execution identity. Legacy execution ids predate a generated prefix, so validation accepts bounded visible ASCII.",
+        "type": "string"
+      },
+      "ExecutionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "execution_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "execution_id": {
+            "$ref": "#/definitions/ExecutionId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      },
+      "HostContextDiagnostic": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "HostContextPosition": {
+        "type": "object",
+        "required": [
+          "character",
+          "line"
+        ],
+        "properties": {
+          "character": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "line": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "HostContextSelection": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "HostTurnContext": {
+        "description": "Bounded, advisory context captured by an editor, notes app, or browser. This never grants filesystem or vault authority to the sending client.",
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/HostContextDiagnostic"
+            }
+          },
+          "document_excerpt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "related_resources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resource_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "workspace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      },
+      "TranscriptEntryId": {
+        "type": "string"
+      },
+      "TranscriptEntryRef": {
+        "type": "object",
+        "required": [
+          "entry_id",
+          "entry_seq",
+          "session"
+        ],
+        "properties": {
+          "entry_id": {
+            "$ref": "#/definitions/TranscriptEntryId"
+          },
+          "entry_seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1.0
+          },
+          "session": {
+            "$ref": "#/definitions/SessionRef"
+          }
+        }
+      },
+      "TurnArtifactRef": {
+        "type": "object",
+        "required": [
+          "byte_size",
+          "content_type",
+          "hash64",
+          "role"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "byte_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "hash64": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "TurnPart": {
+        "oneOf": [
+          {
+            "description": "Successful inference route for this assistant turn. This records the daemon-observed route after fallback, not the composer's requested pick.",
+            "type": "object",
+            "required": [
+              "kind",
+              "model",
+              "provider"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "model_receipt"
+                ]
+              },
+              "model": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "markdown"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "markdown": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "description": "Ephemeral-style progress captured between tool rounds (not the final answer).",
+            "type": "object",
+            "required": [
+              "kind",
+              "markdown"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "progress"
+                ]
+              },
+              "markdown": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "markdown"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "reasoning"
+                ]
+              },
+              "markdown": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "input_summary",
+              "kind",
+              "run_id",
+              "started_at",
+              "status",
+              "tool_name"
+            ],
+            "properties": {
+              "artifact_refs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/TurnArtifactRef"
+                }
+              },
+              "finished_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "input_summary": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tool_run"
+                ]
+              },
+              "output_summary": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "run_id": {
+                "type": "string"
+              },
+              "started_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "status": {
+                "type": "string"
+              },
+              "tool_name": {
+                "type": "string"
+              },
+              "tool_round": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint",
+                "minimum": 0.0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "handoff_kind",
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "handoff_kind": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "handoff"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "media_id",
+              "mime"
+            ],
+            "properties": {
+              "byte_size": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "user_media"
+                ]
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "media_id": {
+                "type": "string"
+              },
+              "mime": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "context",
+              "kind"
+            ],
+            "properties": {
+              "context": {
+                "$ref": "#/definitions/HostTurnContext"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "host_context"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "artifact_id",
+              "kind",
+              "label",
+              "mime"
+            ],
+            "properties": {
+              "artifact_id": {
+                "type": "string"
+              },
+              "byte_size": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "height_px": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint32",
+                "minimum": 0.0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "attachment_ref"
+                ]
+              },
+              "label": {
+                "type": "string"
+              },
+              "mime": {
+                "type": "string"
+              },
+              "presentation": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "description": "Forward-compatible catch-all for newer clients reading older persisted timelines.",
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "TurnSliceSummary": {
+        "type": "object",
+        "required": [
+          "failures",
+          "goal",
+          "outcomes",
+          "tool_rounds",
+          "tools"
+        ],
+        "properties": {
+          "delegate_intent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "delegate_work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failures": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "goal": {
+            "type": "string"
+          },
+          "open_gaps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recent_digests": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scratch_phase": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tool_rounds": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "working_notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "TranscriptEntryId": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "TranscriptEntryId",
+    "type": "string"
+  },
+  "TranscriptEntryRef": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "TranscriptEntryRef",
+    "type": "object",
+    "required": [
+      "entry_id",
+      "entry_seq",
+      "session"
+    ],
+    "properties": {
+      "entry_id": {
+        "$ref": "#/definitions/TranscriptEntryId"
+      },
+      "entry_seq": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 1.0
+      },
+      "session": {
+        "$ref": "#/definitions/SessionRef"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      },
+      "TranscriptEntryId": {
+        "type": "string"
       }
     }
   },

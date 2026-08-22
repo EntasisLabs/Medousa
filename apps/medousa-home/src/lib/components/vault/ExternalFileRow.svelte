@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Link2 } from "@lucide/svelte";
+  import { File, FileArchive, FileCode2, FileImage, FileText, Link2 } from "@lucide/svelte";
   import type { ExternalFileEntry } from "$lib/types/externalDesk";
   import {
     formatExternalFileSize,
@@ -23,12 +23,27 @@
     onOpen,
     onLink,
   }: Props = $props();
+
+  const kind = $derived.by(() => {
+    const ext = (entry.ext ?? entry.name.split(".").pop() ?? "")
+      .toLowerCase()
+      .replace(/^\./, "");
+    if (["png", "jpg", "jpeg", "gif", "webp", "svg", "heic", "avif"].includes(ext)) {
+      return "image";
+    }
+    if (["zip", "tar", "gz", "bz2", "7z", "rar"].includes(ext)) return "archive";
+    if (
+      ["js", "ts", "tsx", "jsx", "rs", "py", "go", "java", "c", "cpp", "h", "css", "html", "json", "toml", "yaml", "yml"].includes(ext)
+    ) {
+      return "code";
+    }
+    if (["pdf", "md", "txt", "rtf", "doc", "docx"].includes(ext)) return "document";
+    return "file";
+  });
 </script>
 
 <div
-  class="group flex items-center gap-1 rounded-container-token {selected
-    ? 'bg-primary-500/10'
-    : 'hover:bg-surface-700/70'}"
+  class="vault-external-file-shell group {selected ? 'vault-external-file-shell-selected' : ''}"
 >
   <button
     type="button"
@@ -37,12 +52,27 @@
     title={entry.path}
     onclick={() => onOpen(entry)}
   >
-    <span class="block truncate text-sm text-surface-100">{entry.name}</span>
-    <span class="workshop-faint block truncate text-[10px]">
-      {formatExternalModified(entry.modified_at_utc)}
-      {#if entry.size_bytes > 0}
-        · {formatExternalFileSize(entry.size_bytes)}
+    <span class="vault-external-file-icon" aria-hidden="true">
+      {#if kind === "image"}
+        <FileImage size={14} strokeWidth={1.7} />
+      {:else if kind === "archive"}
+        <FileArchive size={14} strokeWidth={1.7} />
+      {:else if kind === "code"}
+        <FileCode2 size={14} strokeWidth={1.7} />
+      {:else if kind === "document"}
+        <FileText size={14} strokeWidth={1.7} />
+      {:else}
+        <File size={14} strokeWidth={1.7} />
       {/if}
+    </span>
+    <span class="vault-external-file-copy">
+      <span class="vault-external-file-name">{entry.name}</span>
+      <span class="vault-external-file-meta">
+        {formatExternalModified(entry.modified_at_utc)}
+        {#if entry.size_bytes > 0}
+          · {formatExternalFileSize(entry.size_bytes)}
+        {/if}
+      </span>
     </span>
   </button>
   {#if showLink && onLink}

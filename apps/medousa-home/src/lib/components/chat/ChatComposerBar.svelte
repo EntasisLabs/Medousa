@@ -1,7 +1,7 @@
 <script lang="ts">
   import "$lib/styles/composer.postcss";
   import { onDestroy, onMount } from "svelte";
-  import { Mic, Square } from "@lucide/svelte";
+  import { LoaderCircle, Mic, Square } from "@lucide/svelte";
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
   import ChatAttachmentChips from "$lib/components/chat/ChatAttachmentChips.svelte";
   import ChatModelPicker from "$lib/components/chat/ChatModelPicker.svelte";
@@ -426,6 +426,9 @@
           <ComposerPlusMenu
             disabled={blocked}
             showWorkshop={true}
+            showStashes={mobile}
+            mode={agentRuntime}
+            model={`${runtime.provider}:${runtime.model}`}
             onProfile={() => {
               agentOpen = false;
               profileOpen = true;
@@ -495,19 +498,23 @@
             onmousedown={(event) => event.preventDefault()}
             onclick={() => void stopActiveTurn()}
           >
-            <Square size={12} strokeWidth={2.4} fill="currentColor" />
+            {#if stoppingTurn}
+              <LoaderCircle size={14} strokeWidth={2} class="animate-spin" />
+            {:else}
+              <Square size={11} strokeWidth={2.4} fill="currentColor" />
+            {/if}
+          </button>
+        {:else}
+          <button
+            type="submit"
+            class="composer-bar-send"
+            disabled={!canSend}
+            aria-label="Send message"
+            onmousedown={(event) => event.preventDefault()}
+          >
+            {composerBlocked ? "…" : "↑"}
           </button>
         {/if}
-
-        <button
-          type="submit"
-          class="composer-bar-send"
-          disabled={!canSend}
-          aria-label="Send message"
-          onmousedown={(event) => event.preventDefault()}
-        >
-          {composerBlocked ? "…" : "↑"}
-        </button>
       </div>
     {/if}
   </div>
@@ -554,6 +561,9 @@
       <div bind:this={plusAnchorEl} class="composer-plus-anchor relative shrink-0">
         <ComposerPlusMenu
           disabled={blocked}
+          showStashes={mobile}
+          mode={agentRuntime}
+          model={`${runtime.provider}:${runtime.model}`}
           onProfile={() => {
             agentOpen = false;
             profileOpen = true;
@@ -608,19 +618,23 @@
           onmousedown={(event) => event.preventDefault()}
           onclick={() => void stopActiveTurn()}
         >
-          <Square size={10} strokeWidth={2.4} fill="currentColor" />
+          {#if stoppingTurn}
+            <LoaderCircle size={13} strokeWidth={2} class="animate-spin" />
+          {:else}
+            <Square size={10} strokeWidth={2.4} fill="currentColor" />
+          {/if}
+        </button>
+      {:else}
+        <button
+          type="submit"
+          class="composer-bar-send"
+          disabled={!canSend}
+          aria-label="Send message"
+          onmousedown={(event) => event.preventDefault()}
+        >
+          {composerBlocked ? "…" : "↑"}
         </button>
       {/if}
-
-      <button
-        type="submit"
-        class="composer-bar-send"
-        disabled={!canSend}
-        aria-label="Send message"
-        onmousedown={(event) => event.preventDefault()}
-      >
-        {composerBlocked ? "…" : "↑"}
-      </button>
     </div>
   {/if}
 </div>

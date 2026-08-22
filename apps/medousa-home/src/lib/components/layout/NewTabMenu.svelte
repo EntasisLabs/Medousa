@@ -312,7 +312,7 @@
   .new-tab-menu {
     z-index: 145;
     width: 11.5rem;
-    padding: 0.3rem;
+    padding: var(--menu-panel-pad, 0.3rem);
     overflow: hidden;
   }
 
@@ -363,17 +363,17 @@
     display: flex;
     width: 100%;
     align-items: center;
-    gap: 0.55rem;
+    gap: var(--menu-row-gap, 0.55rem);
     margin: 0;
-    padding: 0.45rem 0.55rem;
+    padding: var(--menu-row-pad-y, 0.45rem) var(--menu-row-pad-x, 0.55rem);
     border: 0;
-    border-radius: 0.45rem;
+    border-radius: var(--menu-row-radius, 0.45rem);
     background: transparent;
     color: rgb(var(--color-surface-200));
     font: inherit;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    letter-spacing: -0.01em;
+    font-size: var(--menu-label-size, 0.8125rem);
+    font-weight: var(--menu-label-weight, 500);
+    letter-spacing: var(--menu-label-tracking, -0.01em);
     text-align: left;
     cursor: pointer;
     transition:
@@ -395,8 +395,8 @@
 
   .new-tab-menu-item-icon {
     display: inline-flex;
-    width: 1rem;
-    height: 1rem;
+    width: var(--menu-icon, 0.875rem);
+    height: var(--menu-icon, 0.875rem);
     flex-shrink: 0;
     align-items: center;
     justify-content: center;

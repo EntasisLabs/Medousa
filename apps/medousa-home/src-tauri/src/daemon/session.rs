@@ -1,11 +1,13 @@
 use crate::daemon::types::{
     ActiveSessionTurnResponse, AgentModeId, AgentModeListResponse, AgentModeProposalListResponse,
     AgentModeProposalResponse, AgentModeScope, AgentModeTransitionPolicy,
-    CancelActiveSessionTurnResponse, CodeIntentContext, MediaRef, SessionAgentModeResponse,
-    SessionCodeBindingResponse, SessionDeleteQuery, SessionDeleteResponse,
-    SessionCodeProjectResponse, StartSessionCodeProjectRequest,
+    CancelActiveSessionTurnResponse, CodeIntentContext, CreatePromptStashRequest,
+    DeletePromptStashResponse, DeriveSessionRequest, DeriveSessionResponse, MediaRef, PromptStash,
+    PromptStashListResponse, SessionAgentModeResponse, SessionCodeBindingResponse,
+    SessionCodeProjectResponse, SessionDeleteQuery, SessionDeleteResponse,
     SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameResponse,
-    SetSessionAgentModeRequest, StageRoutingMatrix, TurnSurfaceContext,
+    SetSessionAgentModeRequest, StageRoutingMatrix, StartSessionCodeProjectRequest,
+    TurnSurfaceContext,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -28,6 +30,8 @@ pub struct CreateSessionRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateSessionResponse {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authority_id: Option<String>,
     pub session_id: String,
     pub catalog: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -57,6 +61,19 @@ pub async fn session_create(
         },
     )
     .await
+}
+
+#[tauri::command]
+pub async fn session_derive(
+    state: State<'_, DaemonState>,
+    request: DeriveSessionRequest,
+    idempotency_key: String,
+) -> Result<DeriveSessionResponse, String> {
+    client(&state)
+        .sessions()
+        .derive(&request, idempotency_key.trim())
+        .await
+        .map_err(sdk_error)
 }
 
 #[tauri::command]
@@ -283,6 +300,41 @@ pub async fn session_delete(
     client(&state)
         .sessions()
         .delete(trimmed, &query)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn prompt_stash_list(
+    state: State<'_, DaemonState>,
+) -> Result<PromptStashListResponse, String> {
+    client(&state)
+        .prompt_stashes()
+        .list()
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn prompt_stash_create(
+    state: State<'_, DaemonState>,
+    request: CreatePromptStashRequest,
+) -> Result<PromptStash, String> {
+    client(&state)
+        .prompt_stashes()
+        .create(&request)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn prompt_stash_delete(
+    state: State<'_, DaemonState>,
+    stash_id: String,
+) -> Result<DeletePromptStashResponse, String> {
+    client(&state)
+        .prompt_stashes()
+        .delete(stash_id.trim())
         .await
         .map_err(sdk_error)
 }

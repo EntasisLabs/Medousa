@@ -16,6 +16,42 @@
     @apply flex shrink-0 items-center gap-0.5;
   }
 
+  .lme-side-rail-dock .lme-notes-crumb {
+    flex: 0 1 auto;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  .lme-notes-crumb .vault-dock-branch {
+    max-width: 9rem;
+    padding-inline: 0.32rem;
+    color: rgb(var(--theme-text-secondary));
+    font-size: 0.75rem;
+    font-weight: 450;
+    letter-spacing: -0.008em;
+  }
+
+  .lme-notes-crumb .vault-dock-branch__icon {
+    color: rgb(var(--theme-text-tertiary));
+    opacity: 0.9;
+  }
+
+  .lme-notes-crumb .vault-dock-branch__label {
+    font-family: inherit;
+    font-size: 0.75rem;
+    font-weight: 450;
+    line-height: 1;
+    letter-spacing: -0.008em;
+  }
+
+  .lme-notes-crumb__sep {
+    margin-inline: 0.22rem;
+    color: rgb(var(--theme-text-quiet));
+    font-size: 0.6875rem;
+    font-weight: 400;
+    line-height: 1;
+  }
+
   /* Compact chrome when the dock is temporarily hosted in a rail popover toolbar. */
   .lme-side-rail-dock--status {
     @apply flex h-full w-full min-w-0 items-center gap-0.5 border-t-0 bg-transparent px-0.5;

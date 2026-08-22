@@ -7,6 +7,7 @@
 @import "./lib/styles/block-tokens.postcss";
 @import "./lib/styles/chart-tokens.postcss";
 @import "./lib/styles/workshop-primitives.postcss";
+@import "./lib/styles/menu-density.postcss";
 @import "./lib/styles/input-chrome.postcss";
 @import "./lib/styles/workshop-shell.postcss";
 @import "./lib/styles/theme-semantic.postcss";
@@ -154,4 +155,20 @@
   .shell-context-menu {
     z-index: 160;
   }
+}
+
+/*
+ * Body-portaled rail/status sheets must own their stack above composer menus
+ * and drop targets. Keep this contract unlayered: destination feature styles
+ * are lazy-loaded and must not be able to lower an already-open overlay.
+ */
+.workshop-rail-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+}
+
+.workshop-rail-sheet {
+  position: fixed;
+  z-index: 241;
 }

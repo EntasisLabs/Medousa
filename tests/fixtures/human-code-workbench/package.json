@@ -1,0 +1,5 @@
+{
+  "name": "human-code-workbench-fixture",
+  "private": true,
+  "workspaces": ["apps/*"]
+}

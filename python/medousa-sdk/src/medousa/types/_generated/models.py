@@ -337,6 +337,25 @@ class ComponentRuntimeEvent(MedousaModel):
     stack: str | None = None
 
 
+class AuthorityId(RootModel[str]):
+    root: str = Field(..., title='AuthorityId')
+
+
+class ContextManifestId(RootModel[str]):
+    root: str = Field(..., title='ContextManifestId')
+
+
+class SessionId(RootModel[str]):
+    root: str = Field(
+        ..., description='Canonical chat session identifier. Construction never normalizes input.'
+    )
+
+
+class SessionRef(MedousaModel):
+    authority_id: AuthorityId
+    session_id: SessionId
+
+
 class TurnSurfaceContext(MedousaModel):
     channel_id: str | None = None
     channel_surface: str | None = Field(
@@ -366,6 +385,50 @@ class AgentSessionConfigOption(MedousaModel):
     name: str
     options: list[AgentSessionConfigChoice] | None = None
     type: str
+
+
+class MediaRef(MedousaModel):
+    kind: str = Field(..., description='image | document | spreadsheet | audio')
+    label: str | None = None
+    media_id: str
+    mime: str
+
+
+class PromptStashDraft(MedousaModel):
+    media_refs: list[MediaRef] | None = None
+    mode: str | None = None
+    model: str | None = None
+    text: str
+
+
+class PromptStashId(RootModel[str]):
+    root: str = Field(..., title='PromptStashId')
+
+
+class DeriveSessionTarget(MedousaModel):
+    catalog: str | None = Field(
+        None,
+        description='Phase 1 accepts `single` only. The field is explicit so shared/export policy can evolve without changing the derivation primitive.',
+    )
+    display_name: str | None = None
+
+
+class DerivationId(RootModel[str]):
+    root: str = Field(..., title='DerivationId')
+
+
+class ExecutionId(RootModel[str]):
+    root: str = Field(
+        ...,
+        description='Durable execution identity. Legacy execution ids predate a generated prefix, so validation accepts bounded visible ASCII.',
+        title='ExecutionId',
+    )
+
+
+class ExecutionRef(MedousaModel):
+    authority_id: AuthorityId
+    execution_id: ExecutionId
+    session_id: SessionId
 
 
 class ActivityRailMode(Enum):
@@ -583,6 +646,43 @@ class IngestAttachment(MedousaModel):
     kind: str
 
 
+class ConnectionId(RootModel[str]):
+    root: str = Field(
+        ..., description='Stable UUID for one integration connection row.', title='ConnectionId'
+    )
+
+
+class IntegrationSecretStatus(MedousaModel):
+    api_key: bool | None = False
+    app_token: bool | None = False
+    auth_key: bool | None = False
+    bot_token: bool | None = False
+    oauth_bundle: bool | None = False
+
+
+class IntegrationConnection(MedousaModel):
+    base_url: str | None = None
+    connection_id: ConnectionId
+    created_at: AwareDatetime
+    kind: str = Field(
+        ..., description='Catalog / routing slug (`openai`, `discord`, `chatgpt`, `apns`, …).'
+    )
+    label: str | None = None
+    secrets: IntegrationSecretStatus | None = Field(
+        {'api_key': False, 'app_token': False, 'auth_key': False, 'bot_token': False, 'oauth_bundle': False},
+        validate_default=True,
+    )
+    updated_at: AwareDatetime
+
+
+class IntegrationSecretSlot(Enum):
+    api_key = 'api_key'
+    oauth_bundle = 'oauth_bundle'
+    bot_token = 'bot_token'
+    app_token = 'app_token'
+    auth_key = 'auth_key'
+
+
 class HostContextPosition(MedousaModel):
     character: int = Field(..., ge=0)
     line: int = Field(..., ge=0)
@@ -592,13 +692,6 @@ class HostContextSelection(MedousaModel):
     end: HostContextPosition | None = None
     start: HostContextPosition | None = None
     text: str
-
-
-class MediaRef(MedousaModel):
-    kind: str = Field(..., description='image | document | spreadsheet | audio')
-    label: str | None = None
-    media_id: str
-    mime: str
 
 
 class StageRoute(MedousaModel):
@@ -955,6 +1048,22 @@ class McpGatewayServerRuntime(MedousaModel):
     toolCount: int = Field(..., ge=0)
 
 
+class PromptStash(MedousaModel):
+    context_manifest_id: ContextManifestId | None = Field(
+        None, description='Optional durable context selection resolved by an earlier derivation.'
+    )
+    created_at: AwareDatetime
+    created_by: str
+    draft: PromptStashDraft
+    label: str | None = None
+    source_session: SessionRef | None = Field(
+        None,
+        description='Session in which the explicit stash was created. Navigation hint only; it does not grant access or imply a context selection.',
+    )
+    stash_id: PromptStashId
+    updated_at: AwareDatetime
+
+
 class RecurringDefinitionEntry(MedousaModel):
     cron_expr: str
     delivery_label: str | None = None
@@ -1197,6 +1306,24 @@ class SessionHistorySummary(MedousaModel):
     session_id: str
     turns: int = Field(..., ge=0)
     verification_runs: int = Field(..., ge=0)
+
+
+class TranscriptEntryId(RootModel[str]):
+    root: str = Field(..., title='TranscriptEntryId')
+
+
+class TranscriptEntryRef(MedousaModel):
+    entry_id: TranscriptEntryId
+    entry_seq: int = Field(..., ge=1)
+    session: SessionRef
+
+
+class SessionTranscriptSearchHit(MedousaModel):
+    display_name: str | None = None
+    excerpt: str
+    role: str
+    session_id: str
+    timestamp: AwareDatetime
 
 
 class Command17(Enum):
@@ -1984,8 +2111,30 @@ class CreateAgentSessionResponse(MedousaModel):
     work_id: str | None = None
 
 
+class CreateIntegrationConnectionRequest(MedousaModel):
+    base_url: str | None = None
+    kind: str = Field(..., description='Catalog slug (`openai`, `discord`, …).')
+    label: str | None = None
+
+
+class CreatePromptStashRequest(MedousaModel):
+    context_manifest_id: ContextManifestId | None = None
+    draft: PromptStashDraft
+    label: str | None = None
+    source_session: SessionRef | None = None
+
+
 class DecideAgentModeProposalRequest(MedousaModel):
     accept: bool
+
+
+class DeleteIntegrationConnectionResponse(MedousaModel):
+    deleted: bool
+
+
+class DeletePromptStashResponse(MedousaModel):
+    deleted: bool
+    stash_id: PromptStashId
 
 
 class DeleteRecurringResponse(MedousaModel):
@@ -2125,6 +2274,24 @@ class IngestResponse(MedousaModel):
     )
 
 
+class InstallationId(RootModel[str]):
+    root: str = Field(
+        ...,
+        description="Durable installation identity persisted in `{dataDir}/installation.json`.\n\nUUID v4 hyphenated grammar (same as pairing / credential ids). Cannot live in Surreal because Surreal's password is itself keyed by this id.",
+        title='InstallationId',
+    )
+
+
+class IntegrationConnectionListResponse(MedousaModel):
+    connections: list[IntegrationConnection]
+
+
+class IntegrationSecretWriteResponse(MedousaModel):
+    configured: bool
+    connection_id: ConnectionId
+    slot: IntegrationSecretSlot
+
+
 class InteractiveTurnResponse(MedousaModel):
     accepted_at_utc: AwareDatetime
     daemon_notice: str | None = None
@@ -2251,6 +2418,12 @@ class LocalCatalogResponse(MedousaModel):
     tierLabel: str
 
 
+class LocalClientKind(Enum):
+    home_local = 'home-local'
+    medousa_cli = 'medousa-cli'
+    medousa_tui = 'medousa-tui'
+
+
 class LocalEngineStatus(MedousaModel):
     baseUrl: str
     bind: str | None = None
@@ -2290,6 +2463,16 @@ class McpGatewayStatusResponse(MedousaModel):
     message: str
     reachable: bool
     servers: list[McpGatewayServerRuntime]
+
+
+class PatchIntegrationConnectionRequest(MedousaModel):
+    base_url: str | None = None
+    kind: str | None = None
+    label: str | None = None
+
+
+class PromptStashListResponse(MedousaModel):
+    stashes: list[PromptStash]
 
 
 class RecurringDeliveryResponse(MedousaModel):
@@ -2423,6 +2606,11 @@ class SessionSetDisplayNameResponse(MedousaModel):
     session_id: str
 
 
+class SessionTranscriptSearchResponse(MedousaModel):
+    hits: list[SessionTranscriptSearchHit]
+    query: str
+
+
 class SetAgentSessionConfigOptionRequest(MedousaModel):
     config_id: str
     value: Any
@@ -2515,6 +2703,10 @@ class UpdateRecurringResponse(MedousaModel):
     next_run_at_utc: AwareDatetime
     recurring_id: str
     timezone: str
+
+
+class UpsertIntegrationSecretRequest(MedousaModel):
+    value: str = Field(..., description='Secret material. Never echoed in responses.')
 
 
 class VaultAddRootRequest(MedousaModel):
@@ -2655,6 +2847,34 @@ class AgentPermissionRequestRecord(MedousaModel):
     updated_at_utc: AwareDatetime
 
 
+class ConversationRangeSelection(MedousaModel):
+    after_entry_seq: int | None = Field(None, ge=0)
+    session: SessionRef
+    through_entry_seq: int = Field(..., ge=1)
+
+
+class ResolvedConversationRange(MedousaModel):
+    selection: ConversationRangeSelection
+    selection_digest: str
+
+
+class ContextManifest(MedousaModel):
+    created_at: AwareDatetime
+    created_by: str
+    manifest_id: ContextManifestId
+    sources: list[ResolvedConversationRange]
+
+
+class SessionDerivation(MedousaModel):
+    caused_by: ExecutionRef | None = None
+    created_at: AwareDatetime
+    created_by: str
+    derivation_id: DerivationId
+    intent: str
+    manifest: ContextManifest
+    target_session: SessionRef
+
+
 class ComponentDef(MedousaModel):
     config: Any | None = None
     feeds: list[str] | None = []
@@ -2780,6 +3000,25 @@ class TurnPart(
     ]
 ):
     root: TurnPart1 | TurnPart2 | TurnPart3 | TurnPart4 | TurnPart5 | TurnPart6 | TurnPart7 | TurnPart8 | TurnPart9 | TurnPart10
+
+
+class TranscriptEntry(MedousaModel):
+    answer_state: str | None = None
+    caused_by: ExecutionRef | None = None
+    content: str
+    content_digest: str
+    entry_id: TranscriptEntryId
+    entry_seq: int = Field(..., ge=1)
+    parts: list[TurnPart] | None = None
+    role: str
+    slice_summary: TurnSliceSummary | None = None
+    source: TranscriptEntryRef | None = None
+    speaker_profile_id: str | None = Field(
+        None,
+        description='Shared-room human speaker (`user:alice`). Absent on assistant turns / personal chats.',
+    )
+    timestamp: AwareDatetime
+    tool_names: list[str]
 
 
 class TurnStreamEventV210(MedousaModel):
@@ -2916,6 +3155,26 @@ class AgentPermissionResolveResponse(MedousaModel):
     request: AgentPermissionRequestRecord
 
 
+class DeriveSessionRequest(MedousaModel):
+    intent: str = Field(
+        ...,
+        description='Descriptive audit metadata such as `fork`, `work_context`, or `worker_context`; it does not select a different persistence path.',
+    )
+    sources: list[ConversationRangeSelection]
+    target: DeriveSessionTarget
+
+
+class DeriveSessionResponse(MedousaModel):
+    authority_id: AuthorityId
+    catalog: str
+    derivation: SessionDerivation
+    display_name: str | None = None
+    reused: bool = Field(
+        ..., description='True when this idempotency key had already committed the same request.'
+    )
+    session_id: str
+
+
 class FeedStreamEvent(MedousaModel):
     componentPatches: list[ComponentFeedPatch] | None = None
     emittedAtUtc: AwareDatetime
@@ -2994,6 +3253,12 @@ class RuntimeConfigCommandRequest(MedousaModel):
     current_response_depth_mode: str
     draft_model: str
     draft_provider: str
+
+
+class SessionHistoryResponse(MedousaModel):
+    authority_id: AuthorityId
+    session_id: str
+    turns: list[TranscriptEntry]
 
 
 class TurnStreamEnvelopeV2(MedousaModel):
@@ -3091,11 +3356,6 @@ class LocalBenchmarkManifest(MedousaModel):
 
 class SessionAppendTurnRequest(MedousaModel):
     turn: ConversationTurn
-
-
-class SessionHistoryResponse(MedousaModel):
-    session_id: str
-    turns: list[ConversationTurn]
 
 
 class LayoutPreset(MedousaModel):

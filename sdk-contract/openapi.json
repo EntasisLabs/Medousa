@@ -104,7 +104,7 @@
           },
           "uses_native_turns": {
             "default": false,
-            "description": "Native Medousa turns use `/v1/turns` \u2014 not `/v1/agents/sessions`.",
+            "description": "Native Medousa turns use `/v1/turns` — not `/v1/agents/sessions`.",
             "type": "boolean"
           }
         },
@@ -222,12 +222,15 @@
         ],
         "type": "object"
       },
+      "AuthorityId": {
+        "type": "string"
+      },
       "CalendarAlarm": {
         "description": "Display alarm relative to event start (VALARM projection).",
         "properties": {
           "action": {
             "default": "display",
-            "description": "RFC 5545 ACTION \u2014 currently always `display`.",
+            "description": "RFC 5545 ACTION — currently always `display`.",
             "type": "string"
           },
           "trigger_minutes_before": {
@@ -1115,13 +1118,43 @@
             "type": "string"
           },
           {
-            "description": "Native Liquid scene pinned to a custom surface. `config.scene` holds an opaque scene payload (`{ ops: [...] }`) the daemon never interprets \u2014 the client decodes + renders it via the Liquid SceneRenderer.",
+            "description": "Native Liquid scene pinned to a custom surface. `config.scene` holds an opaque scene payload (`{ ops: [...] }`) the daemon never interprets — the client decodes + renders it via the Liquid SceneRenderer.",
             "enum": [
               "scene"
             ],
             "type": "string"
           }
         ]
+      },
+      "ContextManifest": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "manifest_id": {
+            "$ref": "#/components/schemas/ContextManifestId"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ResolvedConversationRange"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "created_at",
+          "created_by",
+          "manifest_id",
+          "sources"
+        ],
+        "type": "object"
+      },
+      "ContextManifestId": {
+        "type": "string"
       },
       "ContextUsageLayer": {
         "description": "One slice of the prompt/context budget (Cursor-style context usage UI).",
@@ -1166,7 +1199,7 @@
             ]
           },
           "estimator": {
-            "description": "`chars / 4` \u2014 documented estimator; not tokenizer-exact.",
+            "description": "`chars / 4` — documented estimator; not tokenizer-exact.",
             "type": "string"
           },
           "layers": {
@@ -1197,6 +1230,32 @@
           "tool_count",
           "total_chars",
           "total_tokens_estimate"
+        ],
+        "type": "object"
+      },
+      "ConversationRangeSelection": {
+        "description": "One committed contiguous range selected from a session. The lower bound is exclusive and the upper bound is inclusive; omitting `after_entry_seq` selects from the beginning of the session.",
+        "properties": {
+          "after_entry_seq": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "session": {
+            "$ref": "#/components/schemas/SessionRef"
+          },
+          "through_entry_seq": {
+            "format": "uint64",
+            "minimum": 1.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session",
+          "through_entry_seq"
         ],
         "type": "object"
       },
@@ -1394,6 +1453,44 @@
         "title": "CreateAgentSessionResponse",
         "type": "object"
       },
+      "CreatePromptStashRequest": {
+        "properties": {
+          "context_manifest_id": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContextManifestId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "draft": {
+            "$ref": "#/components/schemas/PromptStashDraft"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "draft"
+        ],
+        "title": "CreatePromptStashRequest",
+        "type": "object"
+      },
       "CustomViewComponentStatus": {
         "properties": {
           "artifactId": {
@@ -1543,6 +1640,102 @@
           "navVisible",
           "surfaceId"
         ],
+        "type": "object"
+      },
+      "DeletePromptStashResponse": {
+        "properties": {
+          "deleted": {
+            "type": "boolean"
+          },
+          "stash_id": {
+            "$ref": "#/components/schemas/PromptStashId"
+          }
+        },
+        "required": [
+          "deleted",
+          "stash_id"
+        ],
+        "title": "DeletePromptStashResponse",
+        "type": "object"
+      },
+      "DerivationId": {
+        "type": "string"
+      },
+      "DeriveSessionRequest": {
+        "properties": {
+          "intent": {
+            "description": "Descriptive audit metadata such as `fork`, `work_context`, or `worker_context`; it does not select a different persistence path.",
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationRangeSelection"
+            },
+            "type": "array"
+          },
+          "target": {
+            "$ref": "#/components/schemas/DeriveSessionTarget"
+          }
+        },
+        "required": [
+          "intent",
+          "sources",
+          "target"
+        ],
+        "title": "DeriveSessionRequest",
+        "type": "object"
+      },
+      "DeriveSessionResponse": {
+        "properties": {
+          "authority_id": {
+            "$ref": "#/components/schemas/AuthorityId"
+          },
+          "catalog": {
+            "type": "string"
+          },
+          "derivation": {
+            "$ref": "#/components/schemas/SessionDerivation"
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reused": {
+            "description": "True when this idempotency key had already committed the same request.",
+            "type": "boolean"
+          },
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "authority_id",
+          "catalog",
+          "derivation",
+          "reused",
+          "session_id"
+        ],
+        "title": "DeriveSessionResponse",
+        "type": "object"
+      },
+      "DeriveSessionTarget": {
+        "properties": {
+          "catalog": {
+            "description": "Phase 1 accepts `single` only. The field is explicit so shared/export policy can evolve without changing the derivation primitive.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "DesktopNavStyle": {
@@ -2045,6 +2238,29 @@
           "valid"
         ],
         "title": "EnvironmentValidateResponse",
+        "type": "object"
+      },
+      "ExecutionId": {
+        "description": "Durable execution identity. Legacy execution ids predate a generated prefix, so validation accepts bounded visible ASCII.",
+        "type": "string"
+      },
+      "ExecutionRef": {
+        "properties": {
+          "authority_id": {
+            "$ref": "#/components/schemas/AuthorityId"
+          },
+          "execution_id": {
+            "$ref": "#/components/schemas/ExecutionId"
+          },
+          "session_id": {
+            "$ref": "#/components/schemas/SessionId"
+          }
+        },
+        "required": [
+          "authority_id",
+          "execution_id",
+          "session_id"
+        ],
         "type": "object"
       },
       "FeedEvent": {
@@ -2901,7 +3117,7 @@
           },
           "voice_preset_id": {
             "default": null,
-            "description": "Composer voice stance \u2014 short appendix block (not a manuscript specialty).",
+            "description": "Composer voice stance — short appendix block (not a manuscript specialty).",
             "type": [
               "string",
               "null"
@@ -3184,7 +3400,7 @@
                 "type": "null"
               }
             ],
-            "description": "Color theme for this layout \u2014 copied onto `EnvironmentSpec.theme` on activate."
+            "description": "Color theme for this layout — copied onto `EnvironmentSpec.theme` on activate."
           }
         },
         "required": [
@@ -3476,6 +3692,126 @@
         "title": "ModelDownloadProgress",
         "type": "object"
       },
+      "PromptStash": {
+        "properties": {
+          "context_manifest_id": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContextManifestId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional durable context selection resolved by an earlier derivation."
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "draft": {
+            "$ref": "#/components/schemas/PromptStashDraft"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Session in which the explicit stash was created. Navigation hint only; it does not grant access or imply a context selection."
+          },
+          "stash_id": {
+            "$ref": "#/components/schemas/PromptStashId"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "created_by",
+          "draft",
+          "stash_id",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "PromptStashDraft": {
+        "description": "User-created composer state. Unlike automatic Home draft recovery, this is explicit, daemon-owned, and portable across clients of the same authority.",
+        "properties": {
+          "media_refs": {
+            "items": {
+              "$ref": "#/components/schemas/MediaRef"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      },
+      "PromptStashId": {
+        "type": "string"
+      },
+      "PromptStashListResponse": {
+        "properties": {
+          "stashes": {
+            "items": {
+              "$ref": "#/components/schemas/PromptStash"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "stashes"
+        ],
+        "title": "PromptStashListResponse",
+        "type": "object"
+      },
+      "ResolvedConversationRange": {
+        "properties": {
+          "selection": {
+            "$ref": "#/components/schemas/ConversationRangeSelection"
+          },
+          "selection_digest": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "selection",
+          "selection_digest"
+        ],
+        "type": "object"
+      },
       "SessionAgentModeResponse": {
         "properties": {
           "effective_mode": {
@@ -3709,6 +4045,49 @@
         ],
         "type": "object"
       },
+      "SessionDerivation": {
+        "description": "Audit record for materializing a context manifest as a new logical session. `intent` is descriptive metadata; all intents share this persistence path.",
+        "properties": {
+          "caused_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "derivation_id": {
+            "$ref": "#/components/schemas/DerivationId"
+          },
+          "intent": {
+            "type": "string"
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/ContextManifest"
+          },
+          "target_session": {
+            "$ref": "#/components/schemas/SessionRef"
+          }
+        },
+        "required": [
+          "created_at",
+          "created_by",
+          "derivation_id",
+          "intent",
+          "manifest",
+          "target_session"
+        ],
+        "type": "object"
+      },
       "SessionHistoryListResponse": {
         "properties": {
           "next_cursor": {
@@ -3732,17 +4111,21 @@
       },
       "SessionHistoryResponse": {
         "properties": {
+          "authority_id": {
+            "$ref": "#/components/schemas/AuthorityId"
+          },
           "session_id": {
             "type": "string"
           },
           "turns": {
             "items": {
-              "$ref": "#/components/schemas/ConversationTurn"
+              "$ref": "#/components/schemas/TranscriptEntry"
             },
             "type": "array"
           }
         },
         "required": [
+          "authority_id",
           "session_id",
           "turns"
         ],
@@ -3834,6 +4217,25 @@
         ],
         "type": "object"
       },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "properties": {
+          "authority_id": {
+            "$ref": "#/components/schemas/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/components/schemas/SessionId"
+          }
+        },
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "type": "object"
+      },
       "SessionSetDisplayNameRequest": {
         "properties": {
           "display_name": {
@@ -3860,6 +4262,55 @@
           "session_id"
         ],
         "title": "SessionSetDisplayNameResponse",
+        "type": "object"
+      },
+      "SessionTranscriptSearchHit": {
+        "properties": {
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "excerpt": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "excerpt",
+          "role",
+          "session_id",
+          "timestamp"
+        ],
+        "type": "object"
+      },
+      "SessionTranscriptSearchResponse": {
+        "properties": {
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/SessionTranscriptSearchHit"
+            },
+            "type": "array"
+          },
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "hits",
+          "query"
+        ],
+        "title": "SessionTranscriptSearchResponse",
         "type": "object"
       },
       "SetSessionAgentModeRequest": {
@@ -4227,7 +4678,7 @@
         "type": "object"
       },
       "StreamUiScene": {
-        "description": "Liquid UI scene channel payload \u2014 a batch of model-authored scene ops for one turn. `ops` are forwarded verbatim as opaque JSON (the client decodes and validates them into typed `SceneOp`s); the daemon never inspects their shape.",
+        "description": "Liquid UI scene channel payload — a batch of model-authored scene ops for one turn. `ops` are forwarded verbatim as opaque JSON (the client decodes and validates them into typed `SceneOp`s); the daemon never inspects their shape.",
         "properties": {
           "ops": {
             "description": "Ordered scene operations, opaque JSON validated client-side.",
@@ -4350,6 +4801,124 @@
         "required": [
           "key",
           "value"
+        ],
+        "type": "object"
+      },
+      "TranscriptEntry": {
+        "description": "One immutable transcript payload at an ordered position in a session. Session authority and session id are carried by the enclosing history response; callers can combine them with these coordinates into a `TranscriptEntryRef`.",
+        "properties": {
+          "answer_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "caused_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "content_digest": {
+            "type": "string"
+          },
+          "entry_id": {
+            "$ref": "#/components/schemas/TranscriptEntryId"
+          },
+          "entry_seq": {
+            "format": "uint64",
+            "minimum": 1.0,
+            "type": "integer"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/TurnPart"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          },
+          "slice_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TurnSliceSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TranscriptEntryRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "speaker_profile_id": {
+            "description": "Shared-room human speaker (`user:alice`). Absent on assistant turns / personal chats.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timestamp": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "tool_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "content",
+          "content_digest",
+          "entry_id",
+          "entry_seq",
+          "role",
+          "timestamp",
+          "tool_names"
+        ],
+        "type": "object"
+      },
+      "TranscriptEntryId": {
+        "type": "string"
+      },
+      "TranscriptEntryRef": {
+        "properties": {
+          "entry_id": {
+            "$ref": "#/components/schemas/TranscriptEntryId"
+          },
+          "entry_seq": {
+            "format": "uint64",
+            "minimum": 1.0,
+            "type": "integer"
+          },
+          "session": {
+            "$ref": "#/components/schemas/SessionRef"
+          }
+        },
+        "required": [
+          "entry_id",
+          "entry_seq",
+          "session"
         ],
         "type": "object"
       },
@@ -5597,7 +6166,7 @@
           },
           "channel_surface": {
             "default": null,
-            "description": "Adapter surface: telegram, discord, slack, home-desktop, home-ios, tui, api, \u2026",
+            "description": "Adapter surface: telegram, discord, slack, home-desktop, home-ios, tui, api, …",
             "type": [
               "string",
               "null"
@@ -5615,7 +6184,7 @@
           },
           "supports_ui_artifacts": {
             "default": false,
-            "description": "When true, the connected client can render sandboxed HTML UI artifacts (`cognition_ui_present`). Channel adapters and clients set this \u2014 the daemon does not infer it from channel name.",
+            "description": "When true, the connected client can render sandboxed HTML UI artifacts (`cognition_ui_present`). Channel adapters and clients set this — the daemon does not infer it from channel name.",
             "type": "boolean"
           },
           "user_id": {
@@ -6029,7 +6598,7 @@
           },
           "session_id": {
             "default": null,
-            "description": "Chat session id for workshop linking tags (`chat:\u2026`, `session`, `profile:\u2026`).",
+            "description": "Chat session id for workshop linking tags (`chat:…`, `session`, `profile:…`).",
             "type": [
               "string",
               "null"
@@ -6133,7 +6702,7 @@
         "type": "string"
       },
       "WorkerProgressDto": {
-        "description": "Streaming slice of a worker's live transcript \u2014 the `live_*` fields of `WorkCardDetail`, pushed instead of polled.",
+        "description": "Streaming slice of a worker's live transcript — the `live_*` fields of `WorkCardDetail`, pushed instead of polled.",
         "properties": {
           "column": {
             "$ref": "#/components/schemas/WorkBoardColumn"
@@ -14654,6 +15223,66 @@
         }
       }
     },
+    "/v1/forge/items/{work_id}/task-runs": {
+      "get": {
+        "operationId": "forge.items.by_work_id.task_runs.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "FORGE_ITEMS_BY_WORK_ID_TASK_RUNS_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "forge.items.by_work_id.task_runs.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "forge.items.by_work_id.task_runs.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "forge.items.by_work_id.task_runs.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
     "/v1/forge/items/{work_id}/task-runs/{run_id}": {
       "delete": {
         "operationId": "forge.items.by_work_id.task_runs.by_run_id.delete",
@@ -18573,6 +19202,416 @@
         }
       }
     },
+    "/v1/integrations": {
+      "get": {
+        "operationId": "integrations.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "INTEGRATIONS_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "integrations.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      },
+      "post": {
+        "operationId": "integrations.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "INTEGRATIONS_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "integrations.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 4096,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/integrations/{connection_id}": {
+      "delete": {
+        "operationId": "integrations.by_connection_id.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "INTEGRATIONS_BY_CONNECTION_ID_DELETEResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.delete"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.delete"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.delete"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      },
+      "get": {
+        "operationId": "integrations.by_connection_id.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "INTEGRATIONS_BY_CONNECTION_ID_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      },
+      "patch": {
+        "operationId": "integrations.by_connection_id.patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "INTEGRATIONS_BY_CONNECTION_ID_PATCHResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.patch"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.patch"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.patch"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 4096,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/integrations/{connection_id}/secrets/{slot}": {
+      "delete": {
+        "operationId": "integrations.by_connection_id.secrets.by_slot.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "slot",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "INTEGRATIONS_BY_CONNECTION_ID_SECRETS_BY_SLOT_DELETEResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.secrets.by_slot.delete"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.secrets.by_slot.delete"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.secrets.by_slot.delete"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      },
+      "put": {
+        "operationId": "integrations.by_connection_id.secrets.by_slot.put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "slot",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "INTEGRATIONS_BY_CONNECTION_ID_SECRETS_BY_SLOT_PUTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.secrets.by_slot.put"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.secrets.by_slot.put"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "integrations.by_connection_id.secrets.by_slot.put"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
     "/v1/interactive/turn": {
       "post": {
         "operationId": "interactive.turn.post",
@@ -21627,6 +22666,173 @@
         }
       }
     },
+    "/v1/prompt-stashes": {
+      "get": {
+        "operationId": "prompt_stashes.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptStashListResponse"
+                }
+              }
+            },
+            "description": "prompt_stashes.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "prompt_stashes.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "prompt_stashes.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      },
+      "post": {
+        "operationId": "prompt_stashes.post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePromptStashRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptStash"
+                }
+              }
+            },
+            "description": "prompt_stashes.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "prompt_stashes.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "prompt_stashes.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 262144,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/prompt-stashes/{stash_id}": {
+      "delete": {
+        "operationId": "prompt_stashes.by_stash_id.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stash_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletePromptStashResponse"
+                }
+              }
+            },
+            "description": "prompt_stashes.by_stash_id.delete"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "prompt_stashes.by_stash_id.delete"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "prompt_stashes.by_stash_id.delete"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
     "/v1/recurring": {
       "get": {
         "operationId": "recurring.get",
@@ -22781,6 +23987,125 @@
           "credential_scheme": "bearer",
           "feature_profile": "core",
           "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/sessions/derive": {
+      "post": {
+        "operationId": "sessions.derive.post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeriveSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeriveSessionResponse"
+                }
+              }
+            },
+            "description": "sessions.derive.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.derive.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.derive.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1048576,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/sessions/search": {
+      "get": {
+        "operationId": "sessions.search.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionTranscriptSearchResponse"
+                }
+              }
+            },
+            "description": "sessions.search.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.search.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.search.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
           "trust_group": "portal"
         }
       }
@@ -27756,449 +29081,6 @@
           "feature_profile": "core",
           "rate_limit_class": "read",
           "trust_group": "portal"
-        }
-      }
-    },
-    "/v1/integrations": {
-      "get": {
-        "operationId": "integrations.get",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "description": "INTEGRATIONS_GETResponse",
-                  "x-medousa-opaque": true
-                }
-              }
-            },
-            "description": "integrations.get"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
-                }
-              }
-            },
-            "description": "integrations.get"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
-                }
-              }
-            },
-            "description": "integrations.get"
-          }
-        },
-        "x-medousa-policy": {
-          "body_limit": 1024,
-          "bootstrap_public": false,
-          "browser_policy": "native_only",
-          "capabilities": [
-            "admin.runtime"
-          ],
-          "credential_scheme": "bearer",
-          "feature_profile": "core",
-          "rate_limit_class": "administration",
-          "trust_group": "administration"
-        }
-      },
-      "post": {
-        "operationId": "integrations.post",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "description": "INTEGRATIONS_POSTResponse",
-                  "x-medousa-opaque": true
-                }
-              }
-            },
-            "description": "integrations.post"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
-                }
-              }
-            },
-            "description": "integrations.post"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
-                }
-              }
-            },
-            "description": "integrations.post"
-          }
-        },
-        "x-medousa-policy": {
-          "body_limit": 4096,
-          "bootstrap_public": false,
-          "browser_policy": "native_only",
-          "capabilities": [
-            "admin.runtime"
-          ],
-          "credential_scheme": "bearer",
-          "feature_profile": "core",
-          "rate_limit_class": "administration",
-          "trust_group": "administration"
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "description": "INTEGRATIONS_POSTRequest",
-                "x-medousa-opaque": true
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/integrations/{connection_id}": {
-      "get": {
-        "operationId": "integrations.by_connection_id.get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "connection_id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "description": "INTEGRATIONS_BY_CONNECTION_ID_GETResponse",
-                  "x-medousa-opaque": true
-                }
-              }
-            },
-            "description": "integrations.by_connection_id.get"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
-                }
-              }
-            },
-            "description": "integrations.by_connection_id.get"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
-                }
-              }
-            },
-            "description": "integrations.by_connection_id.get"
-          }
-        },
-        "x-medousa-policy": {
-          "body_limit": 1024,
-          "bootstrap_public": false,
-          "browser_policy": "native_only",
-          "capabilities": [
-            "admin.runtime"
-          ],
-          "credential_scheme": "bearer",
-          "feature_profile": "core",
-          "rate_limit_class": "administration",
-          "trust_group": "administration"
-        }
-      },
-      "patch": {
-        "operationId": "integrations.by_connection_id.patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "connection_id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "description": "INTEGRATIONS_BY_CONNECTION_ID_PATCHResponse",
-                  "x-medousa-opaque": true
-                }
-              }
-            },
-            "description": "integrations.by_connection_id.patch"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
-                }
-              }
-            },
-            "description": "integrations.by_connection_id.patch"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
-                }
-              }
-            },
-            "description": "integrations.by_connection_id.patch"
-          }
-        },
-        "x-medousa-policy": {
-          "body_limit": 4096,
-          "bootstrap_public": false,
-          "browser_policy": "native_only",
-          "capabilities": [
-            "admin.runtime"
-          ],
-          "credential_scheme": "bearer",
-          "feature_profile": "core",
-          "rate_limit_class": "administration",
-          "trust_group": "administration"
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "description": "INTEGRATIONS_BY_CONNECTION_ID_PATCHRequest",
-                "x-medousa-opaque": true
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "integrations.by_connection_id.delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "connection_id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "description": "INTEGRATIONS_BY_CONNECTION_ID_DELETEResponse",
-                  "x-medousa-opaque": true
-                }
-              }
-            },
-            "description": "integrations.by_connection_id.delete"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
-                }
-              }
-            },
-            "description": "integrations.by_connection_id.delete"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
-                }
-              }
-            },
-            "description": "integrations.by_connection_id.delete"
-          }
-        },
-        "x-medousa-policy": {
-          "body_limit": 1024,
-          "bootstrap_public": false,
-          "browser_policy": "native_only",
-          "capabilities": [
-            "admin.runtime"
-          ],
-          "credential_scheme": "bearer",
-          "feature_profile": "core",
-          "rate_limit_class": "administration",
-          "trust_group": "administration"
-        }
-      }
-    },
-    "/v1/integrations/{connection_id}/secrets/{slot}": {
-      "put": {
-        "operationId": "integrations.by_connection_id.secrets.by_slot.put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "connection_id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "slot",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "description": "INTEGRATIONS_BY_CONNECTION_ID_SECRETS_BY_SLOT_PUTResponse",
-                  "x-medousa-opaque": true
-                }
-              }
-            },
-            "description": "integrations.by_connection_id.secrets.by_slot.put"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
-                }
-              }
-            },
-            "description": "integrations.by_connection_id.secrets.by_slot.put"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
-                }
-              }
-            },
-            "description": "integrations.by_connection_id.secrets.by_slot.put"
-          }
-        },
-        "x-medousa-policy": {
-          "body_limit": 16384,
-          "bootstrap_public": false,
-          "browser_policy": "native_only",
-          "capabilities": [
-            "admin.runtime"
-          ],
-          "credential_scheme": "bearer",
-          "feature_profile": "core",
-          "rate_limit_class": "administration",
-          "trust_group": "administration"
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "description": "INTEGRATIONS_BY_CONNECTION_ID_SECRETS_BY_SLOT_PUTRequest",
-                "x-medousa-opaque": true
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "integrations.by_connection_id.secrets.by_slot.delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "connection_id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "slot",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "description": "INTEGRATIONS_BY_CONNECTION_ID_SECRETS_BY_SLOT_DELETEResponse",
-                  "x-medousa-opaque": true
-                }
-              }
-            },
-            "description": "integrations.by_connection_id.secrets.by_slot.delete"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
-                }
-              }
-            },
-            "description": "integrations.by_connection_id.secrets.by_slot.delete"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
-                }
-              }
-            },
-            "description": "integrations.by_connection_id.secrets.by_slot.delete"
-          }
-        },
-        "x-medousa-policy": {
-          "body_limit": 1024,
-          "bootstrap_public": false,
-          "browser_policy": "native_only",
-          "capabilities": [
-            "admin.runtime"
-          ],
-          "credential_scheme": "bearer",
-          "feature_profile": "core",
-          "rate_limit_class": "administration",
-          "trust_group": "administration"
         }
       }
     }

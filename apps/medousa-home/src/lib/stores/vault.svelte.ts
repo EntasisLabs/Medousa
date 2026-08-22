@@ -73,7 +73,7 @@ import {
 } from "$lib/utils/vaultAttachments";
 import { pickAttachmentFiles, pickSpreadsheetFiles } from "$lib/utils/vaultAttachmentPicker";
 import { isWriteFirstKind } from "$lib/utils/vaultAuthoring";
-import { type VaultSaveStatus } from "$lib/utils/vaultSave";
+import { type VaultSaveStatus, vaultIfMatchToken } from "$lib/utils/vaultSave";
 import {
   isAbsoluteDiskPath,
   normalizeVaultNotePath,
@@ -709,7 +709,7 @@ export class VaultStore {
   }
 
   syncNoteMetadata(response: VaultNoteContentResponse) {
-    this.contentHash = response.note.content_hash;
+    this.contentHash = vaultIfMatchToken(response);
     this.title = response.note.title;
     this.selectedKind = resolveKind(response.note.path, response.note.kind);
     this.wikilinksOut = response.note.wikilinks_out;
@@ -727,7 +727,7 @@ export class VaultStore {
     this.resetSaveState();
     this.content = response.content;
     this.baselineContent = response.content;
-    this.contentHash = response.note.content_hash;
+    this.contentHash = vaultIfMatchToken(response);
     this.title = response.note.title;
     this.selectedKind = kindFromNoteContent(
       response.note.path,

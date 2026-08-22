@@ -14,6 +14,15 @@
     @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-content-tertiary transition hover:bg-surface-700/70 hover:text-surface-100;
   }
 
+  .session-rail-title {
+    @apply inline-flex items-center gap-1.5 px-1.5 text-[12px] font-medium text-content-secondary;
+    letter-spacing: -0.008em;
+  }
+
+  .session-rail-title > :where(svg) {
+    @apply shrink-0 text-content-quiet;
+  }
+
   .session-sidebar-toolbar {
     @apply flex items-center gap-1.5 border-b border-surface-500/35 px-2.5 py-2;
   }
@@ -53,7 +62,7 @@
   }
 
   .session-sidebar-list {
-    @apply flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pb-2 pt-1.5;
+    @apply flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pb-3 pt-1;
     /* Keep gutter reserved so revealing the thumb never shoves titles. */
     scrollbar-gutter: stable;
     scrollbar-width: thin;
@@ -90,12 +99,35 @@
     background: rgb(var(--color-surface-400) / 0.45);
   }
 
+  .session-sidebar-section {
+    @apply flex flex-col;
+  }
+
+  .session-sidebar-section-heading {
+    @apply flex h-[1.625rem] w-full items-center justify-between gap-2 px-4 text-left;
+  }
+
+  .session-sidebar-section-heading--button {
+    width: calc(100% - 1rem);
+    margin-inline: 0.5rem;
+    padding-inline: 0.5rem !important;
+    @apply rounded-md transition hover:bg-surface-800/45;
+  }
+
   .session-sidebar-section-title {
-    @apply px-2.5 pb-1.5 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-content-quiet;
+    @apply min-w-0 truncate text-[10px] font-semibold uppercase tracking-[0.08em] text-content-quiet;
+  }
+
+  .session-sidebar-section-count {
+    @apply shrink-0 text-[9px] font-normal tabular-nums text-content-quiet;
+  }
+
+  .session-sidebar-section-heading__trailing {
+    @apply inline-flex shrink-0 items-center gap-1 text-content-quiet;
   }
 
   .session-sidebar-section-list {
-    @apply space-y-1;
+    @apply space-y-0.5;
   }
 
   .session-sidebar-empty {
@@ -103,19 +135,35 @@
   }
 
   .session-row {
-    @apply relative flex items-stretch rounded-md transition hover:bg-surface-800/70;
+    @apply relative mx-2 flex min-h-8 items-stretch rounded-md transition hover:bg-surface-800/60;
   }
 
   .session-row:focus-within {
-    @apply bg-surface-800/70;
+    @apply bg-surface-800/60;
+  }
+
+  .session-row--selected {
+    background: rgb(var(--theme-card-hover) / 0.72);
+    box-shadow: inset 0 0 0 1px rgb(var(--theme-border) / 0.2);
+  }
+
+  .session-row--selected:hover,
+  .session-row--selected:focus-within {
+    background: rgb(var(--theme-card-hover) / 0.86);
   }
 
   .session-row-main {
-    @apply flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-2 text-left;
+    padding: 0.375rem 0.5rem !important;
+    @apply flex min-w-0 flex-1 items-center gap-1.5 text-left;
   }
 
   .session-row-title {
-    @apply block min-w-0 truncate text-[13px] font-medium leading-snug text-surface-100;
+    @apply block min-w-0 truncate text-[13px] font-normal leading-snug text-surface-100;
+    letter-spacing: -0.006em;
+  }
+
+  .session-row-title--untitled {
+    @apply italic text-content-tertiary;
   }
 
   .session-row-shared-mark {
@@ -123,15 +171,16 @@
   }
 
   .session-row-meta {
-    @apply inline-flex shrink-0 items-center justify-end gap-2 self-center px-2 text-[10px] leading-none text-content-quiet transition-opacity duration-150;
+    @apply inline-flex shrink-0 items-center justify-end gap-1.5 self-center py-0 pl-1 pr-2 text-[10px] leading-none text-content-quiet transition-opacity duration-150;
+    font-variant-numeric: tabular-nums;
   }
 
   .session-row-when {
-    @apply tabular-nums text-content-quiet;
+    @apply min-w-[2.5rem] text-right tabular-nums text-content-quiet;
   }
 
   .session-row-turns {
-    @apply inline-flex items-center gap-0.5 text-content-quiet;
+    @apply inline-flex min-w-[1.75rem] items-center justify-end gap-0.5 text-content-quiet;
   }
 
   /*
@@ -274,6 +323,10 @@
     @apply opacity-0 transition-opacity duration-200;
   }
 
+  .chat-turn-action--visible {
+    @apply opacity-100;
+  }
+
   .chat-turn-actions--mobile {
     opacity: 0.4;
   }
@@ -331,15 +384,15 @@
   }
 
   .chat-composer-bar {
-    @apply rounded-2xl px-3 py-1.5;
-    border: 1px solid rgb(var(--color-surface-600) / 0.22);
-    background-color: rgb(var(--color-surface-800) / 0.35);
+    @apply rounded-[20px];
+    border: 1px solid rgb(var(--theme-border) / 0.36);
+    background-color: rgb(var(--theme-pane) / 0.72);
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.03);
   }
 
   .chat-composer-bar:focus-within {
-    border-color: rgb(var(--color-surface-500) / 0.35);
-    background-color: rgb(var(--color-surface-800) / 0.5);
+    border-color: rgb(var(--theme-border) / 0.58);
+    background-color: rgb(var(--theme-pane) / 0.84);
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 0.04),
       0 0 0 3px rgb(var(--color-primary-500) / 0.08);
@@ -369,7 +422,7 @@
   }
 
   .chat-composer-bar.chat-composer-shell {
-    @apply px-1.5 py-1;
+    padding: 0.38rem 0.45rem 0.32rem !important;
   }
 
   .chat-media-parts {
@@ -496,7 +549,9 @@
 
   /* Quiet under-composer runtime row (Cursor-style meta). */
   .chat-runtime-under {
-    @apply mt-1 flex min-h-0 items-center gap-4 px-1;
+    @apply flex min-h-6 items-center gap-1;
+    margin-top: 0.28rem;
+    padding-inline: 0.28rem;
   }
 
   .chat-runtime-picker {
@@ -504,10 +559,13 @@
   }
 
   .chat-runtime-trigger {
-    @apply inline-flex max-w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-[11px] transition-colors duration-150;
+    @apply inline-flex max-w-full items-center gap-1.5 rounded-md transition-colors duration-150;
     border: 1px solid transparent;
     background: transparent;
     color: rgb(var(--theme-text-secondary));
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+    padding: 0.25rem 0.32rem !important;
   }
 
   .chat-runtime-trigger:hover:not(:disabled),
@@ -521,6 +579,12 @@
 
   .chat-runtime-trigger-label {
     @apply truncate font-medium;
+  }
+
+  .chat-runtime-under > .composer-turn-controls {
+    margin-left: 0.1rem;
+    padding-left: 0.35rem;
+    border-left: 1px solid rgb(var(--theme-border) / 0.32);
   }
 
   .chat-runtime-trigger-chevron {

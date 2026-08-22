@@ -4,6 +4,7 @@ import {
   codeLanguageServerEventFromMessage,
   codeLspReconnectDelay,
   codeWorkspaceLspPoolKey,
+  smartEditingUnavailableMessage,
 } from "./codingEngineClient";
 
 describe("coding-engine workspace client identity", () => {
@@ -91,6 +92,15 @@ describe("coding-engine lifecycle", () => {
       level: "warning",
       message: "Project reload required",
     });
+  });
+
+  it("turns protected websocket failures into an actionable workshop repair", () => {
+    expect(smartEditingUnavailableMessage("rust", "HTTP 401 Unauthorized")).toContain(
+      "Settings → Connection",
+    );
+    expect(smartEditingUnavailableMessage("rust", "rust-analyzer exited")).toBe(
+      "Smart editing is unavailable for rust: rust-analyzer exited",
+    );
   });
 });
 

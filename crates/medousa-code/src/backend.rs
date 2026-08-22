@@ -130,6 +130,14 @@ fn resolve_command(command: &str) -> PathBuf {
     if as_path.is_absolute() && as_path.is_file() {
         return as_path;
     }
+    if let Ok(executable) = std::env::current_exe()
+        && let Some(sibling_dir) = executable.parent()
+    {
+        let candidate = sibling_dir.join(command);
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
     if let Some(bin) = data_dir_bin() {
         let candidate = bin.join(command);
         if candidate.is_file() {
@@ -143,10 +151,19 @@ fn resolve_command(command: &str) -> PathBuf {
             }
         }
     }
+    if let Some(home) = dirs::home_dir() {
+        for bin in [home.join(".cargo/bin"), home.join(".local/bin")] {
+            let candidate = bin.join(command);
+            if candidate.is_file() {
+                return candidate;
+            }
+        }
+    }
     as_path
 }
 
-/// Whether a language-server command can be resolved from `{dataDir}/bin` or PATH.
+/// Whether a language-server command can be resolved from the engine sibling,
+/// `{dataDir}/bin`, standard user tool bins, or PATH.
 pub fn command_available(command: &str) -> bool {
     let resolved = resolve_command(command);
     if resolved.is_file() {

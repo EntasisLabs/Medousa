@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from medousa.jobs import JobsApi
     from medousa.local_models import LocalModelsApi
     from medousa.mcp_gateway import McpGatewayApi
+    from medousa.prompt_stashes import PromptStashesApi
     from medousa.recurring import RecurringApi
     from medousa.runtime import RuntimeApi
     from medousa.sessions import SessionsApi
@@ -72,6 +73,11 @@ class MedousaClient:
         from medousa.sessions import SessionsApi
 
         return SessionsApi(self)
+
+    def prompt_stashes(self) -> PromptStashesApi:
+        from medousa.prompt_stashes import PromptStashesApi
+
+        return PromptStashesApi(self)
 
     def interactive(self) -> InteractiveApi:
         from medousa.interactive import InteractiveApi

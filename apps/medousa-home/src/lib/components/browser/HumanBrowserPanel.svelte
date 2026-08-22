@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import "$lib/styles/browser.postcss";
-  import { ArrowLeft, ArrowRight, Square, RefreshCw } from "@lucide/svelte";
+  import { ArrowLeft, ArrowRight, ExternalLink, Square, RefreshCw } from "@lucide/svelte";
   import HumanBrowserTabBar from "$lib/components/browser/HumanBrowserTabBar.svelte";
   import HumanBrowserUrlBar from "$lib/components/browser/HumanBrowserUrlBar.svelte";
   import BrowserChromeActions from "$lib/components/browser/BrowserChromeActions.svelte";
@@ -27,6 +27,7 @@
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { isTauri, shouldUseMobileShell } from "$lib/platform";
   import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
+  import { showBrowser } from "$lib/window";
 
   interface Props {
     visible?: boolean;
@@ -257,6 +258,17 @@
         {/if}
       </div>
       <HumanBrowserUrlBar {urlBarFocusNonce} />
+      {#if isTauri()}
+        <button
+          type="button"
+          class="browser-chrome-btn"
+          title="Open browser window"
+          aria-label="Open browser window"
+          onclick={() => void showBrowser()}
+        >
+          <ExternalLink size={15} strokeWidth={1.75} />
+        </button>
+      {/if}
       <BrowserChromeActions />
     </div>
 

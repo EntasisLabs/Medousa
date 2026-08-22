@@ -40,6 +40,19 @@ export type CodeProblemsControllerDeps = {
   openProblem: (problem: CodeProblem) => Promise<void>;
   onError: (message: string) => void;
   syncDocument: () => void;
+  onProblemsSelected?: (selected: boolean) => void;
+};
+
+export type CodeTaskProblemRun = {
+  runId: string;
+  taskLabel: string;
+  success: boolean | null;
+  locations: Array<{
+    path: string;
+    line: number;
+    column?: number | null;
+    message: string;
+  }>;
 };
 
 function editorProblemsToWorkspace(
@@ -81,6 +94,8 @@ export class CodeProblemsController {
   panel = $state<CodeContextPanel>(null);
   documentProblems = $state<CodeEditorDocumentProblem[]>([]);
   workspaceProblems = $state<CodeProblem[]>([]);
+  taskProblems = $state<CodeProblem[]>([]);
+  taskRunId = $state<string | null>(null);
   workspaceScope = $state("");
   loaded = $state(false);
   loading = $state(false);
@@ -114,9 +129,10 @@ export class CodeProblemsController {
   }
 
   get effective(): CodeProblem[] {
-    return this.loaded && this.workspaceScope === this.scopeKey
+    const languageProblems = this.loaded && this.workspaceScope === this.scopeKey
       ? this.workspaceProblems
       : this.documentFallback;
+    return [...languageProblems, ...this.taskProblems];
   }
 
   get filtered(): CodeProblem[] {
@@ -137,6 +153,7 @@ export class CodeProblemsController {
   setPanel(next: CodeContextPanel) {
     this.panel = next;
     this.#deps.persistPanel(next);
+    this.#deps.onProblemsSelected?.(next === "problems");
   }
 
   restorePanel(next: CodeContextPanel) {
@@ -145,6 +162,35 @@ export class CodeProblemsController {
 
   setDocumentProblems(next: CodeEditorDocumentProblem[]) {
     this.documentProblems = next;
+  }
+
+  setTaskRun(run: CodeTaskProblemRun | null) {
+    if (!run) {
+      this.taskRunId = null;
+      this.taskProblems = [];
+      return;
+    }
+    this.taskRunId = run.runId;
+    this.taskProblems = run.locations.map((location, index) => ({
+      id: `task\u0000${run.runId}\u0000${location.path}\u0000${location.line}\u0000${location.column ?? 1}\u0000${location.message}\u0000${index}`,
+      uri: `task-run://${run.runId}/${location.path}`,
+      path: location.path,
+      language: "",
+      message: location.message || `Task reported a problem in ${location.path}`,
+      severity: "error",
+      severityNumber: 1,
+      line: Math.max(1, location.line),
+      character: Math.max(1, location.column ?? 1),
+      endLine: Math.max(1, location.line),
+      endCharacter: Math.max(1, location.column ?? 1),
+      source: run.taskLabel,
+      tags: [],
+      relatedInformation: [],
+      origin: "task",
+      runId: run.runId,
+      taskLabel: run.taskLabel,
+      fresh: true,
+    }));
   }
 
   async refresh(options?: { quiet?: boolean }) {

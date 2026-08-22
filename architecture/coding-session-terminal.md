@@ -25,8 +25,10 @@ Daemon-proxied to the session host (`medousa-session`, default
 
 - `GET /v1/shell-sessions` — discovery + spawn status (mirrors `/v1/coding-engine`)
 - `GET /v1/sessions/shell` — list sessions
-- `POST /v1/sessions/shell` — create `{ work_id?, cwd? , lease_id? }`
-- `WS /v1/sessions/shell/{id}` — frames `{type: stdout|stdin|resize}`; payload
+- `POST /v1/sessions/shell` — create `{ work_id?, cwd?, lease_id?, argv? }`;
+  non-empty `argv` hosts that command directly instead of starting a login shell
+- `WS /v1/sessions/shell/{id}` — frames
+  `{type: stdout|stdin|resize|ready|exit}`; payload
   base64 in text frames, raw bytes in binary frames. Human attaches default to
   retained-history replay. Agent readers attach with `?replay=tail` initially
   and `?after_sequence=N` thereafter; the host emits a `ready` watermark before
@@ -70,6 +72,9 @@ Consequences:
 - Session host receives Forge worktree roots as `--allow-root` at spawn; the
   coding tools' read/patch surface is constrained to scripts root + those
   worktrees.
+- Interactive/background project tasks use direct `argv` hosting and retain
+  the returned `session_id` on their Forge run. Output and every Terminal pane
+  attach to that one PTY; detaching does not own or stop the process.
 
 ## Coding toolkit gating
 

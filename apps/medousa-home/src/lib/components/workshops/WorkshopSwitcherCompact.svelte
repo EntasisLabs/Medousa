@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { Check, Monitor, Plus } from "@lucide/svelte";
+  import { Check, Monitor, Plus, Settings2 } from "@lucide/svelte";
   import WorkshopJoinSheet from "$lib/components/workshops/WorkshopJoinSheet.svelte";
+  import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { connection } from "$lib/stores/connection.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
@@ -16,7 +17,15 @@
   import { isTauriMobilePlatform } from "$lib/platform";
   import { isTauri } from "$lib/window";
   import { placeRailPopover, placeToolbarPopover } from "$lib/utils/railPopover";
-  import { tick } from "svelte";
+  import {
+    popBrowserPopoverOverlay,
+    pushBrowserPopoverOverlay,
+  } from "$lib/utils/browserPopoverOverlay";
+  import {
+    announceStatusPopoverOpen,
+    closeOnOtherStatusPopover,
+  } from "$lib/utils/statusPopoverCoordination";
+  import { onMount, tick } from "svelte";
 
   interface Props {
     hideWhenSingle?: boolean;
@@ -63,6 +72,12 @@
   });
 
   $effect(() => {
+    if (!sheetOpen || !isFloatingMenu) return;
+    void pushBrowserPopoverOverlay();
+    return () => void popBrowserPopoverOverlay();
+  });
+
+  $effect(() => {
     if (!sheetOpen || !isFloatingMenu || !railTriggerEl || !railMenuEl) return;
     layout.shellSidebarWidth;
     let frame = 0;
@@ -74,6 +89,7 @@
           width: 280,
           gap: 8,
           pad: 10,
+          align: "start",
         });
       } else {
         placeRailPopover(railTriggerEl, railMenuEl);
@@ -86,6 +102,7 @@
             width: 280,
             gap: 8,
             pad: 10,
+            align: "start",
           });
         } else {
           placeRailPopover(railTriggerEl, railMenuEl);
@@ -117,11 +134,18 @@
   function openSheet() {
     if (workshops.switching) return;
     haptic("light");
+    if (variant === "status") announceStatusPopoverOpen("workshops");
     sheetOpen = true;
     if (workshops.workshops.length === 0 && !workshops.loading) {
       void workshops.load();
     }
   }
+
+  onMount(() =>
+    closeOnOtherStatusPopover("workshops", () => {
+      if (variant === "status") sheetOpen = false;
+    }),
+  );
 
   function openConnectionSettings() {
     haptic("light");
@@ -319,19 +343,20 @@
 {/if}
 
 {#if sheetOpen}
-  <div
-    class="mobile-sheet-backdrop {isFloatingMenu ? 'workshop-rail-sheet-backdrop' : ''}"
-    role="presentation"
-    onclick={(event) => {
-      if (event.target === event.currentTarget) sheetOpen = false;
-    }}
-  >
+  <BodyPortal enabled={isFloatingMenu}>
     <div
-      bind:this={railMenuEl}
-      class="{isFloatingMenu ? 'workshop-rail-sheet workshop-switcher-menu' : 'mobile-sheet'}"
-      role="menu"
-      aria-label="Switch workshop"
+      class="mobile-sheet-backdrop {isFloatingMenu ? 'workshop-rail-sheet-backdrop' : ''}"
+      role="presentation"
+      onclick={(event) => {
+        if (event.target === event.currentTarget) sheetOpen = false;
+      }}
     >
+      <div
+        bind:this={railMenuEl}
+        class="{isFloatingMenu ? 'workshop-rail-sheet workshop-switcher-menu' : 'mobile-sheet'}"
+        role="menu"
+        aria-label="Switch workshop"
+      >
       <header class="{isFloatingMenu ? 'workshop-switcher-header' : 'mobile-sheet-header'}">
         <div class="min-w-0">
           <h2 class="{isFloatingMenu ? 'workshop-switcher-title' : 'text-sm font-semibold text-surface-50'}">
@@ -426,16 +451,22 @@
             type="button"
             role="menuitem"
             class="{isFloatingMenu
-              ? 'workshop-switcher-manage'
+              ? 'workshop-switcher-action workshop-switcher-manage'
               : 'workshop-text-action mt-3 text-sm'}"
             onclick={openConnectionSettings}
           >
+            {#if isFloatingMenu}
+              <span class="workshop-switcher-action-icon" aria-hidden="true">
+                <Settings2 size={14} strokeWidth={1.8} />
+              </span>
+            {/if}
             Manage in Settings
           </button>
         </div>
       {/if}
+      </div>
     </div>
-  </div>
+  </BodyPortal>
 {/if}
 
 <WorkshopJoinSheet

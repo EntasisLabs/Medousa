@@ -6,6 +6,7 @@ import {
   formatTaskLineToggle,
   TASK_ITEM_RE,
 } from "$lib/utils/vaultPreviewTasks";
+import { vaultIfMatchToken } from "$lib/utils/vaultSave";
 
 export const REMINDERS_NOTE_PATH = "calendar/reminders.md";
 
@@ -105,7 +106,9 @@ export async function appendCalendarReminder(
   const cleanTitle = title.trim() || "Reminder";
   const line = `- [ ] ${cleanTitle} @due(${dueDay})`;
   const next = `${content}\n${line}\n`;
-  await saveVaultNote(path, next, { contentHash: note.note?.content_hash });
+  await saveVaultNote(path, next, {
+    contentHash: vaultIfMatchToken(note),
+  });
   const parsed = parseRemindersFromMarkdown(next, path);
   const created = parsed[parsed.length - 1];
   if (!created) {
@@ -127,7 +130,7 @@ export async function toggleCalendarReminder(
   }
   lines[reminder.lineIndex] = formatTaskLineToggle(line, completed, stampCompletion);
   await saveVaultNote(reminder.notePath, `${lines.join("\n")}`, {
-    contentHash: note.note?.content_hash,
+    contentHash: vaultIfMatchToken(note),
   });
 }
 

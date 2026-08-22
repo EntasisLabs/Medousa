@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { RefreshCw, Search, X } from "@lucide/svelte";
+  import { LayoutTemplate, RefreshCw, Search, X } from "@lucide/svelte";
   import { onMount, tick } from "svelte";
   import ArtifactLibraryList from "$lib/components/artifacts/ArtifactLibraryList.svelte";
   import { artifacts } from "$lib/stores/artifacts.svelte";
@@ -73,8 +73,13 @@
         </button>
       </div>
     {:else}
-      <!-- Push action cluster to the right (matches Automations). -->
-      <div class="lme-dock-leading-ghost min-w-0 flex-1" aria-hidden="true"></div>
+      <div class="lme-artifacts-dock-identity min-w-0 flex-1">
+        <LayoutTemplate size={14} strokeWidth={1.7} aria-hidden="true" />
+        <span>Artifacts</span>
+        {#if artifacts.artifacts.length > 0}
+          <span class="lme-artifacts-dock-count">{artifacts.artifacts.length}</span>
+        {/if}
+      </div>
 
       <div class="lme-dock-chrome-secondary shrink-0">
         <button
@@ -107,6 +112,7 @@
       <ArtifactLibraryList
         artifacts={artifacts.filteredArtifacts}
         selectedArtifactId={artifacts.selectedArtifactId}
+        emptyLabel={searching ? "No artifacts match." : "No artifacts yet."}
         onSelect={(artifactId) => {
           const entry = artifacts.artifacts.find((row) => row.artifact_id === artifactId);
           lmeWorkspace.openDeck(artifactId, entry?.label);
@@ -116,3 +122,27 @@
   </div>
 
 </aside>
+
+<style>
+  .lme-artifacts-dock-identity {
+    display: flex;
+    align-items: center;
+    gap: 0.38rem;
+    color: rgb(var(--theme-text-secondary));
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: -0.008em;
+  }
+
+  .lme-artifacts-dock-identity :global(svg) {
+    flex: 0 0 auto;
+    color: rgb(var(--theme-text-tertiary));
+  }
+
+  .lme-artifacts-dock-count {
+    color: rgb(var(--theme-text-quiet));
+    font-size: 0.59375rem;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+  }
+</style>

@@ -270,6 +270,8 @@ pub enum DaemonOperation {
     ForgeItemsByWorkIdTaskRunsByRunIdGet,
     #[serde(rename = "forge.items.by_work_id.task_runs.by_run_id.preview.post")]
     ForgeItemsByWorkIdTaskRunsByRunIdPreviewPost,
+    #[serde(rename = "forge.items.by_work_id.task_runs.get")]
+    ForgeItemsByWorkIdTaskRunsGet,
     #[serde(rename = "forge.items.by_work_id.tasks.by_task_id.run.post")]
     ForgeItemsByWorkIdTasksByTaskIdRunPost,
     #[serde(rename = "forge.items.by_work_id.tasks.by_task_id.runs.post")]
@@ -406,20 +408,20 @@ pub enum DaemonOperation {
     IngestByStreamIdStreamGet,
     #[serde(rename = "ingest.post")]
     IngestPost,
-    #[serde(rename = "integrations.get")]
-    IntegrationsGet,
-    #[serde(rename = "integrations.post")]
-    IntegrationsPost,
+    #[serde(rename = "integrations.by_connection_id.delete")]
+    IntegrationsByConnectionIdDelete,
     #[serde(rename = "integrations.by_connection_id.get")]
     IntegrationsByConnectionIdGet,
     #[serde(rename = "integrations.by_connection_id.patch")]
     IntegrationsByConnectionIdPatch,
-    #[serde(rename = "integrations.by_connection_id.delete")]
-    IntegrationsByConnectionIdDelete,
-    #[serde(rename = "integrations.by_connection_id.secrets.by_slot.put")]
-    IntegrationsByConnectionIdSecretsBySlotPut,
     #[serde(rename = "integrations.by_connection_id.secrets.by_slot.delete")]
     IntegrationsByConnectionIdSecretsBySlotDelete,
+    #[serde(rename = "integrations.by_connection_id.secrets.by_slot.put")]
+    IntegrationsByConnectionIdSecretsBySlotPut,
+    #[serde(rename = "integrations.get")]
+    IntegrationsGet,
+    #[serde(rename = "integrations.post")]
+    IntegrationsPost,
     #[serde(rename = "interactive.turn.by_turn_id.stream.get")]
     InteractiveTurnByTurnIdStreamGet,
     #[serde(rename = "interactive.turn.post")]
@@ -550,6 +552,12 @@ pub enum DaemonOperation {
     PeerMessagesPost,
     #[serde(rename = "peer.messages.unread_count.get")]
     PeerMessagesUnreadCountGet,
+    #[serde(rename = "prompt_stashes.by_stash_id.delete")]
+    PromptStashesByStashIdDelete,
+    #[serde(rename = "prompt_stashes.get")]
+    PromptStashesGet,
+    #[serde(rename = "prompt_stashes.post")]
+    PromptStashesPost,
     #[serde(rename = "qr.get")]
     QrGet,
     #[serde(rename = "qr.image.get")]
@@ -632,10 +640,14 @@ pub enum DaemonOperation {
     SessionsBySessionIdTurnsPost,
     #[serde(rename = "sessions.by_session_id.workshop.steer.post")]
     SessionsBySessionIdWorkshopSteerPost,
+    #[serde(rename = "sessions.derive.post")]
+    SessionsDerivePost,
     #[serde(rename = "sessions.get")]
     SessionsGet,
     #[serde(rename = "sessions.post")]
     SessionsPost,
+    #[serde(rename = "sessions.search.get")]
+    SessionsSearchGet,
     #[serde(rename = "sessions.shell.by_id.get")]
     SessionsShellByIdGet,
     #[serde(rename = "sessions.shell.by_id.signal.post")]
@@ -920,6 +932,7 @@ impl DaemonOperation {
             Self::ForgeItemsByWorkIdTaskRunsByRunIdEventsGet => "forge.items.by_work_id.task_runs.by_run_id.events.get",
             Self::ForgeItemsByWorkIdTaskRunsByRunIdGet => "forge.items.by_work_id.task_runs.by_run_id.get",
             Self::ForgeItemsByWorkIdTaskRunsByRunIdPreviewPost => "forge.items.by_work_id.task_runs.by_run_id.preview.post",
+            Self::ForgeItemsByWorkIdTaskRunsGet => "forge.items.by_work_id.task_runs.get",
             Self::ForgeItemsByWorkIdTasksByTaskIdRunPost => "forge.items.by_work_id.tasks.by_task_id.run.post",
             Self::ForgeItemsByWorkIdTasksByTaskIdRunsPost => "forge.items.by_work_id.tasks.by_task_id.runs.post",
             Self::ForgeItemsByWorkIdTasksGet => "forge.items.by_work_id.tasks.get",
@@ -988,13 +1001,13 @@ impl DaemonOperation {
             Self::IdentityUpdateProposePost => "identity.update.propose.post",
             Self::IngestByStreamIdStreamGet => "ingest.by_stream_id.stream.get",
             Self::IngestPost => "ingest.post",
-            Self::IntegrationsGet => "integrations.get",
-            Self::IntegrationsPost => "integrations.post",
+            Self::IntegrationsByConnectionIdDelete => "integrations.by_connection_id.delete",
             Self::IntegrationsByConnectionIdGet => "integrations.by_connection_id.get",
             Self::IntegrationsByConnectionIdPatch => "integrations.by_connection_id.patch",
-            Self::IntegrationsByConnectionIdDelete => "integrations.by_connection_id.delete",
-            Self::IntegrationsByConnectionIdSecretsBySlotPut => "integrations.by_connection_id.secrets.by_slot.put",
             Self::IntegrationsByConnectionIdSecretsBySlotDelete => "integrations.by_connection_id.secrets.by_slot.delete",
+            Self::IntegrationsByConnectionIdSecretsBySlotPut => "integrations.by_connection_id.secrets.by_slot.put",
+            Self::IntegrationsGet => "integrations.get",
+            Self::IntegrationsPost => "integrations.post",
             Self::InteractiveTurnByTurnIdStreamGet => "interactive.turn.by_turn_id.stream.get",
             Self::InteractiveTurnPost => "interactive.turn.post",
             Self::JobsAskPost => "jobs.ask.post",
@@ -1060,6 +1073,9 @@ impl DaemonOperation {
             Self::PeerMessagesGet => "peer.messages.get",
             Self::PeerMessagesPost => "peer.messages.post",
             Self::PeerMessagesUnreadCountGet => "peer.messages.unread_count.get",
+            Self::PromptStashesByStashIdDelete => "prompt_stashes.by_stash_id.delete",
+            Self::PromptStashesGet => "prompt_stashes.get",
+            Self::PromptStashesPost => "prompt_stashes.post",
             Self::QrGet => "qr.get",
             Self::QrImageGet => "qr.image.get",
             Self::QrPngGet => "qr.png.get",
@@ -1101,8 +1117,10 @@ impl DaemonOperation {
             Self::SessionsBySessionIdTurnsGet => "sessions.by_session_id.turns.get",
             Self::SessionsBySessionIdTurnsPost => "sessions.by_session_id.turns.post",
             Self::SessionsBySessionIdWorkshopSteerPost => "sessions.by_session_id.workshop.steer.post",
+            Self::SessionsDerivePost => "sessions.derive.post",
             Self::SessionsGet => "sessions.get",
             Self::SessionsPost => "sessions.post",
+            Self::SessionsSearchGet => "sessions.search.get",
             Self::SessionsShellByIdGet => "sessions.shell.by_id.get",
             Self::SessionsShellByIdSignalPost => "sessions.shell.by_id.signal.post",
             Self::SessionsShellGet => "sessions.shell.get",

@@ -1,14 +1,5 @@
 <script lang="ts">
-  import {
-    Calendar,
-    CalendarRange,
-    FilePlus,
-    FileText,
-    FolderPlus,
-    Plus,
-    Search,
-    X,
-  } from "@lucide/svelte";
+  import { Plus, Search, X } from "@lucide/svelte";
   import { onMount, tick, untrack } from "svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import VaultGroupPicker from "$lib/components/vault/VaultGroupPicker.svelte";
@@ -17,11 +8,11 @@
   import VaultLibraryBrowseModeBar from "$lib/components/vault/VaultLibraryBrowseModeBar.svelte";
   import VaultRootPicker from "$lib/components/vault/VaultRootPicker.svelte";
   import VaultTree from "$lib/components/vault/VaultTree.svelte";
+  import VaultCreateMenuItems from "$lib/components/vault/VaultCreateMenuItems.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
-  import { formatShortcut } from "$lib/platform";
   import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
   import {
     placeDockPopover,
@@ -29,7 +20,6 @@
   } from "$lib/utils/dockPopoverPlace";
   import { portLmeDock } from "$lib/utils/lmeDockHost";
   import { ensureRailPopoverOpen } from "$lib/utils/railPopoverChrome";
-  import { canUseLocalVaultFilesystem } from "$lib/utils/vaultFilesystem";
 
   let createOpen = $state(false);
   let createBtnEl = $state<HTMLButtonElement | null>(null);
@@ -73,8 +63,8 @@
     // Prefer below from the top action row; still below when hosted in the rail popover.
     createPlacement = placeDockPopover(createBtnEl, {
       preferUp: false,
-      width: 196,
-      maxHeight: 320,
+      width: 244,
+      maxHeight: 360,
     });
   }
 
@@ -188,16 +178,23 @@
       </div>
     {:else}
       <div
-        class="lme-dock-chrome-secondary lme-dock-chrome-secondary--crumb flex min-w-0 items-center gap-0.5"
+        class="lme-notes-crumb lme-dock-chrome-secondary lme-dock-chrome-secondary--crumb flex min-w-0 items-center"
       >
         <VaultRootPicker compact quiet dropUp={false} />
         <span
-          class="nav-rail-dock-crumb-sep shrink-0 px-px text-[11px] font-medium leading-none text-content-quiet"
+          class="lme-notes-crumb__sep nav-rail-dock-crumb-sep shrink-0"
           aria-hidden="true"
         >
           /
         </span>
         <VaultGroupPicker dropUp={false} />
+        <span
+          class="lme-notes-crumb__sep nav-rail-dock-crumb-sep shrink-0"
+          aria-hidden="true"
+        >
+          /
+        </span>
+        <VaultLibraryBrowseModeBar icons flush rail />
       </div>
       <!-- Push action cluster toward `>` once the bar extends. -->
       <div
@@ -222,7 +219,7 @@
         <BodyPortal>
           <div
             bind:this={createMenuEl}
-            class="vault-dock-popover"
+            class="vault-dock-popover vault-create-menu"
             role="menu"
             tabindex="-1"
             style:left="{createPlacement.left}px"
@@ -233,81 +230,10 @@
             onclick={(event) => event.stopPropagation()}
             onkeydown={handleMenuKeydown}
           >
-            <button
-              type="button"
-              role="menuitem"
-              class="vault-menu-item"
-              disabled={vault.saving}
-              onclick={() => {
-                closeMenus();
-                void vault.createDailyNote();
-              }}
-            >
-              <Calendar size={14} strokeWidth={2} />
-              Daily note
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              class="vault-menu-item"
-              disabled={vault.saving}
-              onclick={() => {
-                closeMenus();
-                void vault.createWeeklyReview();
-              }}
-            >
-              <CalendarRange size={14} strokeWidth={2} />
-              Weekly review
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              class="vault-menu-item w-full justify-between"
-              onclick={() => {
-                closeMenus();
-                vault.openNewNoteDialog();
-              }}
-            >
-              <span class="inline-flex items-center gap-2">
-                <FilePlus size={14} strokeWidth={2} />
-                New note
-              </span>
-              <kbd class="vault-kbd">{formatShortcut("N")}</kbd>
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              class="vault-menu-item"
-              onclick={() => {
-                closeMenus();
-                vault.openNewGroupDialog();
-              }}
-            >
-              <FolderPlus size={14} strokeWidth={2} />
-              New group
-            </button>
-            {#if canUseLocalVaultFilesystem()}
-              <div class="vault-dock-popover__sep"></div>
-              <button
-                type="button"
-                role="menuitem"
-                class="vault-menu-item"
-                onclick={() => {
-                  closeMenus();
-                  void vault.openLooseMarkdownFile();
-                }}
-              >
-                <FileText size={14} strokeWidth={2} />
-                Open markdown file…
-              </button>
-            {/if}
+            <VaultCreateMenuItems onClose={closeMenus} />
           </div>
         </BodyPortal>
       {/if}
-      <div class="lme-dock-chrome-secondary shrink-0">
-        <VaultLibraryBrowseModeBar icons flush rail />
-      </div>
-
       <button
         type="button"
         class="vault-dock-icon-btn {searching ? 'vault-dock-icon-btn-active' : ''}"

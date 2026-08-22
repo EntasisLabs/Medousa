@@ -19,6 +19,8 @@ export type CodeContextPanel =
   | "language"
   | null;
 
+export type CodeBottomPanel = "problems" | "output" | "tests" | "terminal" | null;
+
 /**
  * Project-scoped Code layout. Shell owns pane geometry and group tab strips;
  * this store owns which optional Code regions are open for a work item.
@@ -29,6 +31,13 @@ export type CodeWorkbenchLayout = {
   tests: boolean;
   search: boolean;
   changes: boolean;
+  output: boolean;
+  /** Selected channel in the unified feedback surface. */
+  bottom_panel: CodeBottomPanel;
+  /** User-selected project command. Stable task id from the daemon catalog. */
+  primary_task: string | null;
+  active_run: string | null;
+  recent_runs: string[];
 };
 
 export const DEFAULT_CODE_WORKBENCH_LAYOUT: CodeWorkbenchLayout = {
@@ -37,6 +46,11 @@ export const DEFAULT_CODE_WORKBENCH_LAYOUT: CodeWorkbenchLayout = {
   tests: false,
   search: false,
   changes: false,
+  output: false,
+  bottom_panel: null,
+  primary_task: null,
+  active_run: null,
+  recent_runs: [],
 };
 
 const HISTORY_CAP = 100;
@@ -47,6 +61,7 @@ const CONTEXT_PANELS = new Set<string>([
   "references",
   "language",
 ]);
+const BOTTOM_PANELS = new Set<string>(["problems", "output", "tests", "terminal"]);
 
 export function normalizeCodeWorkbenchLayout(
   value: unknown,
@@ -56,6 +71,17 @@ export function normalizeCodeWorkbenchLayout(
   }
   const raw = value as Record<string, unknown>;
   const panel = raw.context_panel;
+  const rawBottomPanel = raw.bottom_panel;
+  const legacyBottomPanel: CodeBottomPanel =
+    raw.terminal === true
+      ? "terminal"
+      : raw.tests === true
+        ? "tests"
+        : raw.output === true
+          ? "output"
+          : panel === "problems"
+            ? "problems"
+            : null;
   return {
     context_panel:
       panel === null || (typeof panel === "string" && CONTEXT_PANELS.has(panel))
@@ -65,6 +91,26 @@ export function normalizeCodeWorkbenchLayout(
     tests: raw.tests === true,
     search: raw.search === true,
     changes: raw.changes === true,
+    output: raw.output === true,
+    bottom_panel:
+      rawBottomPanel === null ||
+      (typeof rawBottomPanel === "string" && BOTTOM_PANELS.has(rawBottomPanel))
+        ? (rawBottomPanel as CodeBottomPanel)
+        : legacyBottomPanel,
+    primary_task:
+      typeof raw.primary_task === "string" && raw.primary_task.trim()
+        ? raw.primary_task.trim().slice(0, 160)
+        : null,
+    active_run:
+      typeof raw.active_run === "string" && raw.active_run.trim()
+        ? raw.active_run.trim().slice(0, 160)
+        : null,
+    recent_runs: Array.isArray(raw.recent_runs)
+      ? raw.recent_runs
+          .filter((runId): runId is string => typeof runId === "string" && Boolean(runId.trim()))
+          .map((runId) => runId.trim().slice(0, 160))
+          .slice(0, 12)
+      : [],
   };
 }
 
@@ -179,6 +225,42 @@ class CodeWorkbenchState {
 
   setChangesOpen(workId: string, open: boolean) {
     this.patchLayout(workId, { changes: open });
+  }
+
+  setOutputOpen(workId: string, open: boolean) {
+    this.patchLayout(workId, { output: open });
+  }
+
+  setBottomPanel(workId: string, panel: CodeBottomPanel) {
+    const current = this.layoutFor(workId);
+    this.patchLayout(workId, {
+      bottom_panel: panel,
+      output: panel === "output",
+      tests: panel === "tests",
+      terminal: panel === "terminal",
+      context_panel:
+        panel === "problems"
+          ? "problems"
+          : current.context_panel === "problems"
+            ? null
+            : current.context_panel,
+    });
+  }
+
+  setPrimaryTask(workId: string, taskId: string | null) {
+    this.patchLayout(workId, {
+      primary_task: taskId?.trim().slice(0, 160) || null,
+    });
+  }
+
+  setTaskRuns(workId: string, activeRun: string | null, recentRuns: string[]) {
+    this.patchLayout(workId, {
+      active_run: activeRun?.trim().slice(0, 160) || null,
+      recent_runs: recentRuns
+        .filter((runId) => Boolean(runId.trim()))
+        .map((runId) => runId.trim().slice(0, 160))
+        .slice(0, 12),
+    });
   }
 
   record(

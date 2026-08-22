@@ -64,6 +64,7 @@ Shipped product features: [artifacts](../docs/engine/artifacts.md), [mobile shel
 | [hardening/README.md](hardening/README.md) | **Repo-wide hardening** — authority containment, trustworthy state, bounded hot paths, and enforced architecture |
 | [agent-runtime-modes-plan.md](agent-runtime-modes-plan.md) | **Agent runtime modes** — General parity, mode transitions, and Medousa Coder |
 | [typed-tool-contract-runtime-plan.md](typed-tool-contract-runtime-plan.md) | **Typed tool contracts** — stateful macro, catalog/policy split, mode metadata, and Stasis upstream path |
+| [conversation-context-addressing-and-derivation-plan.md](conversation-context-addressing-and-derivation-plan.md) | **Conversation context** — durable entry coordinates, derivation/fork, remote materialization, and replication |
 | [code-surface-bridge-plan.md](code-surface-bridge-plan.md) | **Code surface bridge** — Workshop-owned chrome, unified Review DiffStack, buffer polish |
 | [tui-home-workspace-parity-plan.md](tui-home-workspace-parity-plan.md) | **TUI ↔ Home workspace parity** — tmux panes, notes, code, review, chat over the same daemon |
 | [workshop-and-automations-plan.md](workshop-and-automations-plan.md) | **Workshop + Automations** — W0–W5 (shipped); see [scripts-workbench-plan.md](scripts-workbench-plan.md) for W6 IA |

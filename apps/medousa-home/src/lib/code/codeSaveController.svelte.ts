@@ -63,6 +63,8 @@ export type CodeSaveControllerDeps = {
     lease: { leaseId: string; leaseGeneration: number; executorKind: "human" },
   ) => void;
   refreshDetail: () => Promise<void>;
+  /** Optional active-document transform (for example format-on-save). */
+  beforeSave?: (tab: CodeSaveTab) => Promise<boolean>;
 };
 
 export class CodeSaveController {
@@ -199,6 +201,16 @@ export class CodeSaveController {
     }
     if (!leaseId || generation == null || !this.#deps.isDirty(tab) || this.savingFile) {
       return !this.#deps.isDirty(tab);
+    }
+
+    if (this.#deps.beforeSave && !(await this.#deps.beforeSave(tab))) return false;
+    if (tab.tabId === this.#deps.getActiveTabId() && editor) {
+      const transformedDraft = editor.getValue();
+      if (transformedDraft !== tab.draft) {
+        this.#deps.updateDraft(tab.tabId, transformedDraft);
+        tab = { ...tab, draft: transformedDraft };
+      }
+      editor.flushChanges();
     }
 
     this.savingFile = true;

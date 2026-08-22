@@ -4,7 +4,8 @@
 standalone installer.
 
 Home already ships with the **engine** (daemon, CLI, and TUI). Packages is where
-you add more later — offline brain, messaging adapters, MCP gateway. Those
+you add more later — coding support, the shell session host, offline brain,
+messaging adapters, or the MCP gateway. Those
 optional binaries are separate programs; they are not compiled into
 `medousa_daemon`.
 
@@ -36,6 +37,9 @@ or **Installed**.
 |---------|----------------|
 | **Offline brain** | `medousa_local` — on-device inference for Gemma |
 | **MCP gateway** | Connect MCP tool servers to Medousa |
+| **Coding engine** | Project language-service bridge used by Code |
+| **Language servers** | Pyright plus TypeScript and Svelte language support |
+| **Shell session host** | Shared workshop PTYs for Terminal and interactive project tasks |
 | **Telegram / Discord / Slack / WhatsApp** | Channel adapter binaries |
 
 **Not listed here (on purpose):**

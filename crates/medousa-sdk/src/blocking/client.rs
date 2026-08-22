@@ -12,30 +12,32 @@ use medousa_types::{
     ComponentRuntimeEventsRequest, ComponentRuntimeEventsResponse,
     ComponentRuntimeEventsTailResponse, ComponentRuntimeProbeResult, ComponentStoreDeleteResponse,
     ComponentStoreGetResponse, ComponentStoreListResponse, ComponentStoreSetRequest,
-    ComponentStoreSetResponse, DecideAgentModeProposalRequest, DeleteRecurringResponse,
-    EnqueueAskRequest, EnqueuePromptRequest, EnqueueReportRequest, EnqueueResponse,
-    EnvironmentPendingResponse, EnvironmentProposeResponse, EnvironmentSpecPutRequest,
-    EnvironmentSpecResponse, EnvironmentStatusResponse, EnvironmentValidateRequest,
-    EnvironmentValidateResponse, FeedLatestGoodQuery, FeedLatestGoodResponse, FeedListResponse,
-    FeedReadRequest, FeedTailQuery, FeedTailResponse, HealthResponse, IngestRequest,
-    IngestResponse, InteractiveTurnRequest, InteractiveTurnResponse, JobReportResponse,
-    JobResultResponse, LocalCatalogResponse, LocalEngineStatus, LocalHardwareResponse,
-    LocalModelDownloadRequest, LocalModelDownloadResponse, LocalModelsResponse,
-    McpGatewayStatusResponse, ModelDownloadProgress, RecurringDeliveryResponse, RecurringListQuery,
-    RecurringListResponse, RecurringRunsQuery, RecurringRunsResponse,
-    RegisterRecurringPromptRequest, RegisterRecurringResponse, RuntimeConfigCommandRequest,
-    RuntimeConfigCommandResponse, SessionActiveTurnsResponse, SessionAgentModeResponse,
-    SessionAppendTurnRequest, SessionAppendTurnResponse, SessionCodeBindingResponse,
-    SessionCodeProjectResponse, SessionDeleteQuery, SessionDeleteResponse,
-    SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameRequest,
-    SessionSetDisplayNameResponse, SetSessionAgentModeRequest, SetSessionCodeBindingRequest,
-    StageRouteCommandRequest, StageRouteCommandResponse, StartSessionCodeProjectRequest,
-    TurnBudgetApproveRequest, TurnBudgetDenyRequest, TurnBudgetRequestListResponse,
-    TurnBudgetRequestRecord, TurnBudgetRequestResponse, UpdateRecurringRequest,
-    UpdateRecurringResponse, VaultAddRootRequest, VaultBacklinksQuery, VaultBacklinksResponse,
-    VaultDeleteResponse, VaultNoteContentResponse, VaultNotesListResponse, VaultNotesQuery,
-    VaultRootsResponse, VaultSearchQuery, VaultSearchResponse, VaultSetActiveRootRequest,
-    VaultTagsListResponse, VaultTagsQuery, VaultWriteRequest, VaultWriteResponse, WorkCardDetail,
+    ComponentStoreSetResponse, CreatePromptStashRequest, DecideAgentModeProposalRequest,
+    DeletePromptStashResponse, DeleteRecurringResponse, DeriveSessionRequest,
+    DeriveSessionResponse, EnqueueAskRequest, EnqueuePromptRequest, EnqueueReportRequest,
+    EnqueueResponse, EnvironmentPendingResponse, EnvironmentProposeResponse,
+    EnvironmentSpecPutRequest, EnvironmentSpecResponse, EnvironmentStatusResponse,
+    EnvironmentValidateRequest, EnvironmentValidateResponse, FeedLatestGoodQuery,
+    FeedLatestGoodResponse, FeedListResponse, FeedReadRequest, FeedTailQuery, FeedTailResponse,
+    HealthResponse, IngestRequest, IngestResponse, InteractiveTurnRequest, InteractiveTurnResponse,
+    JobReportResponse, JobResultResponse, LocalCatalogResponse, LocalEngineStatus,
+    LocalHardwareResponse, LocalModelDownloadRequest, LocalModelDownloadResponse,
+    LocalModelsResponse, McpGatewayStatusResponse, ModelDownloadProgress, PromptStash,
+    PromptStashListResponse, RecurringDeliveryResponse, RecurringListQuery, RecurringListResponse,
+    RecurringRunsQuery, RecurringRunsResponse, RegisterRecurringPromptRequest,
+    RegisterRecurringResponse, RuntimeConfigCommandRequest, RuntimeConfigCommandResponse,
+    SessionActiveTurnsResponse, SessionAgentModeResponse, SessionAppendTurnRequest,
+    SessionAppendTurnResponse, SessionCodeBindingResponse, SessionCodeProjectResponse,
+    SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
+    SessionSetDisplayNameRequest, SessionSetDisplayNameResponse, SessionTranscriptSearchResponse,
+    SetSessionAgentModeRequest, SetSessionCodeBindingRequest, StageRouteCommandRequest,
+    StageRouteCommandResponse, StartSessionCodeProjectRequest, TurnBudgetApproveRequest,
+    TurnBudgetDenyRequest, TurnBudgetRequestListResponse, TurnBudgetRequestRecord,
+    TurnBudgetRequestResponse, UpdateRecurringRequest, UpdateRecurringResponse,
+    VaultAddRootRequest, VaultBacklinksQuery, VaultBacklinksResponse, VaultDeleteResponse,
+    VaultNoteContentResponse, VaultNotesListResponse, VaultNotesQuery, VaultRootsResponse,
+    VaultSearchQuery, VaultSearchResponse, VaultSetActiveRootRequest, VaultTagsListResponse,
+    VaultTagsQuery, VaultWriteRequest, VaultWriteResponse, WorkCardDetail,
     WorkspaceCardActionResponse, WorkspaceCardsQuery, WorkspaceCardsResponse, WorkspaceFeedQuery,
     WorkspaceFeedResponse, WorkspaceLinkVaultRequest, WorkspaceSnapshot, WorkspaceSnapshotQuery,
 };
@@ -110,6 +112,29 @@ impl SyncHttp {
         serde_json::from_value(value).map_err(Into::into)
     }
 
+    fn post_with_header<T: serde::de::DeserializeOwned, B: serde::Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+        header: (&'static str, &str),
+    ) -> Result<T, SdkError> {
+        let response = self
+            .client
+            .post(self.url(path))
+            .header(header.0, header.1)
+            .json(body)
+            .send()
+            .map_err(|error| SdkError::Http(error.to_string()))?;
+        let status = response.status();
+        let text = response
+            .text()
+            .map_err(|error| SdkError::Http(error.to_string()))?;
+        if !status.is_success() {
+            return Err(SdkError::Http(format!("{status}: {text}")));
+        }
+        serde_json::from_str(&text).map_err(Into::into)
+    }
+
     fn post_empty<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T, SdkError> {
         let value = self.request(reqwest::Method::POST, path, None)?;
         serde_json::from_value(value).map_err(Into::into)
@@ -162,6 +187,8 @@ blocking_api!(BlockingJobsApi);
 blocking_api!(BlockingRecurringApi);
 #[cfg(feature = "blocking")]
 blocking_api!(BlockingSessionsApi);
+#[cfg(feature = "blocking")]
+blocking_api!(BlockingPromptStashesApi);
 #[cfg(feature = "blocking")]
 blocking_api!(BlockingInteractiveApi);
 #[cfg(feature = "blocking")]
@@ -224,6 +251,10 @@ impl BlockingMedousaClient {
 
     pub fn sessions(&self) -> BlockingSessionsApi<'_> {
         BlockingSessionsApi { http: &self.http }
+    }
+
+    pub fn prompt_stashes(&self) -> BlockingPromptStashesApi<'_> {
+        BlockingPromptStashesApi { http: &self.http }
     }
 
     pub fn interactive(&self) -> BlockingInteractiveApi<'_> {
@@ -474,11 +505,35 @@ impl BlockingSessionsApi<'_> {
         )?)
     }
 
+    pub fn search_transcripts(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<SessionTranscriptSearchResponse, SdkError> {
+        self.http.get(&op_path_query(
+            &ops::SESSIONS_SEARCH_GET,
+            &[],
+            &[("q", query.to_string()), ("limit", limit.to_string())],
+        )?)
+    }
+
     pub fn history(&self, session_id: &str) -> Result<SessionHistoryResponse, SdkError> {
         self.http.get(&op_path(
             &ops::SESSIONS_BY_SESSION_ID_HISTORY_GET,
             &[("session_id", session_id)],
         )?)
+    }
+
+    pub fn derive(
+        &self,
+        request: &DeriveSessionRequest,
+        idempotency_key: &str,
+    ) -> Result<DeriveSessionResponse, SdkError> {
+        self.http.post_with_header(
+            ops::SESSIONS_DERIVE_POST.path,
+            request,
+            ("Idempotency-Key", idempotency_key),
+        )
     }
 
     pub fn set_display_name(
@@ -658,6 +713,24 @@ impl BlockingSessionsApi<'_> {
         self.http.post_empty(&op_path(
             &ops::SESSIONS_BY_SESSION_ID_ACTIVE_TURN_POST,
             &[("session_id", session_id)],
+        )?)
+    }
+}
+
+#[cfg(feature = "blocking")]
+impl BlockingPromptStashesApi<'_> {
+    pub fn list(&self) -> Result<PromptStashListResponse, SdkError> {
+        self.http.get(ops::PROMPT_STASHES_GET.path)
+    }
+
+    pub fn create(&self, request: &CreatePromptStashRequest) -> Result<PromptStash, SdkError> {
+        self.http.post(ops::PROMPT_STASHES_POST.path, request)
+    }
+
+    pub fn delete(&self, stash_id: &str) -> Result<DeletePromptStashResponse, SdkError> {
+        self.http.delete(&op_path(
+            &ops::PROMPT_STASHES_BY_STASH_ID_DELETE,
+            &[("stash_id", stash_id)],
         )?)
     }
 }

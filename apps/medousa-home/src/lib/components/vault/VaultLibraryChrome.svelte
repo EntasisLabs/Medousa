@@ -1,22 +1,11 @@
 <script lang="ts">
-  import {
-    Calendar,
-    CalendarRange,
-    FilePlus,
-    FileText,
-    FolderPlus,
-    PanelLeftClose,
-    Search,
-    Trash2,
-    X,
-  } from "@lucide/svelte";
+  import { Folder, FolderPlus, PanelLeftClose, RefreshCw, Search, Trash2, X } from "@lucide/svelte";
   import { tick } from "svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { externalDesk } from "$lib/stores/externalDesk.svelte";
-  import { formatShortcut } from "$lib/platform";
   import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
-  import { canUseLocalVaultFilesystem } from "$lib/utils/vaultFilesystem";
+  import VaultCreateMenuItems from "./VaultCreateMenuItems.svelte";
   import VaultGroupPicker from "./VaultGroupPicker.svelte";
   import VaultRootPicker from "./VaultRootPicker.svelte";
   import VaultLibraryBrowseModeBar from "./VaultLibraryBrowseModeBar.svelte";
@@ -41,7 +30,7 @@
   const searching = $derived(vault.searchQuery.trim().length > 0);
 
   $effect(() => {
-    if (searching && !searchExpanded && showVaultChrome) {
+    if (searching && !searchExpanded && (showVaultChrome || onSearchExternal)) {
       searchExpanded = true;
     }
   });
@@ -66,7 +55,9 @@
 
   function closeSearch() {
     searchExpanded = false;
-    if (searching) void vault.runSearch("");
+    if (!searching) return;
+    if (showVaultChrome) void vault.runSearch("");
+    else onSearchExternal?.("");
   }
 
   function handleSearchKeydown(event: KeyboardEvent) {
@@ -74,6 +65,10 @@
       event.preventDefault();
       closeSearch();
     }
+  }
+
+  function updateExternalSearch(query: string) {
+    if (onSearchExternal) onSearchExternal(query);
   }
 </script>
 
@@ -181,80 +176,13 @@
           </button>
           {#if createOpen}
             <div
-              class="absolute right-0 top-full z-30 mt-1 min-w-[11rem] rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl"
+              class="vault-create-menu absolute right-0 top-full z-30 mt-1"
               role="menu"
               tabindex="-1"
               onclick={(event) => event.stopPropagation()}
               onkeydown={handleMenuKeydown}
             >
-              <button
-                type="button"
-                role="menuitem"
-                class="vault-menu-item"
-                disabled={vault.saving}
-                onclick={() => {
-                  closeMenus();
-                  void vault.createDailyNote();
-                }}
-              >
-                <Calendar size={14} strokeWidth={2} />
-                Daily note
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                class="vault-menu-item"
-                disabled={vault.saving}
-                onclick={() => {
-                  closeMenus();
-                  void vault.createWeeklyReview();
-                }}
-              >
-                <CalendarRange size={14} strokeWidth={2} />
-                Weekly review
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                class="vault-menu-item w-full justify-between"
-                onclick={() => {
-                  closeMenus();
-                  vault.openNewNoteDialog();
-                }}
-              >
-                <span class="inline-flex items-center gap-2">
-                  <FilePlus size={14} strokeWidth={2} />
-                  New note
-                </span>
-                <kbd class="vault-kbd">{formatShortcut("N")}</kbd>
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                class="vault-menu-item"
-                onclick={() => {
-                  closeMenus();
-                  vault.openNewGroupDialog();
-                }}
-              >
-                <FolderPlus size={14} strokeWidth={2} />
-                New group
-              </button>
-              {#if canUseLocalVaultFilesystem()}
-                <div class="my-1 border-t border-surface-500/35"></div>
-                <button
-                  type="button"
-                  role="menuitem"
-                  class="vault-menu-item"
-                  onclick={() => {
-                    closeMenus();
-                    void vault.openLooseMarkdownFile();
-                  }}
-                >
-                  <FileText size={14} strokeWidth={2} />
-                  Open markdown file…
-                </button>
-              {/if}
+              <VaultCreateMenuItems onClose={closeMenus} />
             </div>
           {/if}
         </div>
@@ -285,6 +213,81 @@
         </button>
       {/if}
     </div>
+  {:else if onSearchExternal}
+    <div class="vault-files-toolbar">
+      {#if searchExpanded}
+        <label class="vault-files-search">
+          <Search size={14} strokeWidth={1.75} class="vault-files-search-icon" />
+          <input
+            bind:this={searchInputEl}
+            type="search"
+            class="vault-files-search-input"
+            placeholder="Search pinned folders…"
+            value={vault.searchQuery}
+            oninput={(event) =>
+              updateExternalSearch((event.currentTarget as HTMLInputElement).value)}
+            onkeydown={handleSearchKeydown}
+          />
+        </label>
+        <button
+          type="button"
+          class="vault-files-toolbar-action"
+          aria-label="Close file search"
+          title="Close search"
+          onclick={closeSearch}
+        >
+          <X size={14} strokeWidth={1.8} />
+        </button>
+      {:else}
+        <div class="vault-files-toolbar-identity">
+          <Folder size={14} strokeWidth={1.75} />
+          <span>Files</span>
+          {#if externalDesk.pinnedRoots.length > 0}
+            <span class="vault-files-toolbar-count">
+              {externalDesk.pinnedRoots.length} folder{externalDesk.pinnedRoots.length === 1 ? "" : "s"}
+            </span>
+          {/if}
+        </div>
+        <span class="min-w-0 flex-1" aria-hidden="true"></span>
+        {#if coLocated}
+          <button
+            type="button"
+            class="vault-files-toolbar-action"
+            aria-label="Add folder"
+            title="Add folder"
+            onclick={() => void externalDesk.pinFolder()}
+          >
+            <FolderPlus size={14} strokeWidth={1.8} />
+          </button>
+          {#if externalDesk.pinnedRoots.length > 0}
+            <button
+              type="button"
+              class="vault-files-toolbar-action"
+              aria-label="Refresh all folders"
+              title="Refresh all folders"
+              disabled={Boolean(externalDesk.loadingRoot)}
+              onclick={() => void externalDesk.refreshAllRoots()}
+            >
+              <RefreshCw size={14} strokeWidth={1.8} />
+            </button>
+          {/if}
+        {/if}
+        <button
+          type="button"
+          class="vault-files-toolbar-action {searching ? 'vault-files-toolbar-action-active' : ''}"
+          aria-label="Search files"
+          title="Search files"
+          onclick={() => void openSearch()}
+        >
+          <Search size={14} strokeWidth={1.8} />
+        </button>
+      {/if}
+    </div>
+    {#if !coLocated}
+      <p class="workshop-faint px-3 pb-2 text-[11px] leading-snug">
+        {vaultPinFolderRemoteHint()}
+      </p>
+    {/if}
   {:else}
     <div class="px-3 py-2">
       <input
@@ -292,7 +295,7 @@
         type="search"
         placeholder="Search pinned folders…"
         value={vault.searchQuery}
-        oninput={(event) => onSearchExternal?.((event.currentTarget as HTMLInputElement).value)}
+        oninput={(event) => updateExternalSearch((event.currentTarget as HTMLInputElement).value)}
       />
     </div>
     <div class="flex flex-wrap items-center gap-3 px-3 pb-2">

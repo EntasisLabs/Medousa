@@ -89,6 +89,20 @@ export interface ChatMessage {
   turnIndex?: number | null;
   /** Shared-room speaker profile id (`user:alice`) for human turns. */
   speakerProfileId?: string | null;
+  /** Durable coordinate for a committed transcript entry. Absent for optimistic/streaming UI. */
+  transcript?: {
+    authorityId: string;
+    sessionId: string;
+    entryId: string;
+    entrySeq: number;
+    /** Original occurrence when this entry was materialized into a derived session. */
+    source?: {
+      authorityId: string;
+      sessionId: string;
+      entryId: string;
+      entrySeq: number;
+    } | null;
+  } | null;
 }
 
 export interface PendingBrowserChallenge {

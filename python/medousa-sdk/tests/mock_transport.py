@@ -30,6 +30,19 @@ class MockTransport:
             raise KeyError(f"No handler for POST {path}")
         return self.handlers[key](base_url, path, body)
 
+    async def post_json_with_headers(
+        self,
+        base_url: str,
+        path: str,
+        body: Any,
+        headers: dict[str, str],
+    ) -> Any:
+        self.calls.append(("POST", path, {"body": body, "headers": headers}))
+        key = ("POST", path)
+        if key not in self.handlers:
+            raise KeyError(f"No handler for POST {path}")
+        return self.handlers[key](base_url, path, body, headers)
+
     async def put_json(self, base_url: str, path: str, body: Any) -> Any:
         self.calls.append(("PUT", path, body))
         key = ("PUT", path)
@@ -65,9 +78,7 @@ class MockTransport:
             raise KeyError(f"No handler for SSE {path}")
         return self.handlers[key](base_url, path)
 
-    async def stream_sse_with_accept(
-        self, base_url: str, path: str, accept: str
-    ) -> httpx.Response:
+    async def stream_sse_with_accept(self, base_url: str, path: str, accept: str) -> httpx.Response:
         self.calls.append(("SSE", path, accept))
         key = ("SSE", path)
         if key not in self.handlers:

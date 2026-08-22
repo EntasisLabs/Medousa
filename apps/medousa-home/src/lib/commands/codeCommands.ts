@@ -4,12 +4,85 @@
  */
 
 import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
+import { undertakings } from "$lib/stores/undertakings.svelte";
 import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
+import type { ProjectTask } from "$lib/forge";
 import { formatCatalogKeys } from "$lib/utils/keyboardShortcutsCatalog";
 import { effectiveChordFor } from "./commandBindings";
 import type { WorkshopCommand, WorkshopCommandContext } from "./types";
 
 export type CodeCommandDetail = { id: string };
+
+const projectTaskCatalogs = new Map<string, ProjectTask[]>();
+const PROJECT_TASK_COMMAND_PREFIX = "workbench.action.tasks.runTask:";
+
+export function publishProjectTaskCommandCatalog(
+  workId: string,
+  tasks: ProjectTask[],
+) {
+  if (!workId) return;
+  projectTaskCatalogs.delete(workId);
+  projectTaskCatalogs.set(workId, tasks.map((task) => ({ ...task, argv: [...task.argv] })));
+  while (projectTaskCatalogs.size > 16) {
+    const oldest = projectTaskCatalogs.keys().next().value;
+    if (!oldest) break;
+    projectTaskCatalogs.delete(oldest);
+  }
+}
+
+export function projectTaskCommandId(workId: string, taskId: string): string {
+  return `${PROJECT_TASK_COMMAND_PREFIX}${encodeURIComponent(workId)}:${encodeURIComponent(taskId)}`;
+}
+
+export function parseProjectTaskCommandId(
+  commandId: string,
+): { workId: string; taskId: string } | null {
+  if (!commandId.startsWith(PROJECT_TASK_COMMAND_PREFIX)) return null;
+  const encoded = commandId.slice(PROJECT_TASK_COMMAND_PREFIX.length);
+  const separator = encoded.indexOf(":");
+  if (separator < 1) return null;
+  try {
+    const workId = decodeURIComponent(encoded.slice(0, separator));
+    const taskId = decodeURIComponent(encoded.slice(separator + 1));
+    return workId && taskId ? { workId, taskId } : null;
+  } catch {
+    return null;
+  }
+}
+
+export function buildProjectTaskCommands(workId: string): WorkshopCommand[] {
+  return (projectTaskCatalogs.get(workId) ?? [])
+    .slice()
+    .sort(
+      (left, right) =>
+        (right.default_rank ?? 0) - (left.default_rank ?? 0) ||
+        left.label.localeCompare(right.label),
+    )
+    .map<WorkshopCommand>((task) => {
+      const repair = task.requirements?.find((requirement) => !requirement.available)?.repair;
+      const root = task.root && task.root !== "." ? ` · ${task.root}` : "";
+      return {
+        id: projectTaskCommandId(workId, task.id),
+        section: "do",
+        label: `Run Task: ${task.label}`,
+        subtitle: repair ?? `${task.kind}${root} · ${task.argv.join(" ")}`,
+        keywords: `run task ${task.kind} ${task.provider ?? ""} ${task.label} ${task.root ?? ""}`,
+        aliases: [task.label, `Tasks: Run ${task.label}`],
+        verb: "run",
+        run: (ctx) => {
+          ctx.navigate("code");
+          dispatchCodeCommand(projectTaskCommandId(workId, task.id));
+          ctx.callbacks.close();
+        },
+      };
+    });
+}
+
+export function codeCommandIdFromEvent(event: Event): string | null {
+  const detail = (event as CustomEvent<CodeCommandDetail | string>).detail;
+  if (typeof detail === "string") return detail.trim() || null;
+  return detail?.id?.trim() || null;
+}
 
 export function dispatchCodeCommand(id: string) {
   if (typeof window === "undefined") return;
@@ -27,7 +100,7 @@ function chordHint(commandId: string, fallback: string): string {
 }
 
 export function buildCodeCommands(): WorkshopCommand[] {
-  return [
+  const commands: WorkshopCommand[] = [
     {
       id: "workbench.action.showCommands",
       section: "do",
@@ -191,6 +264,206 @@ export function buildCodeCommands(): WorkshopCommand[] {
       run: (ctx) => {
         ctx.navigate("code");
         dispatchCodeCommand("workbench.view.testing");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.tasks.runPrimary",
+      section: "do",
+      label: "Run Project",
+      subtitle: "Run the selected project command",
+      keywords: "run project task start launch play",
+      aliases: ["Run Project", "Tasks: Run Project", "workbench.action.tasks.runTask"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.action.tasks.runPrimary");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.tasks.build",
+      section: "do",
+      label: "Build Project",
+      subtitle: "Run the detected project build",
+      keywords: "build compile project task",
+      aliases: ["Build Project", "Tasks: Run Build Task"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.action.tasks.build");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.tasks.test",
+      section: "do",
+      label: "Test Project",
+      subtitle: "Run the detected project test command",
+      keywords: "test project task unit integration",
+      aliases: ["Test Project", "Tasks: Run Test Task"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.action.tasks.test");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "testing.runAtCursor",
+      section: "do",
+      label: "Run Nearest Test",
+      subtitle: "Run the nearest addressable Rust, Python, or Go test",
+      keywords: "test nearest cursor focused unit rust python go",
+      aliases: ["Run Nearest Test", "Test: Run Test at Cursor", "testing.runAtCursor"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("testing.runAtCursor");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.tasks.verify",
+      section: "do",
+      label: "Check Project",
+      subtitle: "Run the detected project verification command",
+      keywords: "check verify lint project task",
+      aliases: ["Check Project", "Verify Project", "Tasks: Run Verify Task"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.action.tasks.verify");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.tasks.rerunLast",
+      section: "do",
+      label: "Rerun Last Project Command",
+      subtitle: "Repeat the exact previous task or targeted test",
+      keywords: "rerun repeat last task test build",
+      aliases: ["Rerun Last Task", "Tasks: Rerun Last"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.action.tasks.rerunLast");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.tasks.terminate",
+      section: "do",
+      label: "Stop Running Project Command",
+      subtitle: "Stop the active Forge project task",
+      keywords: "stop terminate cancel task process",
+      aliases: ["Stop Task", "Terminate Task", "Tasks: Terminate Task"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.action.tasks.terminate");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.files.saveAll",
+      section: "do",
+      label: "Save All Files",
+      subtitle: `${chordHint("workbench.action.files.saveAll", "Mod+Shift+S")} — save every modified project file`,
+      keywords: "save all files dirty modified editor vscode",
+      aliases: ["Save All", "File: Save All", "workbench.action.files.saveAll"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.action.files.saveAll");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "editor.action.formatDocument",
+      section: "do",
+      label: "Format Document",
+      subtitle: `${chordHint("editor.action.formatDocument", "Shift+Alt+F")} — use the active language formatter`,
+      keywords: "format document editor language vscode",
+      aliases: ["Format Document", "Editor: Format Document", "editor.action.formatDocument"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("editor.action.formatDocument");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "editor.action.rename",
+      section: "do",
+      label: "Rename Symbol",
+      subtitle: `${chordHint("editor.action.rename", "F2")} — preview a language-aware rename`,
+      keywords: "rename symbol refactor editor vscode f2",
+      aliases: ["Rename Symbol", "Editor: Rename Symbol", "editor.action.rename"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("editor.action.rename");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.files.newFile",
+      section: "do",
+      label: "New Project File",
+      subtitle: "Create a file in the governed project Explorer",
+      keywords: "new create file explorer project vscode",
+      aliases: ["New File", "File: New File", "workbench.action.files.newFile"],
+      verb: "create",
+      run: (ctx) => {
+        ctx.navigate("code");
+        lmeWorkspace.setExplorerMode("code");
+        dispatchCodeCommand("workbench.action.files.newFile");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.files.newFolder",
+      section: "do",
+      label: "New Project Folder",
+      subtitle: "Create a folder in the governed project Explorer",
+      keywords: "new create folder directory explorer project vscode",
+      aliases: ["New Folder", "File: New Folder", "workbench.action.files.newFolder"],
+      verb: "create",
+      run: (ctx) => {
+        ctx.navigate("code");
+        lmeWorkspace.setExplorerMode("code");
+        dispatchCodeCommand("workbench.action.files.newFolder");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.files.revert",
+      section: "do",
+      label: "Revert Active File",
+      subtitle: "Reload the project version after confirming dirty changes",
+      keywords: "revert reload discard file editor vscode",
+      aliases: ["Revert File", "Reload File", "File: Revert File", "workbench.action.files.revert"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("workbench.action.files.revert");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "workbench.action.files.revealInExplorer",
+      section: "go",
+      label: "Reveal Active File in Explorer",
+      subtitle: "Select the current file in the project tree",
+      keywords: "reveal active file explorer tree vscode",
+      aliases: ["Reveal in Explorer", "File: Reveal in Explorer", "workbench.action.files.revealInExplorer"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        lmeWorkspace.setExplorerMode("code");
+        dispatchCodeCommand("workbench.action.files.revealInExplorer");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "medousa.code.repairLanguageSupport",
+      section: "do",
+      label: "Repair Language Support",
+      subtitle: "Install or restart the active project language tooling",
+      keywords: "repair language server lsp install package editor",
+      aliases: ["Repair Language Support", "Language: Repair Support"],
+      run: (ctx) => {
+        ctx.navigate("code");
+        dispatchCodeCommand("medousa.code.repairLanguageSupport");
         ctx.callbacks.close();
       },
     },
@@ -359,4 +632,6 @@ export function buildCodeCommands(): WorkshopCommand[] {
       },
     },
   ];
+  const workId = undertakings.detail?.id ?? undertakings.active?.workId ?? "";
+  return [...commands, ...buildProjectTaskCommands(workId)];
 }

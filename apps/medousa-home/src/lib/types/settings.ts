@@ -10,7 +10,7 @@ export type SettingsSectionId =
   | "mcp"
   | "basement";
 
-/** Quiet TOC groups — unlabeled app block, then this host. */
+/** Quiet TOC groups — Medousa-wide settings, then this host. */
 export type SettingsSectionGroupId = "app" | "machine";
 
 /** Mobile settings pager order — every section, one at a time with arrows. */
@@ -38,10 +38,10 @@ export function settingsMobileSections(): SettingsSectionId[] {
 
 export const SETTINGS_SECTION_GROUPS: {
   id: SettingsSectionGroupId;
-  /** Empty = no header in the rail (top app block). Machine label is dynamic. */
+  /** Machine label is resolved dynamically for the current environment. */
   label: string;
 }[] = [
-  { id: "app", label: "" },
+  { id: "app", label: "Medousa" },
   { id: "machine", label: "" },
 ];
 

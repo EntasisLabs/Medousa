@@ -2,7 +2,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::session::{ConversationTurn, SessionHistorySummary};
+use crate::session::{
+    AuthorityId, ContextManifestId, ConversationRangeSelection, ConversationTurn, PromptStashId,
+    SessionDerivation, SessionHistorySummary, SessionRef, TranscriptEntry,
+};
 use crate::stage_routing::StageRoutingMatrix;
 use crate::turn::HostTurnContext;
 
@@ -353,6 +356,7 @@ pub struct CreateSessionRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct CreateSessionResponse {
+    pub authority_id: AuthorityId,
     pub session_id: String,
     pub catalog: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -361,6 +365,98 @@ pub struct CreateSessionResponse {
     pub member_profile_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_profile_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct DeriveSessionTarget {
+    /// Phase 1 accepts `single` only. The field is explicit so shared/export
+    /// policy can evolve without changing the derivation primitive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct DeriveSessionRequest {
+    pub sources: Vec<ConversationRangeSelection>,
+    /// Descriptive audit metadata such as `fork`, `work_context`, or
+    /// `worker_context`; it does not select a different persistence path.
+    pub intent: String,
+    pub target: DeriveSessionTarget,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct DeriveSessionResponse {
+    pub authority_id: AuthorityId,
+    pub session_id: String,
+    pub catalog: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    pub derivation: SessionDerivation,
+    /// True when this idempotency key had already committed the same request.
+    pub reused: bool,
+}
+
+/// User-created composer state. Unlike automatic Home draft recovery, this is
+/// explicit, daemon-owned, and portable across clients of the same authority.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct PromptStashDraft {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub media_refs: Vec<MediaRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct PromptStash {
+    pub stash_id: PromptStashId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    pub draft: PromptStashDraft,
+    /// Optional durable context selection resolved by an earlier derivation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_manifest_id: Option<ContextManifestId>,
+    /// Session in which the explicit stash was created. Navigation hint only;
+    /// it does not grant access or imply a context selection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_session: Option<SessionRef>,
+    pub created_by: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CreatePromptStashRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    pub draft: PromptStashDraft,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_manifest_id: Option<ContextManifestId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_session: Option<SessionRef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct PromptStashListResponse {
+    pub stashes: Vec<PromptStash>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct DeletePromptStashResponse {
+    pub stash_id: PromptStashId,
+    pub deleted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -390,9 +486,37 @@ pub struct SessionHistoryListResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
-pub struct SessionHistoryResponse {
+pub struct SessionTranscriptSearchRequest {
+    /// Text to search across user- and assistant-visible transcript prose.
+    pub q: String,
+    /// Maximum matching turns to return (default 20, maximum 100).
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SessionTranscriptSearchHit {
     pub session_id: String,
-    pub turns: Vec<ConversationTurn>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    pub role: String,
+    pub timestamp: DateTime<Utc>,
+    pub excerpt: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SessionTranscriptSearchResponse {
+    pub query: String,
+    pub hits: Vec<SessionTranscriptSearchHit>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SessionHistoryResponse {
+    pub authority_id: AuthorityId,
+    pub session_id: String,
+    pub turns: Vec<TranscriptEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -110,12 +110,21 @@ a private Code IDE chrome.
   current file visible in both panes; drag a tab to a pane edge to move it.
   Directional pane focus (`Ctrl+;` then hjkl) follows on-screen geometry.
   Code Back/Forward restores the remembered pane when that group still exists.
-  Problems, Structure, Search, Changes, Tests, and the Terminal dock restore with the project
-  (`workspace-state` layout); they are not permanent chrome across Chat or Notes.
+  Problems, Structure, Search, Changes, Tests, the selected project command,
+  and the Terminal dock restore with the project (`workspace-state` layout);
+  they are not permanent chrome across Chat or Notes.
   `Cmd/Ctrl+Shift+P` opens Spotlight in command mode (`>`). Code actions also
-  appear under familiar VS Code names (Quick Open, Search, Changes, Problems, Output, Terminal, Tests).
-  A small allowlist of chords can be overridden in storage; a Settings keybinding
-  editor is not shipped yet.
+  appear under familiar VS Code names (Quick Open, Search, Changes, Problems,
+  Output, Terminal, Tests, Run Project, Build Project, Test Project, Save All,
+  Format Document, Rename Symbol, New File, New Folder, Revert, Reveal in
+  Explorer, and Repair Language Support). Editor menus, Explorer buttons,
+  keyboard shortcuts, and Spotlight dispatch those shared commands.
+  Settings → Preferences → Code exposes the bounded shortcut subset that is
+  actually remappable. Focus a shortcut and press its replacement; conflicts
+  are rejected and each override can be reset independently.
+  Every detected project configuration also contributes a scoped **Run Task:
+  …** Spotlight entry with its root, command, and repair reason. Selecting one
+  remembers it as that project's primary command.
 - The Code explorer lists tracked and unignored repository files. `Cmd/Ctrl+P`
   opens Quick Open with fuzzy path matching: type a file name, `@` plus a name
   for project symbols, or `:` plus a number to jump to a line. `Cmd/Ctrl+Shift+F`
@@ -135,6 +144,11 @@ a private Code IDE chrome.
 - New file and New folder are available in the repository explorer. Nested
   parents are created as needed. Rename and delete work on the selected file or
   folder (folder ops apply one guarded multi-file transaction).
+- Settings → Preferences → Code also owns bounded human-workbench behavior:
+  optional format-on-save for the active language-aware file, optional 1.2
+  second autosave, save-all or require-clean run preflight, and whether failed
+  task matchers open Problems. The selected primary task remains scoped to the
+  project and is changed from the Code command bar.
 - Open files become project-scoped shell tabs with independent unsaved drafts.
   Cursor targets and protected draft recovery survive view changes and app
   restarts. If the file changed outside Medousa, the recovered draft remains
@@ -144,8 +158,10 @@ a private Code IDE chrome.
   the explorer; symbol crumbs jump to the definition line. A slim operator
   strip shows who edits, dirty count, issues, and last verification. The
   status bar shows find/save/open hints, `Ln`/`Col`, indentation, language id,
-  and session ownership. **View** toggles word wrap and line numbers. Saves
-  whisper `Saving…` / timed `Saved`.
+  and session ownership. Language failures stay compact there; select
+  **Language issue** for the full message plus Problems, logs, restart, and
+  repair actions. **View** toggles word wrap and line numbers. Saves whisper
+  `Saving…` / timed `Saved`.
 - File and folder create/rename/delete begin or reuse the editing session and
   remain inside the working copy; rename/delete refuse unsaved open drafts and
   use change-conflict protection.
@@ -204,32 +220,68 @@ changes — so decide/approve/finish never forks by author.
 
 ## Run and test
 
-Medousa derives safe project commands from repository manifests instead of
-asking you to type or approve arbitrary command lines. Rust, Go, JavaScript,
-Python, Make, and .NET projects can contribute checks, tests, builds, and
-development processes at the same time, including in mixed repositories.
+Medousa derives safe project commands from manifests at the repository root and
+in bounded nested project roots instead of asking you to approve arbitrary
+command lines. Rust, Go, JavaScript, Python, Make, and .NET projects can
+contribute checks, tests, builds, and development processes. JavaScript roots
+use their bun, pnpm, Yarn, or npm lockfile rather than assuming npm. A nested
+command runs in the directory shown beside its name in the command picker.
+Use a root `.vscode/tasks.json` entry or Terminal when the desired application
+is not detected yet.
 
-- Run, Test, and Build start named project runs. A running command becomes a
-  **Stop** action and can be cancelled without closing the project or Terminal.
+Commands whose executable or JavaScript dependencies are missing remain visible
+as **unavailable** instead of failing after a save or lease transition. Hover
+the disabled Run control for the workshop-machine repair instruction, install
+the tool or dependencies at the stated root, and reopen the project to refresh
+the catalog. Medousa prefers a healthy development/run task, then build, test,
+and check commands; an explicit selection remains the project default.
+
+- The project command bar remains available before a file is opened. Choose a
+  command and select **Run**; Medousa remembers that selection for the project.
+  Run saves every dirty Code buffer first and does not start if a save conflict
+  needs attention. A running command becomes a **Stop** action and can be
+  cancelled without closing the project or Terminal.
 - **Output** is the named task channel (`Task: …`). It streams stdout/stderr while
   a check runs, shows **ready** for background/dev servers, lists clickable
   problem locations, and offers **Open in Browser** for detected loopback URLs
   (direct on a co-located workshop; tokenized private proxy when remote).
-  Spotlight **Output** toggles the panel; runs open it automatically.
+  Spotlight **Output** toggles the panel. Long-running applications open it
+  automatically; short successful checks stay quiet when it was closed.
 - Safe entries from `.vscode/tasks.json` (`npm` / `shell` / `process`) merge into
   the project command list with optional problem-matcher patterns and background
   readiness. Dependency graphs and the full VS Code matcher catalog are not
   imported.
 - **Tests** progressively lists individual Rust, Python, JavaScript/TypeScript,
-  and Go tests. Open one at its definition or run only that test.
-- The latest result stays beside Code with a one-click rerun. Compiler, test,
-  and stack-trace locations open the referenced project file and line.
+  and Go tests under the nearest compatible nested-project runner. Open one at
+  its definition, run it, and see the latest retained passed/failed state beside
+  it. **Run Nearest Test** is available from Spotlight and the editor context
+  menu for addressable Rust, Python, and Go providers. JavaScript package
+  runners currently narrow to the file, so Medousa does not mislabel them as a
+  stable nearest named-test action.
+- The latest result stays beside Code with a one-click exact rerun, including
+  the same targeted test when one was selected. Compiler, test, and stack-trace
+  locations open the referenced project file and line.
+- Active and recent runs belong to the project rather than the mounted editor.
+  Leave Code or reopen Medousa and the Output dock reconnects to the active run
+  from its next ordered event. After completion, use the Output header to switch
+  among retained recent runs. Output visibility and active/recent references
+  restore with the project; older workshops fall back to the last saved run.
+- Problems, Output, Tests, and Terminal share one feedback panel, so opening a
+  channel replaces the visible channel instead of stacking another dock. Task
+  matcher locations appear in Problems with their run identity while language
+  diagnostics remain independent. Failed matched builds open navigable
+  Problems unless **Panel on failure** is disabled in Code preferences. Output
+  includes clear, copy, exact rerun, stop, and command-reveal actions.
 - Completed checks are written into Forge command evidence. Review uses the
   latest completed result to say whether verification passed; cancelled runs
   are preserved as activity but do not pretend the revision failed.
-- Attachment of task runs to interactive PTY Terminal sessions and full OSC shell
-  integration remain later work. Terminal stays the interactive escape hatch with
-  find, path links, session switching, and run-selection.
+- Interactive and background commands run directly in one workshop PTY. Open
+  the Terminal channel to type into that same task process; hiding, reopening,
+  moving, or popping out the pane only detaches and does not restart the task.
+  Stop first sends an interrupt and changes to **Force stop** if the process
+  remains alive. Ready applications offer **Open Preview** and **Open Beside
+  Code** through Medousa's Web surface. Full OSC shell integration remains
+  later work.
 
 ## What each surface does
 

@@ -16,6 +16,19 @@ export function isVaultConflictError(err: unknown): boolean {
   );
 }
 
+/**
+ * Opaque H07 note_version for If-Match when present; digest content_hash only
+ * for legacy residents that still advertise a digest token.
+ */
+export function vaultIfMatchToken(response: {
+  note_version?: string | null;
+  note: { content_hash: string };
+}): string {
+  const version = response.note_version?.trim();
+  if (version) return version;
+  return response.note.content_hash;
+}
+
 export type VaultSaveStatus =
   | "idle"
   | "unsaved"

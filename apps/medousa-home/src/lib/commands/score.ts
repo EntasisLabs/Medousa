@@ -56,7 +56,7 @@ export function scoreCommand(command: WorkshopCommand, query: string): number {
   let score = Math.max(labelScore, bodyScore * 0.92);
   if (score <= 0) return 0;
 
-  // Verb-ish queries prefer Do / pins over long Open lists.
+  // Verb-ish queries prefer Actions / pins over long Open lists.
   if (
     (command.section === "do" || command.section === "pinned") &&
     /^(new|create|run|pin|preview|split|live|build|toggle|note|script|chat|zoom)/.test(

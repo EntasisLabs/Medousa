@@ -921,6 +921,34 @@ pub fn ensure_named_session(session_id: &str, display_name: Option<String>) {
     catalog_store().upsert_row(&session_id, &row);
 }
 
+/// Replace the read projection for an already-committed derived session.
+/// This is intentionally idempotent so a retried derivation can repair
+/// catalog visibility without double-counting copied entries.
+pub fn replace_derived_session(
+    session_id: &SessionId,
+    display_name: Option<String>,
+    profile_id: &str,
+    turns: &[ConversationTurn],
+) {
+    let mut row = SessionCatalogRow::named_session(session_id.as_str(), display_name.clone());
+    row.profile_id = Some(profile_id.to_string());
+    row.turn_count = turns.len();
+    for turn in turns {
+        row.last_activity_at = Some(turn.timestamp);
+        if let Some(preview) = preview_from_turn(turn) {
+            row.preview = preview;
+        }
+        apply_origin_from_turn(&mut row, turn);
+    }
+    if row.display_name.is_none() {
+        row.display_name = turns.iter().find_map(auto_title_from_turn);
+    }
+    if let Some(name) = row.display_name.as_deref() {
+        let _ = crate::session_meta_store::set_session_display_name(session_id.as_str(), name);
+    }
+    catalog_store().upsert_row(session_id, &row);
+}
+
 pub fn record_verification(
     session_id: &str,
     record: &VerificationRunRecord,

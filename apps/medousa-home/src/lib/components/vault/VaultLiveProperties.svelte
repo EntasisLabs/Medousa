@@ -228,12 +228,12 @@
           onclick={() => void focusTitle()}
         >
           <AlignLeft
-            size={14}
-            strokeWidth={1.75}
+            size={13}
+            strokeWidth={1.65}
             class="vault-live-properties__icon"
             aria-hidden="true"
           />
-          <span class="vault-live-properties__label">title</span>
+          <span class="vault-live-properties__label">Title</span>
         </button>
         <input
           bind:this={titleInputEl}
@@ -278,12 +278,12 @@
           onclick={() => void beginAddTag()}
         >
           <Tag
-            size={14}
-            strokeWidth={1.75}
+            size={13}
+            strokeWidth={1.65}
             class="vault-live-properties__icon"
             aria-hidden="true"
           />
-          <span class="vault-live-properties__label">tags</span>
+          <span class="vault-live-properties__label">Tags</span>
         </button>
         <div class="vault-live-properties__tags">
           {#each humanTags as tag (tag)}
@@ -360,8 +360,8 @@
         >
           <span class="vault-live-properties__key vault-live-properties__key--static">
             <Type
-              size={14}
-              strokeWidth={1.75}
+              size={13}
+              strokeWidth={1.65}
               class="vault-live-properties__icon"
               aria-hidden="true"
             />
@@ -414,38 +414,46 @@
 
       {#if addingField}
         <div
-          class="vault-live-properties__row vault-live-properties__row--active"
+          class="vault-live-properties__row vault-live-properties__row--active vault-live-properties__row--new"
           class:vault-live-properties__row--disabled={disabled}
         >
-          <input
-            bind:this={newFieldKeyEl}
-            class="vault-live-properties__key-input"
-            type="text"
-            spellcheck="false"
-            placeholder="key"
-            aria-label="New property key"
-            bind:value={newFieldKey}
-            {disabled}
-            onkeydown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                const valueEl = (event.currentTarget as HTMLInputElement)
-                  .closest(".vault-live-properties__row")
-                  ?.querySelector<HTMLInputElement>(".vault-live-properties__value");
-                valueEl?.focus();
-              }
-              if (event.key === "Escape") {
-                event.preventDefault();
-                cancelAddField();
-              }
-            }}
-          />
+          <div class="vault-live-properties__key-compose">
+            <Type
+              size={13}
+              strokeWidth={1.65}
+              class="vault-live-properties__icon"
+              aria-hidden="true"
+            />
+            <input
+              bind:this={newFieldKeyEl}
+              class="vault-live-properties__key-input"
+              type="text"
+              spellcheck="false"
+              placeholder="Key"
+              aria-label="New property key"
+              bind:value={newFieldKey}
+              {disabled}
+              onkeydown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  const valueEl = (event.currentTarget as HTMLInputElement)
+                    .closest(".vault-live-properties__row")
+                    ?.querySelector<HTMLInputElement>(".vault-live-properties__value");
+                  valueEl?.focus();
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  cancelAddField();
+                }
+              }}
+            />
+          </div>
           <div class="vault-live-properties__value-row">
             <input
               class="vault-live-properties__value"
               type="text"
               spellcheck="false"
-              placeholder="value"
+              placeholder="Empty"
               aria-label="New property value"
               bind:value={newFieldValue}
               {disabled}

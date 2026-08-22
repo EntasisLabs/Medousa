@@ -22,7 +22,7 @@
     workshopRetentionLocalHint,
     workshopRetentionReadHint,
   } from "$lib/platformCopy";
-  import { Check, ChevronDown, Moon, Sun } from "@lucide/svelte";
+  import { Check, ChevronDown, Moon, RotateCcw, Sun } from "@lucide/svelte";
   import MedousaCompanion from "$lib/components/brand/MedousaCompanion.svelte";
   import { MEDOUSA_MARK_OPTIONS } from "$lib/theme/medousaMarks";
   import {
@@ -37,6 +37,18 @@
     listCodeSyntaxThemes,
     type CodeSyntaxThemeId,
   } from "$lib/syntax/codeSyntaxThemes";
+  import {
+    readCodeWorkbenchPreferences,
+    writeCodeWorkbenchPreferences,
+    type CodeWorkbenchPreferences,
+  } from "$lib/config/codeWorkbenchPreferences";
+  import {
+    chordFromKeyboardEvent,
+    conflictingCommandForChord,
+    listRemappableBindings,
+    setChordOverride,
+  } from "$lib/commands/commandBindings";
+  import { formatCatalogKeys } from "$lib/utils/keyboardShortcutsCatalog";
 
   interface Props {
     mobile?: boolean;
@@ -72,13 +84,61 @@
   let moreOpen = $state(false);
   let liveActivityStatus = $state<LiveActivityStatus | null>(null);
   let grammar = $state<GrammarSettings>(readGrammarSettings());
+  let codePreferences = $state<CodeWorkbenchPreferences>(readCodeWorkbenchPreferences());
+  let bindingEpoch = $state(0);
+  let bindingError = $state<string | null>(null);
 
   const syntaxThemeOptions = listCodeSyntaxThemes();
   const activeSyntaxTheme = $derived(codeSyntaxThemePreference.theme);
+  const remappableBindings = $derived.by(() => {
+    void bindingEpoch;
+    return listRemappableBindings().filter((binding) => binding.defaultChord !== "literal:—");
+  });
+  const commandLabels: Record<string, string> = {
+    "workbench.action.showCommands": "Show all commands",
+    "workbench.action.quickOpen": "Quick Open",
+    "workbench.action.navigateBack": "Go back",
+    "workbench.action.navigateForward": "Go forward",
+    "workbench.action.terminal.toggleTerminal": "Toggle Terminal",
+    "workbench.action.findInFiles": "Search in files",
+    "workbench.action.files.saveAll": "Save all files",
+    "editor.action.formatDocument": "Format document",
+    "editor.action.rename": "Rename symbol",
+  };
 
   function patchGrammar(partial: Partial<GrammarSettings>) {
     grammar = { ...grammar, ...partial };
     writeGrammarSettings(grammar);
+  }
+
+  function patchCodePreferences(partial: Partial<CodeWorkbenchPreferences>) {
+    codePreferences = writeCodeWorkbenchPreferences(partial);
+  }
+
+  function captureBinding(event: KeyboardEvent, commandId: string) {
+    if (event.key === "Escape") {
+      (event.currentTarget as HTMLElement).blur();
+      return;
+    }
+    const chord = chordFromKeyboardEvent(event);
+    if (!chord) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const conflict = conflictingCommandForChord(commandId, chord);
+    if (conflict) {
+      bindingError = `${formatCatalogKeys(chord)} is already used by ${commandLabels[conflict] ?? conflict}.`;
+      return;
+    }
+    setChordOverride(commandId, chord);
+    bindingEpoch += 1;
+    bindingError = null;
+    (event.currentTarget as HTMLElement).blur();
+  }
+
+  function resetBinding(commandId: string) {
+    setChordOverride(commandId, null);
+    bindingEpoch += 1;
+    bindingError = null;
   }
 
   const retentionReadOnly = $derived(mobile || isTauriMobilePlatform());
@@ -365,6 +425,120 @@
       </div>
 
       <RoomShellOptions compact />
+    </div>
+  </div>
+
+  <div class="prefs-band">
+    <div class="prefs-band-head">
+      <h3 class="settings-subsection-heading">Code</h3>
+      <p class="settings-subsection-lead">
+        Human editing, run preflight, feedback, and the shortcuts Medousa can
+        actually remap today. Your primary task stays project-specific in the
+        Code command bar.
+      </p>
+    </div>
+
+    <div class="prefs-grid">
+      <label class="prefs-tile">
+        <span class="prefs-tile-copy">
+          <span class="prefs-tile-title">Format on save</span>
+          <span class="prefs-tile-meta">Active file, when its language supports formatting</span>
+        </span>
+        <input
+          type="checkbox"
+          class="prefs-switch"
+          checked={codePreferences.formatOnSave}
+          onchange={(event) =>
+            patchCodePreferences({
+              formatOnSave: (event.currentTarget as HTMLInputElement).checked,
+            })}
+        />
+      </label>
+
+      <label class="prefs-tile">
+        <span class="prefs-tile-copy">
+          <span class="prefs-tile-title">Autosave</span>
+          <span class="prefs-tile-meta">Save the active draft after 1.2 seconds</span>
+        </span>
+        <select
+          class="prefs-endpoint-input"
+          value={codePreferences.autosave}
+          aria-label="Code autosave"
+          onchange={(event) =>
+            patchCodePreferences({
+              autosave: (event.currentTarget as HTMLSelectElement).value as CodeWorkbenchPreferences["autosave"],
+            })}
+        >
+          <option value="off">Off</option>
+          <option value="afterDelay">After a delay</option>
+        </select>
+      </label>
+
+      <label class="prefs-tile">
+        <span class="prefs-tile-copy">
+          <span class="prefs-tile-title">Before running</span>
+          <span class="prefs-tile-meta">Never execute an unknown dirty state</span>
+        </span>
+        <select
+          class="prefs-endpoint-input"
+          value={codePreferences.runSavePolicy}
+          aria-label="Code run save policy"
+          onchange={(event) =>
+            patchCodePreferences({
+              runSavePolicy: (event.currentTarget as HTMLSelectElement).value as CodeWorkbenchPreferences["runSavePolicy"],
+            })}
+        >
+          <option value="saveAll">Save all files</option>
+          <option value="requireClean">Require saved files</option>
+        </select>
+      </label>
+
+      <label class="prefs-tile">
+        <span class="prefs-tile-copy">
+          <span class="prefs-tile-title">Panel on failure</span>
+          <span class="prefs-tile-meta">Open navigable Problems from failed tasks</span>
+        </span>
+        <input
+          type="checkbox"
+          class="prefs-switch"
+          checked={codePreferences.panelOnFailure}
+          onchange={(event) =>
+            patchCodePreferences({
+              panelOnFailure: (event.currentTarget as HTMLInputElement).checked,
+            })}
+        />
+      </label>
+    </div>
+
+    <div class="prefs-keybindings">
+      <div class="prefs-keybindings-head">
+        <div>
+          <span class="prefs-tile-title">Code shortcuts</span>
+          <p class="prefs-tile-meta">Focus a shortcut, then press its replacement. Escape cancels.</p>
+        </div>
+        {#if bindingError}<p class="prefs-keybinding-error">{bindingError}</p>{/if}
+      </div>
+      <div class="prefs-keybinding-list">
+        {#each remappableBindings as binding (binding.commandId)}
+          <div class="prefs-keybinding-row">
+            <span>{commandLabels[binding.commandId] ?? binding.commandId}</span>
+            <button
+              type="button"
+              class="prefs-keybinding-capture"
+              title="Focus, then press a new shortcut"
+              onkeydown={(event) => captureBinding(event, binding.commandId)}
+            >{formatCatalogKeys(binding.effectiveChord)}</button>
+            <button
+              type="button"
+              class="prefs-keybinding-reset"
+              aria-label={`Reset ${commandLabels[binding.commandId] ?? binding.commandId}`}
+              title="Reset shortcut"
+              disabled={!binding.overridden}
+              onclick={() => resetBinding(binding.commandId)}
+            ><RotateCcw size={12} /></button>
+          </div>
+        {/each}
+      </div>
     </div>
   </div>
 
@@ -1253,6 +1427,85 @@
   .prefs-switch:focus-visible {
     outline: 2px solid rgb(var(--theme-focus) / 0.72);
     outline-offset: 2px;
+  }
+
+  .prefs-keybindings {
+    margin-top: 0.75rem;
+    overflow: hidden;
+    border: 1px solid var(--prefs-tile-border);
+    border-radius: var(--prefs-tile-radius);
+    background: var(--prefs-tile-bg);
+  }
+
+  .prefs-keybindings-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.7rem 0.75rem;
+    border-bottom: 1px solid rgb(var(--color-surface-500) / 0.22);
+  }
+
+  .prefs-keybindings-head p {
+    margin: 0.1rem 0 0;
+  }
+
+  .prefs-keybinding-error {
+    max-width: 18rem;
+    font-size: 0.68rem;
+    line-height: 1.35;
+    color: rgb(var(--color-warning-300));
+  }
+
+  .prefs-keybinding-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  }
+
+  .prefs-keybinding-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 2.45rem;
+    padding: 0.4rem 0.7rem;
+    border-bottom: 1px solid rgb(var(--color-surface-500) / 0.16);
+    font-size: 0.73rem;
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  .prefs-keybinding-capture {
+    min-width: 5.25rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.42);
+    border-radius: 0.35rem;
+    background: rgb(var(--color-surface-950) / 0.42);
+    padding: 0.22rem 0.45rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.68rem;
+    color: rgb(var(--color-surface-100));
+  }
+
+  .prefs-keybinding-capture:focus-visible {
+    outline: 2px solid rgb(var(--theme-focus) / 0.72);
+    outline-offset: 1px;
+  }
+
+  .prefs-keybinding-reset {
+    display: grid;
+    width: 1.65rem;
+    height: 1.65rem;
+    place-items: center;
+    border-radius: 0.35rem;
+    color: rgb(var(--theme-text-quiet));
+  }
+
+  .prefs-keybinding-reset:hover:not(:disabled) {
+    background: rgb(var(--color-surface-700) / 0.5);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .prefs-keybinding-reset:disabled {
+    opacity: 0.25;
   }
 
   .prefs-footnote {

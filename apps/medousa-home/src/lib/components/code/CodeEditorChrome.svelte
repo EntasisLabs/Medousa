@@ -13,7 +13,6 @@
     GitPullRequestArrow,
     Play,
     UserRound,
-    X,
     Search,
     GitBranch,
   } from "@lucide/svelte";
@@ -239,6 +238,46 @@
           }}
         ><Play size={14} strokeWidth={1.75} /></button>
       {/if}
+      {#if tasks.projectTasks.length > 0}
+        <div class="code-run-control" aria-label="Project command">
+          {#if tasks.running}
+            <button
+              type="button"
+              class="code-run-button code-run-button--stop"
+              title={tasks.run ? `Stop ${tasks.run.task.label}` : "Stop project command"}
+              aria-label={tasks.run ? `Stop ${tasks.run.task.label}` : "Stop project command"}
+              onclick={() => void tasks.stopDetected()}
+            ><Square size={12} strokeWidth={2} /><span>Stop</span></button>
+          {:else}
+            <button
+              type="button"
+              class="code-run-button"
+              disabled={agentHasControl || busy || tasks.preparing || !tasks.selectedTask || !tasks.taskAvailable(tasks.selectedTask)}
+              title={agentHasControl
+                ? `Resume editing before running ${tasks.selectedTask?.label ?? "this command"}`
+                : !tasks.taskAvailable(tasks.selectedTask)
+                  ? tasks.taskRepair(tasks.selectedTask) ?? `${tasks.selectedTask?.label ?? "Command"} is unavailable`
+                : tasks.selectedTask
+                  ? `Run ${tasks.selectedTask.label}: ${tasks.selectedTask.argv.join(" ")}`
+                  : "No project command selected"}
+              aria-label={tasks.selectedTask ? `Run ${tasks.selectedTask.label}` : "Run project command"}
+              onclick={() => void tasks.runDetected()}
+            ><Play size={12} strokeWidth={2} /><span>{tasks.preparing ? "Saving…" : "Run"}</span></button>
+          {/if}
+          <select
+            class="code-run-select"
+            value={tasks.selectedTaskId}
+            disabled={tasks.running || tasks.preparing}
+            aria-label="Select project command"
+            title={tasks.selectedTask?.argv.join(" ") ?? "Select project command"}
+            onchange={(event) => tasks.selectTask(event.currentTarget.value)}
+          >
+            {#each tasks.projectTasks as task (task.id)}
+              <option value={task.id} disabled={task.available === false}>{task.label}{#if task.root && task.root !== "."} · {task.root}{/if}{#if task.available === false} · unavailable{/if}{#if task.long_running} · background{/if}</option>
+            {/each}
+          </select>
+        </div>
+      {/if}
       {#if activeTab}
         <button
           type="button"
@@ -274,16 +313,6 @@
             onclick={() => void toggleTerminalDock()}
           ><SquareTerminal size={14} strokeWidth={1.75} /></button>
         {/if}
-        {#if tasks.running}
-          <button
-            type="button"
-            class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-active"
-            title={tasks.selectedTask ? `Stop ${tasks.selectedTask.label}` : "Stop task"}
-            aria-label={tasks.selectedTask ? `Stop ${tasks.selectedTask.label}` : "Stop task"}
-            onclick={() => void tasks.stopDetected()}
-          ><X size={14} strokeWidth={1.75} /></button>
-        {/if}
-
         <span class="code-editor-chrome-divider" aria-hidden="true"></span>
 
         {#if agentHasControl && !agentRunning}
@@ -381,7 +410,7 @@
               <span class="code-chrome-menu-field-label">Project command</span>
               <select class="code-chrome-menu-select" aria-label="Project command" bind:value={tasks.selectedTaskId}>
                 {#each tasks.projectTasks as task (task.id)}
-                  <option value={task.id}>{task.label}{#if task.long_running} · background{/if}{#if task.provider === "vscode-tasks"} · tasks.json{/if}</option>
+                  <option value={task.id} disabled={task.available === false}>{task.label}{#if task.root && task.root !== "."} · {task.root}{/if}{#if task.available === false} · unavailable{/if}{#if task.long_running} · background{/if}{#if task.provider === "vscode-tasks"} · tasks.json{/if}</option>
                 {/each}
               </select>
             </label>
@@ -501,6 +530,68 @@
     width: 1px;
     flex-shrink: 0;
     background: rgb(var(--color-surface-500) / 0.35);
+  }
+
+  .code-run-control {
+    display: flex;
+    min-width: 0;
+    height: 24px;
+    align-items: stretch;
+    overflow: hidden;
+    border: 1px solid rgb(var(--color-primary-500) / 0.32);
+    border-radius: 0.35rem;
+    background: rgb(var(--color-primary-500) / 0.09);
+  }
+
+  .code-run-button {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.25rem;
+    border: 0;
+    border-right: 1px solid rgb(var(--color-primary-500) / 0.25);
+    background: rgb(var(--color-primary-500) / 0.12);
+    padding: 0 0.45rem;
+    color: rgb(var(--theme-text));
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .code-run-button:hover:not(:disabled) {
+    background: rgb(var(--color-primary-500) / 0.24);
+  }
+
+  .code-run-button:disabled {
+    cursor: default;
+    opacity: 0.45;
+  }
+
+  .code-run-button--stop {
+    border-right-color: rgb(251 113 133 / 0.25);
+    background: rgb(244 63 94 / 0.12);
+    color: rgb(254 205 211);
+  }
+
+  .code-run-select {
+    min-width: 5rem;
+    max-width: 10rem;
+    border: 0;
+    background: transparent;
+    padding: 0 1.45rem 0 0.4rem;
+    color: rgb(var(--theme-text-secondary));
+    font-size: 11px;
+    outline: none;
+    text-overflow: ellipsis;
+  }
+
+  @media (max-width: 760px) {
+    .code-run-button span {
+      display: none;
+    }
+
+    .code-run-select {
+      max-width: 7rem;
+    }
   }
 
   :global(.code-chrome-menu-item) {

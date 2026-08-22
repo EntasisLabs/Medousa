@@ -16,6 +16,7 @@ mod browser_report_bridge;
 mod browser_host_mobile;
 mod capabilities;
 mod channel_adapters;
+mod code_lsp_transport;
 mod connection_prefs;
 mod daemon;
 mod daemon_service;
@@ -61,6 +62,7 @@ mod workshop_registry;
 mod workshop_runtime;
 mod workshop_transport;
 
+use code_lsp_transport::CodeLspTransportRegistry;
 use daemon::DaemonState;
 use tauri::Manager;
 use terminal::TerminalRegistry;
@@ -303,8 +305,13 @@ fn run_home() {
     }
 
     builder
+        .manage(CodeLspTransportRegistry::default())
         .manage(TerminalRegistry::default())
         .invoke_handler(tauri::generate_handler![
+            code_lsp_transport::code_lsp_attach,
+            code_lsp_transport::code_lsp_ready,
+            code_lsp_transport::code_lsp_send,
+            code_lsp_transport::code_lsp_detach,
             terminal::terminal_info,
             terminal::terminal_sessions,
             terminal::terminal_create,
@@ -673,6 +680,10 @@ fn run_home() {
             daemon::turn_budget::turn_budget_list,
             daemon::session::session_list,
             daemon::session::session_create,
+            daemon::session::session_derive,
+            daemon::session::prompt_stash_list,
+            daemon::session::prompt_stash_create,
+            daemon::session::prompt_stash_delete,
             daemon::shared_mode::shared_mode_status,
             daemon::shared_mode::shared_mode_set,
             daemon::session::session_set_display_name,

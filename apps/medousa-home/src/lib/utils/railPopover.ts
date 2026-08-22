@@ -240,13 +240,17 @@ export function placeRailPopover(
 export function placeComposerPopover(
   trigger: HTMLElement,
   menu: HTMLElement,
-  options?: { gap?: number; pad?: number },
+  options?: { gap?: number; pad?: number; maxHeightRatio?: number },
 ): void {
   const gap = options?.gap ?? 8;
   const pad = options?.pad ?? 8;
+  const maxHeightRatio = options?.maxHeightRatio ?? 0.5;
   const view = viewportBox();
   const maxW = Math.max(0, view.width - pad * 2);
-  const maxH = Math.max(0, Math.min(view.height - pad * 2, view.height * 0.5));
+  const maxH = Math.max(
+    0,
+    Math.min(view.height - pad * 2, view.height * maxHeightRatio),
+  );
 
   menu.style.maxWidth = `${Math.round(Math.min(maxW, 20 * 16))}px`;
   menu.style.maxHeight = `${Math.round(maxH)}px`;

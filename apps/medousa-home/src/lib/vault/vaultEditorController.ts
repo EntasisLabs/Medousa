@@ -57,6 +57,7 @@ import {
 import { lineDiffStats, type LineDiffStats } from "$lib/utils/vaultDiff";
 import {
   isVaultConflictError,
+  vaultIfMatchToken,
   VAULT_AUTOSAVE_MS,
   VAULT_SAVE_ECHO_MS,
   VAULT_SAVED_WHISPER_MS,
@@ -251,7 +252,7 @@ export class VaultEditorController {
       path: key,
       content: response.content,
       baselineContent: response.content,
-      contentHash: response.note.content_hash,
+      contentHash: vaultIfMatchToken(response),
       title: response.note.title,
       dirty: false,
       contentRevision: (this.buffers.get(key)?.contentRevision ?? 0) + 1,
@@ -479,7 +480,7 @@ export class VaultEditorController {
         host.proposalActive = true;
         host.proposalContent = serverContent;
         host.proposalSource = isAgent ? "agent" : "operator";
-        host.contentHash = response.note.content_hash;
+        host.contentHash = vaultIfMatchToken(response);
         host.title = response.note.title;
         host.wikilinksOut = response.note.wikilinks_out;
         host.backlinks = response.note.backlinks;
@@ -700,6 +701,7 @@ export class VaultEditorController {
     path: string,
     writtenContent: string,
     note: VaultNoteContentResponse["note"],
+    ifMatchToken: string,
   ) {
     const host = this.#host;
     const key = normalizeVaultNotePath(path.trim()) || path.trim();
@@ -709,7 +711,7 @@ export class VaultEditorController {
         path: key,
         content: host.content,
         baselineContent: writtenContent,
-        contentHash: note.content_hash,
+        contentHash: ifMatchToken,
         title: note.title,
         dirty: host.dirty,
         contentRevision: host.contentRevision,
@@ -720,7 +722,7 @@ export class VaultEditorController {
         path: key,
         content,
         baselineContent: writtenContent,
-        contentHash: note.content_hash,
+        contentHash: ifMatchToken,
         title: note.title,
         dirty: content !== writtenContent,
         contentRevision: prior?.contentRevision ?? 0,
@@ -737,9 +739,10 @@ export class VaultEditorController {
         sessionId: workshopSessionIdForVaultSave(path),
       });
       const written = response.content ?? job.content;
+      const ifMatchToken = vaultIfMatchToken(response);
 
       if (host.isFocusedPath(path)) {
-        host.contentHash = response.note.content_hash;
+        host.contentHash = ifMatchToken;
         host.title = response.note.title;
         host.selectedKind = resolveKind(response.note.path, response.note.kind);
         host.wikilinksOut = response.note.wikilinks_out;
@@ -754,7 +757,7 @@ export class VaultEditorController {
         }
       }
 
-      this.patchBufferAfterSave(path, written, response.note);
+      this.patchBufferAfterSave(path, written, response.note, ifMatchToken);
 
       invalidateMedousaViewCache(path);
       invalidateTransclusionCache(path);
@@ -766,7 +769,7 @@ export class VaultEditorController {
 
       return {
         ok: true,
-        contentHash: response.note.content_hash,
+        contentHash: ifMatchToken,
         writtenContent: written,
       };
     } catch (err) {

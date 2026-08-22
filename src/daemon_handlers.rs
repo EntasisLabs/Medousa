@@ -1,6 +1,6 @@
 use axum::Json;
 use axum::extract::{Extension, Path as AxumPath, Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use std::sync::Arc;
 
 fn validated_session_id(session_id: String) -> Result<String, (StatusCode, String)> {
@@ -13,21 +13,85 @@ use stasis::ports::outbound::memory::memory_operations::MemoryOperations;
 
 use crate::daemon_api::{
     AgentModeListResponse, AgentModeProposalListResponse, AgentModeProposalResponse,
-    AgentModeScope, AgentModeTransitionPolicy, CreateSessionRequest, CreateSessionResponse,
-    DecideAgentModeProposalRequest, SessionAgentModeResponse, SessionAppendTurnRequest,
-    SessionAppendTurnResponse, SessionCodeBindingResponse, SessionDeleteQuery,
-    SessionDeleteResponse, SessionHistoryListRequest, SessionHistoryListResponse,
-    SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
-    SetSessionAgentModeRequest, SetSessionCodeBindingRequest,
+    AgentModeScope, AgentModeTransitionPolicy, CreatePromptStashRequest, CreateSessionRequest,
+    CreateSessionResponse, DecideAgentModeProposalRequest, DeletePromptStashResponse,
+    DeriveSessionRequest, DeriveSessionResponse, PromptStash, PromptStashListResponse,
+    SessionAgentModeResponse, SessionAppendTurnRequest, SessionAppendTurnResponse,
+    SessionCodeBindingResponse, SessionDeleteQuery, SessionDeleteResponse,
+    SessionHistoryListRequest, SessionHistoryListResponse, SessionHistoryResponse,
+    SessionSetDisplayNameRequest, SessionSetDisplayNameResponse, SessionTranscriptSearchHit,
+    SessionTranscriptSearchRequest, SessionTranscriptSearchResponse, SetSessionAgentModeRequest,
+    SetSessionCodeBindingRequest,
 };
 use crate::shared_session_catalog::SessionCatalogKind;
 use crate::turn_ticket::TurnTicketRegistry;
+use medousa_types::PromptStashId;
 
 #[derive(Clone)]
 pub struct SessionDeleteState {
     pub memory_operations: Option<Arc<dyn MemoryOperations>>,
     pub turn_tickets: TurnTicketRegistry,
     pub turn_streams: Option<crate::daemon::turn_stream_registry::TurnStreamRegistry>,
+}
+
+pub async fn search_session_transcripts(
+    Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
+    Query(request): Query<SessionTranscriptSearchRequest>,
+) -> Result<Json<SessionTranscriptSearchResponse>, (StatusCode, String)> {
+    let query = request.q.trim();
+    if query.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "q is required".to_string()));
+    }
+    if query.chars().count() > crate::session_store::MAX_TRANSCRIPT_SEARCH_QUERY_CHARS {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!(
+                "q must be at most {} characters",
+                crate::session_store::MAX_TRANSCRIPT_SEARCH_QUERY_CHARS
+            ),
+        ));
+    }
+    let limit = request.limit.unwrap_or(20).clamp(1, 100);
+    let profile_id = principal
+        .profile_id()
+        .map(str::to_string)
+        .unwrap_or_else(crate::user_profiles::resolve_workshop_identity_user_id);
+    let visible_sessions = crate::session::list_history_sessions_page_for_profile(
+        Some(&profile_id),
+        10_000,
+        None,
+        None,
+    )
+    .sessions
+    .into_iter()
+    .filter(|session| {
+        crate::session_catalog::session_visible_to_profile(&session.session_id, &profile_id)
+    })
+    .collect::<Vec<_>>();
+    let session_ids = visible_sessions
+        .iter()
+        .map(|session| session.session_id.clone())
+        .collect::<Vec<_>>();
+    let display_names = visible_sessions
+        .into_iter()
+        .map(|session| (session.session_id, session.display_name))
+        .collect::<std::collections::HashMap<_, _>>();
+    let hits = crate::session_store::get_session_store()
+        .search_transcripts(&session_ids, query, limit)
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+        .into_iter()
+        .map(|hit| SessionTranscriptSearchHit {
+            display_name: display_names.get(&hit.session_id).cloned().flatten(),
+            session_id: hit.session_id,
+            role: hit.role,
+            timestamp: hit.timestamp,
+            excerpt: hit.excerpt,
+        })
+        .collect();
+    Ok(Json(SessionTranscriptSearchResponse {
+        query: query.to_string(),
+        hits,
+    }))
 }
 
 /// Session history HTTP handlers extracted to library so they can be tested.
@@ -69,6 +133,9 @@ pub async fn create_session(
     Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
     Json(request): Json<CreateSessionRequest>,
 ) -> Result<Json<CreateSessionResponse>, (StatusCode, String)> {
+    let authority_id = crate::workshop_authority::current()
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?
+        .clone();
     let catalog = SessionCatalogKind::parse(request.catalog.as_deref());
     if request.session_id.is_some() {
         return Err((
@@ -88,6 +155,7 @@ pub async fn create_session(
         SessionCatalogKind::Single => {
             crate::session_catalog::ensure_named_session(&session_id, display_name.clone());
             Ok(Json(CreateSessionResponse {
+                authority_id,
                 session_id,
                 catalog: catalog.as_str().to_string(),
                 display_name,
@@ -121,6 +189,7 @@ pub async fn create_session(
                 let _ = crate::session_meta_store::set_session_display_name(&session_id, name);
             }
             Ok(Json(CreateSessionResponse {
+                authority_id,
                 session_id: row.session_id,
                 catalog: catalog.as_str().to_string(),
                 display_name: row.display_name,
@@ -131,13 +200,121 @@ pub async fn create_session(
     }
 }
 
+pub async fn derive_session(
+    Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
+    headers: HeaderMap,
+    Json(request): Json<DeriveSessionRequest>,
+) -> Result<Json<DeriveSessionResponse>, (StatusCode, String)> {
+    let idempotency_key = headers
+        .get("idempotency-key")
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                "Idempotency-Key header is required".to_string(),
+            )
+        })?
+        .to_str()
+        .map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                "Idempotency-Key header is invalid".to_string(),
+            )
+        })?;
+    crate::context_derivation::derive_session(&principal, request, idempotency_key)
+        .await
+        .map(Json)
+        .map_err(|error| {
+            let status = match error.kind {
+                crate::context_derivation::DerivationErrorKind::Invalid => StatusCode::BAD_REQUEST,
+                crate::context_derivation::DerivationErrorKind::Forbidden => StatusCode::FORBIDDEN,
+                crate::context_derivation::DerivationErrorKind::Conflict => StatusCode::CONFLICT,
+                crate::context_derivation::DerivationErrorKind::Internal => {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                }
+            };
+            (status, error.message)
+        })
+}
+
+fn principal_profile_id(principal: &crate::request_principal::RequestPrincipal) -> String {
+    principal
+        .profile_id()
+        .map(str::to_string)
+        .unwrap_or_else(crate::user_profiles::resolve_workshop_identity_user_id)
+}
+
+pub async fn create_prompt_stash(
+    Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
+    Json(request): Json<CreatePromptStashRequest>,
+) -> Result<(StatusCode, Json<PromptStash>), (StatusCode, String)> {
+    let profile_id = principal_profile_id(&principal);
+    if let Some(source) = request.source_session.as_ref() {
+        let authority = crate::workshop_authority::current()
+            .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?;
+        if &source.authority_id != authority
+            || !crate::session_catalog::session_visible_to_profile(
+                source.session_id.as_str(),
+                &profile_id,
+            )
+        {
+            return Err((
+                StatusCode::FORBIDDEN,
+                "source session is not available".to_string(),
+            ));
+        }
+    }
+    let stash = tokio::task::spawn_blocking(move || {
+        crate::prompt_stash::PromptStashStore::daemon_default().create(&profile_id, request)
+    })
+    .await
+    .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+    .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
+    Ok((StatusCode::CREATED, Json(stash)))
+}
+
+pub async fn list_prompt_stashes(
+    Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
+) -> Result<Json<PromptStashListResponse>, (StatusCode, String)> {
+    let profile_id = principal_profile_id(&principal);
+    let stashes = tokio::task::spawn_blocking(move || {
+        crate::prompt_stash::PromptStashStore::daemon_default().list(&profile_id)
+    })
+    .await
+    .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+    .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?;
+    Ok(Json(PromptStashListResponse { stashes }))
+}
+
+pub async fn delete_prompt_stash(
+    Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
+    AxumPath(stash_id): AxumPath<String>,
+) -> Result<Json<DeletePromptStashResponse>, (StatusCode, String)> {
+    let stash_id = PromptStashId::parse(stash_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let profile_id = principal_profile_id(&principal);
+    let response = tokio::task::spawn_blocking(move || {
+        crate::prompt_stash::PromptStashStore::daemon_default().delete(&profile_id, &stash_id)
+    })
+    .await
+    .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+    .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?;
+    Ok(Json(response))
+}
+
 pub async fn get_session_history(
     AxumPath(session_id): AxumPath<String>,
 ) -> Result<Json<SessionHistoryResponse>, (StatusCode, String)> {
     let session_id = validated_session_id(session_id)?;
 
-    let turns = crate::session::load_history(&session_id);
-    Ok(Json(SessionHistoryResponse { session_id, turns }))
+    let turns = crate::session::load_transcript_entries(&session_id);
+    let authority_id = crate::workshop_authority::current()
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?
+        .clone();
+    Ok(Json(SessionHistoryResponse {
+        authority_id,
+        session_id,
+        turns,
+    }))
 }
 
 pub async fn append_session_turn(

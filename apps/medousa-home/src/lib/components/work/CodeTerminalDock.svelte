@@ -24,7 +24,7 @@
 </script>
 
 {#if open}
-  <div class="flex h-52 shrink-0 flex-col border-t border-surface-500/35 bg-[#0c0a09] sm:h-56">
+  <div class="flex h-52 shrink-0 flex-col bg-[#0c0a09] sm:h-56">
     <div class="min-h-0 flex-1">
       {#if sessionId}
         {#key sessionId}

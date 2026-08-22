@@ -6,6 +6,7 @@
   import { onDestroy, onMount } from "svelte";
   import { userWhisperHook } from "$lib/utils/chatTurnBeats";
   import LiquidChatMessage from "$lib/components/chat/LiquidChatMessage.svelte";
+  import ChatForkMenu from "$lib/components/chat/ChatForkMenu.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import type { ChatMessage } from "$lib/types/chat";
   import { hostContextLabel } from "$lib/types/turnParts";
@@ -20,6 +21,9 @@
     /** Keep open for the latest turn while the assistant is streaming. */
     forceExpand?: boolean;
     onSubmitIntent?: (text: string) => void;
+    onFork?: (includeDraft: boolean) => void | Promise<void>;
+    forkBusy?: boolean;
+    forkHasDraft?: boolean;
   }
 
   let {
@@ -30,6 +34,9 @@
     scrollRoot = null,
     forceExpand = false,
     onSubmitIntent,
+    onFork,
+    forkBusy = false,
+    forkHasDraft = false,
   }: Props = $props();
 
   let rootEl: HTMLElement | undefined = $state();
@@ -136,6 +143,16 @@
       {#if contextLabel}
         <div class="chat-user-whisper-context" title="Context supplied with this turn">
           {contextLabel}
+        </div>
+      {/if}
+      {#if onFork}
+        <div class="chat-user-whisper-actions">
+          <ChatForkMenu
+            hasDraft={forkHasDraft}
+            busy={forkBusy}
+            {mobile}
+            {onFork}
+          />
         </div>
       {/if}
     </div>
@@ -253,6 +270,17 @@
     white-space: nowrap;
     font-size: 0.625rem;
     line-height: 1.35;
+  }
+
+  .chat-user-whisper-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 0.2rem;
+  }
+
+  .chat-user-whisper:hover .chat-user-whisper-actions :global(.chat-turn-action),
+  .chat-user-whisper:focus-within .chat-user-whisper-actions :global(.chat-turn-action) {
+    opacity: 1;
   }
 
   @media (prefers-reduced-motion: reduce) {

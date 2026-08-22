@@ -8,6 +8,7 @@
     | "type_definition"
     | "implementation"
     | "references"
+    | "run_nearest_test"
     | "rename"
     | "format"
     | "organize_imports"
@@ -24,6 +25,7 @@
     canTypeDefinition?: boolean;
     canImplementation?: boolean;
     canReference?: boolean;
+    canRunNearestTest?: boolean;
     canRename?: boolean;
     canFormat?: boolean;
     canOrganize?: boolean;
@@ -41,6 +43,7 @@
     canTypeDefinition = false,
     canImplementation = false,
     canReference = false,
+    canRunNearestTest = false,
     canRename = false,
     canFormat = false,
     canOrganize = false,
@@ -102,6 +105,7 @@
     <button type="button" class="vault-context-menu-item" role="menuitem" disabled={!canTypeDefinition} onclick={() => run("type_definition")}>Go to Type Definition</button>
     <button type="button" class="vault-context-menu-item" role="menuitem" disabled={!canImplementation} onclick={() => run("implementation")}>Go to Implementations</button>
     <button type="button" class="vault-context-menu-item" role="menuitem" disabled={!canReference} onclick={() => run("references")}>Find Uses</button>
+    <button type="button" class="vault-context-menu-item" role="menuitem" disabled={!canRunNearestTest} onclick={() => run("run_nearest_test")}>Run Nearest Test</button>
     <button type="button" class="vault-context-menu-item" role="menuitem" disabled={!canRename || !editable} onclick={() => run("rename")}>Rename Symbol…</button>
     <div class="vault-context-menu-sep" aria-hidden="true"></div>
     <button type="button" class="vault-context-menu-item" role="menuitem" disabled={!canFormat || !editable} onclick={() => run("format")}>Format Document</button>

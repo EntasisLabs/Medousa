@@ -192,8 +192,23 @@
 
   function syncDupTitleHeading() {
     if (!hostEl) return;
-    const h1 = hostEl.querySelector(".ProseMirror > h1:first-child");
-    if (!(h1 instanceof HTMLElement)) return;
+    const prose = hostEl.querySelector(".ProseMirror");
+    if (!(prose instanceof HTMLElement)) return;
+    // Frontmatter stripping and markdown imports can leave empty paragraphs
+    // ahead of the document title. Treat the first substantive block as the
+    // leading block instead of requiring the H1 to be the literal first child.
+    const leadingBlock = [...prose.children].find((child) => {
+      if (!(child instanceof HTMLElement)) return false;
+      if (child.tagName === "H1") return true;
+      return Boolean(child.textContent?.trim());
+    });
+    const h1 = leadingBlock?.tagName === "H1" ? leadingBlock : null;
+    if (!(h1 instanceof HTMLElement)) {
+      prose
+        .querySelector(":scope > h1.vault-live-h1--dup-title")
+        ?.classList.remove("vault-live-h1--dup-title");
+      return;
+    }
     // Skip contenteditable=false widgets (heading `#` marks, chips). Those
     // pollute textContent and flip vault-live-h1--dup-title, which pulls the
     // H1 out of flow and shifts the whole note on the type path.

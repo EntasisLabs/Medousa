@@ -70,6 +70,25 @@ export function buildVaultTree(
     }
 
     const prefix = space.prefix;
+    if (space.id === VAULT_OTHER_SPACE.id) {
+      const otherChildren = buildPathTree(bucket, prefix, space.id);
+      const promotedFolders = otherChildren.filter((node) => node.isFolder);
+      const looseNotes = otherChildren.filter((node) => !node.isFolder);
+      roots.push(...promotedFolders);
+      if (looseNotes.length > 0) {
+        roots.push({
+          name: "loose-notes",
+          path: null,
+          displayLabel: "Loose notes",
+          children: looseNotes,
+          isFolder: true,
+          noteCount: looseNotes.length,
+          dropPrefix: "",
+          defaultCollapsed: true,
+        });
+      }
+      continue;
+    }
     roots.push({
       name: space.id,
       path: null,
@@ -141,7 +160,18 @@ function buildPathTree(
   }
 
   sortTree(root);
+  annotateFolderCounts(root);
   return root.children;
+}
+
+function annotateFolderCounts(node: VaultTreeNode): number {
+  if (!node.isFolder) return node.path ? 1 : 0;
+  const count = node.children.reduce(
+    (total, child) => total + annotateFolderCounts(child),
+    0,
+  );
+  node.noteCount = count;
+  return count;
 }
 
 function folderPrefixForNotePath(path: string): string {

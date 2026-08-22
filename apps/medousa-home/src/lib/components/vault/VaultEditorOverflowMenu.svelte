@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     BookOpen,
+    Code2,
     Columns3,
     Ellipsis,
     FileDown,
@@ -26,6 +27,7 @@
   interface MenuItem {
     id: string;
     label: string;
+    value?: string;
     shortcut?: string;
     icon?: Component;
     disabled?: boolean;
@@ -282,6 +284,7 @@
         label: exportingPdf ? "Preparing PDF…" : "Export PDF…",
         shortcut: exportingPdf ? undefined : formatShortcut("⇧P"),
         icon: FileDown,
+        dividerBefore: rows.length > 0,
         disabled: exportingPdf || noteLoading,
         onClick: async () => {
           open = false;
@@ -295,6 +298,7 @@
         id: "export-word",
         label: exportingWord ? "Preparing Word…" : "Export Word…",
         icon: FileType2,
+        dividerBefore: !onExportPdf && rows.length > 0,
         disabled: exportingWord || noteLoading,
         onClick: async () => {
           open = false;
@@ -306,9 +310,9 @@
     if (onCycleReadingPalette) {
       rows.push({
         id: "reading-palette",
-        label: readingPaletteLabel
-          ? `Reading: ${readingPaletteLabel}`
-          : "Reading palette",
+        label: "Reading theme",
+        value: readingPaletteLabel ?? "Default",
+        icon: BookOpen,
         dividerBefore: true,
         onClick: () => {
           onCycleReadingPalette();
@@ -319,9 +323,9 @@
     if (onToggleHideLiveMarkdownSyntax) {
       rows.push({
         id: "hide-live-syntax",
-        label: hideLiveMarkdownSyntax
-          ? "Show markdown marks"
-          : "Hide markdown marks",
+        label: "Markdown marks",
+        value: hideLiveMarkdownSyntax ? "Hidden" : "Visible",
+        icon: Code2,
         onClick: () => {
           onToggleHideLiveMarkdownSyntax();
         },
@@ -331,7 +335,9 @@
     if (onCyclePaperWidth) {
       rows.push({
         id: "paper-width",
-        label: paperWidthLabel ? `Paper: ${paperWidthLabel}` : "Paper width",
+        label: "Paper width",
+        value: paperWidthLabel ?? "Default",
+        icon: Columns3,
         onClick: () => {
           onCyclePaperWidth();
         },
@@ -453,7 +459,7 @@
     if (onOpenNoteActions) {
       rows.push({
         id: "note-actions",
-        label: "Rename / move / delete…",
+        label: "Manage note…",
         icon: Move,
         disabled: noteLoading,
         dividerBefore: true,
@@ -553,16 +559,20 @@
             disabled={item.disabled}
             onclick={() => void item.onClick()}
           >
-            <span class="vault-editor-overflow__icon" aria-hidden="true">
-              {#if item.icon}
-                {@const Icon = item.icon}
-                <Icon size={14} strokeWidth={1.75} />
+            <span class="vault-editor-overflow__content">
+              <span class="vault-editor-overflow__icon" aria-hidden="true">
+                {#if item.icon}
+                  {@const Icon = item.icon}
+                  <Icon size={14} strokeWidth={1.6} />
+                {/if}
+              </span>
+              <span class="vault-editor-overflow__label">{item.label}</span>
+              {#if item.value}
+                <span class="vault-editor-overflow__value">{item.value}</span>
+              {:else if item.shortcut}
+                <span class="vault-editor-overflow__shortcut">{item.shortcut}</span>
               {/if}
             </span>
-            <span class="vault-editor-overflow__label">{item.label}</span>
-            {#if item.shortcut}
-              <span class="vault-editor-overflow__shortcut">{item.shortcut}</span>
-            {/if}
           </button>
         {/each}
 
@@ -578,14 +588,16 @@
               aria-checked={toggle.on}
               onclick={() => toggle.onToggle()}
             >
-              <span class="vault-editor-overflow__icon" aria-hidden="true"></span>
-              <span class="vault-editor-overflow__label">{toggle.label}</span>
-              <span
-                class="vault-editor-overflow__switch"
-                class:vault-editor-overflow__switch--on={toggle.on}
-                aria-hidden="true"
-              >
-                <span class="vault-editor-overflow__knob"></span>
+              <span class="vault-editor-overflow__content">
+                <span class="vault-editor-overflow__icon" aria-hidden="true"></span>
+                <span class="vault-editor-overflow__label">{toggle.label}</span>
+                <span
+                  class="vault-editor-overflow__switch"
+                  class:vault-editor-overflow__switch--on={toggle.on}
+                  aria-hidden="true"
+                >
+                  <span class="vault-editor-overflow__knob"></span>
+                </span>
               </span>
             </button>
           {/each}

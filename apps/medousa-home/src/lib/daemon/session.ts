@@ -17,6 +17,12 @@ import type {
   SessionCodeBindingResponse,
   SessionCodeProjectResponse,
   StartSessionCodeProjectRequest,
+  DeriveSessionRequest,
+  DeriveSessionResponse,
+  CreatePromptStashRequest,
+  DeletePromptStashResponse,
+  PromptStash,
+  PromptStashListResponse,
 } from "$lib/types/generated/daemon_api";
 import type { MediaRef, MediaUploadResponse } from "$lib/types/media";
 import type { StageRoutingMatrix } from "$lib/types/runtime";
@@ -66,6 +72,7 @@ export interface CreateSessionOptions {
 }
 
 export interface CreateSessionResponse {
+  authority_id?: string | null;
   session_id: string;
   catalog: string;
   display_name?: string | null;
@@ -82,6 +89,35 @@ export async function createSession(
     agentProfileId: options?.agentProfileId,
     displayName: options?.displayName,
   });
+}
+
+export async function deriveSession(
+  request: DeriveSessionRequest,
+  idempotencyKey: string,
+): Promise<DeriveSessionResponse> {
+  return invoke<DeriveSessionResponse>("session_derive", {
+    request,
+    idempotencyKey,
+  });
+}
+
+export async function listPromptStashes(): Promise<PromptStash[]> {
+  const response = await invoke<PromptStashListResponse>("prompt_stash_list");
+  return response.stashes;
+}
+
+export async function createPromptStash(
+  request: CreatePromptStashRequest,
+): Promise<PromptStash> {
+  return invoke<PromptStash>("prompt_stash_create", {
+    request: invokePlain(request),
+  });
+}
+
+export async function deletePromptStash(
+  stashId: string,
+): Promise<DeletePromptStashResponse> {
+  return invoke<DeletePromptStashResponse>("prompt_stash_delete", { stashId });
 }
 
 export interface SharedModeStatus {

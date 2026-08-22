@@ -119,7 +119,7 @@
     active?.kind === "deck" ? artifacts.selectedArtifact : null,
   );
 
-  let deckPanelOpen = $state(true);
+  let deckPanelOpen = $state(false);
 
   async function openFileExternal() {
     if (active?.kind !== "file") return;

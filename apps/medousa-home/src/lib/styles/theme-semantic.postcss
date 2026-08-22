@@ -51,7 +51,10 @@
    * fields are excluded because they are almost always nested inside one of
    * those composites, which owns the `:focus-within` treatment.
    */
-  :where(html[data-theme] :is(button, a, [tabindex]:not([tabindex="-1"]))):focus-visible {
+  :where(
+    html[data-theme]
+      :is(button, a, [tabindex]:not([tabindex="-1"])):not([contenteditable="true"])
+  ):focus-visible {
     outline: 2px solid rgb(var(--theme-focus));
     outline-offset: 2px;
   }

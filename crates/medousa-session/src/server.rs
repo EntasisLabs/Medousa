@@ -78,6 +78,9 @@ pub struct CreateSessionBody {
     pub work_id: Option<String>,
     #[serde(default)]
     pub cwd: Option<String>,
+    /// When present, host this command directly in the PTY instead of spawning a shell.
+    #[serde(default)]
+    pub argv: Option<Vec<String>>,
     #[serde(default = "default_cols")]
     pub cols: u16,
     #[serde(default = "default_rows")]
@@ -91,6 +94,7 @@ pub struct CreateSessionResponse {
     pub cwd: String,
     pub root_kind: String,
     pub work_id: Option<String>,
+    pub argv: Vec<String>,
     pub ws_path: String,
     pub cols: u16,
     pub rows: u16,
@@ -151,6 +155,7 @@ fn meta_json(m: &SessionMeta) -> Value {
             SessionRootKind::Forge => "forge",
         },
         "work_id": m.work_id,
+        "argv": m.argv,
     })
 }
 
@@ -176,12 +181,25 @@ async fn create_session(
             format!("cwd not allowed: {}", cwd.display()),
         ));
     }
+    let argv = body.argv.unwrap_or_default();
+    if argv.len() > 64
+        || argv
+            .iter()
+            .any(|value| value.is_empty() || value.len() > 16 * 1024)
+        || argv.iter().map(String::len).sum::<usize>() > 64 * 1024
+    {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            "argv is empty or exceeds the hosted-command limit".into(),
+        ));
+    }
     let session = state
         .manager
-        .create_with_size(
+        .create_command_with_size(
             root_kind,
             Some(cwd),
             body.work_id.clone(),
+            argv.clone(),
             body.cols,
             body.rows,
         )
@@ -199,6 +217,7 @@ async fn create_session(
             SessionRootKind::Forge => "forge".into(),
         },
         work_id: session.meta.work_id.clone(),
+        argv,
         ws_path: format!("/v1/sessions/shell/{}", session.meta.session_id),
         cols: size.cols,
         rows: size.rows,
@@ -294,6 +313,7 @@ async fn handle_ws(
     };
     session.touch().await;
     let mut output_rx = session.output.subscribe();
+    let mut exit_poll = tokio::time::interval(std::time::Duration::from_millis(50));
     let (mut ws_tx, mut ws_rx) = socket.split();
 
     let replay = attach_replay(session.output_snapshot(), &query);
@@ -386,6 +406,21 @@ async fn handle_ws(
                     None => {}
                 }
             }
+            _ = exit_poll.tick(), if session.exited() => {
+                // The child wait may win the race with the PTY reader. Replay
+                // the final retained chunks before publishing terminal state.
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                for chunk in session.output_snapshot() {
+                    if chunk.sequence > last_sequence {
+                        last_sequence = chunk.sequence;
+                        if send_output_chunk(&mut ws_tx, &chunk).await.is_err() {
+                            return;
+                        }
+                    }
+                }
+                let _ = send_exit(&mut ws_tx, session.exit_code()).await;
+                break;
+            }
         }
     }
 }
@@ -417,6 +452,19 @@ async fn send_attach_ready(
     })
     .to_string();
     ws_tx.send(Message::Text(frame.into())).await
+}
+
+async fn send_exit(
+    ws_tx: &mut futures_util::stream::SplitSink<WebSocket, Message>,
+    exit_code: Option<i32>,
+) -> Result<(), axum::Error> {
+    ws_tx
+        .send(Message::Text(
+            json!({ "type": "exit", "exit_code": exit_code })
+                .to_string()
+                .into(),
+        ))
+        .await
 }
 
 async fn send_output_gap(
@@ -485,7 +533,8 @@ async fn signal_session(
     };
     match body.signal.as_str() {
         "interrupt" | "sigint" => session.signal_interrupt(),
-        "kill" | "destroy" => {
+        "kill" => session.kill(),
+        "destroy" => {
             state.manager.destroy(&session_id).await;
         }
         other => {

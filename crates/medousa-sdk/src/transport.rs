@@ -24,6 +24,23 @@ pub trait Transport: Send + Sync {
         body: serde_json::Value,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>>;
 
+    fn post_json_with_headers<'a>(
+        &'a self,
+        base_url: &'a str,
+        path: &'a str,
+        body: serde_json::Value,
+        headers: Vec<(&'static str, String)>,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
+        if headers.is_empty() {
+            return self.post_json(base_url, path, body);
+        }
+        Box::pin(async {
+            Err(SdkError::Transport(
+                "transport does not support per-request JSON headers".to_string(),
+            ))
+        })
+    }
+
     fn delete_json<'a>(
         &'a self,
         base_url: &'a str,
@@ -155,7 +172,20 @@ impl HttpTransport {
         url: String,
         body: Option<serde_json::Value>,
     ) -> Result<serde_json::Value, SdkError> {
+        Self::request_with_headers(client, method, url, body, Vec::new()).await
+    }
+
+    async fn request_with_headers(
+        client: reqwest::Client,
+        method: reqwest::Method,
+        url: String,
+        body: Option<serde_json::Value>,
+        headers: Vec<(&'static str, String)>,
+    ) -> Result<serde_json::Value, SdkError> {
         let mut builder = client.request(method, url);
+        for (key, value) in headers {
+            builder = builder.header(key, value);
+        }
         if let Some(body) = body {
             builder = builder.json(&body);
         }
@@ -192,6 +222,21 @@ impl Transport for HttpTransport {
         let url = Self::url(base_url, path);
         let client = self.client.clone();
         Box::pin(async move { Self::request(client, reqwest::Method::POST, url, Some(body)).await })
+    }
+
+    fn post_json_with_headers<'a>(
+        &'a self,
+        base_url: &'a str,
+        path: &'a str,
+        body: serde_json::Value,
+        headers: Vec<(&'static str, String)>,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
+        let url = Self::url(base_url, path);
+        let client = self.client.clone();
+        Box::pin(async move {
+            Self::request_with_headers(client, reqwest::Method::POST, url, Some(body), headers)
+                .await
+        })
     }
 
     fn delete_json<'a>(

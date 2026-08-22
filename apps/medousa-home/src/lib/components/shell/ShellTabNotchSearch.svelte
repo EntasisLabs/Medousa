@@ -27,6 +27,22 @@
   let highlight = $state(0);
 
   const hits = $derived(filterTabSearchHits(shellTabs.collectSearchHits(), query));
+  const groupedHits = $derived.by(() => {
+    const groups = new Map<
+      string,
+      { label: string; items: Array<{ hit: ShellTabSearchHit; index: number }> }
+    >();
+    hits.forEach((hit, index) => {
+      const key = `${hit.desktopId}:${hit.paneIndex}`;
+      const group = groups.get(key) ?? {
+        label: `${hit.desktopName} · Pane ${hit.paneIndex}`,
+        items: [],
+      };
+      group.items.push({ hit, index });
+      groups.set(key, group);
+    });
+    return [...groups.entries()].map(([key, group]) => ({ key, ...group }));
+  });
 
   $effect(() => {
     void hits.length;
@@ -39,11 +55,6 @@
     if (hit.kind === "web") return Globe;
     if (hit.kind === "surface") return LayoutGrid;
     return FileText;
-  }
-
-  function metaFor(hit: ShellTabSearchHit): string {
-    const bits = [hit.desktopName, `Pane ${hit.paneIndex}`, tabKindLabel(hit.kind)];
-    return bits.join(" · ");
   }
 
   async function pick(hit: ShellTabSearchHit) {
@@ -72,25 +83,32 @@
     </div>
   {:else}
     <div bind:this={listEl} class="shell-tab-notch-search-list">
-      {#each hits as hit, index (hit.desktopId + ":" + hit.tabId)}
-        {@const Icon = iconFor(hit)}
-        <button
-          type="button"
-          role="option"
-          data-hit-index={index}
-          class="shell-tab-notch-search-row"
-          class:shell-tab-notch-search-row--active={hit.isActive}
-          class:shell-tab-notch-search-row--hl={index === highlight}
-          aria-selected={index === highlight}
-          onclick={() => void pick(hit)}
-          onpointerenter={() => {
-            highlight = index;
-          }}
-        >
-          <Icon size={13} strokeWidth={1.75} class="shell-tab-notch-search-icon" aria-hidden="true" />
-          <span class="shell-tab-notch-search-title">{hit.title}</span>
-          <span class="shell-tab-notch-search-meta">{metaFor(hit)}</span>
-        </button>
+      {#each groupedHits as group (group.key)}
+        <section class="shell-tab-notch-search-group" aria-label={group.label}>
+          <div class="shell-tab-notch-search-group-label">{group.label}</div>
+          {#each group.items as item (item.hit.desktopId + ":" + item.hit.tabId)}
+            {@const hit = item.hit}
+            {@const index = item.index}
+            {@const Icon = iconFor(hit)}
+            <button
+              type="button"
+              role="option"
+              data-hit-index={index}
+              class="shell-tab-notch-search-row"
+              class:shell-tab-notch-search-row--active={hit.isActive}
+              class:shell-tab-notch-search-row--hl={index === highlight}
+              aria-selected={index === highlight}
+              onclick={() => void pick(hit)}
+              onpointerenter={() => {
+                highlight = index;
+              }}
+            >
+              <Icon size={13} strokeWidth={1.75} class="shell-tab-notch-search-icon" aria-hidden="true" />
+              <span class="shell-tab-notch-search-title">{hit.title}</span>
+              <span class="shell-tab-notch-search-meta">{tabKindLabel(hit.kind)}</span>
+            </button>
+          {/each}
+        </section>
       {/each}
     </div>
   {/if}

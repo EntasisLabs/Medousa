@@ -30,6 +30,7 @@ export {
   revertChangesHunk,
   startProjectTaskRun,
   getProjectTaskRun,
+  getProjectTaskRuns,
   cancelProjectTaskRun,
   getReviewFile,
 } from "$lib/forge";
@@ -39,6 +40,8 @@ export type {
   ProjectTask,
   ProjectTaskResult,
   ProjectTaskRun,
+  ProjectTaskRunSummary,
+  ProjectTaskRunList,
   ProjectTest,
   ForgeChanges,
   ChangesFileDiff,

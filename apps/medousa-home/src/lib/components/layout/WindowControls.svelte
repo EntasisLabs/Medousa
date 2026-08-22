@@ -84,40 +84,27 @@
       <X size={11} strokeWidth={2.25} />
     </button>
   </div>
-{:else}
-  <!-- Mirror Mac traffic-light footprint so the notch stays optically centered. -->
-  <div class="window-controls window-controls--spacer" aria-hidden="true"></div>
 {/if}
 
 <style>
-  /*
-   * Match macOS traffic-light cluster width (~78–86px) so left/right system
-   * chrome balances across platforms and the centered notch doesn't jump.
-   */
   .window-controls {
     display: inline-flex;
     flex-shrink: 0;
     align-items: center;
     justify-content: flex-end;
     box-sizing: border-box;
-    width: var(--titlebar-system-chrome, 86px);
     height: 100%;
-    padding-right: 2px;
-  }
-
-  .window-controls--spacer {
-    pointer-events: none;
   }
 
   .window-controls-btn {
     display: inline-flex;
-    width: 28px;
-    height: 28px;
+    width: 46px;
+    height: 100%;
     flex-shrink: 0;
     align-items: center;
     justify-content: center;
     border: 0;
-    border-radius: 5px;
+    border-radius: 0;
     background: transparent;
     color: rgb(var(--theme-text-tertiary));
     transition:
@@ -126,7 +113,7 @@
   }
 
   .window-controls-btn:hover {
-    background: rgb(var(--color-surface-700) / 0.65);
+    background: rgb(var(--color-surface-700) / 0.72);
     color: rgb(var(--color-surface-100));
   }
 

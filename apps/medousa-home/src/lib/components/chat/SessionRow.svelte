@@ -29,10 +29,14 @@
 
   const when = $derived(formatSessionWhen(session.last_timestamp));
   const hasMeta = $derived(Boolean(when) || session.turns > 0);
+  const title = $derived(formatSessionLabel(session));
+  const untitled = $derived(
+    title === "New conversation" || /^\(empty session\)$/i.test(title),
+  );
 </script>
 
 <div
-  class="session-row group/session {selected ? 'workshop-list-row-active' : ''} {alwaysShowActions
+  class="session-row group/session {selected ? 'session-row--selected' : ''} {alwaysShowActions
     ? 'session-row--touch'
     : ''}"
 >
@@ -41,11 +45,11 @@
       originSurface={session.origin_surface}
       hasCodeWork={session.has_code_work}
     />
-    <span class="session-row-title truncate">
+    <span class="session-row-title truncate" class:session-row-title--untitled={untitled}>
       {#if session.catalog === "shared"}
         <span class="session-row-shared-mark" title="Shared room">Room</span>
       {/if}
-      {formatSessionLabel(session)}
+      {untitled ? "Untitled chat" : title}
     </span>
   </button>
 

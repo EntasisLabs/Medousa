@@ -181,7 +181,15 @@ impl InteractiveTurnStreamSink {
         turn: crate::session::ConversationTurn,
     ) -> Result<crate::session_store::CommitReceipt, crate::session_store::StoreError> {
         let scratch = self.take_pending_scratch();
-        crate::session_writer::persist_turn(&self.session_id, turn, scratch).await
+        let caused_by = crate::workshop_authority::execution_ref(&self.session_id, &self.turn_id)
+            .map_err(crate::session_store::StoreError::InvalidInput)?;
+        crate::session_writer::persist_turn_with_execution(
+            &self.session_id,
+            turn,
+            scratch,
+            Some(caused_by),
+        )
+        .await
     }
 
     /// Commit a finalized terminal/handoff body **through the durable event-log
@@ -1605,7 +1613,14 @@ async fn run_agent_turn_inner(
         // persist off the hot path so the user message write (and its catalog cascade)
         // doesn't block prompt prep / first token on a SurrealKV fsync.
         conversation.push(user_turn.clone());
-        if let Err(error) = crate::session_writer::persist_turn(&session_id, user_turn, None).await
+        let caused_by = crate::workshop_authority::execution_ref(&session_id, turn_id).ok();
+        if let Err(error) = crate::session_writer::persist_turn_with_execution(
+            &session_id,
+            user_turn,
+            None,
+            caused_by,
+        )
+        .await
         {
             sink.agent_error(1, format!("user turn persistence failed: {error}"))
                 .await;

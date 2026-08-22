@@ -253,7 +253,7 @@ describe("shellTabs store", () => {
     expect(shellTabs.groups).toHaveLength(2);
   });
 
-  it("splits by retaining the active tab in both panes", async () => {
+  it("splits by moving the active tab into the new pane", async () => {
     const { shellTabs } = await loadShellTabs();
     lmeState.tabs = [
       { tabId: "lme-1", kind: "note", path: "notes/split.md", title: "Split note" },
@@ -265,16 +265,58 @@ describe("shellTabs store", () => {
     expect(shellTabs.splitActive("right")).toBe(true);
     expect(shellTabs.paneCount).toBe(2);
     expect(shellTabs.activeGroupId).not.toBe(fromGroupId);
-    expect(shellTabs.tabs.filter((tab) => tab.kind === "lme")).toHaveLength(2);
+    expect(shellTabs.tabs.filter((tab) => tab.kind === "lme")).toHaveLength(1);
+    const from = shellTabs.groups.find((group) => group.id === fromGroupId);
+    const to = shellTabs.groups.find((group) => group.id === shellTabs.activeGroupId);
+    expect(from?.tabIds).not.toContain(shellId);
+    expect(to?.tabIds).toContain(shellId);
+  });
+
+  it("can retain the active tab in both panes via retainActiveInSplit", async () => {
+    const { shellTabs } = await loadShellTabs();
+    lmeState.tabs = [
+      { tabId: "lme-retain", kind: "note", path: "notes/retain.md", title: "Retain note" },
+    ];
+    lmeState.activeTabId = "lme-retain";
+    const shellId = shellTabs.openLme("lme-retain", {
+      activate: true,
+      title: "Retain note",
+    });
+    expect(shellId).toBeTruthy();
+    const fromGroupId = shellTabs.activeGroupId;
+    expect(shellTabs.retainActiveInSplit("right")).toBe(true);
+    expect(shellTabs.paneCount).toBe(2);
     const from = shellTabs.groups.find((group) => group.id === fromGroupId);
     const to = shellTabs.groups.find((group) => group.id === shellTabs.activeGroupId);
     expect(from?.tabIds).toContain(shellId);
     expect(to?.tabIds.some((id) => id !== shellId)).toBe(true);
     expect(
       shellTabs.tabs.filter(
-        (tab) => tab.kind === "lme" && tab.lmeTabId === "lme-1",
+        (tab) => tab.kind === "lme" && tab.lmeTabId === "lme-retain",
       ),
     ).toHaveLength(2);
+  });
+
+  it("moves a focused note out when splitting a chat+note group", async () => {
+    const { shellTabs } = await loadShellTabs();
+    lmeState.tabs = [
+      { tabId: "lme-mix", kind: "note", path: "notes/mix.md", title: "Mix note" },
+    ];
+    lmeState.activeTabId = "lme-mix";
+    const chatId = shellTabs.openChat("session-mix", { activate: true, title: "Chat" });
+    const noteId = shellTabs.openLme("lme-mix", { activate: true, title: "Mix note" });
+    expect(chatId).toBeTruthy();
+    expect(noteId).toBeTruthy();
+    const fromGroupId = shellTabs.activeGroupId;
+    expect(shellTabs.splitActive("right")).toBe(true);
+    expect(shellTabs.paneCount).toBe(2);
+    const from = shellTabs.groups.find((group) => group.id === fromGroupId);
+    const to = shellTabs.groups.find((group) => group.id === shellTabs.activeGroupId);
+    expect(from?.tabIds).toContain(chatId);
+    expect(from?.tabIds).not.toContain(noteId);
+    expect(from?.activeTabId).toBe(chatId);
+    expect(to?.tabIds).toContain(noteId);
+    expect(shellTabs.tabs.filter((tab) => tab.kind === "lme")).toHaveLength(1);
   });
 
   it("can move the active tab into a new split as a separate command", async () => {
@@ -340,22 +382,21 @@ describe("shellTabs store", () => {
     const moveId = shellTabs.openChat("session-b", { activate: true });
     expect(stayId).toBeTruthy();
     expect(moveId).toBeTruthy();
-    // splitActive retains the focused tab; moveId stays in the source pane and
-    // a second shell tab for the same session is cloned into the new pane.
+    // splitActive moves the focused tab; moveId goes to the new pane and
+    // stayId remains alone in the source pane.
     expect(shellTabs.splitActive("right")).toBe(true);
     const rightGroup = shellTabs.activeGroupId;
     expect(shellTabs.paneCount).toBe(2);
     const rightTabId = shellTabs.groups.find((group) => group.id === rightGroup)
       ?.activeTabId;
-    expect(rightTabId).toBeTruthy();
-    expect(rightTabId).not.toBe(moveId);
+    expect(rightTabId).toBe(moveId);
 
     const otherId = shellTabs.createDesktop("Park", { activate: false });
     expect(shellTabs.movePaneToDesktop(rightGroup, otherId)).toBe(true);
     expect(shellTabs.paneCount).toBe(1);
     expect(shellTabs.tabs.some((tab) => tab.id === rightTabId)).toBe(false);
     expect(shellTabs.tabs.some((tab) => tab.id === stayId)).toBe(true);
-    expect(shellTabs.tabs.some((tab) => tab.id === moveId)).toBe(true);
+    expect(shellTabs.tabs.some((tab) => tab.id === moveId)).toBe(false);
     const park = shellTabs.desktops.find((desktop) => desktop.id === otherId);
     expect(park?.layout.tabs.some((tab) => tab.id === rightTabId)).toBe(true);
   });
@@ -389,22 +430,20 @@ describe("shellTabs store", () => {
     expect(tabId).toBeTruthy();
     expect(shellTabs.splitActive("right")).toBe(true);
     expect(shellTabs.paneCount).toBe(2);
+    // Move split: the only chat tab lives in the new pane; source is empty.
     expect(
       shellTabs.tabs.filter(
         (tab) => tab.kind === "chat" && tab.sessionId === "session-a",
       ),
-    ).toHaveLength(2);
-    const cloneId = shellTabs.activeTab?.id;
-    expect(cloneId).toBeTruthy();
-    expect(cloneId).not.toBe(tabId);
+    ).toHaveLength(1);
+    expect(shellTabs.activeTab?.id).toBe(tabId);
     expect(shellTabs.closeActiveGroup()).toBe(true);
     expect(shellTabs.paneCount).toBe(1);
-    // Merge keeps both the original and retained clone in the surviving pane.
     expect(
       shellTabs.tabs.filter(
         (tab) => tab.kind === "chat" && tab.sessionId === "session-a",
       ),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
     expect(shellTabs.closeActiveGroup()).toBe(false);
   });
 
@@ -729,7 +768,8 @@ describe("shellTabs store", () => {
     const { shellTabs } = await loadShellTabs();
     shellTabs.openChat("session-a", { activate: true });
     shellTabs.splitActive("right");
-    // Split retains session-a in both panes; open a distinct chat in the other pane.
+    // Move split leaves the source pane empty; open session-b there and keep
+    // session-a focused in the split pane.
     const otherGroup = shellTabs.groups.find((g) => g.id !== shellTabs.activeGroupId);
     expect(otherGroup).toBeTruthy();
     if (otherGroup) {
