@@ -9,10 +9,15 @@
   import { visibleActivityFeed } from "$lib/utils/activityFilter";
   import { buildActivityStory } from "$lib/utils/activityStory";
   import {
+    announceStatusPopoverOpen,
+    closeOnOtherStatusPopover,
+  } from "$lib/utils/statusPopoverCoordination";
+  import {
     ACTIVITY_HOT_MS,
     isActivityFeedHot,
     truncateActivityLabel,
   } from "$lib/utils/activityPulse";
+  import { onMount } from "svelte";
 
   let open = $state(false);
   let triggerEl = $state<HTMLButtonElement | null>(null);
@@ -63,12 +68,16 @@
   });
 
   function toggle() {
-    open = !open;
+    const next = !open;
+    if (next) announceStatusPopoverOpen("activity");
+    open = next;
   }
 
   function close() {
     open = false;
   }
+
+  onMount(() => closeOnOtherStatusPopover("activity", close));
 </script>
 
 <div class="status-activity-pulse" class:status-activity-pulse--idle={!hot}>

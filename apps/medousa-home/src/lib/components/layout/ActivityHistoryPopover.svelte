@@ -1,11 +1,16 @@
 <script lang="ts">
   import ActivityStoryFeed from "$lib/components/layout/ActivityStoryFeed.svelte";
   import ActivityToolReceipts from "$lib/components/layout/ActivityToolReceipts.svelte";
+  import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { activityView } from "$lib/stores/activityView.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { visibleActivityFeed } from "$lib/utils/activityFilter";
   import { buildActivityStory } from "$lib/utils/activityStory";
+  import {
+    popBrowserPopoverOverlay,
+    pushBrowserPopoverOverlay,
+  } from "$lib/utils/browserPopoverOverlay";
   import { placeToolbarPopover } from "$lib/utils/railPopover";
   import { tick } from "svelte";
 
@@ -35,6 +40,12 @@
   );
 
   $effect(() => {
+    if (!open) return;
+    void pushBrowserPopoverOverlay();
+    return () => void popBrowserPopoverOverlay();
+  });
+
+  $effect(() => {
     if (visibleEvents.length > 0) {
       workspace.scheduleActivityCardPrefetch();
       activityView.pruneToFeed(new Set(workspace.feed.map((event) => event.id)));
@@ -59,6 +70,7 @@
         gap: 8,
         pad: 10,
         maxHeightRatio: 0.72,
+        align: "start",
       });
       frame = window.requestAnimationFrame(() => {
         if (!triggerEl || !menuEl) return;
@@ -68,6 +80,7 @@
           gap: 8,
           pad: 10,
           maxHeightRatio: 0.72,
+          align: "start",
         });
       });
     };
@@ -94,18 +107,19 @@
 </script>
 
 {#if open}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div
-    class="activity-history-scrim"
-    role="presentation"
-    onclick={onClose}
-  ></div>
-  <div
-    bind:this={menuEl}
-    class="activity-history-popover workshop-rail-sheet"
-    role="dialog"
-    aria-label="Activity history"
-  >
+  <BodyPortal>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="activity-history-scrim"
+      role="presentation"
+      onclick={onClose}
+    ></div>
+    <div
+      bind:this={menuEl}
+      class="activity-history-popover workshop-rail-sheet"
+      role="dialog"
+      aria-label="Activity history"
+    >
     <header class="activity-history-header">
       <div class="min-w-0">
         <h2 class="activity-history-title">Activity</h2>
@@ -147,18 +161,19 @@
     <footer class="activity-history-footer">
       <ActivityToolReceipts sessionScoped={true} limit={2} />
     </footer>
-  </div>
+    </div>
+  </BodyPortal>
 {/if}
 
 <style>
   .activity-history-scrim {
     position: fixed;
     inset: 0;
-    z-index: 70;
+    z-index: 160;
   }
 
   .activity-history-popover {
-    z-index: 71;
+    z-index: 161;
     display: flex;
     flex-direction: column;
     overflow: hidden;

@@ -239,6 +239,7 @@
 
   .workshop-rail-sheet-backdrop {
     @apply items-start justify-start p-0;
+    z-index: 160;
     background-color: rgb(var(--color-surface-950) / 0.28);
     backdrop-filter: blur(2px);
   }
@@ -247,6 +248,7 @@
     @apply fixed w-[min(17.5rem,calc(100vw-1rem))] overflow-hidden rounded-xl border border-surface-500/40 shadow-2xl;
     top: 0;
     left: 0;
+    z-index: 161;
     max-height: min(32rem, calc(100vh - 1rem));
     background-color: rgb(var(--color-surface-900) / 0.96);
     backdrop-filter: blur(16px);

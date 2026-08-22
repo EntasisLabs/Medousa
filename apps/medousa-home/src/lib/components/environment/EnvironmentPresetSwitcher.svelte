@@ -1,5 +1,6 @@
 <script lang="ts">
   import "$lib/styles/workshop-surfaces.postcss";
+  import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { settings } from "$lib/stores/settings.svelte";
@@ -7,6 +8,14 @@
   import { COLOR_THEME_OPTIONS } from "$lib/types/colorThemes";
   import { presetDescription, presetDisplayLabel } from "$lib/utils/customViewStatus";
   import { placeRailPopover, placeToolbarPopover } from "$lib/utils/railPopover";
+  import {
+    popBrowserPopoverOverlay,
+    pushBrowserPopoverOverlay,
+  } from "$lib/utils/browserPopoverOverlay";
+  import {
+    announceStatusPopoverOpen,
+    closeOnOtherStatusPopover,
+  } from "$lib/utils/statusPopoverCoordination";
   import {
     Check,
     ChevronDown,
@@ -16,7 +25,7 @@
     Pencil,
     Sun,
   } from "@lucide/svelte";
-  import { tick } from "svelte";
+  import { onMount, tick } from "svelte";
 
   interface Props {
     variant?: "settings" | "rail" | "status";
@@ -60,6 +69,12 @@
   });
 
   $effect(() => {
+    if (!open || !isFloatingMenu) return;
+    void pushBrowserPopoverOverlay();
+    return () => void popBrowserPopoverOverlay();
+  });
+
+  $effect(() => {
     if (!open || !isFloatingMenu || !triggerEl || !menuEl) return;
     layout.shellSidebarWidth;
     themePickerOpen;
@@ -72,6 +87,7 @@
           width: MENU_WIDTH,
           gap: 8,
           pad: 10,
+          align: "start",
         });
       } else {
         placeRailPopover(triggerEl, menuEl);
@@ -84,6 +100,7 @@
             width: MENU_WIDTH,
             gap: 8,
             pad: 10,
+            align: "start",
           });
         } else {
           placeRailPopover(triggerEl, menuEl);
@@ -142,6 +159,18 @@
     layout.startRailLayoutEditing();
   }
 
+  function toggleMenu() {
+    const next = !open;
+    if (next && variant === "status") announceStatusPopoverOpen("layout");
+    open = next;
+  }
+
+  onMount(() =>
+    closeOnOtherStatusPopover("layout", () => {
+      if (variant === "status") open = false;
+    }),
+  );
+
   function presetIcon(presetId: string) {
     return presetId === "focus" ? Focus : PanelsTopLeft;
   }
@@ -159,7 +188,7 @@
       aria-haspopup="menu"
       aria-expanded={open}
       disabled={busy}
-      onclick={() => (open = !open)}
+      onclick={toggleMenu}
     >
       <PanelsTopLeft size={13} strokeWidth={1.75} class="shrink-0 opacity-80" aria-hidden="true" />
       <span class="truncate">{activeLabel}</span>
@@ -241,19 +270,20 @@
   {/if}
 
   {#if open && isFloatingMenu}
-    <div
-      class="mobile-sheet-backdrop workshop-rail-sheet-backdrop"
-      role="presentation"
-      onclick={(event) => {
-        if (event.target === event.currentTarget) open = false;
-      }}
-    >
+    <BodyPortal>
       <div
-        bind:this={menuEl}
-        class="workshop-rail-sheet workshop-switcher-menu workshop-layout-menu"
-        role="menu"
-        aria-label="Layout"
+        class="mobile-sheet-backdrop workshop-rail-sheet-backdrop"
+        role="presentation"
+        onclick={(event) => {
+          if (event.target === event.currentTarget) open = false;
+        }}
       >
+        <div
+          bind:this={menuEl}
+          class="workshop-rail-sheet workshop-switcher-menu workshop-layout-menu"
+          role="menu"
+          aria-label="Layout"
+        >
         <header class="workshop-switcher-header">
           <div class="min-w-0">
             <h2 class="workshop-switcher-title">Layout</h2>
@@ -392,8 +422,9 @@
             Edit destinations
           </button>
         </div>
+        </div>
       </div>
-    </div>
+    </BodyPortal>
   {/if}
 {/if}
 
