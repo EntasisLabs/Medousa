@@ -35,7 +35,7 @@
 
   /* Live properties — intimate rows, not a metadata spreadsheet */
   .vault-live-properties {
-    --vlp-key-w: 5rem;
+    --vlp-key-w: 4rem;
     --vlp-ink: rgb(var(--shell-fg, var(--color-surface-100)));
     --vlp-mute: rgb(var(--shell-muted, var(--color-surface-400)));
     --vlp-faint: rgb(var(--shell-muted, var(--color-surface-500)));
@@ -109,7 +109,7 @@
     display: grid;
     grid-template-columns: var(--vlp-key-w) minmax(0, 1fr);
     align-items: center;
-    column-gap: 0.75rem;
+    column-gap: 0.625rem;
     min-height: 2rem;
     margin: 0;
     padding: 0.28rem 0.45rem 0.28rem 0.15rem;
@@ -132,6 +132,27 @@
     cursor: text;
   }
 
+  /* New fields are a brief inline compose state, not a permanent table row. */
+  .vault-live-properties__row--new,
+  .vault-live-properties__row--new:hover,
+  .vault-live-properties__row--new:focus-within {
+    width: min(100%, 32rem);
+    margin-top: 0.2rem;
+    background: transparent;
+  }
+
+  .vault-live-properties__row--new .vault-live-properties__key-input,
+  .vault-live-properties__row--new .vault-live-properties__value {
+    border-bottom: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.28);
+    border-radius: 0;
+    padding-block: 0.25rem;
+  }
+
+  .vault-live-properties__row--new .vault-live-properties__key-input:focus,
+  .vault-live-properties__row--new .vault-live-properties__value:focus {
+    border-bottom-color: rgb(var(--shell-fg, var(--color-surface-100)) / 0.55);
+  }
+
   .vault-live-properties__row--empty .vault-live-properties__tags {
     opacity: 0.92;
   }
@@ -142,12 +163,12 @@
     pointer-events: none;
   }
 
-  /* Icon + label as one intimate unit; values share a clean left edge */
+  /* One strict label axis; values share a clean left edge. */
   .vault-live-properties__key {
     appearance: none;
     display: inline-flex;
     align-items: center;
-    gap: 0.42rem;
+    gap: 0;
     width: max-content;
     max-width: 100%;
     margin: 0;
@@ -246,7 +267,7 @@
     border: none;
     border-radius: 0.35rem;
     background: transparent;
-    color: var(--vlp-faint);
+    color: var(--vlp-mute);
     cursor: pointer;
     font: inherit;
     font-size: 0.75rem;
@@ -278,6 +299,7 @@
     font-weight: 500;
     letter-spacing: 0;
     line-height: 1;
+    color: var(--vlp-mute);
     white-space: nowrap;
   }
 
@@ -386,7 +408,7 @@
     margin: 0;
     border-radius: 0.25rem;
     cursor: pointer;
-    opacity: 0.35;
+    opacity: 0;
     transition:
       opacity 120ms ease,
       color 120ms ease,
@@ -450,14 +472,14 @@
     gap: 0.28rem;
     min-width: 1.4rem;
     height: 1.4rem;
-    padding: 0 0.28rem;
+    padding: 0 0.35rem;
     border: 1px dashed transparent;
     border-radius: 0.35rem;
     background: transparent;
     font-size: 0.75rem;
     font-weight: 500;
     letter-spacing: -0.01em;
-    color: var(--vlp-faint);
+    color: var(--vlp-mute);
     cursor: pointer;
     transition:
       color 140ms ease,

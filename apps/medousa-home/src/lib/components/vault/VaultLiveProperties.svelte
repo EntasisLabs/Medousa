@@ -5,7 +5,7 @@
    * Kind lives on the chrome pill; workshop tags stay in Build/YAML.
    */
   import { tick, untrack } from "svelte";
-  import { AlignLeft, ChevronRight, Plus, Tag, Type, X } from "@lucide/svelte";
+  import { ChevronRight, Plus, X } from "@lucide/svelte";
   import {
     isWorkshopVaultTag,
     listFrontmatterScalarFields,
@@ -227,13 +227,7 @@
           tabindex="-1"
           onclick={() => void focusTitle()}
         >
-          <AlignLeft
-            size={14}
-            strokeWidth={1.75}
-            class="vault-live-properties__icon"
-            aria-hidden="true"
-          />
-          <span class="vault-live-properties__label">title</span>
+          <span class="vault-live-properties__label">Title</span>
         </button>
         <input
           bind:this={titleInputEl}
@@ -277,13 +271,7 @@
           tabindex="-1"
           onclick={() => void beginAddTag()}
         >
-          <Tag
-            size={14}
-            strokeWidth={1.75}
-            class="vault-live-properties__icon"
-            aria-hidden="true"
-          />
-          <span class="vault-live-properties__label">tags</span>
+          <span class="vault-live-properties__label">Tags</span>
         </button>
         <div class="vault-live-properties__tags">
           {#each humanTags as tag (tag)}
@@ -347,6 +335,7 @@
               aria-label="Add tag"
             >
               <Plus size={12} strokeWidth={2} aria-hidden="true" />
+              <span>Add</span>
             </button>
           {/if}
         </div>
@@ -359,12 +348,6 @@
           class:vault-live-properties__row--disabled={disabled}
         >
           <span class="vault-live-properties__key vault-live-properties__key--static">
-            <Type
-              size={14}
-              strokeWidth={1.75}
-              class="vault-live-properties__icon"
-              aria-hidden="true"
-            />
             <span class="vault-live-properties__label" title={field.key}>{field.key}</span>
           </span>
           <div class="vault-live-properties__value-row">
@@ -414,7 +397,7 @@
 
       {#if addingField}
         <div
-          class="vault-live-properties__row vault-live-properties__row--active"
+          class="vault-live-properties__row vault-live-properties__row--active vault-live-properties__row--new"
           class:vault-live-properties__row--disabled={disabled}
         >
           <input
