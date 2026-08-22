@@ -1911,3 +1911,39 @@
     min-width: 0;
   }
 }
+
+/*
+ * Live headings are document structure, not generic application chrome.
+ * Keep their hierarchy outside cascade layers so late-loaded theme/preflight
+ * rules cannot flatten H1/H2/H3 back to the surrounding prose size.
+ * Resume notes retain their purpose-built presentation above.
+ */
+.vault-editor:not([data-note-kind="resume"])
+  .ProseMirror.vault-live-prose
+  > h1:not(.vault-live-h1--dup-title) {
+  margin: 0.25rem 0 0.75rem;
+  font-size: 1.5rem;
+  line-height: 1.25;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.vault-editor:not([data-note-kind="resume"])
+  .ProseMirror.vault-live-prose
+  > h2 {
+  margin: 1.5rem 0 0.5rem;
+  font-size: 1.25rem;
+  line-height: 1.35;
+  font-weight: 620;
+  letter-spacing: -0.018em;
+}
+
+.vault-editor:not([data-note-kind="resume"])
+  .ProseMirror.vault-live-prose
+  > h3 {
+  margin: 1.15rem 0 0.4rem;
+  font-size: 1.0625rem;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
