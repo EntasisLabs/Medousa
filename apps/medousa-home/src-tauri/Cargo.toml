@@ -136,7 +136,5 @@ split-debuginfo = "unpacked"
 debug = false
 
 [patch.crates-io]
-grapheme-runtime = { path = "../../../vendor/grapheme-runtime" }
-grapheme-sdk = { path = "../../../vendor/grapheme-sdk" }
 # Upstream Package.swift declares iOS 13 but uses UNNotificationPresentationOptions.banner/.list (iOS 14+).
 tauri-plugin-mobile-push = { path = "../../../vendor/tauri-plugin-mobile-push" }
