@@ -118,20 +118,14 @@
     </div>
 
     <div class="app-titlebar-tabs min-w-0 flex-1">
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class="app-titlebar-drag"
-        data-tauri-drag-region
-        ondblclick={onDragDblClick}
-      ></div>
       <ShellTabNotch />
-      <ShellWorkspaceControl />
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         class="app-titlebar-drag"
         data-tauri-drag-region
         ondblclick={onDragDblClick}
       ></div>
+      <ShellWorkspaceControl />
     </div>
 
     <div class="app-titlebar-actions shrink-0">
@@ -228,9 +222,9 @@
     height: 100%;
     align-items: center;
     justify-content: flex-start;
-    gap: 0.5rem;
+    gap: 0.75rem;
     margin-left: 1px;
-    padding: 4px 2px;
+    padding: 4px 8px 4px 6px;
   }
 
   .app-titlebar-drag {

@@ -20,71 +20,55 @@
     animation: shell-tab-notch-open 150ms ease-out;
   }
 
-  .shell-tab-notch-drawer-section {
-    flex: 0 0 auto;
-    border-bottom: 1px solid rgb(var(--color-surface-500) / 0.2);
-    padding: 0.75rem;
-  }
-
-  .shell-tab-notch-drawer-heading {
+  .shell-tab-notch-drawer-toolbar {
     display: flex;
+    min-width: 0;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 0.55rem;
-    color: rgb(var(--color-surface-100));
-    font-size: 0.78rem;
-    font-weight: 600;
+    gap: 0.75rem;
+    border-bottom: 1px solid rgb(var(--color-surface-500) / 0.2);
+    padding: 0.55rem 0.6rem 0.5rem 0.7rem;
   }
 
   .shell-tab-notch-drawer-quiet-action,
-  .shell-tab-notch-drawer-actions button,
-  .shell-tab-notch-drawer-desktop-actions button {
+  .shell-tab-notch-drawer-toolbar-actions button {
     display: inline-flex;
+    width: 1.65rem;
+    height: 1.65rem;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: center;
-    border: 1px solid rgb(var(--color-surface-500) / 0.2);
+    border: 0;
     border-radius: 0.38rem;
-    background: rgb(var(--color-surface-950) / 0.28);
+    background: transparent;
     color: rgb(var(--theme-text-tertiary));
     transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
   }
 
-  .shell-tab-notch-drawer-quiet-action {
-    width: 1.75rem;
-    height: 1.75rem;
-  }
-
-  .shell-tab-notch-drawer-actions {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.4rem;
-  }
-
-  .shell-tab-notch-drawer-actions button {
-    min-width: 0;
-    gap: 0.4rem;
-    padding: 0.5rem 0.55rem;
-    font-size: 0.7rem;
+  .shell-tab-notch-drawer-toolbar-actions {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.1rem;
   }
 
   .shell-tab-notch-drawer-quiet-action:hover:not(:disabled),
-  .shell-tab-notch-drawer-actions button:hover:not(:disabled),
-  .shell-tab-notch-drawer-desktop-actions button:hover:not(:disabled) {
-    border-color: rgb(var(--color-surface-400) / 0.32);
+  .shell-tab-notch-drawer-toolbar-actions button:hover:not(:disabled) {
     background: rgb(var(--color-surface-800) / 0.65);
     color: rgb(var(--color-surface-100));
+  }
+
+  .shell-tab-notch-drawer-divider {
+    width: 1px;
+    height: 0.9rem;
+    margin: 0 0.2rem;
+    background: rgb(var(--color-surface-500) / 0.22);
   }
 
   .shell-tab-notch-drawer button:disabled {
     opacity: 0.32;
     cursor: default;
-  }
-
-  .shell-tab-notch-drawer-desktop {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
   }
 
   .shell-tab-notch-drawer-desktop-copy {
@@ -129,20 +113,11 @@
     font-size: 0.66rem;
   }
 
-  .shell-tab-notch-drawer-desktop-actions {
-    display: inline-flex;
-    flex-shrink: 0;
-    gap: 0.25rem;
-  }
-
-  .shell-tab-notch-drawer-desktop-actions button {
-    width: 1.75rem;
-    height: 1.75rem;
+  .shell-tab-notch-drawer-toolbar-actions button {
     font-size: 0.66rem;
   }
 
-  .shell-tab-notch-drawer-desktop-actions button.active {
-    border-color: rgb(var(--color-surface-400) / 0.38);
+  .shell-tab-notch-drawer-toolbar-actions button.active {
     background: rgb(var(--color-surface-700) / 0.8);
     color: rgb(var(--color-surface-50));
   }
@@ -160,15 +135,15 @@
 
   .shell-tab-notch-drawer-stage {
     display: flex;
-    min-height: 9.5rem;
+    min-height: 6.5rem;
     flex: 1 1 auto;
     flex-direction: column;
     overflow: hidden;
-    padding: 0.55rem;
+    padding: 0.4rem;
   }
 
   .shell-tab-notch-drawer--single .shell-tab-notch-drawer-stage {
-    min-height: 7.5rem;
+    min-height: 5rem;
   }
 
   .shell-tab-notch-drawer--search {

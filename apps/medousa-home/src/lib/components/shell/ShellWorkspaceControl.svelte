@@ -65,7 +65,7 @@
     if (!triggerEl || !drawerEl) return;
     const trigger = triggerEl.getBoundingClientRect();
     const pad = 8;
-    const width = Math.min(36 * 16, window.innerWidth - pad * 2);
+    const width = Math.min(30 * 16, window.innerWidth - pad * 2);
     const left = Math.max(pad, Math.min(trigger.right - width, window.innerWidth - width - pad));
     const maxHeight = Math.min(28 * 16, window.innerHeight - trigger.bottom - pad * 2);
     drawerEl.style.position = "fixed";

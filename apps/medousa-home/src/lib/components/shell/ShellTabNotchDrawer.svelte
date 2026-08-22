@@ -64,40 +64,7 @@
   onclick={(event) => event.stopPropagation()}
   onkeydown={(event) => event.stopPropagation()}
 >
-  <section class="shell-tab-notch-drawer-section shell-tab-notch-drawer-customize">
-    <div class="shell-tab-notch-drawer-heading">
-      <span>Customize view</span>
-      <button
-        type="button"
-        class="shell-tab-notch-drawer-quiet-action"
-        title="Search open tabs"
-        aria-label="Search open tabs"
-        onclick={onSearch}
-      >
-        <Search size={14} strokeWidth={1.8} />
-      </button>
-    </div>
-    <div class="shell-tab-notch-drawer-actions" role="group" aria-label="Customize active pane">
-      <button type="button" disabled={!canSplit} onclick={() => shellTabs.splitActive("right")}>
-        <Columns2 size={15} strokeWidth={1.75} />
-        <span>Split right</span>
-      </button>
-      <button type="button" disabled={!canSplit} onclick={() => shellTabs.splitActive("down")}>
-        <Rows2 size={15} strokeWidth={1.75} />
-        <span>Split down</span>
-      </button>
-      <button
-        type="button"
-        disabled={!canMergePane}
-        onclick={() => shellTabs.closeActiveGroup()}
-      >
-        <SquareX size={15} strokeWidth={1.75} />
-        <span>Close pane</span>
-      </button>
-    </div>
-  </section>
-
-  <section class="shell-tab-notch-drawer-section shell-tab-notch-drawer-desktop">
+  <section class="shell-tab-notch-drawer-toolbar">
     <div class="shell-tab-notch-drawer-desktop-copy">
       <span class="shell-tab-notch-drawer-kicker">Desktop {desktopIndex + 1}</span>
       {#if renamingDesktop}
@@ -124,7 +91,33 @@
       {/if}
       <span>{paneCount} pane{paneCount === 1 ? "" : "s"}</span>
     </div>
-    <div class="shell-tab-notch-drawer-desktop-actions">
+    <div class="shell-tab-notch-drawer-toolbar-actions" role="group" aria-label="Desktop and pane actions">
+      <button
+        type="button"
+        class="shell-tab-notch-drawer-quiet-action"
+        title="Search open tabs"
+        aria-label="Search open tabs"
+        onclick={onSearch}
+      >
+        <Search size={14} strokeWidth={1.8} />
+      </button>
+      <span class="shell-tab-notch-drawer-divider" aria-hidden="true"></span>
+      <button type="button" title="Split pane right" aria-label="Split pane right" disabled={!canSplit} onclick={() => shellTabs.splitActive("right")}>
+        <Columns2 size={15} strokeWidth={1.75} />
+      </button>
+      <button type="button" title="Split pane down" aria-label="Split pane down" disabled={!canSplit} onclick={() => shellTabs.splitActive("down")}>
+        <Rows2 size={15} strokeWidth={1.75} />
+      </button>
+      <button
+        type="button"
+        title="Close pane and merge tabs"
+        aria-label="Close pane and merge tabs"
+        disabled={!canMergePane}
+        onclick={() => shellTabs.closeActiveGroup()}
+      >
+        <SquareX size={15} strokeWidth={1.75} />
+      </button>
+      <span class="shell-tab-notch-drawer-divider" aria-hidden="true"></span>
       {#each shellTabs.desktops as desktop, index (desktop.id)}
         <button
           type="button"
