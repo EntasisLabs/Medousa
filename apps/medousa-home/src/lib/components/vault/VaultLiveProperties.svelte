@@ -347,7 +347,6 @@
               aria-label="Add tag"
             >
               <Plus size={12} strokeWidth={2} aria-hidden="true" />
-              <span>Add</span>
             </button>
           {/if}
         </div>
