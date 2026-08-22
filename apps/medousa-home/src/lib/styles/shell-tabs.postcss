@@ -20,7 +20,6 @@
     animation: shell-tab-notch-open 150ms ease-out;
   }
 
-  .shell-tab-notch-drawer-header,
   .shell-tab-notch-drawer-footer {
     display: flex;
     min-width: 0;
@@ -31,15 +30,18 @@
     padding: 0.6rem 0.65rem;
   }
 
-  .shell-tab-notch-drawer-header {
-    border-bottom: 1px solid rgb(var(--color-surface-500) / 0.18);
-  }
-
   .shell-tab-notch-drawer-footer {
     border-top: 1px solid rgb(var(--color-surface-500) / 0.18);
     color: rgb(var(--theme-text-quiet));
     font-size: 0.64rem;
     font-weight: 550;
+  }
+
+  .shell-tab-notch-drawer-footer-divider {
+    width: 1px;
+    height: 0.9rem;
+    margin: 0 0.25rem;
+    background: rgb(var(--color-surface-500) / 0.22);
   }
 
   .shell-tab-notch-drawer-quiet-action,

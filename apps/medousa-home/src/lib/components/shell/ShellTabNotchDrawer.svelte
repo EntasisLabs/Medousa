@@ -58,7 +58,11 @@
   onclick={(event) => event.stopPropagation()}
   onkeydown={(event) => event.stopPropagation()}
 >
-  <header class="shell-tab-notch-drawer-header">
+  <div class="shell-tab-notch-drawer-stage">
+    <ShellTabNotchMiniLayout node={shellTabs.splitRoot} {onTabSettled} />
+  </div>
+
+  <footer class="shell-tab-notch-drawer-footer">
     <div class="shell-tab-notch-drawer-desktop-copy">
       {#if renamingDesktop}
         <input
@@ -84,24 +88,17 @@
       {/if}
       <span>{paneCount} pane{paneCount === 1 ? "" : "s"}</span>
     </div>
-    <button
-      type="button"
-      class="shell-tab-notch-drawer-quiet-action"
-      title="Search open tabs"
-      aria-label="Search open tabs"
-      onclick={onSearch}
-    >
-      <Search size={14} strokeWidth={1.8} />
-    </button>
-  </header>
-
-  <div class="shell-tab-notch-drawer-stage">
-    <ShellTabNotchMiniLayout node={shellTabs.splitRoot} {onTabSettled} />
-  </div>
-
-  <footer class="shell-tab-notch-drawer-footer">
-    <span>Desktop</span>
-    <div class="shell-tab-notch-drawer-desktop-actions" role="group" aria-label="Desktops">
+    <div class="shell-tab-notch-drawer-desktop-actions" role="group" aria-label="Desktop actions">
+      <button
+        type="button"
+        class="shell-tab-notch-drawer-quiet-action"
+        title="Search open tabs"
+        aria-label="Search open tabs"
+        onclick={onSearch}
+      >
+        <Search size={14} strokeWidth={1.8} />
+      </button>
+      <span class="shell-tab-notch-drawer-footer-divider" aria-hidden="true"></span>
       {#each shellTabs.desktops as desktop, index (desktop.id)}
         <button
           type="button"
