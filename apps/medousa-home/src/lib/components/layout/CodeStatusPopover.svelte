@@ -135,11 +135,11 @@
   .code-status-scrim {
     position: fixed;
     inset: 0;
-    z-index: 72;
+    z-index: 240;
   }
 
   .code-status-popover {
-    z-index: 73;
+    z-index: 241;
     overflow: hidden;
     padding: 0;
     color: rgb(var(--theme-text-primary));

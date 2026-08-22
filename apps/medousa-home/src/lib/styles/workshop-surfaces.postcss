@@ -239,7 +239,9 @@
 
   .workshop-rail-sheet-backdrop {
     @apply items-start justify-start p-0;
-    z-index: 160;
+    /* Status surfaces must clear composer menus/drop targets (220–230), while
+       remaining below full-screen application modals (260+). */
+    z-index: 240;
     background-color: rgb(var(--color-surface-950) / 0.28);
     backdrop-filter: blur(2px);
   }
@@ -248,7 +250,7 @@
     @apply fixed w-[min(17.5rem,calc(100vw-1rem))] overflow-hidden rounded-xl border border-surface-500/40 shadow-2xl;
     top: 0;
     left: 0;
-    z-index: 161;
+    z-index: 241;
     max-height: min(32rem, calc(100vh - 1rem));
     /* Status popovers sit over dense editors/composers, so their surface must
        remain fully opaque even when the surrounding shell uses translucency. */

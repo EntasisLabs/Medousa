@@ -169,11 +169,11 @@
   .activity-history-scrim {
     position: fixed;
     inset: 0;
-    z-index: 160;
+    z-index: 240;
   }
 
   .activity-history-popover {
-    z-index: 161;
+    z-index: 241;
     display: flex;
     flex-direction: column;
     overflow: hidden;
