@@ -151,7 +151,6 @@
             hasDraft={forkHasDraft}
             busy={forkBusy}
             {mobile}
-            visible
             {onFork}
           />
         </div>
@@ -277,7 +276,11 @@
     display: flex;
     justify-content: flex-end;
     margin-top: 0.2rem;
-    opacity: 0.58;
+  }
+
+  .chat-user-whisper:hover .chat-user-whisper-actions :global(.chat-turn-action),
+  .chat-user-whisper:focus-within .chat-user-whisper-actions :global(.chat-turn-action) {
+    opacity: 1;
   }
 
   @media (prefers-reduced-motion: reduce) {

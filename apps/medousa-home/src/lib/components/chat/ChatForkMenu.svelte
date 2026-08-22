@@ -6,7 +6,6 @@
     hasDraft?: boolean;
     busy?: boolean;
     mobile?: boolean;
-    visible?: boolean;
     onFork: (includeDraft: boolean) => void | Promise<void>;
   }
 
@@ -14,7 +13,6 @@
     hasDraft = false,
     busy = false,
     mobile = false,
-    visible = false,
     onFork,
   }: Props = $props();
   let open = $state(false);
@@ -37,7 +35,7 @@
     <button
       type="button"
       class="chat-turn-action"
-      class:chat-turn-action--visible={menuOpen || busy || mobile || visible}
+      class:chat-turn-action--visible={menuOpen || busy || mobile}
       title="Fork conversation"
       aria-label="Fork conversation"
       aria-haspopup="menu"
