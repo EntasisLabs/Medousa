@@ -6,19 +6,145 @@
 @layer features {
 
 
-  /* Quiet fused extension under the notch (same width — not full-shell). */
+  /* Calm workspace popover under the app-bar workspace trigger. */
   .shell-tab-notch-drawer {
     z-index: 145;
     display: flex;
     flex-direction: column;
     overflow: hidden;
     border: 1px solid rgb(var(--color-surface-500) / 0.28);
-    border-top: 0;
-    border-radius: 0 0 0.4rem 0.4rem;
+    border-radius: 0.55rem;
     background: rgb(var(--color-surface-900) / 0.94);
     backdrop-filter: blur(14px);
     box-shadow: 0 14px 32px rgb(0 0 0 / 0.28);
     animation: shell-tab-notch-open 150ms ease-out;
+  }
+
+  .shell-tab-notch-drawer-section {
+    flex: 0 0 auto;
+    border-bottom: 1px solid rgb(var(--color-surface-500) / 0.2);
+    padding: 0.75rem;
+  }
+
+  .shell-tab-notch-drawer-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.55rem;
+    color: rgb(var(--color-surface-100));
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+
+  .shell-tab-notch-drawer-quiet-action,
+  .shell-tab-notch-drawer-actions button,
+  .shell-tab-notch-drawer-desktop-actions button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgb(var(--color-surface-500) / 0.2);
+    border-radius: 0.38rem;
+    background: rgb(var(--color-surface-950) / 0.28);
+    color: rgb(var(--theme-text-tertiary));
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  }
+
+  .shell-tab-notch-drawer-quiet-action {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+
+  .shell-tab-notch-drawer-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.4rem;
+  }
+
+  .shell-tab-notch-drawer-actions button {
+    min-width: 0;
+    gap: 0.4rem;
+    padding: 0.5rem 0.55rem;
+    font-size: 0.7rem;
+  }
+
+  .shell-tab-notch-drawer-quiet-action:hover:not(:disabled),
+  .shell-tab-notch-drawer-actions button:hover:not(:disabled),
+  .shell-tab-notch-drawer-desktop-actions button:hover:not(:disabled) {
+    border-color: rgb(var(--color-surface-400) / 0.32);
+    background: rgb(var(--color-surface-800) / 0.65);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .shell-tab-notch-drawer button:disabled {
+    opacity: 0.32;
+    cursor: default;
+  }
+
+  .shell-tab-notch-drawer-desktop {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .shell-tab-notch-drawer-desktop-copy {
+    display: grid;
+    grid-template-columns: auto auto;
+    align-items: baseline;
+    gap: 0.1rem 0.4rem;
+    min-width: 0;
+  }
+
+  .shell-tab-notch-drawer-kicker {
+    grid-column: 1 / -1;
+    color: rgb(var(--theme-text-quiet));
+    font-size: 0.58rem;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .shell-tab-notch-drawer-desktop-name,
+  .shell-tab-notch-drawer-desktop-name-input {
+    min-width: 0;
+    overflow: hidden;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: rgb(var(--color-surface-100));
+    font-size: 0.76rem;
+    font-weight: 600;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .shell-tab-notch-drawer-desktop-name-input {
+    border-bottom: 1px solid rgb(var(--color-surface-400) / 0.45);
+    outline: none;
+  }
+
+  .shell-tab-notch-drawer-desktop-copy > span:last-child {
+    color: rgb(var(--theme-text-quiet));
+    font-size: 0.66rem;
+  }
+
+  .shell-tab-notch-drawer-desktop-actions {
+    display: inline-flex;
+    flex-shrink: 0;
+    gap: 0.25rem;
+  }
+
+  .shell-tab-notch-drawer-desktop-actions button {
+    width: 1.75rem;
+    height: 1.75rem;
+    font-size: 0.66rem;
+  }
+
+  .shell-tab-notch-drawer-desktop-actions button.active {
+    border-color: rgb(var(--color-surface-400) / 0.38);
+    background: rgb(var(--color-surface-700) / 0.8);
+    color: rgb(var(--color-surface-50));
   }
 
   @keyframes shell-tab-notch-open {
@@ -38,7 +164,7 @@
     flex: 1 1 auto;
     flex-direction: column;
     overflow: hidden;
-    padding: 0.35rem;
+    padding: 0.55rem;
   }
 
   .shell-tab-notch-drawer--single .shell-tab-notch-drawer-stage {
@@ -78,6 +204,19 @@
     color: rgb(var(--theme-text-quiet));
     font-size: 0.75rem;
     text-align: center;
+  }
+
+  .shell-tab-notch-search-group + .shell-tab-notch-search-group {
+    margin-top: 0.35rem;
+  }
+
+  .shell-tab-notch-search-group-label {
+    padding: 0.25rem 0.4rem 0.2rem;
+    color: rgb(var(--theme-text-quiet));
+    font-size: 0.58rem;
+    font-weight: 650;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
   }
 
   .shell-tab-notch-search-row {

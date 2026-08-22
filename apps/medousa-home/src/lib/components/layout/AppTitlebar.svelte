@@ -5,10 +5,9 @@
     ExternalLink,
     PanelLeft,
     PanelLeftOpen,
-    Plus,
   } from "@lucide/svelte";
   import ShellTabNotch from "$lib/components/shell/ShellTabNotch.svelte";
-  import NewTabMenu from "$lib/components/layout/NewTabMenu.svelte";
+  import ShellWorkspaceControl from "$lib/components/shell/ShellWorkspaceControl.svelte";
   import WindowControls from "$lib/components/layout/WindowControls.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { environment } from "$lib/stores/environment.svelte";
@@ -126,6 +125,7 @@
         ondblclick={onDragDblClick}
       ></div>
       <ShellTabNotch />
+      <ShellWorkspaceControl />
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         class="app-titlebar-drag"
@@ -135,10 +135,6 @@
     </div>
 
     <div class="app-titlebar-actions shrink-0">
-      <NewTabMenu>
-        <Plus size={16} />
-      </NewTabMenu>
-      <!-- Always reserve the pop-out slot so the centered notch doesn't shift. -->
       {#if showChatPopoutBtn}
         <button
           type="button"
@@ -159,8 +155,6 @@
         >
           <ExternalLink size={16} />
         </button>
-      {:else}
-        <span class="app-titlebar-btn app-titlebar-btn--ghost" aria-hidden="true"></span>
       {/if}
     </div>
 
@@ -173,12 +167,10 @@
    * y on trafficLightPosition moves lights DOWN (I had been lowering y — oops).
    * Bar height centers controls on light midline: y18 + 6 ≈ 24 → ~36–40px bar.
    *
-   * --titlebar-system-chrome mirrors Mac traffic lights ↔ Win/Linux controls so
-   * the centered notch stays optically stable across platforms.
+   * Native and custom chrome keep their own platform-appropriate footprints.
    */
   .app-titlebar {
     --titlebar-height: 40px;
-    --titlebar-system-chrome: 86px;
     display: flex;
     height: var(--titlebar-height);
     flex-shrink: 0;
@@ -203,12 +195,16 @@
     align-items: center;
     gap: 1px;
     box-sizing: border-box;
-    /* Same left footprint as WindowControls on the right (Mac lights / Win spacer). */
-    padding-left: var(--titlebar-system-chrome);
+    padding-left: 4px;
     padding-right: 4px;
     transition:
       background-color 160ms ease,
       width 160ms ease;
+  }
+
+  .app-titlebar--mac .app-titlebar-rail-slot {
+    /* Clear the native traffic lights without mirroring them on the right. */
+    padding-left: 86px;
   }
 
   .app-titlebar-rail-slot--expanded {
@@ -231,8 +227,8 @@
     min-width: 0;
     height: 100%;
     align-items: center;
-    justify-content: center;
-    gap: 0.35rem;
+    justify-content: flex-start;
+    gap: 0.5rem;
     margin-left: 1px;
     padding: 4px 2px;
   }
@@ -251,11 +247,6 @@
     padding-left: 4px;
   }
 
-  .app-titlebar-btn--ghost {
-    visibility: hidden;
-    pointer-events: none;
-  }
-
   .app-titlebar-btn {
     display: inline-flex;
     width: 26px;
@@ -272,8 +263,7 @@
       color 120ms ease;
   }
 
-  /* Slightly larger chrome glyphs than the old 13–14px set. */
-  .app-titlebar :global(svg.lucide) {
+  .app-titlebar-btn :global(svg.lucide) {
     width: 16px;
     height: 16px;
   }
