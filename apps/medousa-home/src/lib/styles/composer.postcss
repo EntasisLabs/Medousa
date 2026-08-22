@@ -754,6 +754,10 @@
     @apply relative flex min-w-0 items-center gap-0.5;
   }
 
+  .composer-drafts-control {
+    @apply relative ml-auto flex shrink-0 items-center;
+  }
+
   .composer-turn-trigger {
     @apply inline-flex max-w-full items-center gap-1 rounded-md transition-colors duration-150;
     border: 1px solid transparent;
@@ -848,6 +852,50 @@
 
   .composer-turn-option-check {
     @apply mt-0.5 shrink-0 text-content-link;
+  }
+
+  .composer-drafts-menu .composer-anchored-menu-body {
+    padding-top: 0.42rem;
+    padding-bottom: 0.42rem;
+  }
+
+  .composer-drafts-header {
+    @apply flex items-center justify-between gap-3;
+  }
+
+  .composer-drafts-divider {
+    @apply mx-1 my-1.5 border-t border-surface-700/45;
+  }
+
+  .composer-draft-row {
+    @apply relative flex min-w-0 items-center rounded-lg transition-colors;
+  }
+
+  .composer-draft-row:hover,
+  .composer-draft-row:focus-within {
+    @apply bg-surface-800/70;
+  }
+
+  .composer-draft-apply {
+    @apply min-w-0 flex-1 pr-9;
+  }
+
+  .composer-draft-row:hover .composer-draft-apply,
+  .composer-draft-row:focus-within .composer-draft-apply {
+    background: transparent;
+  }
+
+  .composer-draft-delete {
+    @apply absolute right-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-content-quiet opacity-0 transition hover:bg-surface-700/70 hover:text-content-error focus-visible:opacity-100 disabled:pointer-events-none disabled:opacity-40;
+  }
+
+  .composer-draft-row:hover .composer-draft-delete,
+  .composer-draft-row:focus-within .composer-draft-delete {
+    @apply opacity-100;
+  }
+
+  .composer-drafts-empty {
+    @apply px-2.5 py-2 text-[10.5px] text-content-quiet;
   }
 
   .composer-bar:focus-within {

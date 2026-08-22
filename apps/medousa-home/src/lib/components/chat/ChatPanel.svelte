@@ -12,6 +12,7 @@
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import ComposerSkillPills from "$lib/components/chat/ComposerSkillPills.svelte";
   import ComposerSkillSlashMenu from "$lib/components/chat/ComposerSkillSlashMenu.svelte";
+  import ComposerDraftsControl from "$lib/components/chat/ComposerDraftsControl.svelte";
   import ComposerTurnControls from "$lib/components/chat/ComposerTurnControls.svelte";
   import AgentSessionControls from "$lib/components/chat/AgentSessionControls.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
@@ -1156,6 +1157,11 @@
               onChange={agentSession.updateAgentConfig}
             />
           {/if}
+          <ComposerDraftsControl
+            disabled={connection.offline || chat.composerBlocked}
+            mode={agentSession.sessionRuntime}
+            model={`${runtime.provider}:${runtime.model}`}
+          />
         </div>
       {/if}
       <ComposerSkillSlashMenu

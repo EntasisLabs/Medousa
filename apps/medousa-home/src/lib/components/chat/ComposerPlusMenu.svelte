@@ -25,6 +25,8 @@
     disabled?: boolean;
     /** Optional workshop entry for mobile. */
     showWorkshop?: boolean;
+    /** Keep drafts in the compact add menu on mobile layouts. */
+    showStashes?: boolean;
     onProfile?: () => void;
     onAgent?: () => void;
     onWorkshop?: () => void;
@@ -35,6 +37,7 @@
   let {
     disabled = false,
     showWorkshop = false,
+    showStashes = true,
     onProfile,
     onAgent,
     onWorkshop,
@@ -89,7 +92,7 @@
   });
 
   $effect(() => {
-    if (!open) return;
+    if (!open || !showStashes) return;
     void refreshStashes();
   });
 
@@ -204,7 +207,7 @@
   bind:this={triggerEl}
   type="button"
   class="composer-bar-icon-btn"
-  aria-label="Add attachments, profile, or agent"
+  aria-label="Add attachments and composer options"
   aria-haspopup="menu"
   aria-expanded={open}
   disabled={disabled || chat.pendingMediaUploading}
@@ -229,20 +232,22 @@
         <Paperclip size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
         <span>Attach</span>
       </button>
-      <button
-        type="button"
-        class="composer-plus-menu-item"
-        role="menuitem"
-        disabled={!canStash || stashSaving}
-        onclick={() => void stashDraft()}
-      >
-        {#if stashSaving}
-          <LoaderCircle size={15} class="shrink-0 animate-spin opacity-70" />
-        {:else}
-          <BookmarkPlus size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
-        {/if}
-        <span>Stash draft</span>
-      </button>
+      {#if showStashes}
+        <button
+          type="button"
+          class="composer-plus-menu-item"
+          role="menuitem"
+          disabled={!canStash || stashSaving}
+          onclick={() => void stashDraft()}
+        >
+          {#if stashSaving}
+            <LoaderCircle size={15} class="shrink-0 animate-spin opacity-70" />
+          {:else}
+            <BookmarkPlus size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
+          {/if}
+          <span>Stash draft</span>
+        </button>
+      {/if}
       {#if showWorkshop && onWorkshop}
         <button
           type="button"
@@ -263,50 +268,52 @@
         <span>Agent</span>
       </button>
 
-      {#if stashesLoading || stashes.length > 0 || stashError}
-        <div class="composer-plus-menu-divider" aria-hidden="true"></div>
-        <div class="composer-stash-heading">
-          <span>Prompt stashes</span>
-          {#if stashesLoading}<LoaderCircle size={12} class="animate-spin" />{/if}
-        </div>
-      {/if}
+      {#if showStashes}
+        {#if stashesLoading || stashes.length > 0 || stashError}
+          <div class="composer-plus-menu-divider" aria-hidden="true"></div>
+          <div class="composer-stash-heading">
+            <span>Prompt stashes</span>
+            {#if stashesLoading}<LoaderCircle size={12} class="animate-spin" />{/if}
+          </div>
+        {/if}
 
-      {#each stashes as stash (stash.stash_id)}
-        <div class="composer-stash-row">
-          <button
-            type="button"
-            class="composer-stash-apply"
-            role="menuitem"
-            onclick={() => applyStash(stash)}
-          >
-            <ArchiveRestore size={14} strokeWidth={1.75} class="shrink-0 opacity-65" />
-            <span class="composer-stash-copy">
-              <span class="composer-stash-label">{stash.label || "Untitled draft"}</span>
-              <span class="composer-stash-meta">
-                {stash.draft.media_refs?.length
-                  ? `${stash.draft.media_refs.length} attachment${stash.draft.media_refs.length === 1 ? "" : "s"}`
-                  : "Saved prompt"}
+        {#each stashes as stash (stash.stash_id)}
+          <div class="composer-stash-row">
+            <button
+              type="button"
+              class="composer-stash-apply"
+              role="menuitem"
+              onclick={() => applyStash(stash)}
+            >
+              <ArchiveRestore size={14} strokeWidth={1.75} class="shrink-0 opacity-65" />
+              <span class="composer-stash-copy">
+                <span class="composer-stash-label">{stash.label || "Untitled draft"}</span>
+                <span class="composer-stash-meta">
+                  {stash.draft.media_refs?.length
+                    ? `${stash.draft.media_refs.length} attachment${stash.draft.media_refs.length === 1 ? "" : "s"}`
+                    : "Saved prompt"}
+                </span>
               </span>
-            </span>
-          </button>
-          <button
-            type="button"
-            class="composer-stash-delete"
-            aria-label={`Delete ${stash.label || "prompt stash"}`}
-            disabled={deletingStashId !== null}
-            onclick={(event) => void removeStash(event, stash.stash_id)}
-          >
-            {#if deletingStashId === stash.stash_id}
-              <LoaderCircle size={12} class="animate-spin" />
-            {:else}
-              <Trash2 size={13} strokeWidth={1.8} />
-            {/if}
-          </button>
-        </div>
-      {/each}
+            </button>
+            <button
+              type="button"
+              class="composer-stash-delete"
+              aria-label={`Delete ${stash.label || "prompt stash"}`}
+              disabled={deletingStashId !== null}
+              onclick={(event) => void removeStash(event, stash.stash_id)}
+            >
+              {#if deletingStashId === stash.stash_id}
+                <LoaderCircle size={12} class="animate-spin" />
+              {:else}
+                <Trash2 size={13} strokeWidth={1.8} />
+              {/if}
+            </button>
+          </div>
+        {/each}
 
-      {#if stashError}
-        <p class="composer-stash-error" role="alert">Couldn’t update prompt stashes.</p>
+        {#if stashError}
+          <p class="composer-stash-error" role="alert">Couldn’t update prompt stashes.</p>
+        {/if}
       {/if}
     </div>
   </BodyPortal>

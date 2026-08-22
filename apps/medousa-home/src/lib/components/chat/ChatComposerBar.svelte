@@ -426,6 +426,7 @@
           <ComposerPlusMenu
             disabled={blocked}
             showWorkshop={true}
+            showStashes={mobile}
             mode={agentRuntime}
             model={`${runtime.provider}:${runtime.model}`}
             onProfile={() => {
@@ -560,6 +561,7 @@
       <div bind:this={plusAnchorEl} class="composer-plus-anchor relative shrink-0">
         <ComposerPlusMenu
           disabled={blocked}
+          showStashes={mobile}
           mode={agentRuntime}
           model={`${runtime.provider}:${runtime.model}`}
           onProfile={() => {
