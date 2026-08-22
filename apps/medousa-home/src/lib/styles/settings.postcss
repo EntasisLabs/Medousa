@@ -78,8 +78,8 @@
   }
 
   .settings-nav--rail {
-    gap: 0.125rem;
-    padding: 0.2rem 0.375rem 0.75rem;
+    gap: 0.0625rem;
+    padding: 0.35rem 0.5rem 0.85rem;
   }
 
   .settings-nav-group {
@@ -96,22 +96,23 @@
 
   .settings-nav--rail .settings-nav-group {
     display: flex;
-    height: 1.4rem;
+    height: 1.75rem;
     align-items: center;
     padding: 0 0.5rem;
     color: rgb(var(--theme-text-quiet));
-    font-size: 0.59rem;
-    font-weight: 650;
-    letter-spacing: 0.095em;
-    line-height: 1;
+    font-size: 0.75rem;
+    font-weight: 450;
+    letter-spacing: -0.006em;
+    line-height: 1.2;
+    text-transform: none;
   }
 
   .settings-nav--rail .settings-nav-group:not(:first-child) {
-    margin-top: 0.7rem;
+    margin-top: 0.85rem;
   }
 
   .settings-nav--rail .settings-nav-group--active {
-    color: rgb(var(--theme-text-tertiary));
+    color: rgb(var(--theme-text-quiet));
   }
 
   .settings-nav-item {
@@ -124,12 +125,12 @@
 
   .settings-nav--rail .settings-nav-item {
     display: flex;
-    min-height: 2.05rem;
+    min-height: 2.125rem;
     align-items: center;
     gap: 0.5rem;
     margin: 0;
-    border-radius: 0.375rem;
-    padding: 0.35rem 0.5rem;
+    border-radius: 0.45rem;
+    padding: 0.4rem 0.5rem;
     text-align: left;
   }
 
@@ -138,23 +139,24 @@
   }
 
   .settings-nav--rail .settings-nav-item-active {
-    background: rgb(var(--theme-card-hover) / 0.72);
-    box-shadow: inset 0 0 0 1px rgb(var(--theme-border) / 0.2);
+    background: rgb(var(--color-surface-800) / 0.78);
+    box-shadow: none;
   }
 
   .settings-nav--rail .settings-nav-item-active:hover {
-    background: rgb(var(--theme-card-hover) / 0.86);
+    background: rgb(var(--color-surface-800) / 0.92);
   }
 
   .settings-nav-item-icon {
     @apply shrink-0 text-content-quiet;
-    width: 0.95rem;
-    height: 0.95rem;
-    stroke-width: 1.65;
+    width: 1rem;
+    height: 1rem;
+    color: rgb(var(--theme-text-tertiary));
+    stroke-width: 1.7;
   }
 
   .settings-nav-item-active .settings-nav-item-icon {
-    color: rgb(var(--theme-text-secondary));
+    color: rgb(var(--color-surface-200));
   }
 
   .settings-nav-item-copy {
@@ -166,15 +168,15 @@
   }
 
   .settings-nav--rail .settings-nav-item-label {
-    color: rgb(var(--theme-text-secondary));
-    font-size: 0.8125rem;
+    color: rgb(var(--color-surface-200));
+    font-size: 0.875rem;
     font-weight: 450;
-    line-height: 1.2;
-    letter-spacing: -0.009em;
+    line-height: 1.25;
+    letter-spacing: -0.008em;
   }
 
   .settings-nav--rail .settings-nav-item-active .settings-nav-item-label {
-    color: rgb(var(--color-surface-100));
+    color: rgb(var(--color-surface-50));
     font-weight: 500;
   }
 

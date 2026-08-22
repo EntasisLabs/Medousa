@@ -12,7 +12,7 @@
   class="settings-rail-title"
   class:nav-rail-popover-toolbar-label={popover}
 >
-  <Settings size={13} strokeWidth={1.75} aria-hidden="true" />
+  <Settings size={14} strokeWidth={1.7} aria-hidden="true" />
   <span>Settings</span>
 </div>
 
@@ -21,17 +21,16 @@
     display: inline-flex;
     min-width: 0;
     align-items: center;
-    gap: 0.4rem;
-    padding-inline: 0.4rem;
-    color: rgb(var(--color-surface-200));
-    font-size: 0.78rem;
-    font-weight: 550;
-    letter-spacing: -0.012em;
+    gap: 0.45rem;
+    padding-inline: 0.45rem;
+    color: rgb(var(--theme-text-secondary));
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
   }
 
   .settings-rail-title :global(svg) {
     flex-shrink: 0;
     color: rgb(var(--theme-text-tertiary));
-    opacity: 0.9;
   }
 </style>
