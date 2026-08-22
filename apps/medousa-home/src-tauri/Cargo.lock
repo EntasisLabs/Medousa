@@ -9329,11 +9329,3 @@ dependencies = [
  "syn 2.0.117",
  "winnow 1.0.3",
 ]
-
-[[patch.unused]]
-name = "grapheme-runtime"
-version = "0.6.1"
-
-[[patch.unused]]
-name = "grapheme-sdk"
-version = "0.6.1"
