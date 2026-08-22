@@ -22,7 +22,7 @@
     min-width: 0;
     align-items: center;
     gap: 0.45rem;
-    padding-inline: 0.45rem;
+    padding-inline: 0.7rem;
     color: rgb(var(--theme-text-secondary));
     font-size: 0.8125rem;
     font-weight: 500;
