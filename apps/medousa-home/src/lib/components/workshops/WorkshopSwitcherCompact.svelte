@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Check, Monitor, Plus } from "@lucide/svelte";
+  import { Check, Monitor, Plus, Settings2 } from "@lucide/svelte";
   import WorkshopJoinSheet from "$lib/components/workshops/WorkshopJoinSheet.svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
@@ -451,10 +451,15 @@
             type="button"
             role="menuitem"
             class="{isFloatingMenu
-              ? 'workshop-switcher-manage'
+              ? 'workshop-switcher-action workshop-switcher-manage'
               : 'workshop-text-action mt-3 text-sm'}"
             onclick={openConnectionSettings}
           >
+            {#if isFloatingMenu}
+              <span class="workshop-switcher-action-icon" aria-hidden="true">
+                <Settings2 size={14} strokeWidth={1.8} />
+              </span>
+            {/if}
             Manage in Settings
           </button>
         </div>

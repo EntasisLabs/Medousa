@@ -409,7 +409,6 @@
         </div>
 
         <div class="workshop-switcher-footer">
-          <div class="workshop-switcher-divider" aria-hidden="true"></div>
           <button
             type="button"
             role="menuitem"
@@ -596,9 +595,9 @@
   .workshop-layout-appearance {
     position: relative;
     display: grid;
-    gap: 0.2rem;
+    gap: 0.15rem;
     flex-shrink: 0;
-    padding: 0 0.5rem 0.35rem;
+    padding: 0 0.5rem 0.25rem;
   }
 
   .workshop-layout-chip {
@@ -606,8 +605,8 @@
     align-items: center;
     gap: 0.55rem;
     width: 100%;
-    min-height: 2.25rem;
-    padding: 0.35rem 0.5rem;
+    min-height: 2rem;
+    padding: 0.25rem 0.5rem;
     border: 0;
     border-radius: 0.5rem;
     background: transparent;
@@ -617,7 +616,7 @@
   }
 
   .workshop-layout-chip:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--color-surface-800) 55%, transparent);
+    background: color-mix(in srgb, rgb(var(--color-surface-800)) 40%, transparent);
   }
 
   .workshop-layout-chip:disabled {
@@ -626,29 +625,29 @@
   }
 
   .workshop-layout-chip-open {
-    background: color-mix(in srgb, var(--color-primary-600) 14%, transparent);
+    background: color-mix(in srgb, rgb(var(--color-primary-600)) 10%, transparent);
   }
 
   .workshop-layout-chip-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 1.75rem;
-    height: 1.75rem;
+    width: 1.65rem;
+    height: 1.65rem;
     flex-shrink: 0;
     border-radius: 0.4rem;
     color: rgb(var(--theme-text-secondary));
-    background: color-mix(in srgb, var(--color-surface-800) 80%, transparent);
+    background: color-mix(in srgb, rgb(var(--color-surface-800)) 58%, transparent);
   }
 
   .workshop-layout-chip-swatches {
     display: flex;
-    width: 1.75rem;
-    height: 1.75rem;
+    width: 1.65rem;
+    height: 1.65rem;
     flex-shrink: 0;
     overflow: hidden;
     border-radius: 0.4rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-500) 40%, transparent);
+    border: 1px solid color-mix(in srgb, rgb(var(--color-surface-500)) 28%, transparent);
   }
 
   .workshop-layout-chip-swatches span {
@@ -659,16 +658,17 @@
 
   .workshop-layout-chip-body {
     display: flex;
+    align-items: baseline;
     min-width: 0;
     flex: 1 1 auto;
-    flex-direction: column;
-    gap: 0.05rem;
+    gap: 0.5rem;
   }
 
   .workshop-layout-chip-label {
-    font-size: 0.625rem;
+    flex-shrink: 0;
+    font-size: 0.6rem;
     font-weight: 650;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: rgb(var(--theme-text-quiet));
   }
@@ -677,7 +677,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.8125rem;
+    font-size: 0.78rem;
     font-weight: 550;
     color: rgb(var(--color-surface-100));
   }
@@ -691,8 +691,8 @@
     padding: 0.25rem;
     overflow-y: auto;
     border-radius: 0.55rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-600) 45%, transparent);
-    background: color-mix(in srgb, var(--color-surface-950) 40%, transparent);
+    border: 1px solid color-mix(in srgb, rgb(var(--color-surface-600)) 30%, transparent);
+    background: color-mix(in srgb, rgb(var(--color-surface-950)) 32%, transparent);
   }
 
   .workshop-layout-theme-card {
@@ -710,12 +710,12 @@
   }
 
   .workshop-layout-theme-card:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--color-surface-800) 65%, transparent);
+    background: color-mix(in srgb, rgb(var(--color-surface-800)) 45%, transparent);
   }
 
   .workshop-layout-theme-card-active {
-    border-color: color-mix(in srgb, var(--color-primary-500) 40%, transparent);
-    background: color-mix(in srgb, var(--color-primary-600) 12%, transparent);
+    border-color: color-mix(in srgb, rgb(var(--color-primary-500)) 28%, transparent);
+    background: color-mix(in srgb, rgb(var(--color-primary-600)) 8%, transparent);
   }
 
   .workshop-layout-theme-card:disabled {
@@ -730,7 +730,7 @@
     flex-shrink: 0;
     overflow: hidden;
     border-radius: 0.3rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-500) 35%, transparent);
+    border: 1px solid color-mix(in srgb, rgb(var(--color-surface-500)) 35%, transparent);
   }
 
   .workshop-layout-theme-card-swatches span {
