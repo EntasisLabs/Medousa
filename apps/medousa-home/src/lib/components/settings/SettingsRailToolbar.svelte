@@ -21,16 +21,17 @@
     display: inline-flex;
     min-width: 0;
     align-items: center;
-    gap: 0.375rem;
-    padding-inline: 0.375rem;
-    color: rgb(var(--theme-text-secondary));
-    font-size: 0.75rem;
-    font-weight: 500;
-    letter-spacing: -0.008em;
+    gap: 0.4rem;
+    padding-inline: 0.4rem;
+    color: rgb(var(--color-surface-200));
+    font-size: 0.78rem;
+    font-weight: 550;
+    letter-spacing: -0.012em;
   }
 
   .settings-rail-title :global(svg) {
     flex-shrink: 0;
-    color: rgb(var(--theme-text-quiet));
+    color: rgb(var(--theme-text-tertiary));
+    opacity: 0.9;
   }
 </style>
