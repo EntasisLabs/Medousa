@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use genai::chat::ChatMessage;
+use medousa_runtime::MedousaToolLoopPipeline;
 use stasis::application::orchestration::prompt_pipeline::PromptExecutionPipeline;
 use stasis::application::orchestration::tool_loop_pipeline::ToolCallMode;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;

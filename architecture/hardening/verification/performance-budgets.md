@@ -414,8 +414,17 @@ and advisory/license/source exceptions.
 Initial binding regression ceilings are recorded in
 [`scripts/ci/dependency-budget.json`](../../../scripts/ci/dependency-budget.json)
 (H11 inventory: 944 unique pairs / 94 duplicate names before unused-root-dep
-removal; **899 / 90** after dropping unused root adapter frameworks and
-dead `hmac`/`cap-std`/`portable-pty` deps). H11 lowers them after removing unused direct dependencies and defines
+removal; **900 / 90** after dropping unused root adapter frameworks and
+dead `hmac`/`cap-std`/`portable-pty` deps, then adding the reviewed,
+local `medousa-runtime` package boundary; its Phase 1B edges reuse packages
+already in the closure, as do its Phase 1C
+Stasis/`genai`/`tracing`/`sha2`/Tokio/`tokio-util` edges; the portable loop-gate
+and foreground-presentation-port seam adds no production dependency, and the
+physical production-loop/golden-suite move adds only a test-only `async-trait`
+edge already present in the workspace closure; the same local package moves the
+Home Tauri closure from `490` to `491` without growing its duplicate-name count).
+H11 lowers them
+after removing unused direct dependencies and defines
 per-package composition. A new dependency requires an owner, feature
 justification, size/build delta, and duplicate-version explanation.
 

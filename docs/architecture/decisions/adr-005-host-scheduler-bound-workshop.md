@@ -42,8 +42,8 @@ the recovery truth across restart.
 | Workshop disposition + steer | `src/agent_runtime/turn_worker/store.rs` |
 | Enter bound workshop | `src/agent_runtime/turn_worker/run.rs` |
 | begin_work tool | `src/turn_control_tools.rs` |
-| Host exit | `src/medousa_tool_loop.rs`, `src/agent_runtime/turn_orchestrator.rs` |
+| Host exit | `crates/medousa-runtime/src/tool_loop.rs`, `src/agent_runtime/turn_orchestrator.rs` |
 | Host allowlist | `src/agent_runtime/turn_worker/policy.rs` |
-| Host FSM | `src/agent_runtime/turn_completion_fsm.rs` |
+| Host FSM | `crates/medousa-runtime/src/completion_fsm.rs` |
 | Steer HTTP | `src/daemon/workshop_steer.rs` |
 | Ticket phase | `crates/medousa-types/src/turn_ticket.rs` |

@@ -10,8 +10,6 @@ pub mod active_stream_sink;
 pub mod ambient_context;
 pub mod daemon_interactive_turn;
 pub mod execution_context;
-#[cfg(test)]
-mod golden_turn;
 pub(crate) mod provider_stream;
 #[cfg(test)]
 mod spine_byte_parity;
@@ -64,6 +62,7 @@ pub mod turn_delivery;
 pub mod turn_ledger;
 pub mod turn_loop_settings;
 pub mod turn_orchestrator;
+pub mod turn_presentation;
 pub mod turn_services;
 pub mod turn_worker;
 pub mod turn_worker_job;

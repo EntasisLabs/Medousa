@@ -1019,40 +1019,45 @@ async fn run_worker_turn_inner(
     };
 
     let mut worker_scratch: Option<crate::agent_runtime::turn_context::TurnScratchpad> = None;
+    let delegation_control: Arc<dyn medousa_runtime::DelegationControlPort> = store.clone();
+    let runtime_ports = medousa_runtime::RuntimePorts::new()
+        .with_optional_ledger_sink(super::super::turn_ledger::session_turn_ledger_sink(Some(
+            &record.session_id,
+        )))
+        .with_tool_run_events(Arc::new(
+            super::super::tool_stream::DaemonToolRunEventPort::new(sink.clone()),
+        ))
+        .with_turn_presentation(Arc::new(
+            super::super::turn_presentation::DaemonTurnPresentationPort::new(sink.clone()),
+        ))
+        .with_budget_approval(Arc::new(
+            crate::turn_budget_request::DaemonTurnBudgetApprovalPort::new(
+                record.parent_turn_correlation_id.clone(),
+                stream_turn_id,
+                Some(record.session_id.clone()),
+                record
+                    .delivery_target
+                    .as_ref()
+                    .map(|target| target.channel.clone()),
+                record.delivery_target.clone(),
+                Some(sink.clone()),
+            ),
+        ))
+        .with_delegation_control(delegation_control);
     let mut completion_gate = ToolLoopCompletionGate {
         stream_turn_id,
-        session_id: Some(record.session_id.clone()),
-        sink: Some(sink.clone()),
+        runtime_ports,
         orchestration: None,
         budget: None,
         max_tool_rounds: worker_max_rounds,
         max_text_only_stuck_continues: turn_loop_settings.max_text_only_stuck_continues,
         scratch_out: Some(&mut worker_scratch),
-        host_handoff_slot: None,
         parent_turn_correlation_id: record.parent_turn_correlation_id.clone(),
         initial_worker_scratch,
-        handoff_parent_user_prompt: record.parent_user_prompt.clone(),
-        handoff_vibe_signature: record
-            .handoff_capsule
-            .as_ref()
-            .and_then(|cap| cap.vibe_signature.clone()),
-        handoff_model_avec: record
-            .handoff_capsule
-            .as_ref()
-            .and_then(|cap| cap.model_avec.map(Into::into)),
-        handoff_continuity_bundle: record
-            .handoff_capsule
-            .as_ref()
-            .and_then(|cap| cap.host_continuity.clone()),
         skip_avec_ritual_check: matches!(
             intent,
             TurnWorkerIntent::Research | TurnWorkerIntent::General
         ),
-        channel: record
-            .delivery_target
-            .as_ref()
-            .map(|target| target.channel.clone()),
-        delivery_target: record.delivery_target.clone(),
         tool_round_budget_ceiling: worker_max_rounds,
         hard_tool_round_ceiling: None,
         require_operator_budget_gate: false,
@@ -1061,8 +1066,6 @@ async fn run_worker_turn_inner(
         cancel_poll_work_id: Some(work_id.clone()),
         steer_poll_work_id: is_bound_workshop.then_some(work_id.clone()),
         round_context_provider: None,
-        evidence_undertaking_id: None,
-        compact_evidence_receipt_sink: None,
         active_turn_checkpoint_sink: None,
         active_turn_resume: None,
     };
@@ -1588,7 +1591,7 @@ pub fn pipeline_for_turn_profile(
     supports_browser_host: bool,
     channel_surface: Option<&str>,
     client_registry: crate::client_tools::ClientRegistry,
-) -> crate::medousa_tool_loop::MedousaToolLoopPipeline {
+) -> medousa_runtime::MedousaToolLoopPipeline {
     if host_bus {
         let allowlist = super::policy::host_bus_tool_names();
         let filtered: Arc<dyn ToolRegistry> =

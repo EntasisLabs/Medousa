@@ -50,13 +50,24 @@
       "revisit": "2026-11-01"
     }
   ],
+  "budgetChangeLedger": [
+    {
+      "date": "2026-08-23",
+      "workload": "P09 medousa-default, medousa-iroh-transport, medousa-runtime, and Home Tauri",
+      "owner": "iOS embedded-daemon / daemon composition",
+      "reason": "Add the local medousa-runtime workspace boundary so every daemon deployment can share one production foreground-turn kernel; extracted dependencies reuse packages already in the measured closure.",
+      "oldNew": "899->900 default; 980->981 iroh; 490->491 Home Tauri; duplicate-version counts unchanged",
+      "evidence": "architecture/hardening/11-package-and-dependency-boundaries.md#2026-08-23-medousa-runtime-boundary",
+      "revisit": "Mobile daemon composition gate or 2026-11-01, whichever comes first"
+    }
+  ],
   "profiles": {
     "medousa-default": {
       "kind": "package",
       "package": "medousa",
       "features": [],
       "forbidAdapterFrameworks": true,
-      "uniqueNameVersionPairs": 899,
+      "uniqueNameVersionPairs": 900,
       "duplicateVersionNames": 90
     },
     "medousa-iroh-transport": {
@@ -64,8 +75,16 @@
       "package": "medousa",
       "features": ["iroh-transport"],
       "forbidAdapterFrameworks": true,
-      "uniqueNameVersionPairs": 980,
+      "uniqueNameVersionPairs": 981,
       "duplicateVersionNames": 96
+    },
+    "medousa-runtime-portable": {
+      "kind": "package",
+      "package": "medousa-runtime",
+      "features": [],
+      "forbidAdapterFrameworks": true,
+      "uniqueNameVersionPairs": 537,
+      "duplicateVersionNames": 43
     },
     "adapter-workspace": {
       "kind": "packages",
@@ -82,7 +101,7 @@
       "kind": "manifest",
       "manifestPath": "apps/medousa-home/src-tauri/Cargo.toml",
       "forbidAdapterFrameworks": true,
-      "uniqueNameVersionPairs": 490,
+      "uniqueNameVersionPairs": 491,
       "duplicateVersionNames": 33
     }
   },
@@ -181,7 +200,8 @@
   "packageComposition": {
     "engine": {
       "crates": [
-        "medousa"
+        "medousa",
+        "medousa-runtime"
       ],
       "features": [],
       "binaries": [

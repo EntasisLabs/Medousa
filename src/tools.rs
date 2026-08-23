@@ -5,6 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Utc};
 use locus_core_rs::NodeStore;
+use medousa_runtime::MedousaToolLoopPipeline;
 use schemars::JsonSchema;
 use schemars::schema::{InstanceType, Schema, SchemaObject};
 use serde::{Deserialize, Serialize};
@@ -12,7 +13,6 @@ use serde_json::{Value, json};
 use tokio::sync::{RwLock, mpsc};
 use uuid::Uuid;
 
-use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use stasis::application::orchestration::tool_registry::{StasisTool, ToolRegistry};
 use stasis::domain::runtime::job_attempt::JobAttemptOutcome;
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;

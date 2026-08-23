@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -460,12 +459,6 @@ impl Drop for TurnExecutionLease {
     }
 }
 
-tokio::task_local! {
-    static ACTIVE_TURN_CONTEXT: Arc<TurnExecutionContext>;
-}
-
-static MISSING_TURN_CONTEXT_INVOCATIONS: AtomicU64 = AtomicU64::new(0);
-
 /// Zero-sized compatibility token for tools whose upstream trait cannot yet
 /// accept a typed invocation context. It carries no mutable fallback state.
 #[derive(Clone, Debug, Default)]
@@ -490,59 +483,25 @@ pub async fn with_turn_execution_context<F>(
 where
     F: Future,
 {
-    ACTIVE_TURN_CONTEXT.scope(context, future).await
+    let boundary = Arc::new(
+        medousa_runtime::TurnExecutionBoundary::new(
+            context.cancellation().clone(),
+            context.deadline(),
+        )
+        .with_host_context(context),
+    );
+    medousa_runtime::with_turn_execution_boundary(boundary, future).await
 }
 
 pub fn active_turn_execution_context() -> Option<Arc<TurnExecutionContext>> {
-    ACTIVE_TURN_CONTEXT.try_with(Arc::clone).ok()
+    medousa_runtime::active_turn_execution_boundary()?.host_context::<TurnExecutionContext>()
 }
 
 pub fn missing_turn_context_invocations() -> u64 {
-    MISSING_TURN_CONTEXT_INVOCATIONS.load(Ordering::Relaxed)
+    medousa_runtime::missing_turn_execution_boundary_invocations()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TurnExecutionBoundaryError {
-    MissingContext,
-    Cancelled,
-    DeadlineExceeded,
-}
-
-impl fmt::Display for TurnExecutionBoundaryError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::MissingContext => formatter.write_str("turn execution context is missing"),
-            Self::Cancelled => formatter.write_str("turn cancelled"),
-            Self::DeadlineExceeded => formatter.write_str("turn execution deadline exceeded"),
-        }
-    }
-}
-
-impl std::error::Error for TurnExecutionBoundaryError {}
-
-/// Await one provider/tool leaf under the active turn's cancellation root and
-/// absolute deadline. An unscoped leaf fails closed before it is polled.
-pub async fn await_turn_boundary<F, T>(future: F) -> Result<T, TurnExecutionBoundaryError>
-where
-    F: Future<Output = T>,
-{
-    let Some(context) = active_turn_execution_context() else {
-        MISSING_TURN_CONTEXT_INVOCATIONS.fetch_add(1, Ordering::Relaxed);
-        return Err(TurnExecutionBoundaryError::MissingContext);
-    };
-    let cancellation = context.cancellation().clone();
-    let deadline = tokio::time::Instant::from_std(context.deadline());
-    tokio::pin!(future);
-    tokio::select! {
-        biased;
-        () = cancellation.cancelled() => Err(TurnExecutionBoundaryError::Cancelled),
-        () = tokio::time::sleep_until(deadline) => {
-            cancellation.cancel();
-            Err(TurnExecutionBoundaryError::DeadlineExceeded)
-        }
-        output = &mut future => Ok(output),
-    }
-}
+pub use medousa_runtime::{TurnExecutionBoundaryError, await_turn_boundary};
 
 /// Compatibility read for tools whose upstream trait cannot yet accept context.
 /// The marker carries no fallback: an unscoped invocation fails closed.
@@ -560,6 +519,7 @@ pub async fn turn_continuation_scope(access: &TurnScopeAccess) -> Option<TurnCon
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::Ordering;
     use std::time::Duration;
 
     use super::*;

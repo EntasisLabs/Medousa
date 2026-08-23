@@ -24,6 +24,9 @@ for target in "${targets[@]}"; do
   echo "check-ios-embedded-deps: medousa-engine -> ${target}"
   cargo check --locked -p medousa-engine --target "${target}" --profile "${profile}"
 
+  echo "check-ios-embedded-deps: production foreground runtime -> ${target}"
+  cargo check --locked -p medousa-runtime --target "${target}" --profile "${profile}"
+
   echo "check-ios-embedded-deps: Stasis + Locus native -> ${target}"
   cargo build --locked -p medousa-ios-dependency-probe \
     --target "${target}" \

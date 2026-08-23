@@ -538,6 +538,65 @@ pub async fn emit_tool_run_finished(
     .await;
 }
 
+#[derive(Clone)]
+pub struct DaemonToolRunEventPort {
+    sink: SharedAgentStreamSink,
+}
+
+impl DaemonToolRunEventPort {
+    pub fn new(sink: SharedAgentStreamSink) -> Self {
+        Self { sink }
+    }
+}
+
+impl medousa_runtime::ToolRunEventPort for DaemonToolRunEventPort {
+    fn started(
+        &self,
+        event: medousa_runtime::ToolRunStart,
+    ) -> medousa_runtime::RuntimePortFuture<String> {
+        let sink = self.sink.clone();
+        Box::pin(async move {
+            let tool_run_id = new_tool_run_id();
+            emit_tool_run_started(
+                &sink,
+                &tool_run_id,
+                &event.tool_name,
+                &event.tool_input,
+                event.tool_round,
+            )
+            .await;
+            tool_run_id
+        })
+    }
+
+    fn finished(
+        &self,
+        event: medousa_runtime::ToolRunFinish,
+    ) -> medousa_runtime::RuntimePortFuture<()> {
+        let sink = self.sink.clone();
+        Box::pin(async move {
+            let safe_input = crate::settings_guard::redact_json_value(&event.invocation.tool_input);
+            let safe_output =
+                crate::settings_guard::redact_json_value(&event.invocation.tool_output);
+            emit_tool_run_finished(
+                &sink,
+                &event.tool_run_id,
+                event.tool_round,
+                &event.invocation,
+                crate::payload_receipt::receipt_meta(
+                    &safe_input,
+                    crate::payload_receipt::DEFAULT_MAX_INLINE_BYTES,
+                ),
+                crate::payload_receipt::receipt_meta(
+                    &safe_output,
+                    crate::payload_receipt::DEFAULT_MAX_INLINE_BYTES,
+                ),
+            )
+            .await;
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

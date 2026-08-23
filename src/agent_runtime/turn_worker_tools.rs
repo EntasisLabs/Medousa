@@ -2,7 +2,6 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use stasis::domain::errors::StasisError;
 
 use crate::agent_runtime::turn_worker::{
@@ -22,37 +21,7 @@ const COGNITION_TURN_WORKER_STATUS_ID: ToolId = ToolId::new(COGNITION_TURN_WORKE
 const COGNITION_SPAWN_TURN_WORKER_ID: ToolId = ToolId::new(COGNITION_SPAWN_TURN_WORKER);
 const COGNITION_WORKSHOP_STEER_ID: ToolId = ToolId::new(COGNITION_WORKSHOP_STEER);
 
-pub fn is_workshop_spawn_call(tool_name: &str, input: &Value) -> bool {
-    tool_name.trim() == crate::public_api::COGNITION_WORKSHOP_MUTATE
-        && input.get("action").and_then(Value::as_str) == Some("workshop.spawn")
-}
-
-pub fn worker_spawn_from_invocations(
-    invocations: &[stasis::application::orchestration::tool_loop_pipeline::ToolInvocation],
-) -> Option<(String, String)> {
-    invocations.iter().rev().find_map(|inv| {
-        if !is_workshop_spawn_call(&inv.tool_name, &inv.tool_input) {
-            return None;
-        }
-        let spawned = inv
-            .tool_output
-            .get("worker_spawned")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        if !spawned {
-            return None;
-        }
-        let work_id = inv.tool_output.get("work_id")?.as_str()?.to_string();
-        let ack = inv
-            .tool_output
-            .get("user_ack")
-            .and_then(|v| v.as_str())
-            .or_else(|| inv.tool_output.get("message").and_then(|v| v.as_str()))
-            .unwrap_or("Working on that in the background.")
-            .to_string();
-        Some((work_id, ack))
-    })
-}
+pub use medousa_runtime::turn_control::{is_workshop_spawn_call, worker_spawn_from_invocations};
 
 pub struct CognitionSpawnTurnWorkerTool {
     scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,

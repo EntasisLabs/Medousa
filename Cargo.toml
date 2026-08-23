@@ -15,6 +15,7 @@ members = [
     "crates/medousa-api-contract",
     "crates/medousa-tool-macros",
     "crates/medousa-engine",
+    "crates/medousa-runtime",
     "crates/medousa-ios-dependency-probe",
     "crates/medousa-sdk",
     "crates/medousa-sdk-iroh",
@@ -75,6 +76,7 @@ medousa-install-support = { path = "crates/medousa-install-support" }
 medousa-local-credential = { path = "crates/medousa-local-credential" }
 medousa-secrets = { path = "crates/medousa-secrets" }
 medousa-engine = { path = "crates/medousa-engine" }
+medousa-runtime = { path = "crates/medousa-runtime" }
 medousa-host = { path = "crates/medousa-host" }
 medousa-store = { path = "crates/medousa-store" }
 medousa-sdk = { path = "crates/medousa-sdk" }

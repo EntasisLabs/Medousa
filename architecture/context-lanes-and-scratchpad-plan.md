@@ -190,7 +190,7 @@ Maps to existing pieces:
 | Task | Detail |
 |------|--------|
 | 1.1 | Add `TurnScratchpad` struct in `turn_ledger.rs` (or `turn_scratchpad.rs`) |
-| 1.2 | Update each tool round in `medousa_tool_loop.rs`: refresh scratch, append `[MEDOUSA_SCRATCH]` after control line |
+| 1.2 | Update each tool round in `crates/medousa-runtime/src/tool_loop.rs`: refresh scratch, append `[MEDOUSA_SCRATCH]` after control line |
 | 1.3 | Append compact `tool_round_digest` (names + ok/fail) to scratch |
 | 1.4 | Gatekeeper / checklist write `open_gaps` into scratch |
 | 1.5 | Persist scratch snapshot in ledger JSONL (`scratch` field on `tool_round` events) |
@@ -205,7 +205,7 @@ Maps to existing pieces:
 
 **Goal:** Host LLM calls use explicit pools; user lane stays clean.
 
-**Shipped:** `HostTurnContext` in `medousa_tool_loop` — `user_lane_prefix` + `tool_lane.messages`; optional tools footer on final response; failure explanation uses scratch not tool transcript.
+**Shipped:** `HostTurnContext` in `medousa-runtime` — `user_lane_prefix` + `tool_lane.messages`; optional tools footer on final response; failure explanation uses scratch not tool transcript.
 
 | Task | Detail |
 |------|--------|
@@ -329,7 +329,7 @@ Maps to existing pieces:
 
 | Area | File |
 |------|------|
-| Tool loop messages | `src/medousa_tool_loop.rs` |
+| Tool loop messages | `crates/medousa-runtime/src/tool_loop.rs` |
 | Control / ledger | `src/agent_runtime/turn_ledger.rs` |
 | Orchestration | `src/agent_runtime/turn_orchestrator.rs` |
 | Prior / user lane | `src/agent_runtime/turn_services.rs` |

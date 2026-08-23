@@ -821,6 +821,22 @@ impl TurnWorkerStore {
     }
 }
 
+impl medousa_runtime::DelegationControlPort for TurnWorkerStore {
+    fn is_cancelled(&self, work_id: &str) -> bool {
+        TurnWorkerStore::is_work_cancelled(self, work_id)
+    }
+
+    fn drain_steer_messages(&self, work_id: &str) -> Vec<medousa_runtime::TurnSteerMessage> {
+        TurnWorkerStore::drain_steer_messages(self, work_id)
+            .into_iter()
+            .map(|message| medousa_runtime::TurnSteerMessage {
+                text: message.text,
+                speaker_profile_id: message.speaker_profile_id,
+            })
+            .collect()
+    }
+}
+
 fn is_active_bound(record: &TurnWorkRecord) -> bool {
     !record.archived
         && record.disposition == TurnWorkDisposition::Bound

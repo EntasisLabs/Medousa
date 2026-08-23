@@ -1,6 +1,7 @@
 //! Output-side turn completion: receipt checklist + optional gatekeeper model.
 
 use genai::chat::{ChatMessage, ChatRequest};
+use medousa_runtime::{RuntimePorts, TurnPresentationPort};
 use serde_json::Value;
 use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionContext, PromptExecutionPipeline,
@@ -10,201 +11,48 @@ use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 use super::prompt_prep::truncate_text_for_budget;
 use super::stream_sink::SharedAgentStreamSink;
 use super::turn_budget::{TurnBudget, TurnOrchestrationState, try_consume_gatekeeper_budget};
-use super::turn_completion_fsm::TurnCompletionProfile;
 use std::sync::Arc;
 
-use super::turn_context::{ToolRoundContextProvider, TurnScratchpad, WorkerHandoffCapsule};
-use super::worker_continuity::HostContinuityBundle;
 use crate::turn_text_heuristics::looks_like_interim_status;
-use stasis::ports::outbound::memory::memory_models::MemoryAvecState;
 
-/// Host context for completion gatekeeper calls from the tool loop.
-pub struct ToolLoopCompletionGate<'a> {
-    pub stream_turn_id: u64,
-    pub session_id: Option<String>,
-    pub sink: Option<SharedAgentStreamSink>,
-    pub orchestration: Option<&'a mut TurnOrchestrationState>,
-    pub budget: Option<&'a TurnBudget>,
-    /// Configured model-round budget for this tool-loop execution.
-    pub max_tool_rounds: usize,
-    /// Consecutive text-only continues without new tools before the turn stops.
-    pub max_text_only_stuck_continues: usize,
-    /// Latest scratchpad snapshot from the tool loop (for failure explanation / debugging).
-    pub scratch_out: Option<&'a mut Option<TurnScratchpad>>,
-    /// Shared slot updated each host tool round; consumed at worker spawn.
-    pub host_handoff_slot: Option<Arc<tokio::sync::RwLock<Option<WorkerHandoffCapsule>>>>,
-    pub parent_turn_correlation_id: Option<String>,
-    /// Seeds worker tool-loop scratch from host handoff (Tier C).
-    pub initial_worker_scratch: Option<TurnScratchpad>,
-    /// Raw user message for handoff (without tool-policy appendix).
-    pub handoff_parent_user_prompt: Option<String>,
-    pub handoff_vibe_signature: Option<String>,
-    pub handoff_model_avec: Option<MemoryAvecState>,
-    pub handoff_continuity_bundle: Option<HostContinuityBundle>,
-    /// Workshop lane (research/general worker): skip host memory AVEC ritual receipt checks.
-    pub skip_avec_ritual_check: bool,
-    /// Origin channel for operator notifications (`tui`, `telegram`, `home-desktop`, …).
-    pub channel: Option<String>,
-    /// Full delivery target for channel push (Telegram chat id, Home session, …).
-    pub delivery_target: Option<crate::turn_continuation::StoredDeliveryTarget>,
-    /// Hard ceiling for silent tool-round extension (host bus cap).
-    pub tool_round_budget_ceiling: usize,
-    /// Optional mode-owned ceiling that operator approval cannot exceed.
-    pub hard_tool_round_ceiling: Option<usize>,
-    /// When true, `cognition_turn_request_more_rounds` pauses for operator approval.
-    pub require_operator_budget_gate: bool,
-    /// Text-only completion behavior, independent of the execution lane.
-    pub completion_profile: TurnCompletionProfile,
-    /// Poll turn-worker store each round; end loop when status is cancelled.
-    pub cancel_poll_work_id: Option<String>,
-    /// Drain steer inbox each round and inject `[MEDOUSA_WORKSHOP_STEER]`.
-    pub steer_poll_work_id: Option<String>,
-    /// Mode-owned ambient/delta compiler invoked after each tool batch.
-    pub round_context_provider: Option<Arc<dyn ToolRoundContextProvider>>,
-    /// Forge undertaking allowed to own ephemeral non-replayable evidence.
-    pub evidence_undertaking_id: Option<String>,
-    /// Stages compact ephemeral-evidence provenance into the Forge command log.
-    pub compact_evidence_receipt_sink:
-        Option<Arc<dyn super::coder_evidence::CompactEvidenceReceiptSink>>,
-    /// Coder-only durable checkpoint writer. General/worker lanes leave this absent.
-    pub active_turn_checkpoint_sink:
-        Option<Arc<dyn super::coder_turn_checkpoint::ActiveTurnCheckpointSink>>,
-    /// Exact safe-boundary state consumed once when this loop starts.
-    pub active_turn_resume: Option<super::coder_turn_checkpoint::ActiveTurnResumeState>,
-}
+pub use medousa_runtime::{
+    ToolLoopCompletionGate, ToolLoopCompletionGateConfig, collect_tool_names,
+};
 
-/// Owned, immutable turn context shared by primary, continuation, and retry
-/// loop gates. Binding the three mutable budget/scratch references in one place
-/// prevents those execution paths from silently drifting as gate fields evolve.
-#[derive(Clone)]
-pub struct ToolLoopCompletionGateConfig {
-    pub stream_turn_id: u64,
-    pub session_id: Option<String>,
-    pub sink: Option<SharedAgentStreamSink>,
-    pub max_text_only_stuck_continues: usize,
-    pub host_handoff_slot: Option<Arc<tokio::sync::RwLock<Option<WorkerHandoffCapsule>>>>,
-    pub parent_turn_correlation_id: Option<String>,
-    pub handoff_parent_user_prompt: Option<String>,
-    pub handoff_vibe_signature: Option<String>,
-    pub handoff_model_avec: Option<MemoryAvecState>,
-    pub handoff_continuity_bundle: Option<HostContinuityBundle>,
-    pub skip_avec_ritual_check: bool,
-    pub channel: Option<String>,
-    pub delivery_target: Option<crate::turn_continuation::StoredDeliveryTarget>,
-    pub hard_tool_round_ceiling: Option<usize>,
-    pub require_operator_budget_gate: bool,
-    pub completion_profile: TurnCompletionProfile,
-    pub cancel_poll_work_id: Option<String>,
-    pub steer_poll_work_id: Option<String>,
-    pub round_context_provider: Option<Arc<dyn ToolRoundContextProvider>>,
-    pub evidence_undertaking_id: Option<String>,
-    pub compact_evidence_receipt_sink:
-        Option<Arc<dyn super::coder_evidence::CompactEvidenceReceiptSink>>,
-}
-
-impl ToolLoopCompletionGateConfig {
-    #[allow(clippy::too_many_arguments)]
-    pub fn bind<'a>(
-        &self,
-        orchestration: &'a mut TurnOrchestrationState,
-        budget: &'a TurnBudget,
-        scratch_out: &'a mut Option<TurnScratchpad>,
-        max_tool_rounds: usize,
-        tool_round_budget_ceiling: usize,
-        initial_worker_scratch: TurnScratchpad,
-        active_turn_checkpoint_sink: Option<
-            Arc<dyn super::coder_turn_checkpoint::ActiveTurnCheckpointSink>,
-        >,
-        active_turn_resume: Option<super::coder_turn_checkpoint::ActiveTurnResumeState>,
-    ) -> ToolLoopCompletionGate<'a> {
-        ToolLoopCompletionGate {
-            stream_turn_id: self.stream_turn_id,
-            session_id: self.session_id.clone(),
-            sink: self.sink.clone(),
-            orchestration: Some(orchestration),
-            budget: Some(budget),
-            max_tool_rounds,
-            max_text_only_stuck_continues: self.max_text_only_stuck_continues,
-            scratch_out: Some(scratch_out),
-            host_handoff_slot: self.host_handoff_slot.clone(),
-            parent_turn_correlation_id: self.parent_turn_correlation_id.clone(),
-            initial_worker_scratch: Some(initial_worker_scratch),
-            handoff_parent_user_prompt: self.handoff_parent_user_prompt.clone(),
-            handoff_vibe_signature: self.handoff_vibe_signature.clone(),
-            handoff_model_avec: self.handoff_model_avec,
-            handoff_continuity_bundle: self.handoff_continuity_bundle.clone(),
-            skip_avec_ritual_check: self.skip_avec_ritual_check,
-            channel: self.channel.clone(),
-            delivery_target: self.delivery_target.clone(),
-            tool_round_budget_ceiling,
-            hard_tool_round_ceiling: self.hard_tool_round_ceiling,
-            require_operator_budget_gate: self.require_operator_budget_gate,
-            completion_profile: self.completion_profile,
-            cancel_poll_work_id: self.cancel_poll_work_id.clone(),
-            steer_poll_work_id: self.steer_poll_work_id.clone(),
-            round_context_provider: self.round_context_provider.clone(),
-            evidence_undertaking_id: self.evidence_undertaking_id.clone(),
-            compact_evidence_receipt_sink: self.compact_evidence_receipt_sink.clone(),
-            active_turn_checkpoint_sink,
-            active_turn_resume,
-        }
-    }
-}
-
-impl ToolLoopCompletionGate<'_> {
-    pub fn new_for_execution(
-        stream_turn_id: u64,
-        session_id: Option<String>,
-        sink: Option<SharedAgentStreamSink>,
-        max_tool_rounds: usize,
-    ) -> Self {
-        let max_tool_rounds = max_tool_rounds.max(1);
-        Self {
-            stream_turn_id,
-            session_id,
+/// Daemon convenience composition used by integration and golden-loop tests.
+pub fn tool_loop_completion_gate_for_execution(
+    stream_turn_id: u64,
+    session_id: Option<String>,
+    sink: Option<SharedAgentStreamSink>,
+    max_tool_rounds: usize,
+) -> ToolLoopCompletionGate<'static> {
+    let tool_run_events = sink.clone().map(|sink| {
+        Arc::new(super::tool_stream::DaemonToolRunEventPort::new(sink))
+            as Arc<dyn medousa_runtime::ToolRunEventPort>
+    });
+    let turn_presentation = sink.clone().map(|sink| {
+        Arc::new(super::turn_presentation::DaemonTurnPresentationPort::new(
             sink,
-            orchestration: None,
-            budget: None,
-            max_tool_rounds,
-            max_text_only_stuck_continues:
-                crate::agent_runtime::turn_ledger::resolve_max_text_only_stuck_continues(
-                    max_tool_rounds,
-                ),
-            scratch_out: None,
-            host_handoff_slot: None,
-            parent_turn_correlation_id: None,
-            initial_worker_scratch: None,
-            handoff_parent_user_prompt: None,
-            handoff_vibe_signature: None,
-            handoff_model_avec: None,
-            handoff_continuity_bundle: None,
-            skip_avec_ritual_check: false,
-            channel: None,
-            delivery_target: None,
-            tool_round_budget_ceiling: max_tool_rounds,
-            hard_tool_round_ceiling: None,
-            require_operator_budget_gate: false,
-            completion_profile: TurnCompletionProfile::ForegroundPrincipal,
-            cancel_poll_work_id: None,
-            steer_poll_work_id: None,
-            round_context_provider: None,
-            evidence_undertaking_id: None,
-            compact_evidence_receipt_sink: None,
-            active_turn_checkpoint_sink: None,
-            active_turn_resume: None,
-        }
-    }
-}
-
-impl ToolLoopCompletionGate<'_> {
-    pub async fn reset_scratch(&self, streaming_enabled: bool) {
-        if !streaming_enabled {
-            return;
-        }
-        if let Some(sink) = self.sink.as_ref() {
-            sink.scratch_reset(self.stream_turn_id).await;
-        }
-    }
+        )) as Arc<dyn TurnPresentationPort>
+    });
+    let budget_approval = Arc::new(
+        crate::turn_budget_request::DaemonTurnBudgetApprovalPort::new(
+            None,
+            stream_turn_id,
+            session_id.clone(),
+            None,
+            None,
+            sink,
+        ),
+    );
+    let runtime_ports = RuntimePorts::new()
+        .with_optional_ledger_sink(super::turn_ledger::session_turn_ledger_sink(
+            session_id.as_deref(),
+        ))
+        .with_optional_tool_run_events(tool_run_events)
+        .with_optional_turn_presentation(turn_presentation)
+        .with_budget_approval(budget_approval);
+    ToolLoopCompletionGate::new_for_execution(stream_turn_id, runtime_ports, max_tool_rounds)
 }
 
 const GATEKEEPER_MAX_PROMPT_CHARS: usize = 2_000;
@@ -319,13 +167,6 @@ pub fn missing_ritual_tools_for_avec(
         missing.push("cognition_memory_mutate action=memory.calibrate".to_string());
     }
     missing
-}
-
-pub fn collect_tool_names(invocations: &[ToolInvocation]) -> Vec<String> {
-    invocations
-        .iter()
-        .map(|inv| inv.tool_name.clone())
-        .collect()
 }
 
 fn normalize_draft(text: &str) -> String {

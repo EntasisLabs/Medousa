@@ -2,7 +2,9 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
+#[cfg(test)]
 use serde_json::Value;
+#[cfg(test)]
 use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 #[cfg(test)]
 use stasis::application::orchestration::tool_registry::StasisTool;
@@ -41,216 +43,16 @@ const COGNITION_TURN_CHECKPOINT_ID: ToolId = ToolId::new(COGNITION_TURN_CHECKPOI
 const COGNITION_TURN_REQUEST_MORE_ROUNDS_ID: ToolId =
     ToolId::new(COGNITION_TURN_REQUEST_MORE_ROUNDS);
 
-pub struct RequestMoreRoundsPayload {
-    pub requested_rounds: usize,
-    pub reason: String,
-    pub progress_summary: Option<String>,
-}
-
-fn turn_action<'a>(tool_name: &str, input: &'a Value) -> Option<&'a str> {
-    if tool_name.trim() != crate::public_api::COGNITION_TURN {
-        return None;
-    }
-    input
-        .get("action")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-}
-
-pub fn is_turn_control_call(tool_name: &str) -> bool {
-    tool_name.trim() == crate::public_api::COGNITION_TURN
-}
-
-pub fn is_prepare_final_tool_name(tool_name: &str, input: &Value) -> bool {
-    turn_action(tool_name, input) == Some("turn.prepare_final")
-}
-
-pub fn is_finish_turn_tool_name(tool_name: &str, input: &Value) -> bool {
-    turn_action(tool_name, input) == Some("turn.finish")
-}
-
-pub fn is_checkpoint_turn_tool_name(tool_name: &str, input: &Value) -> bool {
-    turn_action(tool_name, input) == Some("turn.checkpoint")
-}
-
-pub fn is_request_more_rounds_tool_name(tool_name: &str, input: &Value) -> bool {
-    turn_action(tool_name, input) == Some("turn.request_more_rounds")
-}
-
-pub fn is_begin_work_tool_name(tool_name: &str, input: &Value) -> bool {
-    turn_action(tool_name, input) == Some("turn.begin_work")
-}
-
-pub fn is_update_user_tool_name(tool_name: &str, input: &Value) -> bool {
-    turn_action(tool_name, input) == Some("turn.update_user")
-}
-
-pub fn is_propose_mode_tool_name(tool_name: &str, input: &Value) -> bool {
-    turn_action(tool_name, input) == Some("turn.propose_mode")
-}
-
-/// Extract the latest successful user-update line from a tool batch.
-pub fn update_user_message_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
-    for inv in invocations.iter().rev() {
-        if !is_update_user_tool_name(&inv.tool_name, &inv.tool_input) {
-            continue;
-        }
-        if inv.tool_output.get("ok") == Some(&Value::Bool(false)) {
-            continue;
-        }
-        if let Some(message) = message_from_turn_control_message_payload(&inv.tool_input) {
-            return Some(message);
-        }
-        if let Some(message) = message_from_turn_control_message_payload(&inv.tool_output) {
-            return Some(message);
-        }
-    }
-    None
-}
-
-/// Latest principal-visible progress line from update_user or begin_work in this batch.
-pub fn turn_progress_message_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
-    update_user_message_from_invocations(invocations)
-        .or_else(|| begin_work_message_from_invocations(invocations))
-}
-
-/// Extract the latest successful begin-work progress message from a tool batch.
-pub fn begin_work_message_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
-    for inv in invocations.iter().rev() {
-        if !is_begin_work_tool_name(&inv.tool_name, &inv.tool_input) {
-            continue;
-        }
-        if inv.tool_output.get("ok") == Some(&Value::Bool(false)) {
-            continue;
-        }
-        if let Some(message) = message_from_begin_work_payload(&inv.tool_input) {
-            return Some(message);
-        }
-        if let Some(message) = message_from_begin_work_payload(&inv.tool_output) {
-            return Some(message);
-        }
-    }
-    None
-}
-
-fn note_from_begin_work_payload(payload: &Value) -> Option<String> {
-    payload
-        .get("note")
-        .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-}
-
-/// Extract the latest successful begin-work sticky note from a tool batch.
-pub fn begin_work_note_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
-    for inv in invocations.iter().rev() {
-        if !is_begin_work_tool_name(&inv.tool_name, &inv.tool_input) {
-            continue;
-        }
-        if inv.tool_output.get("ok") == Some(&Value::Bool(false)) {
-            continue;
-        }
-        if let Some(note) = note_from_begin_work_payload(&inv.tool_input) {
-            return Some(note);
-        }
-        if let Some(note) = note_from_begin_work_payload(&inv.tool_output) {
-            return Some(note);
-        }
-    }
-    None
-}
-
-fn message_from_begin_work_payload(payload: &Value) -> Option<String> {
-    payload
-        .get("message")
-        .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-}
-
-/// Extract the operator-facing final message from a tool batch, if `cognition_turn_finish` ran.
-pub fn finish_turn_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
-    for inv in invocations.iter().rev() {
-        if !is_finish_turn_tool_name(&inv.tool_name, &inv.tool_input) {
-            continue;
-        }
-        if inv.tool_output.get("ok") == Some(&Value::Bool(false)) {
-            continue;
-        }
-        if let Some(message) = message_from_finish_turn_payload(&inv.tool_input) {
-            return Some(message);
-        }
-        if let Some(message) = message_from_finish_turn_payload(&inv.tool_output) {
-            return Some(message);
-        }
-    }
-    None
-}
-
-/// Preserve the model's terminal prose exactly. Completion policy is based on
-/// response/tool events, never a semantic classification of this text.
-pub fn terminal_text_for_fsm_end(_termination_reason: &str, draft_text: String) -> String {
-    draft_text
-}
-
-pub fn request_more_rounds_from_invocations(
-    invocations: &[ToolInvocation],
-) -> Option<RequestMoreRoundsPayload> {
-    for inv in invocations.iter().rev() {
-        if !is_request_more_rounds_tool_name(&inv.tool_name, &inv.tool_input) {
-            continue;
-        }
-        if inv.tool_output.get("ok") == Some(&Value::Bool(false)) {
-            continue;
-        }
-        let requested_rounds = inv
-            .tool_input
-            .get("requested_rounds")
-            .or_else(|| inv.tool_output.get("requested_rounds"))
-            .and_then(|value| value.as_u64())
-            .map(|value| value as usize)
-            .unwrap_or(1)
-            .clamp(1, crate::turn_budget_request::MAX_REQUESTED_ROUNDS_PER_ASK);
-        let reason = inv
-            .tool_input
-            .get("reason")
-            .or_else(|| inv.tool_output.get("reason"))
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)?;
-        let progress_summary = inv
-            .tool_input
-            .get("progress_summary")
-            .or_else(|| inv.tool_output.get("progress_summary"))
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
-        return Some(RequestMoreRoundsPayload {
-            requested_rounds,
-            reason,
-            progress_summary,
-        });
-    }
-    None
-}
-
-fn message_from_finish_turn_payload(payload: &Value) -> Option<String> {
-    message_from_turn_control_message_payload(payload)
-}
-
-fn message_from_turn_control_message_payload(payload: &Value) -> Option<String> {
-    payload
-        .get("message")
-        .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-}
+pub use medousa_runtime::turn_control::{
+    RequestMoreRoundsPayload, begin_work_message_from_invocations,
+    begin_work_note_from_invocations, checkpoint_turn_from_invocations,
+    finish_turn_from_invocations, is_begin_work_tool_name, is_checkpoint_turn_tool_name,
+    is_finish_turn_tool_name, is_prepare_final_tool_name, is_propose_mode_tool_name,
+    is_request_more_rounds_tool_name, is_turn_control_call, is_update_user_tool_name,
+    request_more_rounds_from_invocations, terminal_text_for_fsm_end,
+    turn_progress_message_from_invocations, update_user_message_from_invocations,
+    workshop_entered_from_invocations,
+};
 
 fn optional_trimmed(value: Option<String>) -> Option<TrimmedText> {
     value.and_then(|value| TrimmedText::new(value).ok())
@@ -375,25 +177,6 @@ impl From<TurnRequestMoreRoundsInput> for TurnRequestMoreRoundsCommand {
     }
 }
 
-/// Extract the principal-facing checkpoint from a tool batch, if `cognition_turn_checkpoint` ran.
-pub fn checkpoint_turn_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
-    for inv in invocations.iter().rev() {
-        if !is_checkpoint_turn_tool_name(&inv.tool_name, &inv.tool_input) {
-            continue;
-        }
-        if inv.tool_output.get("ok") == Some(&Value::Bool(false)) {
-            continue;
-        }
-        if let Some(message) = message_from_turn_control_message_payload(&inv.tool_input) {
-            return Some(message);
-        }
-        if let Some(message) = message_from_turn_control_message_payload(&inv.tool_output) {
-            return Some(message);
-        }
-    }
-    None
-}
-
 /// Signal tool-loop entry with a principal-facing progress line (loop continues).
 pub struct CognitionTurnBeginWorkTool {
     scheduler: std::sync::Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
@@ -476,33 +259,6 @@ impl CognitionTurnBeginWorkTool {
             .enter_bound_workshop(message.as_str(), goal.as_str(), command.intent)
             .await
     }
-}
-
-pub fn workshop_entered_from_invocations(
-    invocations: &[ToolInvocation],
-) -> Option<(String, String)> {
-    invocations.iter().rev().find_map(|inv| {
-        if !is_begin_work_tool_name(&inv.tool_name, &inv.tool_input) {
-            return None;
-        }
-        let entered = inv
-            .tool_output
-            .get("workshop_entered")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        if !entered {
-            return None;
-        }
-        let work_id = inv.tool_output.get("work_id")?.as_str()?.to_string();
-        let ack = inv
-            .tool_output
-            .get("user_ack")
-            .and_then(|v| v.as_str())
-            .or_else(|| inv.tool_output.get("message").and_then(|v| v.as_str()))
-            .unwrap_or("Working on that in the workshop.")
-            .to_string();
-        Some((work_id, ack))
-    })
 }
 
 /// Short principal-facing status while the turn continues (not a final answer).

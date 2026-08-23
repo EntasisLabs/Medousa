@@ -7589,6 +7589,7 @@ dependencies = [
  "medousa-local-inference",
  "medousa-mcp-gateway",
  "medousa-mcp-server",
+ "medousa-runtime",
  "medousa-sdk",
  "medousa-secrets",
  "medousa-store",
@@ -7912,6 +7913,23 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "medousa-runtime"
+version = "0.9.1"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "genai 0.6.5",
+ "medousa-engine",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "stasis-rs",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]

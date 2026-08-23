@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crate::identity_store_ext::MedousaIdentityMemoryStore;
-use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use locus_core_rs::NodeStore;
+use medousa_runtime::MedousaToolLoopPipeline;
 use stasis::application::orchestration::prompt_pipeline::PromptExecutionPipeline;
 use stasis::application::orchestration::tool_registry::ToolRegistry;
 use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
@@ -46,6 +46,9 @@ pub(crate) fn build_tool_loop_pipeline_for_target(
     ));
     let prompt_pipeline = PromptExecutionPipeline::new(chat_client);
     MedousaToolLoopPipeline::new(prompt_pipeline, tool_registry)
+        .with_parallel_execution_settings_provider(Arc::new(
+            crate::execution_policy::load_parallel_execution_settings,
+        ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -310,7 +313,10 @@ pub(crate) async fn assemble_tui_runtime(
         EngineExecutionLane::Interactive,
     ));
     let tool_loop_pipeline =
-        MedousaToolLoopPipeline::new(prompt_pipeline, guarded_registry.clone());
+        MedousaToolLoopPipeline::new(prompt_pipeline, guarded_registry.clone())
+            .with_parallel_execution_settings_provider(Arc::new(
+                crate::execution_policy::load_parallel_execution_settings,
+            ));
 
     Ok(TuiRuntime {
         runtime,

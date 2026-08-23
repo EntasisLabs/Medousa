@@ -15,9 +15,8 @@ use crate::session;
 
 const BUDGET_REQUESTS_FILE: &str = "workspace/turn_budget_requests.json";
 
-pub const MAX_REQUESTED_ROUNDS_PER_ASK: usize = 8;
+pub use medousa_runtime::turn_control::{ABSOLUTE_MAX_TOOL_ROUNDS, MAX_REQUESTED_ROUNDS_PER_ASK};
 pub const MAX_APPROVALS_PER_TURN: usize = 2;
-pub const ABSOLUTE_MAX_TOOL_ROUNDS: usize = 32;
 
 static STORE: Lazy<TurnBudgetRequestStore> = Lazy::new(TurnBudgetRequestStore::new);
 
@@ -70,6 +69,128 @@ pub struct CreateTurnBudgetRequest {
     pub requested_rounds: usize,
     pub reason: String,
     pub progress_summary: Option<String>,
+}
+
+#[derive(Clone)]
+pub struct DaemonTurnBudgetApprovalPort {
+    turn_correlation_id: Option<String>,
+    stream_turn_id: u64,
+    session_id: Option<String>,
+    channel: Option<String>,
+    delivery_target: Option<crate::turn_continuation::StoredDeliveryTarget>,
+    sink: Option<crate::agent_runtime::stream_sink::SharedAgentStreamSink>,
+}
+
+impl DaemonTurnBudgetApprovalPort {
+    pub fn new(
+        turn_correlation_id: Option<String>,
+        stream_turn_id: u64,
+        session_id: Option<String>,
+        channel: Option<String>,
+        delivery_target: Option<crate::turn_continuation::StoredDeliveryTarget>,
+        sink: Option<crate::agent_runtime::stream_sink::SharedAgentStreamSink>,
+    ) -> Self {
+        Self {
+            turn_correlation_id,
+            stream_turn_id,
+            session_id,
+            channel,
+            delivery_target,
+            sink,
+        }
+    }
+}
+
+impl medousa_runtime::TurnBudgetApprovalPort for DaemonTurnBudgetApprovalPort {
+    fn begin(
+        &self,
+        request: medousa_runtime::TurnBudgetApprovalRequest,
+    ) -> medousa_runtime::RuntimePortFuture<
+        Result<medousa_runtime::PendingTurnBudgetApproval, String>,
+    > {
+        let turn_correlation_id = self.turn_correlation_id.clone();
+        let stream_turn_id = self.stream_turn_id;
+        let session_id = self.session_id.clone();
+        let channel = self.channel.clone();
+        let delivery_target = self.delivery_target.clone();
+        let sink = self.sink.clone();
+        Box::pin(async move {
+            let (request_id, receiver) = turn_budget_request_store()
+                .create_and_register_wait(CreateTurnBudgetRequest {
+                    turn_correlation_id,
+                    stream_turn_id,
+                    session_id,
+                    channel,
+                    rounds_executed: request.rounds_executed,
+                    max_tool_rounds: request.max_tool_rounds,
+                    requested_rounds: request.requested_rounds,
+                    reason: request.reason.clone(),
+                    progress_summary: request.progress_summary.clone(),
+                })
+                .await?;
+
+            if let Some(sink) = sink.as_ref() {
+                sink.turn_budget_approval_required(
+                    stream_turn_id,
+                    request_id.clone(),
+                    request.rounds_executed,
+                    request.max_tool_rounds,
+                    request.requested_rounds,
+                    request.reason.clone(),
+                    request.progress_summary.clone(),
+                )
+                .await;
+                sink.notice(format!(
+                    "◈ turn_budget_request id={request_id} at {}/{} requested=+{}",
+                    request.rounds_executed, request.max_tool_rounds, request.requested_rounds,
+                ))
+                .await;
+            }
+
+            if let Some(stored) = delivery_target.as_ref() {
+                let target = crate::channel_delivery::ChannelDeliveryTarget::from(stored);
+                let notify_payload = crate::turn_budget_notify::TurnBudgetNotifyPayload {
+                    request_id: request_id.clone(),
+                    rounds_executed: request.rounds_executed,
+                    max_tool_rounds: request.max_tool_rounds,
+                    requested_rounds: request.requested_rounds,
+                    reason: request.reason,
+                    progress_summary: request.progress_summary,
+                };
+                tokio::spawn(async move {
+                    let client = reqwest::Client::new();
+                    if let Err(err) =
+                        crate::turn_budget_notify::notify_turn_budget_approval_required(
+                            &client,
+                            &target,
+                            notify_payload,
+                        )
+                        .await
+                    {
+                        eprintln!("turn budget channel notify failed: {err:#}");
+                    }
+                });
+            }
+
+            let resolution_request_id = request_id.clone();
+            let resolution = Box::pin(async move {
+                match turn_budget_request_store()
+                    .wait_for_resolution(&resolution_request_id, receiver)
+                    .await
+                {
+                    BudgetResolution::Approved { granted_rounds } => {
+                        medousa_runtime::TurnBudgetApprovalResolution::Approved { granted_rounds }
+                    }
+                    BudgetResolution::Denied => {
+                        medousa_runtime::TurnBudgetApprovalResolution::Denied
+                    }
+                }
+            });
+            Ok(medousa_runtime::PendingTurnBudgetApproval::new(
+                request_id, resolution,
+            ))
+        })
+    }
 }
 
 struct WaiterState {
