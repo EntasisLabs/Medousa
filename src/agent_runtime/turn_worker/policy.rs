@@ -180,6 +180,8 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition_skill_discover",
             "cognition_skill_propose",
             "cognition_openshell_status",
+            "cognition_openshell_request_secret",
+            "cognition_grapheme_request_secret",
         ],
     );
 
@@ -250,6 +252,8 @@ mod tests {
         assert!(!names.contains("cognition_identity_recall"));
         assert!(!names.contains("cognition_identity_remember"));
         assert!(names.contains("cognition_openshell_status"));
+        assert!(!names.contains("cognition_openshell_request_secret"));
+        assert!(!names.contains("cognition_grapheme_request_secret"));
         assert!(names.contains("cognition_openshell_sandbox_run"));
         assert!(names.contains("cognition_skill_discover"));
         assert!(names.contains("cognition_skill_probe"));
@@ -313,6 +317,8 @@ mod tests {
         assert!(names.contains("cognition_tools_discover"));
         assert!(names.contains("cognition_web_search"));
         assert!(names.contains("cognition_browser_fetch"));
+        assert!(names.contains("cognition_openshell_request_secret"));
+        assert!(names.contains("cognition_grapheme_request_secret"));
         assert!(!names.contains("cognition_environment_get"));
         assert!(!names.contains("cognition_ui_present"));
     }

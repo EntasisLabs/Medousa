@@ -38,4 +38,22 @@ describe("chatSessionRuntime", () => {
     expect(copy.messages).toHaveLength(2);
     expect(copy.turns).not.toBe(runtime.turns);
   });
+
+  it("clones secure prompts without sharing mutable metadata", () => {
+    const runtime = emptySessionRuntime("sess-a");
+    runtime.secretAlert = {
+      turnId: "turn-1",
+      messageId: null,
+      requestId: "asecret-1",
+      label: "GitHub token",
+      reason: "Read a private repository",
+      providerType: "github",
+      credentialKey: "GITHUB_TOKEN",
+      backend: "openshell_provider",
+      allowedHosts: [],
+    };
+    const copy = cloneRuntime(runtime);
+    copy.secretAlert!.label = "Changed";
+    expect(runtime.secretAlert?.label).toBe("GitHub token");
+  });
 });

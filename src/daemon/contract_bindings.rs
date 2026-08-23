@@ -240,6 +240,18 @@ pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
             request: Some("CreateAgentSessionRequest"),
             response: "CreateAgentSessionResponse",
         },
+        "agents.secret_requests.get" => WireBinding {
+            request: None,
+            response: "AgentSecretRequestListResponse",
+        },
+        "agents.secret_requests.by_request_id.fulfill.post" => WireBinding {
+            request: Some("AgentSecretFulfillRequest"),
+            response: "AgentSecretResolveResponse",
+        },
+        "agents.secret_requests.by_request_id.deny.post" => WireBinding {
+            request: Some("AgentSecretDenyRequest"),
+            response: "AgentSecretResolveResponse",
+        },
         other => {
             if let Some((_, name)) = stream_binding(other) {
                 return Some(WireBinding {

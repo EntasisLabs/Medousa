@@ -178,6 +178,16 @@ openshell doctor check
 
 `openshell status` should show server reachable (no `Connection refused`).
 
+For Medousa's secure credential handoff, enable profile-backed Providers v2 on
+the workshop gateway:
+
+```bash
+openshell settings set --global --key providers_v2_enabled --value true --yes
+openshell settings get --global --json
+```
+
+Medousa fails closed when this setting is absent, false, or cannot be verified.
+
 ---
 
 ## First sandbox
@@ -351,6 +361,7 @@ spec:
   tools:
     allow:
       - cognition_openshell_status
+      - cognition_openshell_request_secret
       - cognition_openshell_sandbox_run
 ```
 
@@ -367,9 +378,38 @@ medousa manuscript-validate openshell-researcher
 | Tool | Role |
 |------|------|
 | `cognition_openshell_status` | Gateway/policy probe (read-only) |
+| `cognition_openshell_request_secret` | Trusted UI credential prompt → opaque, one-use grant |
 | `cognition_openshell_sandbox_run` | Enqueue `openshell.sandbox.run` (create → exec → destroy) |
 
 Spawn a worker with `manuscript_id=openshell-researcher`, then call `cognition_openshell_sandbox_run` with `command` (string or argv array). Policy/sandbox defaults come from the manuscript when `manuscript_id` is set.
+
+### Agent-initiated credential handoff
+
+When an OpenShell command needs a provider credential, the interactive host
+calls `cognition_openshell_request_secret` with metadata only:
+
+```json
+{
+  "provider_type": "github",
+  "credential_key": "GITHUB_TOKEN",
+  "label": "GitHub token",
+  "reason": "Read the private repository requested in this turn"
+}
+```
+
+Home renders a trusted password field outside the transcript and fulfills the
+request through the native-only `/v1/agents/secret-requests/{id}/fulfill`
+route. The value is passed to `openshell provider create` through a child-only
+environment variable using OpenShell's bare-key credential form, never argv.
+The tool receives only a session-bound, one-use `sgrant-*` id. Pass that id in
+`secret_grant_ids` on exactly one `cognition_openshell_sandbox_run` call.
+
+The durable job stores provider names, not values or grant ids. Medousa always
+creates the sandbox with `--no-auto-providers` and explicit `--provider` flags.
+OpenShell injects placeholders and resolves them only through the gateway proxy
+for provider-bound endpoints. The sandbox policy remains a separate traffic
+authorization boundary; a provider cannot open a destination that policy
+denies.
 
 ---
 

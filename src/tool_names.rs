@@ -41,6 +41,7 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_environment_wiki",
     "cognition_feed_publish",
     "cognition_feed_subscribe",
+    "cognition_grapheme_request_secret",
     "cognition_identity_mutate",
     "cognition_identity_query",
     "cognition_intent_resolve",
@@ -53,6 +54,7 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_manuscript_resolve",
     "cognition_memory_mutate",
     "cognition_memory_query",
+    "cognition_openshell_request_secret",
     "cognition_openshell_sandbox_run",
     "cognition_project_bind",
     "cognition_project_create",
@@ -143,6 +145,7 @@ mod tests {
         assert!(tool_allowed("cognition_skill_discover", &host));
         assert!(tool_allowed("cognition_skill_propose", &host));
         assert!(tool_allowed("cognition_openshell_status", &host));
+        assert!(tool_allowed("cognition_grapheme_request_secret", &host));
         assert!(!tool_allowed("cognition_skill_probe", &host));
         assert!(!tool_allowed("cognition_openshell_sandbox_run", &host));
     }

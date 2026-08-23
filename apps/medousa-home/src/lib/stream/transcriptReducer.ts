@@ -30,6 +30,7 @@ import {
   isBudgetApprovalStreamEvent,
   isBrowserChallengeStreamEvent,
   isPermissionRequestStreamEvent,
+  isSecretRequestStreamEvent,
   isTerminalContentCommit,
   isWorkerHandoffStreamEvent,
   isWorkerSynthesisStreamEvent,
@@ -81,6 +82,7 @@ export type FocusedStreamRemainder =
   | { type: "worker_synthesis" }
   | { type: "browser_challenge" }
   | { type: "permission_request" }
+  | { type: "secret_request" }
   | { type: "permission_resolved" }
   | { type: "browser_navigated" }
   | { type: "ui_scene"; messageId: string }
@@ -521,6 +523,10 @@ export function applyFocusedStreamEvent(
     return { messages, remainder: { type: "permission_request" } };
   }
 
+  if (isSecretRequestStreamEvent(event)) {
+    return { messages, remainder: { type: "secret_request" } };
+  }
+
   if (event.event_type === "browser_navigated") {
     return { messages, remainder: { type: "browser_navigated" } };
   }
@@ -587,6 +593,7 @@ export function reduceTranscriptEnvelope(
     legacy.event_type === "ui_scene" ||
     legacy.event_type === "turn_checkpoint" ||
     legacy.event_type === "permission_request" ||
+    legacy.event_type === "secret_request" ||
     legacy.event_type === "browser_challenge" ||
     legacy.event_type === "browser_navigated"
   ) {

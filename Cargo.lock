@@ -7576,6 +7576,7 @@ dependencies = [
  "grapheme-lsp",
  "grapheme-runtime",
  "grapheme-sdk",
+ "hmac 0.12.1",
  "httparse",
  "icalendar",
  "image",

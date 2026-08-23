@@ -24,6 +24,12 @@ pub enum DaemonOperation {
     AgentsPermissionRequestsGet,
     #[serde(rename = "agents.runtimes.get")]
     AgentsRuntimesGet,
+    #[serde(rename = "agents.secret_requests.by_request_id.deny.post")]
+    AgentsSecretRequestsByRequestIdDenyPost,
+    #[serde(rename = "agents.secret_requests.by_request_id.fulfill.post")]
+    AgentsSecretRequestsByRequestIdFulfillPost,
+    #[serde(rename = "agents.secret_requests.get")]
+    AgentsSecretRequestsGet,
     #[serde(rename = "agents.sessions.by_agent_session_id.cancel.post")]
     AgentsSessionsByAgentSessionIdCancelPost,
     #[serde(rename = "agents.sessions.by_agent_session_id.config.post")]
@@ -809,6 +815,9 @@ impl DaemonOperation {
             Self::AgentsPermissionRequestsByRequestIdDenyPost => "agents.permission_requests.by_request_id.deny.post",
             Self::AgentsPermissionRequestsGet => "agents.permission_requests.get",
             Self::AgentsRuntimesGet => "agents.runtimes.get",
+            Self::AgentsSecretRequestsByRequestIdDenyPost => "agents.secret_requests.by_request_id.deny.post",
+            Self::AgentsSecretRequestsByRequestIdFulfillPost => "agents.secret_requests.by_request_id.fulfill.post",
+            Self::AgentsSecretRequestsGet => "agents.secret_requests.get",
             Self::AgentsSessionsByAgentSessionIdCancelPost => "agents.sessions.by_agent_session_id.cancel.post",
             Self::AgentsSessionsByAgentSessionIdConfigPost => "agents.sessions.by_agent_session_id.config.post",
             Self::AgentsSessionsByAgentSessionIdPromptPost => "agents.sessions.by_agent_session_id.prompt.post",

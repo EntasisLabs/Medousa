@@ -698,6 +698,12 @@ fn build_event_messages(
         permission_request_id: None,
         agent_session_id: None,
         agent_runtime: None,
+        secret_request_id: None,
+        secret_label: None,
+        secret_provider_type: None,
+        secret_credential_key: None,
+        secret_backend: None,
+        secret_allowed_hosts: None,
     })
 }
 

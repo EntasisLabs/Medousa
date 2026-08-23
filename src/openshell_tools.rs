@@ -24,13 +24,19 @@ use crate::turn_continuation::{
 use crate::typed_tools::{CompatOption, ExternalJson, ToolId, medousa_tool};
 
 pub const COGNITION_OPENSHELL_STATUS: &str = "cognition_openshell_status";
+pub const COGNITION_OPENSHELL_REQUEST_SECRET: &str = "cognition_openshell_request_secret";
 pub const COGNITION_OPENSHELL_SANDBOX_RUN: &str = "cognition_openshell_sandbox_run";
 
 const COGNITION_OPENSHELL_STATUS_ID: ToolId = ToolId::new(COGNITION_OPENSHELL_STATUS);
+const COGNITION_OPENSHELL_REQUEST_SECRET_ID: ToolId =
+    ToolId::new(COGNITION_OPENSHELL_REQUEST_SECRET);
 const COGNITION_OPENSHELL_SANDBOX_RUN_ID: ToolId = ToolId::new(COGNITION_OPENSHELL_SANDBOX_RUN);
 
-pub const OPENSHELL_COGNITION_TOOLS: &[&str] =
-    &[COGNITION_OPENSHELL_STATUS, COGNITION_OPENSHELL_SANDBOX_RUN];
+pub const OPENSHELL_COGNITION_TOOLS: &[&str] = &[
+    COGNITION_OPENSHELL_STATUS,
+    COGNITION_OPENSHELL_REQUEST_SECRET,
+    COGNITION_OPENSHELL_SANDBOX_RUN,
+];
 
 pub fn is_openshell_cognition_tool(name: &str) -> bool {
     name.starts_with("cognition_openshell_")
@@ -43,10 +49,192 @@ pub fn register_openshell_tools(
     turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 ) -> stasis::prelude::Result<()> {
     registry.register_typed_tool(CognitionOpenshellStatusTool)?;
+    registry.register_typed_tool(CognitionOpenshellRequestSecretTool::new(turn_scope.clone()))?;
     registry.register_typed_tool(CognitionOpenshellSandboxRunTool::new(
         runtime, event_tx, turn_scope,
     ))?;
     Ok(())
+}
+
+async fn probe_openshell_providers_v2() -> Result<bool, String> {
+    tokio::task::spawn_blocking(crate::openshell_sandbox_run::openshell_providers_v2_enabled)
+        .await
+        .map_err(|err| format!("OpenShell Providers v2 probe task failed: {err}"))?
+}
+
+async fn probe_openshell_provider_profile(
+    provider_type: &str,
+    credential_key: &str,
+) -> Result<(), String> {
+    let provider_type = provider_type.to_string();
+    let credential_key = credential_key.to_string();
+    tokio::task::spawn_blocking(move || {
+        crate::openshell_sandbox_run::validate_openshell_provider_profile(
+            &provider_type,
+            &credential_key,
+        )
+    })
+    .await
+    .map_err(|err| format!("OpenShell provider profile probe task failed: {err}"))?
+}
+
+pub struct CognitionOpenshellRequestSecretTool {
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
+}
+
+impl CognitionOpenshellRequestSecretTool {
+    pub fn new(turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess) -> Self {
+        Self { turn_scope }
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct OpenshellRequestSecretInput {
+    /// OpenShell provider profile id, such as `github` or `openai`.
+    provider_type: String,
+    /// Environment variable expected by that provider, such as `GITHUB_TOKEN`.
+    credential_key: String,
+    /// Short trusted-UI label describing the credential.
+    label: String,
+    /// Why this turn needs the credential and what it will do with it.
+    reason: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum OpenshellRequestSecretOutput {
+    Granted {
+        grant_id: String,
+        provider_type: String,
+        credential_key: String,
+        usage_hint: String,
+    },
+    Denied {
+        reason: String,
+    },
+    Rejected {
+        reason: String,
+        policy_message: String,
+    },
+}
+
+#[medousa_tool(id = COGNITION_OPENSHELL_REQUEST_SECRET_ID)]
+impl CognitionOpenshellRequestSecretTool {
+    /// Ask the user for a credential through Medousa's trusted secret-entry UI. Never ask the user to paste a key into chat. This tool receives metadata only and returns an opaque one-use grant for `cognition_openshell_sandbox_run.secret_grant_ids`; the credential value is never exposed to the model or transcript.
+    async fn invoke_typed(
+        &self,
+        input: OpenshellRequestSecretInput,
+    ) -> stasis::prelude::Result<OpenshellRequestSecretOutput> {
+        let Some(scope) =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await
+        else {
+            return Ok(OpenshellRequestSecretOutput::Rejected {
+                reason: "missing_turn_context".to_string(),
+                policy_message: "secure credential requests require an active interactive turn"
+                    .to_string(),
+            });
+        };
+        if !scope.supports_ui_artifacts {
+            return Ok(OpenshellRequestSecretOutput::Rejected {
+                reason: "unsupported_surface".to_string(),
+                policy_message:
+                    "secure credential entry is available only on a trusted Medousa UI surface"
+                        .to_string(),
+            });
+        }
+        let Some(sink) = crate::engine_adapters::active_tool_sink().await else {
+            return Ok(OpenshellRequestSecretOutput::Rejected {
+                reason: "missing_trusted_prompt_channel".to_string(),
+                policy_message: "the active turn cannot publish a trusted credential prompt"
+                    .to_string(),
+            });
+        };
+
+        let report = tokio::task::spawn_blocking(collect_openshell_doctor_report)
+            .await
+            .map_err(|err| {
+                StasisError::PortFailure(format!("openshell preflight join error: {err}"))
+            })?;
+        if !report.readyz_ok || !report.cli_installed {
+            return Ok(OpenshellRequestSecretOutput::Rejected {
+                reason: "openshell_unavailable".to_string(),
+                policy_message: format!(
+                    "OpenShell CLI and gateway must be ready at {} before storing a credential",
+                    report.gateway_url
+                ),
+            });
+        }
+        match probe_openshell_providers_v2().await {
+            Ok(true) => {}
+            Ok(false) => {
+                return Ok(OpenshellRequestSecretOutput::Rejected {
+                    reason: "providers_v2_disabled".to_string(),
+                    policy_message: "secure credential handoff requires OpenShell Providers v2; enable providers_v2_enabled on the workshop gateway".to_string(),
+                });
+            }
+            Err(error) => {
+                return Ok(OpenshellRequestSecretOutput::Rejected {
+                    reason: "providers_v2_unverified".to_string(),
+                    policy_message: error,
+                });
+            }
+        }
+        if let Err(error) =
+            probe_openshell_provider_profile(&input.provider_type, &input.credential_key).await
+        {
+            return Ok(OpenshellRequestSecretOutput::Rejected {
+                reason: "invalid_provider_profile".to_string(),
+                policy_message: error,
+            });
+        }
+
+        let record = crate::agent_secret_request::agent_secret_request_store()
+            .create(crate::agent_secret_request::CreateAgentSecretRequest {
+                turn_id: scope.turn_correlation_id,
+                session_id: scope.session_id,
+                provider_type: input.provider_type.clone(),
+                credential_key: input.credential_key.clone(),
+                backend: medousa_types::AgentSecretRequestBackend::OpenshellProvider,
+                allowed_hosts: Vec::new(),
+                label: input.label.clone(),
+                reason: input.reason.clone(),
+            })
+            .map_err(StasisError::PortFailure)?;
+
+        sink.emit(medousa_engine::ToolSinkEvent::SecretRequest {
+            request_id: record.request_id.clone(),
+            label: record.label,
+            reason: record.reason,
+            provider_type: record.provider_type.clone(),
+            credential_key: record.credential_key.clone(),
+            backend: "openshell_provider".to_string(),
+            allowed_hosts: record.allowed_hosts,
+        })
+        .await;
+
+        match crate::agent_secret_request::agent_secret_request_store()
+            .wait_for_resolution(&record.request_id)
+            .await
+            .map_err(StasisError::PortFailure)?
+        {
+            crate::agent_secret_request::SecretRequestResolution::Granted { grant_id } => {
+                Ok(OpenshellRequestSecretOutput::Granted {
+                    grant_id,
+                    provider_type: record.provider_type,
+                    credential_key: record.credential_key,
+                    usage_hint: "Pass this grant_id once in cognition_openshell_sandbox_run.secret_grant_ids. Do not print it or ask for the credential value."
+                        .to_string(),
+                })
+            }
+            crate::agent_secret_request::SecretRequestResolution::Denied => {
+                Ok(OpenshellRequestSecretOutput::Denied {
+                    reason: "the user denied or did not complete secure credential entry"
+                        .to_string(),
+                })
+            }
+        }
+    }
 }
 
 pub struct CognitionOpenshellStatusTool;
@@ -68,6 +256,7 @@ pub struct OpenshellStatusOutput {
     pub active_gateway_name: Option<String>,
     pub policy_templates_dir: String,
     pub policy_template_count: usize,
+    pub providers_v2_enabled: Option<bool>,
 }
 
 #[medousa_tool(id = COGNITION_OPENSHELL_STATUS_ID)]
@@ -77,11 +266,17 @@ impl CognitionOpenshellStatusTool {
         &self,
         _input: OpenshellStatusInput,
     ) -> stasis::prelude::Result<OpenshellStatusOutput> {
-        let report = tokio::task::spawn_blocking(collect_openshell_doctor_report)
-            .await
-            .map_err(|err| {
-                StasisError::PortFailure(format!("openshell status join error: {err}"))
-            })?;
+        let (report, providers_v2_enabled) = tokio::task::spawn_blocking(|| {
+            let report = collect_openshell_doctor_report();
+            let providers_v2_enabled = if report.readyz_ok && report.cli_installed {
+                crate::openshell_sandbox_run::openshell_providers_v2_enabled().ok()
+            } else {
+                None
+            };
+            (report, providers_v2_enabled)
+        })
+        .await
+        .map_err(|err| StasisError::PortFailure(format!("openshell status join error: {err}")))?;
         Ok(OpenshellStatusOutput {
             gateway_url: report.gateway_url,
             gateway_reachable: report.gateway_reachable,
@@ -95,6 +290,7 @@ impl CognitionOpenshellStatusTool {
             active_gateway_name: report.active_gateway_name,
             policy_templates_dir: report.policy_templates_dir.display().to_string(),
             policy_template_count: report.policy_template_count,
+            providers_v2_enabled,
         })
     }
 }
@@ -247,6 +443,9 @@ pub struct OpenshellSandboxRunInput {
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
     correlation_id: CompatOption<String>,
+    /// Opaque one-use grants returned by cognition_openshell_request_secret.
+    #[serde(default)]
+    secret_grant_ids: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -260,6 +459,7 @@ struct OpenshellSandboxRunCommand {
     destroy_on_complete: bool,
     skill_script: Option<String>,
     correlation_id: Option<String>,
+    secret_grant_ids: Vec<String>,
 }
 
 fn optional_openshell_text(value: CompatOption<String>) -> Option<String> {
@@ -286,6 +486,7 @@ impl TryFrom<OpenshellSandboxRunInput> for OpenshellSandboxRunCommand {
                 .unwrap_or_else(default_destroy_on_complete),
             skill_script: optional_openshell_text(input.skill_script),
             correlation_id: optional_openshell_text(input.correlation_id),
+            secret_grant_ids: input.secret_grant_ids,
         })
     }
 }
@@ -383,6 +584,29 @@ impl CognitionOpenshellSandboxRunTool {
                 gateway_url: Some(report.gateway_url),
             });
         }
+        if !command.secret_grant_ids.is_empty() {
+            match probe_openshell_providers_v2().await {
+                Ok(true) => {}
+                Ok(false) => {
+                    return Ok(OpenshellSandboxRunOutput::Rejected {
+                        status: "rejected".to_string(),
+                        reason: "providers_v2_disabled".to_string(),
+                        policy_message:
+                            "secret grants require OpenShell Providers v2 on the workshop gateway"
+                                .to_string(),
+                        gateway_url: Some(report.gateway_url),
+                    });
+                }
+                Err(error) => {
+                    return Ok(OpenshellSandboxRunOutput::Rejected {
+                        status: "rejected".to_string(),
+                        reason: "providers_v2_unverified".to_string(),
+                        policy_message: error,
+                        gateway_url: Some(report.gateway_url),
+                    });
+                }
+            }
+        }
 
         let destroy_on_complete = command.destroy_on_complete;
         let workdir = command.workdir.clone();
@@ -390,7 +614,7 @@ impl CognitionOpenshellSandboxRunTool {
         let correlation_id = command.correlation_id.clone();
         let skill_script = command.skill_script.clone();
 
-        let payload = if let (Some(manuscript_id), Some(script)) =
+        let mut payload = if let (Some(manuscript_id), Some(script)) =
             (manuscript_id.as_deref(), skill_script.as_deref())
         {
             let manuscript = build_manuscript_context(manuscript_id)
@@ -421,8 +645,26 @@ impl CognitionOpenshellSandboxRunTool {
                 skill_assets_dir: None,
                 skill_upload_dest: None,
                 skill_script: None,
+                providers: Vec::new(),
             }
         };
+        let scope =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await;
+        if !command.secret_grant_ids.is_empty() {
+            let Some(scope) = scope.as_ref() else {
+                return Ok(OpenshellSandboxRunOutput::Rejected {
+                    status: "rejected".to_string(),
+                    reason: "missing_turn_context".to_string(),
+                    policy_message: "secret grants may only be used from their active chat session"
+                        .to_string(),
+                    gateway_url: None,
+                });
+            };
+            payload.providers = crate::agent_secret_request::agent_secret_request_store()
+                .consume_openshell_grants(&command.secret_grant_ids, &scope.session_id)
+                .map_err(StasisError::PortFailure)?;
+        }
         let payload_ref = payload.to_payload_ref()?;
 
         let job_id = format!("openshell-{}", Uuid::new_v4().simple());
@@ -438,9 +680,7 @@ impl CognitionOpenshellSandboxRunTool {
         )
         .build();
 
-        if let Some(scope) =
-            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope).await
-        {
+        if let Some(scope) = scope.as_ref() {
             wire_turn_child_job(
                 &mut job,
                 &scope,
@@ -461,16 +701,13 @@ impl CognitionOpenshellSandboxRunTool {
             })
             .await;
 
-        let continuation =
-            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
-                .await
-                .map(|scope| {
-                    ExternalJson::new(continuation_tool_metadata(
-                        &scope,
-                        &job_id,
-                        ContinuationAwaitMode::Async,
-                    ))
-                });
+        let continuation = scope.map(|scope| {
+            ExternalJson::new(continuation_tool_metadata(
+                &scope,
+                &job_id,
+                ContinuationAwaitMode::Async,
+            ))
+        });
         Ok(OpenshellSandboxRunOutput::Enqueued {
             job_id,
             status: "enqueued".to_string(),
@@ -524,6 +761,9 @@ mod tests {
     #[test]
     fn openshell_tool_names_are_stable() {
         assert!(is_openshell_cognition_tool(COGNITION_OPENSHELL_STATUS));
+        assert!(is_openshell_cognition_tool(
+            COGNITION_OPENSHELL_REQUEST_SECRET
+        ));
         assert!(is_openshell_cognition_tool(COGNITION_OPENSHELL_SANDBOX_RUN));
         assert!(!is_openshell_cognition_tool("cognition_memory_query"));
     }
@@ -579,6 +819,7 @@ mod tests {
             "destroy_on_complete": "true",
             "skill_script": " scripts/run.sh ",
             "correlation_id": " correlation-1 ",
+            "secret_grant_ids": ["sgrant-one"],
         }))
         .expect("sandbox input");
         let command = OpenshellSandboxRunCommand::try_from(input).expect("sandbox command");
@@ -591,5 +832,6 @@ mod tests {
         assert!(command.destroy_on_complete);
         assert_eq!(command.skill_script.as_deref(), Some("scripts/run.sh"));
         assert_eq!(command.correlation_id.as_deref(), Some("correlation-1"));
+        assert_eq!(command.secret_grant_ids, vec!["sgrant-one"]);
     }
 }

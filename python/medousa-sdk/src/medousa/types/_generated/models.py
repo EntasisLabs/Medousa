@@ -65,6 +65,19 @@ class AgentRuntimeInfo(MedousaModel):
     )
 
 
+class AgentSecretRequestBackend(Enum):
+    openshell_provider = 'openshell_provider'
+    grapheme_runtime = 'grapheme_runtime'
+
+
+class AgentSecretRequestStatus(Enum):
+    pending = 'pending'
+    provisioning = 'provisioning'
+    fulfilled = 'fulfilled'
+    denied = 'denied'
+    expired = 'expired'
+
+
 class AgentSessionConfigChoice(MedousaModel):
     description: str | None = None
     name: str
@@ -1702,6 +1715,24 @@ class TurnStreamEventV224(MedousaModel):
     type: Type28
 
 
+class Type29(Enum):
+    secret_request = 'secret_request'
+
+
+class TurnStreamEventV225(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    allowed_hosts: list[str] | None = None
+    backend: str
+    credential_key: str
+    label: str
+    provider_type: str
+    reason: str
+    request_id: str
+    type: Type29
+
+
 class WorkerAckKind(Enum):
     worker = 'worker'
     workshop = 'workshop'
@@ -1833,6 +1864,15 @@ class AgentPermissionResolveRequest(MedousaModel):
 
 class AgentRuntimeListResponse(MedousaModel):
     runtimes: list[AgentRuntimeInfo]
+
+
+class AgentSecretDenyRequest(MedousaModel):
+    resolved_by: str | None = None
+
+
+class AgentSecretFulfillRequest(MedousaModel):
+    resolved_by: str | None = None
+    value: str
 
 
 class AgentSessionPromptRequest(MedousaModel):
@@ -2354,6 +2394,15 @@ class InteractiveTurnStreamEvent(MedousaModel):
     root_artifact_id: str | None = Field(
         None, description='Root artifact lineage id for revision chains.'
     )
+    secret_allowed_hosts: list[str] | None = None
+    secret_backend: str | None = None
+    secret_credential_key: str | None = None
+    secret_label: str | None = None
+    secret_provider_type: str | None = None
+    secret_request_id: str | None = Field(
+        None,
+        description='Trusted secret-entry handoff. Metadata only; the value never enters a stream frame or transcript payload.',
+    )
     seq: int | None = Field(
         0,
         description='Monotonic per-turn sequence number, stamped server-side by `TurnEventChannel::publish`. Enables exactly-once replay/dedup on reconnect. `#[serde(default)]` keeps the Python SDK and any older payloads (which never carried `seq`) wire-compatible.',
@@ -2847,6 +2896,23 @@ class AgentPermissionRequestRecord(MedousaModel):
     updated_at_utc: AwareDatetime
 
 
+class AgentSecretRequestRecord(MedousaModel):
+    allowed_hosts: list[str] | None = None
+    backend: AgentSecretRequestBackend
+    created_at_utc: AwareDatetime
+    credential_key: str
+    label: str
+    provider_type: str
+    reason: str
+    request_id: str
+    resolved_at_utc: AwareDatetime | None = None
+    resolved_by: str | None = None
+    session_id: str
+    status: AgentSecretRequestStatus
+    turn_id: str
+    updated_at_utc: AwareDatetime
+
+
 class ConversationRangeSelection(MedousaModel):
     after_entry_seq: int | None = Field(None, ge=0)
     session: SessionRef
@@ -3058,6 +3124,7 @@ class TurnStreamEventV2(
         | TurnStreamEventV222
         | TurnStreamEventV223
         | TurnStreamEventV224
+        | TurnStreamEventV225
     ]
 ):
     root: (
@@ -3085,6 +3152,7 @@ class TurnStreamEventV2(
         | TurnStreamEventV222
         | TurnStreamEventV223
         | TurnStreamEventV224
+        | TurnStreamEventV225
     ) = Field(..., title='TurnStreamEventV2')
 
 
@@ -3153,6 +3221,14 @@ class AgentPermissionRequestListResponse(MedousaModel):
 
 class AgentPermissionResolveResponse(MedousaModel):
     request: AgentPermissionRequestRecord
+
+
+class AgentSecretRequestListResponse(MedousaModel):
+    requests: list[AgentSecretRequestRecord]
+
+
+class AgentSecretResolveResponse(MedousaModel):
+    request: AgentSecretRequestRecord
 
 
 class DeriveSessionRequest(MedousaModel):

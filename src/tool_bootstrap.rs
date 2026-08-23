@@ -73,6 +73,8 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_identity_query",
     "cognition_identity_mutate",
     "cognition_web_search",
+    "cognition_grapheme_request_secret",
+    "cognition_openshell_request_secret",
     "cognition_store_read",
     "cognition_store_write",
     "cognition_calendar_query",
@@ -228,6 +230,8 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_skill_discover",
                     "cognition_skill_propose",
                     "cognition_openshell_status",
+                    "cognition_openshell_request_secret",
+                    "cognition_grapheme_request_secret",
                 ],
             },
             ToolDomainCatalogEntry {

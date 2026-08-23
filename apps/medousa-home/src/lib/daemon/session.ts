@@ -437,6 +437,28 @@ export async function denyAgentPermission(
   });
 }
 
+export async function fulfillAgentSecretRequest(
+  requestId: string,
+  value: string,
+  resolvedBy?: string,
+): Promise<unknown> {
+  return invoke("agents_fulfill_secret_request", {
+    requestId,
+    value,
+    resolvedBy: resolvedBy ?? null,
+  });
+}
+
+export async function denyAgentSecretRequest(
+  requestId: string,
+  resolvedBy?: string,
+): Promise<unknown> {
+  return invoke("agents_deny_secret_request", {
+    requestId,
+    resolvedBy: resolvedBy ?? null,
+  });
+}
+
 export async function listSessionTurns(
   sessionId: string,
   activeOnly = true,

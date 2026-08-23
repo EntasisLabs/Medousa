@@ -40,6 +40,34 @@ export function handlePermissionRequest(host: ChatStoreHost, event: InteractiveT
   };
 }
 
+export function clearSecretAlert(host: ChatStoreHost) {
+  host.secretAlert = null;
+}
+
+export function handleSecretRequest(host: ChatStoreHost, event: InteractiveTurnStreamEvent) {
+  const requestId = event.secret_request_id?.trim();
+  const label = event.secret_label?.trim();
+  const providerType = event.secret_provider_type?.trim();
+  const credentialKey = event.secret_credential_key?.trim();
+  const backend =
+    event.secret_backend === "grapheme_runtime" ? "grapheme_runtime" : "openshell_provider";
+  if (!requestId || !label || !providerType || !credentialKey) return;
+  host.secretAlert = {
+    turnId: event.turn_id,
+    messageId: host.messageIdForTurn(event.turn_id),
+    requestId,
+    label,
+    reason:
+      event.operator_message?.trim() ||
+      event.message?.trim() ||
+      "The sandbox needs a credential to continue",
+    providerType,
+    credentialKey,
+    backend,
+    allowedHosts: event.secret_allowed_hosts ?? [],
+  };
+}
+
 export function clearBrowserChallenge(host: ChatStoreHost, sessionId?: string) {
   if (!sessionId || host.browserChallenge?.sessionId === sessionId) {
     host.browserChallenge = null;

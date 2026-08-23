@@ -218,6 +218,16 @@ Hot-swappable external agent runtimes (Cursor / Codex via ACP). Native Medousa t
 | `list_permission_requests(status?, limit?)` | `GET /v1/agents/permission-requests` | `AgentPermissionRequestListResponse` |
 | `approve_permission(id, request)` | `POST …/approve` | `AgentPermissionResolveResponse` |
 | `deny_permission(id, request)` | `POST …/deny` | `AgentPermissionResolveResponse` |
+| `list_secret_requests(status?, limit?)` | `GET /v1/agents/secret-requests` | `AgentSecretRequestListResponse` |
+| `fulfill_secret_request(id, request)` (Rust) / `fulfill_secret_request(id, value, resolved_by=…)` (Python) | `POST …/fulfill` | write-only value → `AgentSecretResolveResponse` |
+| `deny_secret_request(id, request)` (Rust) / `deny_secret_request(id, resolved_by=…)` (Python) | `POST …/deny` | `AgentSecretDenyRequest` → `AgentSecretResolveResponse` |
+
+`AgentSecretFulfillRequest.value` is write-only credential material. Move it
+directly into the request and do not log, clone, cache, or add it to a chat
+turn. Only native trusted clients can call these routes. Inspect
+`AgentSecretRequestRecord.backend` and `allowed_hosts` when presenting the
+approval: OpenShell values are provisioned into a provider, while Grapheme
+values authorize one in-memory run against the listed exact HTTPS authorities.
 
 `CreateAgentSessionRequest` and `AgentSessionPromptRequest` accept an optional
 `CodeIntentContext`. Prefer it over embedding workspace paths, selections, or

@@ -111,6 +111,27 @@ impl ToolSinkPort for AgentStreamToolSinkAdapter {
                     .browser_navigated(&turn_correlation_id, url, title, opened_by_agent)
                     .await;
             }
+            ToolSinkEvent::SecretRequest {
+                request_id,
+                label,
+                reason,
+                provider_type,
+                credential_key,
+                backend,
+                allowed_hosts,
+            } => {
+                self.inner
+                    .secret_request_required(
+                        request_id,
+                        label,
+                        reason,
+                        provider_type,
+                        credential_key,
+                        backend,
+                        allowed_hosts,
+                    )
+                    .await;
+            }
         }
     }
 }

@@ -443,6 +443,27 @@ fn main() {
         AgentPermissionResolveResponse,
         "AgentPermissionResolveResponse"
     );
+    export_type!(
+        schemas,
+        AgentSecretRequestRecord,
+        "AgentSecretRequestRecord"
+    );
+    export_type!(
+        schemas,
+        AgentSecretRequestListResponse,
+        "AgentSecretRequestListResponse"
+    );
+    export_type!(
+        schemas,
+        AgentSecretFulfillRequest,
+        "AgentSecretFulfillRequest"
+    );
+    export_type!(schemas, AgentSecretDenyRequest, "AgentSecretDenyRequest");
+    export_type!(
+        schemas,
+        AgentSecretResolveResponse,
+        "AgentSecretResolveResponse"
+    );
 
     // Workspace
     export_type!(

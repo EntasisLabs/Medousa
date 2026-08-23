@@ -95,6 +95,27 @@ pub fn resolve_openshell_local_bin(name: &str) -> Option<PathBuf> {
     .find(|candidate| candidate.is_file())
 }
 
+/// Resolve the optional OpenShell package sidecar-first, then from Medousa's
+/// shared package bin directory, developer-local installs, and finally PATH.
+pub fn resolve_openshell_cli_binary() -> Option<PathBuf> {
+    let name = if cfg!(windows) {
+        "openshell.exe"
+    } else {
+        "openshell"
+    };
+    if let Ok(current_exe) = std::env::current_exe() {
+        let sibling = current_exe.with_file_name(name);
+        if sibling.is_file() {
+            return Some(sibling);
+        }
+    }
+    let packaged = crate::paths::medousa_data_dir().join("bin").join(name);
+    if packaged.is_file() {
+        return Some(packaged);
+    }
+    resolve_openshell_local_bin(name).or_else(|| medousa_host::find_command_in_path(name))
+}
+
 pub fn podman_user_socket_path() -> PathBuf {
     #[cfg(unix)]
     {
@@ -142,7 +163,7 @@ pub fn probe_openshell_readyz(gateway_url: &str) -> bool {
 }
 
 pub fn openshell_cli_version() -> Option<String> {
-    let output = std::process::Command::new("openshell")
+    let output = std::process::Command::new(resolve_openshell_cli_binary()?)
         .arg("--version")
         .output()
         .ok()?;

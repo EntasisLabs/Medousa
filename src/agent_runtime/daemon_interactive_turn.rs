@@ -365,6 +365,7 @@ fn stream_tracking(event: &TurnStreamEventV2) -> (&str, &str, bool) {
         TurnStreamEventV2::BrowserNavigated { .. } => ("browser_navigated", "tool", false),
         TurnStreamEventV2::ContextUsage { .. } => ("context_usage", "context", false),
         TurnStreamEventV2::PermissionRequest { .. } => ("permission_request", "permission", false),
+        TurnStreamEventV2::SecretRequest { .. } => ("secret_request", "awaiting_operator", false),
     }
 }
 
@@ -773,6 +774,32 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             url,
             title,
             opened_by_agent,
+        })
+        .await;
+    }
+
+    async fn secret_request_required(
+        &self,
+        request_id: String,
+        label: String,
+        reason: String,
+        provider_type: String,
+        credential_key: String,
+        backend: String,
+        allowed_hosts: Vec<String>,
+    ) {
+        if self.emit_cancelled_if_needed().await {
+            return;
+        }
+
+        self.publish_tracked(TurnStreamEventV2::SecretRequest {
+            request_id,
+            label,
+            reason,
+            provider_type,
+            credential_key,
+            backend,
+            allowed_hosts,
         })
         .await;
     }

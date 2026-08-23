@@ -1,4 +1,4 @@
-import type { ChatMessage, TurnTicketState } from "$lib/types/chat";
+import type { ChatMessage, PendingAgentSecret, TurnTicketState } from "$lib/types/chat";
 
 /** Per-session chat UI/stream state (kept when focus moves to another session). */
 export type ChatSessionRuntime = {
@@ -9,6 +9,7 @@ export type ChatSessionRuntime = {
   historyLoading: boolean;
   sessionPristine: boolean;
   historyNotice: string | null;
+  secretAlert: PendingAgentSecret | null;
   activeTurnId: string | null;
   turns: Map<string, TurnTicketState>;
   workers: Map<string, WorkerLink>;
@@ -37,6 +38,7 @@ export function emptySessionRuntime(sessionId: string, draft = ""): ChatSessionR
     historyLoading: false,
     sessionPristine: false,
     historyNotice: null,
+    secretAlert: null,
     activeTurnId: null,
     turns: new Map(),
     workers: new Map(),
@@ -51,6 +53,7 @@ export function cloneRuntime(runtime: ChatSessionRuntime): ChatSessionRuntime {
   return {
     ...runtime,
     messages: runtime.messages.map((message) => ({ ...message })),
+    secretAlert: runtime.secretAlert ? { ...runtime.secretAlert } : null,
     turns: new Map(runtime.turns),
     workers: new Map(
       [...runtime.workers.entries()].map(([key, value]) => [key, { ...value }]),

@@ -17,7 +17,11 @@ pub const MEDOUSA_MODULE: &str = "medousa";
 
 /// All Medousa-owned host module manifests for the editor catalog.
 pub fn host_module_manifests() -> Vec<ModuleManifest> {
-    vec![medousa_host_module_manifest(), shell_host_module_manifest()]
+    vec![
+        medousa_host_module_manifest(),
+        grapheme_secrets_host_module_manifest(),
+        shell_host_module_manifest(),
+    ]
 }
 
 pub fn medousa_host_module_manifest() -> ModuleManifest {
@@ -45,6 +49,12 @@ pub fn medousa_host_module_manifest() -> ModuleManifest {
                 output_schema_ref: None,
                 effect: EffectKind::Control,
             },
+            ExportedOp {
+                op: "authorized_http".to_string(),
+                input_schema_ref: None,
+                output_schema_ref: None,
+                effect: EffectKind::Secrets,
+            },
         ],
         required_capabilities: vec![],
         limits: ResourceLimits {
@@ -52,6 +62,39 @@ pub fn medousa_host_module_manifest() -> ModuleManifest {
             max_memory_mb: 256,
             max_io_bytes: 16 * 1024 * 1024,
             max_network_calls: 8,
+        },
+    }
+}
+
+/// Override Grapheme's unbound Wasix secrets catalog entry with a Medousa host
+/// implementation. Values remain outside the VM; only run-scoped handles cross
+/// the capability boundary.
+pub fn grapheme_secrets_host_module_manifest() -> ModuleManifest {
+    ModuleManifest {
+        module_id: "secrets".to_string(),
+        version: "1.0.0-medousa.1".to_string(),
+        abi: ModuleAbi::MirV1,
+        entrypoint: "secrets.medousa-host".to_string(),
+        exported_ops: vec![
+            ExportedOp {
+                op: "get_secret_handle".to_string(),
+                input_schema_ref: None,
+                output_schema_ref: None,
+                effect: EffectKind::Secrets,
+            },
+            ExportedOp {
+                op: "sign_request".to_string(),
+                input_schema_ref: None,
+                output_schema_ref: None,
+                effect: EffectKind::Secrets,
+            },
+        ],
+        required_capabilities: vec!["secrets.use.scoped".to_string()],
+        limits: ResourceLimits {
+            max_cpu_ms: 30_000,
+            max_memory_mb: 256,
+            max_io_bytes: 2 * 1024 * 1024,
+            max_network_calls: 0,
         },
     }
 }
@@ -76,11 +119,10 @@ pub fn discover_modules_with_host() -> Vec<ModuleManifest> {
 }
 
 pub fn modules_info_with_host(module_id: &str) -> Option<ModuleInfoPayload> {
-    if let Some(payload) = grapheme_sdk::modules_info_contract(module_id) {
-        return Some(payload);
+    if let Some(manifest) = host_module_manifest_by_id(module_id) {
+        return Some(module_info_from_manifest(&manifest));
     }
-    let manifest = host_module_manifest_by_id(module_id)?;
-    Some(module_info_from_manifest(&manifest))
+    grapheme_sdk::modules_info_contract(module_id)
 }
 
 pub fn curated_examples_for_host_module(module_id: &str) -> Vec<String> {
@@ -104,7 +146,20 @@ pub fn curated_examples_for_host_module(module_id: &str) -> Vec<String> {
   medousa.digest(text: "summarize this turn") { ok }
 }"#
             .to_string(),
+            r#"import secrets from "grapheme/secrets"
+import medousa from "grapheme/medousa"
+query AuthorizedCall {
+  secrets.get_secret_handle(name: "sgrant-…") { handle name }
+  |> medousa.authorized_http(secret: $current.handle, url: "https://api.example.com/v1/me") { status body truncated host }
+}"#
+            .to_string(),
         ],
+        "secrets" => vec![r#"import secrets from "grapheme/secrets"
+query SignPayload {
+  secrets.get_secret_handle(name: "sgrant-…") { handle name }
+  |> secrets.sign_request(secret: $current.handle, payload: "hello") { ok signature algorithm }
+}"#
+        .to_string()],
         _ => Vec::new(),
     }
 }
@@ -126,6 +181,7 @@ pub fn modules_ops_with_host(query: &str) -> grapheme_sdk::ModuleOpsPayload {
 
     for manifest in discover_modules_with_host() {
         let module_id = manifest.module_id.clone();
+        let host_owned = host_module_manifest_by_id(&module_id).is_some();
         let module_match = module_id.to_lowercase().contains(&q);
         for op in manifest.exported_ops {
             let full = format!("{}.{}", module_id, op.op);
@@ -140,13 +196,16 @@ pub fn modules_ops_with_host(query: &str) -> grapheme_sdk::ModuleOpsPayload {
                 continue;
             }
             // Prefer typed SDK row when available (args/output from signatures).
-            let typed = grapheme_sdk::modules_ops_contract(&full)
-                .matches
-                .into_iter()
-                .find(|row| {
-                    row.module_id.eq_ignore_ascii_case(&module_id)
-                        && row.op.eq_ignore_ascii_case(&op.op)
-                });
+            let typed = (!host_owned).then(|| {
+                grapheme_sdk::modules_ops_contract(&full)
+                    .matches
+                    .into_iter()
+                    .find(|row| {
+                        row.module_id.eq_ignore_ascii_case(&module_id)
+                            && row.op.eq_ignore_ascii_case(&op.op)
+                    })
+            });
+            let typed = typed.flatten();
             matches.push(typed.unwrap_or_else(|| host_op_row(&module_id, &op)));
         }
     }
@@ -223,6 +282,20 @@ fn host_op_arg_rows(module_id: &str, op: &str) -> Vec<grapheme_sdk::OperationArg
         (MEDOUSA_MODULE, "synthesize") | (MEDOUSA_MODULE, "deliver") => {
             vec![arg("payload", "any", false)]
         }
+        (MEDOUSA_MODULE, "authorized_http") => vec![
+            arg("secret", "string", true),
+            arg("url", "string", true),
+            arg("method", "string", false),
+            arg("auth", "string", false),
+            arg("header", "string", false),
+            arg("prefix", "string", false),
+            arg("headers", "object", false),
+            arg("body", "any", false),
+        ],
+        ("secrets", "get_secret_handle") => vec![arg("name", "string", true)],
+        ("secrets", "sign_request") => {
+            vec![arg("secret", "string", true), arg("payload", "any", false)]
+        }
         _ => Vec::new(),
     }
 }
@@ -239,6 +312,9 @@ fn host_output_type(module_id: &str, op: &str) -> String {
     match (module_id, op) {
         (SHELL_MODULE, "run") => "object".to_string(),
         (SHELL_MODULE, "status") => "object".to_string(),
+        (MEDOUSA_MODULE, "authorized_http")
+        | ("secrets", "get_secret_handle")
+        | ("secrets", "sign_request") => "object".to_string(),
         _ => "any".to_string(),
     }
 }
@@ -293,14 +369,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn discover_includes_shell_and_medousa() {
+    fn discover_includes_medousa_secret_host_modules() {
         let ids: BTreeSet<_> = discover_modules_with_host()
             .into_iter()
             .map(|m| m.module_id)
             .collect();
         assert!(ids.contains("shell"));
         assert!(ids.contains("medousa"));
+        assert!(ids.contains("secrets"));
         assert!(ids.contains("core"));
+    }
+
+    #[test]
+    fn secret_info_lists_scoped_operations() {
+        let info = modules_info_with_host("secrets").expect("secrets info");
+        assert_eq!(info.entrypoint, "secrets.medousa-host");
+        assert_eq!(info.required_capabilities, ["secrets.use.scoped"]);
+        let ops: BTreeSet<_> = info.exported_ops.into_iter().map(|op| op.op).collect();
+        assert_eq!(
+            ops,
+            BTreeSet::from(["get_secret_handle".to_string(), "sign_request".to_string(),])
+        );
+
+        let rows = modules_ops_with_host("secrets").matches;
+        let get = rows
+            .iter()
+            .find(|row| row.op == "get_secret_handle")
+            .expect("host get_secret_handle row");
+        assert_eq!(get.args[0].name, "name");
+        assert!(get.args[0].required);
     }
 
     #[test]

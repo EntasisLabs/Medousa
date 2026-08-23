@@ -154,6 +154,13 @@ impl TryFrom<GraphemeScriptSaveInput> for GraphemeScriptSaveCommand {
             ToolError::input(COGNITION_GRAPHEME_SCRIPT_SAVE, "body is required")
                 .with_operation("normalize save input")
         })?;
+        if crate::grapheme_secret_bridge::source_contains_secret_grant(body.as_str()) {
+            return Err(ToolError::policy(
+                COGNITION_GRAPHEME_SCRIPT_SAVE,
+                "ephemeral credential grants cannot be saved in the Grapheme library",
+            )
+            .with_operation("validate reusable source"));
+        }
         let intent = input.intent.and_then(|value| TrimmedText::new(value).ok());
         let session_id = input
             .session_id
@@ -563,6 +570,24 @@ mod tests {
         );
         assert_eq!(command.intent.as_ref().unwrap().as_str(), "example");
         assert_eq!(command.session_id.as_ref().unwrap().as_str(), "session-a");
+    }
+
+    #[test]
+    fn save_command_rejects_ephemeral_secret_grants() {
+        let error = GraphemeScriptSaveCommand::try_from(GraphemeScriptSaveInput {
+            id: None,
+            name: Some("Unsafe grant script".into()),
+            body: Some(
+                "query Run { secrets.get_secret_handle(name: \"sgrant-0123456789abcdef0123456789abcdef\") }"
+                    .into(),
+            ),
+            modules: Some(vec!["secrets".into()]),
+            tags: None,
+            intent: None,
+            session_id: None,
+        })
+        .expect_err("ephemeral grants are not reusable");
+        assert!(error.to_string().contains("cannot be saved"));
     }
 
     #[test]

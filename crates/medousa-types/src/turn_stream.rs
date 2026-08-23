@@ -240,6 +240,18 @@ pub enum TurnStreamEventV2 {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         agent_runtime: Option<String>,
     },
+    /// Trusted UI prompt for credential material. This event carries request
+    /// metadata only; the value travels over the dedicated fulfill endpoint.
+    SecretRequest {
+        request_id: String,
+        label: String,
+        reason: String,
+        provider_type: String,
+        credential_key: String,
+        backend: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        allowed_hosts: Vec<String>,
+    },
 }
 
 impl TurnStreamEventV2 {
@@ -389,6 +401,15 @@ mod tests {
                 message: "Allow?".into(),
                 agent_session_id: Some("agent-1".into()),
                 agent_runtime: Some("codex".into()),
+            },
+            TurnStreamEventV2::SecretRequest {
+                request_id: "secret-1".into(),
+                label: "GitHub token".into(),
+                reason: "Read a private repository".into(),
+                provider_type: "github".into(),
+                credential_key: "GITHUB_TOKEN".into(),
+                backend: "openshell_provider".into(),
+                allowed_hosts: vec!["api.github.com".into()],
             },
         ]
     }

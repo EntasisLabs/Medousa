@@ -1089,6 +1089,14 @@ async fn dispatch_daemon_stream_event(
         TurnStreamEventV2::PermissionRequest { message, .. } => {
             send_daemon_notice(event_tx, "permission required", &message).await?;
         }
+        TurnStreamEventV2::SecretRequest { label, reason, .. } => {
+            send_daemon_notice(
+                event_tx,
+                "secure credential entry requires Medousa",
+                &format!("{label}: {reason}"),
+            )
+            .await?;
+        }
         TurnStreamEventV2::Status { .. }
         | TurnStreamEventV2::ModelReceipt { .. }
         | TurnStreamEventV2::ArtifactPresented { .. }

@@ -518,6 +518,7 @@ pub fn build_sandbox_payload_for_skill(
         skill_assets_dir: Some(assets_dir.display().to_string()),
         skill_upload_dest: Some(upload_dest),
         skill_script: Some(script_relative.to_string()),
+        providers: Vec::new(),
     })
 }
 

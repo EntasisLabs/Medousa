@@ -373,6 +373,17 @@ External ACP agents (Cursor / Codex). Clients use the Medousa SDK `agents()` acc
 | GET | `/v1/agents/permission-requests` | List pending ACP permissions |
 | POST | `/v1/agents/permission-requests/{id}/approve` | Approve |
 | POST | `/v1/agents/permission-requests/{id}/deny` | Deny |
+| GET | `/v1/agents/secret-requests` | List credential-request metadata (never values) |
+| POST | `/v1/agents/secret-requests/{id}/fulfill` | Deliver a write-only value to the request's workshop backend |
+| POST | `/v1/agents/secret-requests/{id}/deny` | Deny secure credential handoff |
+
+Secret-request routes are native-only administration routes. The fulfill body
+is write-only: responses, list records, stream frames, and transcripts contain
+request metadata but never the submitted value.
+`AgentSecretRequestRecord.backend` distinguishes persistent
+`openshell_provider` handoff from ephemeral `grapheme_runtime` handoff;
+`allowed_hosts` contains the exact Grapheme HTTPS authorities approved in the
+trusted UI.
 
 Session creation and prompt requests may include `code_context`, a typed,
 bounded snapshot of the user's active Code workspace (outcome, file,
