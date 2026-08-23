@@ -86,6 +86,7 @@ Future / deferred (not blockers):
 
 | Doc | Topic |
 |-----|--------|
+| [ambient-wearable-clients-plan.md](ambient-wearable-clients-plan.md) | **watchOS + Meta Glasses** — ambient sensor surfaces, phone-mediated capture, thin turns |
 | [cognitive-identity-memory-plan.md](cognitive-identity-memory-plan.md) | Identity memory phases |
 | [centralized-ingester-roadmap.md](centralized-ingester-roadmap.md) | Ingester |
 | [outbox-channel-delivery-roadmap.md](outbox-channel-delivery-roadmap.md) | Channel delivery |
