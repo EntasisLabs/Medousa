@@ -1,6 +1,6 @@
 # iOS embedded daemon
 
-> **Status:** Recovery in progress — dependency qualification retained
+> **Status:** Recovery milestones 1–3 complete — local daemon composition next
 >
 > **First target:** iOS (`aarch64-apple-ios` and simulator)
 >
@@ -50,7 +50,7 @@ conversation provenance.
 | Turn lifecycle | Existing production loop, turn event spine, replay, cancellation, commit, and recovery contracts |
 | Persistence | One daemon-owned Stasis/Locus/Surreal composition rooted in the app sandbox |
 | Tools | Existing daemon tool implementations registered through a mobile-safe allowlist |
-| Inference | Explicit mobile credential adapter backed by the existing client secret/Keychain system |
+| Inference | Explicit credential-provider adapter backed by the existing daemon integration secret in Keychain |
 | Remote execution | Authenticated daemon-to-daemon request with bounded context and returned provenance |
 | Backgrounding | Foreground execution with cancellation/checkpoint recovery; no promise of suspended execution |
 | Notes/vault | Not required for the first iOS deployment |
@@ -147,7 +147,7 @@ The initial iOS deployment needs only the following new boundaries:
 
 - Tauri lifecycle ownership for starting/stopping the in-process daemon;
 - a local privileged client bridge to that daemon;
-- explicit Keychain-backed inference credentials;
+- explicit daemon-owned Keychain-backed inference credentials;
 - iOS foreground/background cancellation and recovery policy;
 - a mobile-safe registration filter over existing tools;
 - target-specific feature gates and dependency checks.
@@ -197,11 +197,16 @@ Each milestone lands as one reviewed commit after its acceptance gates pass.
 
 ### Milestone 3 — mobile daemon adapters
 
-- Add the explicit Keychain-backed AI adapter.
+- Add an explicit-credential AI adapter implementing the existing Stasis port.
+  The iOS composition in Milestone 4 binds it to the daemon integration secret
+  already stored in Keychain.
 - Add capability-confined filesystem entry points useful to all daemon
   deployments.
-- Express the mobile tool surface as a filter over existing implementations.
-- Reuse the shared Stasis/Locus composition and semantic adapter.
+- Express the mobile tool surface as an exact registration ceiling over
+  existing implementations. Stasis capabilities and turn admission remain
+  authoritative.
+- Reuse the shared Stasis/Locus composition and apply compatibility fixes to
+  its one semantic adapter.
 
 ### Milestone 4 — local iOS daemon turn
 

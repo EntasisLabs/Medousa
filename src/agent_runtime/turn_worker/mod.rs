@@ -18,8 +18,8 @@ pub use model_routing::{
     default_stage_role_for_intent, resolve_worker_llm_target, resolve_worker_llm_target_with_matrix,
 };
 pub use policy::{
-    TurnWorkerIntent, allowed_tool_names_for_intent, host_bus_tool_names, max_worker_tool_rounds,
-    tool_allowed,
+    MOBILE_FOREGROUND_TOOL_CEILING, TurnWorkerIntent, allowed_tool_names_for_intent,
+    host_bus_tool_names, max_worker_tool_rounds, mobile_foreground_tool_ceiling, tool_allowed,
 };
 pub use prompts::{
     HOST_BUS_TURN_APPENDIX, WORKER_SYSTEM_APPENDIX, system_prompt_for_host_profile,

@@ -671,6 +671,16 @@ impl StoreRoot {
         Ok(())
     }
 
+    /// Open an existing directory beneath this root and return its exact
+    /// capability rather than reopening an ambient pathname.
+    ///
+    /// Consumers that own capability-aware storage formats can retain this
+    /// handle without gaining authority above `path`. Every component is
+    /// opened without following symbolic links.
+    pub fn open_dir_capability(&self, path: &impl StoreRootPath) -> Result<Dir, StoreRootError> {
+        self.open_directory_chain(path.segments(), false, "open_dir_capability")
+    }
+
     pub fn remove_file(&self, path: &impl StoreRootPath) -> Result<(), StoreRootError> {
         let (parent, leaf) = self.open_parent(path, false, "remove_file")?;
         match parent.symlink_metadata(leaf) {
@@ -1469,6 +1479,20 @@ mod tests {
         root.remove_file(&path("one/two/renamed.txt")).unwrap();
         root.remove_dir_all(&path("one")).unwrap();
         assert!(!temp.path().join("one").exists());
+    }
+
+    #[test]
+    fn opened_directory_capability_cannot_escape_its_subtree() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = StoreRoot::open(temp.path()).unwrap();
+        root.create_dir_all(&path("held")).unwrap();
+        root.atomic_write(&path("held/value.txt"), b"inside")
+            .unwrap();
+        root.atomic_write(&path("outside.txt"), b"outside").unwrap();
+
+        let held = root.open_dir_capability(&path("held")).unwrap();
+        assert_eq!(held.read("value.txt").unwrap(), b"inside");
+        assert!(held.read("../outside.txt").is_err());
     }
 
     #[cfg(unix)]

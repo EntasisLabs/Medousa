@@ -8,6 +8,7 @@
 pub mod budget;
 pub mod checkpoint;
 pub mod completion_fsm;
+pub mod credentialed_ai;
 pub mod execution_boundary;
 pub mod execution_policy;
 pub mod loop_gate;
@@ -32,6 +33,11 @@ pub use completion_fsm::{
     AfterToolsRoundContext, ContinueReason, HOST_EMPTY_AFTER_TOOLS_CONTINUE_CAP,
     NoToolDebtRoundContext, TurnCompletionProfile, TurnRoundAction, continue_control_message,
     decide_after_tools_text_round, decide_no_tool_debt_text_round,
+};
+pub use credentialed_ai::{
+    CredentialProvider, CredentialedAiChatBuildError, CredentialedAiChatClient,
+    CredentialedAiChatConfig, CredentialedAiChatConfigError, ProviderCredential,
+    ProviderCredentialError,
 };
 pub use execution_boundary::{
     TurnExecutionBoundary, TurnExecutionBoundaryError, active_turn_execution_boundary,

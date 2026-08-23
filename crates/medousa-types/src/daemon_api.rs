@@ -545,7 +545,7 @@ pub struct SessionSetDisplayNameResponse {
     pub display_name: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SessionDeleteQuery {
     /// When false, keep Locus nodes for this session (transcript/catalog only).
@@ -575,6 +575,14 @@ pub struct SessionDeletionSurfaceResult {
 
 fn default_purge_memory() -> bool {
     true
+}
+
+impl Default for SessionDeleteQuery {
+    fn default() -> Self {
+        Self {
+            purge_memory: default_purge_memory(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3833,4 +3841,16 @@ pub struct AgentSecretDenyRequest {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct AgentSecretResolveResponse {
     pub request: AgentSecretRequestRecord,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SessionDeleteQuery;
+
+    #[test]
+    fn session_delete_default_matches_the_wire_default() {
+        assert!(SessionDeleteQuery::default().purge_memory);
+        let decoded: SessionDeleteQuery = serde_json::from_str("{}").unwrap();
+        assert!(decoded.purge_memory);
+    }
 }
