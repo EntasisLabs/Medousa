@@ -134,6 +134,19 @@ export interface PendingAgentPermission {
   message: string;
 }
 
+export interface PendingAgentSecret {
+  turnId: string;
+  messageId: string | null;
+  /** Metadata-only request id; the credential value never enters chat state. */
+  requestId: string;
+  label: string;
+  reason: string;
+  providerType: string;
+  credentialKey: string;
+  backend: "openshell_provider" | "grapheme_runtime";
+  allowedHosts: string[];
+}
+
 export interface TurnTicketState {
   turnId: string;
   mode: "interactive" | "background";

@@ -19,6 +19,7 @@ Integrator / self-host cookbooks: [../cookbook/README.md](../cookbook/README.md)
 | [Obsidian](obsidian.md) | Use the vault-native Medousa companion |
 | [Browser](browser.md) | Use the page-aware Medousa companion in Chrome or Edge |
 | [Web in Medousa](web-in-medousa.md) | Share a desktop browser tab with bounded agent control |
+| [Secure credential handoff](secure-credential-handoff.md) | Give OpenShell or Grapheme an API key without putting it in chat |
 | [Desktop companion](desktop-companion.md) | Keep chat, approvals, notes, and views in a floating pet |
 | [Drawing](drawing.md) | Sketch inside notes or use a full drawing note |
 | [Undertakings & ForgeLens](undertakings.md) | Governed work, seal, review, World observe |

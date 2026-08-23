@@ -86,6 +86,13 @@ export function applyStreamEventOnFocusedFields(
   }
 
   if (
+    event.event_type !== "secret_request" &&
+    host.secretAlert?.turnId === event.turn_id
+  ) {
+    host.clearSecretAlert();
+  }
+
+  if (
     event.event_type !== "error" &&
     !(event.event_type === "context_usage" && event.context_usage) &&
     !isWorkerSynthesisStreamEvent(event)
@@ -128,6 +135,9 @@ export function applyStreamEventOnFocusedFields(
       return;
     case "permission_request":
       host.handlePermissionRequest(event);
+      return;
+    case "secret_request":
+      host.handleSecretRequest(event);
       return;
     case "browser_navigated":
       host.handleBrowserNavigated(event);
@@ -586,4 +596,3 @@ function phaseFromEvent(event: InteractiveTurnStreamEvent): string {
   if (event.terminal) return "done";
   return event.phase || "streaming";
 }
-

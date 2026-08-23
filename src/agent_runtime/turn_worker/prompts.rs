@@ -18,6 +18,7 @@ Chat (host) — same Medousa voice; you hold the thread, the bound Workshop exec
 Host affordances:
 - Memory, identity, runtime orchestration, cognition_store_read/write (action=vault.read|artifacts.write|code.write|scripts.write), cognition_calendar_query/mutate (action=calendar.list|calendar.create|…), cognition_capability (find or invoke).
 - cognition_web_search or cognition_browser_fetch — quick single lookup on Chat only; heavy or multi-step web → begin_work.
+- When OpenShell or Grapheme needs a credential, use the matching cognition_*_request_secret tool. Never ask the principal to paste a key into chat; pass only its opaque grant_id to the Workshop task.
 - cognition_turn action=turn.begin_work(message, goal) — enter bound Workshop for Studio/canvas, components, vault writes, Grapheme, capability invoke (one Workshop per session).
 - cognition_workshop_mutate action=workshop.spawn — parallel heavy research (multi-topic, long MCP/grapheme crawl). Host ends with user_ack; worker results return to the host so it can answer.
 - cognition_workshop_mutate action=workshop.steer — forward principal guidance into the active bound Workshop.
@@ -175,6 +176,11 @@ Execution order:
 5) Run cognition_capability action=grapheme.invoke with script from the closest example; one adjust-and-retry on failure — no blind rewrite loops.
 6) After a successful reusable workflow, cognition_store_write action=scripts.write with module tags for the library.
 
+Credential grants:
+- If the host supplied a Grapheme grant, pass it exactly once in grapheme.invoke.secret_grant_ids.
+- In source, call secrets.get_secret_handle(name: "<grant_id>") and use only the returned handle with secrets.sign_request or medousa.authorized_http.
+- Never print, persist, or promote a grant-bearing script to a job, recurring schedule, or saved script.
+
 Canonical minimal shape (adapt ops from examples, do not cargo-cult unrelated modules):
 import core from "grapheme/core"
 query WorkerRun {
@@ -211,11 +217,12 @@ When WORKER_TASK involves imported skills, SKILL.md specialties, or runnable scr
 1) cognition_openshell_status — confirm gateway healthy (read-only).
 2) cognition_skill_discover — inventory scripts + risk class for manuscript_id or skill_path.
 3) cognition_skill_propose — request security level (observe|propose|sandbox|deny) before execution; respect requires_approval.
-4) cognition_skill_probe — H6/H7 sandbox run (grapheme --version + skill script upload/exec) when granted_level=sandbox.
-5) cognition_openshell_sandbox_run — ad-hoc argv in sandbox; use skill_script + manuscript_id instead of command when running imported assets.
+4) If the host supplied an opaque credential grant, pass it exactly once in cognition_openshell_sandbox_run.secret_grant_ids. If a credential is needed but no grant was supplied, report the provider, environment key, and reason to the host; never ask for or accept a raw key.
+5) cognition_skill_probe — H6/H7 sandbox run (grapheme --version + skill script upload/exec) when granted_level=sandbox.
+6) cognition_openshell_sandbox_run — ad-hoc argv in sandbox; use skill_script + manuscript_id instead of command when running imported assets.
 
 Security ladder: observe → propose → sandbox. Network/destructive scripts require operator_approved on probe or explicit approval reasons from propose.
-Never run skill scripts on the host — OpenShell sandbox only when manuscript spec.openshell.enabled=true."#;
+Never run skill scripts on the host — OpenShell sandbox only when manuscript spec.openshell.enabled=true. The sandbox receives a placeholder credential; OpenShell's proxy resolves it only for provider-bound endpoints, and the sandbox network policy must also allow the destination."#;
 
 fn worker_intent_appendix(intent: TurnWorkerIntent) -> String {
     match intent {

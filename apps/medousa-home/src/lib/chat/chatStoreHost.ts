@@ -8,6 +8,7 @@ import type {
   ContextUsageReport,
   InteractiveTurnStreamEvent,
   PendingAgentPermission,
+  PendingAgentSecret,
   PendingBrowserChallenge,
   PendingBudgetApproval,
   TurnTicketState,
@@ -44,6 +45,7 @@ export type ChatStoreHost = {
   askHandoffNotice: string | null;
   budgetAlert: PendingBudgetApproval | null;
   permissionAlert: PendingAgentPermission | null;
+  secretAlert: PendingAgentSecret | null;
   browserChallenge: PendingBrowserChallenge | null;
   activeTurnId: string | null;
   contextUsage: ContextUsageReport | null;
@@ -93,9 +95,11 @@ export type ChatStoreHost = {
   scheduleSessionsRefresh(): void;
   linkWorkerFromStream(event: InteractiveTurnStreamEvent, messageId: string): void;
   handlePermissionRequest(event: InteractiveTurnStreamEvent): void;
+  handleSecretRequest(event: InteractiveTurnStreamEvent): void;
   handleBrowserChallenge(event: InteractiveTurnStreamEvent): void;
   handleBrowserNavigated(event: InteractiveTurnStreamEvent): void;
   clearPermissionAlert(): void;
+  clearSecretAlert(): void;
   workerLinkForTurn(turnId: string): WorkerLink | undefined;
   isRelevantSession(sessionId: string | null | undefined): boolean;
   isDetachedWorkerTurnRecord(record: TurnTicketRecord): boolean;

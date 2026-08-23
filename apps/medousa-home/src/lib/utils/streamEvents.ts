@@ -37,6 +37,12 @@ export function isPermissionRequestStreamEvent(
   );
 }
 
+export function isSecretRequestStreamEvent(
+  event: InteractiveTurnStreamEvent,
+): boolean {
+  return event.event_type === "secret_request";
+}
+
 export function isBrowserChallengeStreamEvent(
   event: InteractiveTurnStreamEvent,
 ): boolean {

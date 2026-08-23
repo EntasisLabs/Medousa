@@ -70,6 +70,12 @@ export interface InteractiveTurnStreamEvent {
   response_model?: string | null;
   response_provider?: string | null;
   root_artifact_id?: string | null;
+  secret_allowed_hosts?: string[] | null;
+  secret_backend?: string | null;
+  secret_credential_key?: string | null;
+  secret_label?: string | null;
+  secret_provider_type?: string | null;
+  secret_request_id?: string | null;
   seq?: number;
   terminal: boolean;
   tool_artifact_refs?: StreamToolArtifactRef[] | null;
@@ -89,7 +95,7 @@ export interface InteractiveTurnStreamEvent {
 
 export type WorkerAckKind = "worker" | "workshop";
 
-export type TurnStreamEventV2 = { text: string; type: "content_append" } | { text: string; type: "reasoning_append" } | { debug_message?: string | null; operator_message?: string | null; phase: string; type: "status" } | { message: string; tool_names?: string[]; type: "progress" } | { text: string; tool_names?: string[]; type: "pack_hold" } | { model: string; provider: string; type: "model_receipt" } | { text: string; tool_names?: string[]; type: "final" } | { text: string; tool_names?: string[]; type: "needs_input" } | { text: string; tool_names?: string[]; type: "checkpoint" } | { ack_kind: WorkerAckKind; text: string; tool_names?: string[]; type: "worker_ack"; work_id?: string | null } | { text: string; tool_names?: string[]; type: "worker_synthesis"; work_id?: string | null } | { text: string; tool_names?: string[]; type: "final_pending" } | { debug_message?: string | null; operator_message: string; type: "error" } | { type: "scratch_reset" } | { input_params?: ToolInputParam[]; input_summary: string; tool_name: string; tool_round: number; tool_run_id: string; type: "tool_started" } | { artifact_refs?: StreamToolArtifactRef[]; input_params?: ToolInputParam[]; input_summary: string; output_summary?: string | null; status: string; tool_name: string; tool_round: number; tool_run_id: string; type: "tool_finished" } | { artifact: StreamUiArtifact; type: "artifact_presented" } | { artifact: StreamUiArtifact; previous_artifact_id: string; root_artifact_id?: string | null; type: "artifact_updated" } | { scene: StreamUiScene; type: "ui_scene" } | { max_tool_rounds: number; progress_summary?: string | null; reason: string; request_id: string; requested_rounds: number; rounds_executed: number; type: "budget_approval_required" } | { challenge_url: string; reason: string; session_id: string; type: "browser_challenge" } | { opened_by_agent?: boolean; title?: string | null; type: "browser_navigated"; url: string } | { operator_summary?: string | null; report: ContextUsageReport; type: "context_usage" } | { agent_runtime?: string | null; agent_session_id?: string | null; message: string; request_id: string; type: "permission_request" };
+export type TurnStreamEventV2 = { text: string; type: "content_append" } | { text: string; type: "reasoning_append" } | { debug_message?: string | null; operator_message?: string | null; phase: string; type: "status" } | { message: string; tool_names?: string[]; type: "progress" } | { text: string; tool_names?: string[]; type: "pack_hold" } | { model: string; provider: string; type: "model_receipt" } | { text: string; tool_names?: string[]; type: "final" } | { text: string; tool_names?: string[]; type: "needs_input" } | { text: string; tool_names?: string[]; type: "checkpoint" } | { ack_kind: WorkerAckKind; text: string; tool_names?: string[]; type: "worker_ack"; work_id?: string | null } | { text: string; tool_names?: string[]; type: "worker_synthesis"; work_id?: string | null } | { text: string; tool_names?: string[]; type: "final_pending" } | { debug_message?: string | null; operator_message: string; type: "error" } | { type: "scratch_reset" } | { input_params?: ToolInputParam[]; input_summary: string; tool_name: string; tool_round: number; tool_run_id: string; type: "tool_started" } | { artifact_refs?: StreamToolArtifactRef[]; input_params?: ToolInputParam[]; input_summary: string; output_summary?: string | null; status: string; tool_name: string; tool_round: number; tool_run_id: string; type: "tool_finished" } | { artifact: StreamUiArtifact; type: "artifact_presented" } | { artifact: StreamUiArtifact; previous_artifact_id: string; root_artifact_id?: string | null; type: "artifact_updated" } | { scene: StreamUiScene; type: "ui_scene" } | { max_tool_rounds: number; progress_summary?: string | null; reason: string; request_id: string; requested_rounds: number; rounds_executed: number; type: "budget_approval_required" } | { challenge_url: string; reason: string; session_id: string; type: "browser_challenge" } | { opened_by_agent?: boolean; title?: string | null; type: "browser_navigated"; url: string } | { operator_summary?: string | null; report: ContextUsageReport; type: "context_usage" } | { agent_runtime?: string | null; agent_session_id?: string | null; message: string; request_id: string; type: "permission_request" } | { allowed_hosts?: string[]; backend: string; credential_key: string; label: string; provider_type: string; reason: string; request_id: string; type: "secret_request" };
 
 export interface TurnStreamEnvelopeV2 {
   emitted_at_utc: string;
@@ -295,6 +301,124 @@ export interface SessionCodeBindingResponse {
   session_id: string;
   updated_at_utc?: string | null;
   work_id?: string | null;
+}
+
+export interface SessionTranscriptSearchHit {
+  display_name?: string | null;
+  excerpt: string;
+  role: string;
+  session_id: string;
+  timestamp: string;
+}
+
+export interface SessionTranscriptSearchResponse {
+  hits: SessionTranscriptSearchHit[];
+  query: string;
+}
+
+export type AuthorityId = string;
+
+export type SessionId = string;
+
+export interface SessionRef {
+  authority_id: AuthorityId;
+  session_id: SessionId;
+}
+
+export interface ConversationRangeSelection {
+  after_entry_seq?: number | null;
+  session: SessionRef;
+  through_entry_seq: number;
+}
+
+export interface DeriveSessionTarget {
+  catalog?: string | null;
+  display_name?: string | null;
+}
+
+export interface DeriveSessionRequest {
+  intent: string;
+  sources: ConversationRangeSelection[];
+  target: DeriveSessionTarget;
+}
+
+export type ContextManifestId = string;
+
+export interface ResolvedConversationRange {
+  selection: ConversationRangeSelection;
+  selection_digest: string;
+}
+
+export interface ContextManifest {
+  created_at: string;
+  created_by: string;
+  manifest_id: ContextManifestId;
+  sources: ResolvedConversationRange[];
+}
+
+export type DerivationId = string;
+
+export type ExecutionId = string;
+
+export interface ExecutionRef {
+  authority_id: AuthorityId;
+  execution_id: ExecutionId;
+  session_id: SessionId;
+}
+
+export interface SessionDerivation {
+  caused_by?: ExecutionRef | null;
+  created_at: string;
+  created_by: string;
+  derivation_id: DerivationId;
+  intent: string;
+  manifest: ContextManifest;
+  target_session: SessionRef;
+}
+
+export interface DeriveSessionResponse {
+  authority_id: AuthorityId;
+  catalog: string;
+  derivation: SessionDerivation;
+  display_name?: string | null;
+  reused: boolean;
+  session_id: string;
+}
+
+export type PromptStashId = string;
+
+export interface PromptStashDraft {
+  media_refs?: MediaRef[];
+  mode?: string | null;
+  model?: string | null;
+  text: string;
+}
+
+export interface PromptStash {
+  context_manifest_id?: ContextManifestId | null;
+  created_at: string;
+  created_by: string;
+  draft: PromptStashDraft;
+  label?: string | null;
+  source_session?: SessionRef | null;
+  stash_id: PromptStashId;
+  updated_at: string;
+}
+
+export interface CreatePromptStashRequest {
+  context_manifest_id?: ContextManifestId | null;
+  draft: PromptStashDraft;
+  label?: string | null;
+  source_session?: SessionRef | null;
+}
+
+export interface PromptStashListResponse {
+  stashes: PromptStash[];
+}
+
+export interface DeletePromptStashResponse {
+  deleted: boolean;
+  stash_id: PromptStashId;
 }
 
 export type CodeProjectSource = "blank" | "repository";

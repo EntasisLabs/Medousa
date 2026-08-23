@@ -106,7 +106,8 @@ pub async fn consume_ingest_stream(
             | TurnStreamEventV2::BrowserChallenge { .. }
             | TurnStreamEventV2::BrowserNavigated { .. }
             | TurnStreamEventV2::ContextUsage { .. }
-            | TurnStreamEventV2::PermissionRequest { .. } => {}
+            | TurnStreamEventV2::PermissionRequest { .. }
+            | TurnStreamEventV2::SecretRequest { .. } => {}
         }
     }
 

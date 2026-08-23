@@ -11,10 +11,11 @@ use serde_json::json;
 use stasis::application::runtime::in_memory_runtime::{JobExecutionOutcome, JobHandler};
 use stasis::domain::runtime::job::Job;
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
+use zeroize::Zeroizing;
 
 use crate::openshell_handoff::{
     medousa_openshell_policies_dir, probe_openshell_readyz, probe_tcp_endpoint,
-    resolve_openshell_gateway_url,
+    resolve_openshell_cli_binary, resolve_openshell_gateway_url,
 };
 
 pub const OPENSHELL_SANDBOX_RUN_JOB_TYPE: &str = "openshell.sandbox.run";
@@ -46,6 +47,10 @@ pub struct OpenshellSandboxRunPayload {
     pub skill_upload_dest: Option<String>,
     #[serde(default)]
     pub skill_script: Option<String>,
+    /// OpenShell provider names resolved from opaque, session-bound grants.
+    /// Names are non-secret; credential values never enter the job payload.
+    #[serde(default)]
+    pub providers: Vec<String>,
 }
 
 fn default_destroy_on_complete() -> bool {
@@ -77,6 +82,11 @@ struct CliRunResult {
     status_code: Option<i32>,
     stdout: String,
     stderr: String,
+}
+
+struct SecretCliRunResult {
+    status_code: Option<i32>,
+    stderr: Zeroizing<String>,
 }
 
 #[async_trait]
@@ -139,12 +149,14 @@ impl JobHandler for OpenshellSandboxRunJobHandler {
             let sandbox_from = sandbox_from.clone();
             let policy_path = policy_path.clone();
             let gateway_url = gateway_url.clone();
+            let providers = payload.providers.clone();
             move || {
                 run_sandbox_create(
                     &gateway_url,
                     &sandbox_name,
                     &sandbox_from,
                     policy_path.as_deref(),
+                    &providers,
                 )
             }
         })
@@ -250,6 +262,7 @@ impl JobHandler for OpenshellSandboxRunJobHandler {
             "destroy_ok": destroy_result.map(|value| value.is_ok()),
             "skill_script": payload.skill_script,
             "skill_upload_dest": payload.skill_upload_dest,
+            "providers": payload.providers,
         })
         .to_string();
 
@@ -314,7 +327,14 @@ fn truncate_output(text: &str) -> String {
 }
 
 fn openshell_command(gateway_url: &str) -> std::process::Command {
-    let mut command = std::process::Command::new("openshell");
+    let fallback = if cfg!(windows) {
+        "openshell.exe"
+    } else {
+        "openshell"
+    };
+    let mut command = std::process::Command::new(
+        resolve_openshell_cli_binary().unwrap_or_else(|| std::path::PathBuf::from(fallback)),
+    );
     command.arg("--gateway-endpoint").arg(gateway_url);
     if gateway_url.starts_with("http://") {
         command.arg("--gateway-insecure");
@@ -328,11 +348,158 @@ fn openshell_command(gateway_url: &str) -> std::process::Command {
     command
 }
 
+pub fn openshell_providers_v2_enabled() -> Result<bool, String> {
+    let gateway_url = resolve_openshell_gateway_url(None);
+    let mut command = openshell_command(&gateway_url);
+    command
+        .arg("settings")
+        .arg("get")
+        .arg("--global")
+        .arg("--json");
+    let result = run_cli_capture(&mut command, "settings get --global")?;
+    parse_openshell_providers_v2_settings(&result.stdout)
+}
+
+pub fn validate_openshell_provider_profile(
+    provider_type: &str,
+    credential_key: &str,
+) -> Result<(), String> {
+    let gateway_url = resolve_openshell_gateway_url(None);
+    let mut command = openshell_command(&gateway_url);
+    command
+        .arg("provider")
+        .arg("profile")
+        .arg("export")
+        .arg(provider_type)
+        .arg("--output")
+        .arg("json");
+    let result = run_cli_capture(&mut command, "provider profile export")?;
+    validate_openshell_provider_profile_json(&result.stdout, provider_type, credential_key)
+}
+
+fn validate_openshell_provider_profile_json(
+    raw: &str,
+    provider_type: &str,
+    credential_key: &str,
+) -> Result<(), String> {
+    let profile: serde_json::Value = serde_json::from_str(raw)
+        .map_err(|err| format!("invalid OpenShell provider profile JSON: {err}"))?;
+    let key_declared = profile
+        .get("credentials")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|credentials| {
+            credentials.iter().any(|credential| {
+                credential
+                    .get("env_vars")
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(|env_vars| {
+                        env_vars
+                            .iter()
+                            .any(|value| value.as_str() == Some(credential_key))
+                    })
+            })
+        });
+    if !key_declared {
+        return Err(format!(
+            "credential key {credential_key} is not declared by OpenShell provider profile {provider_type}"
+        ));
+    }
+    let has_endpoints = profile
+        .get("endpoints")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|endpoints| !endpoints.is_empty());
+    if !has_endpoints {
+        return Err(format!(
+            "OpenShell provider profile {provider_type} has no endpoint credential binding"
+        ));
+    }
+    Ok(())
+}
+
+fn parse_openshell_providers_v2_settings(raw: &str) -> Result<bool, String> {
+    let value: serde_json::Value = serde_json::from_str(raw)
+        .map_err(|err| format!("invalid OpenShell global settings JSON: {err}"))?;
+    let Some(setting) = value
+        .get("settings")
+        .and_then(|settings| settings.get("providers_v2_enabled"))
+    else {
+        return Ok(false);
+    };
+    if let Some(enabled) = setting.as_bool() {
+        return Ok(enabled);
+    }
+    match setting.as_str().map(str::trim) {
+        Some(value) if value.eq_ignore_ascii_case("true") => Ok(true),
+        Some(value) if value.eq_ignore_ascii_case("false") => Ok(false),
+        _ => Err("OpenShell providers_v2_enabled setting is not boolean".to_string()),
+    }
+}
+
+/// Create an OpenShell provider without placing credential material in argv.
+/// The CLI reads the bare credential key from its child-only environment and
+/// sends it to the gateway; the owned value is zeroized when this call exits.
+pub fn provision_openshell_provider(
+    provider_name: &str,
+    provider_type: &str,
+    credential_key: &str,
+    secret: Zeroizing<String>,
+) -> Result<(), String> {
+    let gateway_url = resolve_openshell_gateway_url(None);
+    if secret.trim().is_empty() {
+        return Err("credential value must not be empty".to_string());
+    }
+    if secret.as_bytes().contains(&0) {
+        return Err("credential value contains an unsupported NUL byte".to_string());
+    }
+    if !openshell_providers_v2_enabled()? {
+        return Err(
+            "OpenShell Providers v2 must be enabled before storing agent credentials".to_string(),
+        );
+    }
+    validate_openshell_provider_profile(provider_type, credential_key)?;
+
+    let mut command = openshell_command(&gateway_url);
+    command
+        .arg("provider")
+        .arg("create")
+        .arg("--name")
+        .arg(provider_name)
+        .arg("--type")
+        .arg(provider_type)
+        // Bare-key form: OpenShell reads the value from the environment.
+        .arg("--credential")
+        .arg(credential_key)
+        .env(credential_key, secret.as_str());
+
+    let result = run_secret_cli_capture(&mut command, "provider create");
+    if result.status_code == Some(0) {
+        return Ok(());
+    }
+    // Defense in depth if a future CLI version echoes environment material.
+    let stderr = truncate_output(&result.stderr.replace(secret.as_str(), "[REDACTED]"));
+    Err(format!(
+        "OpenShell provider creation failed (exit={:?}): {stderr}",
+        result.status_code
+    ))
+}
+
+/// Roll back a provider that was created after its waiting turn was cancelled,
+/// denied, or expired.
+pub fn delete_openshell_provider(provider_name: &str) -> Result<(), String> {
+    let gateway_url = resolve_openshell_gateway_url(None);
+    let mut command = openshell_command(&gateway_url);
+    command.arg("provider").arg("delete").arg(provider_name);
+    run_cli_capture(&mut command, "provider delete")
+        .map(|_| ())
+        .map_err(|err| format!("OpenShell provider delete failed: {err}"))
+}
+
 fn run_sandbox_create(
     gateway_url: &str,
     sandbox_name: &str,
     sandbox_from: &str,
     policy_path: Option<&std::path::Path>,
+    providers: &[String],
 ) -> Result<(), String> {
     let mut command = openshell_command(gateway_url);
     command
@@ -342,7 +509,13 @@ fn run_sandbox_create(
         .arg(sandbox_name)
         .arg("--from")
         .arg(sandbox_from)
+        // Medousa attaches only explicit, operator-issued grants. Never let
+        // OpenShell discover unrelated daemon-host credentials implicitly.
+        .arg("--no-auto-providers")
         .arg("--no-tty");
+    for provider in providers {
+        command.arg("--provider").arg(provider);
+    }
     if let Some(path) = policy_path {
         command.arg("--policy").arg(path);
     }
@@ -447,6 +620,24 @@ fn run_cli_capture_allow_failure(command: &mut std::process::Command, label: &st
     }
 }
 
+fn run_secret_cli_capture(command: &mut std::process::Command, label: &str) -> SecretCliRunResult {
+    command.stdout(Stdio::null()).stderr(Stdio::piped());
+    let output = match command.output() {
+        Ok(output) => output,
+        Err(err) => {
+            return SecretCliRunResult {
+                status_code: None,
+                stderr: Zeroizing::new(format!("{label} spawn error: {err}")),
+            };
+        }
+    };
+    let stderr_bytes = Zeroizing::new(output.stderr);
+    SecretCliRunResult {
+        status_code: output.status.code(),
+        stderr: Zeroizing::new(String::from_utf8_lossy(&stderr_bytes).into_owned()),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct OpenshellProbeReceipt {
     pub sandbox_name: String,
@@ -468,6 +659,7 @@ pub fn probe_grapheme_in_sandbox(
         &sandbox_name,
         sandbox_from,
         policy_path.as_deref(),
+        &[],
     )?;
     let exec = run_sandbox_exec(
         &gateway_url,
@@ -519,7 +711,13 @@ pub fn probe_skill_script_in_sandbox(
                 .and_then(resolve_policy_template_path)
         });
     let from = payload.sandbox_from.as_deref().unwrap_or(sandbox_from);
-    run_sandbox_create(&gateway_url, &sandbox_name, from, policy_path.as_deref())?;
+    run_sandbox_create(
+        &gateway_url,
+        &sandbox_name,
+        from,
+        policy_path.as_deref(),
+        &payload.providers,
+    )?;
     if let (Some(assets), Some(dest)) = (
         payload.skill_assets_dir.as_deref(),
         payload.skill_upload_dest.as_deref(),
@@ -586,6 +784,7 @@ mod tests {
             skill_assets_dir: None,
             skill_upload_dest: None,
             skill_script: None,
+            providers: Vec::new(),
         };
         let raw = payload.to_payload_ref().expect("encode");
         let decoded: OpenshellSandboxRunPayload = serde_json::from_str(&raw).expect("decode");
@@ -595,5 +794,47 @@ mod tests {
     #[test]
     fn gateway_url_env_constant_is_stable() {
         assert_eq!(ENV_OPENSHELL_GATEWAY_URL, "MEDOUSA_OPENSHELL_GATEWAY_URL");
+    }
+
+    #[test]
+    fn providers_v2_setting_is_parsed_fail_closed() {
+        assert!(
+            parse_openshell_providers_v2_settings(
+                r#"{"settings":{"providers_v2_enabled":"true"}}"#
+            )
+            .unwrap()
+        );
+        assert!(!parse_openshell_providers_v2_settings(r#"{"settings":{}}"#).unwrap());
+        assert!(
+            parse_openshell_providers_v2_settings(
+                r#"{"settings":{"providers_v2_enabled":"maybe"}}"#
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn provider_profile_must_bind_the_requested_key_and_an_endpoint() {
+        let profile = r#"{
+            "credentials": [{"name":"token","env_vars":["GITHUB_TOKEN","GH_TOKEN"]}],
+            "endpoints": [{"host":"api.github.com","port":443}]
+        }"#;
+        assert!(
+            validate_openshell_provider_profile_json(profile, "github", "GITHUB_TOKEN").is_ok()
+        );
+        assert!(
+            validate_openshell_provider_profile_json(profile, "github", "OPENAI_API_KEY")
+                .unwrap_err()
+                .contains("not declared")
+        );
+        assert!(
+            validate_openshell_provider_profile_json(
+                r#"{"credentials":[{"env_vars":["GITHUB_TOKEN"]}],"endpoints":[]}"#,
+                "github",
+                "GITHUB_TOKEN"
+            )
+            .unwrap_err()
+            .contains("no endpoint")
+        );
     }
 }

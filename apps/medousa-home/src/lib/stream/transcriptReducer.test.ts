@@ -100,6 +100,27 @@ describe("reduceTranscriptEnvelope", () => {
     expect(result.handled).toBe(false);
     expect(result.messages[0]?.content).toBe("draft");
   });
+
+  it("keeps secure credential prompts out of transcript messages", () => {
+    const messages = [assistant("working")];
+    const result = reduceTranscriptEnvelope(
+      messages,
+      envelope(10, {
+        type: "secret_request",
+        request_id: "secret-1",
+        label: "GitHub token",
+        reason: "Read a private repository",
+        provider_type: "github",
+        credential_key: "GITHUB_TOKEN",
+        backend: "openshell_provider",
+        allowed_hosts: [],
+      }),
+      ctx,
+    );
+    expect(result.handled).toBe(false);
+    expect(result.messages).toBe(messages);
+    expect(result.legacy.event_type).toBe("secret_request");
+  });
 });
 
 describe("applyStreamEventToMessage", () => {

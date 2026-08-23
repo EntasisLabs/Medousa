@@ -145,6 +145,27 @@ pub trait AgentStreamSink: Send + Sync {
     ) {
         let _ = (turn_correlation_id, url, title, opened_by_agent);
     }
+
+    async fn secret_request_required(
+        &self,
+        request_id: String,
+        label: String,
+        reason: String,
+        provider_type: String,
+        credential_key: String,
+        backend: String,
+        allowed_hosts: Vec<String>,
+    ) {
+        let _ = (
+            request_id,
+            label,
+            reason,
+            provider_type,
+            credential_key,
+            backend,
+            allowed_hosts,
+        );
+    }
 }
 
 pub type SharedAgentStreamSink = Arc<dyn AgentStreamSink>;

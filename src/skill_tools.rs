@@ -560,6 +560,7 @@ impl CognitionSkillProbeTool {
                 skill_assets_dir: None,
                 skill_upload_dest: None,
                 skill_script: None,
+                providers: Vec::new(),
             };
             let job_id = enqueue_openshell_job(
                 &self.runtime,

@@ -3,6 +3,7 @@ import type {
   ContextUsageReport,
   InteractiveTurnStreamEvent,
   PendingAgentPermission,
+  PendingAgentSecret,
   PendingBudgetApproval,
   PendingBrowserChallenge,
   TurnTicketState,
@@ -109,9 +110,11 @@ import {
   clearBrowserChallenge,
   clearBudgetAlert,
   clearPermissionAlert,
+  clearSecretAlert,
   handleBrowserChallenge,
   handleBrowserNavigated,
   handlePermissionRequest,
+  handleSecretRequest,
   hasPendingBudgetApproval,
   noteBudgetResolved,
   notePermissionResolved,
@@ -150,6 +153,7 @@ export class ChatStore implements ChatStoreHost {
   promotedAskIds = loadPromotedAskIds();
   budgetAlert = $state<PendingBudgetApproval | null>(null);
   permissionAlert = $state<PendingAgentPermission | null>(null);
+  secretAlert = $state<PendingAgentSecret | null>(null);
   browserChallenge = $state<PendingBrowserChallenge | null>(null);
   activeTurnId = $state<string | null>(null);
   contextUsage = $state<ContextUsageReport | null>(null);
@@ -275,6 +279,7 @@ export class ChatStore implements ChatStoreHost {
       historyLoading: this.historyLoading,
       sessionPristine: this.sessionPristine,
       historyNotice: this.historyNotice,
+      secretAlert: this.secretAlert,
       activeTurnId: this.activeTurnId,
       turns: this.turns,
       workers: this.workers,
@@ -298,6 +303,7 @@ export class ChatStore implements ChatStoreHost {
     this.historyLoading = runtime.historyLoading;
     this.sessionPristine = runtime.sessionPristine;
     this.historyNotice = runtime.historyNotice;
+    this.secretAlert = runtime.secretAlert;
     this.activeTurnId = runtime.activeTurnId;
     this.turns = runtime.turns;
     this.workers = runtime.workers as typeof this.workers;
@@ -400,6 +406,14 @@ export class ChatStore implements ChatStoreHost {
 
   handlePermissionRequest(event: InteractiveTurnStreamEvent) {
     handlePermissionRequest(this, event);
+  }
+
+  clearSecretAlert() {
+    clearSecretAlert(this);
+  }
+
+  handleSecretRequest(event: InteractiveTurnStreamEvent) {
+    handleSecretRequest(this, event);
   }
 
   clearBrowserChallenge(sessionId?: string) {

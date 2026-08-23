@@ -1,10 +1,11 @@
 #[cfg(feature = "async")]
 use medousa_types::{
     AgentPermissionRequestListResponse, AgentPermissionResolveRequest,
-    AgentPermissionResolveResponse, AgentRuntimeListResponse, AgentSessionPromptRequest,
-    AgentSessionPromptResponse, CancelAgentSessionResponse, CreateAgentSessionRequest,
-    CreateAgentSessionResponse, InteractiveTurnStreamEvent, SetAgentSessionConfigOptionRequest,
-    SetAgentSessionConfigOptionResponse,
+    AgentPermissionResolveResponse, AgentRuntimeListResponse, AgentSecretDenyRequest,
+    AgentSecretFulfillRequest, AgentSecretRequestListResponse, AgentSecretResolveResponse,
+    AgentSessionPromptRequest, AgentSessionPromptResponse, CancelAgentSessionResponse,
+    CreateAgentSessionRequest, CreateAgentSessionResponse, InteractiveTurnStreamEvent,
+    SetAgentSessionConfigOptionRequest, SetAgentSessionConfigOptionResponse,
 };
 
 #[cfg(all(feature = "async", feature = "sse"))]
@@ -179,6 +180,65 @@ impl AgentsApi<'_> {
             serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
         let path = op_path(
             &ops::AGENTS_PERMISSION_REQUESTS_BY_REQUEST_ID_DENY_POST,
+            &[("request_id", request_id.trim())],
+        )?;
+        let value = self
+            .client
+            .transport()
+            .post_json(self.client.base_url(), &path, body)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn list_secret_requests(
+        &self,
+        status: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<AgentSecretRequestListResponse, crate::SdkError> {
+        let mut params = Vec::new();
+        if let Some(status) = status {
+            params.push(("status", status.to_string()));
+        }
+        if let Some(limit) = limit {
+            params.push(("limit", limit.to_string()));
+        }
+        let path = op_path_query(&ops::AGENTS_SECRET_REQUESTS_GET, &[], &params)?;
+        let value = self
+            .client
+            .transport()
+            .get_json(self.client.base_url(), &path)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn fulfill_secret_request(
+        &self,
+        request_id: &str,
+        request: &AgentSecretFulfillRequest,
+    ) -> Result<AgentSecretResolveResponse, crate::SdkError> {
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path = op_path(
+            &ops::AGENTS_SECRET_REQUESTS_BY_REQUEST_ID_FULFILL_POST,
+            &[("request_id", request_id.trim())],
+        )?;
+        let value = self
+            .client
+            .transport()
+            .post_json(self.client.base_url(), &path, body)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn deny_secret_request(
+        &self,
+        request_id: &str,
+        request: &AgentSecretDenyRequest,
+    ) -> Result<AgentSecretResolveResponse, crate::SdkError> {
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path = op_path(
+            &ops::AGENTS_SECRET_REQUESTS_BY_REQUEST_ID_DENY_POST,
             &[("request_id", request_id.trim())],
         )?;
         let value = self

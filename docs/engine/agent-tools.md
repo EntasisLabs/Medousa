@@ -53,6 +53,8 @@ Source: `src/tool_bootstrap.rs`
 | UI present | `cognition_ui_present` — emits `ui_artifact` on stream |
 | Web | `cognition_web_search` — all surfaces; BrowserHost → lite → Grapheme chain |
 | Browser fetch | `cognition_browser_fetch` — gated on `supports_browser_host` |
+| OpenShell secrets | `cognition_openshell_request_secret` — trusted UI prompt; returns an opaque one-use grant, never the credential value |
+| Grapheme secrets | `cognition_grapheme_request_secret` — trusted UI prompt; authorizes an ephemeral credential capability for one native run |
 | Finish | `cognition_turn action=turn.finish` — ends tool loop |
 
 ---
@@ -68,7 +70,63 @@ Capabilities catalog: `GET /v1/capabilities` — SDK `capabilities().list()`.
 ## Integrator guidance
 
 - **HTTP-only clients** do not invoke tools directly; they send prompts via interactive turn or jobs API.
-- **Custom UIs** should handle stream events (`tool_*`, `ui_artifact`, `artifact_updated`, `browser_challenge`) — [custom-chat-ui.md](../cookbook/custom-chat-ui.md).
+- **Custom UIs** should handle stream events (`tool_*`, `ui_artifact`, `artifact_updated`, `browser_challenge`, `secret_request`) — [custom-chat-ui.md](../cookbook/custom-chat-ui.md).
+- A `secret_request` event contains metadata only. Collect the value outside
+  the transcript and submit it to the native-only fulfill endpoint. Never turn
+  it into a user chat message or a tool argument.
+
+## OpenShell credential grants
+
+`cognition_openshell_request_secret` accepts a provider profile id, credential
+environment key, short label, and reason. On a trusted interactive surface it
+publishes `secret_request`, waits for the native UI, and returns an opaque,
+short-lived, session-bound `sgrant-*` id. The model passes that id once through
+`cognition_openshell_sandbox_run.secret_grant_ids`.
+
+The daemon resolves grants to non-secret OpenShell provider names before it
+serializes the sandbox job. Sandbox creation always uses
+`--no-auto-providers`, so unrelated daemon-host credentials are not discovered,
+and attaches only the providers authorized by those grants. OpenShell supplies
+placeholder values inside the sandbox and performs endpoint-bound proxy
+substitution. Provider binding does not widen sandbox network policy; both
+checks must allow a request. Medousa verifies the gateway-global
+`providers_v2_enabled` setting before prompting, provisioning, and consuming a
+grant; an absent, false, or unreadable setting fails closed. Before prompting,
+it also verifies that the requested credential key belongs to the named
+provider profile and that the profile has an endpoint binding.
+
+## Grapheme credential grants
+
+`cognition_grapheme_request_secret` accepts an uppercase credential key, label,
+reason, and up to 16 exact HTTPS authorities in `allowed_hosts`. The trusted UI
+shows those hosts before collecting the value. On approval, the host receives a
+session-bound `sgrant-*` id and passes it once in `secret_grant_ids` on
+`cognition_capability` action `grapheme.invoke`.
+
+Secret grants require an inline script. They are rejected for stored templates
+and are not remembered as the last Grapheme source, which prevents accidental
+promotion into a saved or recurring workflow. Before enqueue, Medousa replaces
+each grant in the source with a daemon-only run alias. The durable job's only
+credential coordinates are those aliases and a short-lived internal run token;
+it contains neither grants nor values. Before execution the workflow engine
+removes the token from initial state and moves the zeroizing credential into a
+thread-local capability scope.
+
+The native `grapheme/secrets` host module exposes:
+
+- `get_secret_handle(name: "sgrant-…")`, returning a run-only `gsecret-*`
+  handle and logical credential name;
+- `sign_request(secret: handle, payload: ...)`, returning an HMAC-SHA256
+  signature; and
+- `medousa.authorized_http(secret: handle, url: "https://…", ...)`, attaching
+  bearer or custom-header authentication only for an approved exact host.
+
+`authorized_http` requires HTTPS, disables redirects, allows at most eight
+calls per run, bounds response size and time, and redacts the credential from
+returned bodies and transport errors.
+Attempts with no active scope, a reused grant, the wrong session or runtime, or
+an unapproved host fail closed. Raw credential bytes never enter Grapheme
+source, state, VM values, tool output, or Stasis persistence.
 
 ---
 

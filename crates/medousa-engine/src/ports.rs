@@ -19,6 +19,15 @@ pub enum ToolSinkEvent {
         title: Option<String>,
         opened_by_agent: bool,
     },
+    SecretRequest {
+        request_id: String,
+        label: String,
+        reason: String,
+        provider_type: String,
+        credential_key: String,
+        backend: String,
+        allowed_hosts: Vec<String>,
+    },
 }
 
 #[async_trait]

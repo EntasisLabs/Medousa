@@ -2,6 +2,7 @@
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
   import ModeProposalBar from "$lib/components/chat/ModeProposalBar.svelte";
   import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
+  import AgentSecretBar from "$lib/components/chat/AgentSecretBar.svelte";
   import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import ChatAgentModePicker from "$lib/components/chat/ChatAgentModePicker.svelte";
@@ -212,6 +213,7 @@
     sessionId={chat.focusedSessionId}
   />
   <AgentPermissionBar mobile />
+  <AgentSecretBar mobile />
   <AgentBrowserPanel mobile />
   <div class="mb-1 flex items-center px-1">
     <ChatAgentModePicker

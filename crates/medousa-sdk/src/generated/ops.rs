@@ -79,6 +79,27 @@ pub const AGENTS_RUNTIMES_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const AGENTS_SECRET_REQUESTS_BY_REQUEST_ID_DENY_POST: Operation = Operation {
+    id: "agents.secret_requests.by_request_id.deny.post",
+    method: "POST",
+    path: "/v1/agents/secret-requests/{request_id}/deny",
+    streaming: false,
+};
+
+pub const AGENTS_SECRET_REQUESTS_BY_REQUEST_ID_FULFILL_POST: Operation = Operation {
+    id: "agents.secret_requests.by_request_id.fulfill.post",
+    method: "POST",
+    path: "/v1/agents/secret-requests/{request_id}/fulfill",
+    streaming: false,
+};
+
+pub const AGENTS_SECRET_REQUESTS_GET: Operation = Operation {
+    id: "agents.secret_requests.get",
+    method: "GET",
+    path: "/v1/agents/secret-requests",
+    streaming: false,
+};
+
 pub const AGENTS_SESSIONS_BY_AGENT_SESSION_ID_CANCEL_POST: Operation = Operation {
     id: "agents.sessions.by_agent_session_id.cancel.post",
     method: "POST",
@@ -2785,6 +2806,9 @@ pub static ALL: &[Operation] = &[
     AGENTS_PERMISSION_REQUESTS_BY_REQUEST_ID_DENY_POST,
     AGENTS_PERMISSION_REQUESTS_GET,
     AGENTS_RUNTIMES_GET,
+    AGENTS_SECRET_REQUESTS_BY_REQUEST_ID_DENY_POST,
+    AGENTS_SECRET_REQUESTS_BY_REQUEST_ID_FULFILL_POST,
+    AGENTS_SECRET_REQUESTS_GET,
     AGENTS_SESSIONS_BY_AGENT_SESSION_ID_CANCEL_POST,
     AGENTS_SESSIONS_BY_AGENT_SESSION_ID_CONFIG_POST,
     AGENTS_SESSIONS_BY_AGENT_SESSION_ID_PROMPT_POST,

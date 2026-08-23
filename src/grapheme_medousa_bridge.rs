@@ -1,9 +1,11 @@
 //! MirV1 host bridge for Grapheme `medousa.*` capabilities.
 //!
-//! Three ops only:
+//! Medousa-owned host ops:
 //! - `medousa.digest` — bounded context compile (no LLM)
 //! - `medousa.synthesize` — single-shot model pass (no tool loop)
 //! - `medousa.deliver` — terminal effect (work, channel, locus, quiet)
+//! - `medousa.authorized_http` — run-scoped credential injection for an
+//!   explicitly approved HTTPS authority
 
 use std::future::IntoFuture;
 use std::path::{Path, PathBuf};
@@ -88,6 +90,9 @@ pub fn configure_grapheme_engine_builder(builder: GraphemeEngineBuilder) -> Grap
 fn medousa_and_shell_capability_interceptor()
 -> impl Fn(&CapabilityCall) -> Option<Result<Value, HostCallError>> + Send + Sync + 'static {
     move |call: &CapabilityCall| {
+        if let Some(result) = crate::grapheme_secret_bridge::try_secret_capability_call(call) {
+            return Some(result);
+        }
         if let Some(result) = try_medousa_call(call) {
             return Some(result);
         }
@@ -97,6 +102,9 @@ fn medousa_and_shell_capability_interceptor()
 
 fn register_medousa_host_module(registry: &mut grapheme_runtime::ModuleRegistry) {
     registry.register_host_module(crate::grapheme_host_catalog::medousa_host_module_manifest());
+    registry.register_host_module(
+        crate::grapheme_host_catalog::grapheme_secrets_host_module_manifest(),
+    );
 }
 
 pub fn medousa_workflow_engine() -> Arc<dyn WorkflowEngine> {
@@ -214,11 +222,27 @@ impl WorkflowEngine for MedousaWorkflowEngine {
         }
 
         let source_owned = source.to_string();
-        let state_current_owned = state_current.cloned();
+        let (secret_run_token, state_current_owned) =
+            crate::grapheme_secret_bridge::split_execution_state(state_current)
+                .map_err(StasisError::PortFailure)?;
+        if secret_run_token.is_none()
+            && crate::grapheme_secret_bridge::source_contains_secret_grant(source)
+        {
+            return Err(StasisError::PortFailure(
+                "grapheme policy violation: ephemeral grant reference has no approved run scope"
+                    .to_string(),
+            ));
+        }
         let guardrails_clone = guardrails.clone();
         let handle = tokio::task::spawn_blocking(move || {
             let engine = Self::shared_engine(&guardrails_clone);
-            engine.execute_source_with_initial_state(&source_owned, state_current_owned)
+            let execute =
+                || engine.execute_source_with_initial_state(&source_owned, state_current_owned);
+            match secret_run_token {
+                Some(token) => crate::grapheme_secret_bridge::with_run_scope(&token, execute)
+                    .map_err(GraphemeSdkError::Contract)?,
+                None => execute(),
+            }
         });
 
         let result = tokio::time::timeout(timeout, handle)

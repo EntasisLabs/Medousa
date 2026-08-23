@@ -734,6 +734,352 @@
       }
     }
   },
+  "AgentSecretDenyRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentSecretDenyRequest",
+    "type": "object",
+    "properties": {
+      "resolved_by": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "AgentSecretFulfillRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentSecretFulfillRequest",
+    "description": "Write-only credential material. Avoid `Debug` and `Clone`: callers should move the value directly into a zeroizing provision operation.",
+    "type": "object",
+    "required": [
+      "value"
+    ],
+    "properties": {
+      "resolved_by": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "value": {
+        "type": "string"
+      }
+    }
+  },
+  "AgentSecretRequestListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentSecretRequestListResponse",
+    "type": "object",
+    "required": [
+      "requests"
+    ],
+    "properties": {
+      "requests": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/AgentSecretRequestRecord"
+        }
+      }
+    },
+    "definitions": {
+      "AgentSecretRequestBackend": {
+        "description": "Runtime boundary that receives an approved credential. OpenShell providers persist at the workshop gateway; Grapheme grants stay ephemeral and are exposed to one run only through opaque host capability handles.",
+        "type": "string",
+        "enum": [
+          "openshell_provider",
+          "grapheme_runtime"
+        ]
+      },
+      "AgentSecretRequestRecord": {
+        "description": "Public metadata for one agent-initiated credential request. Credential material is accepted only by the fulfill endpoint and is never copied into this record, turn events, tool output, or transcript storage.",
+        "type": "object",
+        "required": [
+          "backend",
+          "created_at_utc",
+          "credential_key",
+          "label",
+          "provider_type",
+          "reason",
+          "request_id",
+          "session_id",
+          "status",
+          "turn_id",
+          "updated_at_utc"
+        ],
+        "properties": {
+          "allowed_hosts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "backend": {
+            "$ref": "#/definitions/AgentSecretRequestBackend"
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "credential_key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "provider_type": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "resolved_at_utc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "resolved_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/definitions/AgentSecretRequestStatus"
+          },
+          "turn_id": {
+            "type": "string"
+          },
+          "updated_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AgentSecretRequestStatus": {
+        "description": "Lifecycle for an out-of-transcript secret request. The secret value is deliberately absent from every record and response type.",
+        "type": "string",
+        "enum": [
+          "pending",
+          "provisioning",
+          "fulfilled",
+          "denied",
+          "expired"
+        ]
+      }
+    }
+  },
+  "AgentSecretRequestRecord": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentSecretRequestRecord",
+    "description": "Public metadata for one agent-initiated credential request. Credential material is accepted only by the fulfill endpoint and is never copied into this record, turn events, tool output, or transcript storage.",
+    "type": "object",
+    "required": [
+      "backend",
+      "created_at_utc",
+      "credential_key",
+      "label",
+      "provider_type",
+      "reason",
+      "request_id",
+      "session_id",
+      "status",
+      "turn_id",
+      "updated_at_utc"
+    ],
+    "properties": {
+      "allowed_hosts": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "backend": {
+        "$ref": "#/definitions/AgentSecretRequestBackend"
+      },
+      "created_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "credential_key": {
+        "type": "string"
+      },
+      "label": {
+        "type": "string"
+      },
+      "provider_type": {
+        "type": "string"
+      },
+      "reason": {
+        "type": "string"
+      },
+      "request_id": {
+        "type": "string"
+      },
+      "resolved_at_utc": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date-time"
+      },
+      "resolved_by": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "status": {
+        "$ref": "#/definitions/AgentSecretRequestStatus"
+      },
+      "turn_id": {
+        "type": "string"
+      },
+      "updated_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "definitions": {
+      "AgentSecretRequestBackend": {
+        "description": "Runtime boundary that receives an approved credential. OpenShell providers persist at the workshop gateway; Grapheme grants stay ephemeral and are exposed to one run only through opaque host capability handles.",
+        "type": "string",
+        "enum": [
+          "openshell_provider",
+          "grapheme_runtime"
+        ]
+      },
+      "AgentSecretRequestStatus": {
+        "description": "Lifecycle for an out-of-transcript secret request. The secret value is deliberately absent from every record and response type.",
+        "type": "string",
+        "enum": [
+          "pending",
+          "provisioning",
+          "fulfilled",
+          "denied",
+          "expired"
+        ]
+      }
+    }
+  },
+  "AgentSecretResolveResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentSecretResolveResponse",
+    "type": "object",
+    "required": [
+      "request"
+    ],
+    "properties": {
+      "request": {
+        "$ref": "#/definitions/AgentSecretRequestRecord"
+      }
+    },
+    "definitions": {
+      "AgentSecretRequestBackend": {
+        "description": "Runtime boundary that receives an approved credential. OpenShell providers persist at the workshop gateway; Grapheme grants stay ephemeral and are exposed to one run only through opaque host capability handles.",
+        "type": "string",
+        "enum": [
+          "openshell_provider",
+          "grapheme_runtime"
+        ]
+      },
+      "AgentSecretRequestRecord": {
+        "description": "Public metadata for one agent-initiated credential request. Credential material is accepted only by the fulfill endpoint and is never copied into this record, turn events, tool output, or transcript storage.",
+        "type": "object",
+        "required": [
+          "backend",
+          "created_at_utc",
+          "credential_key",
+          "label",
+          "provider_type",
+          "reason",
+          "request_id",
+          "session_id",
+          "status",
+          "turn_id",
+          "updated_at_utc"
+        ],
+        "properties": {
+          "allowed_hosts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "backend": {
+            "$ref": "#/definitions/AgentSecretRequestBackend"
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "credential_key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "provider_type": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "resolved_at_utc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "resolved_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/definitions/AgentSecretRequestStatus"
+          },
+          "turn_id": {
+            "type": "string"
+          },
+          "updated_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AgentSecretRequestStatus": {
+        "description": "Lifecycle for an out-of-transcript secret request. The secret value is deliberately absent from every record and response type.",
+        "type": "string",
+        "enum": [
+          "pending",
+          "provisioning",
+          "fulfilled",
+          "denied",
+          "expired"
+        ]
+      }
+    }
+  },
   "AgentSessionConfigChoice": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "AgentSessionConfigChoice",
@@ -11270,6 +11616,46 @@
           "null"
         ]
       },
+      "secret_allowed_hosts": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string"
+        }
+      },
+      "secret_backend": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "secret_credential_key": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "secret_label": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "secret_provider_type": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "secret_request_id": {
+        "description": "Trusted secret-entry handoff. Metadata only; the value never enters a stream frame or transcript payload.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "seq": {
         "description": "Monotonic per-turn sequence number, stamped server-side by `TurnEventChannel::publish`. Enables exactly-once replay/dedup on reconnect. `#[serde(default)]` keeps the Python SDK and any older payloads (which never carried `seq`) wire-compatible.",
         "default": 0,
@@ -19541,6 +19927,52 @@
               }
             },
             "additionalProperties": false
+          },
+          {
+            "description": "Trusted UI prompt for credential material. This event carries request metadata only; the value travels over the dedicated fulfill endpoint.",
+            "type": "object",
+            "required": [
+              "backend",
+              "credential_key",
+              "label",
+              "provider_type",
+              "reason",
+              "request_id",
+              "type"
+            ],
+            "properties": {
+              "allowed_hosts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "backend": {
+                "type": "string"
+              },
+              "credential_key": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "provider_type": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "secret_request"
+                ]
+              }
+            },
+            "additionalProperties": false
           }
         ]
       },
@@ -20235,6 +20667,52 @@
             "type": "string",
             "enum": [
               "permission_request"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Trusted UI prompt for credential material. This event carries request metadata only; the value travels over the dedicated fulfill endpoint.",
+        "type": "object",
+        "required": [
+          "backend",
+          "credential_key",
+          "label",
+          "provider_type",
+          "reason",
+          "request_id",
+          "type"
+        ],
+        "properties": {
+          "allowed_hosts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "backend": {
+            "type": "string"
+          },
+          "credential_key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "provider_type": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "secret_request"
             ]
           }
         },

@@ -176,6 +176,17 @@ function legacyEventToV2(event: InteractiveTurnStreamEvent): TurnStreamEventV2 {
         agent_session_id: event.agent_session_id,
         agent_runtime: event.agent_runtime,
       };
+    case "secret_request":
+      return {
+        type: "secret_request",
+        request_id: requiredLegacy(event.secret_request_id, "secret_request_id"),
+        label: requiredLegacy(event.secret_label, "secret_label"),
+        reason: event.message,
+        provider_type: requiredLegacy(event.secret_provider_type, "secret_provider_type"),
+        credential_key: requiredLegacy(event.secret_credential_key, "secret_credential_key"),
+        backend: event.secret_backend ?? "openshell_provider",
+        allowed_hosts: event.secret_allowed_hosts ?? [],
+      };
     default:
       throw new Error(`legacy stream event '${event.event_type}' has no v2 projection`);
   }
@@ -398,6 +409,20 @@ function projectEvent(
         permission_request_id: event.request_id,
         agent_session_id: event.agent_session_id,
         agent_runtime: event.agent_runtime,
+      };
+    case "secret_request":
+      return {
+        ...base,
+        event_type: "secret_request",
+        phase: "awaiting_secret",
+        message: event.reason,
+        operator_message: event.reason,
+        secret_request_id: event.request_id,
+        secret_label: event.label,
+        secret_provider_type: event.provider_type,
+        secret_credential_key: event.credential_key,
+        secret_backend: event.backend,
+        secret_allowed_hosts: event.allowed_hosts,
       };
     default:
       return assertNever(event);

@@ -17,10 +17,12 @@ use medousa_forge::model::WorkId;
 use medousa_types::{
     AgentModeId, AgentPermissionRequestListQuery, AgentPermissionRequestListResponse,
     AgentPermissionResolveRequest, AgentPermissionResolveResponse, AgentRuntimeInfo,
-    AgentRuntimeListResponse, AgentSessionConfigOption, AgentSessionPromptRequest,
-    AgentSessionPromptResponse, CancelAgentSessionResponse, CodeIntentContext,
-    CreateAgentSessionRequest, CreateAgentSessionResponse, InteractiveTurnStreamEvent,
-    SetAgentSessionConfigOptionRequest, SetAgentSessionConfigOptionResponse,
+    AgentRuntimeListResponse, AgentSecretDenyRequest, AgentSecretFulfillRequest,
+    AgentSecretRequestListQuery, AgentSecretRequestListResponse, AgentSecretResolveResponse,
+    AgentSessionConfigOption, AgentSessionPromptRequest, AgentSessionPromptResponse,
+    CancelAgentSessionResponse, CodeIntentContext, CreateAgentSessionRequest,
+    CreateAgentSessionResponse, InteractiveTurnStreamEvent, SetAgentSessionConfigOptionRequest,
+    SetAgentSessionConfigOptionResponse,
 };
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
@@ -28,6 +30,7 @@ use uuid::Uuid;
 use crate::agent_permission_request::{
     CreateAgentPermissionRequest, PermissionResolution, agent_permission_request_store,
 };
+use crate::agent_secret_request::agent_secret_request_store;
 use crate::daemon::acp_forge_adapter;
 use crate::daemon::ingest::{publish_interactive_turn_event, stream_events_from_registry};
 use crate::daemon::route_policy::{
@@ -93,6 +96,26 @@ pub fn permission_surface() -> DeclaredRouter {
                 16 * 1024,
             ),
             post(deny_agent_permission_request),
+        )
+        .route(
+            permission_policy(axum::http::Method::GET, "/v1/agents/secret-requests", 1024),
+            get(list_agent_secret_requests),
+        )
+        .route(
+            permission_policy(
+                axum::http::Method::POST,
+                "/v1/agents/secret-requests/{request_id}/fulfill",
+                20 * 1024,
+            ),
+            post(fulfill_agent_secret_request),
+        )
+        .route(
+            permission_policy(
+                axum::http::Method::POST,
+                "/v1/agents/secret-requests/{request_id}/deny",
+                4 * 1024,
+            ),
+            post(deny_agent_secret_request),
         )
 }
 
@@ -685,6 +708,44 @@ pub async fn deny_agent_permission_request(
     Ok(Json(AgentPermissionResolveResponse { request }))
 }
 
+pub async fn list_agent_secret_requests(
+    Query(query): Query<AgentSecretRequestListQuery>,
+) -> Json<AgentSecretRequestListResponse> {
+    let limit = query.limit.unwrap_or(50);
+    let pending_only = query
+        .status
+        .as_deref()
+        .map(|status| status.eq_ignore_ascii_case("pending"))
+        .unwrap_or(true);
+    let requests = if pending_only {
+        agent_secret_request_store().list_pending(limit)
+    } else {
+        agent_secret_request_store().list_all(limit)
+    };
+    Json(AgentSecretRequestListResponse { requests })
+}
+
+pub async fn fulfill_agent_secret_request(
+    AxumPath(request_id): AxumPath<String>,
+    Json(body): Json<AgentSecretFulfillRequest>,
+) -> Result<Json<AgentSecretResolveResponse>, (StatusCode, String)> {
+    let request = agent_secret_request_store()
+        .fulfill(request_id.trim(), body.value, body.resolved_by)
+        .await
+        .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
+    Ok(Json(AgentSecretResolveResponse { request }))
+}
+
+pub async fn deny_agent_secret_request(
+    AxumPath(request_id): AxumPath<String>,
+    Json(body): Json<AgentSecretDenyRequest>,
+) -> Result<Json<AgentSecretResolveResponse>, (StatusCode, String)> {
+    let request = agent_secret_request_store()
+        .deny(request_id.trim(), body.resolved_by)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
+    Ok(Json(AgentSecretResolveResponse { request }))
+}
+
 fn spawn_prompt_pump(state: AppState, live: LiveAgentSession, prompt: String) {
     tokio::spawn(async move {
         let fail_lease = live.forge_lease.clone();
@@ -1214,6 +1275,12 @@ fn publish_permission_event(
         permission_request_id: Some(permission_request_id.to_string()),
         agent_session_id: Some(live.agent_session_id.clone()),
         agent_runtime: Some(live.runtime.clone()),
+        secret_request_id: None,
+        secret_label: None,
+        secret_provider_type: None,
+        secret_credential_key: None,
+        secret_backend: None,
+        secret_allowed_hosts: None,
     };
     publish_interactive_turn_event(entry, Ok(event));
 }
@@ -1268,6 +1335,12 @@ fn publish_agent_event(
         permission_request_id: None,
         agent_session_id: Some(agent_session_id.to_string()),
         agent_runtime: Some(runtime.to_string()),
+        secret_request_id: None,
+        secret_label: None,
+        secret_provider_type: None,
+        secret_credential_key: None,
+        secret_backend: None,
+        secret_allowed_hosts: None,
     };
     publish_interactive_turn_event(entry, Ok(event));
 }
@@ -1317,6 +1390,12 @@ fn publish_agent_reasoning_event(
         permission_request_id: None,
         agent_session_id: Some(agent_session_id.to_string()),
         agent_runtime: Some(runtime.to_string()),
+        secret_request_id: None,
+        secret_label: None,
+        secret_provider_type: None,
+        secret_credential_key: None,
+        secret_backend: None,
+        secret_allowed_hosts: None,
     };
     publish_interactive_turn_event(entry, Ok(event));
 }
@@ -1331,7 +1410,7 @@ mod tests {
             .inventory()
             .entries()
             .collect::<Vec<_>>();
-        assert_eq!(entries.len(), 3);
+        assert_eq!(entries.len(), 6);
         assert!(entries.iter().all(|entry| {
             entry.group == RouteGroup::Administration
                 && entry.required_capability == Some("admin.execute")

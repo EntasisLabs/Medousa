@@ -346,4 +346,37 @@ describe("multi-live chat session runtimes", () => {
       msg("b2", "delta"),
     ]);
   });
+
+  it("keeps secure credential prompts in their owning chat session", async () => {
+    const { store } = await loadStore();
+    const { emptySessionRuntime } = await import("$lib/chat/chatSessionRuntime");
+    type RuntimeMap = Map<string, ReturnType<typeof emptySessionRuntime>>;
+    const runtimes = (store as unknown as { sessionRuntimes: RuntimeMap }).sessionRuntimes;
+
+    store.sessionId = "sess-focus";
+    store.secretAlert = null;
+    (store as unknown as { stashFocusedRuntime: () => void }).stashFocusedRuntime();
+    runtimes.set("sess-bg", emptySessionRuntime("sess-bg"));
+
+    (store as unknown as { withSessionFields: (id: string, fn: () => void) => void }).withSessionFields(
+      "sess-bg",
+      () => {
+        store.secretAlert = {
+          turnId: "turn-bg",
+          messageId: null,
+          requestId: "asecret-bg",
+          label: "GitHub token",
+          reason: "Read a private repository",
+          providerType: "github",
+          credentialKey: "GITHUB_TOKEN",
+          backend: "openshell_provider",
+          allowedHosts: [],
+        };
+      },
+    );
+
+    expect(store.sessionId).toBe("sess-focus");
+    expect(store.secretAlert).toBeNull();
+    expect(runtimes.get("sess-bg")?.secretAlert?.requestId).toBe("asecret-bg");
+  });
 });

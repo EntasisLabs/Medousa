@@ -129,6 +129,156 @@
         "title": "AgentRuntimeListResponse",
         "type": "object"
       },
+      "AgentSecretDenyRequest": {
+        "properties": {
+          "resolved_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "title": "AgentSecretDenyRequest",
+        "type": "object"
+      },
+      "AgentSecretFulfillRequest": {
+        "description": "Write-only credential material. Avoid `Debug` and `Clone`: callers should move the value directly into a zeroizing provision operation.",
+        "properties": {
+          "resolved_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "AgentSecretFulfillRequest",
+        "type": "object"
+      },
+      "AgentSecretRequestBackend": {
+        "description": "Runtime boundary that receives an approved credential. OpenShell providers persist at the workshop gateway; Grapheme grants stay ephemeral and are exposed to one run only through opaque host capability handles.",
+        "enum": [
+          "openshell_provider",
+          "grapheme_runtime"
+        ],
+        "type": "string"
+      },
+      "AgentSecretRequestListResponse": {
+        "properties": {
+          "requests": {
+            "items": {
+              "$ref": "#/components/schemas/AgentSecretRequestRecord"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "requests"
+        ],
+        "title": "AgentSecretRequestListResponse",
+        "type": "object"
+      },
+      "AgentSecretRequestRecord": {
+        "description": "Public metadata for one agent-initiated credential request. Credential material is accepted only by the fulfill endpoint and is never copied into this record, turn events, tool output, or transcript storage.",
+        "properties": {
+          "allowed_hosts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/AgentSecretRequestBackend"
+          },
+          "created_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "credential_key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "provider_type": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "resolved_at_utc": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resolved_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AgentSecretRequestStatus"
+          },
+          "turn_id": {
+            "type": "string"
+          },
+          "updated_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "backend",
+          "created_at_utc",
+          "credential_key",
+          "label",
+          "provider_type",
+          "reason",
+          "request_id",
+          "session_id",
+          "status",
+          "turn_id",
+          "updated_at_utc"
+        ],
+        "type": "object"
+      },
+      "AgentSecretRequestStatus": {
+        "description": "Lifecycle for an out-of-transcript secret request. The secret value is deliberately absent from every record and response type.",
+        "enum": [
+          "pending",
+          "provisioning",
+          "fulfilled",
+          "denied",
+          "expired"
+        ],
+        "type": "string"
+      },
+      "AgentSecretResolveResponse": {
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/AgentSecretRequestRecord"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "title": "AgentSecretResolveResponse",
+        "type": "object"
+      },
       "AgentSessionConfigChoice": {
         "properties": {
           "description": {
@@ -6152,6 +6302,52 @@
               "type"
             ],
             "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Trusted UI prompt for credential material. This event carries request metadata only; the value travels over the dedicated fulfill endpoint.",
+            "properties": {
+              "allowed_hosts": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "backend": {
+                "type": "string"
+              },
+              "credential_key": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "provider_type": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "secret_request"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "backend",
+              "credential_key",
+              "label",
+              "provider_type",
+              "reason",
+              "request_id",
+              "type"
+            ],
+            "type": "object"
           }
         ]
       },
@@ -8224,6 +8420,194 @@
           "feature_profile": "core",
           "rate_limit_class": "read",
           "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/agents/secret-requests": {
+      "get": {
+        "operationId": "agents.secret_requests.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSecretRequestListResponse"
+                }
+              }
+            },
+            "description": "agents.secret_requests.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "agents.secret_requests.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "agents.secret_requests.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/agents/secret-requests/{request_id}/deny": {
+      "post": {
+        "operationId": "agents.secret_requests.by_request_id.deny.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentSecretDenyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSecretResolveResponse"
+                }
+              }
+            },
+            "description": "agents.secret_requests.by_request_id.deny.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "agents.secret_requests.by_request_id.deny.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "agents.secret_requests.by_request_id.deny.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 4096,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/agents/secret-requests/{request_id}/fulfill": {
+      "post": {
+        "operationId": "agents.secret_requests.by_request_id.fulfill.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentSecretFulfillRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSecretResolveResponse"
+                }
+              }
+            },
+            "description": "agents.secret_requests.by_request_id.fulfill.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "agents.secret_requests.by_request_id.fulfill.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "agents.secret_requests.by_request_id.fulfill.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 20480,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
         }
       }
     },

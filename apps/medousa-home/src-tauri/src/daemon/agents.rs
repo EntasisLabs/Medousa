@@ -1,8 +1,9 @@
 use medousa_types::{
     AgentPermissionRequestListResponse, AgentPermissionResolveRequest,
-    AgentPermissionResolveResponse, AgentRuntimeListResponse, AgentSessionPromptRequest,
-    AgentSessionPromptResponse, CancelAgentSessionResponse, CreateAgentSessionRequest,
-    CreateAgentSessionResponse, SetAgentSessionConfigOptionRequest,
+    AgentPermissionResolveResponse, AgentRuntimeListResponse, AgentSecretDenyRequest,
+    AgentSecretFulfillRequest, AgentSecretRequestListResponse, AgentSecretResolveResponse,
+    AgentSessionPromptRequest, AgentSessionPromptResponse, CancelAgentSessionResponse,
+    CreateAgentSessionRequest, CreateAgentSessionResponse, SetAgentSessionConfigOptionRequest,
     SetAgentSessionConfigOptionResponse,
 };
 use tauri::State;
@@ -108,6 +109,48 @@ pub async fn agents_deny_permission(
     client(&state)
         .agents()
         .deny_permission(request_id.trim(), &request)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn agents_list_secret_requests(
+    state: State<'_, DaemonState>,
+    status: Option<String>,
+    limit: Option<usize>,
+) -> Result<AgentSecretRequestListResponse, String> {
+    client(&state)
+        .agents()
+        .list_secret_requests(status.as_deref(), limit)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn agents_fulfill_secret_request(
+    state: State<'_, DaemonState>,
+    request_id: String,
+    value: String,
+    resolved_by: Option<String>,
+) -> Result<AgentSecretResolveResponse, String> {
+    let request = AgentSecretFulfillRequest { value, resolved_by };
+    client(&state)
+        .agents()
+        .fulfill_secret_request(request_id.trim(), &request)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn agents_deny_secret_request(
+    state: State<'_, DaemonState>,
+    request_id: String,
+    resolved_by: Option<String>,
+) -> Result<AgentSecretResolveResponse, String> {
+    let request = AgentSecretDenyRequest { resolved_by };
+    client(&state)
+        .agents()
+        .deny_secret_request(request_id.trim(), &request)
         .await
         .map_err(sdk_error)
 }

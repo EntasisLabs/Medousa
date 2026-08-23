@@ -539,6 +539,12 @@ fn empty_stream_event(turn_id: &str) -> InteractiveTurnStreamEvent {
         permission_request_id: None,
         agent_session_id: None,
         agent_runtime: None,
+        secret_request_id: None,
+        secret_label: None,
+        secret_provider_type: None,
+        secret_credential_key: None,
+        secret_backend: None,
+        secret_allowed_hosts: None,
     }
 }
 
@@ -805,6 +811,26 @@ pub fn v2_to_v1(envelope: &TurnStreamEnvelopeV2) -> InteractiveTurnStreamEvent {
             wire.agent_session_id = agent_session_id.clone();
             wire.agent_runtime = agent_runtime.clone();
         }
+        TurnStreamEventV2::SecretRequest {
+            request_id,
+            label,
+            reason,
+            provider_type,
+            credential_key,
+            backend,
+            allowed_hosts,
+        } => {
+            wire.event_type = "secret_request".to_string();
+            wire.phase = "awaiting_secret".to_string();
+            wire.message = reason.clone();
+            wire.operator_message = Some(reason.clone());
+            wire.secret_request_id = Some(request_id.clone());
+            wire.secret_label = Some(label.clone());
+            wire.secret_provider_type = Some(provider_type.clone());
+            wire.secret_credential_key = Some(credential_key.clone());
+            wire.secret_backend = Some(backend.clone());
+            wire.secret_allowed_hosts = Some(allowed_hosts.clone());
+        }
     }
     wire
 }
@@ -940,6 +966,18 @@ pub fn v1_to_v2(event: &InteractiveTurnStreamEvent) -> Result<TurnStreamEnvelope
             agent_session_id: event.agent_session_id.clone(),
             agent_runtime: event.agent_runtime.clone(),
         },
+        "secret_request" => TurnStreamEventV2::SecretRequest {
+            request_id: required_legacy(&event.secret_request_id, "secret_request_id")?,
+            label: required_legacy(&event.secret_label, "secret_label")?,
+            reason: event.message.clone(),
+            provider_type: required_legacy(&event.secret_provider_type, "secret_provider_type")?,
+            credential_key: required_legacy(&event.secret_credential_key, "secret_credential_key")?,
+            backend: event
+                .secret_backend
+                .clone()
+                .unwrap_or_else(|| "openshell_provider".to_string()),
+            allowed_hosts: event.secret_allowed_hosts.clone().unwrap_or_default(),
+        },
         other => {
             return Err(format!(
                 "legacy stream event '{other}' has no v2 projection"
@@ -989,6 +1027,7 @@ pub fn journal_turn_event_for_stream(
         || event.tool_artifact_refs.is_some()
         || event.context_usage.is_some()
         || event.ui_scene.is_some()
+        || event.secret_request_id.is_some()
         || matches!(
             event.event_type.as_str(),
             "artifact_presented" | "artifact_updated" | "ui_scene"
@@ -1149,7 +1188,8 @@ pub fn frozen_v2_replay_event(event: &TurnStreamEventV2) -> Option<TurnStreamEve
         | TurnStreamEventV2::ArtifactUpdated { .. }
         | TurnStreamEventV2::UiScene { .. }
         | TurnStreamEventV2::ContextUsage { .. }
-        | TurnStreamEventV2::PermissionRequest { .. } => Some(event.clone()),
+        | TurnStreamEventV2::PermissionRequest { .. }
+        | TurnStreamEventV2::SecretRequest { .. } => Some(event.clone()),
         TurnStreamEventV2::ToolStarted { input_params, .. } if !input_params.is_empty() => {
             Some(event.clone())
         }

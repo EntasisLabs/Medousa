@@ -1926,6 +1926,20 @@ pub struct InteractiveTurnStreamEvent {
     /// External runtime kind when streaming an ACP session (`cursor` / `codex`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_runtime: Option<String>,
+    /// Trusted secret-entry handoff. Metadata only; the value never enters a
+    /// stream frame or transcript payload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_provider_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_credential_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_backend: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_allowed_hosts: Option<Vec<String>>,
 }
 
 /// One slice of the prompt/context budget (Cursor-style context usage UI).
@@ -3732,4 +3746,91 @@ pub struct AgentPermissionResolveRequest {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct AgentPermissionResolveResponse {
     pub request: AgentPermissionRequestRecord,
+}
+
+/// Lifecycle for an out-of-transcript secret request. The secret value is
+/// deliberately absent from every record and response type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AgentSecretRequestStatus {
+    Pending,
+    Provisioning,
+    Fulfilled,
+    Denied,
+    Expired,
+}
+
+/// Runtime boundary that receives an approved credential. OpenShell providers
+/// persist at the workshop gateway; Grapheme grants stay ephemeral and are
+/// exposed to one run only through opaque host capability handles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AgentSecretRequestBackend {
+    OpenshellProvider,
+    GraphemeRuntime,
+}
+
+/// Public metadata for one agent-initiated credential request.
+/// Credential material is accepted only by the fulfill endpoint and is never
+/// copied into this record, turn events, tool output, or transcript storage.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentSecretRequestRecord {
+    pub request_id: String,
+    pub turn_id: String,
+    pub session_id: String,
+    pub provider_type: String,
+    pub credential_key: String,
+    pub backend: AgentSecretRequestBackend,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed_hosts: Vec<String>,
+    pub label: String,
+    pub reason: String,
+    pub status: AgentSecretRequestStatus,
+    pub created_at_utc: DateTime<Utc>,
+    pub updated_at_utc: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_at_utc: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_by: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentSecretRequestListQuery {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentSecretRequestListResponse {
+    pub requests: Vec<AgentSecretRequestRecord>,
+}
+
+/// Write-only credential material. Avoid `Debug` and `Clone`: callers should
+/// move the value directly into a zeroizing provision operation.
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentSecretFulfillRequest {
+    pub value: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_by: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentSecretDenyRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_by: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentSecretResolveResponse {
+    pub request: AgentSecretRequestRecord,
 }

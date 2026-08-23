@@ -87,7 +87,7 @@ fn redact_text(text: &str) -> String {
         return "[REDACTED]".to_string();
     }
 
-    text.to_string()
+    crate::grapheme_secret_bridge::redact_secret_grant_references(text)
 }
 
 #[cfg(test)]
@@ -103,12 +103,14 @@ mod tests {
                 "Authorization": "Bearer secret",
                 "X-API-Key": "123"
             },
+            "source": "get(name: \"sgrant-0123456789abcdef0123456789abcdef\")",
             "query": "safe"
         });
 
         let redacted = redact_json_value(&value);
         assert_eq!(redacted["headers"]["Authorization"], "[REDACTED]");
         assert_eq!(redacted["headers"]["X-API-Key"], "[REDACTED]");
+        assert_eq!(redacted["source"], "get(name: \"[REDACTED_GRANT]\")");
         assert_eq!(redacted["query"], "safe");
     }
 

@@ -159,6 +159,9 @@ pub struct GraphemeInvoke {
     /// Inline Grapheme source if no template
     #[serde(default)]
     script: Option<String>,
+    /// Opaque one-use grants returned by cognition_grapheme_request_secret.
+    #[serde(default)]
+    secret_grant_ids: Vec<String>,
 }
 
 impl JsonSchema for CapabilityAction {
@@ -430,6 +433,12 @@ impl McpInvoke {
 impl GraphemeInvoke {
     async fn execute(self, tool: &CognitionCapabilityTool) -> stasis::prelude::Result<Value> {
         if let Some(template) = self.template {
+            if !self.secret_grant_ids.is_empty() {
+                return Err(StasisError::PortFailure(
+                    "cognition_capability: Grapheme secret grants require an inline script"
+                        .to_string(),
+                ));
+            }
             let output =
                 CognitionGraphemeTemplateRunTool::new(tool.runtime.clone(), tool.event_tx.clone())
                     .invoke_typed(GraphemeTemplateRunInput {
@@ -449,6 +458,7 @@ impl GraphemeInvoke {
             )
             .invoke_typed(GraphemeRunInput {
                 source: self.script,
+                secret_grant_ids: self.secret_grant_ids,
             })
             .await?;
             return Ok(output.into_value());

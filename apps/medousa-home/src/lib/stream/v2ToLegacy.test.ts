@@ -76,6 +76,16 @@ const variants = [
     },
   },
   { type: "permission_request", request_id: "p1", message: "Allow?" },
+  {
+    type: "secret_request",
+    request_id: "s1",
+    label: "GitHub token",
+    reason: "Read a private repository",
+    provider_type: "github",
+    credential_key: "GITHUB_TOKEN",
+    backend: "grapheme_runtime",
+    allowed_hosts: ["api.github.com"],
+  },
 ] satisfies TurnStreamEventV2[];
 
 const legacyTypes = [
@@ -103,6 +113,7 @@ const legacyTypes = [
   "browser_navigated",
   "context_usage",
   "permission_request",
+  "secret_request",
 ];
 
 function envelope(event: TurnStreamEventV2, seq: number): TurnStreamEnvelopeV2 {
@@ -158,5 +169,21 @@ describe("turnStreamV2ToLegacy", () => {
 
     const legacy = turnStreamV2ToLegacy(envelope(variants[14], 3));
     expect(turnStreamPayloadToV2(legacy)).toMatchObject(envelope(variants[14], 3));
+  });
+
+  it("projects only secret-request metadata and roundtrips it", () => {
+    const legacy = turnStreamV2ToLegacy(envelope(variants.at(-1)!, 25));
+    expect(legacy).toMatchObject({
+      event_type: "secret_request",
+      secret_request_id: "s1",
+      secret_label: "GitHub token",
+      secret_provider_type: "github",
+      secret_credential_key: "GITHUB_TOKEN",
+      secret_backend: "grapheme_runtime",
+      secret_allowed_hosts: ["api.github.com"],
+    });
+    expect(legacy).not.toHaveProperty("value");
+    expect(legacy).not.toHaveProperty("secret");
+    expect(turnStreamPayloadToV2(legacy).event).toEqual(variants.at(-1));
   });
 });

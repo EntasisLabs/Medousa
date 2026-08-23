@@ -35,6 +35,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | [Obsidian](guides/obsidian.md) | Vault-native Medousa chat and bounded note context |
 | [Browser](guides/browser.md) | Page-aware Medousa side panel for Chrome and Edge |
 | [Web in Medousa](guides/web-in-medousa.md) | Shared desktop browser, control handoff, and privacy boundaries |
+| [Secure credential handoff](guides/secure-credential-handoff.md) | Give OpenShell or Grapheme an API key without putting it in chat |
 | [Desktop companion](guides/desktop-companion.md) | Floating pet for chat, approvals, notes, Web, and views |
 | [Drawing](guides/drawing.md) | Sketch inside notes or use a full drawing note |
 | [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, seal, review, World |

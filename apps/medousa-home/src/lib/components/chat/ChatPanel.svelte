@@ -18,6 +18,7 @@
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
   import ModeProposalBar from "$lib/components/chat/ModeProposalBar.svelte";
   import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
+  import AgentSecretBar from "$lib/components/chat/AgentSecretBar.svelte";
   import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
@@ -1078,6 +1079,7 @@
         sessionId={panelSessionId}
       />
       <AgentPermissionBar />
+      <AgentSecretBar />
       {#if activeSubagentCount > 0}
         <button
           type="button"

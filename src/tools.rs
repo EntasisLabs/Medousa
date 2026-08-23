@@ -107,6 +107,12 @@ pub(crate) async fn run_grapheme_via_runtime(
     source: &str,
     causation: &str,
 ) -> stasis::prelude::Result<Value> {
+    if crate::grapheme_secret_bridge::source_contains_secret_grant(source) {
+        return Err(StasisError::PortFailure(
+            "ephemeral Grapheme grants require grapheme.invoke with matching secret_grant_ids"
+                .to_string(),
+        ));
+    }
     let job_id = format!("cognition-gph-runtime-{}", Uuid::new_v4().simple());
     let now = Utc::now();
 
@@ -479,6 +485,8 @@ pub struct GraphemeRunInput {
     /// Complete Grapheme source code. Imports under 'grapheme/*' are allowed by default.
     #[schemars(required, with = "String")]
     pub(crate) source: Option<String>,
+    /// Opaque one-use grants returned by cognition_grapheme_request_secret.
+    pub(crate) secret_grant_ids: Vec<String>,
 }
 
 impl<'de> Deserialize<'de> for GraphemeRunInput {
@@ -490,10 +498,13 @@ impl<'de> Deserialize<'de> for GraphemeRunInput {
         struct WireInput {
             #[serde(default)]
             source: CompatOption<String>,
+            #[serde(default)]
+            secret_grant_ids: Vec<String>,
         }
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
             source: input.source.into_option(),
+            secret_grant_ids: input.secret_grant_ids,
         })
     }
 }
@@ -509,17 +520,46 @@ impl CognitionGraphemeRunTool {
         let source = input.source.as_deref().ok_or_else(|| {
             StasisError::PortFailure("cognition_grapheme_run: source is required".to_string())
         })?;
+        validate_grapheme_secret_bindings(source, &input.secret_grant_ids)
+            .map_err(StasisError::PortFailure)?;
+        let session_id = crate::runtime_session::resolve_active_chat_session_id_async(
+            &self.turn_scope,
+            &self.session_id,
+        )
+        .await?;
+        let (secret_run, execution_source) = if input.secret_grant_ids.is_empty() {
+            (None, source.to_string())
+        } else {
+            let materials = crate::agent_secret_request::agent_secret_request_store()
+                .consume_grapheme_grants(&input.secret_grant_ids, &session_id)
+                .map_err(StasisError::PortFailure)?;
+            let (guard, prepared_source) = crate::grapheme_secret_bridge::prepare_run_guard(
+                session_id.clone(),
+                source,
+                materials,
+            )
+            .map_err(StasisError::PortFailure)?;
+            (Some(guard), prepared_source)
+        };
 
-        remember_last_grapheme_source(source).await;
+        if secret_run.is_none() {
+            remember_last_grapheme_source(source).await;
+        }
 
         let job_id = format!("cognition-gph-{}", Uuid::new_v4().simple());
         let now = Utc::now();
 
+        let payload_ref = match secret_run.as_ref() {
+            Some(run) => {
+                crate::grapheme_secret_bridge::secure_payload_ref(&execution_source, run.token())
+            }
+            None => format!("grapheme:inline:{execution_source}"),
+        };
         let mut job = ToolJobSpec::new(
             job_id.clone(),
             "default",
             "workflow.grapheme.run",
-            format!("grapheme:inline:{source}"),
+            payload_ref,
             "cognition_tui",
             "sttp:in:cognition:grapheme",
             now,
@@ -552,7 +592,14 @@ impl CognitionGraphemeRunTool {
             .event_tx
             .send(TuiEvent::ToolInvoked {
                 tool_name: "cognition_grapheme_run".to_string(),
-                input_summary: source.chars().take(60).collect(),
+                input_summary: if secret_run.is_some() {
+                    format!(
+                        "inline Grapheme run with {} credential grant(s)",
+                        input.secret_grant_ids.len()
+                    )
+                } else {
+                    source.chars().take(60).collect()
+                },
             })
             .await;
 
@@ -662,11 +709,6 @@ impl CognitionGraphemeRunTool {
         {
             obj.insert("continuation".to_string(), meta);
         }
-        let session_id = crate::runtime_session::resolve_active_chat_session_id_async(
-            &self.turn_scope,
-            &self.session_id,
-        )
-        .await?;
         let serialized_raw_output =
             serde_json::to_string(&raw_output).unwrap_or_else(|_| raw_output.to_string());
 
@@ -686,6 +728,26 @@ impl CognitionGraphemeRunTool {
         .await;
         Ok(ExternalJson::new(output))
     }
+}
+
+fn validate_grapheme_secret_bindings(
+    source: &str,
+    attached_grants: &[String],
+) -> Result<(), String> {
+    let referenced: HashSet<_> = crate::grapheme_secret_bridge::secret_grant_references(source)
+        .into_iter()
+        .collect();
+    let attached: HashSet<_> = attached_grants
+        .iter()
+        .map(|grant| grant.to_string())
+        .collect();
+    if referenced == attached {
+        return Ok(());
+    }
+    Err(
+        "Grapheme source grant references must exactly match secret_grant_ids for this inline run"
+            .to_string(),
+    )
 }
 
 pub use crate::memory_tools::{
@@ -2999,6 +3061,7 @@ mod tests {
         CognitionUtilityDayOfWeekTool, CognitionUtilityTimeNowTool, CognitionUtilityUuidTool,
         EngineExecutionLane, PolicyAwareToolRegistry, UtilityDayOfWeekInput, UtilityTimeNowInput,
         UtilityUuidInput, extract_module_ops_from_source, referenced_module_ops_for_tool_call,
+        validate_grapheme_secret_bindings,
     };
 
     #[derive(Default)]
@@ -3044,6 +3107,21 @@ mod tests {
             .expect("ops should parse");
 
         assert_eq!(ops, vec!["websearch.search"]);
+    }
+
+    #[test]
+    fn grapheme_secret_bindings_must_match_source_exactly() {
+        let grant = "sgrant-0123456789abcdef0123456789abcdef".to_string();
+        let source = format!("query Run {{ secrets.get_secret_handle(name: \"{grant}\") }}");
+        assert!(validate_grapheme_secret_bindings(&source, &[grant]).is_ok());
+        assert!(validate_grapheme_secret_bindings(&source, &[]).is_err());
+        assert!(
+            validate_grapheme_secret_bindings(
+                "query Run { core.echo(message: \"hello\") }",
+                &["sgrant-0123456789abcdef0123456789abcdef".to_string()]
+            )
+            .is_err()
+        );
     }
 
     #[test]

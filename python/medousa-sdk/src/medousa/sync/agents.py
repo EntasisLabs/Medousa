@@ -8,6 +8,8 @@ from medousa.types import (
     AgentPermissionResolveRequest,
     AgentPermissionResolveResponse,
     AgentRuntimeListResponse,
+    AgentSecretRequestListResponse,
+    AgentSecretResolveResponse,
     AgentSessionPromptRequest,
     AgentSessionPromptResponse,
     CancelAgentSessionResponse,
@@ -99,3 +101,46 @@ class AgentsApiSync:
             body,
         )
         return decode(AgentPermissionResolveResponse, value)
+
+    def list_secret_requests(
+        self, *, status: str | None = "pending", limit: int | None = None
+    ) -> AgentSecretRequestListResponse:
+        query: list[tuple[str, str]] = []
+        if status is not None:
+            query.append(("status", status))
+        if limit is not None:
+            query.append(("limit", str(limit)))
+        route = op_path_query("agents.secret_requests.get", query)
+        value = self._client._transport.get_json(self._client.base_url, route)
+        return decode(AgentSecretRequestListResponse, value)
+
+    def fulfill_secret_request(
+        self, request_id: str, value: str, *, resolved_by: str | None = None
+    ) -> AgentSecretResolveResponse:
+        """Move a write-only value directly to the request's workshop backend."""
+        body = {"value": value}
+        if resolved_by is not None:
+            body["resolved_by"] = resolved_by
+        response = self._client._transport.post_json(
+            self._client.base_url,
+            op_path(
+                "agents.secret_requests.by_request_id.fulfill.post",
+                request_id=request_id.strip(),
+            ),
+            body,
+        )
+        return decode(AgentSecretResolveResponse, response)
+
+    def deny_secret_request(
+        self, request_id: str, *, resolved_by: str | None = None
+    ) -> AgentSecretResolveResponse:
+        body = {} if resolved_by is None else {"resolved_by": resolved_by}
+        value = self._client._transport.post_json(
+            self._client.base_url,
+            op_path(
+                "agents.secret_requests.by_request_id.deny.post",
+                request_id=request_id.strip(),
+            ),
+            body,
+        )
+        return decode(AgentSecretResolveResponse, value)

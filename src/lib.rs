@@ -1,6 +1,7 @@
 pub mod adapter_ingest;
 pub mod agent_permission_request;
 pub mod agent_runtime;
+pub mod agent_secret_request;
 pub mod artifact_chunking;
 pub mod artifact_command_runtime;
 pub mod artifact_extraction;
@@ -107,6 +108,8 @@ pub mod feed_bus;
 pub mod feed_handlers;
 pub mod feed_store;
 pub mod feed_tools;
+pub mod grapheme_secret_bridge;
+pub mod grapheme_secret_tools;
 pub mod grapheme_sttp_compaction;
 pub mod identity_api;
 pub mod identity_manuscript;
