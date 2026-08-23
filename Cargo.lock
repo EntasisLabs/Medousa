@@ -3558,18 +3558,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dummy"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d2a69babd8861dbe09217678b4e8ee461869f9af8a57021e16479628dbd83bd"
-dependencies = [
- "darling 0.20.11",
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
 name = "dunce"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4091,18 +4079,6 @@ name = "extended"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af9673d8203fcb076b19dfd17e38b3d4ae9f44959416ea532ce72415a6020365"
-
-[[package]]
-name = "fake"
-version = "5.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea6be833b323a56361118a747470a45a1bcd5c52a2ec9b1e40c83dafe687e453"
-dependencies = [
- "deunicode",
- "dummy",
- "either",
- "rand 0.10.1",
-]
 
 [[package]]
 name = "fallible-streaming-iterator"
@@ -7167,9 +7143,9 @@ dependencies = [
 
 [[package]]
 name = "locus-core-rs"
-version = "0.4.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "321692dc13d3dceb7c6e31ef3f5e4df4afb642e6cc85887b03612638a0b21e4c"
+checksum = "e0c0fb70e63300b96c42b72879360fec7b30936377fde56faf37e1932513fbaf"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7185,22 +7161,36 @@ dependencies = [
 
 [[package]]
 name = "locus-sdk"
-version = "0.2.2"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "354258f97de49d6e9406a666b21eea2154062e9b2b2c8189d677c328deb4a67b"
+checksum = "a6a8a2da557ebbbeaae676c2c1c67055d4ba706369977f629e538a2f2c2abec5"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "fake",
  "genai 0.5.3",
+ "getrandom 0.2.17",
+ "getrandom 0.4.2",
  "locus-core-rs",
- "rand 0.8.6",
- "rand_chacha 0.3.1",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "locus-surreal-adapter"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88b05abeb5ccfd38e1be3080cc17041cd5e03ec21269f55b8f64ceadbfbdcc83"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "getrandom 0.2.17",
+ "locus-core-rs",
+ "serde_json",
+ "surrealdb",
+ "tracing",
 ]
 
 [[package]]
@@ -7809,6 +7799,19 @@ dependencies = [
  "tar",
  "tokio",
  "uuid 1.23.1",
+]
+
+[[package]]
+name = "medousa-ios-dependency-probe"
+version = "0.0.0"
+dependencies = [
+ "grapheme-sdk",
+ "locus-core-rs",
+ "locus-sdk",
+ "locus-surreal-adapter",
+ "medousa-engine",
+ "medousa-secrets",
+ "stasis-rs",
 ]
 
 [[package]]
@@ -13998,9 +14001,9 @@ dependencies = [
 
 [[package]]
 name = "stasis-rs"
-version = "0.9.2"
+version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fbcddbf966da5cd977e49bbae4243e1c20b48c88b7a4d573b1f14cee30df106"
+checksum = "cc963cb35259760147ac146ea5b4a389a1121d55df9993adcde2f155781822ea"
 dependencies = [
  "anyhow",
  "askama",

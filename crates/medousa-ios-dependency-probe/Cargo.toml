@@ -1,0 +1,30 @@
+[package]
+name = "medousa-ios-dependency-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Compile/link probe for Medousa's native iOS daemon dependencies"
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[features]
+default = []
+stasis-native = [
+    "dep:locus-core-rs",
+    "dep:locus-sdk",
+    "dep:locus-surreal-adapter",
+    "dep:medousa-engine",
+    "dep:stasis-rs",
+]
+grapheme-portable = ["dep:grapheme-sdk"]
+keychain = ["dep:medousa-secrets"]
+
+[dependencies]
+grapheme-sdk = { version = "=0.7.1", default-features = false, optional = true }
+locus-core-rs = { version = "=0.5.0", default-features = false, optional = true }
+locus-sdk = { version = "=0.3.0", default-features = false, optional = true }
+locus-surreal-adapter = { version = "=0.1.0", default-features = false, features = ["native"], optional = true }
+medousa-engine = { path = "../medousa-engine", optional = true }
+medousa-secrets = { path = "../medousa-secrets", optional = true }
+stasis-rs = { version = "=0.9.3", default-features = false, optional = true }

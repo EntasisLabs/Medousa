@@ -92,8 +92,55 @@ pub fn run() {
     run_home();
 }
 
+#[cfg(target_os = "ios")]
+fn run_ios_phase0_keychain_probe_if_requested() -> Result<bool, Box<dyn std::error::Error>> {
+    let requested_by_environment = matches!(
+        std::env::var("MEDOUSA_IOS_KEYCHAIN_PROBE").as_deref(),
+        Ok("1")
+    );
+    let requested_by_argument =
+        std::env::args().any(|argument| argument == "--medousa-ios-phase0-probe");
+    if !requested_by_environment && !requested_by_argument {
+        return Ok(false);
+    }
+
+    match medousa_secrets::probe_client_keyring_roundtrip() {
+        Ok(()) => {
+            eprintln!("[medousa-ios-phase0] keychain_roundtrip=ok");
+            Ok(true)
+        }
+        Err(error) => {
+            eprintln!("[medousa-ios-phase0] keychain_roundtrip=error reason={error:#}");
+            Err(std::io::Error::other("iOS Keychain round-trip probe failed").into())
+        }
+    }
+}
+
+#[cfg(target_os = "ios")]
+fn write_ios_phase0_probe_result(
+    app: &tauri::App,
+    setup_ms: u128,
+    rust_startup_ms: u128,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let result_dir = app.path().app_cache_dir()?;
+    std::fs::create_dir_all(&result_dir)?;
+    let result = serde_json::json!({
+        "schema_version": 1,
+        "keychain_roundtrip": "ok",
+        "setup_ms": setup_ms,
+        "rust_startup_ms": rust_startup_ms,
+    });
+    std::fs::write(
+        result_dir.join("ios-phase0-probe.json"),
+        serde_json::to_vec_pretty(&result)?,
+    )?;
+    Ok(())
+}
+
 #[cfg(not(p02_benchmark))]
 fn run_home() {
+    let rust_startup_started = std::time::Instant::now();
+
     // rustls 0.23+ requires an explicit crypto provider before any reqwest client is built.
     // Tauri's custom-protocol handler uses reqwest during the first WKWebView load.
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -143,7 +190,8 @@ fn run_home() {
         );
     }
 
-    builder = builder.setup(|app| {
+    builder = builder.setup(move |app| {
+        let setup_started = std::time::Instant::now();
         eprintln!("[medousa-home] setup start");
         if let Err(err) =
             workshop_registry::sync_daemon_state_from_registry(&app.state::<DaemonState>())
@@ -157,7 +205,6 @@ fn run_home() {
         // popouts lazily (see tauri.windows.conf.json + window.rs).
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
         window::suspend_hidden_popouts(app.handle());
-        eprintln!("[medousa-home] setup complete");
 
         #[cfg(any(windows, target_os = "linux"))]
         {
@@ -204,6 +251,7 @@ fn run_home() {
         }
         #[cfg(target_os = "ios")]
         {
+            let keychain_probe_ran = run_ios_phase0_keychain_probe_if_requested()?;
             human_browser_ios::init_app_handle(app.handle().clone());
             ios_push_setup::install_ios_push_background_handler();
             // Match medousa-theme surface-950 so the status-bar / Dynamic Island
@@ -214,7 +262,21 @@ fn run_home() {
                     eprintln!("[medousa-home] set_background_color(ios canvas): {err}");
                 }
             }
+
+            if keychain_probe_ran {
+                write_ios_phase0_probe_result(
+                    app,
+                    setup_started.elapsed().as_millis(),
+                    rust_startup_started.elapsed().as_millis(),
+                )?;
+            }
         }
+
+        eprintln!(
+            "[medousa-home] setup complete setup_ms={} rust_startup_ms={}",
+            setup_started.elapsed().as_millis(),
+            rust_startup_started.elapsed().as_millis()
+        );
 
         Ok(())
     });
