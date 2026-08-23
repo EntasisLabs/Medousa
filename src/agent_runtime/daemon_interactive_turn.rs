@@ -1,18 +1,15 @@
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
 
 use crate::daemon::bounded_set::BoundedDedupSet;
-use crate::daemon::turn_event_channel::TurnEventChannel;
 use chrono::{DateTime, Utc};
-use medousa_engine::{
-    TurnPipelineEmission, TurnPipelineError, TurnPipelineHandle, TurnPipelineOutput,
-};
+use medousa_engine::TurnPipelineHandle;
 use medousa_types::turn_stream::{TurnStreamEventV2, WorkerAckKind};
 use serde_json::Value;
-use tokio::sync::{RwLock, Semaphore};
+use tokio::sync::RwLock;
 use tracing::Instrument;
 
 use crate::channel_delivery::{ChannelDeliveryTarget, JobDeliveryRecord, JobDeliveryState};
@@ -26,6 +23,7 @@ use crate::turn_parts::{
     TurnPartsAccumulator, artifact_refs_from_stream, user_conversation_turn,
     user_conversation_turn_with_context_media_and_speaker,
 };
+use crate::turn_pipeline_output::{TurnJournalOutput, daemon_turn_pipeline_budget};
 use crate::workspace::ask_job_store::{self, AskJobStore};
 
 use crate::turn_continuation::{TurnContinuationScope, TurnOutcome, turn_continuation_store};
@@ -89,58 +87,6 @@ pub struct InteractiveTurnStreamSink {
     /// Current presentation draft assembled from content deltas.
     streamed_markdown: std::sync::Mutex<String>,
     pending_slice_scratch: std::sync::Mutex<Option<TurnScratchpad>>,
-}
-
-const GLOBAL_TURN_PIPELINE_BYTES: usize = 64 * 1024 * 1024;
-
-fn global_turn_pipeline_budget() -> Arc<Semaphore> {
-    static BUDGET: OnceLock<Arc<Semaphore>> = OnceLock::new();
-    Arc::clone(BUDGET.get_or_init(|| Arc::new(Semaphore::new(GLOBAL_TURN_PIPELINE_BYTES))))
-}
-
-struct InteractivePipelineOutput {
-    stream_tx: Arc<TurnEventChannel>,
-    event_log: Arc<medousa_engine::TurnEventLog>,
-}
-
-impl TurnPipelineOutput for InteractivePipelineOutput {
-    async fn publish(&self, emission: TurnPipelineEmission) -> Result<(), TurnPipelineError> {
-        let mut wire = crate::sse_turn_projection::v2_to_v1(&emission.envelope);
-        let v2 = emission.envelope;
-        let journal = emission
-            .journal_override
-            .unwrap_or_else(|| crate::sse_turn_projection::journal_turn_event_for_v2(&v2));
-        let event_log = Arc::clone(&self.event_log);
-        let seq = v2.seq;
-        let terminal = v2.event.is_terminal();
-        let emitted_at_utc = v2.emitted_at_utc;
-        let stream_event_v2 = crate::sse_turn_projection::frozen_v2_replay_event(&v2.event);
-        let receipt = tokio::task::spawn_blocking(move || {
-            let receipt = event_log.append_sequenced_with_stream_v2(
-                seq,
-                journal,
-                Some(emitted_at_utc),
-                stream_event_v2,
-            )?;
-            if terminal {
-                let commit = event_log.mark_committed()?;
-                if commit.through_seq != receipt.seq() {
-                    return Err(std::io::Error::other(format!(
-                        "journal commit fence {} diverged from terminal sequence {}",
-                        commit.through_seq,
-                        receipt.seq()
-                    )));
-                }
-            }
-            Ok::<_, std::io::Error>(receipt)
-        })
-        .await
-        .map_err(|error| TurnPipelineError::Output(format!("journal writer stopped: {error}")))?
-        .map_err(|error| TurnPipelineError::Output(format!("journal append failed: {error}")))?;
-        wire.seq = receipt.seq();
-        self.stream_tx.publish_pair(wire, v2);
-        Ok(())
-    }
 }
 
 impl InteractiveTurnStreamSink {
@@ -1024,11 +970,11 @@ pub async fn run_daemon_interactive_turn(
         let pipeline = TurnPipelineHandle::spawn(
             turn_id,
             0,
-            global_turn_pipeline_budget(),
-            Arc::new(InteractivePipelineOutput {
-                stream_tx: Arc::clone(&stream.channel),
-                event_log: Arc::clone(&stream.log),
-            }),
+            daemon_turn_pipeline_budget(),
+            Arc::new(TurnJournalOutput::new(
+                Arc::clone(&stream.channel),
+                Arc::clone(&stream.log),
+            )),
         );
         if let Err(error) = pipeline
             .emit(TurnStreamEventV2::Status {

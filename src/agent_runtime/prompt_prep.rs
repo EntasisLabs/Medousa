@@ -23,7 +23,7 @@ use crate::stage_routing::StageRoute;
 use crate::tools::TuiRuntime;
 use crate::tui::settings::{RuntimeSettings, parse_f32_with_bounds};
 
-pub const MAX_REQUEST_PROMPT_CHARS: usize = 48_000;
+pub use medousa_runtime::MAX_REQUEST_PROMPT_CHARS;
 
 const CHEAP_RECALL_LIMIT: usize = 4;
 const CHEAP_RECALL_QUERY_MAX_CHARS: usize = 280;

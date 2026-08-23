@@ -14,6 +14,8 @@ use surrealdb::engine::any::Any;
 
 use crate::session::{load_discord_bot_token, load_slack_bot_token, load_telegram_bot_token};
 
+pub use crate::turn_scope::ChannelDeliveryTarget;
+
 const DELIVERY_SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE TABLE delivery_endpoint SCHEMALESS",
     "DEFINE TABLE endpoint_delivery_status SCHEMALESS",
@@ -123,52 +125,6 @@ pub fn delivery_target_from_interactive_turn(
         session_id,
         turn_id,
     )
-}
-
-/// Where to deliver a completed ingest job (keyed by `job_id` in the daemon).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChannelDeliveryTarget {
-    pub channel: String,
-    pub user_id: String,
-    pub channel_id: String,
-    pub session_id: String,
-    pub stream_id: Option<String>,
-}
-
-impl ChannelDeliveryTarget {
-    /// Construct a target from already-resolved channel identity. Resolution
-    /// and policy remain explicit at the call site.
-    pub fn new(
-        channel: impl Into<String>,
-        user_id: impl Into<String>,
-        channel_id: impl Into<String>,
-        session_id: impl Into<String>,
-        stream_id: Option<String>,
-    ) -> Self {
-        Self {
-            channel: channel.into(),
-            user_id: user_id.into(),
-            channel_id: channel_id.into(),
-            session_id: session_id.into(),
-            stream_id,
-        }
-    }
-
-    pub fn interactive(
-        channel: impl Into<String>,
-        user_id: impl Into<String>,
-        channel_id: impl Into<String>,
-        session_id: impl Into<String>,
-        turn_id: impl Into<String>,
-    ) -> Self {
-        Self::new(
-            channel,
-            user_id,
-            channel_id,
-            session_id,
-            Some(turn_id.into()),
-        )
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

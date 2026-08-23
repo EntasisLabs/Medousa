@@ -529,13 +529,20 @@ pub async fn workshops_set_active(
     }
 
     if workshop.kind == "local" {
-        let ensure = crate::workshop_runtime::ensure_local_engine(
-            &workshop,
-            crate::workshop_runtime::should_load_private_brain(false),
-        )
-        .await?;
-        if !ensure.ok {
-            return Err(ensure.message);
+        #[cfg(target_os = "ios")]
+        if workshop.id != PERSONAL_WORKSHOP_ID {
+            return Err("iOS supports only the personal embedded local workshop".to_string());
+        }
+        #[cfg(not(target_os = "ios"))]
+        {
+            let ensure = crate::workshop_runtime::ensure_local_engine(
+                &workshop,
+                crate::workshop_runtime::should_load_private_brain(false),
+            )
+            .await?;
+            if !ensure.ok {
+                return Err(ensure.message);
+            }
         }
     }
 

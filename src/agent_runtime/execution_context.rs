@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::request_principal::RequestPrincipal;
 use crate::session_storage::SessionId;
-use crate::turn_continuation::TurnContinuationScope;
+use crate::turn_scope::TurnContinuationScope;
 
 /// Daemon-issued identity for one live turn generation.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -421,6 +421,27 @@ impl TurnExecutionRegistry {
         }
     }
 
+    /// Cancel every execution currently owned by this daemon deployment.
+    ///
+    /// Mobile lifecycle hosts use this at suspension boundaries. The exact
+    /// leases remain registered until their foreground tasks unwind.
+    pub fn cancel_all(&self) -> usize {
+        let contexts = self
+            .inner
+            .state
+            .lock()
+            .expect("turn registry poisoned")
+            .live
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        let cancelled = contexts.len();
+        for context in contexts {
+            context.cancellation().cancel();
+        }
+        cancelled
+    }
+
     fn remove_exact(&self, handle: TurnHandle, expected: &Arc<TurnExecutionContext>) {
         let mut state = self.inner.state.lock().expect("turn registry poisoned");
         if state
@@ -467,7 +488,7 @@ pub struct TurnScopeAccess {
     test_scope: Option<Arc<TurnContinuationScope>>,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 impl TurnScopeAccess {
     pub(crate) fn for_test(scope: TurnContinuationScope) -> Self {
         Self {

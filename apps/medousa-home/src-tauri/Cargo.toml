@@ -60,6 +60,8 @@ tauri-plugin-window-state = "2"
 libc = "0.2"
 
 [target.'cfg(target_os = "ios")'.dependencies]
+async-trait = "0.1"
+medousa = { path = "../../..", default-features = false, features = ["embedded-daemon"] }
 objc2 = "0.6"
 block2 = "0.6"
 objc2-core-foundation = { version = "0.3", features = ["CFCGTypes", "objc2"] }
@@ -69,8 +71,12 @@ objc2-foundation = { version = "0.3", features = [
   "NSURLRequest",
   "NSGeometry",
   "NSDate",
+  "NSNotification",
+  "NSObject",
+  "NSOperation",
   "NSRunLoop",
   "NSObjCRuntime",
+  "block2",
   "objc2-core-foundation",
 ] }
 objc2-ui-kit = { version = "0.3", features = [

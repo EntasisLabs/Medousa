@@ -12,6 +12,8 @@ use crate::daemon::types::{
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use crate::embedded_daemon::EmbeddedDaemonState;
+
 use super::DaemonState;
 use super::sdk::{client, sdk_error};
 use super::workshop_http;
@@ -45,11 +47,42 @@ pub struct CreateSessionResponse {
 #[tauri::command]
 pub async fn session_create(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     catalog: Option<String>,
     member_profile_ids: Option<Vec<String>>,
     agent_profile_id: Option<String>,
     display_name: Option<String>,
 ) -> Result<CreateSessionResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        if catalog
+            .as_deref()
+            .is_some_and(|value| value.trim() != "single")
+            || member_profile_ids
+                .as_ref()
+                .is_some_and(|values| !values.is_empty())
+            || agent_profile_id
+                .as_deref()
+                .is_some_and(|value| !value.trim().is_empty())
+            || display_name
+                .as_deref()
+                .is_some_and(|value| !value.trim().is_empty())
+        {
+            return Err(
+                "the first embedded daemon profile supports plain single-seat sessions".to_string(),
+            );
+        }
+        let created = client.create_session().map_err(|error| error.to_string())?;
+        return Ok(CreateSessionResponse {
+            authority_id: Some(created.authority_id.to_string()),
+            session_id: created.session_id,
+            catalog: created.catalog,
+            display_name: created.display_name,
+            member_profile_ids: created.member_profile_ids,
+            agent_profile_id: created.agent_profile_id,
+        });
+    }
+
     workshop_http::post_json(
         &state,
         "/v1/sessions",
@@ -79,6 +112,7 @@ pub async fn session_derive(
 #[tauri::command]
 pub async fn session_list(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     limit: Option<usize>,
     include_verification: Option<bool>,
     q: Option<String>,
@@ -86,6 +120,33 @@ pub async fn session_list(
 ) -> Result<SessionHistoryListResponse, String> {
     let capped = limit.unwrap_or(50).clamp(1, 200);
     let include_verification = include_verification.unwrap_or(false);
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        if q.as_deref().is_some_and(|value| !value.trim().is_empty())
+            || cursor
+                .as_deref()
+                .is_some_and(|value| !value.trim().is_empty())
+        {
+            return Err(
+                "search and paginated session history are not enabled in the first embedded daemon profile"
+                    .to_string(),
+            );
+        }
+        let mut sessions = client
+            .list_sessions(capped)
+            .map_err(|error| error.to_string())?;
+        if !include_verification {
+            sessions = sessions
+                .into_iter()
+                .map(|session| session.without_verification_fields())
+                .collect();
+        }
+        return Ok(SessionHistoryListResponse {
+            sessions,
+            next_cursor: None,
+        });
+    }
+
     let mut query = vec![
         ("limit", capped.to_string()),
         ("include_verification", include_verification.to_string()),
@@ -166,11 +227,18 @@ pub async fn agent_mode_transition_policy_set(
 #[tauri::command]
 pub async fn session_get_agent_mode(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
 ) -> Result<SessionAgentModeResponse, String> {
     let trimmed = session_id.trim();
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
+    }
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .session_agent_mode(trimmed)
+            .map_err(|error| error.to_string());
     }
     client(&state)
         .sessions()
@@ -237,8 +305,15 @@ pub async fn session_decide_agent_mode_proposal(
 #[tauri::command]
 pub async fn session_get_code_binding(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
 ) -> Result<SessionCodeBindingResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .session_code_binding(session_id.trim())
+            .map_err(|error| error.to_string());
+    }
     client(&state)
         .sessions()
         .code_binding(session_id.trim())
@@ -342,11 +417,25 @@ pub async fn prompt_stash_delete(
 #[tauri::command]
 pub async fn session_get_history(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
 ) -> Result<SessionHistoryResponse, String> {
     let trimmed = session_id.trim();
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
+    }
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        let turns = client
+            .load_transcript_entries(trimmed)
+            .map_err(|error| error.to_string())?;
+        return Ok(SessionHistoryResponse {
+            // Conversation authority belongs to the embedded daemon, not the
+            // local UI principal.
+            authority_id: client.authority_id().clone(),
+            session_id: trimmed.to_string(),
+            turns,
+        });
     }
     client(&state)
         .sessions()
@@ -358,11 +447,19 @@ pub async fn session_get_history(
 #[tauri::command]
 pub async fn session_get_active_turn(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
 ) -> Result<ActiveSessionTurnResponse, String> {
     let trimmed = session_id.trim();
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
+    }
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .active_turn(trimmed)
+            .await
+            .map_err(|error| error.to_string());
     }
     client(&state)
         .sessions()
@@ -374,6 +471,7 @@ pub async fn session_get_active_turn(
 #[tauri::command]
 pub async fn session_cancel_active_turn(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     activation_state: State<'_, super::local_inference::LocalInferenceActivationState>,
     session_id: String,
 ) -> Result<CancelActiveSessionTurnResponse, String> {
@@ -387,6 +485,13 @@ pub async fn session_cancel_active_turn(
             turn_id: None,
             message: "Cancelled local model loading".to_string(),
         });
+    }
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .cancel_active_turn(trimmed)
+            .await
+            .map_err(|error| error.to_string());
     }
     client(&state)
         .sessions()
@@ -533,6 +638,7 @@ fn default_response_depth_mode() -> String {
 #[tauri::command]
 pub async fn turn_create(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     activation_state: State<'_, super::local_inference::LocalInferenceActivationState>,
     session_id: String,
     prompt: String,
@@ -584,6 +690,76 @@ pub async fn turn_create(
     } else {
         Some(model.as_str())
     };
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state
+        .client_if_active_for_route(
+            (!selected_provider.is_empty()).then_some(selected_provider),
+            selected_model,
+        )
+        .await?
+    {
+        if !matches!(ticket_mode, TurnTicketMode::Interactive) {
+            return Err(
+                "background turns are not enabled in the first embedded daemon profile".to_string(),
+            );
+        }
+        if matches!(agent_mode, Some(AgentModeId::Coder))
+            || code_context.is_some()
+            || code_project_setup_authorized.unwrap_or(false)
+        {
+            return Err(
+                "code work is not enabled in the first embedded daemon profile".to_string(),
+            );
+        }
+        if media_refs.as_ref().is_some_and(|refs| !refs.is_empty()) {
+            return Err(
+                "media turns are not enabled in the first embedded daemon profile".to_string(),
+            );
+        }
+        if response_depth_mode
+            .as_deref()
+            .is_some_and(|value| !matches!(value.trim(), "" | "standard"))
+            || reasoning_effort
+                .as_deref()
+                .is_some_and(|value| !matches!(value.trim(), "" | "default"))
+        {
+            return Err(
+                "custom depth and reasoning controls are not enabled in the first embedded daemon profile"
+                    .to_string(),
+            );
+        }
+        if voice_preset_id
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+            || voice_appendix
+                .as_deref()
+                .is_some_and(|value| !value.trim().is_empty())
+        {
+            return Err(
+                "voice turns are not enabled in the first embedded daemon profile".to_string(),
+            );
+        }
+        let accepted = client
+            .start_turn_with_context(
+                trimmed_session,
+                prompt.clone(),
+                identity_user_id.clone(),
+                channel_surface.clone(),
+            )
+            .await
+            .map_err(|error| error.to_string())?;
+        return Ok(TurnTicketResponse {
+            turn_id: accepted.turn_id,
+            session_id: trimmed_session.to_string(),
+            mode: TurnTicketMode::Interactive,
+            phase: TurnTicketPhase::Accepted,
+            accepted_at_utc: accepted.accepted_at_utc,
+            stream_url: accepted.stream_url,
+            stream_ready: accepted.stream_ready,
+            workspace_card_id: None,
+            daemon_notice: accepted.daemon_notice,
+        });
+    }
     if selected_provider.eq_ignore_ascii_case("medousa-local") {
         super::local_inference::ensure_local_engine_for_turn(
             &activation_state,

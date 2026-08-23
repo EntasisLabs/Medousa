@@ -87,7 +87,7 @@ pub async fn verify_surreal_responsive(db: &Surreal<Any>) -> Result<()> {
     .await
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};

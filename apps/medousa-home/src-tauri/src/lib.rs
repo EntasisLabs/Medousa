@@ -20,6 +20,7 @@ mod code_lsp_transport;
 mod connection_prefs;
 mod daemon;
 mod daemon_service;
+mod embedded_daemon;
 mod external_desk;
 mod files;
 mod integration_secrets;
@@ -64,6 +65,7 @@ mod workshop_transport;
 
 use code_lsp_transport::CodeLspTransportRegistry;
 use daemon::DaemonState;
+use embedded_daemon::EmbeddedDaemonState;
 use tauri::Manager;
 use terminal::TerminalRegistry;
 
@@ -170,6 +172,7 @@ fn run_home() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_mobile_push::init())
         .manage(DaemonState::new())
+        .manage(EmbeddedDaemonState::new())
         .manage(daemon::local_inference::LocalInferenceStreamState::new())
         .manage(daemon::local_inference::LocalInferenceActivationState::new());
 
@@ -254,6 +257,8 @@ fn run_home() {
             let keychain_probe_ran = run_ios_phase0_keychain_probe_if_requested()?;
             human_browser_ios::init_app_handle(app.handle().clone());
             ios_push_setup::install_ios_push_background_handler();
+            embedded_daemon::install_lifecycle(app.handle());
+            embedded_daemon::prewarm(app.handle());
             // Match medousa-theme surface-950 so the status-bar / Dynamic Island
             // backdrop is not pure black against the charcoal shell.
             if let Some(main) = app.get_webview_window("main") {

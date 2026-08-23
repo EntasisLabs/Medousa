@@ -20,6 +20,9 @@ pub mod turn_context;
 pub mod turn_control;
 pub mod turn_policy;
 
+/// Maximum user prompt admitted to one foreground production turn.
+pub const MAX_REQUEST_PROMPT_CHARS: usize = 48_000;
+
 #[cfg(test)]
 mod golden_turn;
 

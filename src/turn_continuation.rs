@@ -15,6 +15,8 @@ use tokio::sync::RwLock as AsyncRwLock;
 use crate::channel_delivery::{self, ChannelDeliveryTarget};
 use crate::runtime_composition_ext::RuntimeCompositionExt;
 
+pub use crate::turn_scope::TurnContinuationScope;
+
 const TABLE: &str = "turn_continuation_record";
 pub const TURN_CONTINUATION_VERSION: u16 = 2;
 
@@ -129,29 +131,6 @@ impl From<&StoredDeliveryTarget> for ChannelDeliveryTarget {
             value.stream_id.clone(),
         )
     }
-}
-
-/// Active turn context set for the duration of `run_agent_turn`.
-#[derive(Debug, Clone)]
-pub struct TurnContinuationScope {
-    pub turn_correlation_id: String,
-    pub session_id: String,
-    /// Principal/profile authorized for this turn. Cross-session read tools
-    /// must use this value rather than process-global active-profile state.
-    pub identity_user_id: Option<String>,
-    pub original_prompt: String,
-    pub delivery_target: Option<ChannelDeliveryTarget>,
-    pub provider: String,
-    pub model: String,
-    pub response_depth_mode: String,
-    /// Copied from `TurnSurfaceContext.supports_ui_artifacts` for the active turn.
-    pub supports_ui_artifacts: bool,
-    /// Copied from `TurnSurfaceContext.supports_liquid_markdown` for the active turn.
-    pub supports_liquid_markdown: bool,
-    /// Copied from `TurnSurfaceContext.supports_browser_host` for the active turn.
-    pub supports_browser_host: bool,
-    /// Channel surface label (home-desktop, home-ios, telegram, …).
-    pub channel_surface: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, SurrealValue)]

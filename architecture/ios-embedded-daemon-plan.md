@@ -1,6 +1,6 @@
 # iOS embedded daemon
 
-> **Status:** Recovery milestones 1–3 complete — local daemon composition next
+> **Status:** Recovery milestones 1–4 complete — authenticated heavy-work delegation next
 >
 > **First target:** iOS (`aarch64-apple-ios` and simulator)
 >
@@ -209,6 +209,13 @@ Each milestone lands as one reviewed commit after its acceptance gates pass.
   its one semantic adapter.
 
 ### Milestone 4 — local iOS daemon turn
+
+**Status: complete.** The iOS host now boots the same daemon composition in
+Tauri managed state, routes only the selected personal/local workshop through
+an explicit local-root client, and leaves every remote workshop on the existing
+authenticated SDK/transport path. A deterministic production-loop test locks
+session/transcript persistence, monotonic live and replay events, suspend
+cancellation, resume heartbeat, credential redaction, and same-root reboot.
 
 - Boot one embedded daemon from Tauri managed state.
 - Grant the co-located UI local-root capability.

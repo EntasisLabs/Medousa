@@ -42,6 +42,7 @@ use crate::daemon::types::{
     InteractiveTurnRequest, InteractiveTurnStreamEvent, StageRoutingMatrix, TurnSurfaceContext,
     WorkspaceStreamEvent, DEFAULT_DAEMON_URL,
 };
+use crate::embedded_daemon::EmbeddedDaemonState;
 use crate::workshop_transport;
 use medousa_types::turn_stream::{TurnStreamEnvelopeV2, TURN_STREAM_V2_MEDIA_TYPE};
 use std::collections::HashMap;
@@ -144,6 +145,12 @@ fn replace_cancel_slot(slot: &Mutex<Option<watch::Sender<bool>>>) -> watch::Rece
 }
 
 fn extract_turn_id_from_stream_url(stream_url: &str) -> Option<String> {
+    if let Some(rest) = stream_url.strip_prefix("medousa-embedded://turn/") {
+        let turn_id = rest.strip_suffix("/stream").unwrap_or(rest).trim();
+        if !turn_id.is_empty() {
+            return Some(turn_id.to_string());
+        }
+    }
     for marker in ["/v1/interactive/turn/", "/v1/agents/sessions/"] {
         let Some(found) = stream_url.find(marker) else {
             continue;
@@ -495,8 +502,62 @@ pub async fn interactive_turn_send(
 pub async fn interactive_stream_start(
     app: AppHandle,
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     stream_url: String,
 ) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    if stream_url.starts_with("medousa-embedded://") {
+        let turn_id = extract_turn_id_from_stream_url(&stream_url)
+            .ok_or_else(|| "embedded stream URL missing turn id".to_string())?;
+        let client = _embedded_state.client_if_active().await?.ok_or_else(|| {
+            "embedded turn stream does not belong to the active workshop".to_string()
+        })?;
+        let mut cancel_rx = add_interactive_stream_slot(&state.interactive_streams, &turn_id);
+        tokio::spawn(async move {
+            let mut stream = match client.subscribe_turn(&turn_id, 0).await {
+                Ok(stream) => stream,
+                Err(error) => {
+                    let _ = app.emit(
+                        "interactive://error",
+                        serde_json::json!({ "message": error.to_string() }),
+                    );
+                    return;
+                }
+            };
+            loop {
+                tokio::select! {
+                    changed = cancel_rx.changed() => {
+                        if changed.is_err() || *cancel_rx.borrow() {
+                            break;
+                        }
+                    }
+                    event = stream.recv() => {
+                        match event {
+                            Ok(Some(event)) => {
+                                if let Err(error) = app.emit("interactive://event", event) {
+                                    let _ = app.emit(
+                                        "interactive://error",
+                                        serde_json::json!({ "message": error.to_string() }),
+                                    );
+                                    break;
+                                }
+                            }
+                            Ok(None) => break,
+                            Err(error) => {
+                                let _ = app.emit(
+                                    "interactive://error",
+                                    serde_json::json!({ "message": error.to_string() }),
+                                );
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        return Ok(());
+    }
+
     let daemon_url = state.daemon_url.lock().expect("daemon url lock").clone();
     let stream_url = rewrite_stream_url_for_client(&stream_url, &daemon_url);
     let turn_id = extract_turn_id_from_stream_url(&stream_url)
