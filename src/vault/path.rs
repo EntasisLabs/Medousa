@@ -185,6 +185,9 @@ pub fn project_vault_overlay_capability() -> Result<Option<Arc<StoreRoot>>> {
 }
 
 pub(crate) fn vault_capability_for_root(root: PathBuf) -> Result<Arc<StoreRoot>> {
+    if let Some(deployment) = crate::vault::roots::deployment_vault_capability(&root) {
+        return Ok(deployment);
+    }
     if let Some(existing) = VAULT_ROOT_CAPABILITIES
         .read()
         .expect("vault root capabilities")

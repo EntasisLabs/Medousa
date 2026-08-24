@@ -1,11 +1,13 @@
 //! Multi-vault root registry (Phase 3).
 
-use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 
 #[cfg(feature = "full-daemon")]
 use anyhow::Context;
 use anyhow::{Result, bail};
+
+use crate::store_root::StoreRoot;
 
 #[cfg(feature = "full-daemon")]
 use crate::load_product_config;
@@ -20,23 +22,33 @@ use crate::vault::store::vault_store;
 
 pub const DEFAULT_VAULT_ROOT_ID: &str = "personal";
 
-static DEPLOYMENT_VAULT_ROOT: OnceLock<PathBuf> = OnceLock::new();
+struct DeploymentVaultRoot {
+    path: PathBuf,
+    files: Arc<StoreRoot>,
+}
+
+static DEPLOYMENT_VAULT_ROOT: OnceLock<DeploymentVaultRoot> = OnceLock::new();
 
 /// Bind the daemon's default vault to a deployment-owned filesystem root.
 /// Embedded hosts call this during boot before the lazy vault store opens.
-pub fn configure_deployment_vault_root(root: PathBuf) -> Result<()> {
+pub fn configure_deployment_vault_root(root: PathBuf, files: Arc<StoreRoot>) -> Result<()> {
     if let Some(existing) = DEPLOYMENT_VAULT_ROOT.get() {
-        if existing == &root {
+        if existing.path == root {
             return Ok(());
         }
         bail!(
             "vault root already configured for another daemon deployment: {}",
-            existing.display()
+            existing.path.display()
         );
     }
     DEPLOYMENT_VAULT_ROOT
-        .set(root)
+        .set(DeploymentVaultRoot { path: root, files })
         .map_err(|_| anyhow::anyhow!("vault root configuration raced"))
+}
+
+pub(crate) fn deployment_vault_capability(root: &Path) -> Option<Arc<StoreRoot>> {
+    let deployment = DEPLOYMENT_VAULT_ROOT.get()?;
+    (deployment.path == root).then(|| Arc::clone(&deployment.files))
 }
 
 pub fn deployment_vault_root_configured() -> bool {
@@ -114,7 +126,7 @@ pub fn active_vault_root() -> PathBuf {
         return path;
     }
     if let Some(path) = DEPLOYMENT_VAULT_ROOT.get() {
-        return path.clone();
+        return path.path.clone();
     }
     #[cfg(feature = "full-daemon")]
     {
@@ -138,7 +150,7 @@ pub fn list_vault_root_views() -> crate::daemon_api::VaultRootsResponse {
             roots: vec![crate::daemon_api::VaultRootView {
                 id: DEFAULT_VAULT_ROOT_ID.to_string(),
                 label: "Personal".to_string(),
-                path: path.display().to_string(),
+                path: path.path.display().to_string(),
                 is_default: true,
                 active: true,
                 is_obsidian: false,

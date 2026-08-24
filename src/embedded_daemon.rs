@@ -347,7 +347,16 @@ impl EmbeddedDaemon {
     pub async fn boot(config: EmbeddedDaemonConfig) -> Result<Arc<Self>> {
         let root = prepare_root(&config.root).await?;
         configure_file_session_root(root.join("history")).map_err(|error| anyhow!(error))?;
-        crate::vault::roots::configure_deployment_vault_root(root.join("vault"))
+        let sandbox_files = crate::store_root::StoreRoot::open(&root)
+            .context("open embedded daemon root capability")?;
+        let vault_path =
+            crate::store_root::StorePath::parse("vault").context("validate embedded vault path")?;
+        let vault_files = Arc::new(
+            sandbox_files
+                .open_or_create_subroot(&vault_path)
+                .context("derive embedded vault capability")?,
+        );
+        crate::vault::roots::configure_deployment_vault_root(root.join("vault"), vault_files)
             .context("configure embedded vault root")?;
         crate::vault::io::vault_io()
             .run_anyhow(crate::vault::io::VaultIoClass::Scan, || {
