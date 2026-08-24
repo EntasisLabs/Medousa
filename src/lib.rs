@@ -8,15 +8,29 @@
 include!("full_daemon.rs");
 
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod daemon_api;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod daemon_runtime;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod daemon_runtime_handlers;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod embedded_daemon;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 #[path = "agent_runtime/execution_context.rs"]
 pub mod execution_context;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod grapheme_grants;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod grapheme_runtime;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod locus_memory;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 #[path = "runtime/locus_semantic_index_store.rs"]
 pub mod locus_semantic_index_store;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod locus_semantic_tags;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod locus_service;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 #[path = "runtime/locus_surreal_client.rs"]
 pub mod locus_surreal_client;
@@ -24,7 +38,15 @@ pub mod locus_surreal_client;
 #[path = "runtime/persistent_locus.rs"]
 pub mod persistent_locus;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod portable_daemon_tools;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod recurring_schedule;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod request_principal;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod runtime_composition_ext;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod runtime_job_spec;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 #[allow(dead_code)]
 pub mod session_storage;
@@ -50,6 +72,10 @@ pub mod turn_scope;
 pub mod turn_stream_registry;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod turn_ticket;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod user_profiles;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod vault;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod workshop_authority;
 

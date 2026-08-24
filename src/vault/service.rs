@@ -13,6 +13,7 @@ use crate::vault::semantic_tags::{
     apply_semantic_tags_on_write, collect_distinct_tags, entry_has_all_tags, parse_tags_query,
 };
 use crate::vault::store::vault_store;
+#[cfg(feature = "full-daemon")]
 use crate::workspace::store::workspace_store;
 use base64::Engine;
 
@@ -614,36 +615,43 @@ fn append_vault_feed_event(
     actor: WorkspaceEventActor,
     tool_name: Option<&str>,
 ) {
-    let refs = vec![crate::daemon_api::WorkspaceEventRef {
-        ref_type: "vault_path".to_string(),
-        ref_id: path.to_string(),
-    }];
-    let detail_line = title.trim().to_string();
-    let kind = if created {
-        crate::daemon_api::WorkspaceEventKind::VaultNoteCreated
-    } else {
-        crate::daemon_api::WorkspaceEventKind::VaultNoteUpdated
-    };
-    let summary = match actor {
-        WorkspaceEventActor::Agent => format!("Agent updated vault — {detail_line}"),
-        _ => format!("Vault updated — {detail_line}"),
-    };
-    let tool_names = tool_name
-        .map(|name| vec![name.to_string()])
-        .unwrap_or_default();
-    let event = crate::daemon_api::WorkspaceEvent {
-        id: crate::workspace::event::new_event_id(),
-        timestamp_utc: chrono::Utc::now(),
-        kind,
-        actor,
-        summary,
-        refs,
-        detail_line: Some(detail_line),
-        context_line: Some(path.to_string()),
-        intent: None,
-        tool_names,
-    };
-    workspace_store().append_event(event);
+    #[cfg(not(feature = "full-daemon"))]
+    {
+        let _ = (path, title, created, actor, tool_name);
+    }
+    #[cfg(feature = "full-daemon")]
+    {
+        let refs = vec![crate::daemon_api::WorkspaceEventRef {
+            ref_type: "vault_path".to_string(),
+            ref_id: path.to_string(),
+        }];
+        let detail_line = title.trim().to_string();
+        let kind = if created {
+            crate::daemon_api::WorkspaceEventKind::VaultNoteCreated
+        } else {
+            crate::daemon_api::WorkspaceEventKind::VaultNoteUpdated
+        };
+        let summary = match actor {
+            WorkspaceEventActor::Agent => format!("Agent updated vault — {detail_line}"),
+            _ => format!("Vault updated — {detail_line}"),
+        };
+        let tool_names = tool_name
+            .map(|name| vec![name.to_string()])
+            .unwrap_or_default();
+        let event = crate::daemon_api::WorkspaceEvent {
+            id: crate::workspace::event::new_event_id(),
+            timestamp_utc: chrono::Utc::now(),
+            kind,
+            actor,
+            summary,
+            refs,
+            detail_line: Some(detail_line),
+            context_line: Some(path.to_string()),
+            intent: None,
+            tool_names,
+        };
+        workspace_store().append_event(event);
+    }
 }
 
 #[cfg(test)]

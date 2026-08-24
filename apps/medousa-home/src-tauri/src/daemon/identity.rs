@@ -8,8 +8,10 @@ use crate::daemon::types::{
 use serde_json::Value;
 use tauri::State;
 
-use super::DaemonState;
+use crate::embedded_daemon::EmbeddedDaemonState;
+
 use super::workshop_http;
+use super::DaemonState;
 
 #[tauri::command]
 pub async fn identity_get_context(
@@ -22,16 +24,28 @@ pub async fn identity_get_context(
 #[tauri::command]
 pub async fn identity_list_profiles(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<ListUserProfilesResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client.list_profiles().map_err(|error| error.to_string());
+    }
     workshop_http::get_json(&state, "/v1/identity/profiles").await
 }
 
 #[tauri::command]
 pub async fn identity_create_profile(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     slug: String,
     display_name: String,
 ) -> Result<CreateUserProfileResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .create_profile(&slug, &display_name)
+            .map_err(|error| error.to_string());
+    }
     workshop_http::post_json(
         &state,
         "/v1/identity/profiles",
@@ -43,8 +57,15 @@ pub async fn identity_create_profile(
 #[tauri::command]
 pub async fn identity_set_active_profile(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     profile_id: String,
 ) -> Result<SetActiveUserProfileResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .set_active_profile(&profile_id)
+            .map_err(|error| error.to_string());
+    }
     workshop_http::put_json(
         &state,
         "/v1/identity/profiles/active",

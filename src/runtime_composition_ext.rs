@@ -13,6 +13,23 @@ use stasis::ports::outbound::runtime::outbox_store::OutboxStore;
 use stasis::ports::outbound::runtime::recurring_store::RecurringStore;
 use stasis::prelude::{Result, RuntimeComposition};
 
+/// Process one default-queue job through either supported runtime backend.
+pub async fn process_once(
+    runtime: &RuntimeComposition,
+    worker_id: &str,
+) -> anyhow::Result<Option<String>> {
+    let now = Utc::now();
+    let result = match runtime {
+        RuntimeComposition::InMemory(runtime) => {
+            runtime.process_once("default", worker_id, now).await?
+        }
+        RuntimeComposition::Surreal(runtime) => {
+            runtime.process_once("default", worker_id, now).await?
+        }
+    };
+    Ok(result)
+}
+
 #[async_trait]
 pub trait RuntimeCompositionExt {
     async fn get_job(&self, job_id: &str) -> Result<Option<Job>>;

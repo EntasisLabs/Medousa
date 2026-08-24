@@ -248,7 +248,11 @@ full-daemon = [
     "dep:windows",
     "dep:rappct",
 ]
-embedded-daemon = []
+embedded-daemon = [
+    "dep:base64",
+    "dep:schemars",
+    "dep:unicode-normalization",
+]
 otel-export = [
     "full-daemon",
     "dep:tracing-opentelemetry",

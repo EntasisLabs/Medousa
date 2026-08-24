@@ -1,6 +1,7 @@
 pub mod adapter_ingest;
 pub mod agent_permission_request;
 pub mod agent_runtime;
+pub use agent_runtime::execution_context;
 pub mod agent_secret_request;
 pub mod artifact_chunking;
 pub mod artifact_command_runtime;
@@ -19,10 +20,12 @@ pub mod context_pack;
 pub mod engine_adapters;
 pub mod engine_recovery;
 pub mod feed_sink;
+pub mod grapheme_grants;
 pub mod grapheme_handlers;
 pub mod grapheme_host_catalog;
 pub mod grapheme_lsp_bridge;
 pub mod grapheme_medousa_bridge;
+pub mod grapheme_runtime;
 pub mod grapheme_script;
 pub mod grapheme_script_tools;
 pub mod grapheme_workshop;
@@ -36,6 +39,7 @@ pub mod media_store;
 pub mod media_text_extract;
 pub mod media_vision;
 pub mod model_capability_registry;
+pub mod portable_daemon_tools;
 pub mod prompt_stash;
 pub mod public_api;
 pub mod recurring_agent_turn;
@@ -64,8 +68,8 @@ pub mod turn_control_tools;
 pub mod turn_event_channel;
 pub mod turn_parts;
 pub mod turn_pipeline_output;
-pub mod turn_slice;
 pub mod turn_scope;
+pub mod turn_slice;
 pub mod turn_stream_registry;
 pub mod turn_text_heuristics;
 pub mod turn_worker_notify;
@@ -98,6 +102,7 @@ pub mod daemon;
 pub mod daemon_api;
 pub mod daemon_handlers;
 pub mod daemon_runtime;
+pub mod daemon_runtime_handlers;
 pub mod daemon_self_url;
 pub mod detamu_tools;
 pub mod engine_context;
@@ -134,6 +139,7 @@ pub mod local_credential_handlers;
 pub mod local_daemon_auth;
 pub mod locus_handlers;
 pub mod locus_memory;
+pub mod locus_service;
 pub mod manuscript_handlers;
 pub mod manuscript_tools;
 pub mod mcp_gateway_api;
@@ -693,13 +699,7 @@ fn default_surrealkv_path() -> String {
 }
 
 pub async fn process_once(runtime: &RuntimeComposition, worker_id: &str) -> Result<Option<String>> {
-    let now = Utc::now();
-    let result = match runtime {
-        RuntimeComposition::InMemory(rt) => rt.process_once("default", worker_id, now).await?,
-        RuntimeComposition::Surreal(rt) => rt.process_once("default", worker_id, now).await?,
-    };
-
-    Ok(result)
+    runtime_composition_ext::process_once(runtime, worker_id).await
 }
 
 pub async fn publish_pending(runtime: &RuntimeComposition, limit: usize) -> Result<usize> {

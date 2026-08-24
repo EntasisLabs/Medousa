@@ -5408,6 +5408,7 @@ version = "0.9.1"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64 0.22.1",
  "chrono",
  "genai 0.6.5",
  "locus-core-rs",
@@ -5416,6 +5417,7 @@ dependencies = [
  "medousa-store",
  "medousa-types",
  "once_cell",
+ "schemars 0.8.22",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -5425,6 +5427,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "unicode-normalization",
  "uuid",
 ]
 

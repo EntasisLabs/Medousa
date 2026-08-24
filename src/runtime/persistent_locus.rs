@@ -24,6 +24,11 @@ use crate::runtime::surreal_startup::{timed_step, verify_surreal_responsive};
 #[cfg(not(feature = "full-daemon"))]
 use crate::surreal_startup::{timed_step, verify_surreal_responsive};
 
+const LOCUS_SCHEMA_COMPATIBILITY_STATEMENTS: &[&str] = &[
+    "DEFINE FIELD OVERWRITE source_metadata ON TABLE temporal_node TYPE option<object> FLEXIBLE",
+    "DEFINE FIELD OVERWRITE semantic_links ON TABLE temporal_node TYPE option<array<object>> FLEXIBLE",
+];
+
 fn parse_env_flag(key: &str) -> Option<bool> {
     std::env::var(key).ok().map(|value| {
         matches!(
@@ -36,7 +41,23 @@ fn parse_env_flag(key: &str) -> Option<bool> {
 async fn surreal_locus_node_table_exists(
     db: &surrealdb::Surreal<surrealdb::engine::any::Any>,
 ) -> bool {
-    db.query("INFO FOR TABLE node").await.is_ok()
+    match db.query("SELECT * FROM temporal_node LIMIT 1").await {
+        Ok(response) => response.check().is_ok(),
+        Err(_) => false,
+    }
+}
+
+async fn ensure_locus_schema_compatibility(
+    db: &surrealdb::Surreal<surrealdb::engine::any::Any>,
+) -> Result<()> {
+    for statement in LOCUS_SCHEMA_COMPATIBILITY_STATEMENTS {
+        db.query(*statement)
+            .await
+            .with_context(|| format!("apply Locus schema compatibility statement `{statement}`"))?
+            .check()
+            .with_context(|| format!("apply Locus schema compatibility statement `{statement}`"))?;
+    }
+    Ok(())
 }
 
 async fn should_skip_locus_init_on_existing_graph(
@@ -105,6 +126,10 @@ pub async fn build_persistent_locus_memory(
     .await
     .map_err(|_| anyhow::anyhow!("Locus semantic index init timed out"))?
     .map_err(|err| anyhow::anyhow!("failed to initialize surreal semantic index: {err}"))?;
+
+    ensure_locus_schema_compatibility(&db)
+        .await
+        .context("align Locus object field schema")?;
 
     Ok(Arc::new(LocusMemoryStore {
         node_store: node_store as Arc<dyn NodeStore>,

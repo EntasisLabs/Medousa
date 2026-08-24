@@ -5,10 +5,28 @@ use medousa_types::{AuthorityId, DaemonRuntimeDescriptor, HealthResponse};
 
 pub const AGENT_RUNTIME_VERSION: &str = "centralized-v1";
 
+/// Assembly-time label for the singleton daemon agent runtime — never a chat
+/// session. It lives in the shared layer so profile validation is independent
+/// of the native/TUI composition.
+pub const RUNTIME_BOOTSTRAP_SESSION_ID: &str = "__runtime_bootstrap__";
+
+/// Legacy bootstrap label retained for reserved-profile migration guards.
+pub const LEGACY_RUNTIME_BOOTSTRAP_SESSION_ID: &str = "daemon-agent-runtime";
+
+pub fn is_runtime_bootstrap_session_id(session_id: &str) -> bool {
+    let trimmed = session_id.trim();
+    trimmed == RUNTIME_BOOTSTRAP_SESSION_ID || trimmed == LEGACY_RUNTIME_BOOTSTRAP_SESSION_ID
+}
+
 const COMMON_CAPABILITIES: &[&str] = &[
+    "agent.loop",
     "daemon.authority",
+    "grapheme.runtime",
     "memory.locus",
+    "notes.vault",
     "persistence.surrealkv",
+    "profiles.workshop",
+    "scheduling.stasis",
     "sessions.coordinates",
     "stasis.control-plane",
     "turns.sequenced",

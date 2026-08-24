@@ -16,9 +16,11 @@ use stasis::ports::outbound::memory::memory_models::{
     MemoryAvecState, MemoryNode, MemoryStoreRequest, MemoryStoreResponse,
 };
 
-pub const LOCUS_TENANT_SCOPE_PREFIX: &str = "tenant:";
-pub const LOCUS_TENANT_SCOPE_SEPARATOR: &str = "::session:";
-pub const LOCUS_DEFAULT_TENANT: &str = "default";
+pub use crate::locus_semantic_tags::{
+    LOCUS_DEFAULT_TENANT, LOCUS_TENANT_SCOPE_PREFIX, LOCUS_TENANT_SCOPE_SEPARATOR,
+    derive_locus_tenant_id,
+};
+pub use crate::locus_service::{avec_to_json, sttp_node_to_json};
 /// Chat session id for identity→Locus STTP bridge nodes (scoped per active profile).
 pub const IDENTITY_BRIDGE_CHAT_SESSION: &str = "medousa-identity";
 
@@ -37,16 +39,6 @@ pub fn scoped_locus_session(profile_slug: &str, chat_session_id: &str) -> String
 }
 
 /// Mirror of `locus-core-rs` tenant derivation for tests and diagnostics.
-pub fn derive_locus_tenant_id(session_id: &str) -> String {
-    session_id
-        .strip_prefix(LOCUS_TENANT_SCOPE_PREFIX)
-        .and_then(|remainder| remainder.split_once(LOCUS_TENANT_SCOPE_SEPARATOR))
-        .map(|(tenant, _)| tenant)
-        .filter(|tenant| !tenant.trim().is_empty())
-        .unwrap_or(LOCUS_DEFAULT_TENANT)
-        .to_string()
-}
-
 pub fn parse_scoped_locus_session(session_id: &str) -> Option<(String, String)> {
     session_id
         .strip_prefix(LOCUS_TENANT_SCOPE_PREFIX)
@@ -67,6 +59,7 @@ pub fn identity_bridge_locus_session() -> String {
 }
 
 /// Resolve Locus session for memory tools: explicit arg → turn scope chat id → fallback.
+#[cfg(feature = "full-daemon")]
 pub async fn resolve_memory_tool_session_id(
     input: &Value,
     turn_scope: &crate::agent_runtime::execution_context::TurnScopeAccess,
@@ -83,6 +76,7 @@ pub async fn resolve_memory_tool_session_id(
     .await
 }
 
+#[cfg(feature = "full-daemon")]
 pub async fn resolve_memory_tool_session_id_typed(
     explicit_session_id: Option<&str>,
     turn_scope: &crate::agent_runtime::execution_context::TurnScopeAccess,
@@ -354,33 +348,6 @@ pub fn store_failure_payload(
             "message": message,
             "model_guidance": store_failure_guidance(&message, profile_name)
         }
-    })
-}
-
-pub fn avec_to_json(avec: locus_core_rs::AvecState) -> Value {
-    json!({
-        "stability": avec.stability,
-        "friction": avec.friction,
-        "logic": avec.logic,
-        "autonomy": avec.autonomy,
-        "psi": avec.psi(),
-    })
-}
-
-pub fn sttp_node_to_json(node: &locus_core_rs::SttpNode) -> Value {
-    json!({
-        "raw": node.raw,
-        "session_id": node.session_id,
-        "tier": node.tier,
-        "timestamp": node.timestamp.to_rfc3339(),
-        "context_summary": node.context_summary,
-        "semantic_tags": node.semantic_tags,
-        "psi": node.psi,
-        "rho": node.rho,
-        "kappa": node.kappa,
-        "sync_key": node.sync_key,
-        "user_avec": avec_to_json(node.user_avec),
-        "model_avec": avec_to_json(node.model_avec),
     })
 }
 

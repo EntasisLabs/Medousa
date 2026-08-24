@@ -149,6 +149,9 @@ pub fn user_vault_root() -> PathBuf {
 
 /// Optional project overlay: `{root}/.medousa/vault/`.
 pub fn project_vault_overlay_root() -> Option<PathBuf> {
+    if crate::vault::roots::deployment_vault_root_configured() {
+        return None;
+    }
     project_root().map(|root| root.join(".medousa").join("vault"))
 }
 

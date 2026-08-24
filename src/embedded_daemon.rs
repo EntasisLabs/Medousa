@@ -21,7 +21,15 @@ use medousa_runtime::{
 };
 use medousa_types::daemon_api::{
     AgentModeId, AgentModeSource, CancelActiveSessionTurnResponse, CreateSessionResponse,
-    HealthResponse, InteractiveTurnResponse, SessionAgentModeResponse, SessionCodeBindingResponse,
+    CreateUserProfileResponse, HealthResponse, InteractiveTurnResponse, ListUserProfilesResponse,
+    LocusNodeDetailResponse, LocusNodesListResponse, LocusNodesQuery, LocusTagsListResponse,
+    LocusTagsQuery, RecurringDefinitionEntry, RecurringListResponse, RegisterRecurringResponse,
+    SessionAgentModeResponse, SessionCodeBindingResponse, SetActiveUserProfileResponse,
+    VaultBacklinksResponse, VaultChangesQuery, VaultChangesResponse, VaultDeleteResponse,
+    VaultFileContentResponse, VaultNoteContentResponse, VaultNotesListResponse, VaultNotesQuery,
+    VaultRootsResponse, VaultSearchQuery, VaultSearchResponse, VaultTagsListResponse,
+    VaultTagsQuery, VaultTrashListResponse, VaultTrashRestoreResponse, VaultWriteRequest,
+    VaultWriteResponse,
 };
 use medousa_types::secrets::InstallationId;
 use medousa_types::session::{ConversationTurn, SessionHistorySummary, TranscriptEntry};
@@ -41,9 +49,13 @@ use stasis::domain::errors::{Result as StasisResult, StasisError};
 use stasis::domain::runtime::cluster_node::{
     ClusterNode, ClusterNodeHeartbeat, ClusterNodeRole, NewClusterNode,
 };
+use stasis::infrastructure::memory::locus_memory_operations::LocusMemoryOperations;
 use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta};
+use stasis::ports::outbound::memory::memory_context_reader::MemoryContextReader;
+use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
+use stasis::ports::outbound::memory::memory_operations::MemoryOperations;
 use stasis::ports::outbound::runtime::cluster_node_store::ClusterNodeStore;
-use stasis::prelude::{RuntimeBackend, RuntimeComposition, RuntimeFactory, StasisRuntimeBuilder};
+use stasis::prelude::{RuntimeBackend, RuntimeComposition, RuntimeFactory};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -56,6 +68,7 @@ use crate::execution_context::{
 };
 use crate::persistent_locus::build_persistent_locus_memory;
 use crate::request_principal::{Capability, RequestPrincipal, TransportClass};
+use crate::runtime_composition_ext::RuntimeCompositionExt;
 use crate::session_storage::{SessionId, new_session_id};
 use crate::session_store::{
     SessionStore, TranscriptAppend, configure_file_session_root, get_session_store,
@@ -80,20 +93,22 @@ const STREAM_DELTA_CAPACITY: usize = 128;
 
 /// Mobile capability layer over the daemon's injected tool registry.
 ///
-/// The canonical turn-control protocol is always daemon-owned and cannot be
-/// replaced by a host-supplied registry. Every other admitted tool delegates
-/// to the registry selected by the embedded deployment composition.
+/// The canonical turn-control and portable daemon tools are always daemon-owned
+/// and cannot be replaced by a host-supplied registry. Additional admitted
+/// tools delegate to the registry selected by the embedded composition.
 struct EmbeddedToolRegistry {
     delegate: Arc<dyn ToolRegistry>,
+    portable: InMemoryToolRegistry,
     turn_control: InMemoryToolRegistry,
 }
 
 impl EmbeddedToolRegistry {
-    fn new(delegate: Arc<dyn ToolRegistry>) -> StasisResult<Self> {
+    fn new(delegate: Arc<dyn ToolRegistry>, portable: InMemoryToolRegistry) -> StasisResult<Self> {
         let turn_control = InMemoryToolRegistry::default();
         turn_control.register_tool(EmbeddedTurnControlTool)?;
         Ok(Self {
             delegate,
+            portable,
             turn_control,
         })
     }
@@ -102,8 +117,14 @@ impl EmbeddedToolRegistry {
 #[async_trait::async_trait]
 impl ToolRegistry for EmbeddedToolRegistry {
     async fn list_tools(&self) -> StasisResult<Vec<genai::chat::Tool>> {
-        let mut tools = self.delegate.list_tools().await?;
-        tools.retain(|tool| tool.name.as_str() != medousa_runtime::turn_control::COGNITION_TURN);
+        let mut tools = self.portable.list_tools().await?;
+        let mut delegated = self.delegate.list_tools().await?;
+        delegated.retain(|tool| {
+            tool.name.as_str() != medousa_runtime::turn_control::COGNITION_TURN
+                && !crate::portable_daemon_tools::PORTABLE_DAEMON_TOOL_NAMES
+                    .contains(&tool.name.as_str())
+        });
+        tools.extend(delegated);
         tools.extend(self.turn_control.list_tools().await?);
         Ok(tools)
     }
@@ -115,6 +136,10 @@ impl ToolRegistry for EmbeddedToolRegistry {
     ) -> StasisResult<serde_json::Value> {
         if tool_name.trim() == medousa_runtime::turn_control::COGNITION_TURN {
             self.turn_control.invoke_tool(tool_name, input).await
+        } else if crate::portable_daemon_tools::PORTABLE_DAEMON_TOOL_NAMES
+            .contains(&tool_name.trim())
+        {
+            self.portable.invoke_tool(tool_name, input).await
         } else {
             self.delegate.invoke_tool(tool_name, input).await
         }
@@ -289,7 +314,10 @@ pub struct EmbeddedDaemon {
     chat_client: Arc<dyn AiChatClient>,
     tool_registry: Arc<dyn ToolRegistry>,
     session_store: Arc<dyn SessionStore>,
-    _runtime: RuntimeComposition,
+    profile_registry: Arc<std::sync::RwLock<crate::user_profiles::UserProfileRegistry>>,
+    locus_service: crate::locus_service::LocusService,
+    memory_writer: Arc<dyn MemoryContextWriter>,
+    runtime: Arc<RuntimeComposition>,
     _locus_memory: Arc<stasis::infrastructure::memory::locus_node_store_factory::LocusMemoryStore>,
     cluster_node_store: Arc<dyn ClusterNodeStore>,
     cluster_node: ClusterNode,
@@ -306,6 +334,20 @@ impl EmbeddedDaemon {
     pub async fn boot(config: EmbeddedDaemonConfig) -> Result<Arc<Self>> {
         let root = prepare_root(&config.root).await?;
         configure_file_session_root(root.join("history")).map_err(|error| anyhow!(error))?;
+        crate::vault::roots::configure_deployment_vault_root(root.join("vault"))
+            .context("configure embedded vault root")?;
+        crate::vault::io::vault_io()
+            .run_anyhow(crate::vault::io::VaultIoClass::Scan, || {
+                crate::vault::vault_store().refresh_from_disk()
+            })
+            .await
+            .context("initialize embedded vault")?;
+        let profile_registry = Arc::new(std::sync::RwLock::new(
+            crate::user_profiles::UserProfileRegistry::load_or_bootstrap_at(
+                root.join("user_profiles.json"),
+            ),
+        ));
+        crate::user_profiles::init_workshop_profile_registry(profile_registry.clone());
 
         let turn_log_root = root.join(medousa_engine::TURN_LOG_DIR);
         medousa_engine::configure_log_root(turn_log_root.clone());
@@ -325,11 +367,9 @@ impl EmbeddedDaemon {
         let backend = RuntimeBackend::surreal_kv(surreal_path, "medousa", "runtime");
         crate::surreal_startup::ensure_runtime_backend_prerequisites(&backend)
             .context("prepare embedded SurrealKV runtime")?;
-        let runtime = StasisRuntimeBuilder::new(backend)
-            .with_chat_client(config.chat_client.clone())
-            .build()
+        let runtime = RuntimeFactory::build(backend)
             .await
-            .context("boot embedded Stasis runtime")?;
+            .context("boot embedded Stasis persistence shell")?;
         crate::stasis_surreal_schema::ensure_stasis_runtime_schema(&runtime)
             .await
             .context("initialize embedded Stasis schema")?;
@@ -351,7 +391,71 @@ impl EmbeddedDaemon {
                 bail!("embedded daemon requires its SurrealKV persistence backend")
             }
         };
-        let cluster_node_store = RuntimeFactory::resolve_cluster_node_store(&runtime, None);
+        let memory_reader: Arc<dyn MemoryContextReader> = Arc::new(
+            stasis::infrastructure::memory::locus_context_reader::LocusContextReader::new(
+                locus_memory.clone(),
+            ),
+        );
+        let memory_writer: Arc<dyn MemoryContextWriter> =
+            Arc::new(crate::locus_memory::MedousaLocusContextWriter::new(
+                locus_memory.node_store.clone(),
+                crate::locus_memory::resolve_locus_ingest_profile(),
+            ));
+        let memory_operations: Arc<dyn MemoryOperations> =
+            Arc::new(LocusMemoryOperations::new(locus_memory.clone(), None));
+        let locus_service = crate::locus_service::LocusService::new(
+            locus_memory.node_store.clone(),
+            locus_memory.semantic_index.clone(),
+            memory_reader.clone(),
+        );
+        let runtime = Arc::new(runtime);
+        let portable_tools = crate::portable_daemon_tools::build_portable_daemon_tool_registry(
+            runtime.clone(),
+            locus_service.clone(),
+            memory_writer.clone(),
+        )
+        .context("initialize portable daemon tools")?;
+        let tool_registry: Arc<dyn ToolRegistry> = Arc::new(
+            EmbeddedToolRegistry::new(config.tool_registry.clone(), portable_tools)
+                .context("initialize embedded tool capability layer")?,
+        );
+        let thread_store = RuntimeFactory::resolve_thread_store(runtime.as_ref(), None);
+        let cluster_node_store = RuntimeFactory::resolve_cluster_node_store(runtime.as_ref(), None);
+        let workflow_engine = RuntimeFactory::default_workflow_engine();
+        let memory_reader = Some(memory_reader);
+        let memory_writer_for_runtime = Some(memory_writer.clone());
+        let memory_operations = Some(memory_operations);
+        let identity_store = None;
+        match runtime.as_ref() {
+            RuntimeComposition::InMemory(runtime) => {
+                crate::daemon_runtime_handlers::register_daemon_runtime_handlers(
+                    runtime,
+                    &config.chat_client,
+                    &tool_registry,
+                    &workflow_engine,
+                    &memory_reader,
+                    &memory_writer_for_runtime,
+                    &identity_store,
+                    &memory_operations,
+                    &thread_store,
+                    &cluster_node_store,
+                )?;
+            }
+            RuntimeComposition::Surreal(runtime) => {
+                crate::daemon_runtime_handlers::register_daemon_runtime_handlers(
+                    runtime,
+                    &config.chat_client,
+                    &tool_registry,
+                    &workflow_engine,
+                    &memory_reader,
+                    &memory_writer_for_runtime,
+                    &identity_store,
+                    &memory_operations,
+                    &thread_store,
+                    &cluster_node_store,
+                )?;
+            }
+        }
         let cluster_node = register_or_heartbeat_node(
             cluster_node_store.as_ref(),
             &config.installation_id,
@@ -373,12 +477,12 @@ impl EmbeddedDaemon {
             provider: Arc::from(config.provider),
             model: Arc::from(config.model),
             chat_client: config.chat_client,
-            tool_registry: Arc::new(
-                EmbeddedToolRegistry::new(config.tool_registry)
-                    .context("initialize embedded tool capability layer")?,
-            ),
+            tool_registry,
             session_store,
-            _runtime: runtime,
+            profile_registry,
+            locus_service,
+            memory_writer,
+            runtime,
             _locus_memory: locus_memory,
             cluster_node_store,
             cluster_node,
@@ -727,6 +831,21 @@ impl EmbeddedDaemonClient {
             .iter()
             .cloned()
             .chain(std::iter::once("transport.in-process".to_string()));
+        let (active_profile_id, active_profile_display_name) = {
+            let registry = self
+                .daemon
+                .profile_registry
+                .read()
+                .map_err(|_| anyhow!("profile registry lock poisoned"))?;
+            let active_profile_id = registry.active_profile_id().to_string();
+            let active_profile_display_name = registry
+                .list_profiles()
+                .into_iter()
+                .find(|profile| profile.profile_id == active_profile_id)
+                .map(|profile| profile.display_name)
+                .unwrap_or_else(|| "Personal".to_string());
+            (active_profile_id, active_profile_display_name)
+        };
         Ok(crate::daemon_runtime::health_response(
             self.daemon.authority_id.clone(),
             "embedded",
@@ -738,10 +857,351 @@ impl EmbeddedDaemonClient {
                 tool_registry_count,
                 last_agent_turn_latency_ms: None,
                 last_agent_turn_at_utc: None,
-                active_profile_id: String::new(),
-                active_profile_display_name: String::new(),
+                active_profile_id,
+                active_profile_display_name,
             },
         ))
+    }
+
+    pub fn list_profiles(&self) -> Result<ListUserProfilesResponse> {
+        self.require(Capability::WorkshopRead)?;
+        let registry = self
+            .daemon
+            .profile_registry
+            .read()
+            .map_err(|_| anyhow!("profile registry lock poisoned"))?;
+        Ok(ListUserProfilesResponse {
+            profiles: registry
+                .list_profiles()
+                .into_iter()
+                .map(|profile| profile.to_dto())
+                .collect(),
+            active_profile_id: registry.active_profile_id().to_string(),
+            resolved_user_id: registry.resolve_active_user_id(),
+        })
+    }
+
+    pub fn create_profile(
+        &self,
+        slug: &str,
+        display_name: &str,
+    ) -> Result<CreateUserProfileResponse> {
+        self.require(Capability::AdminRuntime)?;
+        let mut registry = self
+            .daemon
+            .profile_registry
+            .write()
+            .map_err(|_| anyhow!("profile registry lock poisoned"))?;
+        let profile = registry.create_profile(slug, display_name)?;
+        Ok(CreateUserProfileResponse {
+            profile: profile.to_dto(),
+            active_profile_id: registry.active_profile_id().to_string(),
+            resolved_user_id: registry.resolve_active_user_id(),
+        })
+    }
+
+    pub fn set_active_profile(&self, profile_id: &str) -> Result<SetActiveUserProfileResponse> {
+        self.require(Capability::AdminRuntime)?;
+        let mut registry = self
+            .daemon
+            .profile_registry
+            .write()
+            .map_err(|_| anyhow!("profile registry lock poisoned"))?;
+        let resolved_user_id = registry.set_active_profile(profile_id)?;
+        Ok(SetActiveUserProfileResponse {
+            active_profile_id: registry.active_profile_id().to_string(),
+            resolved_user_id,
+        })
+    }
+
+    pub async fn list_locus_nodes(&self, query: LocusNodesQuery) -> Result<LocusNodesListResponse> {
+        self.require(Capability::ContentRead)?;
+        self.daemon
+            .locus_service
+            .list_nodes(query)
+            .await
+            .map_err(anyhow::Error::new)
+    }
+
+    pub async fn list_locus_tags(&self, query: LocusTagsQuery) -> Result<LocusTagsListResponse> {
+        self.require(Capability::ContentRead)?;
+        self.daemon
+            .locus_service
+            .list_tags(query)
+            .await
+            .map_err(anyhow::Error::new)
+    }
+
+    pub async fn get_locus_node(&self, sync_key: &str) -> Result<LocusNodeDetailResponse> {
+        self.require(Capability::ContentRead)?;
+        self.daemon
+            .locus_service
+            .get_node(sync_key)
+            .await
+            .map_err(anyhow::Error::new)
+    }
+
+    pub async fn store_memory_context(
+        &self,
+        session_id: &str,
+        raw_node: &str,
+    ) -> Result<stasis::ports::outbound::memory::memory_models::MemoryStoreResponse> {
+        self.require(Capability::ContentWrite)?;
+        let session_id = crate::locus_memory::resolve_workshop_locus_session(session_id);
+        self.daemon
+            .memory_writer
+            .store_context(
+                &stasis::ports::outbound::memory::memory_models::MemoryStoreRequest {
+                    session_id,
+                    raw_node: raw_node.to_string(),
+                },
+            )
+            .await
+            .map_err(anyhow::Error::new)
+    }
+
+    pub async fn list_recurring_schedules(&self) -> Result<RecurringListResponse> {
+        self.require(Capability::WorkshopRead)?;
+        let recurring = self
+            .daemon
+            .runtime
+            .list_recurring()
+            .await
+            .map_err(anyhow::Error::new)?
+            .into_iter()
+            .map(|definition| RecurringDefinitionEntry {
+                recurring_id: definition.id,
+                queue: definition.queue,
+                job_type: definition.job_type.clone(),
+                cron_expr: definition.cron_expr,
+                timezone: definition.timezone,
+                enabled: definition.enabled,
+                next_run_at_utc: definition.next_run_at,
+                last_run_at_utc: definition.last_run_at,
+                manuscript_id: None,
+                prompt_excerpt: None,
+                display_name: None,
+                execution_mode: (definition.job_type == "workflow.grapheme.run")
+                    .then_some("grapheme".to_string()),
+                delivery_label: None,
+                last_run_status: None,
+            })
+            .collect::<Vec<_>>();
+        Ok(RecurringListResponse {
+            count: recurring.len(),
+            recurring,
+        })
+    }
+
+    /// Persist a portable Grapheme schedule in Stasis. Mobile lifecycle catch-up
+    /// policy is deliberately handled by the daemon resume path, not a host timer.
+    pub async fn register_grapheme_schedule(
+        &self,
+        source: &str,
+        cron_expr: &str,
+        timezone: &str,
+        start_immediately: bool,
+    ) -> Result<RegisterRecurringResponse> {
+        self.require(Capability::AdminExecute)?;
+        if source.trim().is_empty() {
+            bail!("grapheme source is required");
+        }
+        let validation = crate::grapheme_runtime::validate_grapheme_source_for_schedule(
+            &self.daemon.runtime,
+            source,
+        )
+        .await
+        .map_err(anyhow::Error::new)?;
+        if !validation
+            .get("validated")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+        {
+            bail!("grapheme source did not pass the Stasis runtime preflight");
+        }
+
+        let recurring_id = format!("embedded-grapheme-{}", Uuid::new_v4().simple());
+        let definition = crate::recurring_schedule::RecurringScheduleSpec::new(
+            recurring_id.clone(),
+            "default",
+            "workflow.grapheme.run",
+            format!("grapheme:inline:{source}"),
+            cron_expr,
+            timezone,
+        )
+        .start_immediately(start_immediately)
+        .build(Utc::now())
+        .map_err(anyhow::Error::new)?;
+        let response = RegisterRecurringResponse {
+            recurring_id,
+            queue: definition.queue.clone(),
+            next_run_at_utc: definition.next_run_at,
+            cron_expr: definition.cron_expr.clone(),
+            timezone: definition.timezone.clone(),
+        };
+        self.daemon
+            .runtime
+            .register_recurring(definition)
+            .await
+            .map_err(anyhow::Error::new)?;
+        Ok(response)
+    }
+
+    pub async fn list_vault_notes(&self, query: VaultNotesQuery) -> Result<VaultNotesListResponse> {
+        self.require(Capability::ContentRead)?;
+        crate::vault::io::vault_io()
+            .run_anyhow(crate::vault::io::VaultIoClass::Scan, move || {
+                Ok(crate::vault::VaultService::list_notes_paged(
+                    query.prefix.as_deref(),
+                    query.limit.unwrap_or(100),
+                    query.tags.as_deref(),
+                    query.tag_prefix.as_deref(),
+                    query.cursor.as_deref(),
+                    query.generation,
+                ))
+            })
+            .await
+    }
+
+    pub async fn list_vault_changes(
+        &self,
+        query: VaultChangesQuery,
+    ) -> Result<VaultChangesResponse> {
+        self.require(Capability::ContentRead)?;
+        crate::vault::io::vault_io()
+            .run_anyhow(crate::vault::io::VaultIoClass::Scan, move || {
+                Ok(crate::vault::VaultService::changes_since(
+                    query.since_generation,
+                    query.cursor.as_deref(),
+                    query.limit.unwrap_or(200),
+                ))
+            })
+            .await
+    }
+
+    pub async fn list_vault_tags(&self, query: VaultTagsQuery) -> Result<VaultTagsListResponse> {
+        self.require(Capability::ContentRead)?;
+        crate::vault::io::vault_io()
+            .run_anyhow(crate::vault::io::VaultIoClass::Scan, move || {
+                Ok(crate::vault::VaultService::list_tags(
+                    query.prefix.as_deref(),
+                    query.limit.unwrap_or(100),
+                ))
+            })
+            .await
+    }
+
+    pub async fn get_vault_note(&self, path: String) -> Result<VaultNoteContentResponse> {
+        self.require(Capability::ContentRead)?;
+        crate::vault::io::vault_io()
+            .run_anyhow(crate::vault::io::VaultIoClass::Scan, move || {
+                crate::vault::VaultService::get_note(&path)
+            })
+            .await
+    }
+
+    pub async fn get_vault_file(&self, path: String) -> Result<VaultFileContentResponse> {
+        self.require(Capability::ContentRead)?;
+        crate::vault::io::vault_io()
+            .run_anyhow(crate::vault::io::VaultIoClass::Scan, move || {
+                crate::vault::VaultService::read_file(&path)
+            })
+            .await
+    }
+
+    pub async fn save_vault_note(
+        &self,
+        path: String,
+        request: VaultWriteRequest,
+        if_match: Option<String>,
+    ) -> Result<VaultWriteResponse> {
+        self.require(Capability::ContentWrite)?;
+        crate::vault::io::vault_io()
+            .run_anyhow(crate::vault::io::VaultIoClass::Mutation, move || {
+                crate::vault::VaultService::write_note(Some(&path), &request, if_match.as_deref())
+            })
+            .await
+    }
+
+    pub async fn create_vault_note(
+        &self,
+        request: VaultWriteRequest,
+    ) -> Result<VaultWriteResponse> {
+        self.require(Capability::ContentWrite)?;
+        crate::vault::io::vault_io()
+            .run_anyhow(crate::vault::io::VaultIoClass::Mutation, move || {
+                crate::vault::VaultService::create_note(&request)
+            })
+            .await
+    }
+
+    pub async fn delete_vault_note(&self, path: String) -> Result<VaultDeleteResponse> {
+        self.require(Capability::ContentWrite)?;
+        crate::vault::io::vault_io()
+            .run_anyhow(crate::vault::io::VaultIoClass::Mutation, move || {
+                crate::vault::VaultService::delete_note(&path)
+            })
+            .await
+    }
+
+    pub async fn search_vault(&self, query: VaultSearchQuery) -> Result<VaultSearchResponse> {
+        self.require(Capability::ContentRead)?;
+        crate::vault::io::vault_io()
+            .run_anyhow(crate::vault::io::VaultIoClass::SearchRebuild, move || {
+                crate::vault::VaultService::search(
+                    query.q.as_deref(),
+                    query.limit.unwrap_or(20),
+                    query.tags.as_deref(),
+                )
+            })
+            .await
+    }
+
+    pub async fn vault_backlinks(&self, path: String) -> Result<VaultBacklinksResponse> {
+        self.require(Capability::ContentRead)?;
+        crate::vault::io::vault_io()
+            .run_anyhow(crate::vault::io::VaultIoClass::Scan, move || {
+                crate::vault::VaultService::backlinks(&path)
+            })
+            .await
+    }
+
+    pub fn list_vault_roots(&self) -> Result<VaultRootsResponse> {
+        self.require(Capability::ContentRead)?;
+        Ok(crate::vault::roots::list_vault_root_views())
+    }
+
+    pub fn set_active_vault_root(&self, root_id: &str) -> Result<VaultRootsResponse> {
+        self.require(Capability::AdminRuntime)?;
+        crate::vault::roots::set_active_vault_root(root_id)
+    }
+
+    pub fn add_vault_root(
+        &self,
+        label: &str,
+        path: &str,
+        id: Option<&str>,
+    ) -> Result<VaultRootsResponse> {
+        self.require(Capability::AdminRuntime)?;
+        crate::vault::roots::add_vault_root(label, path, id)
+    }
+
+    pub async fn list_vault_trash(&self, limit: usize) -> Result<VaultTrashListResponse> {
+        self.require(Capability::ContentRead)?;
+        crate::vault::io::vault_io()
+            .run_anyhow(crate::vault::io::VaultIoClass::Scan, move || {
+                crate::vault::VaultService::list_trash(limit)
+            })
+            .await
+    }
+
+    pub async fn restore_vault_trash(&self, path: String) -> Result<VaultTrashRestoreResponse> {
+        self.require(Capability::ContentWrite)?;
+        crate::vault::io::vault_io()
+            .run_anyhow(crate::vault::io::VaultIoClass::Mutation, move || {
+                crate::vault::VaultService::restore_from_trash(&path)
+            })
+            .await
     }
 
     pub fn create_session(&self) -> Result<CreateSessionResponse> {
@@ -836,6 +1296,34 @@ impl EmbeddedDaemonClient {
         if prompt.chars().count() > MAX_REQUEST_PROMPT_CHARS {
             bail!("turn prompt exceeds the foreground prompt limit");
         }
+        let identity_user_id = {
+            let registry = self
+                .daemon
+                .profile_registry
+                .read()
+                .map_err(|_| anyhow!("profile registry lock poisoned"))?;
+            match identity_user_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                Some(requested)
+                    if registry
+                        .list_profiles()
+                        .iter()
+                        .any(|profile| profile.profile_id == requested) =>
+                {
+                    requested.to_string()
+                }
+                Some(requested) => {
+                    bail!(
+                        "profile '{requested}' does not belong to embedded workshop authority '{}'",
+                        self.daemon.authority_id
+                    )
+                }
+                None => registry.resolve_active_user_id(),
+            }
+        };
 
         let prior_messages =
             history_to_chat_messages(self.daemon.session_store.load_history(&session_id));
@@ -870,7 +1358,7 @@ impl EmbeddedDaemonClient {
         let scope = TurnContinuationScope {
             turn_correlation_id: turn_id.clone(),
             session_id: session_id.to_string(),
-            identity_user_id,
+            identity_user_id: Some(identity_user_id),
             original_prompt: prompt.clone(),
             delivery_target: None,
             provider: self.daemon.provider.to_string(),
@@ -1160,7 +1648,7 @@ mod tests {
     use async_trait::async_trait;
     use genai::ModelIden;
     use genai::adapter::AdapterKind;
-    use genai::chat::{ChatOptions, ChatRequest, ChatResponse, MessageContent};
+    use genai::chat::{ChatOptions, ChatRequest, ChatResponse, MessageContent, ToolCall};
     use stasis::domain::errors::Result as StasisResult;
 
     use super::*;
@@ -1170,11 +1658,39 @@ mod tests {
     const SECRET_CANARY: &str = "embedded-secret-must-never-escape";
     const FIRST_REPLY: &str = "The embedded daemon owns this foreground turn.";
     const SECOND_REPLY: &str = "The mobile shell remains only its privileged local client.";
+    const GRAPHEME_REPLY: &str = "The portable Grapheme workflow completed on the phone daemon.";
+    const GRAPHEME_SOURCE: &str = r#"import core from "grapheme/core"
+
+query MobileProbe {
+    core.echo(message: "embedded phase four") {
+        state { current }
+    }
+}
+"#;
 
     fn text_response(text: &str) -> ChatResponse {
         let model = ModelIden::from_static(AdapterKind::OpenAI, "embedded-test-model");
         ChatResponse {
             content: MessageContent::from(text.to_string()),
+            reasoning_content: None,
+            model_iden: model.clone(),
+            provider_model_iden: model,
+            stop_reason: None,
+            usage: Default::default(),
+            captured_raw_body: None,
+            response_id: None,
+        }
+    }
+
+    fn tool_response(name: &str, arguments: serde_json::Value) -> ChatResponse {
+        let model = ModelIden::from_static(AdapterKind::OpenAI, "embedded-test-model");
+        ChatResponse {
+            content: MessageContent::from_tool_calls(vec![ToolCall {
+                call_id: format!("call-{name}"),
+                fn_name: name.to_string(),
+                fn_arguments: arguments,
+                thought_signatures: None,
+            }]),
             reasoning_content: None,
             model_iden: model.clone(),
             provider_model_iden: model,
@@ -1199,6 +1715,15 @@ mod tests {
             match self.calls.fetch_add(1, Ordering::AcqRel) {
                 0 => Ok(text_response(FIRST_REPLY)),
                 1 => Ok(text_response(SECOND_REPLY)),
+                2 => pending::<StasisResult<ChatResponse>>().await,
+                3 => Ok(tool_response(
+                    "cognition_grapheme_run",
+                    json!({ "source": GRAPHEME_SOURCE }),
+                )),
+                4 => Ok(tool_response(
+                    medousa_runtime::turn_control::COGNITION_TURN,
+                    json!({ "action": "turn.finish", "message": GRAPHEME_REPLY }),
+                )),
                 _ => pending::<StasisResult<ChatResponse>>().await,
             }
         }
@@ -1296,7 +1821,7 @@ mod tests {
         .await
         .expect("boot embedded daemon");
         let delivery_endpoints =
-            RuntimeFactory::resolve_delivery_endpoint_store(&daemon._runtime, None);
+            RuntimeFactory::resolve_delivery_endpoint_store(daemon.runtime.as_ref(), None);
         assert!(
             delivery_endpoints
                 .get("embedded-schema-probe")
@@ -1336,8 +1861,116 @@ mod tests {
                 .contains(Capability::AdminExecute)
         );
 
+        let initial_profiles = client.list_profiles().expect("list embedded profiles");
+        assert_eq!(
+            initial_profiles.active_profile_id,
+            crate::user_profiles::DEFAULT_USER_ID
+        );
+        let mobile_profile = client
+            .create_profile("mobile", "Mobile")
+            .expect("create embedded profile");
+        client
+            .set_active_profile(&mobile_profile.profile.profile_id)
+            .expect("activate embedded profile");
+        assert_eq!(
+            client
+                .health()
+                .await
+                .expect("read profile-aware health")
+                .active_profile_id,
+            mobile_profile.profile.profile_id
+        );
+
+        let tools = daemon
+            .tool_registry
+            .list_tools()
+            .await
+            .expect("list embedded daemon tools");
+        let tool_names = tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect::<Vec<_>>();
+        assert!(
+            crate::portable_daemon_tools::PORTABLE_DAEMON_TOOL_NAMES
+                .iter()
+                .all(|name| tool_names.contains(name))
+        );
+        assert!(tool_names.iter().all(|name| {
+            !["pty", "forge", "coder", "detamu"]
+                .iter()
+                .any(|blocked| name.contains(blocked))
+        }));
+
         let session = client.create_session().expect("create daemon session");
         assert_eq!(session.authority_id, authority_id);
+        assert!(
+            client
+                .start_turn_with_context(
+                    &session.session_id,
+                    "foreign profile must fail closed",
+                    Some("user:foreign-workshop".to_string()),
+                    None,
+                )
+                .await
+                .expect_err("foreign workshop profile admitted")
+                .to_string()
+                .contains("does not belong")
+        );
+
+        let note_path = "phase-four/mobile-note.md";
+        let note_body = "# Mobile note\n\nOwned by the embedded Personal workshop.";
+        let note = client
+            .create_vault_note(VaultWriteRequest {
+                path: Some(note_path.to_string()),
+                content: note_body.to_string(),
+                session_id: Some(session.session_id.clone()),
+                semantic_tags: Some(vec!["mobile".to_string(), "phase-four".to_string()]),
+                auto_workshop_tags: true,
+            })
+            .await
+            .expect("create embedded vault note");
+        assert!(note.created);
+        assert!(sandbox.path().join("vault").join(note_path).is_file());
+        assert!(
+            client
+                .get_vault_note(note_path.to_string())
+                .await
+                .expect("read embedded vault note")
+                .content
+                .contains(note_body)
+        );
+
+        let locus_session =
+            crate::locus_memory::resolve_workshop_locus_session(&session.session_id);
+        let sttp = crate::locus_memory::CANONICAL_STTP_SCHEMA_EXAMPLE
+            .split_once("\n\n")
+            .expect("canonical STTP body")
+            .1
+            .replace("session-abc", &locus_session)
+            .replace("parser hardening session", "embedded mobile memory");
+        let stored = client
+            .store_memory_context(&session.session_id, &sttp)
+            .await
+            .expect("store embedded Locus memory");
+        assert!(
+            stored.valid,
+            "memory rejection: {:?}",
+            stored.validation_error
+        );
+        let memories = client
+            .list_locus_nodes(LocusNodesQuery {
+                session_id: Some(locus_session.clone()),
+                limit: Some(10),
+                ..LocusNodesQuery::default()
+            })
+            .await
+            .expect("list embedded Locus memory");
+        assert!(
+            memories
+                .nodes
+                .iter()
+                .any(|node| node.context_summary.contains("embedded mobile memory"))
+        );
         let accepted = client
             .start_turn(&session.session_id, "prove the mobile deployment boundary")
             .await
@@ -1445,6 +2078,38 @@ mod tests {
         );
         daemon.resume().await.expect("resume embedded daemon");
 
+        let grapheme_turn = client
+            .start_turn(&session.session_id, "run the portable Grapheme probe")
+            .await
+            .expect("start Grapheme-backed foreground turn");
+        let grapheme_events = collect_to_eof(
+            client
+                .subscribe_turn(&grapheme_turn.turn_id, 0)
+                .await
+                .expect("subscribe Grapheme turn"),
+        )
+        .await;
+        assert!(matches!(
+            grapheme_events.last().map(|event| &event.event),
+            Some(TurnStreamEventV2::Final { text, tool_names })
+                if text == GRAPHEME_REPLY
+                    && tool_names.iter().any(|name| name == "cognition_grapheme_run")
+        ));
+
+        let schedule = client
+            .register_grapheme_schedule(GRAPHEME_SOURCE, "0 0 0 * * * *", "UTC", false)
+            .await
+            .expect("register embedded Grapheme schedule");
+        assert!(
+            client
+                .list_recurring_schedules()
+                .await
+                .expect("list embedded schedules")
+                .recurring
+                .iter()
+                .any(|entry| entry.recurring_id == schedule.recurring_id)
+        );
+
         drop(client);
         crate::session_store::reset_session_store_for_test();
         assert_eq!(Arc::strong_count(&daemon), 1);
@@ -1465,11 +2130,50 @@ mod tests {
         assert_eq!(rebooted.authority_id(), &authority_id);
         assert_eq!(rebooted.cluster_node().node_id, node_id);
         let rebooted_client = rebooted.local_client();
+        assert_eq!(
+            rebooted_client
+                .list_profiles()
+                .expect("reload embedded profiles")
+                .active_profile_id,
+            mobile_profile.profile.profile_id
+        );
+        assert!(
+            rebooted_client
+                .get_vault_note(note_path.to_string())
+                .await
+                .expect("reload embedded vault note")
+                .content
+                .contains(note_body)
+        );
+        assert!(
+            rebooted_client
+                .list_locus_nodes(LocusNodesQuery {
+                    session_id: Some(locus_session),
+                    limit: Some(10),
+                    ..LocusNodesQuery::default()
+                })
+                .await
+                .expect("reload embedded Locus memory")
+                .retrieved
+                > 0
+        );
+        assert!(
+            rebooted_client
+                .list_recurring_schedules()
+                .await
+                .expect("reload embedded schedules")
+                .recurring
+                .iter()
+                .any(|entry| entry.recurring_id == schedule.recurring_id)
+        );
         let rebooted_transcript = rebooted_client
             .load_transcript_entries(&session.session_id)
             .expect("reload transcript after reboot");
-        assert_eq!(rebooted_transcript.len(), 3);
+        assert_eq!(rebooted_transcript.len(), 5);
         assert_eq!(rebooted_transcript[2].turn.role, "user");
+        assert_eq!(rebooted_transcript[3].turn.role, "user");
+        assert_eq!(rebooted_transcript[4].turn.role, "assistant");
+        assert_eq!(rebooted_transcript[4].turn.content, GRAPHEME_REPLY);
         let rebooted_replay = rebooted_client
             .replay_turn(&accepted.turn_id, 0)
             .await
