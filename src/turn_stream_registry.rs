@@ -7,7 +7,7 @@ use async_trait::async_trait;
 #[cfg(feature = "full-daemon")]
 use medousa_engine::configure_log_root;
 use medousa_engine::{
-    Principal, TurnEnvelope, TurnEventLog, TurnStreamRegistryPort, default_log_root,
+    Principal, TurnEnvelope, TurnEventLog, TurnStreamRegistryPort, TurnSurface, default_log_root,
 };
 use tokio::sync::RwLock;
 
@@ -47,17 +47,27 @@ impl TurnStreamRegistryPortAdapter {
     pub fn registry(&self) -> TurnStreamRegistry {
         self.registry.clone()
     }
-}
 
-#[async_trait]
-impl TurnStreamRegistryPort for TurnStreamRegistryPortAdapter {
-    async fn register_stream(&self, turn_id: &str) -> bool {
+    /// Register a newly admitted turn with its daemon-owned session identity.
+    /// Recovery reads this surface from the journal instead of guessing a
+    /// session after a process interruption.
+    pub async fn register_stream_for_session(&self, turn_id: &str, session_id: &str) -> bool {
+        self.register_envelope(
+            TurnEnvelope::new(turn_id, Principal::operator()).with_surface(Some(TurnSurface {
+                channel_id: Some(session_id.to_string()),
+                ..TurnSurface::default()
+            })),
+        )
+        .await
+    }
+
+    async fn register_envelope(&self, envelope: TurnEnvelope) -> bool {
         ensure_log_root();
+        let turn_id = envelope.turn_id.clone();
         let mut guard = self.registry.write().await;
-        if guard.contains_key(turn_id) {
+        if guard.contains_key(&turn_id) {
             return false;
         }
-        let envelope = TurnEnvelope::new(turn_id, Principal::operator());
         let log = match TurnEventLog::open_in(default_log_root(), envelope) {
             Ok(log) => Arc::new(log),
             Err(err) => {
@@ -66,13 +76,21 @@ impl TurnStreamRegistryPort for TurnStreamRegistryPortAdapter {
             }
         };
         guard.insert(
-            turn_id.to_string(),
+            turn_id,
             TurnStreamEntry {
                 channel: TurnEventChannel::new(512),
                 log,
             },
         );
         true
+    }
+}
+
+#[async_trait]
+impl TurnStreamRegistryPort for TurnStreamRegistryPortAdapter {
+    async fn register_stream(&self, turn_id: &str) -> bool {
+        self.register_envelope(TurnEnvelope::new(turn_id, Principal::operator()))
+            .await
     }
 
     async fn drop_stream(&self, turn_id: &str) {

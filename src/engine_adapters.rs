@@ -3,13 +3,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use medousa_engine::{
-    StoreError, ToolSinkEvent, ToolSinkPort, TurnStorePort, TurnTicketPort, UpsertOutcome,
-};
-use medousa_types::session::ConversationTurn;
+use medousa_engine::{ToolSinkEvent, ToolSinkPort, TurnTicketPort};
 
 use crate::daemon::turn_stream_registry::{TurnStreamRegistry, TurnStreamRegistryPortAdapter};
-use crate::engine_recovery::{mark_recovery_ledger, recovery_ledger_contains};
 
 /// Local newtype so the engine port can be implemented without orphan-rule issues.
 pub struct TurnTicketPortAdapter(pub crate::turn_ticket::TurnTicketRegistry);
@@ -37,33 +33,6 @@ impl TurnTicketPort for TurnTicketPortAdapter {
     }
     async fn get(&self, turn_id: &str) -> Option<medousa_types::turn_ticket::TurnTicket> {
         crate::turn_ticket::get_turn(&self.0, turn_id).await
-    }
-}
-
-/// Idempotent session turn store keyed by turn id (recovery + live persist).
-pub struct SessionTurnStore;
-
-#[async_trait]
-impl TurnStorePort for SessionTurnStore {
-    async fn upsert_turn(
-        &self,
-        session_id: &str,
-        turn_id: &str,
-        turn: ConversationTurn,
-    ) -> Result<UpsertOutcome, StoreError> {
-        if self.turn_exists(session_id, turn_id).await? {
-            return Ok(UpsertOutcome::AlreadyPresent);
-        }
-        let caused_by = crate::workshop_authority::execution_ref(session_id, turn_id).ok();
-        crate::session_writer::persist_turn_with_execution(session_id, turn, None, caused_by)
-            .await
-            .map_err(|error| StoreError(error.to_string()))?;
-        mark_recovery_ledger(session_id, turn_id);
-        Ok(UpsertOutcome::Inserted)
-    }
-
-    async fn turn_exists(&self, session_id: &str, turn_id: &str) -> Result<bool, StoreError> {
-        Ok(recovery_ledger_contains(session_id, turn_id))
     }
 }
 
@@ -232,8 +201,21 @@ mod tests {
         medousa_engine::configure_log_root(root.clone());
         let registry = crate::daemon::turn_stream_registry::new_turn_stream_registry();
         let port = turn_stream_registry_adapter(registry.clone());
+        assert!(
+            port.register_stream_for_session("turn-a", "session-a")
+                .await
+        );
+        assert_eq!(
+            port.event_log("turn-a")
+                .await
+                .expect("turn log")
+                .envelope()
+                .surface
+                .as_ref()
+                .and_then(|surface| surface.channel_id.as_deref()),
+            Some("session-a")
+        );
         let port: &dyn TurnStreamRegistryPort = &port;
-        assert!(port.register_stream("turn-a").await);
         assert!(!port.register_stream("turn-a").await);
         assert!(port.has_stream("turn-a").await);
         assert!(port.event_log("turn-a").await.is_some());

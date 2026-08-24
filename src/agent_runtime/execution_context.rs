@@ -328,6 +328,7 @@ struct RegistryState {
 struct RegistryInner {
     max_live: usize,
     state: Mutex<RegistryState>,
+    changed: tokio::sync::Notify,
 }
 
 /// Bounded registry for live execution owners. Locks never cross an await.
@@ -346,6 +347,7 @@ impl TurnExecutionRegistry {
                     live: HashMap::with_capacity(max_live),
                     high_water: 0,
                 }),
+                changed: tokio::sync::Notify::new(),
             }),
         }
     }
@@ -442,6 +444,27 @@ impl TurnExecutionRegistry {
         cancelled
     }
 
+    /// Wait for every exact execution lease to leave the registry.
+    ///
+    /// Suspension callers cancel first, then use this bounded wait to let the
+    /// normal turn owner publish its one terminal event and release its lease.
+    pub async fn wait_for_idle(&self, timeout: std::time::Duration) -> bool {
+        if self.live_count() == 0 {
+            return true;
+        }
+        tokio::time::timeout(timeout, async {
+            loop {
+                let changed = self.inner.changed.notified();
+                if self.live_count() == 0 {
+                    break;
+                }
+                changed.await;
+            }
+        })
+        .await
+        .is_ok()
+    }
+
     fn remove_exact(&self, handle: TurnHandle, expected: &Arc<TurnExecutionContext>) {
         let mut state = self.inner.state.lock().expect("turn registry poisoned");
         if state
@@ -450,6 +473,8 @@ impl TurnExecutionRegistry {
             .is_some_and(|current| Arc::ptr_eq(current, expected))
         {
             state.live.remove(&handle);
+            drop(state);
+            self.inner.changed.notify_waiters();
         }
     }
 }
@@ -645,6 +670,27 @@ mod tests {
         drop(first);
         assert_eq!(registry.live_count(), 0);
         assert!(registry.admit(context("session-b", "provider-b")).is_ok());
+    }
+
+    #[tokio::test]
+    async fn bounded_idle_wait_observes_exact_lease_release() {
+        let registry = TurnExecutionRegistry::new(1);
+        let lease = registry.admit(context("session-a", "provider-a")).unwrap();
+        let waiting = {
+            let registry = registry.clone();
+            tokio::spawn(async move { registry.wait_for_idle(Duration::from_secs(1)).await })
+        };
+        let second_waiting = {
+            let registry = registry.clone();
+            tokio::spawn(async move { registry.wait_for_idle(Duration::from_secs(1)).await })
+        };
+
+        tokio::task::yield_now().await;
+        drop(lease);
+
+        assert!(waiting.await.expect("idle waiter"));
+        assert!(second_waiting.await.expect("second idle waiter"));
+        assert_eq!(registry.live_count(), 0);
     }
 
     #[test]

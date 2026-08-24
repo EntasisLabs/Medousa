@@ -68,6 +68,7 @@ pub mod turn_control_tools;
 pub mod turn_event_channel;
 pub mod turn_parts;
 pub mod turn_pipeline_output;
+pub mod turn_recovery;
 pub mod turn_scope;
 pub mod turn_slice;
 pub mod turn_stream_registry;

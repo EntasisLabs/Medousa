@@ -84,6 +84,7 @@ objc2-ui-kit = { version = "0.3", features = [
   "UIViewController",
   "UIWindow",
   "UIApplication",
+  "block2",
 ] }
 tauri-plugin-ios-webview-insets = "0.1"
 

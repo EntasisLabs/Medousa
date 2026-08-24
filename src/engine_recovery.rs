@@ -3,13 +3,13 @@
 use std::path::PathBuf;
 
 use medousa_engine::{
-    TURN_LOG_DIR, TurnEventLog, TurnStorePort, UpsertOutcome, configure_log_root, default_log_root,
-    prune_committed, recover_uncommitted,
+    TURN_LOG_DIR, TurnEventLog, configure_log_root, default_log_root, prune_committed,
+    recover_uncommitted,
 };
 
-use crate::engine_adapters::SessionTurnStore;
 use crate::paths;
 use crate::store_root::{StoreEntryKind, StorePath, StoreRoot};
+use crate::turn_recovery::SessionStoreTurnStore;
 
 const MAX_RECOVERY_LOG_BYTES: u64 = 128 * 1024 * 1024;
 
@@ -138,12 +138,15 @@ pub async fn run_startup_turn_recovery() {
         );
     }
 
-    let store = SessionTurnStore;
+    let store = SessionStoreTurnStore::new(crate::session_store::get_session_store());
     for item in recovered {
-        let session_id = item
-            .session_id
-            .clone()
-            .unwrap_or_else(|| "default".to_string());
+        let Some(session_id) = item.session_id.clone() else {
+            tracing::warn!(
+                turn_id = %item.turn_id,
+                "turn recovery refused a journal without session identity"
+            );
+            continue;
+        };
         let Ok((_typed_session_id, _mutation)) =
             crate::session_deletion::acquire_mutation_for_str(&session_id)
         else {
@@ -151,42 +154,32 @@ pub async fn run_startup_turn_recovery() {
             continue;
         };
         let turn_id = item.turn_id.clone();
-        let mut committed_any = false;
-
-        for turn in item.history {
-            let outcome = store.upsert_turn(&session_id, &turn_id, turn).await;
-            match outcome {
-                Ok(UpsertOutcome::Inserted) => {
-                    committed_any = true;
-                    tracing::info!(
-                        session_id = %session_id,
-                        turn_id = %turn_id,
-                        "recovered uncommitted turn body"
-                    );
-                }
-                Ok(UpsertOutcome::AlreadyPresent) => {
-                    tracing::debug!(
-                        session_id = %session_id,
-                        turn_id = %turn_id,
-                        "recovery skipped duplicate turn body"
-                    );
-                }
-                Err(err) => {
-                    tracing::warn!(
-                        session_id = %session_id,
-                        turn_id = %turn_id,
-                        error = %err,
-                        "turn recovery persist failed"
-                    );
-                }
+        if recovery_ledger_contains(&session_id, &turn_id) {
+            if let Ok(log) = TurnEventLog::open_in(&root, item.envelope)
+                && let Err(error) = log.mark_committed()
+            {
+                tracing::warn!(%turn_id, %error, "recovery commit marker write failed");
             }
+            continue;
         }
 
-        if (committed_any || recovery_ledger_contains(&session_id, &turn_id))
-            && let Ok(log) = TurnEventLog::open_in(&root, item.envelope)
-            && let Err(error) = log.mark_committed()
-        {
-            tracing::warn!(%turn_id, %error, "recovery commit marker write failed");
+        match crate::turn_recovery::recover_journal_item(&root, item, &store).await {
+            Ok(report) => {
+                mark_recovery_ledger(&session_id, &turn_id);
+                tracing::info!(
+                    session_id = %session_id,
+                    turn_id = %turn_id,
+                    inserted = report.inserted,
+                    already_present = report.already_present,
+                    "reconciled interrupted turn journal"
+                );
+            }
+            Err(error) => tracing::warn!(
+                session_id = %session_id,
+                turn_id = %turn_id,
+                %error,
+                "turn recovery persist failed"
+            ),
         }
     }
 
@@ -201,7 +194,43 @@ pub async fn run_startup_turn_recovery() {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use medousa_engine::{Principal, TurnEnvelope, TurnEvent, TurnStorePort};
+    use medousa_engine::{
+        Principal, StoreError, TurnEnvelope, TurnEvent, TurnStorePort, UpsertOutcome,
+    };
+    use medousa_types::session::ConversationTurn;
+
+    #[derive(Default)]
+    struct RecordingTurnStore(std::sync::Mutex<Vec<(String, String)>>);
+
+    #[async_trait::async_trait]
+    impl TurnStorePort for RecordingTurnStore {
+        async fn upsert_turn(
+            &self,
+            session_id: &str,
+            turn_id: &str,
+            _turn: ConversationTurn,
+        ) -> Result<UpsertOutcome, StoreError> {
+            let mut turns = self.0.lock().expect("recording turn store");
+            if turns
+                .iter()
+                .any(|(session, turn)| session == session_id && turn == turn_id)
+            {
+                return Ok(UpsertOutcome::AlreadyPresent);
+            }
+            turns.push((session_id.to_string(), turn_id.to_string()));
+            Ok(UpsertOutcome::Inserted)
+        }
+
+        async fn turn_exists(&self, session_id: &str, turn_id: &str) -> Result<bool, StoreError> {
+            Ok(self
+                .0
+                .lock()
+                .expect("recording turn store")
+                .iter()
+                .any(|(session, turn)| session == session_id && turn == turn_id))
+        }
+    }
+
     #[tokio::test]
     async fn recovery_replays_uncommitted_journal_and_marks_committed() {
         let temp = tempfile::tempdir().expect("temporary recovery root");
@@ -224,25 +253,19 @@ mod tests {
             .unwrap();
         }
 
-        let pending = recover_uncommitted(&root);
+        let mut pending = recover_uncommitted(&root);
         assert_eq!(pending.len(), 1);
 
-        let store = SessionTurnStore;
-        let session_id = "session-recover".to_string();
-        for turn in pending[0].history.clone() {
-            store
-                .upsert_turn(&session_id, "turn-recover-1", turn)
-                .await
-                .expect("upsert");
-        }
-        if let Ok(log) = TurnEventLog::open_in(&root, envelope) {
-            log.mark_committed().unwrap();
-        }
+        let report = crate::turn_recovery::recover_journal_item(
+            &root,
+            pending.remove(0),
+            &RecordingTurnStore::default(),
+        )
+        .await
+        .expect("recover journal");
 
+        assert_eq!(report.session_id, "session-recover");
+        assert_eq!(report.inserted, 1);
         assert!(recover_uncommitted(&root).is_empty());
-        assert!(recovery_ledger_contains(
-            "session-recover",
-            "turn-recover-1"
-        ));
     }
 }

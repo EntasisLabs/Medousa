@@ -148,7 +148,10 @@ pub async fn spawn_turn_ticket(
     let stream_port = crate::engine_adapters::turn_stream_registry_adapter(
         state.interactive_turn_streams.clone(),
     );
-    if !stream_port.register_stream(&turn_id).await {
+    if !stream_port
+        .register_stream_for_session(&turn_id, &session_id_text)
+        .await
+    {
         return Err((
             StatusCode::CONFLICT,
             format!("turn stream already registered for '{turn_id}'"),

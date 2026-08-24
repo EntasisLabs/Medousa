@@ -8,7 +8,7 @@
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -56,7 +56,7 @@ use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
 use stasis::ports::outbound::memory::memory_operations::MemoryOperations;
 use stasis::ports::outbound::runtime::cluster_node_store::ClusterNodeStore;
 use stasis::prelude::{RuntimeBackend, RuntimeComposition, RuntimeFactory};
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex as AsyncMutex, mpsc};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -68,7 +68,9 @@ use crate::execution_context::{
 };
 use crate::persistent_locus::build_persistent_locus_memory;
 use crate::request_principal::{Capability, RequestPrincipal, TransportClass};
-use crate::runtime_composition_ext::RuntimeCompositionExt;
+use crate::runtime_composition_ext::{
+    RuntimeCompositionExt, RuntimeRecoveryReport, reconcile_after_unavailability,
+};
 use crate::session_storage::{SessionId, new_session_id};
 use crate::session_store::{
     SessionStore, TranscriptAppend, configure_file_session_root, get_session_store,
@@ -89,7 +91,16 @@ use crate::turn_ticket::{
 const EMBEDDED_STREAM_SCHEME: &str = "medousa-embedded://turn";
 const EMBEDDED_NODE_LEASE_SECONDS: i64 = 300;
 const DEFAULT_FOREGROUND_TURN_TIMEOUT: Duration = Duration::from_secs(180);
+const EMBEDDED_SUSPEND_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+const EMBEDDED_RECOVERY_MAX_JOBS: usize = 32;
 const STREAM_DELTA_CAPACITY: usize = 128;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EmbeddedSuspendReport {
+    pub cancellation_requested: usize,
+    pub remaining_turns: usize,
+    pub timed_out: bool,
+}
 
 /// Mobile capability layer over the daemon's injected tool registry.
 ///
@@ -327,6 +338,8 @@ pub struct EmbeddedDaemon {
     executions: TurnExecutionRegistry,
     foreground_turn_timeout: Duration,
     suspended: AtomicBool,
+    lifecycle_epoch: AtomicU64,
+    recovery_lock: AsyncMutex<()>,
 }
 
 impl EmbeddedDaemon {
@@ -391,6 +404,20 @@ impl EmbeddedDaemon {
                 bail!("embedded daemon requires its SurrealKV persistence backend")
             }
         };
+        let turn_store = crate::turn_recovery::SessionStoreTurnStore::new(session_store.clone());
+        for item in medousa_engine::recover_uncommitted(&turn_log_root) {
+            let report =
+                crate::turn_recovery::recover_journal_item(&turn_log_root, item, &turn_store)
+                    .await
+                    .context("recover interrupted embedded turn")?;
+            tracing::info!(
+                session_id = %report.session_id,
+                turn_id = %report.turn_id,
+                inserted = report.inserted,
+                already_present = report.already_present,
+                "reconciled interrupted embedded turn journal"
+            );
+        }
         let memory_reader: Arc<dyn MemoryContextReader> = Arc::new(
             stasis::infrastructure::memory::locus_context_reader::LocusContextReader::new(
                 locus_memory.clone(),
@@ -462,6 +489,21 @@ impl EmbeddedDaemon {
             &authority_id,
         )
         .await?;
+        let boot_recovery = reconcile_after_unavailability(
+            runtime.as_ref(),
+            &format!("{}:boot", cluster_node.node_id),
+            &cluster_node.node_id,
+            EMBEDDED_RECOVERY_MAX_JOBS,
+        )
+        .await
+        .context("reconcile embedded Stasis work at boot")?;
+        if boot_recovery.materialized > 0 || !boot_recovery.processed_job_ids.is_empty() {
+            tracing::info!(
+                materialized = boot_recovery.materialized,
+                processed = boot_recovery.processed_job_ids.len(),
+                "reconciled embedded Stasis work at boot"
+            );
+        }
 
         let turn_streams = new_turn_stream_registry();
         let turn_stream_port = TurnStreamRegistryPortAdapter::new(turn_streams.clone());
@@ -492,6 +534,8 @@ impl EmbeddedDaemon {
             executions: TurnExecutionRegistry::new(config.max_live_turns),
             foreground_turn_timeout: config.foreground_turn_timeout,
             suspended: AtomicBool::new(false),
+            lifecycle_epoch: AtomicU64::new(0),
+            recovery_lock: AsyncMutex::new(()),
         }))
     }
 
@@ -521,11 +565,50 @@ impl EmbeddedDaemon {
     /// Cancel foreground work before iOS suspends the process.
     pub fn suspend(&self) -> usize {
         self.suspended.store(true, Ordering::Release);
+        self.lifecycle_epoch.fetch_add(1, Ordering::AcqRel);
         self.executions.cancel_all()
     }
 
-    /// Re-advertise the same Stasis node after returning to foreground.
-    pub async fn resume(&self) -> Result<()> {
+    /// Let cancelled foreground owners publish their terminal event and release
+    /// their exact execution leases, without exceeding the host deadline.
+    pub async fn drain_suspended(
+        &self,
+        cancellation_requested: usize,
+        timeout: Duration,
+    ) -> EmbeddedSuspendReport {
+        let idle = self.executions.wait_for_idle(timeout).await;
+        let remaining_turns = self.executions.live_count();
+        EmbeddedSuspendReport {
+            cancellation_requested,
+            remaining_turns,
+            timed_out: !idle,
+        }
+    }
+
+    pub async fn suspend_and_drain(&self, timeout: Duration) -> EmbeddedSuspendReport {
+        let cancellation_requested = self.suspend();
+        self.drain_suspended(cancellation_requested, timeout).await
+    }
+
+    /// Re-advertise the same Stasis node and run its canonical durable-work
+    /// reconciliation before foreground admission reopens.
+    pub async fn resume(&self) -> Result<RuntimeRecoveryReport> {
+        let _recovery = self.recovery_lock.lock().await;
+        if !self.suspended.load(Ordering::Acquire) {
+            return Ok(RuntimeRecoveryReport::default());
+        }
+        let lifecycle_epoch = self.lifecycle_epoch.load(Ordering::Acquire);
+        if !self
+            .executions
+            .wait_for_idle(EMBEDDED_SUSPEND_DRAIN_TIMEOUT)
+            .await
+        {
+            bail!("embedded foreground turns did not drain before resume");
+        }
+        if lifecycle_epoch != self.lifecycle_epoch.load(Ordering::Acquire) {
+            return Ok(RuntimeRecoveryReport::default());
+        }
+
         let heartbeat = ClusterNodeHeartbeat {
             node_id: self.cluster_node.node_id.clone(),
             heartbeat_at: Utc::now(),
@@ -539,8 +622,18 @@ impl EmbeddedDaemon {
             .await
             .context("heartbeat embedded Stasis node")?
             .ok_or_else(|| anyhow!("embedded Stasis node registration is missing"))?;
-        self.suspended.store(false, Ordering::Release);
-        Ok(())
+        let report = reconcile_after_unavailability(
+            self.runtime.as_ref(),
+            &format!("{}:wake", self.cluster_node.node_id),
+            &self.cluster_node.node_id,
+            EMBEDDED_RECOVERY_MAX_JOBS,
+        )
+        .await
+        .context("reconcile embedded Stasis work after wake")?;
+        if lifecycle_epoch == self.lifecycle_epoch.load(Ordering::Acquire) {
+            self.suspended.store(false, Ordering::Release);
+        }
+        Ok(report)
     }
 
     pub fn live_turn_count(&self) -> usize {
@@ -548,9 +641,24 @@ impl EmbeddedDaemon {
     }
 
     async fn ensure_turn_stream(&self, turn_id: &str) -> Result<TurnStreamEntry> {
-        if !self.turn_stream_port.has_stream(turn_id).await
-            && !self.turn_stream_port.register_stream(turn_id).await
-        {
+        self.ensure_turn_stream_with_session(turn_id, None).await
+    }
+
+    async fn ensure_turn_stream_with_session(
+        &self,
+        turn_id: &str,
+        session_id: Option<&str>,
+    ) -> Result<TurnStreamEntry> {
+        let registered = if self.turn_stream_port.has_stream(turn_id).await {
+            true
+        } else if let Some(session_id) = session_id {
+            self.turn_stream_port
+                .register_stream_for_session(turn_id, session_id)
+                .await
+        } else {
+            self.turn_stream_port.register_stream(turn_id).await
+        };
+        if !registered {
             bail!("failed to open daemon turn stream '{turn_id}'");
         }
         let entry = self
@@ -1347,7 +1455,11 @@ impl EmbeddedDaemonClient {
         .await
         .map_err(|error| anyhow!(error.message))?;
 
-        let stream = match self.daemon.ensure_turn_stream(&turn_id).await {
+        let stream = match self
+            .daemon
+            .ensure_turn_stream_with_session(&turn_id, Some(session_id.as_str()))
+            .await
+        {
             Ok(stream) => stream,
             Err(error) => {
                 mark_cancelled(&self.daemon.turn_tickets, &turn_id).await;
@@ -1650,6 +1762,7 @@ mod tests {
     use genai::adapter::AdapterKind;
     use genai::chat::{ChatOptions, ChatRequest, ChatResponse, MessageContent, ToolCall};
     use stasis::domain::errors::Result as StasisResult;
+    use stasis::domain::runtime::job::JobState;
 
     use super::*;
     use crate::request_principal::PrincipalKind;
@@ -1789,6 +1902,27 @@ query MobileProbe {
         })
         .await
         .expect("embedded daemon state transition timed out");
+    }
+
+    fn assert_tree_excludes(root: &Path, needle: &[u8]) {
+        let mut pending = vec![root.to_path_buf()];
+        while let Some(path) = pending.pop() {
+            for entry in std::fs::read_dir(&path).expect("read embedded persistence tree") {
+                let entry = entry.expect("embedded persistence entry");
+                let file_type = entry.file_type().expect("embedded persistence file type");
+                if file_type.is_dir() {
+                    pending.push(entry.path());
+                } else if file_type.is_file() {
+                    let bytes =
+                        std::fs::read(entry.path()).expect("read embedded persistence file");
+                    assert!(
+                        !bytes.windows(needle.len()).any(|window| window == needle),
+                        "credential canary escaped into {}",
+                        entry.path().display()
+                    );
+                }
+            }
+        }
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1980,6 +2114,16 @@ query MobileProbe {
             accepted.stream_url,
             format!("{EMBEDDED_STREAM_SCHEME}/{}/stream", accepted.turn_id)
         );
+        assert_eq!(
+            turn_stream_log(&daemon.turn_streams, &accepted.turn_id)
+                .await
+                .expect("accepted turn journal")
+                .envelope()
+                .surface
+                .as_ref()
+                .and_then(|surface| surface.channel_id.as_deref()),
+            Some(session.session_id.as_str())
+        );
 
         let events = collect_to_eof(
             client
@@ -2045,7 +2189,10 @@ query MobileProbe {
             .expect("start cancellable foreground turn");
         wait_until(|| chat.calls() >= 3).await;
         assert_eq!(daemon.live_turn_count(), 1);
-        assert_eq!(daemon.suspend(), 1);
+        let suspend_report = daemon.suspend_and_drain(Duration::from_secs(2)).await;
+        assert_eq!(suspend_report.cancellation_requested, 1);
+        assert_eq!(suspend_report.remaining_turns, 0);
+        assert!(!suspend_report.timed_out);
         assert!(
             client
                 .start_turn(&session.session_id, "suspended work must fail closed")
@@ -2068,7 +2215,34 @@ query MobileProbe {
                 debug_message: None,
             }) if operator_message == "foreground turn cancelled"
         ));
-        wait_until(|| daemon.live_turn_count() == 0).await;
+        assert_eq!(
+            cancelled_events
+                .iter()
+                .filter(|event| event.event.is_terminal())
+                .count(),
+            1
+        );
+        let transcript_after_cancel = client
+            .load_transcript_entries(&session.session_id)
+            .expect("load transcript after cancellation");
+        assert_eq!(transcript_after_cancel.len(), 3);
+        assert_eq!(transcript_after_cancel[2].turn.role, "user");
+        assert_eq!(
+            transcript_after_cancel[2]
+                .caused_by
+                .as_ref()
+                .expect("cancelled user execution")
+                .execution_id
+                .as_str(),
+            cancelled.turn_id
+        );
+        assert!(transcript_after_cancel.iter().all(|entry| {
+            entry.turn.role == "user"
+                || entry
+                    .caused_by
+                    .as_ref()
+                    .is_none_or(|execution| execution.execution_id.as_str() != cancelled.turn_id)
+        }));
         assert!(
             !client
                 .active_turn(&session.session_id)
@@ -2076,7 +2250,8 @@ query MobileProbe {
                 .expect("read cancelled turn state")
                 .active
         );
-        daemon.resume().await.expect("resume embedded daemon");
+        let wake = daemon.resume().await.expect("resume embedded daemon");
+        assert_eq!(wake.materialized, 0);
 
         let grapheme_turn = client
             .start_turn(&session.session_id, "run the portable Grapheme probe")
@@ -2110,6 +2285,97 @@ query MobileProbe {
                 .any(|entry| entry.recurring_id == schedule.recurring_id)
         );
 
+        let mut due_definition = daemon
+            .runtime
+            .list_recurring()
+            .await
+            .expect("load embedded recurring definition")
+            .into_iter()
+            .find(|definition| definition.id == schedule.recurring_id)
+            .expect("registered embedded recurring definition");
+        due_definition.next_run_at = Utc::now() - chrono::Duration::seconds(1);
+        daemon
+            .runtime
+            .save_recurring(due_definition)
+            .await
+            .expect("make embedded schedule due");
+
+        let idle_suspend = daemon.suspend_and_drain(Duration::from_secs(2)).await;
+        assert_eq!(idle_suspend.cancellation_requested, 0);
+        assert!(!idle_suspend.timed_out);
+        let schedule_wake = daemon
+            .resume()
+            .await
+            .expect("reconcile due schedule after wake");
+        assert_eq!(schedule_wake.materialized, 1);
+        assert_eq!(schedule_wake.processed_job_ids.len(), 1);
+        let resumed_definition = daemon
+            .runtime
+            .list_recurring()
+            .await
+            .expect("reload reconciled recurring definition")
+            .into_iter()
+            .find(|definition| definition.id == schedule.recurring_id)
+            .expect("reconciled recurring definition");
+        assert!(resumed_definition.last_run_at.is_some());
+        assert!(resumed_definition.next_run_at > Utc::now());
+        let succeeded_after_wake = daemon
+            .runtime
+            .list_jobs_by_state(JobState::Succeeded)
+            .await
+            .expect("list schedule jobs after wake")
+            .into_iter()
+            .filter(|job| job.correlation_id == schedule.recurring_id)
+            .count();
+        assert_eq!(succeeded_after_wake, 1);
+
+        let second_idle_suspend = daemon.suspend_and_drain(Duration::from_secs(2)).await;
+        assert!(!second_idle_suspend.timed_out);
+        let second_wake = daemon.resume().await.expect("repeat wake reconciliation");
+        assert_eq!(second_wake.materialized, 0);
+        assert!(second_wake.processed_job_ids.is_empty());
+
+        let mut restart_due_definition = daemon
+            .runtime
+            .list_recurring()
+            .await
+            .expect("load recurring definition before restart")
+            .into_iter()
+            .find(|definition| definition.id == schedule.recurring_id)
+            .expect("recurring definition before restart");
+        restart_due_definition.next_run_at = Utc::now() - chrono::Duration::seconds(1);
+        daemon
+            .runtime
+            .save_recurring(restart_due_definition)
+            .await
+            .expect("make schedule due before restart");
+
+        const RECOVERED_REPLY: &str = "Recovered exactly once from the interrupted journal.";
+        let recovered_turn_id = "daemon-turn-embedded-recovery-canary";
+        let recovered_envelope = medousa_engine::TurnEnvelope::new(
+            recovered_turn_id,
+            medousa_engine::Principal::operator(),
+        )
+        .with_surface(Some(medousa_engine::TurnSurface {
+            channel_surface: Some("mobile".to_string()),
+            channel_id: Some(session.session_id.clone()),
+            user_id: None,
+        }));
+        let recovery_log = medousa_engine::TurnEventLog::open_in(
+            sandbox.path().join(medousa_engine::TURN_LOG_DIR),
+            recovered_envelope,
+        )
+        .expect("open interrupted turn journal");
+        recovery_log
+            .append(medousa_engine::TurnEvent::FinalResponse {
+                text: RECOVERED_REPLY.to_string(),
+                tool_names: Vec::new(),
+                parts: Vec::new(),
+                committed_at: Utc::now(),
+            })
+            .expect("append interrupted terminal turn");
+        drop(recovery_log);
+
         drop(client);
         crate::session_store::reset_session_store_for_test();
         assert_eq!(Arc::strong_count(&daemon), 1);
@@ -2120,7 +2386,7 @@ query MobileProbe {
 
         let rebooted = EmbeddedDaemon::boot(EmbeddedDaemonConfig::with_chat_client(
             sandbox.path(),
-            installation_id,
+            installation_id.clone(),
             "openai",
             "embedded-test-model",
             chat,
@@ -2166,14 +2432,38 @@ query MobileProbe {
                 .iter()
                 .any(|entry| entry.recurring_id == schedule.recurring_id)
         );
+        let succeeded_after_restart = rebooted
+            .runtime
+            .list_jobs_by_state(JobState::Succeeded)
+            .await
+            .expect("list schedule jobs after restart")
+            .into_iter()
+            .filter(|job| job.correlation_id == schedule.recurring_id)
+            .count();
+        assert_eq!(succeeded_after_restart, 2);
         let rebooted_transcript = rebooted_client
             .load_transcript_entries(&session.session_id)
             .expect("reload transcript after reboot");
-        assert_eq!(rebooted_transcript.len(), 5);
+        assert_eq!(rebooted_transcript.len(), 6);
         assert_eq!(rebooted_transcript[2].turn.role, "user");
         assert_eq!(rebooted_transcript[3].turn.role, "user");
         assert_eq!(rebooted_transcript[4].turn.role, "assistant");
         assert_eq!(rebooted_transcript[4].turn.content, GRAPHEME_REPLY);
+        assert_eq!(rebooted_transcript[5].turn.role, "assistant");
+        assert_eq!(rebooted_transcript[5].turn.content, RECOVERED_REPLY);
+        assert_eq!(
+            rebooted_transcript[5]
+                .caused_by
+                .as_ref()
+                .expect("recovered execution identity")
+                .execution_id
+                .as_str(),
+            recovered_turn_id
+        );
+        assert!(
+            medousa_engine::recover_uncommitted(sandbox.path().join(medousa_engine::TURN_LOG_DIR))
+                .is_empty()
+        );
         let rebooted_replay = rebooted_client
             .replay_turn(&accepted.turn_id, 0)
             .await
@@ -2182,5 +2472,86 @@ query MobileProbe {
             serde_json::to_value(rebooted_replay).expect("serialize reboot replay"),
             serde_json::to_value(events).expect("serialize original events")
         );
+        let rebooted_cancelled_replay = rebooted_client
+            .replay_turn(&cancelled.turn_id, 0)
+            .await
+            .expect("reload cancelled journal after reboot");
+        assert_eq!(
+            rebooted_cancelled_replay
+                .iter()
+                .filter(|event| event.event.is_terminal())
+                .count(),
+            1
+        );
+
+        drop(rebooted_client);
+        crate::session_store::reset_session_store_for_test();
+        assert_eq!(Arc::strong_count(&rebooted), 1);
+        drop(rebooted);
+        tokio::time::sleep(Duration::from_millis(250)).await;
+
+        let credentialed_config = EmbeddedDaemonConfig::credentialed(
+            sandbox.path(),
+            installation_id,
+            "openai",
+            "embedded-credential-test",
+            Some("https://127.0.0.1:9/v1".to_string()),
+            Arc::new(CanaryCredentialProvider),
+        )
+        .expect("credentialed embedded reboot config")
+        .with_foreground_turn_timeout(Duration::from_secs(5));
+        let credentialed = EmbeddedDaemon::boot(credentialed_config)
+            .await
+            .expect("credentialed embedded reboot");
+        let credentialed_client = credentialed.local_client();
+        assert_eq!(
+            credentialed_client
+                .load_transcript_entries(&session.session_id)
+                .expect("transcript before credential probe")
+                .len(),
+            6,
+            "journal recovery must remain idempotent across another boot"
+        );
+        let credential_probe = credentialed_client
+            .start_turn(
+                &session.session_id,
+                "exercise the Keychain credential boundary",
+            )
+            .await
+            .expect("start credential-bound turn");
+        let credential_events = collect_to_eof(
+            credentialed_client
+                .subscribe_turn(&credential_probe.turn_id, 0)
+                .await
+                .expect("subscribe credential-bound turn"),
+        )
+        .await;
+        assert!(matches!(
+            credential_events.last().map(|event| &event.event),
+            Some(TurnStreamEventV2::Error {
+                debug_message: None,
+                ..
+            })
+        ));
+        assert_eq!(
+            credential_events
+                .iter()
+                .filter(|event| event.event.is_terminal())
+                .count(),
+            1
+        );
+        assert!(
+            !serde_json::to_vec(&credential_events)
+                .expect("serialize credential probe events")
+                .windows(SECRET_CANARY.len())
+                .any(|window| window == SECRET_CANARY.as_bytes())
+        );
+
+        drop(credentialed_client);
+        crate::session_store::reset_session_store_for_test();
+        assert_eq!(Arc::strong_count(&credentialed), 1);
+        drop(credentialed);
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        assert_tree_excludes(sandbox.path(), SECRET_CANARY.as_bytes());
     }
 }
