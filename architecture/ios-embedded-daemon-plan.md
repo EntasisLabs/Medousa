@@ -1,252 +1,557 @@
-# iOS embedded daemon
+# iOS daemon parity recovery train
 
-> **Status:** Recovery milestones 1–4 complete — authenticated heavy-work delegation next
+> **Status:** Proposed plan lock — implementation paused pending review
 >
 > **First target:** iOS (`aarch64-apple-ios` and simulator)
 >
-> **Deferred targets:** Android, browser WASM
+> **Later targets:** Android, then browser WASM after the required Stasis updates
 >
 > **Date:** 2026-08-23
+>
+> **Baseline:** [ios-embedded-phase0-baseline.md](ios-embedded-phase0-baseline.md)
 
-## Product invariant
+## Why this recovery train exists
 
-`medousa_daemon` owns every operation that constitutes work: authority,
-sessions, transcript sequencing, turns, memory, tools, persistence, scheduling,
-delegation, and recovery. Embedded, desktop, server, and headless are deployment
-and integration profiles of that same product.
+The objective is not to create a mini daemon, a second mobile product, or a
+reduced behavior model. The objective is to run the existing daemon correctly
+inside a mobile host, using the same logic and contracts under a target-safe
+feature composition.
 
-Medousa Home and the mobile UI are clients. A co-located client receives the
-daemon's highest local privilege through the trusted in-process/local bridge.
-That privilege never crosses a daemon-to-daemon boundary.
+The branch proved useful iOS compile, lifecycle, inference, and portability
+work, but it also allowed the embedded composition to drift into a parallel
+boot and premature delegation path. Four observed failures expose that drift:
 
-An embedded mobile daemon talking to another daemon reuses the existing
-pairing, authentication, signed-envelope, transport, and capability-grant
-flows. New requirements extend those flows; they do not create a privileged
-shortcut.
+1. Embedded boot reaches a delivery endpoint store before the canonical Stasis
+   Surreal schema has created `delivery_endpoint`.
+2. A remote health request returns HTTP 404 over Iroh even though the current
+   full daemon declares `/v1/health`.
+3. Chat history decoding reports a missing required `authority_id` even though
+   the current response contract requires it.
+4. Home can mix local embedded and remote workshop state or routing, allowing
+   profiles, turns, and client state to cross workshop boundaries.
 
-## Product goal
+The table failure is a confirmed schema/bootstrap bug. The 404 and missing
+field are contract/responder identity failures until proven otherwise; they
+must not be papered over with optional fields or fallback routes.
 
-A fresh Medousa install on iPhone boots an embedded deployment of
-`medousa_daemon` inside the Tauri process. The local UI can immediately use its
-privileged daemon client to create and continue conversations, run the
-production agent loop, use the mobile-safe Grapheme tool surface, and persist
-Locus memory. AI inference may remain remote for the first release.
+This document supersedes the earlier milestone order in this file. Previous
+commits are evidence and raw material, not architectural approval. They remain
+subject to the keep/rework/remove audit below.
 
-The user can still select a paired full daemon with the existing workshop
-client. The embedded daemon can later delegate heavier work to that daemon
-through authenticated daemon-to-daemon flows while preserving turn and
-conversation provenance.
+## Product definition
 
-## Locked decisions
+`medousa_daemon` is the product. Full, server, headless, embedded, mobile, and
+eventually WASM are deployment and host compositions of that one product.
 
-| Area | Decision |
-|---|---|
-| Runtime owner | `medousa_daemon`; never Home, Tauri, or a mobile-only service model |
-| Runtime form on iOS | In-process daemon composition; no child process and no loopback HTTP requirement |
-| Client privilege | Co-located Home/mobile client receives explicit local-root capability |
-| Peer privilege | No implicit trust; reuse pairing, authentication, signed envelopes, and capability grants |
-| Control plane | Stasis cluster nodes, capabilities, queue ownership, jobs, and agent envelopes |
-| Conversation identity | Existing Medousa `AuthorityId`, `SessionRef`, `ExecutionRef`, entry sequence, and derivation model |
-| Turn lifecycle | Existing production loop, turn event spine, replay, cancellation, commit, and recovery contracts |
-| Persistence | One daemon-owned Stasis/Locus/Surreal composition rooted in the app sandbox |
-| Tools | Existing daemon tool implementations registered through a mobile-safe allowlist |
-| Inference | Explicit credential-provider adapter backed by the existing daemon integration secret in Keychain |
-| Remote execution | Authenticated daemon-to-daemon request with bounded context and returned provenance |
-| Backgrounding | Foreground execution with cancellation/checkpoint recovery; no promise of suspended execution |
-| Notes/vault | Not required for the first iOS deployment |
-| WASM | Deferred until the iOS daemon profile is proven and later Stasis support is available |
+A fresh iPhone install boots its own daemon-backed **Personal workshop** in the
+app sandbox. The phone can chat and perform all mobile-compatible work without
+another Medousa daemon. AI inference may be remote through a ChatGPT account or
+API credential.
 
-## Existing authority to reuse
+The user may separately choose to:
 
-The mobile deployment must compose these existing contracts instead of
-reimplementing them:
+- portal Home into a paired remote workshop; or
+- grant the phone daemon permission to delegate selected heavy work to a
+  particular paired daemon.
 
-- Medousa authority, session, transcript-entry, execution, and context-manifest
-  types;
-- the immutable authority-scoped session store and deterministic derivation
-  service;
-- the durable turn event log, monotonic sequence assignment, replay cursor,
-  commit marker, cancellation, and active-turn reattachment;
-- Stasis `RuntimeComposition`, control-plane node registration, capability
-  tags, queue ownership, typed jobs, agent envelopes, causation, handoff, and
-  durable waits;
-- pairing identities, signed nonces, bearer/session credentials, signed mesh
-  envelopes, delivery receipts, and LAN/Iroh routing;
-- the existing daemon memory bundle and Locus semantic-index adapter;
-- the production Medousa loop, completion FSM, perception policy, and tool
-  implementations.
+Neither choice is implied by pairing, by the existence of one remote workshop,
+or by the other choice.
 
-Moving one of these implementations into a portable crate is allowed when it
-is behavior-preserving and reduces the iOS compile boundary. Creating a second
-implementation or source of truth is not.
+## Locked invariants
 
-## Target composition
+These are acceptance rules, not implementation suggestions.
+
+1. **One daemon product.** All targets use the same daemon-owned authority,
+   session, turn, persistence, memory, scheduling, and agent-loop logic.
+2. **The daemon owns work.** Home, Tauri, and every other client may request,
+   observe, cancel, or configure work within granted privileges; they do not
+   create a second work engine or source of truth.
+3. **Slim means a compile composition.** Feature gates remove incompatible host
+   adapters and optional native workloads. They do not change common behavior,
+   identity, persistence semantics, or wire contracts.
+4. **Mobile is a complete workshop.** Its authority, profiles, sessions, turns,
+   memory, notes, schedules, and storage are its own. A remote daemon is not its
+   implicit backend.
+5. **One active Home target.** Every daemon-owned Home operation resolves
+   through the same active-workshop target: Personal uses the embedded daemon;
+   a paired workshop uses only that remote daemon.
+6. **Profiles are workshop-local.** A profile ID is meaningful only under its
+   owning workshop authority. Home never passes a remote active profile into a
+   Personal turn or combines profile catalogs.
+7. **Pairing establishes trust, not intent.** Pairing does not switch the active
+   workshop, connect on boot, poll an inactive daemon, or select a delegation
+   target.
+8. **Portal and delegation are independent.** Portal selection is a client
+   routing choice. Delegation is an explicit daemon-owned binding and bounded
+   capability grant. Both default to off for a newly paired relationship.
+9. **Local root stays local.** The co-located Home bridge receives the embedded
+   daemon's highest client privilege. No daemon-to-daemon transport may assert
+   or inherit local-root privilege.
+10. **One canonical schema path.** All deployments run the same ordered base
+    schema/migration bootstrap before opening common stores. Optional native
+    features may add versioned migrations, but may not redefine common tables.
+11. **One contract vocabulary.** Direct in-process, HTTP, and Iroh adapters
+    invoke the same operations and serialize the same DTOs. Transport absence
+    is allowed; semantic drift is not.
+12. **No silent storage substitution.** A configured persistent daemon fails
+    boot with a typed diagnostic when schema or storage initialization fails.
+    It does not silently become a file-backed or in-memory workshop.
+13. **Mobile lifecycle changes availability, not truth.** iOS suspension may
+    stop timers and active execution. Durable Stasis work, schedules, and turn
+    state reconcile on wake/restart using existing recovery semantics.
+14. **No new synchronization model without proof of a gap.** Existing Stasis
+    control-plane identity plus Medousa authority, session sequence, derivation,
+    forking, pairing, and daemon-to-daemon primitives are used first. A new
+    replica/delta protocol requires a named failing contract test and a separate
+    design review.
+
+## Terms that must remain distinct
+
+| Term | Owner | Meaning |
+|---|---|---|
+| Personal workshop | Phone daemon | The independent workshop rooted in the mobile app sandbox |
+| Active workshop | Home client | The one daemon whose UI state and operations Home currently displays |
+| Known workshop | Home client | A saved connection entry; it implies neither active routing nor delegation |
+| Paired peer | Existing auth flow | A trusted remote identity and credentials with only granted capabilities |
+| Portal | Home client | An intentional switch from Personal to a remote workshop |
+| Delegation binding | Phone daemon | An explicit, revocable choice of peer and capability ceiling for heavy work |
+| Deployment profile | Build/host | A feature and adapter composition of the same daemon product |
+| User profile | Selected daemon | An identity lane nested inside exactly one workshop authority |
+
+The topology is intentionally asymmetric:
 
 ```text
-Medousa mobile UI (client)
-    |
-    | explicit local-root client capability
-    v
-iOS in-process medousa_daemon deployment
-    |-- Stasis RuntimeComposition and control plane
-    |-- existing authority/session/turn services
-    |-- Locus + Surreal mobile persistence
-    |-- production agent loop
-    |-- filtered existing tool registry
-    `-- Keychain-backed inference adapter
+                         explicit portal selection
+Medousa Home ----------------------------------------------+
+    |                                                      |
+    | Personal selected                                    v
+    | local-root bridge                         paired remote daemon
+    v                                                      |
+phone medousa_daemon                                       | own authority,
+    | own authority, profiles, sessions, turns             | profiles, data
+    | own Surreal + Stasis + Locus data                     |
+    |                                                      |
+    +---- explicit delegation binding + existing auth -----+
 
-Paired full medousa_daemon
-    ^
-    | existing pairing + auth + signed transport
-    | bounded context grant / task request / result provenance
-    `---------------------------------------------
+Pairing alone creates neither arrow.
 ```
 
-The UI may also select a paired workshop directly through the existing SDK and
-Iroh transport. That remains a client-to-daemon connection. Transparent heavy
-work delegation is a separate daemon-to-daemon operation and must not be
-implemented in the UI.
+## Target capability composition
 
-## Identity and trust boundaries
+The shared daemon baseline is the default behavioral layer. Host and workload
+features are additive around it.
 
-- The embedded daemon has the stable Medousa authority derived from its local
-  installation identity.
-- The UI does not mint daemon authority, session, execution, job, or turn
-  identities.
-- Stasis owns cluster-node identity and orchestration correlation; Medousa owns
-  conversation authority and provenance. Any mapping is metadata, not a new
-  identity system.
-- A local-root capability is admitted only by the co-located daemon bridge.
-- Pairing a remote daemon grants only the capabilities represented by the
-  existing authenticated relationship.
-- A remote daemon rejects local-root claims received over network transports.
-- Replica imports preserve session IDs, entry IDs, entry sequences, and content
-  digests and fail closed on conflicts.
+### Shared across full and mobile deployments
 
-## Compile-boundary strategy
+- installation/workshop authority and user-profile registry;
+- canonical Surreal bootstrap and daemon-owned persistence;
+- Stasis runtime composition, durable jobs, schedules, recovery, and control
+  plane;
+- Locus memory and semantic indexing through the existing adapter;
+- sessions, transcript sequencing, derivation/forking, turns, cancellation,
+  replay, and recovery;
+- the production async agent loop and turn-completion protocol;
+- notes stored under the owning daemon's filesystem/sandbox authority;
+- lean Grapheme and the mobile-compatible subset of existing daemon tools;
+- inference ports and explicit credentials;
+- generated daemon operation/DTO contracts;
+- pairing, authentication, signed-envelope, and capability-grant primitives
+  needed by an explicitly configured remote relationship.
 
-The first engineering problem is limiting what the daemon deployment compiles,
-not inventing a smaller daemon API.
+### iOS host adapters
 
-1. Characterize the production loop and retain its golden parity tests.
-2. Move already-existing runtime logic behind portable crate/module boundaries
-   only where target compilation requires it.
-3. Gate host-only adapters such as process execution, desktop vault access,
-   browser hosts, full Grapheme host support, delivery surfaces, and telemetry.
-4. Build the mobile daemon from the same services with a restricted adapter and
-   capability composition.
-5. Measure the resolved iOS dependency graph at every milestone; a new crate is
-   not considered portable merely because it has `default-features = false`.
+- in-process lifecycle ownership rather than a child process;
+- a local-root Tauri client bridge rather than loopback HTTP;
+- app-sandbox filesystem roots;
+- Keychain-backed inference and pairing secrets;
+- foreground/background/wake hooks that trigger daemon recovery;
+- target-supported outbound transport for explicit portal or delegation use.
 
-Compile-time features choose available adapters. Runtime Stasis capabilities
-remain the source of truth for what a deployed daemon advertises and accepts.
+### Native full deployment additions
 
-## Genuine integration gaps
+- Axum/Mio listeners and native server transports;
+- PTY and process hosting;
+- Forge, Coder, and Detamu workloads;
+- full native Grapheme/host integrations;
+- other process-heavy or desktop-only delivery/integration adapters.
 
-The initial iOS deployment needs only the following new boundaries:
+These additions may advertise extra capabilities. They must not replace the
+shared services with different implementations.
 
-- Tauri lifecycle ownership for starting/stopping the in-process daemon;
-- a local privileged client bridge to that daemon;
-- explicit daemon-owned Keychain-backed inference credentials;
-- iOS foreground/background cancellation and recovery policy;
-- a mobile-safe registration filter over existing tools;
-- target-specific feature gates and dependency checks.
+### Deferred WASM work
 
-Distributed heavy-work execution additionally requires:
+WASM is not an iOS acceptance gate. After iOS parity is proven and the needed
+Stasis releases land, the next effort gates or replaces native listener,
+filesystem, timer, and networking hosts such as Axum/Mio. It reuses the same
+daemon logic and contracts; it does not begin another slim-daemon architecture.
 
-- a bounded context manifest and authenticated task request;
-- remote materialization of a derived worker session;
-- result and provenance receipts;
-- idempotent replica deltas with a high-water cursor.
+## Compile and module boundary rule
 
-These additions must attach to existing session, turn, mesh, and Stasis
-contracts.
+The Rust library consumed by the daemon binary and mobile host must expose one
+shared daemon composition. The repository's existing `medousa-sdk` name remains
+the client SDK; this plan does not create a competing "core SDK" product.
 
-## Explicitly forbidden parallel architecture
+Feature gates should sit at target-incompatible adapters or optional workload
+registration. A shared service must not have separate `full-daemon` and
+`embedded-daemon` implementations merely because the compositions enter from
+different hosts. In particular:
 
-Do not add:
+- full and embedded boot call the same ordered bootstrap phases;
+- schema and migration modules compile in every persistent deployment;
+- transport adapters call common operation/service handlers;
+- common DTO fields do not become optional by target;
+- full builds are the shared baseline plus native capabilities;
+- mobile builds are the shared baseline plus iOS adapters and without
+  unsupported native workloads.
 
-- a client-owned session or turn store;
-- a mobile-only node descriptor beside Stasis `ClusterNode`;
-- a mobile runtime profile used as a second capability/control plane;
-- a second turn registry, stream sequencer, replay model, or outcome store;
-- an embedded identity file beside the daemon installation authority;
-- copied Locus adapters or copied tool implementations;
-- a bespoke daemon-to-daemon authentication path;
-- client code that packages, schedules, executes, or commits daemon work.
+## Current branch recovery policy
 
-## Recovery milestones
+Before adding behavior, compare the branch and working tree against the
+pre-mobile baseline and classify each hunk. Do not discard the branch wholesale
+and do not preserve code merely because it already landed.
 
-Each milestone lands as one reviewed commit after its acceptance gates pass.
+### Keep
 
-### Milestone 1 — iOS qualification
+- behavior-preserving moves that let the existing daemon logic compile on iOS;
+- target qualification, dependency fixes, and repeatable device/simulator
+  gates;
+- thin Tauri lifecycle, Keychain, sandbox, and local-root bridge adapters;
+- changes that extend an existing daemon contract for a demonstrated mobile
+  host gap;
+- mobile-safe filtering that registers existing tools without copying their
+  implementations;
+- transport diagnostics and tests that do not introduce new routing authority.
 
-- Pin the mobile-capable Stasis/Locus releases.
-- Compile/link Stasis + Locus, lean Grapheme, `medousa-engine`, and Keychain for
-  device and simulator targets.
-- Preserve the strict Keychain round-trip diagnostic and startup/size baseline.
-- Add the repeatable CI dependency gate.
+### Rework onto the shared path
 
-### Milestone 2 — portable daemon runtime boundary
+- the embedded bootstrap and store initialization;
+- embedded direct commands that bypass common daemon operations;
+- schema setup currently owned by more than one module;
+- inference and tool composition that currently depends on a parallel turn
+  owner;
+- useful bounded delegation grants, provenance, or transport work that can be
+  attached to existing Stasis/Medousa primitives after local parity is green.
 
-- Recover only behavior-preserving moves of the production loop, completion
-  FSM, loop state, and policy.
-- Keep daemon compatibility reexports while downstream imports migrate.
-- Remove any parallel node/capability model from the extraction.
-- Prove daemon golden-turn parity and measure the resulting iOS graph.
+### Remove or leave out of the build
 
-### Milestone 3 — mobile daemon adapters
+- duplicate authority, identity, session, turn, stream, replay, schema, or
+  capability models;
+- a second embedded-only implementation of daemon business logic;
+- auto-selection of the only paired portal as a delegation target;
+- boot-time connection to a remote merely because Home knows it;
+- Home code that packages, schedules, executes, or commits daemon work;
+- remote-profile fallback during Personal turns;
+- silent persistence fallback;
+- any replica/synchronization protocol duplicating existing Stasis and Medousa
+  primitives;
+- PTY, Forge, Coder, Detamu, Axum/Mio listeners, or other unsupported native
+  workloads in the mobile composition.
 
-- Add an explicit-credential AI adapter implementing the existing Stasis port.
-  The iOS composition in Milestone 4 binds it to the daemon integration secret
-  already stored in Keychain.
-- Add capability-confined filesystem entry points useful to all daemon
-  deployments.
-- Express the mobile tool surface as an exact registration ceiling over
-  existing implementations. Stasis capabilities and turn admission remain
-  authoritative.
-- Reuse the shared Stasis/Locus composition and apply compatibility fixes to
-  its one semantic adapter.
+The modified iOS Live Activity `Info.plist` is deployment/user work outside this
+train and must remain untouched.
 
-### Milestone 4 — local iOS daemon turn
+## Phased recovery plan
 
-**Status: complete.** The iOS host now boots the same daemon composition in
-Tauri managed state, routes only the selected personal/local workshop through
-an explicit local-root client, and leaves every remote workshop on the existing
-authenticated SDK/transport path. A deterministic production-loop test locks
-session/transcript persistence, monotonic live and replay events, suspend
-cancellation, resume heartbeat, credential redaction, and same-root reboot.
+Every phase lands as one reviewed commit only after its acceptance gates pass.
+If a phase reveals a product-level choice or a missing upstream primitive, stop
+at the boundary and amend this plan before proceeding.
 
-- Boot one embedded daemon from Tauri managed state.
-- Grant the co-located UI local-root capability.
-- Create a daemon-owned session and execute one production foreground turn.
-- Persist/replay it through the existing session and turn stores.
-- Verify suspend, cancellation, restart, and credential redaction behavior.
+### Phase 0 — Recover the branch to one-daemon boundaries
 
-### Milestone 5 — authenticated heavy-work delegation
+**Goal:** Remove architectural violations without throwing away useful mobile
+qualification and adapter work.
 
-- Extend the existing mesh/task request and context-derivation contracts.
-- Materialize a bounded worker session on the paired daemon.
-- Execute using existing Stasis job/agent identity and return provenance.
-- Prove remote peers cannot exercise local-root authority.
+Work:
 
-### Milestone 6 — replica deltas
+- inventory committed changes since the pre-mobile baseline plus the entire
+  uncommitted delegation diff;
+- record each changed area as keep, rework, or remove under the policy above;
+- make premature delegation dormant and default-unbound;
+- remove automatic portal/delegation selection and any client-owned work path;
+- preserve behavior-moving compile work and thin host adapters;
+- add focused characterization tests for the four reported failures where the
+  existing harness permits them;
+- establish the exact full, embedded, iOS device, and iOS simulator build
+  commands used by every later phase.
 
-- Export and import idempotent transcript deltas using existing identities.
-- Track a high-water cursor and preserve the single-writer rule.
-- Fail closed on digest/sequence conflicts and test interrupted synchronization.
+Gate:
 
-## Acceptance gates
+- both full and embedded libraries compile;
+- existing daemon golden-turn behavior remains green;
+- no pairing or workshop-registry state can activate delegation;
+- the diff ledger accounts for every branch-owned change;
+- no unrelated user file enters the commit.
 
-Every retained or new slice must answer all of these questions:
+### Phase 1 — One boot pipeline and one canonical schema
 
-1. Which daemon-owned contract is authoritative?
-2. Is this implementation reused, moved, or genuinely new?
-3. Does any client become a second source of truth?
-4. Does any network path assume local privilege?
-5. Do desktop daemon behavior and golden-turn tests remain unchanged?
-6. Does the slice compile for both iOS device and simulator targets?
-7. Does it materially improve or preserve the measured mobile dependency graph?
+**Goal:** Make every persistent deployment initialize the same daemon
+prerequisites in the same order.
 
-If a change cannot pass those gates, it does not belong in the mobile daemon
-recovery.
+Work:
+
+- extract or expose the existing full-daemon bootstrap phases as the shared
+  daemon bootstrap; do not create a second generalized runtime;
+- make full binary, headless/server hosts, and iOS in-process host call it;
+- define one ordered, versioned base schema/migration manifest for common
+  Medousa, Stasis, and Locus stores;
+- run that manifest before resolving, reading, seeding, or registering any
+  store, node, schedule, or delivery endpoint;
+- remove duplicate ownership of delivery table definitions;
+- make persistent boot failures consistent and fail closed across targets;
+- expose a common schema revision for diagnostics.
+
+Gate:
+
+- a fresh full daemon and fresh embedded daemon create the same common schema;
+- both reopen an existing database and apply upgrades idempotently;
+- endpoint-enabled embedded boot cannot query `delivery_endpoint` before its
+  migration;
+- stale-lock recovery does not skip or partially apply schema work;
+- a forced schema failure aborts both deployments rather than selecting a
+  different store;
+- common schema manifests/revisions match across feature builds.
+
+This phase fixes the confirmed `delivery_endpoint` failure and the structural
+cause that allowed schema behavior to diverge.
+
+### Phase 2 — One operation contract across direct, HTTP, and Iroh surfaces
+
+**Goal:** Make transport an adapter around a shared responder, with enough
+identity to diagnose the process actually answering.
+
+Work:
+
+- route in-process, HTTP, and Iroh requests through the same daemon operations
+  and generated DTOs;
+- add a shared runtime descriptor containing at least workshop authority,
+  product version/build revision, contract revision, base schema revision,
+  deployment target, and advertised capabilities;
+- return that descriptor from the direct health operation and `/v1/health`;
+- make clients fail with a typed compatibility diagnostic when required
+  contract identity is absent or incompatible;
+- keep `authority_id` required in session/history coordinates and find the
+  actual old/wrong responder instead of defaulting it;
+- include HTTP method and path in Iroh transport errors without logging bearer
+  tokens or response bodies containing secrets;
+- verify generated route inventories against the full router.
+
+Gate:
+
+- direct, HTTP, and Iroh health calls decode the same descriptor fields;
+- authenticated `/v1/health` over LAN and Iroh cannot return an unexplained 404;
+- session creation/history DTOs round-trip across all supported transports with
+  the same required `authority_id`;
+- a stale or wrong daemon build is named by revision in the error;
+- contract generation and documentation checks are green.
+
+This phase resolves the reported health 404 and missing `authority_id` by
+proving the responder and contract, not by adding fallbacks.
+
+### Phase 3 — Strict workshop routing and state isolation in Home
+
+**Goal:** Ensure Home is a client of exactly one selected daemon at a time and
+never combines authorities.
+
+Work:
+
+- introduce one active-workshop resolver used by every daemon-owned Tauri/Home
+  operation, including health, identity/profiles, sessions, turns, notes,
+  memory, schedules, and capabilities;
+- route Personal exclusively through the embedded local-root bridge;
+- route a selected paired workshop exclusively through its authenticated remote
+  transport;
+- stop mobile development URL rewriting from mutating the Personal workshop;
+- make switching atomic from the UI's perspective: stop old streams/effects,
+  clear or park old scoped state, select the target, then load its state;
+- key persisted client state such as last session, pins, drafts, promoted asks,
+  and chat configuration by workshop ID and, where needed, authority;
+- validate every selected profile against the active workshop before turn
+  admission;
+- keep the Home known-workshop registry separate from the phone daemon's
+  delegation configuration.
+
+Gate:
+
+- Personal health/profile/session/turn tests make zero remote calls;
+- paired-workshop tests make zero embedded calls;
+- switching cannot render or submit with the previous workshop's profile,
+  session, stream, or draft;
+- merely adding or pairing a workshop starts no connection, polling, switch, or
+  delegation;
+- deleting/revoking a portal cannot damage Personal data;
+- isolation tests use distinct authority/profile/session canaries.
+
+### Phase 4 — Restore the complete mobile-compatible daemon surface
+
+**Goal:** Make mobile a full independent workshop within the limits of its host,
+not a chat-only substitute runtime.
+
+Work:
+
+- compare the pre-branch full daemon's shared services against the mobile
+  composition and close only target-related gaps;
+- compose the existing authority/profile, session/turn, Stasis, Locus, notes,
+  lean Grapheme, scheduling, recovery, and async agent-loop implementations;
+- register the existing mobile-compatible tools under an explicit capability
+  ceiling;
+- keep notes and file work within the phone daemon's sandbox authority;
+- bind ChatGPT-account and/or API-key inference through the existing daemon
+  inference port and Keychain-backed credentials;
+- gate unsupported host integrations at their adapters/registrations rather
+  than gating shared daemon logic behind `full-daemon`.
+
+Gate:
+
+- with no paired workshop configured, an iPhone can create a local profile,
+  start/reopen a session, complete an inferred turn, replay it, use memory, and
+  create/read a note;
+- a mobile-safe Grapheme tool runs through the production turn path;
+- the descriptor advertises the same common capabilities and only truthful
+  host-specific differences;
+- PTY, Forge, Coder, Detamu, and native listener graphs do not enter the mobile
+  dependency closure;
+- the full daemon still uses the same shared logic and retains its additional
+  capabilities.
+
+### Phase 5 — iOS lifecycle, schedules, and recovery hardening
+
+**Goal:** Make daemon truth survive real mobile lifecycle behavior.
+
+Work:
+
+- treat suspend as loss of execution time, not loss of durable state;
+- cancel or checkpoint live leaves within a bounded background deadline;
+- on wake/restart, run the existing Stasis recovery and schedule reconciliation
+  path before admitting conflicting work;
+- define and test catch-up/coalescing behavior using Stasis policies rather than
+  an always-running mobile timer;
+- verify same-root reopen, Keychain credential redaction, schema upgrade, memory
+  reopen, and turn reattachment;
+- measure startup, memory, binary size, thermal behavior, and cancellation on a
+  physical device as well as simulator.
+
+Gate:
+
+- a scheduled item persisted before suspension is recovered according to its
+  policy after wake/restart;
+- interrupted turns do not duplicate transcript sequence or terminal events;
+- restart reopens the same authority, profiles, notes, sessions, memory, and
+  Stasis work;
+- credentials never enter Surreal, logs, events, or crash diagnostics;
+- iOS device and simulator gates are repeatable.
+
+At this point the independent mobile product goal is complete.
+
+### Phase 6 — Explicit remote portal and heavy-work delegation
+
+**Goal:** Add optional distributed compute without changing workshop ownership
+or reimplementing existing distributed primitives.
+
+Work:
+
+- keep portal selection as the existing explicit Home workshop switch;
+- add a separate daemon-owned, revocable delegation binding whose default is
+  `None` and whose target is an exact paired peer identity;
+- require an explicit user action to create/change that binding and an existing
+  authenticated capability grant to use it;
+- reuse Stasis job/agent/control-plane identity and existing Medousa session
+  derivation, sequence, fork, turn, pairing, auth, and signed transport flows;
+- audit the current uncommitted task/grant/provenance work and retain only the
+  fields or adapters that bridge a demonstrated gap;
+- derive a bounded remote worker context and return a result/provenance receipt
+  to the initiating daemon-owned turn;
+- keep both workshop stores independent; delegation does not import remote
+  profiles, switch Home, or merge session catalogs.
+
+Gate:
+
+- pairing alone leaves delegation unset and emits no task traffic;
+- selecting a remote portal does not bind it for delegation;
+- binding a peer does not switch Home away from Personal;
+- multiple paired peers never trigger heuristic or "only peer" selection;
+- remote peers cannot assert local-root privilege or exceed the granted tool,
+  context, deadline, and resource ceiling;
+- retries are idempotent under existing identities;
+- the initiating daemon records returned provenance without creating a second
+  transcript owner.
+
+### Phase 7 — Release parity and future-target handoff
+
+**Goal:** Prove the architecture as a supported product path and leave a clean
+boundary for Android/WASM.
+
+Work:
+
+- run repository CI parity plus target compile/dependency checks;
+- add cross-feature schema, contract, and capability-manifest diff gates;
+- document the independent Personal workflow, explicit portal workflow, and
+  explicit delegation workflow;
+- record measured iOS dependency and runtime budgets against the Phase 0
+  baseline;
+- inventory remaining native host assumptions for Android and WASM without
+  implementing a new runtime model.
+
+Gate:
+
+- full and mobile deployments pass the same common behavior suite;
+- schema/contract drift fails CI before packaging;
+- user documentation never implies that pairing, portal, or delegation are the
+  same action;
+- WASM follow-on work is limited to named host adapters and upstream readiness.
+
+## Error-to-phase map
+
+| Observed issue | Owning phase | Required proof |
+|---|---|---|
+| Missing `delivery_endpoint` table | Phase 1 | Same ordered schema bootstrap before endpoint access |
+| `/v1/health` 404 over Iroh | Phase 2 | Shared operation + method/path/build-aware transport test |
+| Missing `authority_id` while loading chat | Phase 2 | Required cross-transport DTO round-trip and responder revision |
+| Profiles/turns/state may mix across workshops | Phase 3 | Single target resolver and distinct-authority isolation tests |
+| Remote chosen without explicit intent | Phase 0 and Phase 6 | Default-unbound behavior and separate portal/delegation tests |
+
+## Cross-phase verification matrix
+
+The exact commands are recorded in Phase 0 and then kept stable. The matrix
+must cover:
+
+| Dimension | Required variants |
+|---|---|
+| Rust composition | full daemon; embedded daemon without default full features |
+| Apple target | iOS device; arm64 simulator |
+| Database state | fresh; existing current; prior revision; failed/locked reopen |
+| Transport | in-process direct; authenticated HTTP/LAN; authenticated Iroh |
+| Workshop | Personal only; one paired inactive; paired active; multiple paired |
+| Identity | distinct authority, profile, session, and turn canaries |
+| Lifecycle | first boot; warm reopen; suspend/wake; killed/restart |
+| Capability | common mobile-safe surface; full native additions; denied remote root |
+
+Tests that rely on optional fields, silent fallback, sleeps, shared global
+state, or one-process assumptions do not count as parity proof.
+
+## Commit and review cadence
+
+- The approved plan itself may land as the plan-lock commit.
+- Each numbered phase is one cohesive commit after its gates pass.
+- Do not mix phases merely because nearby files overlap.
+- Before each commit, show the scoped diff, tests run, and retained known risks.
+- Never include unrelated worktree changes.
+- Prefer corrective commits over destructive history rewriting unless the user
+  explicitly requests a rebase.
+- If a phase fails an invariant, stop and revise the plan; do not compensate in
+  a later phase with another abstraction.
+
+## Final definition of done
+
+The recovery is complete when an iPhone, with no paired Medousa daemon, boots
+its own workshop and uses the same daemon logic to manage profiles, sessions,
+turns, memory, notes, schedules, recovery, tools, and persisted state while
+using remote AI inference only as configured.
+
+Home can intentionally portal to another workshop without contaminating either
+workshop. Separately, the phone daemon can intentionally delegate bounded heavy
+work to an exact authenticated peer without assuming privilege, switching the
+UI, merging profiles, or inventing new turn/replica ownership.
+
+Full desktop/server builds remain that same daemon with additional native host
+capabilities. Future WASM work changes adapters and feature closure—not the
+product or its behavioral contracts.
