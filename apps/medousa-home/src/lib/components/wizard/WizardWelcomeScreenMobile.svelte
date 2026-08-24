@@ -1,35 +1,23 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { ChevronRight, Laptop, LoaderCircle, QrCode, Wifi } from "@lucide/svelte";
-  import { checkDaemonHealth, getDaemonUrl, setDaemonUrl } from "$lib/daemon";
-  import { inferDevDaemonUrl, isLoopbackDaemonUrl } from "$lib/daemonConnection";
+  import { ChevronRight, Laptop, QrCode } from "@lucide/svelte";
   import { setPairDeepLinkHandler } from "$lib/mobileNative";
   import { wizard } from "$lib/stores/wizard.svelte";
   import { parsePairQrUrl } from "$lib/utils/pairingUrl";
-  import { completePairingFromQr } from "$lib/utils/pairingClient";
   import { workshops } from "$lib/stores/workshops.svelte";
   import {
-    workshopPairingFromHostHint,
     workshopPairingStepsHint,
     workshopQrScanHint,
   } from "$lib/platformCopy";
 
-  type ConnectMode = "address" | "pair";
-
-  let connectMode = $state<ConnectMode>("address");
   let daemonUrl = $state("");
   let pairLink = $state("");
-  let testing = $state(false);
   let statusMessage = $state<string | null>(null);
-  let connected = $state(false);
   let showHelp = $state(false);
 
   onMount(() => {
-    void loadInitialUrl();
-
     setPairDeepLinkHandler((url) => {
       if (applyPairLink(url)) {
-        connectMode = "pair";
         statusMessage = "Pairing link received — tap Continue when ready.";
       }
     });
@@ -38,34 +26,6 @@
       setPairDeepLinkHandler(null);
     };
   });
-
-  async function loadInitialUrl() {
-    try {
-      const current = (await getDaemonUrl()).trim();
-      if (current && !isLoopbackDaemonUrl(current)) {
-        daemonUrl = current;
-      } else {
-        daemonUrl = inferDevDaemonUrl() ?? "";
-      }
-      if (daemonUrl) {
-        await testConnection(false);
-      }
-    } catch {
-      daemonUrl = inferDevDaemonUrl() ?? "";
-    }
-  }
-
-  function urlLooksValid(value: string): boolean {
-    try {
-      const parsed = new URL(value.trim());
-      return (
-        (parsed.protocol === "http:" || parsed.protocol === "https:") &&
-        !isLoopbackDaemonUrl(parsed.toString())
-      );
-    } catch {
-      return false;
-    }
-  }
 
   function applyPairLink(raw: string): boolean {
     const parsed = parsePairQrUrl(raw);
@@ -81,103 +41,22 @@
     }
   }
 
-  async function testConnection(showErrors = true) {
-    if (connectMode === "pair" && pairLink.trim() && !urlLooksValid(daemonUrl)) {
-      if (!applyPairLink(pairLink)) {
-        if (showErrors) {
-          statusMessage = "Paste the full medousa:// pairing link from your computer.";
-        }
-        connected = false;
-        return;
-      }
-    }
-
-    if (!urlLooksValid(daemonUrl)) {
-      if (showErrors) {
-        statusMessage =
-          connectMode === "pair"
-            ? workshopPairingFromHostHint()
-            : "Enter your computer's address — e.g. http://192.168.1.42:7419";
-      }
-      connected = false;
-      return;
-    }
-
-    testing = true;
-    statusMessage = null;
-    wizard.error = null;
-    try {
-      await setDaemonUrl(daemonUrl.trim());
-      const health = await checkDaemonHealth();
-      connected = health.ok;
-      statusMessage = health.ok
-        ? "Connected — you're ready to talk."
-        : health.message || "Could not reach Medousa on that computer yet.";
-    } catch (err) {
-      connected = false;
-      statusMessage = err instanceof Error ? err.message : String(err);
-    } finally {
-      testing = false;
-    }
-  }
-
   async function continueSetup() {
-    let parsedPairLink = null as ReturnType<typeof parsePairQrUrl>;
-    if (connectMode === "pair" && pairLink.trim()) {
-      parsedPairLink = parsePairQrUrl(pairLink);
-      applyPairLink(pairLink);
-    }
-
-    if (!urlLooksValid(daemonUrl)) {
-      statusMessage =
-        connectMode === "pair"
-          ? "Paste a valid pairing link before continuing."
-          : "Enter a valid address before continuing.";
+    if (!applyPairLink(pairLink)) {
+      statusMessage = "Paste a valid pairing link before continuing.";
       return;
     }
 
     wizard.busy = true;
     wizard.error = null;
     try {
-      if (connectMode === "pair" && pairLink.trim()) {
-        const canBootstrapOverIroh = Boolean(parsedPairLink?.irohTicket);
-        if (!canBootstrapOverIroh && !connected) {
-          await testConnection(false);
-        }
-        if (!canBootstrapOverIroh && !connected) {
-          wizard.error =
-            statusMessage ??
-            "Could not connect yet. Check that Medousa is running on your computer and on the same Wi‑Fi.";
-          return;
-        }
-        try {
-          const paired = await completePairingFromQr({
-            qrUrl: pairLink.trim(),
-            daemonUrl: daemonUrl.trim(),
-          });
-          await workshops.onPairComplete(paired);
-          if (workshops.pendingSwitchAfterPair) {
-            await workshops.confirmSwitchAfterPair();
-          }
-          statusMessage = `Paired with ${paired.workshopPeerName} — you're ready to talk.`;
-        } catch (err) {
-          wizard.error = err instanceof Error ? err.message : String(err);
-          return;
-        }
-      } else {
-        await setDaemonUrl(daemonUrl.trim());
-        if (!connected) {
-          await testConnection(false);
-        }
-        if (!connected) {
-          wizard.error =
-            statusMessage ??
-            "Could not connect yet. Check that Medousa is running on your computer and on the same Wi‑Fi.";
-          return;
-        }
-      }
+      const paired = await workshops.joinFromPairLink(pairLink.trim());
+      statusMessage =
+        `Paired with ${paired.workshopPeerName}. Personal stays active until you choose to switch.`;
 
       await wizard.continue("mobile-client");
+    } catch (err) {
+      wizard.error = err instanceof Error ? err.message : String(err);
     } finally {
       wizard.busy = false;
     }
@@ -191,11 +70,8 @@
   }
 
   const canContinue = $derived.by(() => {
-    if (wizard.busy || testing) return false;
-    if (connectMode === "pair") {
-      return pairLink.trim().length > 0 || urlLooksValid(daemonUrl);
-    }
-    return urlLooksValid(daemonUrl);
+    if (wizard.busy) return false;
+    return parsePairQrUrl(pairLink) !== null;
   });
 </script>
 
@@ -205,8 +81,8 @@
     Link to your computer
   </h1>
   <p class="mt-3 text-sm leading-relaxed text-content-secondary">
-    Medousa on your phone talks to Medousa on your computer over home Wi‑Fi. Models and memory
-    stay on the computer — this app is your window in.
+    Your phone keeps its own Personal workshop. Pairing saves your computer as another workshop;
+    it will not switch or send work there unless you choose it.
   </p>
 
   <div class="mt-6 rounded-xl border border-primary-500/35 bg-primary-500/10 p-5">
@@ -222,91 +98,36 @@
     </div>
   </div>
 
-  <div class="mt-6 flex gap-2">
-    <button
-      type="button"
-      class="btn min-h-10 flex-1 text-sm {connectMode === 'pair'
-        ? 'variant-filled-primary'
-        : 'variant-soft'}"
-      disabled={wizard.busy || testing}
-      onclick={() => (connectMode = "pair")}
-    >
+  <label class="mt-6 block">
+    <span class="block text-sm font-medium text-surface-100">
       <QrCode class="mr-2 inline h-4 w-4" aria-hidden="true" />
       Pairing link
-    </button>
-    <button
-      type="button"
-      class="btn min-h-10 flex-1 text-sm {connectMode === 'address'
-        ? 'variant-filled-primary'
-        : 'variant-soft'}"
-      disabled={wizard.busy || testing}
-      onclick={() => (connectMode = "address")}
-    >
-      Enter address
-    </button>
-  </div>
-
-  {#if connectMode === "pair"}
-    <label class="mt-6 block">
-      <span class="block text-sm font-medium text-surface-100">Pairing link</span>
-      <span class="workshop-faint mt-0.5 block text-xs">
-        {workshopQrScanHint()}
-      </span>
-      <input
-        class="input mt-2 w-full font-mono text-sm"
-        type="text"
-        inputmode="url"
-        autocapitalize="off"
-        autocorrect="off"
-        spellcheck="false"
-        placeholder="medousa://pair/1.0?a=…"
-        bind:value={pairLink}
-        oninput={onPairLinkInput}
-        onchange={onPairLinkInput}
-        disabled={wizard.busy || testing}
-      />
-    </label>
-    {#if daemonUrl && urlLooksValid(daemonUrl)}
-      <p class="workshop-faint mt-2 text-xs">
-        Computer address: <span class="font-mono text-content-secondary">{daemonUrl}</span>
-      </p>
-    {/if}
-  {:else}
-    <label class="mt-6 block">
-      <span class="block text-sm font-medium text-surface-100">Computer address</span>
-      <span class="workshop-faint mt-0.5 block text-xs">Same Wi‑Fi as this phone</span>
-      <input
-        class="input mt-2 w-full font-mono text-sm"
-        type="url"
-        inputmode="url"
-        autocapitalize="off"
-        autocorrect="off"
-        spellcheck="false"
-        placeholder="http://192.168.1.42:7419"
-        bind:value={daemonUrl}
-        disabled={wizard.busy || testing}
-      />
-    </label>
+    </span>
+    <span class="workshop-faint mt-0.5 block text-xs">
+      {workshopQrScanHint()}
+    </span>
+    <input
+      class="input mt-2 w-full font-mono text-sm"
+      type="text"
+      inputmode="url"
+      autocapitalize="off"
+      autocorrect="off"
+      spellcheck="false"
+      placeholder="medousa://pair/1.0?a=…"
+      bind:value={pairLink}
+      oninput={onPairLinkInput}
+      onchange={onPairLinkInput}
+      disabled={wizard.busy}
+    />
+  </label>
+  {#if daemonUrl}
+    <p class="workshop-faint mt-2 text-xs">
+      Computer address: <span class="font-mono text-content-secondary">{daemonUrl}</span>
+    </p>
   {/if}
 
-  <div class="mt-4 flex flex-wrap gap-3">
-    <button
-      type="button"
-      class="btn variant-soft min-h-11"
-      disabled={wizard.busy || testing || (connectMode === "address" && !daemonUrl.trim())}
-      onclick={() => void testConnection()}
-    >
-      {#if testing}
-        <LoaderCircle class="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-      {:else}
-        <Wifi class="mr-2 h-4 w-4" aria-hidden="true" />
-      {/if}
-      Test connection
-    </button>
-  </div>
-
   {#if statusMessage}
-    <p class="mt-4 text-sm {connected ? 'text-content-success' : 'text-content-warning'}">{statusMessage}</p>
+    <p class="mt-4 text-sm text-content-warning">{statusMessage}</p>
   {/if}
 
   <button
@@ -325,7 +146,7 @@
         {workshopPairingStepsHint()}
         if needed.
       </li>
-      <li>You can change this address later in Settings → Connection.</li>
+      <li>You can pair or switch workshops later in Settings → Connection.</li>
     </ul>
   {/if}
 
@@ -333,7 +154,7 @@
     <button
       type="button"
       class="btn variant-ghost min-h-11"
-      disabled={wizard.busy || testing}
+      disabled={wizard.busy}
       onclick={() => void skipSetup()}
     >
       Skip for now

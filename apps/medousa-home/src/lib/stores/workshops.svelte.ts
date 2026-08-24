@@ -1,4 +1,3 @@
-import { workshopDefaultsQueryPort } from "$lib/runtime/workshopDefaultsPorts";
 import { getDaemonUrl } from "$lib/daemon";
 import {
   addLocalWorkshop,
@@ -70,6 +69,7 @@ export class WorkshopsStore {
     this.error = null;
     try {
       this.registry = await loadWorkshopRegistry();
+      workshopSwitchPorts().activateWorkshopScope(this.activeWorkshopId);
       const url = (await getDaemonUrl()).trim();
       if (url) workshopSwitchPorts().setDaemonUrl(url);
       this.applyThemeForActiveWorkshop();
@@ -176,6 +176,7 @@ export class WorkshopsStore {
   ) {
     if (!isTauri()) return;
     if (workshopId === this.activeWorkshopId) return;
+    if (this.switching) return;
     if (!options?.force && this.needsSwitchConfirm()) {
       this.confirmSwitchId = workshopId;
       return;
@@ -183,25 +184,36 @@ export class WorkshopsStore {
 
     this.switching = true;
     this.error = null;
+    const previousWorkshopId = this.activeWorkshopId;
+    let selectionCommitted = false;
     try {
       const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
-      const flushed = await workshopSwitchPorts().flushVaultBeforeLeave();
+      const ports = workshopSwitchPorts();
+      const flushed = await ports.flushVaultBeforeLeave();
       if (!flushed) return;
       shellTabs.checkpoint();
+      await ports.prepareForWorkshopSwitch();
       this.registry = await setActiveWorkshop(workshopId);
+      selectionCommitted = true;
+      ports.activateWorkshopScope(this.activeWorkshopId);
+      await shellTabs.switchWorkspaceScope(this.activeWorkshopId);
       const url = (await getDaemonUrl()).trim();
-      if (url) workshopSwitchPorts().setDaemonUrl(url);
+      if (url) ports.setDaemonUrl(url);
       await requestWorkshopReconnect((health) => {
         options?.onHealthChange?.(health);
       });
-      workshopDefaultsQueryPort().resetForReconnect();
-      await workshopDefaultsQueryPort().load(true);
       this.applyThemeForActiveWorkshop();
-      await this.restoreLastSession();
-      await shellTabs.switchWorkspaceScope(this.activeWorkshopId);
-      toast.show(`Connected to ${this.activeLabel}`);
+      toast.show(`Switched to ${this.activeLabel}`);
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
+      const ports = workshopSwitchPorts();
+      const recoveryWorkshopId = selectionCommitted
+        ? this.activeWorkshopId
+        : previousWorkshopId;
+      ports.activateWorkshopScope(recoveryWorkshopId);
+      const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
+      await shellTabs.switchWorkspaceScope(recoveryWorkshopId).catch(() => undefined);
+      await requestWorkshopReconnect(options?.onHealthChange).catch(() => null);
       throw err;
     } finally {
       this.switching = false;
@@ -288,20 +300,37 @@ export class WorkshopsStore {
   ) {
     if (workshopId === PERSONAL_WORKSHOP_ID) return;
     const wasActive = workshopId === this.activeWorkshopId;
+    let shellTabs: {
+      checkpoint: () => void;
+      switchWorkspaceScope: (scopeId: string) => Promise<void>;
+    } | null = null;
     this.error = null;
     try {
+      if (wasActive) {
+        const ports = workshopSwitchPorts();
+        const flushed = await ports.flushVaultBeforeLeave();
+        if (!flushed) return;
+        ({ shellTabs } = await import("$lib/stores/shellTabs.svelte"));
+        shellTabs.checkpoint();
+        await ports.prepareForWorkshopSwitch();
+      }
       this.registry = await removeWorkshop(workshopId);
       if (wasActive) {
+        workshopSwitchPorts().activateWorkshopScope(this.activeWorkshopId);
+        await shellTabs?.switchWorkspaceScope(this.activeWorkshopId);
         const url = (await getDaemonUrl()).trim();
         if (url) workshopSwitchPorts().setDaemonUrl(url);
         await requestWorkshopReconnect((health) => {
           options?.onHealthChange?.(health);
         });
-        const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
-        await shellTabs.switchWorkspaceScope(this.activeWorkshopId);
       }
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
+      if (wasActive) {
+        workshopSwitchPorts().activateWorkshopScope(this.activeWorkshopId);
+        await shellTabs?.switchWorkspaceScope(this.activeWorkshopId).catch(() => undefined);
+        await requestWorkshopReconnect(options?.onHealthChange).catch(() => null);
+      }
     }
   }
 

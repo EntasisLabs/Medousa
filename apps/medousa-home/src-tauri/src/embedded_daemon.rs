@@ -98,13 +98,10 @@ impl Default for EmbeddedDaemonState {
 #[cfg(target_os = "ios")]
 async fn embedded_workshop_selected() -> Result<bool, String> {
     tokio::task::spawn_blocking(|| {
-        let registry = crate::workshop_registry::ensure_migrated()?;
-        Ok(
-            crate::workshop_registry::active_workshop(&registry).is_some_and(|workshop| {
-                workshop.id == crate::workshop_registry::PERSONAL_WORKSHOP_ID
-                    && workshop.kind == "local"
-            }),
-        )
+        Ok(matches!(
+            crate::active_workshop::resolve()?,
+            crate::active_workshop::ActiveWorkshopTarget::EmbeddedPersonal
+        ))
     })
     .await
     .map_err(|_| "embedded workshop selection task failed".to_string())?

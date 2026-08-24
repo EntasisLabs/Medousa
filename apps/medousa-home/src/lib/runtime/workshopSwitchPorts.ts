@@ -5,6 +5,8 @@ import type { ColorThemeId } from "$lib/types/colorThemes";
 export type WorkshopSwitchPorts = {
   vaultDirty: () => boolean;
   flushVaultBeforeLeave: () => Promise<boolean>;
+  prepareForWorkshopSwitch: () => Promise<void>;
+  activateWorkshopScope: (workshopId: string) => void;
   hasLiveInteractiveTurn: () => boolean;
   chatSessionId: () => string;
   chatHasSession: (sessionId: string) => boolean;
@@ -20,6 +22,8 @@ export type WorkshopSwitchPorts = {
 const unbound: WorkshopSwitchPorts = {
   vaultDirty: () => false,
   flushVaultBeforeLeave: async () => true,
+  prepareForWorkshopSwitch: async () => {},
+  activateWorkshopScope: () => {},
   hasLiveInteractiveTurn: () => false,
   chatSessionId: () => "",
   chatHasSession: () => false,

@@ -31,6 +31,11 @@ export async function submitChatTurn(input: {
   onAgentSessionLost: () => void;
   scrollToLatest: (force: boolean) => void;
 }): Promise<void> {
+  const workshopEpoch = chat.workshopEpoch;
+  if (!chat.workshopScopeId) {
+    throw new Error("Workshop is switching; wait for it to reconnect");
+  }
+  const identityUserId = userProfiles.turnIdentityUserId();
   const codeProjectSetupAuthorized = input.codeProjectSetupAuthorized ?? false;
   const runtime = getSessionAgentRuntime(chat.sessionId);
   if (runtime !== "medousa" && input.mode === "interactive" && !codeProjectSetupAuthorized) {
@@ -49,10 +54,16 @@ export async function submitChatTurn(input: {
       stream_url: streamUrl || agentSessionStreamUrl(agentSessionId),
       stream_ready: streamReady,
     };
-    chat.beginTurn(input.userContent, ticket, [], userProfiles.activeProfileId);
+    if (chat.workshopEpoch !== workshopEpoch) {
+      throw new Error("Workshop changed while the turn was being admitted");
+    }
+    chat.beginTurn(input.userContent, ticket, [], identityUserId);
     chat.clearPendingMedia();
     input.scrollToLatest(true);
     await chat.startTurnStream(ticket.turn_id, ticket.session_id, ticket.stream_url);
+    if (chat.workshopEpoch !== workshopEpoch) {
+      throw new Error("Workshop changed before the agent prompt was sent");
+    }
     try {
       await promptAgentSession(agentSessionId, input.prompt, activeCodeContext(chat.sessionId));
     } catch (err) {
@@ -88,11 +99,14 @@ export async function submitChatTurn(input: {
     voiceAppendix: voice.voiceAppendix,
     identityUserId: opts.identityUserId,
   });
+  if (chat.workshopEpoch !== workshopEpoch) {
+    throw new Error("Workshop changed while the turn was being admitted");
+  }
   chat.beginTurn(
     input.userContent,
     accepted,
     mediaRefs,
-    opts.identityUserId ?? userProfiles.activeProfileId,
+    opts.identityUserId ?? identityUserId,
   );
   chat.clearPendingMedia();
   input.scrollToLatest(true);

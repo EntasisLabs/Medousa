@@ -156,7 +156,7 @@ pub async fn runtime_config_command(
     state: State<'_, DaemonState>,
     request: RuntimeConfigCommandRequest,
 ) -> Result<RuntimeConfigCommandResponse, String> {
-    client(&state)
+    client(&state)?
         .runtime()
         .config_command(&request)
         .await
@@ -168,7 +168,7 @@ pub async fn runtime_stage_route_command(
     state: State<'_, DaemonState>,
     request: StageRouteCommandRequest,
 ) -> Result<StageRouteCommandResponse, String> {
-    client(&state)
+    client(&state)?
         .runtime()
         .stage_route_command(&request)
         .await

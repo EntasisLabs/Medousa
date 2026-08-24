@@ -178,7 +178,6 @@
     if (isTauriIos()) {
       void registerRemotePush();
     }
-    void vault.refreshNotes();
     const detachKeyboard = attachMobileKeyboardViewport();
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;

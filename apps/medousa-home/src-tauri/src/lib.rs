@@ -5,6 +5,7 @@ mod account_connections;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod app_update;
 mod autostart;
+mod active_workshop;
 mod badge;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod authorized_resource;

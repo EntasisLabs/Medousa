@@ -8,6 +8,7 @@ import { workspace } from "$lib/stores/workspace.svelte";
 import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
 import { voicePresets } from "$lib/stores/voicePresets.svelte";
 import { userProfiles } from "$lib/stores/userProfiles.svelte";
+import { identity } from "$lib/stores/identity.svelte";
 import { workshops } from "$lib/stores/workshops.svelte";
 import { ensureMobileDaemonUrl } from "$lib/daemonConnection";
 import {
@@ -76,6 +77,7 @@ async function registerBrowserHostClient(health: DaemonHealth): Promise<void> {
 }
 
 let workshopTeardown = false;
+let workshopTransitioning = false;
 let workshopConnectMode: WorkshopConnectMode = "full";
 const workspaceReconnect = new ReconnectScheduler({
   policy: DEFAULT_WORKSPACE_BACKOFF,
@@ -180,17 +182,20 @@ async function restartWorkshopStreamsLite(): Promise<void> {
 function registerStreamListeners(unlisteners: Promise<() => void>[]) {
   unlisteners.push(
     onEnvironmentEvent<EnvironmentStreamEvent>((event) => {
+      if (workshopTransitioning) return;
       environment.applyEvent(event);
     }),
   );
   unlisteners.push(
     onEnvironmentError((error) => {
+      if (workshopTransitioning) return;
       environment.setError(error.message);
       scheduleEnvironmentStreamReconnect();
     }),
   );
   unlisteners.push(
     onWorkspaceEvent<WorkspaceStreamEvent>((event) => {
+      if (workshopTransitioning) return;
       workspace.applyEvent(event);
       const kind = event.feed_event?.kind;
       if (kind === "vault_note_created" || kind === "vault_note_updated") {
@@ -204,12 +209,14 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
   );
   unlisteners.push(
     onWorkspaceError((error) => {
+      if (workshopTransitioning) return;
       workspace.setError(error.message);
       scheduleWorkspaceStreamReconnect();
     }),
   );
   unlisteners.push(
     onInteractiveEvent<TurnStreamEnvelopeV2 | InteractiveTurnStreamEvent>((payload) => {
+      if (workshopTransitioning) return;
       const envelope = turnStreamPayloadToV2(payload);
       const turnBefore = chat.turns.get(envelope.turn_id);
       chat.applyStreamEvent(envelope);
@@ -245,6 +252,7 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
   );
   unlisteners.push(
     onInteractiveError((error) => {
+      if (workshopTransitioning) return;
       chat.noteStreamFailure(error.message, {
         recoverable: error.recoverable ?? isRecoverableStreamError(error.message),
       });
@@ -253,11 +261,49 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
   );
 }
 
+/** Stop the selected daemon's effects and remove its in-memory projections. */
+export async function prepareForWorkshopSwitch(): Promise<void> {
+  workshopTransitioning = true;
+  cancelScheduledStreamRecovery();
+  connection.setHealth(null);
+  await Promise.all([
+    stopWorkspaceStream().catch(() => undefined),
+    stopEnvironmentSync().catch(() => undefined),
+    chat.stopOwnedInteractiveStreams().catch(() => undefined),
+  ]);
+  clearWorkshopState();
+}
+
+function clearWorkshopState(): void {
+  chat.prepareForWorkshopSwitch();
+  runtime.resetWorkshopRuntime();
+  workshopDefaults.resetForReconnect();
+  userProfiles.resetForReconnect();
+  identity.clear();
+  environment.resetForReconnect();
+  vault.resetForWorkshopSwitch();
+  workspace.resetForWorkshopSwitch();
+  automations.resetForWorkshopSwitch();
+  voicePresets.resetForWorkshopSwitch();
+}
+
+/** Bind client-only caches after Rust has committed the new active selection. */
+export function activateWorkshopScope(workshopId: string): void {
+  if (chat.workshopScopeId && chat.workshopScopeId !== workshopId) {
+    clearWorkshopState();
+  }
+  chat.activateWorkshopScope(workshopId);
+}
+
 async function startWorkshopStreams(): Promise<void> {
   cancelScheduledStreamRecovery();
   await stopWorkspaceStream();
   await stopEnvironmentSync();
-  await environment.load();
+  await Promise.all([
+    environment.load(),
+    vault.refreshVaultRoots(),
+    vault.refreshNotes(),
+  ]);
   await startWorkspaceStream(workspace.revision || undefined);
   await startEnvironmentSync();
   void automations.refresh();
@@ -444,33 +490,40 @@ export function attachWorkshopForegroundResume(
 export async function reconnectWorkshop(
   onHealthChange: (health: DaemonHealth | null) => void,
 ): Promise<DaemonHealth> {
-  cancelScheduledStreamRecovery();
-  await ensureMobileDaemonUrl();
-  await invalidateRouteCaches().catch(() => {});
-  const health = await ensureWorkshopEngineHealthy({ allowSpawn: true });
-  connection.setHealth(health);
-  onHealthChange(health);
+  try {
+    cancelScheduledStreamRecovery();
+    await Promise.all([
+      stopWorkspaceStream().catch(() => undefined),
+      stopEnvironmentSync().catch(() => undefined),
+      chat.stopOwnedInteractiveStreams().catch(() => undefined),
+    ]);
+    await ensureMobileDaemonUrl();
+    await invalidateRouteCaches().catch(() => {});
+    const health = await ensureWorkshopEngineHealthy({ allowSpawn: true });
+    connection.setHealth(health);
+    onHealthChange(health);
 
-  await stopWorkspaceStream();
-  await chat.stopOwnedInteractiveStreams();
-
-  if (health.ok) {
-    runtime.resetWorkshopRuntime();
-    workshopDefaults.resetForReconnect();
-    userProfiles.resetForReconnect();
-    environment.resetForReconnect();
-    vault.resetForWorkshopSwitch();
-    await workshopDefaults.load(true);
-    if (workshopDefaults.loaded) {
-      runtime.applyFromWorkshopDraft(workshopDefaults.draft);
+    if (health.ok) {
+      runtime.resetWorkshopRuntime();
+      workshopDefaults.resetForReconnect();
+      userProfiles.resetForReconnect();
+      environment.resetForReconnect();
+      vault.resetForWorkshopSwitch();
+      await workshopDefaults.load(true);
+      if (workshopDefaults.loaded) {
+        runtime.applyFromWorkshopDraft(workshopDefaults.draft);
+      }
+      await userProfiles.load();
+      await settings.hydrateWorkRetentionFromDaemon();
+      workshopTransitioning = false;
+      await startWorkshopStreams();
+      await workshops.restoreLastSession();
     }
-    await userProfiles.load();
-    await settings.hydrateWorkRetentionFromDaemon();
-    await startWorkshopStreams();
-    await workshops.restoreLastSession();
-  }
 
-  return health;
+    return health;
+  } finally {
+    workshopTransitioning = false;
+  }
 }
 
 /**
@@ -498,6 +551,7 @@ export function connectWorkshop(options: {
 
   void (async () => {
     try {
+      await workshops.load();
       connection.setHealth(null);
       options.onHealthChange(null);
       await ensureMobileDaemonUrl();

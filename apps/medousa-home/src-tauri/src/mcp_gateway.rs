@@ -511,7 +511,7 @@ async fn admin_refresh_catalog(base_url: &str) -> Result<(), String> {
 async fn reindex_daemon_capabilities(
     state: &tauri::State<'_, crate::daemon::DaemonState>,
 ) -> Result<(), String> {
-    crate::daemon::sdk::client(state)
+    crate::daemon::sdk::client(state)?
         .capabilities()
         .reindex()
         .await
@@ -668,11 +668,23 @@ pub async fn mcp_gateway_status(
     let (config, path, _) = load_file_config()?;
     let config_path = path.display().to_string();
 
-    match crate::daemon::sdk::client(&state)
-        .mcp_gateway()
-        .status()
-        .await
-    {
+    let status = match crate::daemon::sdk::client(&state) {
+        Ok(client) => client.mcp_gateway().status().await,
+        Err(err) => {
+            return Ok(McpGatewayStatusResult {
+                gateway_url: resolve_gateway_url(),
+                reachable: false,
+                message: format!(
+                    "Workshop unavailable — cannot check MCP gateway status ({err})"
+                ),
+                health: None,
+                servers: servers_from_local_config(&config, false),
+                config_path,
+            });
+        }
+    };
+
+    match status {
         Ok(daemon_status) => Ok(merge_daemon_gateway_status(
             daemon_status,
             &config,

@@ -13,7 +13,7 @@ pub async fn artifact_command(
     state: State<'_, DaemonState>,
     request: ArtifactCommandRequest,
 ) -> Result<ArtifactCommandResponse, String> {
-    client(&state)
+    client(&state)?
         .runtime()
         .artifact_command(&request)
         .await
@@ -25,7 +25,7 @@ pub async fn artifact_fetch(
     state: State<'_, DaemonState>,
     request: ArtifactFetchRequest,
 ) -> Result<ArtifactFetchResponse, String> {
-    client(&state)
+    client(&state)?
         .runtime()
         .artifact_fetch(&request)
         .await
@@ -37,7 +37,7 @@ pub async fn artifact_list_ui(
     state: State<'_, DaemonState>,
     request: ArtifactListUiRequest,
 ) -> Result<ArtifactListUiResponse, String> {
-    client(&state)
+    client(&state)?
         .runtime()
         .artifact_list_ui(&request)
         .await
@@ -49,7 +49,7 @@ pub async fn artifact_write(
     state: State<'_, DaemonState>,
     request: ArtifactWriteRequest,
 ) -> Result<ArtifactWriteResponse, String> {
-    client(&state)
+    client(&state)?
         .runtime()
         .artifact_write(&request)
         .await
@@ -61,7 +61,7 @@ pub async fn artifact_delete(
     state: State<'_, DaemonState>,
     request: ArtifactDeleteRequest,
 ) -> Result<ArtifactDeleteResponse, String> {
-    client(&state)
+    client(&state)?
         .runtime()
         .artifact_delete(&request)
         .await

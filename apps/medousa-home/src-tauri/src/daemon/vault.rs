@@ -38,7 +38,7 @@ pub async fn vault_list_notes(
         cursor: cursor.filter(|value| !value.trim().is_empty()),
         generation,
     };
-    client(&state)
+    client(&state)?
         .vault()
         .list_notes(&query)
         .await
@@ -57,7 +57,7 @@ pub async fn vault_list_changes(
         cursor: cursor.filter(|value| !value.trim().is_empty()),
         limit,
     };
-    client(&state)
+    client(&state)?
         .vault()
         .list_changes(&query)
         .await
@@ -74,7 +74,7 @@ pub async fn vault_list_tags(
         prefix: prefix.filter(|value| !value.trim().is_empty()),
         limit,
     };
-    client(&state)
+    client(&state)?
         .vault()
         .list_tags(&query)
         .await
@@ -87,7 +87,7 @@ pub async fn vault_get_note(
     path: String,
 ) -> Result<VaultNoteContentResponse, String> {
     let encoded = encode_note_path(path.trim());
-    client(&state)
+    client(&state)?
         .vault()
         .get_note(&encoded)
         .await
@@ -100,7 +100,7 @@ pub async fn vault_get_file(
     path: String,
 ) -> Result<VaultFileContentResponse, String> {
     let encoded = encode_note_path(path.trim());
-    client(&state)
+    client(&state)?
         .vault()
         .get_file(&encoded)
         .await
@@ -121,7 +121,7 @@ pub async fn vault_save_note(
         session_id: session_id.filter(|value| !value.trim().is_empty()),
         auto_workshop_tags,
     };
-    client(&state)
+    client(&state)?
         .vault()
         .update_note(
             &encoded,
@@ -151,7 +151,7 @@ pub async fn vault_create_note(
         semantic_tags: semantic_tags.filter(|tags| !tags.is_empty()),
         auto_workshop_tags: auto_workshop_tags.unwrap_or(true),
     };
-    client(&state)
+    client(&state)?
         .vault()
         .create_note(&request)
         .await
@@ -164,7 +164,7 @@ pub async fn vault_delete_note(
     path: String,
 ) -> Result<serde_json::Value, String> {
     let encoded = encode_note_path(path.trim());
-    client(&state)
+    client(&state)?
         .vault()
         .delete_note(&encoded)
         .await
@@ -189,7 +189,7 @@ pub async fn vault_search(
         limit: limit.or(Some(20)),
         tags: tags.filter(|value| !value.trim().is_empty()),
     };
-    client(&state)
+    client(&state)?
         .vault()
         .search(&search)
         .await
@@ -204,7 +204,7 @@ pub async fn vault_backlinks(
     let query = VaultBacklinksQuery {
         path: Some(path.trim().to_string()),
     };
-    client(&state)
+    client(&state)?
         .vault()
         .backlinks(&query)
         .await
@@ -213,7 +213,7 @@ pub async fn vault_backlinks(
 
 #[tauri::command]
 pub async fn vault_list_roots(state: State<'_, DaemonState>) -> Result<VaultRootsResponse, String> {
-    client(&state).vault().list_roots().await.map_err(sdk_error)
+    client(&state)?.vault().list_roots().await.map_err(sdk_error)
 }
 
 #[tauri::command]
@@ -224,7 +224,7 @@ pub async fn vault_set_active_root(
     let request = VaultSetActiveRootRequest {
         root_id: root_id.trim().to_string(),
     };
-    client(&state)
+    client(&state)?
         .vault()
         .set_active_root(&request)
         .await
@@ -243,7 +243,7 @@ pub async fn vault_add_root(
         path: path.trim().to_string(),
         id: id.filter(|value| !value.trim().is_empty()),
     };
-    client(&state)
+    client(&state)?
         .vault()
         .add_root(&request)
         .await
@@ -255,7 +255,7 @@ pub async fn vault_list_trash(
     state: State<'_, DaemonState>,
     limit: Option<usize>,
 ) -> Result<serde_json::Value, String> {
-    client(&state)
+    client(&state)?
         .vault()
         .list_trash(limit)
         .await
@@ -267,7 +267,7 @@ pub async fn vault_restore_trash(
     state: State<'_, DaemonState>,
     path: String,
 ) -> Result<serde_json::Value, String> {
-    client(&state)
+    client(&state)?
         .vault()
         .restore_trash(path.trim())
         .await

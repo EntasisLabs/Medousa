@@ -27,6 +27,8 @@ export type ChatMessageIndexes = {
 };
 
 export type ChatStoreHost = {
+  workshopScopeId: string;
+  workshopEpoch: number;
   sessionId: string;
   messages: ChatMessage[];
   draft: string;

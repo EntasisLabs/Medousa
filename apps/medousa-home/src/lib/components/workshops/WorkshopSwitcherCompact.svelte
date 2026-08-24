@@ -272,7 +272,7 @@
             Switch to {workshops.pendingSwitchAfterPairLabel}?
           </h2>
           <p class="workshop-faint mt-0.5 text-xs leading-relaxed">
-            You're connected. Switch now, or stay on your current workshop.
+            Pairing saved this workshop. Switch now, or stay on your current workshop.
           </p>
         </div>
       </header>

@@ -34,6 +34,7 @@ import {
 } from "$lib/chat/chatSessionRuntime";
 import { loadDraftForSession } from "$lib/chat/draftPersistence";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
+import { workshopScopedStorageKey } from "$lib/utils/workshopLocality";
 
 export const SESSION_KEY = "medousa-home-session-id";
 export const PINS_KEY = "medousa-home-pinned-sessions";
@@ -42,10 +43,12 @@ const SESSIONS_STALE_MS = 30_000;
 const SESSIONS_REFRESH_DEBOUNCE_MS = 1_500;
 const PROMOTED_ASKS_MAX = 200;
 
-export function loadPromotedAskIds(): Set<string> {
+export function loadPromotedAskIds(workshopId?: string): Set<string> {
   if (typeof localStorage === "undefined") return new Set();
   try {
-    const raw = localStorage.getItem(PROMOTED_ASKS_KEY);
+    const raw = localStorage.getItem(
+      workshopScopedStorageKey(PROMOTED_ASKS_KEY, workshopId),
+    );
     if (!raw) return new Set();
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return new Set();
@@ -57,18 +60,21 @@ export function loadPromotedAskIds(): Set<string> {
   }
 }
 
-export function savePromotedAskIds(ids: Set<string>) {
+export function savePromotedAskIds(ids: Set<string>, workshopId?: string) {
   if (typeof localStorage === "undefined") return;
   const list = [...ids];
   const trimmed =
     list.length > PROMOTED_ASKS_MAX ? list.slice(list.length - PROMOTED_ASKS_MAX) : list;
-  localStorage.setItem(PROMOTED_ASKS_KEY, JSON.stringify(trimmed));
+  localStorage.setItem(
+    workshopScopedStorageKey(PROMOTED_ASKS_KEY, workshopId),
+    JSON.stringify(trimmed),
+  );
 }
 
-export function loadPinnedIds(): string[] {
+export function loadPinnedIds(workshopId?: string): string[] {
   if (typeof localStorage === "undefined") return [];
   try {
-    const raw = localStorage.getItem(PINS_KEY);
+    const raw = localStorage.getItem(workshopScopedStorageKey(PINS_KEY, workshopId));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string") : [];
@@ -77,9 +83,11 @@ export function loadPinnedIds(): string[] {
   }
 }
 
-export function loadSessionId(): string {
+export function loadSessionId(workshopId?: string): string {
   if (typeof localStorage === "undefined") return "";
-  const existing = localStorage.getItem(SESSION_KEY);
+  const existing = localStorage.getItem(
+    workshopScopedStorageKey(SESSION_KEY, workshopId),
+  );
   if (existing) return existing;
   return "";
 }
@@ -161,6 +169,7 @@ export async function forkSessionFromEntry(
   message: ChatMessage,
   options?: { includeDraft?: boolean },
 ): Promise<string> {
+  const workshopEpoch = host.workshopEpoch;
   const coordinate = message.transcript;
   if (!coordinate?.authorityId || !coordinate.entryId || coordinate.entrySeq < 1) {
     throw new Error("This message is not committed yet");
@@ -202,14 +211,23 @@ export async function forkSessionFromEntry(
     },
     derivationIdempotencyKey(),
   );
+  if (host.workshopEpoch !== workshopEpoch) {
+    throw new Error("Workshop changed while the conversation was being forked");
+  }
 
   await switchSession(host, result.session_id);
+  if (host.workshopEpoch !== workshopEpoch) {
+    throw new Error("Workshop changed while the fork was opening");
+  }
   if (sourceDraft) {
     host.draft = sourceDraft;
     host.flushDraftPersist();
     host.stashFocusedRuntime();
   }
   const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
+  if (host.workshopEpoch !== workshopEpoch) {
+    throw new Error("Workshop changed while the fork was opening");
+  }
   shellTabs.openChat(result.session_id, {
     activate: true,
     title: result.display_name ?? displayName,
@@ -239,7 +257,10 @@ export function togglePin(host: ChatStoreHost, sessionId: string) {
   } else {
     host.pinnedIds = [...host.pinnedIds, sessionId];
   }
-  localStorage.setItem(PINS_KEY, JSON.stringify(host.pinnedIds));
+  localStorage.setItem(
+    workshopScopedStorageKey(PINS_KEY, host.workshopScopeId),
+    JSON.stringify(host.pinnedIds),
+  );
 }
 
 export async function renameSession(
@@ -247,11 +268,13 @@ export async function renameSession(
   sessionId: string,
   displayName: string,
 ): Promise<void> {
+  const workshopEpoch = host.workshopEpoch;
   const trimmed = displayName.trim();
   if (!trimmed) {
     throw new Error("Session name must not be empty");
   }
   const response = await setSessionDisplayName(sessionId, trimmed);
+  if (host.workshopEpoch !== workshopEpoch) return;
   host.sessions = host.sessions.map((session) =>
     session.session_id === sessionId
       ? { ...session, display_name: response.display_name }
@@ -264,11 +287,13 @@ export async function deleteSession(
   sessionId: string,
   options?: { purgeMemory?: boolean },
 ) {
+  const workshopEpoch = host.workshopEpoch;
   const trimmed = sessionId.trim();
   if (!trimmed) {
     throw new Error("session_id is required");
   }
   const deletion = await daemonDeleteSession(trimmed, options);
+  if (host.workshopEpoch !== workshopEpoch) return;
   const deletionStatus = deletion.status ?? (deletion.deleted ? "complete" : "retryable_partial");
   if (deletionStatus !== "complete" || !deletion.deleted) {
     const failed = (deletion.surfaces ?? [])
@@ -281,7 +306,10 @@ export async function deleteSession(
   }
   host.sessions = host.sessions.filter((session) => session.session_id !== trimmed);
   host.pinnedIds = host.pinnedIds.filter((id) => id !== trimmed);
-  localStorage.setItem(PINS_KEY, JSON.stringify(host.pinnedIds));
+  localStorage.setItem(
+    workshopScopedStorageKey(PINS_KEY, host.workshopScopeId),
+    JSON.stringify(host.pinnedIds),
+  );
   if (host.sessionId === trimmed) {
     await host.newSession();
   } else {
@@ -290,6 +318,7 @@ export async function deleteSession(
 }
 
 async function fetchSessions(host: ChatStoreHost, hadCache: boolean, query = "") {
+  const workshopEpoch = host.workshopEpoch;
   host.sessionsRefreshing = hadCache;
   if (!hadCache) {
     host.sessionsError = null;
@@ -300,15 +329,19 @@ async function fetchSessions(host: ChatStoreHost, hadCache: boolean, query = "")
       includeVerification: false,
       q: query || undefined,
     });
+    if (host.workshopEpoch !== workshopEpoch) return;
     host.sessions = response.sessions;
     host.sessionsFetchedAt = Date.now();
     host.sessionsError = null;
   } catch (err) {
+    if (host.workshopEpoch !== workshopEpoch) return;
     if (!hadCache) {
       host.sessionsError = err instanceof Error ? err.message : String(err);
     }
   } finally {
-    host.sessionsRefreshing = false;
+    if (host.workshopEpoch === workshopEpoch) {
+      host.sessionsRefreshing = false;
+    }
   }
 }
 
@@ -316,6 +349,7 @@ export async function refreshSessions(
   host: ChatStoreHost,
   options?: { force?: boolean; q?: string },
 ) {
+  const workshopEpoch = host.workshopEpoch;
   const force = options?.force ?? false;
   const query = (options?.q ?? "").trim();
   if (options?.q !== undefined) {
@@ -335,8 +369,8 @@ export async function refreshSessions(
     return host.sessionsRefreshInFlight;
   }
 
-  host.sessionsRefreshInFlight = (async () => {
-    while (true) {
+  const inFlight = (async () => {
+    while (host.workshopEpoch === workshopEpoch) {
       const q = host.sessionsRefreshDesiredQuery ?? "";
       const cacheHint = host.sessions.length > 0;
       await fetchSessions(host, cacheHint, q);
@@ -345,11 +379,14 @@ export async function refreshSessions(
       }
     }
   })();
+  host.sessionsRefreshInFlight = inFlight;
 
   try {
-    await host.sessionsRefreshInFlight;
+    await inFlight;
   } finally {
-    host.sessionsRefreshInFlight = null;
+    if (host.sessionsRefreshInFlight === inFlight) {
+      host.sessionsRefreshInFlight = null;
+    }
   }
 }
 
@@ -364,6 +401,7 @@ export function scheduleSessionsRefresh(host: ChatStoreHost) {
 }
 
 export async function warmBackgroundSession(host: ChatStoreHost, sessionId: string) {
+  const workshopEpoch = host.workshopEpoch;
   const trimmed = sessionId.trim();
   if (!trimmed || trimmed === host.sessionId) return;
 
@@ -372,17 +410,21 @@ export async function warmBackgroundSession(host: ChatStoreHost, sessionId: stri
     return;
   }
 
-  const runtime = emptySessionRuntime(trimmed, loadDraftForSession(trimmed));
+  const runtime = emptySessionRuntime(
+    trimmed,
+    loadDraftForSession(trimmed, host.workshopScopeId),
+  );
   runtime.historyLoading = true;
   host.sessionRuntimes.set(trimmed, runtime);
   host.bumpRuntimeRevision();
 
   try {
     const history = await getSessionHistory(trimmed);
+    if (host.workshopEpoch !== workshopEpoch) return;
     if (host.sessionId === trimmed) return;
     const current =
       host.sessionRuntimes.get(trimmed) ??
-      emptySessionRuntime(trimmed, loadDraftForSession(trimmed));
+      emptySessionRuntime(trimmed, loadDraftForSession(trimmed, host.workshopScopeId));
     current.messages = mapTurns(history.turns, {
       sessionId: trimmed,
       authorityId: history.authority_id,
@@ -392,6 +434,7 @@ export async function warmBackgroundSession(host: ChatStoreHost, sessionId: stri
     host.sessionRuntimes.set(trimmed, current);
     host.bumpRuntimeRevision();
   } catch (err) {
+    if (host.workshopEpoch !== workshopEpoch) return;
     if (host.sessionId === trimmed) return;
     const current = host.sessionRuntimes.get(trimmed);
     if (!current) return;
@@ -406,13 +449,22 @@ export async function newSession(
   host: ChatStoreHost,
   options?: { shellContext?: { desktopId: string; groupId: string } },
 ) {
+  const workshopEpoch = host.workshopEpoch;
   const { createSession } = await import("$lib/daemon");
   const created = await createSession();
+  if (host.workshopEpoch !== workshopEpoch) {
+    throw new Error("Workshop changed while the conversation was being created");
+  }
   host.flushDraftPersist();
   host.stashFocusedRuntime();
   const id = created.session_id;
-  localStorage.setItem(SESSION_KEY, id);
-  host.loadRuntimeIntoFocused(emptySessionRuntime(id, loadDraftForSession(id)));
+  localStorage.setItem(
+    workshopScopedStorageKey(SESSION_KEY, host.workshopScopeId),
+    id,
+  );
+  host.loadRuntimeIntoFocused(
+    emptySessionRuntime(id, loadDraftForSession(id, host.workshopScopeId)),
+  );
   host.sessionPristine = true;
   host.historyLoading = false;
   host.transcriptEpoch += 1;
@@ -423,6 +475,7 @@ export async function newSession(
   chatStreamPool.acquire(id);
   host.stashFocusedRuntime();
   const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
+  if (host.workshopEpoch !== workshopEpoch) return;
   const shellContext = options?.shellContext;
   if (
     !shellContext ||
@@ -436,6 +489,7 @@ export async function newSession(
   }
   void refreshSessions(host, { force: true, q: "" });
   const { workshops } = await import("$lib/stores/workshops.svelte");
+  if (host.workshopEpoch !== workshopEpoch) return;
   void workshops.saveActiveSession(id);
 }
 
@@ -446,6 +500,7 @@ export async function newSharedRoom(
     memberProfileIds?: string[];
   },
 ) {
+  const workshopEpoch = host.workshopEpoch;
   const { createSession } = await import("$lib/daemon");
   const { userProfiles } = await import("$lib/stores/userProfiles.svelte");
   const { sharedMode } = await import("$lib/stores/sharedMode.svelte");
@@ -465,12 +520,20 @@ export async function newSharedRoom(
     agentProfileId: sharedMode.generalProfileId,
     displayName: options?.displayName?.trim() || "Shared room",
   });
+  if (host.workshopEpoch !== workshopEpoch) {
+    throw new Error("Workshop changed while the shared room was being created");
+  }
 
   host.flushDraftPersist();
   host.stashFocusedRuntime();
   const id = created.session_id;
-  localStorage.setItem(SESSION_KEY, id);
-  host.loadRuntimeIntoFocused(emptySessionRuntime(id, loadDraftForSession(id)));
+  localStorage.setItem(
+    workshopScopedStorageKey(SESSION_KEY, host.workshopScopeId),
+    id,
+  );
+  host.loadRuntimeIntoFocused(
+    emptySessionRuntime(id, loadDraftForSession(id, host.workshopScopeId)),
+  );
   host.sessionPristine = true;
   host.historyLoading = false;
   host.transcriptEpoch += 1;
@@ -481,9 +544,12 @@ export async function newSharedRoom(
   chatStreamPool.acquire(id);
   host.stashFocusedRuntime();
   await refreshSessions(host, { force: true });
+  if (host.workshopEpoch !== workshopEpoch) return;
   const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
+  if (host.workshopEpoch !== workshopEpoch) return;
   shellTabs.openChat(id, { activate: true });
   const { workshops } = await import("$lib/stores/workshops.svelte");
+  if (host.workshopEpoch !== workshopEpoch) return;
   void workshops.saveActiveSession(id);
 }
 
@@ -492,9 +558,15 @@ export async function ensureSessionHydrated(
   options?: { notice?: boolean },
 ) {
   if (!host.sessionId.trim()) {
-    host.sessionBootstrapInFlight ??= newSession(host).finally(() => {
-      host.sessionBootstrapInFlight = null;
-    });
+    if (!host.sessionBootstrapInFlight) {
+      const pending = newSession(host);
+      const tracked = pending.finally(() => {
+        if (host.sessionBootstrapInFlight === tracked) {
+          host.sessionBootstrapInFlight = null;
+        }
+      });
+      host.sessionBootstrapInFlight = tracked;
+    }
     await host.sessionBootstrapInFlight;
     return;
   }
@@ -513,12 +585,15 @@ export async function reconcileOnResume(
   options?: { notice?: boolean },
   cards: WorkCard[] = [],
 ) {
+  const workshopEpoch = host.workshopEpoch;
   const sessionId = host.sessionId.trim();
   if (!sessionId) return;
 
   const epoch = host.transcriptEpoch;
   const stillSameSession = () =>
-    epoch === host.transcriptEpoch && host.sessionId.trim() === sessionId;
+    workshopEpoch === host.workshopEpoch &&
+    epoch === host.transcriptEpoch &&
+    host.sessionId.trim() === sessionId;
 
   try {
     const attached = await host.tryReattachActiveTurn(cards);
@@ -566,12 +641,15 @@ export async function reloadCurrentSession(
   host: ChatStoreHost,
   options?: { notice?: boolean },
 ) {
+  const workshopEpoch = host.workshopEpoch;
   const sessionId = host.sessionId.trim();
   if (!sessionId) return;
 
   const epoch = host.transcriptEpoch;
   const stillSameSession = () =>
-    epoch === host.transcriptEpoch && host.sessionId.trim() === sessionId;
+    workshopEpoch === host.workshopEpoch &&
+    epoch === host.transcriptEpoch &&
+    host.sessionId.trim() === sessionId;
 
   host.historyLoading = true;
   host.streamError = null;
@@ -598,10 +676,12 @@ export async function reloadCurrentSession(
 }
 
 export async function switchSession(host: ChatStoreHost, sessionId: string) {
+  const workshopEpoch = host.workshopEpoch;
   const sourceSessionId = host.sessionId.trim();
   const mirrorShellChat = () => {
     chatStreamPool.acquire(sessionId);
     void import("$lib/stores/shellTabs.svelte").then(({ shellTabs }) => {
+      if (host.workshopEpoch !== workshopEpoch) return;
       if (host.sessionId.trim() !== sessionId) return;
       const active = shellTabs.activeTab;
       if (active?.kind !== "chat" || active.sessionId !== sourceSessionId) return;
@@ -618,6 +698,7 @@ export async function switchSession(host: ChatStoreHost, sessionId: string) {
 
   if (trimmed === host.sessionId) {
     await reloadCurrentSession(host, { notice: false });
+    if (host.workshopEpoch !== workshopEpoch) return;
     host.stashFocusedRuntime();
     mirrorShellChat();
     return;
@@ -634,29 +715,43 @@ export async function switchSession(host: ChatStoreHost, sessionId: string) {
     runtime.transcriptEpoch = switchEpoch;
     host.loadRuntimeIntoFocused(runtime);
     host.transcriptEpoch = switchEpoch;
-    localStorage.setItem(SESSION_KEY, trimmed);
+    localStorage.setItem(
+      workshopScopedStorageKey(SESSION_KEY, host.workshopScopeId),
+      trimmed,
+    );
     chatScenes.reset();
     chatInteractions.reset();
     chatStreamPool.acquire(trimmed);
     host.stashFocusedRuntime();
     const { workshops } = await import("$lib/stores/workshops.svelte");
+    if (host.workshopEpoch !== workshopEpoch) return;
     void workshops.saveActiveSession(trimmed);
     void host.tryReattachActiveTurn();
     mirrorShellChat();
     return;
   }
 
-  const fresh = emptySessionRuntime(trimmed, loadDraftForSession(trimmed));
+  const fresh = emptySessionRuntime(
+    trimmed,
+    loadDraftForSession(trimmed, host.workshopScopeId),
+  );
   fresh.historyLoading = true;
   fresh.transcriptEpoch = switchEpoch;
   host.loadRuntimeIntoFocused(fresh);
   host.transcriptEpoch = switchEpoch;
-  localStorage.setItem(SESSION_KEY, trimmed);
+  localStorage.setItem(
+    workshopScopedStorageKey(SESSION_KEY, host.workshopScopeId),
+    trimmed,
+  );
   chatScenes.reset();
   chatInteractions.reset();
   try {
     const history = await getSessionHistory(trimmed);
-    if (host.sessionId !== trimmed || switchEpoch !== host.transcriptEpoch) return;
+    if (
+      host.workshopEpoch !== workshopEpoch ||
+      host.sessionId !== trimmed ||
+      switchEpoch !== host.transcriptEpoch
+    ) return;
     host.messages = mapTurns(history.turns, {
       sessionId: trimmed,
       authorityId: history.authority_id,
@@ -664,14 +759,23 @@ export async function switchSession(host: ChatStoreHost, sessionId: string) {
     const { workshops } = await import("$lib/stores/workshops.svelte");
     void workshops.saveActiveSession(trimmed);
   } catch (err) {
-    if (host.sessionId === trimmed && switchEpoch === host.transcriptEpoch) {
+    if (
+      host.workshopEpoch === workshopEpoch &&
+      host.sessionId === trimmed &&
+      switchEpoch === host.transcriptEpoch
+    ) {
       host.streamError = err instanceof Error ? err.message : String(err);
     }
   } finally {
-    if (host.sessionId === trimmed && switchEpoch === host.transcriptEpoch) {
+    if (
+      host.workshopEpoch === workshopEpoch &&
+      host.sessionId === trimmed &&
+      switchEpoch === host.transcriptEpoch
+    ) {
       host.historyLoading = false;
     }
   }
+  if (host.workshopEpoch !== workshopEpoch) return;
   host.stashFocusedRuntime();
   chatStreamPool.acquire(trimmed);
   void host.tryReattachActiveTurn();
@@ -687,10 +791,11 @@ export function promoteAskToChat(host: ChatStoreHost, jobId: string) {
     ),
   );
   host.promotedAskIds.add(trimmed);
-  savePromotedAskIds(host.promotedAskIds);
+  savePromotedAskIds(host.promotedAskIds, host.workshopScopeId);
 }
 
 export async function hydrateAskThreads(host: ChatStoreHost, cards: WorkCard[]) {
+  const workshopEpoch = host.workshopEpoch;
   const epoch = host.transcriptEpoch;
   const targets = cards.filter((card) => {
     if (!isAskJobId(card.id)) return false;
@@ -710,7 +815,11 @@ export async function hydrateAskThreads(host: ChatStoreHost, cards: WorkCard[]) 
         try {
           const sessionId = askSessionId(card.id);
           const history = await getSessionHistory(sessionId);
-          if (epoch !== host.transcriptEpoch || history.turns.length === 0) {
+          if (
+            workshopEpoch !== host.workshopEpoch ||
+            epoch !== host.transcriptEpoch ||
+            history.turns.length === 0
+          ) {
             return [] as ChatMessage[];
           }
           return mapTurns(history.turns, {
@@ -725,7 +834,7 @@ export async function hydrateAskThreads(host: ChatStoreHost, cards: WorkCard[]) 
       }),
     );
 
-    if (epoch !== host.transcriptEpoch) return;
+    if (workshopEpoch !== host.workshopEpoch || epoch !== host.transcriptEpoch) return;
 
     const hydrated = batches.flat();
     if (hydrated.length === 0) return;

@@ -55,14 +55,8 @@ pub fn is_host_engine(state: &State<'_, DaemonState>) -> bool {
     matches!(host.as_str(), "127.0.0.1" | "localhost" | "::1" | "[::1]")
 }
 
-pub fn daemon_base(state: &State<'_, DaemonState>) -> Result<String, String> {
-    Ok(state
-        .daemon_url
-        .lock()
-        .expect("daemon url lock")
-        .clone()
-        .trim_end_matches('/')
-        .to_string())
+pub fn daemon_base(_state: &State<'_, DaemonState>) -> Result<String, String> {
+    crate::active_workshop::transport_base_url()
 }
 
 fn daemon_http_client(base_url: &str) -> Result<Client, String> {

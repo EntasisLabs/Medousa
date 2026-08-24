@@ -52,7 +52,7 @@ use tauri::{AppHandle, Emitter, State};
 use tokio::sync::watch;
 
 pub struct DaemonState {
-    pub daemon_url: Mutex<String>,
+    daemon_url: Mutex<String>,
     workspace_cancel: Mutex<Option<watch::Sender<bool>>>,
     environment_cancel: Mutex<Option<watch::Sender<bool>>>,
     /// One SSE listener per turn id — Tier 2c multi-stream bridge.
@@ -75,6 +75,30 @@ impl DaemonState {
             environment_cancel: Mutex::new(None),
             interactive_streams: Mutex::new(HashMap::new()),
             contract_streams: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub(crate) fn cancel_all_streams(&self) {
+        for slot in [&self.workspace_cancel, &self.environment_cancel] {
+            if let Some(tx) = slot.lock().expect("daemon cancel lock").take() {
+                let _ = tx.send(true);
+            }
+        }
+        for (_, tx) in self
+            .interactive_streams
+            .lock()
+            .expect("interactive streams lock")
+            .drain()
+        {
+            let _ = tx.send(true);
+        }
+        for (_, tx) in self
+            .contract_streams
+            .lock()
+            .expect("contract stream lock")
+            .drain()
+        {
+            let _ = tx.send(true);
         }
     }
 }
@@ -180,8 +204,8 @@ fn add_interactive_stream_slot(
 }
 
 #[tauri::command]
-pub fn daemon_url(state: State<'_, DaemonState>) -> String {
-    state.daemon_url.lock().expect("daemon url lock").clone()
+pub fn daemon_url(_state: State<'_, DaemonState>) -> Result<String, String> {
+    crate::active_workshop::display_url()
 }
 
 #[tauri::command]
@@ -190,9 +214,8 @@ pub fn set_daemon_url(state: State<'_, DaemonState>, url: String) -> Result<(), 
     if trimmed.is_empty() {
         return Err("daemon URL cannot be empty".to_string());
     }
-    apply_daemon_url(&state, &trimmed)?;
-    let _ = crate::workshop_registry::update_active_workshop_url(&trimmed);
-    Ok(())
+    crate::workshop_registry::update_active_workshop_url(&trimmed)?;
+    apply_daemon_url(&state, &trimmed)
 }
 
 pub fn apply_daemon_url(state: &DaemonState, url: &str) -> Result<(), String> {
@@ -275,8 +298,8 @@ pub async fn daemon_health(
         });
     }
 
-    let endpoint = state.daemon_url.lock().expect("daemon url lock").clone();
-    Ok(match self::sdk::client(&state).health().get().await {
+    let endpoint = crate::active_workshop::display_url()?;
+    Ok(match self::sdk::client(&state)?.health().get().await {
         Ok(detail) => connected_health(detail, &endpoint),
         Err(error) => disconnected_health(self::sdk::sdk_error(error)),
     })
@@ -297,7 +320,7 @@ pub async fn workspace_stream_start(
         &query,
     );
 
-    let config = self::sdk::transport_config(&state);
+    let config = self::sdk::transport_config(&state)?;
     let cancel_rx = replace_cancel_slot(&state.workspace_cancel);
 
     tokio::spawn(async move {
@@ -353,7 +376,7 @@ pub async fn environment_stream_start(
         &query,
     );
 
-    let config = self::sdk::transport_config(&state);
+    let config = self::sdk::transport_config(&state)?;
     let cancel_rx = replace_cancel_slot(&state.environment_cancel);
 
     tokio::spawn(async move {
@@ -430,7 +453,6 @@ pub async fn interactive_turn_send(
     stage_routing: Option<StageRoutingMatrix>,
     channel_surface: Option<String>,
 ) -> Result<InteractiveTurnAccepted, String> {
-    let _base = state.daemon_url.lock().expect("daemon url lock").clone();
     let provider = provider
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
@@ -507,8 +529,8 @@ pub async fn interactive_turn_send(
         identity_user_id: None,
     };
 
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
-    let parsed = self::sdk::client(&state)
+    let base = crate::active_workshop::transport_base_url()?;
+    let parsed = self::sdk::client(&state)?
         .interactive()
         .start_turn(&request)
         .await
@@ -579,13 +601,13 @@ pub async fn interactive_stream_start(
         return Ok(());
     }
 
-    let daemon_url = state.daemon_url.lock().expect("daemon url lock").clone();
+    let config = self::sdk::transport_config(&state)?;
+    let daemon_url = config.lan_base.clone();
     let stream_url = rewrite_stream_url_for_client(&stream_url, &daemon_url);
     let turn_id = extract_turn_id_from_stream_url(&stream_url)
         .ok_or_else(|| "stream URL missing turn id".to_string())?;
     let cancel_rx = add_interactive_stream_slot(&state.interactive_streams, &turn_id);
 
-    let config = self::sdk::transport_config(&state);
     let path = reqwest::Url::parse(&stream_url)
         .ok()
         .map(|url| {

@@ -25,7 +25,7 @@ pub async fn feed_tail(
         profile_id: profile_id.filter(|id| !id.trim().is_empty()),
         limit: limit.map(|value| value.clamp(1, 100)),
     };
-    client(&state)
+    client(&state)?
         .feeds()
         .tail(feed_id, &query)
         .await
@@ -49,7 +49,7 @@ pub async fn feed_latest_good(
     let query = FeedLatestGoodQuery {
         profile_id: profile_id.filter(|id| !id.trim().is_empty()),
     };
-    client(&state)
+    client(&state)?
         .feeds()
         .latest_good(feed_id, &query)
         .await

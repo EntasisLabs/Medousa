@@ -14,7 +14,7 @@ pub async fn environment_get_status(
     surface_id: Option<String>,
     include_runtime: Option<bool>,
 ) -> Result<EnvironmentStatusResponse, String> {
-    client(&state)
+    client(&state)?
         .environment()
         .get_status(
             profile_id.as_deref().filter(|id| !id.trim().is_empty()),
@@ -30,7 +30,7 @@ pub async fn environment_get_spec(
     state: State<'_, DaemonState>,
     profile_id: Option<String>,
 ) -> Result<EnvironmentSpecResponse, String> {
-    client(&state)
+    client(&state)?
         .environment()
         .get_spec(profile_id.as_deref().filter(|id| !id.trim().is_empty()))
         .await
@@ -42,7 +42,7 @@ pub async fn environment_put_spec(
     state: State<'_, DaemonState>,
     request: EnvironmentSpecPutRequest,
 ) -> Result<EnvironmentSpecResponse, String> {
-    client(&state)
+    client(&state)?
         .environment()
         .put_spec(&request)
         .await
@@ -54,7 +54,7 @@ pub async fn environment_get_pending(
     state: State<'_, DaemonState>,
     profile_id: Option<String>,
 ) -> Result<EnvironmentPendingResponse, String> {
-    client(&state)
+    client(&state)?
         .environment()
         .get_pending(profile_id.as_deref().filter(|id| !id.trim().is_empty()))
         .await
@@ -66,7 +66,7 @@ pub async fn environment_apply_pending(
     state: State<'_, DaemonState>,
     profile_id: Option<String>,
 ) -> Result<EnvironmentSpecResponse, String> {
-    client(&state)
+    client(&state)?
         .environment()
         .apply_pending(profile_id.as_deref().filter(|id| !id.trim().is_empty()))
         .await
@@ -78,7 +78,7 @@ pub async fn environment_dismiss_pending(
     state: State<'_, DaemonState>,
     profile_id: Option<String>,
 ) -> Result<(), String> {
-    client(&state)
+    client(&state)?
         .environment()
         .dismiss_pending(profile_id.as_deref().filter(|id| !id.trim().is_empty()))
         .await

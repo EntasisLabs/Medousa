@@ -336,7 +336,7 @@ pub async fn account_connections_probe(
     state: State<'_, DaemonState>,
 ) -> Result<AccountConnections, String> {
     ensure_vendor_cli_path();
-    let runtimes = client(&state)
+    let runtimes = client(&state)?
         .agents()
         .list_runtimes()
         .await

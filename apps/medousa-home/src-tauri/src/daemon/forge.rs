@@ -35,7 +35,7 @@ pub async fn forge_request(
         return Err("unsupported Forge API method".into());
     }
     crate::workshop_transport::workshop_json_request(
-        &workshop_http::transport_config(&state),
+        &workshop_http::transport_config(&state)?,
         &method,
         &path,
         body.as_ref(),

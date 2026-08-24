@@ -76,7 +76,7 @@ pub async fn daemon_stream_start(
     streams.insert(handle.clone(), tx);
     drop(streams);
 
-    let config = crate::daemon::sdk::transport_config(&state);
+    let config = crate::daemon::sdk::transport_config(&state)?;
     let event_name = format!("daemon-stream://{handle}/event");
     let error_event = format!("daemon-stream://{handle}/error");
     tokio::spawn(async move {

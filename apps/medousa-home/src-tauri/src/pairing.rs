@@ -85,14 +85,8 @@ fn pairing_http_client(base_url: &str) -> Result<Client, String> {
     )
 }
 
-fn daemon_base(state: &State<'_, DaemonState>) -> Result<String, String> {
-    Ok(state
-        .daemon_url
-        .lock()
-        .expect("daemon url lock")
-        .clone()
-        .trim_end_matches('/')
-        .to_string())
+fn daemon_base(_state: &State<'_, DaemonState>) -> Result<String, String> {
+    crate::active_workshop::transport_base_url()
 }
 
 fn pairing_unavailable_message(status: reqwest::StatusCode, body: &str) -> String {

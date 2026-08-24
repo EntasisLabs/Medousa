@@ -110,7 +110,7 @@ pub async fn authorized_resource_admit(
         return Err("unsupported resource purpose".to_string());
     }
     let path = validate_vault_relative_path(&path)?;
-    let file = client(&daemon)
+    let file = client(&daemon)?
         .vault()
         .get_file(&encode_vault_path(path))
         .await

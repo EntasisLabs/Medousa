@@ -49,7 +49,7 @@ pub async fn session_create(
         return client.create_session().map_err(|error| error.to_string());
     }
 
-    client(&state)
+    client(&state)?
         .sessions()
         .create(&CreateSessionRequest {
             session_id: None,
@@ -68,7 +68,7 @@ pub async fn session_derive(
     request: DeriveSessionRequest,
     idempotency_key: String,
 ) -> Result<DeriveSessionResponse, String> {
-    client(&state)
+    client(&state)?
         .sessions()
         .derive(&request, idempotency_key.trim())
         .await
@@ -149,7 +149,7 @@ pub async fn session_set_display_name(
         return Err("display name must not be empty".to_string());
     }
 
-    client(&state)
+    client(&state)?
         .sessions()
         .set_display_name(trimmed_id, trimmed_name)
         .await
@@ -160,7 +160,7 @@ pub async fn session_set_display_name(
 pub async fn agent_mode_list(
     state: State<'_, DaemonState>,
 ) -> Result<AgentModeListResponse, String> {
-    client(&state)
+    client(&state)?
         .runtime()
         .agent_modes()
         .await
@@ -171,7 +171,7 @@ pub async fn agent_mode_list(
 pub async fn agent_mode_transition_policy_get(
     state: State<'_, DaemonState>,
 ) -> Result<AgentModeTransitionPolicy, String> {
-    client(&state)
+    client(&state)?
         .runtime()
         .agent_mode_transition_policy()
         .await
@@ -183,7 +183,7 @@ pub async fn agent_mode_transition_policy_set(
     state: State<'_, DaemonState>,
     policy: AgentModeTransitionPolicy,
 ) -> Result<AgentModeTransitionPolicy, String> {
-    client(&state)
+    client(&state)?
         .runtime()
         .set_agent_mode_transition_policy(&policy)
         .await
@@ -206,7 +206,7 @@ pub async fn session_get_agent_mode(
             .session_agent_mode(trimmed)
             .map_err(|error| error.to_string());
     }
-    client(&state)
+    client(&state)?
         .sessions()
         .agent_mode(trimmed)
         .await
@@ -223,7 +223,7 @@ pub async fn session_set_agent_mode(
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
-    client(&state)
+    client(&state)?
         .sessions()
         .set_agent_mode(
             trimmed,
@@ -247,7 +247,7 @@ pub async fn session_list_agent_mode_proposals(
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
-    client(&state)
+    client(&state)?
         .sessions()
         .agent_mode_proposals(trimmed)
         .await
@@ -261,7 +261,7 @@ pub async fn session_decide_agent_mode_proposal(
     proposal_id: String,
     accept: bool,
 ) -> Result<AgentModeProposalResponse, String> {
-    client(&state)
+    client(&state)?
         .sessions()
         .decide_agent_mode_proposal(session_id.trim(), proposal_id.trim(), accept)
         .await
@@ -280,7 +280,7 @@ pub async fn session_get_code_binding(
             .session_code_binding(session_id.trim())
             .map_err(|error| error.to_string());
     }
-    client(&state)
+    client(&state)?
         .sessions()
         .code_binding(session_id.trim())
         .await
@@ -293,7 +293,7 @@ pub async fn session_set_code_binding(
     session_id: String,
     work_id: String,
 ) -> Result<SessionCodeBindingResponse, String> {
-    client(&state)
+    client(&state)?
         .sessions()
         .set_code_binding(session_id.trim(), work_id.trim())
         .await
@@ -305,7 +305,7 @@ pub async fn session_clear_code_binding(
     state: State<'_, DaemonState>,
     session_id: String,
 ) -> Result<SessionCodeBindingResponse, String> {
-    client(&state)
+    client(&state)?
         .sessions()
         .clear_code_binding(session_id.trim())
         .await
@@ -318,7 +318,7 @@ pub async fn session_start_code_project(
     session_id: String,
     request: StartSessionCodeProjectRequest,
 ) -> Result<SessionCodeProjectResponse, String> {
-    client(&state)
+    client(&state)?
         .sessions()
         .start_code_project(session_id.trim(), &request)
         .await
@@ -338,7 +338,7 @@ pub async fn session_delete(
     let query = SessionDeleteQuery {
         purge_memory: purge_memory.unwrap_or(true),
     };
-    client(&state)
+    client(&state)?
         .sessions()
         .delete(trimmed, &query)
         .await
@@ -349,7 +349,7 @@ pub async fn session_delete(
 pub async fn prompt_stash_list(
     state: State<'_, DaemonState>,
 ) -> Result<PromptStashListResponse, String> {
-    client(&state)
+    client(&state)?
         .prompt_stashes()
         .list()
         .await
@@ -361,7 +361,7 @@ pub async fn prompt_stash_create(
     state: State<'_, DaemonState>,
     request: CreatePromptStashRequest,
 ) -> Result<PromptStash, String> {
-    client(&state)
+    client(&state)?
         .prompt_stashes()
         .create(&request)
         .await
@@ -373,7 +373,7 @@ pub async fn prompt_stash_delete(
     state: State<'_, DaemonState>,
     stash_id: String,
 ) -> Result<DeletePromptStashResponse, String> {
-    client(&state)
+    client(&state)?
         .prompt_stashes()
         .delete(stash_id.trim())
         .await
@@ -403,7 +403,7 @@ pub async fn session_get_history(
             turns,
         });
     }
-    client(&state)
+    client(&state)?
         .sessions()
         .history(trimmed)
         .await
@@ -427,7 +427,7 @@ pub async fn session_get_active_turn(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)
+    client(&state)?
         .sessions()
         .active_turn(trimmed)
         .await
@@ -459,7 +459,7 @@ pub async fn session_cancel_active_turn(
             .await
             .map_err(|error| error.to_string());
     }
-    client(&state)
+    client(&state)?
         .sessions()
         .cancel_active_turn(trimmed)
         .await

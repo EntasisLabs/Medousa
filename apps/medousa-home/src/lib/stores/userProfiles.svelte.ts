@@ -6,6 +6,7 @@ import {
 } from "$lib/daemon";
 import type { UserProfileRecord } from "$lib/types/userProfile";
 import { profileSwitchPorts } from "$lib/runtime/profileSwitchPorts";
+import { activeWorkshopId } from "$lib/utils/workshopLocality";
 
 const PROFILE_SLUG_PATTERN = /^[a-z][a-z0-9_-]{0,31}$/;
 
@@ -22,6 +23,8 @@ export class UserProfilesStore {
   /** Active profile changed on another device (last-writer-wins). */
   remoteChangeNotice = $state<string | null>(null);
   private localSwitchPending = false;
+  private loadEpoch = 0;
+  workshopScopeId = "";
 
   activeProfile = $derived(
     this.profiles.find((profile) => profile.profile_id === this.activeProfileId) ?? null,
@@ -37,6 +40,7 @@ export class UserProfilesStore {
 
   applyHealthSnapshot(health: DaemonHealth | null) {
     if (!health?.ok || !health.active_profile_id) return;
+    if (this.workshopScopeId && this.workshopScopeId !== activeWorkshopId()) return;
     if (this.localSwitchPending) return;
     if (this.activeProfileId && health.active_profile_id !== this.activeProfileId) {
       return;
@@ -45,14 +49,18 @@ export class UserProfilesStore {
   }
 
   async load(options?: { suppressRemoteNotice?: boolean }) {
+    const requestEpoch = ++this.loadEpoch;
+    const workshopId = activeWorkshopId();
     const previousActive = this.activeProfileId;
     this.loading = true;
     this.error = null;
     try {
       const response = await listUserProfiles();
+      if (requestEpoch !== this.loadEpoch || workshopId !== activeWorkshopId()) return;
       this.profiles = response.profiles.filter((profile) => !profile.archived);
       this.activeProfileId = response.active_profile_id;
       this.resolvedUserId = response.resolved_user_id;
+      this.workshopScopeId = workshopId;
 
       if (
         previousActive &&
@@ -72,10 +80,13 @@ export class UserProfilesStore {
         ]);
       }
     } catch (err) {
+      if (requestEpoch !== this.loadEpoch || workshopId !== activeWorkshopId()) return;
       this.error = err instanceof Error ? err.message : String(err);
     } finally {
-      this.loading = false;
-      this.localSwitchPending = false;
+      if (requestEpoch === this.loadEpoch) {
+        this.loading = false;
+        this.localSwitchPending = false;
+      }
     }
   }
 
@@ -87,6 +98,14 @@ export class UserProfilesStore {
 
   async setActive(profileId: string) {
     if (profileId === this.activeProfileId) return;
+    if (this.workshopScopeId !== activeWorkshopId()) {
+      throw new Error("Profiles are still loading for the active workshop");
+    }
+    if (!this.profiles.some((profile) => profile.profile_id === profileId)) {
+      throw new Error("That profile does not belong to the active workshop");
+    }
+    const requestEpoch = this.loadEpoch;
+    const workshopId = this.workshopScopeId;
     const hadConversation = profileSwitchPorts().hasConversation();
     this.localSwitchPending = true;
     this.remoteChangeNotice = null;
@@ -95,6 +114,7 @@ export class UserProfilesStore {
     this.message = null;
     try {
       const response = await setActiveUserProfile(profileId);
+      if (requestEpoch !== this.loadEpoch || workshopId !== activeWorkshopId()) return;
       this.activeProfileId = response.active_profile_id;
       this.resolvedUserId = response.resolved_user_id;
       await this.load({ suppressRemoteNotice: true });
@@ -110,14 +130,18 @@ export class UserProfilesStore {
         this.message = `Switched to ${this.activeDisplayName}`;
       }
     } catch (err) {
+      if (workshopId !== activeWorkshopId()) return;
       this.localSwitchPending = false;
       this.error = err instanceof Error ? err.message : String(err);
     } finally {
-      this.saving = false;
+      if (workshopId === activeWorkshopId()) {
+        this.saving = false;
+      }
     }
   }
 
   async create(slug: string, displayName: string) {
+    const workshopId = activeWorkshopId();
     const normalizedSlug = slug.trim().toLowerCase();
     const normalizedName = displayName.trim();
     if (!PROFILE_SLUG_PATTERN.test(normalizedSlug)) {
@@ -135,14 +159,19 @@ export class UserProfilesStore {
     this.message = null;
     try {
       await createUserProfile(normalizedSlug, normalizedName);
+      if (workshopId !== activeWorkshopId()) return false;
       await this.load({ suppressRemoteNotice: true });
+      if (workshopId !== activeWorkshopId()) return false;
       this.message = `Created ${normalizedName}`;
       return true;
     } catch (err) {
+      if (workshopId !== activeWorkshopId()) return false;
       this.error = err instanceof Error ? err.message : String(err);
       return false;
     } finally {
-      this.saving = false;
+      if (workshopId === activeWorkshopId()) {
+        this.saving = false;
+      }
     }
   }
 
@@ -159,7 +188,23 @@ export class UserProfilesStore {
     this.error = null;
   }
 
+  turnIdentityUserId(): string | undefined {
+    const workshopId = activeWorkshopId();
+    if (this.workshopScopeId && this.workshopScopeId !== workshopId) {
+      throw new Error("Profiles are still loading for the active workshop");
+    }
+    const profileId = this.activeProfileId?.trim();
+    if (profileId && !this.profiles.some((profile) => profile.profile_id === profileId)) {
+      throw new Error("The selected profile does not belong to the active workshop");
+    }
+    return profileId || this.resolvedUserId?.trim() || undefined;
+  }
+
   resetForReconnect() {
+    this.loadEpoch += 1;
+    this.workshopScopeId = "";
+    this.loading = false;
+    this.saving = false;
     this.profiles = [];
     this.activeProfileId = null;
     this.resolvedUserId = null;

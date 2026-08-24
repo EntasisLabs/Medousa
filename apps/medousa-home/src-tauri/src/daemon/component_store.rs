@@ -20,7 +20,7 @@ pub async fn component_store_get(
         return Err("component_id is required".to_string());
     }
 
-    client(&state)
+    client(&state)?
         .components()
         .store_get(
             component_id,
@@ -52,7 +52,7 @@ pub async fn component_store_set(
         value,
         profile_id: profile_id.filter(|id| !id.trim().is_empty()),
     };
-    client(&state)
+    client(&state)?
         .components()
         .store_put_key(component_id, key, &request)
         .await
@@ -72,7 +72,7 @@ pub async fn component_store_delete(
         return Err("component_id and key are required".to_string());
     }
 
-    client(&state)
+    client(&state)?
         .components()
         .store_delete_key(
             component_id,
@@ -94,7 +94,7 @@ pub async fn component_store_list_keys(
         return Err("component_id is required".to_string());
     }
 
-    client(&state)
+    client(&state)?
         .components()
         .store_list_keys(
             component_id,

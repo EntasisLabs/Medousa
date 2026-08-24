@@ -15,7 +15,13 @@ export function setActiveWorkshopIdPort(port: (() => string | undefined) | null)
 }
 
 export function activeWorkshopId(): string {
-  return idPort()?.trim() || "default";
+  return idPort()?.trim() || "personal";
+}
+
+/** Local client caches must never alias the same daemon id across workshops. */
+export function workshopScopedStorageKey(prefix: string, workshopId?: string): string {
+  const scope = workshopId?.trim() || activeWorkshopId();
+  return `${prefix}:${scope}`;
 }
 
 /**

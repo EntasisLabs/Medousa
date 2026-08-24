@@ -42,6 +42,7 @@ export type VaultRootsHost = {
   loading: boolean;
   selectedKind: VaultNoteKind;
   openGeneration: number;
+  workshopEpoch: number;
   clearAutosaveTimer(): void;
   clearProposal(): void;
   clearRailSelection(): void;
@@ -210,14 +211,17 @@ export class VaultRootsController {
 
   async refreshVaultRoots() {
     const host = this.#host;
+    const workshopEpoch = host.workshopEpoch;
     host.vaultRootsLoading = true;
     host.vaultRootsError = null;
     try {
       const response = await listVaultRoots();
+      if (workshopEpoch !== host.workshopEpoch) return;
       host.vaultRootsUnavailable = false;
       host.vaultRoots = response.roots;
       host.activeVaultRootId = response.activeRootId;
     } catch (err) {
+      if (workshopEpoch !== host.workshopEpoch) return;
       const message = err instanceof Error ? err.message : String(err);
       if (/404|not found/i.test(message)) {
         host.vaultRootsUnavailable = true;
@@ -237,7 +241,9 @@ export class VaultRootsController {
         host.vaultRootsError = message;
       }
     } finally {
-      host.vaultRootsLoading = false;
+      if (workshopEpoch === host.workshopEpoch) {
+        host.vaultRootsLoading = false;
+      }
     }
   }
 
@@ -312,6 +318,7 @@ export class VaultRootsController {
     host.clearProposal();
     this.clearLooseFile();
     host.selectedPath = null;
+    host.clearRailSelection();
     host.content = "";
     host.baselineContent = "";
     host.contentHash = null;
@@ -325,14 +332,16 @@ export class VaultRootsController {
     host.notes = [];
     host.tree = [];
     host.error = null;
+    host.noteLoading = false;
+    host.loading = false;
     host.vaultRoots = [];
     host.activeVaultRootId = null;
+    host.vaultRootsLoading = false;
+    host.vaultRootsError = null;
     host.vaultRootsUnavailable = false;
     invalidateVaultRootCache();
     void import("$lib/utils/vaultLocalImages").then(({ clearDaemonImagePreviewCache }) => {
       clearDaemonImagePreviewCache();
     });
-    void this.refreshVaultRoots();
-    void host.refreshNotes();
   }
 }

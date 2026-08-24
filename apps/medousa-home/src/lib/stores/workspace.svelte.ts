@@ -101,6 +101,30 @@ export class WorkspaceStore {
   private reconcilingCards = false;
   private recoveringWorkerResults = false;
   private heartbeatsSinceReconcile = 0;
+  private workshopEpoch = 0;
+
+  resetForWorkshopSwitch() {
+    this.workshopEpoch += 1;
+    this.revision = 0;
+    this.cards = [];
+    this.feed = [];
+    this.columnCounts = {};
+    this.streamError = null;
+    this.selectedCardId = null;
+    this.selectedCardDetail = null;
+    this.cardDetailError = null;
+    this.cardActionMessage = null;
+    this.askSubmitting = false;
+    this.askError = null;
+    this.askMessage = null;
+    this.pendingFocusJobId = null;
+    this.pendingAskCompletion = null;
+    this.cardDetailsCache = new Map();
+    this.previousColumns.clear();
+    this.reconcilingCards = false;
+    this.recoveringWorkerResults = false;
+    this.heartbeatsSinceReconcile = 0;
+  }
 
   applyEvent(event: WorkspaceStreamEvent) {
     this.revision = event.workspace_revision;
@@ -297,11 +321,13 @@ export class WorkspaceStore {
   /** Pull authoritative card columns when activity says done but the board lagged. */
   async reconcileCardsFromSnapshot() {
     if (this.reconcilingCards) return;
+    const workshopEpoch = this.workshopEpoch;
     this.reconcilingCards = true;
     try {
       const snapshot = await fetchWorkspaceSnapshot(
         this.revision > 0 ? this.revision : undefined,
       );
+      if (this.workshopEpoch !== workshopEpoch) return;
       if (snapshot.cards.length === 0 && this.revision > 0) {
         return;
       }
@@ -313,9 +339,12 @@ export class WorkspaceStore {
       await this.recoverPendingWorkerResults({ previousColumns });
       this.syncColumnMemory();
     } catch (err) {
+      if (this.workshopEpoch !== workshopEpoch) return;
       this.streamError = err instanceof Error ? err.message : String(err);
     } finally {
-      this.reconcilingCards = false;
+      if (this.workshopEpoch === workshopEpoch) {
+        this.reconcilingCards = false;
+      }
     }
   }
 
