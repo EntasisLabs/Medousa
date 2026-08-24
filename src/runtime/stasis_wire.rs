@@ -32,6 +32,7 @@ use crate::channel_delivery;
 use crate::grapheme_medousa_bridge::{self, MedousaBridgeDeps};
 use crate::runtime::memory_bundle::MemoryAdapterBundle;
 use crate::runtime::stasis_otel::attach_otel_to_builder;
+use crate::runtime::stasis_surreal_schema::ensure_stasis_runtime_schema;
 use crate::runtime::surreal_startup::timed_step;
 use crate::workflow;
 
@@ -133,6 +134,7 @@ pub async fn build_daemon_stasis_composition(
                 },
             )
             .await?;
+            ensure_stasis_runtime_schema(&shell).await?;
             eprintln!("medousa-daemon: surreal runtime connected, initializing memory adapters…");
             let memory = MemoryAdapterBundle::from_runtime_shell(&shell).await?;
             eprintln!("medousa-daemon: wiring job handlers and delivery…");
@@ -233,6 +235,7 @@ pub async fn build_local_stasis_composition(
         | RuntimeBackend::SurrealMem { .. } => {
             crate::ensure_runtime_backend_prerequisites(&config.backend)?;
             let shell = RuntimeFactory::build(config.backend.clone()).await?;
+            ensure_stasis_runtime_schema(&shell).await?;
             let memory = MemoryAdapterBundle::from_runtime_shell(&shell).await?;
             let composition = wire_local_stasis_composition(shell, &config, &memory).await?;
             Ok((composition, memory))

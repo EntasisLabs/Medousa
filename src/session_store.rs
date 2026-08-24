@@ -155,27 +155,29 @@ const SESSION_SCHEMA_MIGRATIONS: &[&str] = &[
     "UPDATE session_turn SET search_text = content WHERE search_text = NONE OR search_text = NULL",
 ];
 
-/// Initialize the session store based on the runtime composition.
-/// When a Surreal runtime is active, swaps the file-backed store for a
-/// SurrealDB-backed implementation.
-pub async fn init_session_store_with_runtime(runtime: &RuntimeComposition) {
+/// Bind the session store to the runtime composition.
+///
+/// Persistent schema failures are fatal to daemon boot; silently selecting a
+/// different store would create a second workshop history.
+pub async fn init_session_store_with_runtime(
+    runtime: &RuntimeComposition,
+) -> Result<(), StoreError> {
     match runtime {
         RuntimeComposition::Surreal(rt) => {
             let db = rt.job_store.db();
             let store = SurrealSessionStore::new(db);
-            if let Err(err) = store.ensure_schema().await {
-                eprintln!(
-                    "Surreal session store schema init error: {err}; falling back to file-backed store"
-                );
-                return;
-            }
+            store
+                .ensure_schema()
+                .await
+                .map_err(|error| StoreError::Backend(error.to_string()))?;
             set_session_store(Arc::new(store));
             eprintln!("Surreal runtime detected; session store switched to SurrealDB backend");
         }
-        _ => {
+        RuntimeComposition::InMemory(_) => {
             // Keep file-backed store for in-memory runtimes.
         }
     }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, SurrealValue)]

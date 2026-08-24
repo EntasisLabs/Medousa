@@ -31,6 +31,9 @@ pub mod session_store;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod sse_turn_projection;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+#[path = "runtime/stasis_surreal_schema.rs"]
+pub mod stasis_surreal_schema;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod store_root;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 #[path = "runtime/surreal_startup.rs"]

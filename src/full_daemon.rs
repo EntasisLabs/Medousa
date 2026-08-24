@@ -251,10 +251,9 @@ pub mod workflow_plan;
 pub mod workshop_api;
 pub mod workshop_env;
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use chrono::Utc;
 use serde_json::{Value, json};
@@ -341,6 +340,10 @@ pub use product_config::{
     apply_surreal_env_from_fields, format_i64_csv, format_u64_csv, ingest_sender_allowed,
     load_product_config, migrate_from_onboard_profile, parse_i64_csv, parse_u64_csv,
     save_product_config,
+};
+pub use runtime::surreal_startup::{
+    clear_stale_surrealkv_lock, ensure_runtime_backend_prerequisites, remove_surrealkv_lock,
+    surrealkv_lock_path,
 };
 pub use runtime::{
     MedousaPlatformRuntime, PlatformBuildConfig, TuiPlatformBuildConfig, TuiPlatformMode,
@@ -553,6 +556,7 @@ pub async fn build_runtime_with_identity_store(
     builder = runtime::stasis_otel::attach_otel_to_builder(builder)?;
 
     let runtime = builder.with_tool(MockWebSearchTool)?.build().await?;
+    runtime::stasis_surreal_schema::ensure_stasis_runtime_schema(&runtime).await?;
 
     Ok(runtime)
 }
@@ -617,6 +621,7 @@ pub async fn build_daemon_runtime(
     builder = runtime::stasis_otel::attach_otel_to_builder(builder)?;
 
     let runtime = builder.with_tool(MockWebSearchTool)?.build().await?;
+    runtime::stasis_surreal_schema::ensure_stasis_runtime_schema(&runtime).await?;
 
     channel_delivery::seed_internal_outbox_endpoint_for_runtime(
         &runtime,
@@ -684,72 +689,6 @@ fn default_surrealkv_path() -> String {
         .join(DEFAULT_SURREALKV_FILENAME)
         .to_string_lossy()
         .to_string()
-}
-
-pub(crate) fn ensure_runtime_backend_prerequisites(backend: &RuntimeBackend) -> Result<()> {
-    if let RuntimeBackend::SurrealKv { path, .. } = backend {
-        let path_buf = PathBuf::from(surreal_config::surrealkv_filesystem_path(path));
-        if let Some(parent) = path_buf.parent()
-            && !parent.as_os_str().is_empty()
-        {
-            std::fs::create_dir_all(parent).with_context(|| {
-                format!(
-                    "failed to create SurrealKV runtime directory {}",
-                    parent.display()
-                )
-            })?;
-        }
-
-        clear_stale_surrealkv_lock(backend)?;
-    }
-
-    Ok(())
-}
-
-/// Remove a leftover SurrealKV `LOCK` file when no daemon holds the database.
-pub fn clear_stale_surrealkv_lock(backend: &RuntimeBackend) -> Result<()> {
-    if let RuntimeBackend::SurrealKv { path, .. } = backend {
-        let lock_path = PathBuf::from(surreal_config::surrealkv_filesystem_path(path)).join("LOCK");
-        if !lock_path.exists() {
-            return Ok(());
-        }
-
-        std::fs::remove_file(&lock_path).with_context(|| {
-            format!(
-                "failed to remove stale SurrealKV lock at {} — another medousa_daemon may be running. \
-                 Stop it with `pkill -x medousa_daemon`, or remove the lock manually if no daemon is running.",
-                lock_path.display()
-            )
-        })?;
-    }
-
-    Ok(())
-}
-
-/// Path to the SurrealKV lock file for diagnostics (`None` for non-KV backends).
-pub fn surrealkv_lock_path(backend: &RuntimeBackend) -> Option<PathBuf> {
-    match backend {
-        RuntimeBackend::SurrealKv { path, .. } => {
-            Some(PathBuf::from(surreal_config::surrealkv_filesystem_path(path)).join("LOCK"))
-        }
-        _ => None,
-    }
-}
-
-/// Remove the SurrealKV lock file for a given backend (used during graceful shutdown).
-pub fn remove_surrealkv_lock(backend: &RuntimeBackend) {
-    if let RuntimeBackend::SurrealKv { path, .. } = backend {
-        let lock_path = PathBuf::from(surreal_config::surrealkv_filesystem_path(path)).join("LOCK");
-        if lock_path.exists()
-            && let Err(err) = std::fs::remove_file(&lock_path)
-        {
-            tracing::warn!(
-                path = %lock_path.display(),
-                error = %err,
-                "failed to remove SurrealKV lock file during shutdown"
-            );
-        }
-    }
 }
 
 pub async fn process_once(runtime: &RuntimeComposition, worker_id: &str) -> Result<Option<String>> {

@@ -58,8 +58,7 @@ use crate::persistent_locus::build_persistent_locus_memory;
 use crate::request_principal::{Capability, RequestPrincipal, TransportClass};
 use crate::session_storage::{SessionId, new_session_id};
 use crate::session_store::{
-    SessionStore, SurrealSessionStore, TranscriptAppend, configure_file_session_root,
-    set_session_store,
+    SessionStore, TranscriptAppend, configure_file_session_root, get_session_store,
 };
 use crate::turn_event_channel::TurnEventSubscription;
 use crate::turn_pipeline_output::{TurnJournalOutput, daemon_turn_pipeline_budget};
@@ -324,33 +323,34 @@ impl EmbeddedDaemon {
             .ok_or_else(|| anyhow!("embedded daemon root is not valid UTF-8"))?
             .to_string();
         let backend = RuntimeBackend::surreal_kv(surreal_path, "medousa", "runtime");
+        crate::surreal_startup::ensure_runtime_backend_prerequisites(&backend)
+            .context("prepare embedded SurrealKV runtime")?;
         let runtime = StasisRuntimeBuilder::new(backend)
             .with_chat_client(config.chat_client.clone())
             .build()
             .await
             .context("boot embedded Stasis runtime")?;
+        crate::stasis_surreal_schema::ensure_stasis_runtime_schema(&runtime)
+            .await
+            .context("initialize embedded Stasis schema")?;
+        crate::session_store::init_session_store_with_runtime(&runtime)
+            .await
+            .context("initialize embedded session schema")?;
 
         let (session_store, locus_memory): (
             Arc<dyn SessionStore>,
             Arc<stasis::infrastructure::memory::locus_node_store_factory::LocusMemoryStore>,
         ) = match &runtime {
             RuntimeComposition::Surreal(runtime) => {
-                let store = Arc::new(SurrealSessionStore::new(runtime.job_store.db()));
-                store
-                    .ensure_schema()
-                    .await
-                    .context("initialize embedded session schema")?;
                 let locus_memory = build_persistent_locus_memory(runtime.job_store.db())
                     .await
                     .context("initialize embedded Locus memory")?;
-                (store, locus_memory)
+                (get_session_store(), locus_memory)
             }
             RuntimeComposition::InMemory(_) => {
                 bail!("embedded daemon requires its SurrealKV persistence backend")
             }
         };
-        set_session_store(session_store.clone());
-
         let cluster_node_store = RuntimeFactory::resolve_cluster_node_store(&runtime, None);
         let cluster_node = register_or_heartbeat_node(
             cluster_node_store.as_ref(),
@@ -1133,7 +1133,7 @@ mod tests {
     use super::*;
     use crate::request_principal::PrincipalKind;
 
-    const INSTALLATION_ID: &str = "bf8907dd-0cad-4c60-995e-10f65aad16f1";
+    const INSTALLATION_ID: &str = crate::workshop_authority::TEST_INSTALLATION_ID;
     const SECRET_CANARY: &str = "embedded-secret-must-never-escape";
     const FIRST_REPLY: &str = "The embedded daemon owns this foreground turn.";
     const SECOND_REPLY: &str = "The mobile shell remains only its privileged local client.";
@@ -1262,6 +1262,15 @@ mod tests {
         ))
         .await
         .expect("boot embedded daemon");
+        let delivery_endpoints =
+            RuntimeFactory::resolve_delivery_endpoint_store(&daemon._runtime, None);
+        assert!(
+            delivery_endpoints
+                .get("embedded-schema-probe")
+                .await
+                .expect("read canonical delivery endpoint table")
+                .is_none()
+        );
         let authority_id = daemon.authority_id().clone();
         let node_id = daemon.cluster_node().node_id.clone();
         let client = daemon.local_client();
@@ -1389,6 +1398,8 @@ mod tests {
         assert_eq!(Arc::strong_count(&daemon), 1);
         drop(daemon);
         tokio::time::sleep(Duration::from_millis(250)).await;
+        std::fs::write(sandbox.path().join("runtime.surrealkv/LOCK"), b"stale")
+            .expect("stale lock fixture");
 
         let rebooted = EmbeddedDaemon::boot(EmbeddedDaemonConfig::with_chat_client(
             sandbox.path(),

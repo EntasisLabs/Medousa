@@ -69,7 +69,7 @@ pub(crate) async fn build_tui_runtime_services(
         base_url,
     };
     let (composition, memory) = build_local_stasis_composition(wire_config).await?;
-    crate::session_store::init_session_store_with_runtime(&composition).await;
+    crate::session_store::init_session_store_with_runtime(&composition).await?;
     crate::artifact_store::init_artifact_store_with_runtime(&composition).await;
     crate::component_store::init_component_store_with_runtime(&composition).await;
     crate::integration_connection::init_integration_connection_from_runtime(&composition).await;
