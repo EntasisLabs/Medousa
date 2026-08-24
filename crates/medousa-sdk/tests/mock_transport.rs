@@ -196,6 +196,25 @@ impl Transport for MockTransport {
     }
 }
 
+fn health_json(contract_revision: u32) -> serde_json::Value {
+    serde_json::json!({
+        "runtime": {
+            "authority_id": format!("auth_{}", "a".repeat(64)),
+            "product_version": "0.9.1",
+            "build_revision": "test-build-42",
+            "contract_revision": contract_revision,
+            "base_schema_revision": 1,
+            "deployment_profile": "full",
+            "deployment_target": "full:macos:aarch64",
+            "advertised_capabilities": ["transport.http"]
+        },
+        "status": "ok",
+        "backend": "test",
+        "worker_id": "worker-1",
+        "now_utc": "2026-01-01T00:00:00Z"
+    })
+}
+
 #[cfg(feature = "sse")]
 #[tokio::test]
 async fn typed_v2_stream_reconnects_with_cursor_and_dedupes_replay() {
@@ -284,18 +303,142 @@ async fn typed_v2_stream_exhausts_retries_without_sequence_progress() {
 async fn mock_transport_routes_health_get() {
     let transport = Arc::new(MockTransport::new().on_get(
         "/v1/health",
-        serde_json::json!({
-            "status": "ok",
-            "backend": "test",
-            "worker_id": "worker-1",
-            "now_utc": "2026-01-01T00:00:00Z",
-        }),
+        health_json(medousa_sdk::DAEMON_API_CONTRACT_REVISION),
     ));
     let client =
         medousa_sdk::MedousaClient::with_transport(transport.clone(), "http://127.0.0.1:8080");
     let health = client.health().get().await.expect("health get");
     assert_eq!(health.status, "ok");
+    assert_eq!(health.runtime.build_revision, "test-build-42");
     assert_eq!(transport.call_count(), 1);
+}
+
+#[tokio::test]
+async fn health_rejects_missing_or_incompatible_contract_identity() {
+    let missing = Arc::new(MockTransport::new().on_get(
+        "/v1/health",
+        serde_json::json!({
+            "status": "ok",
+            "backend": "test",
+            "worker_id": "old-worker",
+            "now_utc": "2026-01-01T00:00:00Z"
+        }),
+    ));
+    let client = medousa_sdk::MedousaClient::with_transport(missing, "http://127.0.0.1:8080");
+    let error = client
+        .health()
+        .get()
+        .await
+        .expect_err("descriptor required");
+    assert!(matches!(error, medousa_sdk::SdkError::Compatibility(_)));
+    assert!(
+        error
+            .to_string()
+            .contains("omitted the required runtime descriptor")
+    );
+
+    let mut invalid_descriptor = health_json(medousa_sdk::DAEMON_API_CONTRACT_REVISION);
+    invalid_descriptor["runtime"]
+        .as_object_mut()
+        .expect("runtime object")
+        .remove("authority_id");
+    let invalid = Arc::new(MockTransport::new().on_get("/v1/health", invalid_descriptor));
+    let client = medousa_sdk::MedousaClient::with_transport(invalid, "http://127.0.0.1:8080");
+    let error = client
+        .health()
+        .get()
+        .await
+        .expect_err("descriptor fields are required");
+    assert!(matches!(error, medousa_sdk::SdkError::Compatibility(_)));
+    assert!(error.to_string().contains("invalid health contract"));
+
+    let incompatible = Arc::new(MockTransport::new().on_get(
+        "/v1/health",
+        health_json(medousa_sdk::DAEMON_API_CONTRACT_REVISION + 1),
+    ));
+    let client = medousa_sdk::MedousaClient::with_transport(incompatible, "http://127.0.0.1:8080");
+    let error = client
+        .health()
+        .get()
+        .await
+        .expect_err("revision must match");
+    assert!(matches!(error, medousa_sdk::SdkError::Compatibility(_)));
+    assert!(error.to_string().contains("test-build-42"));
+    assert!(error.to_string().contains("contract revision"));
+}
+
+#[tokio::test]
+async fn session_create_and_history_keep_required_workshop_authority() {
+    use medousa_types::CreateSessionRequest;
+
+    let authority = format!("auth_{}", "b".repeat(64));
+    let transport = Arc::new(
+        MockTransport::new()
+            .on_post(
+                "/v1/sessions",
+                serde_json::json!({
+                    "authority_id": authority.clone(),
+                    "session_id": "session-1",
+                    "catalog": "single"
+                }),
+            )
+            .on_get(
+                "/v1/sessions/session-1/history",
+                serde_json::json!({
+                    "authority_id": authority,
+                    "session_id": "session-1",
+                    "turns": []
+                }),
+            ),
+    );
+    let client =
+        medousa_sdk::MedousaClient::with_transport(transport.clone(), "http://127.0.0.1:8080");
+    let created = client
+        .sessions()
+        .create(&CreateSessionRequest {
+            session_id: None,
+            catalog: None,
+            member_profile_ids: None,
+            agent_profile_id: None,
+            display_name: None,
+        })
+        .await
+        .expect("create session");
+    let history = client
+        .sessions()
+        .history(&created.session_id)
+        .await
+        .expect("session history");
+    assert_eq!(created.authority_id, history.authority_id);
+    assert_eq!(transport.call_count(), 2);
+}
+
+#[tokio::test]
+async fn missing_history_authority_names_the_responder_build() {
+    let transport = Arc::new(
+        MockTransport::new()
+            .on_get(
+                "/v1/sessions/session-1/history",
+                serde_json::json!({ "session_id": "session-1", "turns": [] }),
+            )
+            .on_get(
+                "/v1/health",
+                health_json(medousa_sdk::DAEMON_API_CONTRACT_REVISION),
+            ),
+    );
+    let client =
+        medousa_sdk::MedousaClient::with_transport(transport.clone(), "http://127.0.0.1:8080");
+    let error = client
+        .sessions()
+        .history("session-1")
+        .await
+        .expect_err("authority is required");
+    assert!(matches!(error, medousa_sdk::SdkError::Compatibility(_)));
+    let message = error.to_string();
+    assert!(message.contains("GET /v1/sessions/session-1/history"));
+    assert!(message.contains("test-build-42"));
+    assert!(message.contains("authority_id"));
+    assert_eq!(transport.call_count(), 2);
 }
 
 #[tokio::test]

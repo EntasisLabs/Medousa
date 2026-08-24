@@ -542,6 +542,14 @@ fn normalize_path(path: &str) -> String {
     }
 }
 
+fn diagnostic_path(path: &str) -> String {
+    normalize_path(path)
+        .split('?')
+        .next()
+        .unwrap_or("/")
+        .to_string()
+}
+
 fn build_multipart_body(fields: &[MultipartField]) -> (Vec<u8>, String) {
     let boundary = format!("medousa-{}", Uuid::new_v4());
     let mut body = Vec::new();
@@ -592,8 +600,9 @@ async fn iroh_open_stream(
         .map_err(|err| err.to_string())?;
     if !(200..300).contains(&response.status) {
         return Err(format!(
-            "workshop returned HTTP {} over iroh",
-            response.status
+            "workshop returned HTTP {} over iroh for GET {}",
+            response.status,
+            diagnostic_path(path),
         ));
     }
     Ok(response.body)
@@ -635,8 +644,9 @@ async fn iroh_request(
             .map_err(|err| err.to_string())?;
     if !(200..300).contains(&response.status) {
         return Err(format!(
-            "workshop returned HTTP {} over iroh",
-            response.status
+            "workshop returned HTTP {} over iroh for {method} {}",
+            response.status,
+            diagnostic_path(path),
         ));
     }
     let mut out = Vec::new();
@@ -675,7 +685,7 @@ mod tests {
     use std::io::{Read, Write};
     use std::net::TcpListener;
 
-    use super::{auth_headers, lan_body_attempts, lan_request, RequestPayload};
+    use super::{auth_headers, diagnostic_path, lan_body_attempts, lan_request, RequestPayload};
     use crate::pairing_client::WorkshopTransportConfig;
 
     #[test]
@@ -685,6 +695,14 @@ mod tests {
         assert_eq!(lan_body_attempts("PUT"), 1);
         assert_eq!(lan_body_attempts("PATCH"), 1);
         assert_eq!(lan_body_attempts("DELETE"), 1);
+    }
+
+    #[test]
+    fn transport_diagnostics_strip_query_values() {
+        assert_eq!(
+            diagnostic_path("v1/sessions/search?q=private"),
+            "/v1/sessions/search"
+        );
     }
 
     #[test]

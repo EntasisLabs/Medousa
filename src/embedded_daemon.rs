@@ -21,7 +21,7 @@ use medousa_runtime::{
 };
 use medousa_types::daemon_api::{
     AgentModeId, AgentModeSource, CancelActiveSessionTurnResponse, CreateSessionResponse,
-    InteractiveTurnResponse, SessionAgentModeResponse, SessionCodeBindingResponse,
+    HealthResponse, InteractiveTurnResponse, SessionAgentModeResponse, SessionCodeBindingResponse,
 };
 use medousa_types::secrets::InstallationId;
 use medousa_types::session::{ConversationTurn, SessionHistorySummary, TranscriptEntry};
@@ -711,6 +711,39 @@ impl EmbeddedDaemonClient {
         &self.daemon.model
     }
 
+    pub async fn health(&self) -> Result<HealthResponse> {
+        self.require(Capability::WorkshopRead)?;
+        let tool_registry_count = self
+            .daemon
+            .tool_registry
+            .list_tools()
+            .await
+            .context("read embedded tool registry")?
+            .len();
+        let advertised_capabilities = self
+            .daemon
+            .cluster_node
+            .capability_tags
+            .iter()
+            .cloned()
+            .chain(std::iter::once("transport.in-process".to_string()));
+        Ok(crate::daemon_runtime::health_response(
+            self.daemon.authority_id.clone(),
+            "embedded",
+            advertised_capabilities,
+            crate::daemon_runtime::DaemonHealthSnapshot {
+                backend: "surreal-kv".to_string(),
+                worker_id: self.daemon.cluster_node.node_id.clone(),
+                agent_runtime_version: crate::daemon_runtime::AGENT_RUNTIME_VERSION.to_string(),
+                tool_registry_count,
+                last_agent_turn_latency_ms: None,
+                last_agent_turn_at_utc: None,
+                active_profile_id: String::new(),
+                active_profile_display_name: String::new(),
+            },
+        ))
+    }
+
     pub fn create_session(&self) -> Result<CreateSessionResponse> {
         self.require(Capability::WorkshopInteract)?;
         let session_id = new_session_id();
@@ -1274,6 +1307,25 @@ mod tests {
         let authority_id = daemon.authority_id().clone();
         let node_id = daemon.cluster_node().node_id.clone();
         let client = daemon.local_client();
+
+        let health = client.health().await.expect("read embedded daemon health");
+        assert_eq!(health.runtime.authority_id, authority_id);
+        assert_eq!(
+            health.runtime.contract_revision,
+            medousa_types::DAEMON_API_CONTRACT_REVISION
+        );
+        assert_eq!(
+            health.runtime.base_schema_revision,
+            crate::stasis_surreal_schema::DAEMON_PERSISTENCE_SCHEMA_REVISION
+        );
+        assert_eq!(health.runtime.deployment_profile, "embedded");
+        assert!(
+            health
+                .runtime
+                .advertised_capabilities
+                .iter()
+                .any(|capability| capability == "transport.in-process")
+        );
 
         assert_eq!(client.principal().kind(), PrincipalKind::LocalApp);
         assert_eq!(client.principal().transport(), TransportClass::Loopback);

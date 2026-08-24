@@ -1,11 +1,11 @@
 #[cfg(feature = "async")]
 use medousa_types::{
     ActiveSessionTurnResponse, AgentModeProposalListResponse, AgentModeProposalResponse,
-    AgentModeScope, CancelActiveSessionTurnResponse, DecideAgentModeProposalRequest,
-    DeriveSessionRequest, DeriveSessionResponse, SessionActiveTurnsResponse,
-    SessionAgentModeResponse, SessionAppendTurnRequest, SessionAppendTurnResponse,
-    SessionCodeBindingResponse, SessionCodeProjectResponse, SessionDeleteQuery,
-    SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
+    AgentModeScope, CancelActiveSessionTurnResponse, CreateSessionRequest, CreateSessionResponse,
+    DecideAgentModeProposalRequest, DeriveSessionRequest, DeriveSessionResponse,
+    SessionActiveTurnsResponse, SessionAgentModeResponse, SessionAppendTurnRequest,
+    SessionAppendTurnResponse, SessionCodeBindingResponse, SessionCodeProjectResponse,
+    SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
     SessionSetDisplayNameRequest, SessionSetDisplayNameResponse, SessionTranscriptSearchResponse,
     SetSessionAgentModeRequest, SetSessionCodeBindingRequest, StartSessionCodeProjectRequest,
 };
@@ -24,6 +24,28 @@ pub struct SessionsApi<'a> {
 
 #[cfg(feature = "async")]
 impl SessionsApi<'_> {
+    pub async fn create(
+        &self,
+        request: &CreateSessionRequest,
+    ) -> Result<CreateSessionResponse, crate::SdkError> {
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path = ops::SESSIONS_POST.path;
+        let value = self
+            .client
+            .transport()
+            .post_json(self.client.base_url(), path, body)
+            .await?;
+        if value
+            .get("authority_id")
+            .and_then(serde_json::Value::as_str)
+            .is_none()
+        {
+            return Err(crate::health::missing_authority_error(self.client, "POST", path).await);
+        }
+        decode(value).await
+    }
+
     pub async fn list(&self, limit: usize) -> Result<SessionHistoryListResponse, crate::SdkError> {
         let path = op_path_query(&ops::SESSIONS_GET, &[], &[("limit", limit.to_string())])?;
         let value = self
@@ -65,6 +87,13 @@ impl SessionsApi<'_> {
             .transport()
             .get_json(self.client.base_url(), &path)
             .await?;
+        if value
+            .get("authority_id")
+            .and_then(serde_json::Value::as_str)
+            .is_none()
+        {
+            return Err(crate::health::missing_authority_error(self.client, "GET", &path).await);
+        }
         decode(value).await
     }
 

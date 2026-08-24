@@ -215,50 +215,71 @@ pub fn invalidate_route_caches() {
     workshop_transport::invalidate_all_route_caches();
 }
 
-#[tauri::command]
-pub async fn daemon_health(state: State<'_, DaemonState>) -> Result<DaemonHealth, String> {
-    match self::sdk::client(&state).health().get().await {
-        Ok(detail) => Ok(DaemonHealth {
-            ok: true,
-            message: format!(
-                "connected to {} · {} tools",
-                state.daemon_url.lock().expect("daemon url lock"),
-                detail.tool_registry_count
-            ),
-            backend: Some(detail.backend),
-            worker_id: Some(detail.worker_id),
-            tool_registry_count: Some(detail.tool_registry_count),
-            agent_runtime_version: if detail.agent_runtime_version.is_empty() {
-                None
-            } else {
-                Some(detail.agent_runtime_version)
-            },
-            last_agent_turn_at_utc: detail.last_agent_turn_at_utc,
-            last_agent_turn_latency_ms: detail.last_agent_turn_latency_ms,
-            active_profile_id: if detail.active_profile_id.is_empty() {
-                None
-            } else {
-                Some(detail.active_profile_id)
-            },
-            active_profile_display_name: if detail.active_profile_display_name.is_empty() {
-                None
-            } else {
-                Some(detail.active_profile_display_name)
-            },
-        }),
-        Err(err) => Ok(DaemonHealth {
-            ok: false,
-            message: self::sdk::sdk_error(err),
-            backend: None,
-            worker_id: None,
-            tool_registry_count: None,
-            agent_runtime_version: None,
-            last_agent_turn_at_utc: None,
-            last_agent_turn_latency_ms: None,
-            active_profile_id: None,
-            active_profile_display_name: None,
-        }),
+fn connected_health(detail: medousa_types::HealthResponse, endpoint: &str) -> DaemonHealth {
+    DaemonHealth {
+        ok: true,
+        message: format!(
+            "connected to {endpoint} · {} tools · build {}",
+            detail.tool_registry_count, detail.runtime.build_revision,
+        ),
+        runtime: Some(detail.runtime),
+        backend: Some(detail.backend),
+        worker_id: Some(detail.worker_id),
+        tool_registry_count: Some(detail.tool_registry_count),
+        agent_runtime_version: if detail.agent_runtime_version.is_empty() {
+            None
+        } else {
+            Some(detail.agent_runtime_version)
+        },
+        last_agent_turn_at_utc: detail.last_agent_turn_at_utc,
+        last_agent_turn_latency_ms: detail.last_agent_turn_latency_ms,
+        active_profile_id: if detail.active_profile_id.is_empty() {
+            None
+        } else {
+            Some(detail.active_profile_id)
+        },
+        active_profile_display_name: if detail.active_profile_display_name.is_empty() {
+            None
+        } else {
+            Some(detail.active_profile_display_name)
+        },
     }
+}
+
+fn disconnected_health(message: String) -> DaemonHealth {
+    DaemonHealth {
+        ok: false,
+        message,
+        runtime: None,
+        backend: None,
+        worker_id: None,
+        tool_registry_count: None,
+        agent_runtime_version: None,
+        last_agent_turn_at_utc: None,
+        last_agent_turn_latency_ms: None,
+        active_profile_id: None,
+        active_profile_display_name: None,
+    }
+}
+
+#[tauri::command]
+pub async fn daemon_health(
+    state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
+) -> Result<DaemonHealth, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return Ok(match client.health().await {
+            Ok(detail) => connected_health(detail, "Personal"),
+            Err(error) => disconnected_health(error.to_string()),
+        });
+    }
+
+    let endpoint = state.daemon_url.lock().expect("daemon url lock").clone();
+    Ok(match self::sdk::client(&state).health().get().await {
+        Ok(detail) => connected_health(detail, &endpoint),
+        Err(error) => disconnected_health(self::sdk::sdk_error(error)),
+    })
 }
 
 #[tauri::command]

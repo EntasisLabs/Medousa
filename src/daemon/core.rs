@@ -28,24 +28,36 @@ fn active_profile_snapshot(
         .unwrap_or_else(|| "Personal".to_string());
     (active_profile_id, active_profile_display_name)
 }
-pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
+pub async fn health(
+    State(state): State<AppState>,
+) -> Result<Json<HealthResponse>, (StatusCode, String)> {
     let (active_profile_id, active_profile_display_name) = state
         .profile_registry
         .read()
         .map(|registry| active_profile_snapshot(&registry))
         .unwrap_or_default();
-    Json(HealthResponse {
-        status: "ok".to_string(),
-        backend: state.backend,
-        worker_id: state.worker_id,
-        now_utc: Utc::now(),
-        agent_runtime_version: crate::agent_runtime::AGENT_RUNTIME_VERSION.to_string(),
-        tool_registry_count: state.agent_tool_registry_count,
-        last_agent_turn_latency_ms: *state.last_agent_turn_latency_ms.read().await,
-        last_agent_turn_at_utc: *state.last_agent_turn_at.read().await,
-        active_profile_id,
-        active_profile_display_name,
-    })
+    let authority_id = crate::workshop_authority::current()
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?
+        .clone();
+    let advertised_capabilities = ["deployment.native-workloads", "transport.http"]
+        .into_iter()
+        .chain(cfg!(feature = "iroh-transport").then_some("transport.iroh"));
+
+    Ok(Json(crate::daemon_runtime::health_response(
+        authority_id,
+        "full",
+        advertised_capabilities,
+        crate::daemon_runtime::DaemonHealthSnapshot {
+            backend: state.backend,
+            worker_id: state.worker_id,
+            agent_runtime_version: crate::daemon_runtime::AGENT_RUNTIME_VERSION.to_string(),
+            tool_registry_count: state.agent_tool_registry_count,
+            last_agent_turn_latency_ms: *state.last_agent_turn_latency_ms.read().await,
+            last_agent_turn_at_utc: *state.last_agent_turn_at.read().await,
+            active_profile_id,
+            active_profile_display_name,
+        },
+    )))
 }
 
 pub async fn stats(

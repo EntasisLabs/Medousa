@@ -8,6 +8,8 @@
 include!("full_daemon.rs");
 
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod daemon_runtime;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod embedded_daemon;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 #[path = "agent_runtime/execution_context.rs"]

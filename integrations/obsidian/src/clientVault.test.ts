@@ -110,7 +110,22 @@ describe("Medousa vault client", () => {
     let receiver: unknown;
     const hostFetch = function (this: unknown, _input: RequestInfo | URL, _init?: RequestInit): Promise<Response> {
       receiver = this;
-      return Promise.resolve(Response.json({ ok: true }));
+      return Promise.resolve(Response.json({
+        runtime: {
+          authority_id: `auth_${"a".repeat(64)}`,
+          product_version: "0.9.1",
+          build_revision: "test-build-42",
+          contract_revision: 1,
+          base_schema_revision: 1,
+          deployment_profile: "full",
+          deployment_target: "full:macos:aarch64",
+          advertised_capabilities: ["transport.http"],
+        },
+        status: "ok",
+        backend: "test",
+        worker_id: "worker-1",
+        now_utc: "2026-01-01T00:00:00Z",
+      }));
     } as typeof globalThis.fetch;
     const client = new MedousaClient({
       baseUrl: "http://127.0.0.1:7419",

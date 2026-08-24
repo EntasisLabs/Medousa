@@ -5,7 +5,12 @@ import type {
   AgentModeProposalListResponse,
   AgentModeProposalResponse,
   AgentModeScope,
+  AuthorityId,
   CodeIntentContext,
+  CreateSessionRequest,
+  CreateSessionResponse,
+  DaemonRuntimeDescriptor,
+  HealthResponse,
   InteractiveTurnRequest,
   InteractiveTurnResponse,
   InteractiveTurnStreamEvent,
@@ -15,7 +20,9 @@ import type {
   SessionAgentModeResponse,
   SessionCodeBindingResponse,
   SessionCodeProjectResponse,
+  SessionHistoryResponse,
   StartSessionCodeProjectRequest,
+  TranscriptEntry,
 } from "./generated/daemon_api.js";
 
 export type {
@@ -31,11 +38,18 @@ export type {
   AgentModeProposalListResponse,
   AgentModeProposalResponse,
   AgentModeScope,
+  AuthorityId,
   CodeIntentContext,
+  CreateSessionRequest,
+  CreateSessionResponse,
+  DaemonRuntimeDescriptor,
+  HealthResponse,
   SessionAgentModeResponse,
   SessionCodeBindingResponse,
   SessionCodeProjectResponse,
+  SessionHistoryResponse,
   StartSessionCodeProjectRequest,
+  TranscriptEntry,
 };
 
 export type MedousaSurface = "vscode" | "neovim" | "obsidian" | "browser";
@@ -68,10 +82,6 @@ export interface MedousaContext {
   notePath?: string;
   sessionId?: string;
   relatedResources?: string[];
-}
-
-export interface HealthResponse {
-  [key: string]: unknown;
 }
 
 export interface CapabilityListResponse {
@@ -152,33 +162,7 @@ export interface VaultBacklinksResponse {
   backlinks: string[];
 }
 
-export interface CreateSessionRequest {
-  catalog?: string;
-  member_profile_ids?: string[];
-  agent_profile_id?: string;
-  display_name?: string;
-}
-
-export interface CreateSessionResponse {
-  session_id: string;
-  catalog: string;
-  display_name?: string | null;
-  member_profile_ids?: string[];
-  agent_profile_id?: string | null;
-}
-
-export interface SessionTurn {
-  role: string;
-  content: string;
-  timestamp: string;
-  tool_names?: string[];
-  answer_state?: string | null;
-}
-
-export interface SessionHistoryResponse {
-  session_id: string;
-  turns: SessionTurn[];
-}
+export type SessionTurn = TranscriptEntry;
 
 export interface ForgeUndertaking {
   id: string;

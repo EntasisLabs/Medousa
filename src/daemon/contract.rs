@@ -549,6 +549,19 @@ mod tests {
             .clone();
         assert!(!health.responses[0].schema.opaque);
         assert_eq!(health.responses[0].schema.name, "HealthResponse");
+        let create_session = production_registry(false)
+            .get("sessions.post")
+            .unwrap()
+            .clone();
+        assert_eq!(
+            create_session.request_body.as_ref().unwrap().schema.name,
+            "CreateSessionRequest"
+        );
+        assert_eq!(
+            create_session.responses[0].schema.name,
+            "CreateSessionResponse"
+        );
+        assert!(!create_session.responses[0].schema.opaque);
         let vault = production_registry(false)
             .get("vault.notes.get")
             .unwrap()

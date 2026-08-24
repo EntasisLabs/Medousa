@@ -2,12 +2,12 @@ use crate::daemon::types::{
     ActiveSessionTurnResponse, AgentModeId, AgentModeListResponse, AgentModeProposalListResponse,
     AgentModeProposalResponse, AgentModeScope, AgentModeTransitionPolicy,
     CancelActiveSessionTurnResponse, CodeIntentContext, CreatePromptStashRequest,
-    DeletePromptStashResponse, DeriveSessionRequest, DeriveSessionResponse, MediaRef, PromptStash,
-    PromptStashListResponse, SessionAgentModeResponse, SessionCodeBindingResponse,
-    SessionCodeProjectResponse, SessionDeleteQuery, SessionDeleteResponse,
-    SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameResponse,
-    SetSessionAgentModeRequest, StageRoutingMatrix, StartSessionCodeProjectRequest,
-    TurnSurfaceContext,
+    CreateSessionRequest, CreateSessionResponse, DeletePromptStashResponse, DeriveSessionRequest,
+    DeriveSessionResponse, MediaRef, PromptStash, PromptStashListResponse,
+    SessionAgentModeResponse, SessionCodeBindingResponse, SessionCodeProjectResponse,
+    SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
+    SessionSetDisplayNameResponse, SetSessionAgentModeRequest, StageRoutingMatrix,
+    StartSessionCodeProjectRequest, TurnSurfaceContext,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -17,32 +17,6 @@ use crate::embedded_daemon::EmbeddedDaemonState;
 use super::DaemonState;
 use super::sdk::{client, sdk_error};
 use super::workshop_http;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateSessionRequest {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub catalog: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub member_profile_ids: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_profile_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub display_name: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateSessionResponse {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub authority_id: Option<String>,
-    pub session_id: String,
-    pub catalog: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub display_name: Option<String>,
-    #[serde(default)]
-    pub member_profile_ids: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_profile_id: Option<String>,
-}
 
 #[tauri::command]
 pub async fn session_create(
@@ -72,28 +46,20 @@ pub async fn session_create(
                 "the first embedded daemon profile supports plain single-seat sessions".to_string(),
             );
         }
-        let created = client.create_session().map_err(|error| error.to_string())?;
-        return Ok(CreateSessionResponse {
-            authority_id: Some(created.authority_id.to_string()),
-            session_id: created.session_id,
-            catalog: created.catalog,
-            display_name: created.display_name,
-            member_profile_ids: created.member_profile_ids,
-            agent_profile_id: created.agent_profile_id,
-        });
+        return client.create_session().map_err(|error| error.to_string());
     }
 
-    workshop_http::post_json(
-        &state,
-        "/v1/sessions",
-        &CreateSessionRequest {
+    client(&state)
+        .sessions()
+        .create(&CreateSessionRequest {
+            session_id: None,
             catalog,
             member_profile_ids,
             agent_profile_id,
             display_name,
-        },
-    )
-    .await
+        })
+        .await
+        .map_err(sdk_error)
 }
 
 #[tauri::command]

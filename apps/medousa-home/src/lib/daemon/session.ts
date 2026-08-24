@@ -16,6 +16,7 @@ import type {
   SessionAgentModeResponse,
   SessionCodeBindingResponse,
   SessionCodeProjectResponse,
+  CreateSessionResponse,
   StartSessionCodeProjectRequest,
   DeriveSessionRequest,
   DeriveSessionResponse,
@@ -69,15 +70,6 @@ export interface CreateSessionOptions {
   memberProfileIds?: string[];
   agentProfileId?: string;
   displayName?: string;
-}
-
-export interface CreateSessionResponse {
-  authority_id?: string | null;
-  session_id: string;
-  catalog: string;
-  display_name?: string | null;
-  member_profile_ids?: string[];
-  agent_profile_id?: string | null;
 }
 
 export async function createSession(

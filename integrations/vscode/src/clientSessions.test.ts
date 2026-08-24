@@ -1,7 +1,59 @@
 import { describe, expect, it } from "vitest";
-import { MedousaClient } from "@medousa/client";
+import { MedousaClient, MedousaCompatibilityError } from "@medousa/client";
+
+function healthPayload(contractRevision = 1) {
+  return {
+    runtime: {
+      authority_id: `auth_${"a".repeat(64)}`,
+      product_version: "0.9.1",
+      build_revision: "test-build-42",
+      contract_revision: contractRevision,
+      base_schema_revision: 1,
+      deployment_profile: "full",
+      deployment_target: "full:macos:aarch64",
+      advertised_capabilities: ["transport.http"],
+    },
+    status: "ok",
+    backend: "test",
+    worker_id: "worker-1",
+    now_utc: "2026-01-01T00:00:00Z",
+  };
+}
 
 describe("Medousa session client", () => {
+  it("uses protected health and rejects an incompatible responder", async () => {
+    const requests: string[] = [];
+    const client = new MedousaClient({
+      baseUrl: "http://127.0.0.1:7419",
+      fetch: async (input) => {
+        requests.push(String(input));
+        return Response.json(healthPayload(2));
+      },
+    });
+
+    await expect(client.health()).rejects.toBeInstanceOf(MedousaCompatibilityError);
+    expect(requests).toEqual(["http://127.0.0.1:7419/v1/health"]);
+  });
+
+  it("keeps workshop authority required for session responses", async () => {
+    const requests: string[] = [];
+    const client = new MedousaClient({
+      baseUrl: "http://127.0.0.1:7419",
+      fetch: async (input) => {
+        const url = String(input);
+        requests.push(url);
+        if (url.endsWith("/v1/health")) return Response.json(healthPayload());
+        return Response.json({ session_id: "session-one", catalog: "single" });
+      },
+    });
+
+    await expect(client.createSession()).rejects.toThrow("test-build-42");
+    expect(requests).toEqual([
+      "http://127.0.0.1:7419/v1/sessions",
+      "http://127.0.0.1:7419/v1/health",
+    ]);
+  });
+
   it("renames sessions through the daemon-owned name endpoint", async () => {
     let request: { url: string; init?: RequestInit } | undefined;
     const client = new MedousaClient({

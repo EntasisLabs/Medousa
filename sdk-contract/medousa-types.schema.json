@@ -3797,6 +3797,147 @@
       }
     }
   },
+  "CreateSessionRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreateSessionRequest",
+    "type": "object",
+    "properties": {
+      "agent_profile_id": {
+        "description": "Agent persona for shared rooms (defaults to `user:general` in Shared mode).",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "catalog": {
+        "description": "`single` (default) or `shared`.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "display_name": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "member_profile_ids": {
+        "description": "Required for `catalog: shared` — member seat profile ids.",
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string"
+        }
+      },
+      "session_id": {
+        "description": "Deprecated compatibility field. New sessions are always daemon-generated.",
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "CreateSessionResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreateSessionResponse",
+    "type": "object",
+    "required": [
+      "authority_id",
+      "catalog",
+      "session_id"
+    ],
+    "properties": {
+      "agent_profile_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "authority_id": {
+        "$ref": "#/definitions/AuthorityId"
+      },
+      "catalog": {
+        "type": "string"
+      },
+      "display_name": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "member_profile_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "session_id": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      }
+    }
+  },
+  "DaemonRuntimeDescriptor": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DaemonRuntimeDescriptor",
+    "type": "object",
+    "required": [
+      "advertised_capabilities",
+      "authority_id",
+      "base_schema_revision",
+      "build_revision",
+      "contract_revision",
+      "deployment_profile",
+      "deployment_target",
+      "product_version"
+    ],
+    "properties": {
+      "advertised_capabilities": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "authority_id": {
+        "$ref": "#/definitions/AuthorityId"
+      },
+      "base_schema_revision": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "build_revision": {
+        "type": "string"
+      },
+      "contract_revision": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "deployment_profile": {
+        "type": "string"
+      },
+      "deployment_target": {
+        "type": "string"
+      },
+      "product_version": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      }
+    }
+  },
   "DecideAgentModeProposalRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "DecideAgentModeProposalRequest",
@@ -10407,6 +10548,7 @@
     "required": [
       "backend",
       "now_utc",
+      "runtime",
       "status",
       "worker_id"
     ],
@@ -10447,6 +10589,9 @@
         "type": "string",
         "format": "date-time"
       },
+      "runtime": {
+        "$ref": "#/definitions/DaemonRuntimeDescriptor"
+      },
       "status": {
         "type": "string"
       },
@@ -10458,6 +10603,57 @@
       },
       "worker_id": {
         "type": "string"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "DaemonRuntimeDescriptor": {
+        "type": "object",
+        "required": [
+          "advertised_capabilities",
+          "authority_id",
+          "base_schema_revision",
+          "build_revision",
+          "contract_revision",
+          "deployment_profile",
+          "deployment_target",
+          "product_version"
+        ],
+        "properties": {
+          "advertised_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "base_schema_revision": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "build_revision": {
+            "type": "string"
+          },
+          "contract_revision": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "deployment_profile": {
+            "type": "string"
+          },
+          "deployment_target": {
+            "type": "string"
+          },
+          "product_version": {
+            "type": "string"
+          }
+        }
       }
     }
   },

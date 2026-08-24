@@ -593,7 +593,7 @@ async fn main() -> Result<()> {
             .context("failed to load pairing device identity")?;
         #[cfg(feature = "iroh-transport")]
         let iroh_info = if medousa::iroh_transport::iroh_enabled_from_env() {
-            let upstream = format!("http://{addr}");
+            let upstream = medousa::daemon_self_url::daemon_self_base_url();
             let secret =
                 medousa::iroh_transport::secret_key_from_pairing_identity(identity.signing_key());
             match medousa::iroh_transport::spawn_workshop_gateway_with_secret(&upstream, secret)

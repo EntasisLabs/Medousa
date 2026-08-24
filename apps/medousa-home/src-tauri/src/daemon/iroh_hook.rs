@@ -20,6 +20,30 @@ impl TauriIrohHook {
     }
 }
 
+fn diagnostic_path(path: &str) -> &str {
+    path.split('?').next().unwrap_or(path)
+}
+
+fn iroh_status_error(method: &str, path: &str, status: u16) -> SdkError {
+    let path = diagnostic_path(path);
+    if status == 404 && method == "GET" && path == "/v1/health" {
+        return SdkError::Compatibility(format!(
+            "GET /v1/health returned HTTP 404 over iroh; responder does not expose the health operation required by daemon contract revision {}",
+            medousa_sdk::DAEMON_API_CONTRACT_REVISION,
+        ));
+    }
+    SdkError::Http(format!(
+        "workshop returned HTTP {status} over iroh for {method} {path}"
+    ))
+}
+
+fn iroh_request_error(method: &str, path: &str, error: impl std::fmt::Display) -> SdkError {
+    SdkError::Http(format!(
+        "iroh request failed for {method} {}: {error}",
+        diagnostic_path(path),
+    ))
+}
+
 impl IrohHttpHook for TauriIrohHook {
     fn request_json<'a>(
         &'a self,
@@ -43,22 +67,18 @@ impl IrohHttpHook for TauriIrohHook {
             let mut response =
                 medousa_iroh_http::iroh_http_request(&ticket, &method, &path, &header_refs, body)
                     .await
-                    .map_err(|err| SdkError::Http(err.to_string()))?;
+                    .map_err(|error| iroh_request_error(&method, &path, error))?;
+            if !(200..300).contains(&response.status) {
+                return Err(iroh_status_error(&method, &path, response.status));
+            }
             let mut out = Vec::new();
             while let Some(chunk) = response
                 .body
                 .read_chunk()
                 .await
-                .map_err(|err| SdkError::Http(err.to_string()))?
+                .map_err(|error| iroh_request_error(&method, &path, error))?
             {
                 out.extend_from_slice(&chunk);
-            }
-            if !(200..300).contains(&response.status) {
-                let body = String::from_utf8_lossy(&out);
-                return Err(SdkError::Http(format!(
-                    "workshop returned HTTP {} over iroh: {body}",
-                    response.status
-                )));
             }
             Ok(out)
         })
@@ -83,17 +103,35 @@ impl IrohHttpHook for TauriIrohHook {
                 let response =
                     medousa_iroh_http::iroh_http_request(&ticket, "GET", &path, &header_refs, None)
                         .await
-                        .map_err(|err| SdkError::Http(err.to_string()))?;
+                        .map_err(|error| iroh_request_error("GET", &path, error))?;
                 if !(200..300).contains(&response.status) {
-                    return Err(SdkError::Http(format!(
-                        "workshop returned HTTP {} over iroh",
-                        response.status
-                    )));
+                    return Err(iroh_status_error("GET", &path, response.status));
                 }
                 Ok(iroh_body_stream(response.body))
             })
             .try_flatten(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::iroh_status_error;
+
+    #[test]
+    fn status_errors_name_the_operation_without_a_response_body() {
+        let error = iroh_status_error("POST", "/v1/sessions?token=secret", 404).to_string();
+        assert!(error.contains("POST /v1/sessions"));
+        assert!(error.contains("HTTP 404 over iroh"));
+        assert!(!error.contains("token"));
+        assert!(!error.contains("secret"));
+    }
+
+    #[test]
+    fn missing_health_is_a_typed_contract_error() {
+        let error = iroh_status_error("GET", "/v1/health", 404);
+        assert!(matches!(error, medousa_sdk::SdkError::Compatibility(_)));
+        assert!(error.to_string().contains("contract revision"));
     }
 }
 

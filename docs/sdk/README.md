@@ -45,7 +45,7 @@ reuse Medousa's private first-party local credentials.
 
 | Accessor | Purpose |
 |----------|---------|
-| `health()` | Liveness |
+| `health()` | Protected runtime health and contract identity |
 | `http()` | Generic GET/POST/PUT/PATCH/DELETE |
 | `ingest()` | Channel ingest |
 | `local_models()` | Local inference probe & downloads |

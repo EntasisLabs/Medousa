@@ -165,6 +165,7 @@ describe("multi-live chat session runtimes", () => {
           role: "assistant",
           content: "Derived answer",
           timestamp: "2026-08-21T12:00:00Z",
+          tool_names: [],
           source: {
             session: {
               authority_id: "auth_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

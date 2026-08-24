@@ -55,6 +55,15 @@ export class MedousaHttpError extends Error {
   }
 }
 
+export class MedousaCompatibilityError extends Error {
+  constructor(readonly detail: string) {
+    super(`Medousa compatibility error: ${detail}`);
+    this.name = "MedousaCompatibilityError";
+  }
+}
+
+const DAEMON_API_CONTRACT_REVISION = 1;
+
 export class MedousaClient {
   private readonly baseUrl: string;
   private readonly bearerToken?: string;
@@ -70,7 +79,9 @@ export class MedousaClient {
   }
 
   async health(options?: ClientRequestOptions): Promise<HealthResponse> {
-    return this.request<HealthResponse>("/health", { signal: options?.signal });
+    const path = "/v1/health";
+    const value = await this.request<unknown>(path, { signal: options?.signal });
+    return decodeHealthResponse(value, path);
   }
 
   async registerClient(
@@ -136,21 +147,22 @@ export class MedousaClient {
     request: CreateSessionRequest = {},
     options?: ClientRequestOptions,
   ): Promise<CreateSessionResponse> {
-    return this.request<CreateSessionResponse>("/v1/sessions", {
+    const path = "/v1/sessions";
+    const value = await this.request<unknown>(path, {
       method: "POST",
       body: JSON.stringify(request),
       signal: options?.signal,
     });
+    return this.requireAuthority<CreateSessionResponse>(value, "POST", path);
   }
 
   async sessionHistory(
     sessionId: string,
     options?: ClientRequestOptions,
   ): Promise<SessionHistoryResponse> {
-    return this.request<SessionHistoryResponse>(
-      `/v1/sessions/${encodeURIComponent(sessionId)}/history`,
-      { signal: options?.signal },
-    );
+    const path = `/v1/sessions/${encodeURIComponent(sessionId)}/history`;
+    const value = await this.request<unknown>(path, { signal: options?.signal });
+    return this.requireAuthority<SessionHistoryResponse>(value, "GET", path);
   }
 
   async agentModes(options?: ClientRequestOptions): Promise<AgentModeListResponse> {
@@ -522,6 +534,30 @@ export class MedousaClient {
     return (await response.json()) as T;
   }
 
+  private async requireAuthority<T>(
+    value: unknown,
+    method: string,
+    path: string,
+  ): Promise<T> {
+    if (
+      isRecord(value) &&
+      typeof value.authority_id === "string" &&
+      value.authority_id
+    ) {
+      return value as T;
+    }
+    let responder = "responder identity unavailable";
+    try {
+      const health = await this.health();
+      responder = `responder authority ${health.runtime.authority_id} build ${health.runtime.build_revision} (${health.runtime.deployment_target}) contract revision ${health.runtime.contract_revision}`;
+    } catch (error) {
+      responder += `: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    throw new MedousaCompatibilityError(
+      `${method} ${path} response omitted required authority_id; ${responder}; client expects daemon contract revision ${DAEMON_API_CONTRACT_REVISION}`,
+    );
+  }
+
   private headers(): Record<string, string> {
     return {
       Accept: "application/json",
@@ -543,6 +579,49 @@ export class MedousaClient {
       }, { once: true });
     });
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function decodeHealthResponse(value: unknown, path: string): HealthResponse {
+  if (!isRecord(value) || !isRecord(value.runtime)) {
+    throw new MedousaCompatibilityError(
+      `GET ${path} responder omitted the required runtime descriptor; client expects daemon contract revision ${DAEMON_API_CONTRACT_REVISION}`,
+    );
+  }
+  const runtime = value.runtime;
+  if (
+    typeof runtime.authority_id !== "string" ||
+    !runtime.authority_id ||
+    typeof runtime.product_version !== "string" ||
+    typeof runtime.build_revision !== "string" ||
+    !runtime.build_revision ||
+    typeof runtime.contract_revision !== "number" ||
+    !Number.isInteger(runtime.contract_revision) ||
+    typeof runtime.base_schema_revision !== "number" ||
+    !Number.isInteger(runtime.base_schema_revision) ||
+    typeof runtime.deployment_profile !== "string" ||
+    typeof runtime.deployment_target !== "string" ||
+    !runtime.deployment_target ||
+    !Array.isArray(runtime.advertised_capabilities)
+  ) {
+    throw new MedousaCompatibilityError(
+      `GET ${path} responder returned an invalid runtime descriptor; client expects daemon contract revision ${DAEMON_API_CONTRACT_REVISION}`,
+    );
+  }
+  if (runtime.contract_revision !== DAEMON_API_CONTRACT_REVISION) {
+    throw new MedousaCompatibilityError(
+      `GET ${path} responder authority ${String(runtime.authority_id ?? "unknown")} build ${String(runtime.build_revision ?? "unknown")} (${String(runtime.deployment_target ?? "unknown")}) uses daemon contract revision ${String(runtime.contract_revision ?? "unknown")}; client expects ${DAEMON_API_CONTRACT_REVISION}`,
+    );
+  }
+  if (runtime.base_schema_revision <= 0) {
+    throw new MedousaCompatibilityError(
+      `GET ${path} responder authority ${String(runtime.authority_id ?? "unknown")} build ${String(runtime.build_revision ?? "unknown")} reported invalid base schema revision ${String(runtime.base_schema_revision ?? "unknown")}`,
+    );
+  }
+  return value as unknown as HealthResponse;
 }
 
 function encodeVaultPath(path: string): string {

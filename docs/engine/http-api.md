@@ -54,6 +54,13 @@ but invalid bearer never falls back to anonymous access.
 | GET | `/v1/continuations/lineage/{turn_correlation_id}` | `TurnContinuationLineageResponse` | `http().get` | — |
 | POST | `/v1/jobs/{job_id}/replay-and-resume` | `ReplayAndResumeResponse` | `http().post` | — |
 
+Protected health includes a required `DaemonRuntimeDescriptor`: workshop
+`authority_id`, product/build revision, daemon contract revision, base schema
+revision, deployment profile/target, and advertised capabilities. Direct
+in-process clients and HTTP/Iroh clients receive the same descriptor. A client
+must treat a missing or incompatible descriptor as a contract error, not infer
+identity from its configured URL.
+
 Continuation replay is single-claim and reauthorizes the recorded profile
 against the current session catalog. Records from older unversioned authority
 formats, profiles that no longer have access, and delivery targets for another
@@ -126,7 +133,7 @@ for the protocol and surface-scoping rules.
 
 | Method | Path | Types | SDK |
 |--------|------|-------|-----|
-| POST | `/v1/sessions` | `CreateSessionRequest` → daemon-generated `CreateSessionResponse.session_id` | `MedousaClient.createSession` (TypeScript) |
+| POST | `/v1/sessions` | `CreateSessionRequest` → `CreateSessionResponse` | `sessions().create` / `MedousaClient.createSession` (TypeScript) |
 | GET | `/v1/sessions` | `SessionHistoryListResponse` (`origin_surface`, `has_code_work` on each summary) | `sessions().list` |
 | GET | `/v1/sessions/search?q=&limit=` | Profile-scoped transcript matches with role, timestamp, and excerpt | `sessions().search_transcripts` |
 | POST | `/v1/sessions/derive` | `DeriveSessionRequest` → `DeriveSessionResponse` | `sessions().derive` |
@@ -150,6 +157,9 @@ turn fields remain flat for compatible renderers; each record also carries a
 durable `entry_id`, one-based session `entry_seq`, `content_digest`, and
 optional execution/source provenance. Use `(authority_id, session_id,
 entry_id, entry_seq)` when addressing a committed transcript occurrence.
+`authority_id` is required in both `CreateSessionResponse` and
+`SessionHistoryResponse`; clients must not substitute the selected connection
+or another workshop when it is absent.
 
 `POST /v1/sessions/derive` requires an `Idempotency-Key` header. Its ordered
 `sources` select committed ranges with an exclusive `after_entry_seq` and

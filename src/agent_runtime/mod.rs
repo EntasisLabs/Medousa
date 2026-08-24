@@ -4,7 +4,7 @@
 //! Phase 2+: daemon-hosted turn loop and channel-agnostic streaming.
 
 /// Version label exposed in daemon `/health` and doctor diagnostics.
-pub const AGENT_RUNTIME_VERSION: &str = "centralized-v1";
+pub use crate::daemon_runtime::AGENT_RUNTIME_VERSION;
 
 pub mod active_stream_sink;
 pub mod ambient_context;

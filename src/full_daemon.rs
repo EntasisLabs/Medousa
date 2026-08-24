@@ -97,6 +97,7 @@ pub mod custom_view_tools;
 pub mod daemon;
 pub mod daemon_api;
 pub mod daemon_handlers;
+pub mod daemon_runtime;
 pub mod daemon_self_url;
 pub mod detamu_tools;
 pub mod engine_context;

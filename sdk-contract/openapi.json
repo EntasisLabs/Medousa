@@ -1641,6 +1641,87 @@
         "title": "CreatePromptStashRequest",
         "type": "object"
       },
+      "CreateSessionRequest": {
+        "properties": {
+          "agent_profile_id": {
+            "description": "Agent persona for shared rooms (defaults to `user:general` in Shared mode).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "catalog": {
+            "description": "`single` (default) or `shared`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "member_profile_ids": {
+            "description": "Required for `catalog: shared` — member seat profile ids.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "session_id": {
+            "description": "Deprecated compatibility field. New sessions are always daemon-generated.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "title": "CreateSessionRequest",
+        "type": "object"
+      },
+      "CreateSessionResponse": {
+        "properties": {
+          "agent_profile_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "authority_id": {
+            "$ref": "#/components/schemas/AuthorityId"
+          },
+          "catalog": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "member_profile_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "authority_id",
+          "catalog",
+          "session_id"
+        ],
+        "title": "CreateSessionResponse",
+        "type": "object"
+      },
       "CustomViewComponentStatus": {
         "properties": {
           "artifactId": {
@@ -1789,6 +1870,52 @@
           "label",
           "navVisible",
           "surfaceId"
+        ],
+        "type": "object"
+      },
+      "DaemonRuntimeDescriptor": {
+        "properties": {
+          "advertised_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "authority_id": {
+            "$ref": "#/components/schemas/AuthorityId"
+          },
+          "base_schema_revision": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "build_revision": {
+            "type": "string"
+          },
+          "contract_revision": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "deployment_profile": {
+            "type": "string"
+          },
+          "deployment_target": {
+            "type": "string"
+          },
+          "product_version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "advertised_capabilities",
+          "authority_id",
+          "base_schema_revision",
+          "build_revision",
+          "contract_revision",
+          "deployment_profile",
+          "deployment_target",
+          "product_version"
         ],
         "type": "object"
       },
@@ -2762,6 +2889,9 @@
             "format": "date-time",
             "type": "string"
           },
+          "runtime": {
+            "$ref": "#/components/schemas/DaemonRuntimeDescriptor"
+          },
           "status": {
             "type": "string"
           },
@@ -2778,6 +2908,7 @@
         "required": [
           "backend",
           "now_utc",
+          "runtime",
           "status",
           "worker_id"
         ],
@@ -24328,13 +24459,22 @@
       "post": {
         "operationId": "sessions.post",
         "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "SESSIONS_POSTResponse",
-                  "x-medousa-opaque": true
+                  "$ref": "#/components/schemas/CreateSessionResponse"
                 }
               }
             },

@@ -23,6 +23,7 @@ fn main() {
     let mut schemas: BTreeMap<String, RootSchema> = BTreeMap::new();
 
     // Health & jobs
+    export_type!(schemas, DaemonRuntimeDescriptor, "DaemonRuntimeDescriptor");
     export_type!(schemas, HealthResponse, "HealthResponse");
     export_type!(schemas, ApiErrorEnvelope, "ApiErrorEnvelope");
     export_type!(schemas, EnqueueAskRequest, "EnqueueAskRequest");
@@ -46,6 +47,8 @@ fn main() {
 
     // Sessions
     export_type!(schemas, AuthorityId, "AuthorityId");
+    export_type!(schemas, CreateSessionRequest, "CreateSessionRequest");
+    export_type!(schemas, CreateSessionResponse, "CreateSessionResponse");
     export_type!(schemas, TranscriptEntryId, "TranscriptEntryId");
     export_type!(schemas, ContextManifestId, "ContextManifestId");
     export_type!(schemas, DerivationId, "DerivationId");
