@@ -277,6 +277,29 @@ impl TurnPartsAccumulator {
         conversation_turn_from_parts("assistant", content, tool_names, answer_state, parts)
     }
 
+    /// Finalize a V3 turn whose visible text segments were committed at their
+    /// observation positions. Terminal settlement must not append the aggregate
+    /// body as a second authoritative text part.
+    pub fn finalize_chronological_turn(
+        &mut self,
+        content: String,
+        tool_names: Vec<String>,
+        answer_state: Option<String>,
+    ) -> ConversationTurn {
+        self.parts.retain(
+            |part| !matches!(part, TurnPart::Reasoning { markdown } if markdown.is_empty()),
+        );
+        let has_visible_text = self.parts.iter().any(
+            |part| matches!(part, TurnPart::Text { markdown, .. } if !markdown.trim().is_empty()),
+        );
+        if !has_visible_text && !content.trim().is_empty() {
+            self.commit_text_segment(&content, None, None);
+        }
+        let parts = std::mem::take(&mut self.parts);
+        self.reset();
+        conversation_turn_from_parts("assistant", content, tool_names, answer_state, parts)
+    }
+
     pub fn finalize_worker_ack_turn(
         &mut self,
         content: String,
@@ -562,6 +585,50 @@ mod tests {
             &parts[5],
             TurnPart::Text { markdown, segment_id: None, model_round: None }
                 if markdown == "Here is the answer."
+        ));
+    }
+
+    #[test]
+    fn chronological_finalize_keeps_segments_without_duplicate_aggregate_text() {
+        let mut acc = TurnPartsAccumulator::default();
+        acc.commit_text_segment("Let me check.", Some("segment-1"), Some(1));
+        acc.tool_started("run-1", "search", "query", 1);
+        acc.tool_finished("run-1", "succeeded", Some("found".into()), vec![]);
+        acc.commit_text_segment("Found it.", Some("segment-2"), Some(2));
+
+        let turn = acc.finalize_chronological_turn(
+            "Let me check.\n\nFound it.".into(),
+            vec!["search".into()],
+            None,
+        );
+        let parts = turn.parts.expect("parts");
+
+        assert_eq!(parts.len(), 3);
+        assert!(matches!(
+            &parts[0],
+            TurnPart::Text { markdown, segment_id: Some(id), model_round: Some(1) }
+                if markdown == "Let me check." && id == "segment-1"
+        ));
+        assert!(matches!(&parts[1], TurnPart::ToolRun { run_id, .. } if run_id == "run-1"));
+        assert!(matches!(
+            &parts[2],
+            TurnPart::Text { markdown, segment_id: Some(id), model_round: Some(2) }
+                if markdown == "Found it." && id == "segment-2"
+        ));
+    }
+
+    #[test]
+    fn chronological_finalize_adds_terminal_text_only_when_no_segment_was_observed() {
+        let mut acc = TurnPartsAccumulator::default();
+
+        let turn = acc.finalize_chronological_turn("Fallback answer.".into(), vec![], None);
+        let parts = turn.parts.expect("parts");
+
+        assert_eq!(parts.len(), 1);
+        assert!(matches!(
+            &parts[0],
+            TurnPart::Text { markdown, segment_id: None, model_round: None }
+                if markdown == "Fallback answer."
         ));
     }
 

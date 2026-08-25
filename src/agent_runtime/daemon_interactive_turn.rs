@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use crate::daemon::bounded_set::BoundedDedupSet;
 use chrono::{DateTime, Utc};
 use medousa_engine::TurnPipelineHandle;
-use medousa_types::turn_stream::{TurnStreamEventV2, WorkerAckKind};
+use medousa_types::turn_stream::{TurnCompletionOutcomeV3, TurnStreamEventV3, WorkerAckKind};
 use serde_json::Value;
 use tokio::sync::RwLock;
 use tracing::Instrument;
@@ -84,32 +84,143 @@ pub struct InteractiveTurnStreamSink {
     delivery: Option<InteractiveTurnDeliveryContext>,
     session_hooks: InteractiveTurnSessionHooks,
     parts: std::sync::Mutex<TurnPartsAccumulator>,
-    /// Current presentation draft assembled from content deltas.
-    streamed_markdown: std::sync::Mutex<String>,
+    text: std::sync::Mutex<ChronologicalTextState>,
     pending_slice_scratch: std::sync::Mutex<Option<TurnScratchpad>>,
 }
 
+#[derive(Debug)]
+struct ActiveTextSegment {
+    segment_id: String,
+    model_round: usize,
+    markdown: String,
+}
+
+#[derive(Debug)]
+struct CommittedTextSegment {
+    segment_id: String,
+    model_round: usize,
+    markdown: String,
+}
+
+#[derive(Debug)]
+struct ChronologicalTextState {
+    model_round: usize,
+    next_ordinal: usize,
+    active: Option<ActiveTextSegment>,
+    committed_markdown: Vec<String>,
+}
+
+impl Default for ChronologicalTextState {
+    fn default() -> Self {
+        Self {
+            model_round: 1,
+            next_ordinal: 0,
+            active: None,
+            committed_markdown: Vec::new(),
+        }
+    }
+}
+
 impl InteractiveTurnStreamSink {
-    fn append_stream_delta(&self, delta: &str) {
+    fn prepare_content_delta(
+        &self,
+        delta: String,
+    ) -> Option<(Option<TurnStreamEventV3>, TurnStreamEventV3)> {
         if delta.is_empty() {
-            return;
+            return None;
         }
-        if let Ok(mut body) = self.streamed_markdown.lock() {
-            body.push_str(delta);
-        }
-    }
-
-    fn clear_streamed_markdown(&self) {
-        if let Ok(mut body) = self.streamed_markdown.lock() {
-            body.clear();
-        }
-    }
-
-    fn streamed_markdown(&self) -> String {
-        self.streamed_markdown
+        let mut state = self
+            .text
             .lock()
-            .map(|body| body.clone())
-            .unwrap_or_default()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let started = if state.active.is_none() {
+            state.next_ordinal = state.next_ordinal.saturating_add(1);
+            let segment_id = format!("{}:text:{}", self.turn_id, state.next_ordinal);
+            let model_round = state.model_round;
+            state.active = Some(ActiveTextSegment {
+                segment_id: segment_id.clone(),
+                model_round,
+                markdown: String::new(),
+            });
+            Some(TurnStreamEventV3::AssistantTextStarted {
+                segment_id,
+                model_round,
+            })
+        } else {
+            None
+        };
+        let active = state.active.as_mut().expect("active segment initialized");
+        active.markdown.push_str(&delta);
+        Some((
+            started,
+            TurnStreamEventV3::ContentAppend {
+                segment_id: active.segment_id.clone(),
+                text: delta,
+            },
+        ))
+    }
+
+    fn take_active_segment(&self, advance_model_round: bool) -> Option<CommittedTextSegment> {
+        let mut state = self
+            .text
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let active = state.active.take();
+        if advance_model_round {
+            state.model_round = state.model_round.saturating_add(1);
+        }
+        let active = active.filter(|segment| !segment.markdown.is_empty())?;
+        state.committed_markdown.push(active.markdown.clone());
+        Some(CommittedTextSegment {
+            segment_id: active.segment_id,
+            model_round: active.model_round,
+            markdown: active.markdown,
+        })
+    }
+
+    async fn commit_active_segment(&self, advance_model_round: bool) {
+        let Some(segment) = self.take_active_segment(advance_model_round) else {
+            return;
+        };
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.commit_text_segment(
+                &segment.markdown,
+                Some(&segment.segment_id),
+                Some(segment.model_round),
+            );
+        }
+        self.publish_tracked(TurnStreamEventV3::AssistantTextCommitted {
+            segment_id: segment.segment_id,
+        })
+        .await;
+    }
+
+    fn aggregate_text(&self) -> String {
+        self.text
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .committed_markdown
+            .join("\n\n")
+    }
+
+    async fn terminal_body(&self, fallback: &str) -> String {
+        self.commit_active_segment(false).await;
+        if self.aggregate_text().trim().is_empty()
+            && !fallback.trim().is_empty()
+            && let Some((started, append)) = self.prepare_content_delta(fallback.to_string())
+        {
+            if let Some(started) = started {
+                self.publish_tracked(started).await;
+            }
+            self.publish_tracked(append).await;
+            self.commit_active_segment(false).await;
+        }
+        let aggregate = self.aggregate_text();
+        if aggregate.trim().is_empty() {
+            fallback.to_string()
+        } else {
+            aggregate
+        }
     }
 
     fn take_pending_scratch(&self) -> Option<TurnScratchpad> {
@@ -165,23 +276,12 @@ impl InteractiveTurnStreamSink {
     ) -> bool {
         if let Err(error) = self.persist_via_spine(assistant_turn, event).await {
             let message = format!("turn persistence failed: {error}");
-            self.publish_tracked(TurnStreamEventV2::Error {
-                operator_message: message.clone(),
-                debug_message: None,
-            })
-            .await;
+            self.publish_failure(TurnCompletionOutcomeV3::Failed, message.clone(), None)
+                .await;
             self.sync_ask_job_failed(message).await;
             return false;
         }
         true
-    }
-
-    /// Terminal model/control output is the durable source of truth.
-    ///
-    /// Stream deltas are presentation-only and travel through an asynchronous bridge;
-    /// using their arrival state here can persist a stale preamble or a partial final.
-    fn canonical_terminal_body(terminal_text: &str) -> String {
-        terminal_text.to_string()
     }
 
     async fn turn_cancelled(&self) -> bool {
@@ -197,10 +297,12 @@ impl InteractiveTurnStreamSink {
         }
 
         let failure = crate::turn_failure::TurnFailure::cancelled();
-        self.publish_tracked(TurnStreamEventV2::Error {
-            operator_message: failure.operator_message,
-            debug_message: Some(failure.debug_message),
-        })
+        self.commit_active_segment(false).await;
+        self.publish_failure(
+            TurnCompletionOutcomeV3::Cancelled,
+            failure.operator_message,
+            Some(failure.debug_message),
+        )
         .await;
 
         if let Some(delivery) = &self.delivery {
@@ -212,13 +314,32 @@ impl InteractiveTurnStreamSink {
         true
     }
 
-    async fn publish_tracked(&self, event: TurnStreamEventV2) {
+    async fn publish_failure(
+        &self,
+        outcome: TurnCompletionOutcomeV3,
+        operator_message: String,
+        debug_message: Option<String>,
+    ) {
+        self.publish_tracked(TurnStreamEventV3::Error {
+            operator_message,
+            debug_message,
+        })
+        .await;
+        self.publish_tracked(TurnStreamEventV3::TurnCompleted {
+            outcome,
+            aggregate_text: self.aggregate_text(),
+            tool_names: Vec::new(),
+        })
+        .await;
+    }
+
+    async fn publish_tracked(&self, event: TurnStreamEventV3) {
         self.publish_tracked_with_journal(event, None).await;
     }
 
     async fn publish_tracked_with_journal(
         &self,
-        event: TurnStreamEventV2,
+        event: TurnStreamEventV3,
         journal_override: Option<super::turn_event::TurnEvent>,
     ) {
         if let Some(registry) = &self.session_hooks.turn_ticket_registry {
@@ -235,13 +356,13 @@ impl InteractiveTurnStreamSink {
         let deferred_append = journal_override.is_none()
             && matches!(
                 &event,
-                TurnStreamEventV2::ContentAppend { .. } | TurnStreamEventV2::ReasoningAppend { .. }
+                TurnStreamEventV3::ContentAppend { .. } | TurnStreamEventV3::ReasoningAppend { .. }
             );
         let result = if deferred_append {
-            self.pipeline.admit(event).await
+            self.pipeline.admit_v3(event).await
         } else {
             self.pipeline
-                .emit_with_journal(event, journal_override)
+                .emit_v3_with_journal(event, journal_override)
                 .await
                 .map(|_| ())
         };
@@ -278,40 +399,50 @@ impl InteractiveTurnStreamSink {
     }
 }
 
-fn stream_tracking(event: &TurnStreamEventV2) -> (&str, &str, bool) {
+fn stream_tracking(event: &TurnStreamEventV3) -> (&str, &str, bool) {
     match event {
-        TurnStreamEventV2::ContentAppend { .. } => ("content_delta", "streaming", false),
-        TurnStreamEventV2::ReasoningAppend { .. } => ("reasoning_delta", "streaming", false),
-        TurnStreamEventV2::Status { phase, .. } => ("status", phase, false),
-        TurnStreamEventV2::Progress { .. } => ("turn_progress", "tool_loop", false),
-        TurnStreamEventV2::PackHold { .. } => ("assistant_pack_hold", "pack_hold", false),
-        TurnStreamEventV2::ModelReceipt { .. } => ("model_receipt", "inference", false),
-        TurnStreamEventV2::Final { .. } => ("final", "complete", true),
-        TurnStreamEventV2::NeedsInput { .. } => ("needs_input", "awaiting_operator", true),
-        TurnStreamEventV2::Checkpoint { .. } => ("turn_checkpoint", "handoff", true),
-        TurnStreamEventV2::WorkerAck { ack_kind, .. } => match ack_kind {
+        TurnStreamEventV3::AssistantTextStarted { .. } => {
+            ("assistant_text_started", "streaming", false)
+        }
+        TurnStreamEventV3::ContentAppend { .. } => ("content_delta", "streaming", false),
+        TurnStreamEventV3::AssistantTextCommitted { .. } => {
+            ("assistant_text_committed", "streaming", false)
+        }
+        TurnStreamEventV3::ReasoningAppend { .. } => ("reasoning_delta", "streaming", false),
+        TurnStreamEventV3::Status { phase, .. } => ("status", phase, false),
+        TurnStreamEventV3::Progress { .. } => ("turn_progress", "tool_loop", false),
+        TurnStreamEventV3::ModelReceipt { .. } => ("model_receipt", "inference", false),
+        TurnStreamEventV3::WorkerAck { ack_kind, .. } => match ack_kind {
             WorkerAckKind::Worker => ("worker_ack", "worker_ack", false),
             WorkerAckKind::Workshop => ("workshop_ack", "workshop_ack", false),
         },
-        TurnStreamEventV2::WorkerSynthesis { .. } => ("worker_synthesis", "worker_synthesis", true),
-        TurnStreamEventV2::FinalPending { .. } => ("final_pending", "wrapping_up", false),
-        TurnStreamEventV2::Error { .. } => ("error", "failed", true),
-        TurnStreamEventV2::ScratchReset => ("scratch_reset", "streaming", false),
-        TurnStreamEventV2::ToolStarted { .. } => ("tool_started", "tool_loop", false),
-        TurnStreamEventV2::ToolFinished { .. } => ("tool_finished", "tool_loop", false),
-        TurnStreamEventV2::ArtifactPresented { .. } => ("artifact_presented", "tool_loop", false),
-        TurnStreamEventV2::ArtifactUpdated { .. } => ("artifact_updated", "tool_loop", false),
-        TurnStreamEventV2::UiScene { .. } => ("ui_scene", "tool_loop", false),
-        TurnStreamEventV2::BudgetApprovalRequired { .. } => {
+        TurnStreamEventV3::WorkerSynthesis { .. } => {
+            ("worker_synthesis", "worker_synthesis", false)
+        }
+        TurnStreamEventV3::Error { .. } => ("error", "failed", false),
+        TurnStreamEventV3::ToolStarted { .. } => ("tool_started", "tool_loop", false),
+        TurnStreamEventV3::ToolFinished { .. } => ("tool_finished", "tool_loop", false),
+        TurnStreamEventV3::ArtifactPresented { .. } => ("artifact_presented", "tool_loop", false),
+        TurnStreamEventV3::ArtifactUpdated { .. } => ("artifact_updated", "tool_loop", false),
+        TurnStreamEventV3::UiScene { .. } => ("ui_scene", "tool_loop", false),
+        TurnStreamEventV3::BudgetApprovalRequired { .. } => {
             ("budget_approval", "awaiting_operator", false)
         }
-        TurnStreamEventV2::BrowserChallenge { .. } => {
+        TurnStreamEventV3::BrowserChallenge { .. } => {
             ("browser_challenge", "awaiting_operator", false)
         }
-        TurnStreamEventV2::BrowserNavigated { .. } => ("browser_navigated", "tool", false),
-        TurnStreamEventV2::ContextUsage { .. } => ("context_usage", "context", false),
-        TurnStreamEventV2::PermissionRequest { .. } => ("permission_request", "permission", false),
-        TurnStreamEventV2::SecretRequest { .. } => ("secret_request", "awaiting_operator", false),
+        TurnStreamEventV3::BrowserNavigated { .. } => ("browser_navigated", "tool", false),
+        TurnStreamEventV3::ContextUsage { .. } => ("context_usage", "context", false),
+        TurnStreamEventV3::PermissionRequest { .. } => ("permission_request", "permission", false),
+        TurnStreamEventV3::SecretRequest { .. } => ("secret_request", "awaiting_operator", false),
+        TurnStreamEventV3::TurnCompleted { outcome, .. } => match outcome {
+            TurnCompletionOutcomeV3::Completed => ("turn_completed", "complete", true),
+            TurnCompletionOutcomeV3::NeedsInput => ("turn_completed", "awaiting_operator", true),
+            TurnCompletionOutcomeV3::Checkpointed => ("turn_completed", "handoff", true),
+            TurnCompletionOutcomeV3::Failed
+            | TurnCompletionOutcomeV3::Cancelled
+            | TurnCompletionOutcomeV3::FuseExhausted => ("turn_completed", "failed", true),
+        },
     }
 }
 
@@ -324,7 +455,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         if let Ok(mut parts) = self.parts.lock() {
             parts.set_model_receipt(&provider, &model);
         }
-        self.publish_tracked(TurnStreamEventV2::ModelReceipt { provider, model })
+        self.publish_tracked(TurnStreamEventV3::ModelReceipt { provider, model })
             .await;
     }
 
@@ -332,9 +463,13 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         if self.emit_cancelled_if_needed().await {
             return;
         }
-        self.append_stream_delta(&delta);
-        self.publish_tracked(TurnStreamEventV2::ContentAppend { text: delta })
-            .await;
+        let Some((started, append)) = self.prepare_content_delta(delta) else {
+            return;
+        };
+        if let Some(started) = started {
+            self.publish_tracked(started).await;
+        }
+        self.publish_tracked(append).await;
     }
 
     async fn reasoning_chunk(&self, _turn_id: u64, delta: String) {
@@ -344,7 +479,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         if let Ok(mut parts) = self.parts.lock() {
             parts.push_reasoning_delta(&delta);
         }
-        self.publish_tracked(TurnStreamEventV2::ReasoningAppend { text: delta })
+        self.publish_tracked(TurnStreamEventV3::ReasoningAppend { text: delta })
             .await;
     }
 
@@ -367,7 +502,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             })
             .unwrap_or_else(|_| user_conversation_turn(text.clone()));
 
-        let wire = TurnStreamEventV2::WorkerAck {
+        let wire = TurnStreamEventV3::WorkerAck {
             ack_kind: WorkerAckKind::Worker,
             text: text.clone(),
             tool_names: tool_names.clone(),
@@ -403,7 +538,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             })
             .unwrap_or_else(|_| user_conversation_turn(text.clone()));
 
-        let wire = TurnStreamEventV2::WorkerAck {
+        let wire = TurnStreamEventV3::WorkerAck {
             ack_kind: WorkerAckKind::Workshop,
             text: text.clone(),
             tool_names: tool_names.clone(),
@@ -425,12 +560,14 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
-        let body = Self::canonical_terminal_body(&text);
+        let body = self.terminal_body(&text).await;
 
         let assistant_turn = self
             .parts
             .lock()
-            .map(|mut parts| parts.finalize_assistant_turn(body.clone(), tool_names.clone(), None))
+            .map(|mut parts| {
+                parts.finalize_chronological_turn(body.clone(), tool_names.clone(), None)
+            })
             .unwrap_or_else(|_| {
                 crate::turn_parts::conversation_turn_from_parts(
                     "assistant",
@@ -445,10 +582,9 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 )
             });
 
-        // Always carry the authoritative body in the terminal commit. The client
-        // replaces any partial streamed draft with this value.
-        let final_event = TurnStreamEventV2::Final {
-            text: body.clone(),
+        let final_event = TurnStreamEventV3::TurnCompleted {
+            outcome: TurnCompletionOutcomeV3::Completed,
+            aggregate_text: body.clone(),
             tool_names: tool_names.clone(),
         };
         let event = super::turn_event::TurnEvent::final_response_from_turn(&assistant_turn);
@@ -472,13 +608,13 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
-        let body = Self::canonical_terminal_body(&text);
+        let body = self.terminal_body(&text).await;
 
         let assistant_turn = self
             .parts
             .lock()
             .map(|mut parts| {
-                parts.finalize_assistant_turn(
+                parts.finalize_chronological_turn(
                     body.clone(),
                     tool_names.clone(),
                     Some("checkpoint".to_string()),
@@ -498,8 +634,9 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 )
             });
 
-        let checkpoint_event = TurnStreamEventV2::Checkpoint {
-            text: body.clone(),
+        let checkpoint_event = TurnStreamEventV3::TurnCompleted {
+            outcome: TurnCompletionOutcomeV3::Checkpointed,
+            aggregate_text: body.clone(),
             tool_names: tool_names.clone(),
         };
         let event = super::turn_event::TurnEvent::checkpoint_from_turn(&assistant_turn);
@@ -523,13 +660,13 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
-        let body = Self::canonical_terminal_body(&text);
+        let body = self.terminal_body(&text).await;
 
         let assistant_turn = self
             .parts
             .lock()
             .map(|mut parts| {
-                parts.finalize_assistant_turn(
+                parts.finalize_chronological_turn(
                     body.clone(),
                     tool_names.clone(),
                     Some("needs_input".to_string()),
@@ -549,8 +686,9 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 )
             });
 
-        let needs_input_event = TurnStreamEventV2::NeedsInput {
-            text: body.clone(),
+        let needs_input_event = TurnStreamEventV3::TurnCompleted {
+            outcome: TurnCompletionOutcomeV3::NeedsInput,
+            aggregate_text: body.clone(),
             tool_names: tool_names.clone(),
         };
         let event = super::turn_event::TurnEvent::needs_input_from_turn(&assistant_turn);
@@ -569,12 +707,16 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     }
 
     async fn agent_final_pending(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
-        let _ = turn_id;
+        let _ = (turn_id, tool_names);
         if self.emit_cancelled_if_needed().await {
             return;
         }
-        self.publish_tracked(TurnStreamEventV2::FinalPending { text, tool_names })
-            .await;
+        self.publish_tracked(TurnStreamEventV3::Status {
+            phase: "wrapping_up".into(),
+            operator_message: Some(text),
+            debug_message: None,
+        })
+        .await;
     }
 
     async fn agent_turn_progress(&self, _turn_id: u64, message: String, tool_names: Vec<String>) {
@@ -582,7 +724,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
-        self.publish_tracked(TurnStreamEventV2::Progress {
+        self.publish_tracked(TurnStreamEventV3::Progress {
             message,
             tool_names,
         })
@@ -593,32 +735,50 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         &self,
         _turn_id: u64,
         fragments: Vec<String>,
-        tool_names: Vec<String>,
+        _tool_names: Vec<String>,
     ) {
         if self.emit_cancelled_if_needed().await {
             return;
         }
 
-        self.publish_tracked(TurnStreamEventV2::PackHold {
-            text: fragments
-                .iter()
-                .map(|value| value.trim())
-                .filter(|value| !value.is_empty())
-                .collect::<Vec<_>>()
-                .join("\n\n"),
-            tool_names,
-        })
-        .await;
+        let held = fragments
+            .iter()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let needs_fallback_segment = {
+            let state = self
+                .text
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            state.active.is_none()
+                && !held.is_empty()
+                && state
+                    .committed_markdown
+                    .last()
+                    .is_none_or(|last| last != &held)
+        };
+        if needs_fallback_segment && let Some((started, append)) = self.prepare_content_delta(held)
+        {
+            if let Some(started) = started {
+                self.publish_tracked(started).await;
+            }
+            self.publish_tracked(append).await;
+        }
+        self.commit_active_segment(true).await;
     }
 
     async fn agent_error(&self, _turn_id: u64, message: String) {
         let failure = crate::turn_failure::TurnFailure::from_debug(&message);
 
         // Do not persist raw provider/runtime errors as assistant transcript turns.
-        self.publish_tracked(TurnStreamEventV2::Error {
-            operator_message: failure.operator_message.clone(),
-            debug_message: Some(failure.debug_message.clone()),
-        })
+        self.commit_active_segment(false).await;
+        self.publish_failure(
+            TurnCompletionOutcomeV3::Failed,
+            failure.operator_message.clone(),
+            Some(failure.debug_message.clone()),
+        )
         .await;
         self.sync_ask_job_failed(failure.debug_message.clone())
             .await;
@@ -639,7 +799,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     }
 
     async fn notice(&self, message: String) {
-        self.publish_tracked(TurnStreamEventV2::Status {
+        self.publish_tracked(TurnStreamEventV3::Status {
             phase: "orchestration".into(),
             operator_message: None,
             debug_message: Some(message),
@@ -648,23 +808,11 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     }
 
     async fn scratch_reset(&self, _turn_id: u64) {
-        let slice = self.streamed_markdown();
-        if !slice.trim().is_empty() {
-            if let Ok(mut parts) = self.parts.lock() {
-                parts.close_legacy_text_draft(&slice);
-            }
-            self.publish_tracked(TurnStreamEventV2::Progress {
-                message: slice.trim().to_string(),
-                tool_names: Vec::new(),
-            })
-            .await;
-        }
-        self.clear_streamed_markdown();
-        self.publish_tracked(TurnStreamEventV2::ScratchReset).await;
+        self.commit_active_segment(true).await;
     }
 
     async fn reset_streamed_markdown(&self) {
-        self.clear_streamed_markdown();
+        self.commit_active_segment(false).await;
     }
 
     async fn turn_budget_approval_required(
@@ -681,7 +829,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
-        self.publish_tracked(TurnStreamEventV2::BudgetApprovalRequired {
+        self.publish_tracked(TurnStreamEventV3::BudgetApprovalRequired {
             request_id,
             rounds_executed,
             max_tool_rounds,
@@ -703,7 +851,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
-        self.publish_tracked(TurnStreamEventV2::BrowserChallenge {
+        self.publish_tracked(TurnStreamEventV3::BrowserChallenge {
             session_id,
             challenge_url,
             reason,
@@ -722,7 +870,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
-        self.publish_tracked(TurnStreamEventV2::BrowserNavigated {
+        self.publish_tracked(TurnStreamEventV3::BrowserNavigated {
             url,
             title,
             opened_by_agent,
@@ -744,7 +892,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
-        self.publish_tracked(TurnStreamEventV2::SecretRequest {
+        self.publish_tracked(TurnStreamEventV3::SecretRequest {
             request_id,
             label,
             reason,
@@ -757,7 +905,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     }
 
     async fn tool_invoked(&self, tool_name: String, input_summary: String) {
-        self.publish_tracked(TurnStreamEventV2::Status {
+        self.publish_tracked(TurnStreamEventV3::Status {
             phase: "tool".into(),
             operator_message: None,
             debug_message: Some(format!("tool={tool_name} {input_summary}")),
@@ -776,12 +924,11 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         if self.emit_cancelled_if_needed().await {
             return;
         }
-        let draft = self.streamed_markdown();
+        self.commit_active_segment(false).await;
         if let Ok(mut parts) = self.parts.lock() {
-            parts.commit_legacy_text_draft(&draft);
             parts.tool_started(&tool_run_id, &tool_name, &input_summary, tool_round);
         }
-        self.publish_tracked(TurnStreamEventV2::ToolStarted {
+        self.publish_tracked(TurnStreamEventV3::ToolStarted {
             tool_run_id,
             tool_name,
             input_summary,
@@ -881,7 +1028,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             && let Some(ui_artifact) =
                 super::tool_stream::ui_artifact_from_tool_output(&tool_output)
         {
-            self.publish_tracked(TurnStreamEventV2::ArtifactPresented {
+            self.publish_tracked(TurnStreamEventV3::ArtifactPresented {
                 artifact: ui_artifact,
             })
             .await;
@@ -889,7 +1036,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         if crate::ui_build_tools::is_ui_scene_stream_tool(&tool_name)
             && let Some(scene) = super::tool_stream::scene_ops_from_tool_output(&tool_output)
         {
-            self.publish_tracked(TurnStreamEventV2::UiScene { scene })
+            self.publish_tracked(TurnStreamEventV3::UiScene { scene })
                 .await;
         }
         if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
@@ -907,20 +1054,20 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                     .and_then(|value| value.as_str())
                     .map(str::trim)
                     .filter(|value| !value.is_empty());
-                self.publish_tracked(TurnStreamEventV2::ArtifactUpdated {
+                self.publish_tracked(TurnStreamEventV3::ArtifactUpdated {
                     previous_artifact_id: previous.to_string(),
                     artifact: ui_artifact,
                     root_artifact_id: root.map(str::to_string),
                 })
                 .await;
             } else {
-                self.publish_tracked(TurnStreamEventV2::ArtifactPresented {
+                self.publish_tracked(TurnStreamEventV3::ArtifactPresented {
                     artifact: ui_artifact,
                 })
                 .await;
             }
         }
-        self.publish_tracked(TurnStreamEventV2::ToolFinished {
+        self.publish_tracked(TurnStreamEventV3::ToolFinished {
             tool_run_id,
             tool_name,
             status,
@@ -942,7 +1089,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         _input_receipt: Option<ArtifactReceiptMeta>,
         _output_receipt: Option<ArtifactReceiptMeta>,
     ) {
-        self.publish_tracked(TurnStreamEventV2::Status {
+        self.publish_tracked(TurnStreamEventV3::Status {
             phase: "tool".into(),
             operator_message: Some(format!("tool_payload={tool_name}")),
             debug_message: None,
@@ -985,7 +1132,7 @@ pub async fn run_daemon_interactive_turn(
             )),
         );
         if let Err(error) = pipeline
-            .emit(TurnStreamEventV2::Status {
+            .emit_v3(TurnStreamEventV3::Status {
                 phase: "accepted".into(),
                 operator_message: Some("interactive turn accepted; agent runtime started".into()),
                 debug_message: None,
@@ -1004,7 +1151,7 @@ pub async fn run_daemon_interactive_turn(
             delivery,
             session_hooks: session_hooks.unwrap_or_default(),
             parts: std::sync::Mutex::new(TurnPartsAccumulator::default()),
-            streamed_markdown: std::sync::Mutex::new(String::new()),
+            text: std::sync::Mutex::new(ChronologicalTextState::default()),
             pending_slice_scratch: std::sync::Mutex::new(None),
         });
         let sink: SharedAgentStreamSink = interactive_sink.clone();
@@ -1837,7 +1984,7 @@ async fn run_agent_turn_inner(
                 .insert(session_id, context_report.clone());
         }
         stream_sink
-            .publish_tracked(TurnStreamEventV2::ContextUsage {
+            .publish_tracked(TurnStreamEventV3::ContextUsage {
                 report: context_report,
                 operator_summary: Some(context_summary),
             })
@@ -2018,5 +2165,184 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
 
     async fn reset_streamed_markdown(&self) {
         self.inner.reset_streamed_markdown().await;
+    }
+}
+
+#[cfg(test)]
+mod chronological_sink_tests {
+    use std::sync::Mutex;
+
+    use medousa_engine::{
+        TURN_PIPELINE_BYTE_CAPACITY, TurnPipelineEmission, TurnPipelineEnvelope, TurnPipelineError,
+        TurnPipelineOutput,
+    };
+    use medousa_types::turn::TurnPart;
+    use tokio::sync::Semaphore;
+
+    use super::*;
+
+    #[derive(Default)]
+    struct RecordingOutput {
+        events: Mutex<Vec<TurnPipelineEnvelope>>,
+    }
+
+    impl TurnPipelineOutput for RecordingOutput {
+        async fn publish(&self, emission: TurnPipelineEmission) -> Result<(), TurnPipelineError> {
+            self.events
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(emission.envelope);
+            Ok(())
+        }
+    }
+
+    fn sink(output: Arc<RecordingOutput>) -> InteractiveTurnStreamSink {
+        InteractiveTurnStreamSink {
+            turn_id: "turn-chronological".into(),
+            session_id: "session-1".into(),
+            pipeline: TurnPipelineHandle::spawn(
+                "turn-chronological",
+                0,
+                Arc::new(Semaphore::new(TURN_PIPELINE_BYTE_CAPACITY * 2)),
+                output,
+            ),
+            delivery: None,
+            session_hooks: InteractiveTurnSessionHooks::default(),
+            parts: std::sync::Mutex::new(TurnPartsAccumulator::default()),
+            text: std::sync::Mutex::new(ChronologicalTextState::default()),
+            pending_slice_scratch: std::sync::Mutex::new(None),
+        }
+    }
+
+    #[tokio::test]
+    async fn pack_hold_becomes_a_committed_segment_not_a_hidden_event() {
+        let output = Arc::new(RecordingOutput::default());
+        let sink = sink(Arc::clone(&output));
+
+        sink.content_chunk(1, "First response.".into()).await;
+        sink.agent_pack_hold(1, vec!["First response.".into()], Vec::new())
+            .await;
+        sink.agent_pack_hold(1, vec!["Second response.".into()], Vec::new())
+            .await;
+        let body = sink
+            .terminal_body("First response.\n\nSecond response.")
+            .await;
+        sink.publish_tracked(TurnStreamEventV3::TurnCompleted {
+            outcome: TurnCompletionOutcomeV3::Completed,
+            aggregate_text: body.clone(),
+            tool_names: Vec::new(),
+        })
+        .await;
+
+        assert_eq!(body, "First response.\n\nSecond response.");
+        let turn = sink
+            .parts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .finalize_chronological_turn(body, Vec::new(), None);
+        let text_parts = turn
+            .parts
+            .unwrap()
+            .into_iter()
+            .filter_map(|part| match part {
+                TurnPart::Text {
+                    markdown,
+                    segment_id,
+                    model_round,
+                } => Some((markdown, segment_id, model_round)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(text_parts.len(), 2);
+        assert_eq!(text_parts[0].0, "First response.");
+        assert_eq!(text_parts[0].2, Some(1));
+        assert_eq!(text_parts[1].0, "Second response.");
+        assert_eq!(text_parts[1].2, Some(2));
+        assert!(text_parts.iter().all(|(_, id, _)| id.is_some()));
+
+        let events = output
+            .events
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(
+            events
+                .iter()
+                .map(TurnPipelineEnvelope::seq)
+                .collect::<Vec<_>>(),
+            [1, 2, 3, 4, 5, 6, 7]
+        );
+        assert!(
+            events
+                .iter()
+                .all(|event| matches!(event, TurnPipelineEnvelope::V3(_)))
+        );
+        assert!(!events.iter().any(|event| matches!(
+            event,
+            TurnPipelineEnvelope::V3(envelope)
+                if matches!(&envelope.event, TurnStreamEventV3::Progress { .. })
+        )));
+        drop(events);
+        sink.pipeline.cancel();
+    }
+
+    #[tokio::test]
+    async fn tool_start_commits_visible_prose_before_the_receipt() {
+        let output = Arc::new(RecordingOutput::default());
+        let sink = sink(Arc::clone(&output));
+
+        sink.content_chunk(1, "I’ll inspect it.".into()).await;
+        sink.tool_run_started(
+            "run-1".into(),
+            "search".into(),
+            "query".into(),
+            Vec::new(),
+            1,
+        )
+        .await;
+
+        let events = output
+            .events
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(events.len(), 4);
+        assert!(matches!(
+            &events[2],
+            TurnPipelineEnvelope::V3(envelope)
+                if matches!(&envelope.event, TurnStreamEventV3::AssistantTextCommitted { .. })
+        ));
+        assert!(matches!(
+            &events[3],
+            TurnPipelineEnvelope::V3(envelope)
+                if matches!(&envelope.event, TurnStreamEventV3::ToolStarted { tool_run_id, .. } if tool_run_id == "run-1")
+        ));
+        let projected_v2 = events
+            .iter()
+            .filter_map(|event| match event {
+                TurnPipelineEnvelope::V3(envelope) => {
+                    crate::sse_turn_projection::v3_to_v2(envelope)
+                        .expect("valid V2 compatibility projection")
+                }
+                TurnPipelineEnvelope::V2(_) => panic!("sink must author native V3 facts"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            projected_v2
+                .iter()
+                .map(|event| event.seq)
+                .collect::<Vec<_>>(),
+            [2, 4]
+        );
+        assert!(matches!(
+            &projected_v2[0].event,
+            medousa_types::TurnStreamEventV2::ContentAppend { text }
+                if text == "I’ll inspect it."
+        ));
+        assert!(matches!(
+            &projected_v2[1].event,
+            medousa_types::TurnStreamEventV2::ToolStarted { tool_run_id, .. }
+                if tool_run_id == "run-1"
+        ));
+        drop(events);
+        sink.pipeline.cancel();
     }
 }
