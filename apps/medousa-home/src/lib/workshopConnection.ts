@@ -550,6 +550,7 @@ export function connectWorkshop(options: {
       : attachWorkshopObserverForegroundResume(options.onHealthChange);
 
   void (async () => {
+    let health: DaemonHealth;
     try {
       await workshops.load();
       connection.setHealth(null);
@@ -557,14 +558,24 @@ export function connectWorkshop(options: {
       await ensureMobileDaemonUrl();
       // P0.1 — day-2+ launch: spawn local engine when health is down (wizard warm
       // only runs while the first-run sheet is visible).
-      const health = await ensureWorkshopEngineHealthy({
+      health = await ensureWorkshopEngineHealthy({
         allowSpawn: mode === "full",
       });
       connection.setHealth(health);
       options.onHealthChange(health);
+    } catch (err) {
+      const failed = {
+        ok: false,
+        message: err instanceof Error ? err.message : String(err),
+      };
+      connection.setHealth(failed);
+      options.onHealthChange(failed);
+      return;
+    }
 
-      void loadWorkshopDefaults(health.ok);
+    void loadWorkshopDefaults(health.ok);
 
+    try {
       if (health.ok) {
         if (mode === "full") {
           await startWorkshopStreams();
@@ -582,12 +593,12 @@ export function connectWorkshop(options: {
       }
       workshops.applyThemeForActiveWorkshop();
     } catch (err) {
-      const failed = {
-        ok: false,
-        message: err instanceof Error ? err.message : String(err),
-      };
-      connection.setHealth(failed);
-      options.onHealthChange(failed);
+      // Projection/bootstrap failures do not make a healthy daemon offline.
+      // Keep the composer usable and recover the failed stream independently.
+      chat.noteResumeFailure(err);
+      if (health.ok && mode === "full") {
+        scheduleWorkspaceStreamReconnect();
+      }
     }
   })();
 
