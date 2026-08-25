@@ -5509,6 +5509,7 @@ dependencies = [
  "medousa-iroh-http",
  "medousa-local-credential",
  "medousa-local-inference",
+ "medousa-runtime",
  "medousa-sdk",
  "medousa-sdk-iroh",
  "medousa-secrets",

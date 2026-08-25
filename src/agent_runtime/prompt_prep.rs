@@ -382,20 +382,7 @@ pub fn append_voice_preset_hint(
     voice_preset_id: Option<&str>,
     voice_appendix: Option<&str>,
 ) -> String {
-    let appendix = voice_appendix
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let Some(appendix) = appendix else {
-        return prompt.to_string();
-    };
-    let preset = voice_preset_id
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("custom");
-    format!(
-        "{prompt}\n\n[MEDOUSA_VOICE]\npreset={preset}\n{}",
-        truncate_text_for_budget(appendix, 800)
-    )
+    medousa_runtime::append_voice_preset_hint(prompt, voice_preset_id, voice_appendix)
 }
 
 pub fn append_identity_context_hint(prompt: &str, identity: &IdentityContextProbe) -> String {

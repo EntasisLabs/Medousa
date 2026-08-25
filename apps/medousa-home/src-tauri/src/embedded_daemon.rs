@@ -256,14 +256,19 @@ fn inference_route_from_defaults(
         .filter(|value| !value.is_empty())
         .unwrap_or("gpt-5.4-mini")
         .to_string();
-    let base_url = crate::integration_secrets::load_connection_base_url(&provider).or_else(|| {
-        defaults
-            .base_url
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-    });
+    let base_url = crate::integration_secrets::load_connection_base_url(&provider)
+        .or_else(|| {
+            defaults
+                .base_url
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        })
+        .or_else(|| {
+            crate::provider_catalog::find_provider(&provider)
+                .and_then(|entry| entry.default_base_url.map(str::to_string))
+        });
     medousa::embedded_daemon::validate_credentialed_inference_route(
         provider.clone(),
         model.clone(),

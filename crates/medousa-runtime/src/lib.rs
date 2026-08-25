@@ -19,6 +19,7 @@ pub mod tool_loop;
 pub mod turn_context;
 pub mod turn_control;
 pub mod turn_policy;
+pub mod turn_presentation;
 
 /// Maximum user prompt admitted to one foreground production turn.
 pub const MAX_REQUEST_PROMPT_CHARS: usize = 48_000;
@@ -40,7 +41,7 @@ pub use completion_fsm::{
 pub use credentialed_ai::{
     CredentialProvider, CredentialedAiChatBuildError, CredentialedAiChatClient,
     CredentialedAiChatConfig, CredentialedAiChatConfigError, ProviderCredential,
-    ProviderCredentialError,
+    ProviderCredentialError, genai_model_target, resolve_genai_adapter_kind,
 };
 pub use execution_boundary::{
     TurnExecutionBoundary, TurnExecutionBoundaryError, active_turn_execution_boundary,
@@ -59,3 +60,4 @@ pub use ports::{
 };
 pub use tool_loop::MedousaToolLoopPipeline;
 pub use turn_context::{HostTurnContext, ToolLaneState, ToolRoundContextProvider};
+pub use turn_presentation::append_voice_preset_hint;

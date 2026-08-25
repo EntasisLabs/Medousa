@@ -117,7 +117,14 @@ async fn probe_network_online(client: &Client) -> bool {
 
 #[tauri::command]
 pub fn providers_list() -> ProvidersListResult {
-    provider_catalog::providers_catalog()
+    if matches!(
+        crate::active_workshop::resolve(),
+        Ok(crate::active_workshop::ActiveWorkshopTarget::EmbeddedPersonal)
+    ) {
+        provider_catalog::providers_catalog_for_embedded()
+    } else {
+        provider_catalog::providers_catalog()
+    }
 }
 
 #[tauri::command]

@@ -421,6 +421,20 @@ pub fn providers_catalog() -> ProvidersListResult {
     }
 }
 
+pub fn providers_catalog_for_embedded() -> ProvidersListResult {
+    let mut catalog = providers_catalog();
+    catalog.providers.retain(|entry| {
+        entry.id == "custom"
+            || medousa_runtime::CredentialedAiChatConfig::new(
+                entry.id.clone(),
+                entry.default_model.clone(),
+                entry.default_base_url.clone(),
+            )
+            .is_ok()
+    });
+    catalog
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -443,6 +457,33 @@ mod tests {
                 .iter()
                 .any(|entry| entry.id == "openai-codex")
         );
+    }
+
+    #[test]
+    fn embedded_catalog_uses_portable_runtime_route_admission() {
+        let catalog = providers_catalog_for_embedded();
+        for provider in [
+            "openai",
+            "anthropic",
+            "google",
+            "deepseek",
+            "groq",
+            "xai",
+            "ollama",
+            "openrouter",
+            "custom",
+        ] {
+            assert!(
+                catalog.providers.iter().any(|entry| entry.id == provider),
+                "missing embedded provider {provider}"
+            );
+        }
+        for provider in ["openai-codex", "medousa-local", "replicate", "bedrock"] {
+            assert!(
+                !catalog.providers.iter().any(|entry| entry.id == provider),
+                "host-only provider leaked into embedded catalog: {provider}"
+            );
+        }
     }
 
     #[test]

@@ -7,9 +7,8 @@
   import ModelsStagesTab from "$lib/components/settings/ModelsStagesTab.svelte";
   import ProvidersSettingsTab from "$lib/components/settings/ProvidersSettingsTab.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
-  import { workshops } from "$lib/stores/workshops.svelte";
   import { voicePresets } from "$lib/stores/voicePresets.svelte";
-  import { isTauriIos, isTauriMobilePlatform } from "$lib/platform";
+  import { isTauriMobilePlatform } from "$lib/platform";
   import { DEPTH_CHARTER_OPTIONS } from "$lib/types/settings";
   import {
     BUILTIN_VOICE_PRESETS,
@@ -20,7 +19,6 @@
     type VoicePreset,
   } from "$lib/types/voicePresets";
   import { depthModeLabel } from "$lib/utils/chatModelPicker";
-  import { PERSONAL_WORKSHOP_ID } from "$lib/types/workshopRegistry";
   import { formatModelDisplayName } from "$lib/utils/formatModelDisplay";
   import { listProviders, type ProvidersListResult } from "$lib/utils/providersApi";
   import { composerSttStatus } from "$lib/utils/composerStt";
@@ -45,12 +43,6 @@
   type Picker = "stance" | "depth" | null;
 
   const readOnly = $derived(mobile && isTauriMobilePlatform());
-  const embeddedPersonal = $derived(
-    isTauriIos() &&
-      workshops.activeWorkshop?.id === PERSONAL_WORKSHOP_ID &&
-      workshops.activeWorkshop?.kind === "local",
-  );
-
   const memoryPrimary = [
     {
       key: "sliceHotWindowTurns" as const,
@@ -120,13 +112,7 @@
   let modePolicySaving = $state(false);
   let modePolicyFeedback = $state<string | null>(null);
 
-  const inferenceCatalog = $derived.by(() => {
-    if (!catalog || !embeddedPersonal) return catalog;
-    return {
-      ...catalog,
-      providers: catalog.providers.filter((entry) => entry.id === "openai"),
-    };
-  });
+  const inferenceCatalog = $derived(catalog);
 
   let editorOpen = $state(false);
   let editingId = $state<string | null>(null);

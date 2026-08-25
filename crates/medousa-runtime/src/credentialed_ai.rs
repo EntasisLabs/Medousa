@@ -28,7 +28,7 @@ use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta, send_st
 use tokio::sync::mpsc;
 use zeroize::{Zeroize, Zeroizing};
 
-const CERTIFIED_PROVIDER: &str = "openai";
+const MAX_PROVIDER_BYTES: usize = 128;
 const MAX_MODEL_BYTES: usize = 256;
 const MAX_BASE_URL_BYTES: usize = 2 * 1024;
 const MAX_CREDENTIAL_BYTES: usize = 16 * 1024;
@@ -39,8 +39,10 @@ const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1/";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum CredentialedAiChatConfigError {
-    #[error("credentialed AI provider is not certified")]
+    #[error("credentialed AI provider is not supported by this runtime route")]
     UnsupportedProvider,
+    #[error("credentialed AI provider is invalid: {0}")]
+    InvalidProvider(&'static str),
     #[error("credentialed AI model is invalid: {0}")]
     InvalidModel(&'static str),
     #[error("credentialed AI base URL is invalid: {0}")]
@@ -62,10 +64,20 @@ impl CredentialedAiChatConfig {
     ) -> Result<Self, CredentialedAiChatConfigError> {
         let provider = normalize_provider(provider.into())?;
         let model = normalize_model(model.into())?;
-        let base_url = base_url
-            .map(normalize_base_url)
-            .transpose()?
-            .filter(|url| url != OPENAI_DEFAULT_BASE_URL);
+        let base_url = base_url.map(normalize_base_url).transpose()?.filter(|url| {
+            !provider.eq_ignore_ascii_case("openai") || url != OPENAI_DEFAULT_BASE_URL
+        });
+        let adapter = resolve_genai_adapter_kind(&provider, &model, base_url.as_deref())
+            .ok_or(CredentialedAiChatConfigError::UnsupportedProvider)?;
+        if base_url
+            .as_deref()
+            .is_some_and(|url| url.starts_with("http://"))
+            && adapter.default_key_env_name().is_some()
+        {
+            return Err(CredentialedAiChatConfigError::InvalidBaseUrl(
+                "https_required_for_credentials",
+            ));
+        }
         Ok(Self {
             provider,
             model,
@@ -205,11 +217,8 @@ impl CredentialedAiChatClient {
     }
 
     fn adapter_kind_for(config: &CredentialedAiChatConfig) -> AdapterKind {
-        if config.base_url.is_none() && config.model.to_ascii_lowercase().starts_with("gpt-5") {
-            AdapterKind::OpenAIResp
-        } else {
-            AdapterKind::OpenAI
-        }
+        resolve_genai_adapter_kind(&config.provider, &config.model, config.base_url.as_deref())
+            .expect("validated credentialed inference route")
     }
 
     #[cfg(test)]
@@ -218,11 +227,7 @@ impl CredentialedAiChatClient {
     }
 
     fn model_target_for(config: &CredentialedAiChatConfig) -> String {
-        let namespace = match Self::adapter_kind_for(config) {
-            AdapterKind::OpenAIResp => "openai_resp",
-            _ => "openai",
-        };
-        format!("{namespace}::{}", config.model)
+        genai_model_target(&config.provider, &config.model, config.base_url.as_deref())
     }
 
     #[cfg(test)]
@@ -233,10 +238,17 @@ impl CredentialedAiChatClient {
     async fn load_credential(
         &self,
         config: &CredentialedAiChatConfig,
-    ) -> StasisResult<ProviderCredential> {
+    ) -> StasisResult<Option<ProviderCredential>> {
+        if Self::adapter_kind_for(config)
+            .default_key_env_name()
+            .is_none()
+        {
+            return Ok(None);
+        }
         self.credentials
             .credential_for(&config.provider)
             .await
+            .map(Some)
             .map_err(|error| {
                 StasisError::PortFailure(format!(
                     "credential for provider '{}' is unavailable: {error}",
@@ -248,10 +260,10 @@ impl CredentialedAiChatClient {
     fn request_client(
         &self,
         config: &CredentialedAiChatConfig,
-        credential: ProviderCredential,
+        credential: Option<ProviderCredential>,
     ) -> Client {
         let adapter_kind = Self::adapter_kind_for(config);
-        let credential = Arc::new(credential);
+        let credential = credential.map(Arc::new);
         let mut builder = Client::builder()
             .with_reqwest(self.http_client.clone())
             .with_adapter_kind(adapter_kind)
@@ -263,9 +275,9 @@ impl CredentialedAiChatClient {
                 }
                 // genai requires an owned key. The request-local client confines
                 // this unavoidable clone to one provider call.
-                Ok(Some(AuthData::from_single(
-                    credential.expose_secret().to_string(),
-                )))
+                Ok(credential.as_ref().map(|credential| {
+                    AuthData::from_single(credential.expose_secret().to_string())
+                }))
             });
 
         if let Some(base_url) = config.base_url.clone() {
@@ -472,12 +484,91 @@ fn append_bounded(target: &mut String, chunk: &str, lane: &str) -> StasisResult<
     Ok(())
 }
 
+/// Resolve a Medousa provider id to the genai protocol used by both full and
+/// embedded daemon deployments. Providers with an explicit OpenAI-compatible
+/// endpoint use the OpenAI protocol; native genai providers keep their native
+/// request and response semantics.
+pub fn resolve_genai_adapter_kind(
+    provider: &str,
+    model: &str,
+    base_url: Option<&str>,
+) -> Option<AdapterKind> {
+    let provider = provider.trim().to_ascii_lowercase();
+    let model = model.trim().to_ascii_lowercase();
+    let has_custom_endpoint = base_url
+        .map(str::trim)
+        .is_some_and(|value| !value.is_empty());
+
+    let adapter = match provider.as_str() {
+        // ChatGPT-account auth is a distinct daemon adapter, not an API-key
+        // route. Medousa Local likewise belongs to the local inference port.
+        "openai-codex" | "medousa-local" | "bedrock" => return None,
+        "openai" => {
+            if !has_custom_endpoint && model.starts_with("gpt-5") {
+                AdapterKind::OpenAIResp
+            } else {
+                AdapterKind::OpenAI
+            }
+        }
+        "google" | "google-gemini" | "gemini" => AdapterKind::Gemini,
+        "openrouter" | "open-router" => AdapterKind::OpenRouter,
+        "zhipu" => AdapterKind::BigModel,
+        "qwen" => AdapterKind::Aliyun,
+        // These catalog routes expose OpenAI-compatible HTTP APIs. Their
+        // endpoint is required so they can never fall through to OpenAI's URL.
+        "custom" | "mistral" | "perplexity" | "azure-openai" | "cerebras" | "hyperbolic"
+        | "huggingface" => {
+            if !has_custom_endpoint {
+                return None;
+            }
+            AdapterKind::OpenAI
+        }
+        _ => match AdapterKind::from_lower_str(&provider) {
+            Some(adapter) => adapter,
+            None if has_custom_endpoint => AdapterKind::OpenAI,
+            None => return None,
+        },
+    };
+    Some(adapter)
+}
+
+/// Build the provider-qualified model target used by genai.
+///
+/// Explicitly qualified model ids remain authoritative for the full daemon.
+/// Credentialed embedded routes reject those ids at configuration admission.
+pub fn genai_model_target(provider: &str, model: &str, base_url: Option<&str>) -> String {
+    let model = model.trim();
+    if model.contains("::") {
+        return model.to_string();
+    }
+    match resolve_genai_adapter_kind(provider, model, base_url) {
+        Some(adapter) => format!("{}::{model}", adapter.as_lower_str()),
+        None => format!("{}::{model}", provider.trim()),
+    }
+}
+
 fn normalize_provider(provider: String) -> Result<String, CredentialedAiChatConfigError> {
     let provider = provider.trim();
-    if !provider.eq_ignore_ascii_case(CERTIFIED_PROVIDER) {
-        return Err(CredentialedAiChatConfigError::UnsupportedProvider);
+    if provider.is_empty() {
+        return Err(CredentialedAiChatConfigError::InvalidProvider("empty"));
     }
-    Ok(CERTIFIED_PROVIDER.to_string())
+    if provider.len() > MAX_PROVIDER_BYTES {
+        return Err(CredentialedAiChatConfigError::InvalidProvider("too_long"));
+    }
+    if provider.chars().any(char::is_control) {
+        return Err(CredentialedAiChatConfigError::InvalidProvider(
+            "control_character",
+        ));
+    }
+    if !provider
+        .chars()
+        .all(|value| value.is_ascii_alphanumeric() || matches!(value, '-' | '_' | '.'))
+    {
+        return Err(CredentialedAiChatConfigError::InvalidProvider(
+            "invalid_character",
+        ));
+    }
+    Ok(provider.to_ascii_lowercase())
 }
 
 fn normalize_model(model: String) -> Result<String, CredentialedAiChatConfigError> {
@@ -511,9 +602,9 @@ fn normalize_base_url(base_url: String) -> Result<String, CredentialedAiChatConf
     }
     let mut parsed = url::Url::parse(base_url)
         .map_err(|_| CredentialedAiChatConfigError::InvalidBaseUrl("syntax"))?;
-    if parsed.scheme() != "https" {
+    if !matches!(parsed.scheme(), "http" | "https") {
         return Err(CredentialedAiChatConfigError::InvalidBaseUrl(
-            "https_required",
+            "http_or_https_required",
         ));
     }
     if parsed.cannot_be_a_base() || parsed.host_str().is_none() {
@@ -577,14 +668,19 @@ mod tests {
     }
 
     #[test]
-    fn configuration_is_provider_bound_and_https_only() {
+    fn configuration_accepts_portable_provider_routes_and_safe_http_urls() {
         let config = config(" gpt-4.1-mini ", Some("https://gateway.example/v1"));
         assert_eq!(config.provider(), "openai");
         assert_eq!(config.model(), "gpt-4.1-mini");
         assert_eq!(config.base_url(), Some("https://gateway.example/v1/"));
-        assert_eq!(
-            CredentialedAiChatConfig::new("anthropic", "claude", None),
-            Err(CredentialedAiChatConfigError::UnsupportedProvider)
+        assert!(CredentialedAiChatConfig::new("anthropic", "claude-sonnet-4-6", None).is_ok());
+        assert!(
+            CredentialedAiChatConfig::new(
+                "ollama",
+                "llama3.2",
+                Some("http://127.0.0.1:11434".to_string())
+            )
+            .is_ok()
         );
         assert!(matches!(
             CredentialedAiChatConfig::new(
@@ -593,10 +689,81 @@ mod tests {
                 Some("http://gateway.example/v1".to_string())
             ),
             Err(CredentialedAiChatConfigError::InvalidBaseUrl(
-                "https_required"
+                "https_required_for_credentials"
             ))
         ));
+        assert_eq!(
+            CredentialedAiChatConfig::new("openai-codex", "gpt-5.6-sol", None),
+            Err(CredentialedAiChatConfigError::UnsupportedProvider)
+        );
+        assert!(CredentialedAiChatConfig::new("not a provider", "model", None).is_err());
         assert!(CredentialedAiChatConfig::new("openai", "other::model", None).is_err());
+    }
+
+    #[test]
+    fn provider_catalog_routes_use_their_native_or_compatible_adapters() {
+        let routes = [
+            (
+                "anthropic",
+                "claude-sonnet-4-6",
+                None,
+                AdapterKind::Anthropic,
+                "anthropic::claude-sonnet-4-6",
+            ),
+            (
+                "google",
+                "gemini-3.1-pro-preview",
+                None,
+                AdapterKind::Gemini,
+                "gemini::gemini-3.1-pro-preview",
+            ),
+            (
+                "deepseek",
+                "deepseek-v4-flash",
+                None,
+                AdapterKind::DeepSeek,
+                "deepseek::deepseek-v4-flash",
+            ),
+            (
+                "groq",
+                "llama-3.3-70b-versatile",
+                None,
+                AdapterKind::Groq,
+                "groq::llama-3.3-70b-versatile",
+            ),
+            ("xai", "grok-4", None, AdapterKind::Xai, "xai::grok-4"),
+            (
+                "openrouter",
+                "anthropic/claude-sonnet-4-6",
+                None,
+                AdapterKind::OpenRouter,
+                "open_router::anthropic/claude-sonnet-4-6",
+            ),
+            (
+                "mistral",
+                "mistral-large-latest",
+                Some("https://api.mistral.ai/v1"),
+                AdapterKind::OpenAI,
+                "openai::mistral-large-latest",
+            ),
+        ];
+
+        for (provider, model, base_url, expected_adapter, expected_target) in routes {
+            let config =
+                CredentialedAiChatConfig::new(provider, model, base_url.map(str::to_string))
+                    .unwrap();
+            let client = client(config, Arc::new(MissingCredentialProvider::default()));
+            assert_eq!(
+                client.adapter_kind(),
+                expected_adapter,
+                "provider={provider}"
+            );
+            assert_eq!(
+                client.model_target(),
+                expected_target,
+                "provider={provider}"
+            );
+        }
     }
 
     #[test]
@@ -686,6 +853,24 @@ mod tests {
         assert!(message.contains("openai"));
         assert!(message.contains("missing"));
         assert_eq!(credentials.requested.lock().unwrap().as_slice(), ["openai"]);
+    }
+
+    #[tokio::test]
+    async fn keyless_ollama_route_does_not_consult_the_credential_store() {
+        let credentials = Arc::new(MissingCredentialProvider::default());
+        let config = CredentialedAiChatConfig::new(
+            "ollama",
+            "llama3.2",
+            Some("http://127.0.0.1:9".to_string()),
+        )
+        .unwrap();
+        let client = client(config, credentials.clone());
+        let error = client
+            .complete(ChatRequest::default(), None)
+            .await
+            .expect_err("closed local endpoint must fail");
+        assert!(error.to_string().contains("ollama"));
+        assert!(credentials.requested.lock().unwrap().is_empty());
     }
 
     #[test]

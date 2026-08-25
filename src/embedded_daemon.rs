@@ -733,6 +733,7 @@ impl EmbeddedDaemon {
         self: Arc<Self>,
         lease: crate::execution_context::TurnExecutionLease,
         prompt: String,
+        inference_prompt: String,
         prior_messages: Vec<ChatMessage>,
         stream: TurnStreamEntry,
     ) {
@@ -811,7 +812,7 @@ impl EmbeddedDaemon {
         let prompt_pipeline = PromptExecutionPipeline::new(self.chat_client.clone());
         let tool_loop = MedousaToolLoopPipeline::new(prompt_pipeline, self.tool_registry.clone());
         let request = ToolLoopExecutionRequest {
-            user_prompt: prompt,
+            user_prompt: inference_prompt,
             system_prompt: None,
             context: PromptExecutionContext {
                 correlation_id: Some(context.correlation_id().to_string()),
@@ -1457,6 +1458,26 @@ impl EmbeddedDaemonClient {
         identity_user_id: Option<String>,
         channel_surface: Option<String>,
     ) -> Result<InteractiveTurnResponse> {
+        self.start_turn_with_presentation_context(
+            session_id,
+            prompt,
+            identity_user_id,
+            channel_surface,
+            None,
+            None,
+        )
+        .await
+    }
+
+    pub async fn start_turn_with_presentation_context(
+        &self,
+        session_id: &str,
+        prompt: impl Into<String>,
+        identity_user_id: Option<String>,
+        channel_surface: Option<String>,
+        voice_preset_id: Option<String>,
+        voice_appendix: Option<String>,
+    ) -> Result<InteractiveTurnResponse> {
         self.require(Capability::WorkshopInteract)?;
         if self.daemon.suspended.load(Ordering::Acquire) {
             bail!("embedded daemon is suspended");
@@ -1469,6 +1490,11 @@ impl EmbeddedDaemonClient {
         if prompt.chars().count() > MAX_REQUEST_PROMPT_CHARS {
             bail!("turn prompt exceeds the foreground prompt limit");
         }
+        let inference_prompt = medousa_runtime::append_voice_preset_hint(
+            &prompt,
+            voice_preset_id.as_deref(),
+            voice_appendix.as_deref(),
+        );
         let identity_user_id = {
             let registry = self
                 .daemon
@@ -1573,7 +1599,7 @@ impl EmbeddedDaemonClient {
         let daemon = self.daemon.clone();
         tokio::spawn(async move {
             daemon
-                .execute_foreground_turn(lease, prompt, prior_messages, stream)
+                .execute_foreground_turn(lease, prompt, inference_prompt, prior_messages, stream)
                 .await;
         });
 

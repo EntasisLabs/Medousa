@@ -694,23 +694,14 @@ pub async fn turn_create(
                     .to_string(),
             );
         }
-        if voice_preset_id
-            .as_deref()
-            .is_some_and(|value| !value.trim().is_empty())
-            || voice_appendix
-                .as_deref()
-                .is_some_and(|value| !value.trim().is_empty())
-        {
-            return Err(
-                "voice turns are not enabled in the first embedded daemon profile".to_string(),
-            );
-        }
         let accepted = client
-            .start_turn_with_context(
+            .start_turn_with_presentation_context(
                 trimmed_session,
                 prompt.clone(),
                 identity_user_id.clone(),
                 channel_surface.clone(),
+                voice_preset_id.clone(),
+                voice_appendix.clone(),
             )
             .await
             .map_err(|error| error.to_string())?;

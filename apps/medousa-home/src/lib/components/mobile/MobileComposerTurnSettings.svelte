@@ -6,10 +6,8 @@
   import { runtime } from "$lib/stores/runtime.svelte";
   import { voicePresets } from "$lib/stores/voicePresets.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
-  import { workshops } from "$lib/stores/workshops.svelte";
   import { getEngineTuiDefaults } from "$lib/daemon";
-  import { isTauriIos, isTauriMobilePlatform } from "$lib/platform";
-  import { PERSONAL_WORKSHOP_ID } from "$lib/types/workshopRegistry";
+  import { isTauriMobilePlatform } from "$lib/platform";
   import { modelPickKey } from "$lib/utils/formatModelDisplay";
   import {
     buildMobileModelDropdownOptions,
@@ -46,11 +44,6 @@
   let options = $state<ChatModelPickOption[]>([]);
   let catalogSnapshot = $state<Awaited<ReturnType<typeof listProviders>> | null>(null);
 
-  const embeddedPersonal = $derived(
-    isTauriIos() &&
-      workshops.activeWorkshop?.id === PERSONAL_WORKSHOP_ID &&
-      workshops.activeWorkshop?.kind === "local",
-  );
   const activeKey = $derived(modelPickKey(runtime.provider, runtime.model));
   const groupedOptions = $derived(
     groupChatModelOptions(options, catalogSnapshot, runtime.provider),
@@ -121,23 +114,18 @@
       if (workshopDefaults.loaded) {
         favorites = workshopDefaults.favoriteModels();
       }
-      const visibleCatalog = embeddedPersonal
-        ? {
-            ...catalog,
-            providers: catalog.providers.filter((entry) => entry.id === "openai"),
-          }
-        : catalog;
-      catalogSnapshot = visibleCatalog;
+      catalogSnapshot = catalog;
       const modelOptions = buildMobileModelDropdownOptions(
-        visibleCatalog,
+        catalog,
         probe,
         runtime.provider,
         runtime.model,
         favorites,
       );
-      options = embeddedPersonal
-        ? modelOptions.filter((option) => option.provider === "openai")
-        : modelOptions;
+      const availableProviders = new Set(catalog.providers.map((entry) => entry.id));
+      options = modelOptions.filter(
+        (option) => option.key === activeKey || availableProviders.has(option.provider),
+      );
     } catch {
       options = [];
     } finally {

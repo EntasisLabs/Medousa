@@ -267,7 +267,6 @@ use chrono::Utc;
 use serde_json::{Value, json};
 use stasis::application::orchestration::prompt_pipeline::PromptExecutionPipeline;
 use stasis::application::orchestration::tool_registry::StasisTool;
-use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::infrastructure::runtime::http_webhook_event_publisher::HttpWebhookTransportPublisher;
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 use stasis::ports::outbound::runtime::delivery_endpoint_store::DeliveryEndpointStore;
@@ -449,14 +448,7 @@ pub fn resolve_llm_target(explicit_provider: Option<&str>, explicit_model: Optio
 /// explicitly. Custom base URLs are left on Chat Completions because compatibility
 /// proxies and local servers do not necessarily implement `/v1/responses`.
 pub fn genai_model_target(provider: &str, model: &str, base_url: Option<&str>) -> String {
-    if base_url.is_none()
-        && provider.eq_ignore_ascii_case("openai")
-        && model.trim().to_ascii_lowercase().starts_with("gpt-5")
-    {
-        return format!("openai_resp::{}", model.trim());
-    }
-
-    GenaiChatClient::build_model_target(Some(provider), model)
+    medousa_runtime::genai_model_target(provider, model, base_url)
 }
 
 pub fn build_genai_chat_client(
