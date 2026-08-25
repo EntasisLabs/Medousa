@@ -229,6 +229,7 @@ pub struct EmbeddedDaemonConfig {
     provider: String,
     model: String,
     chat_client: Arc<dyn AiChatClient>,
+    credentialed_chat_client: Option<CredentialedAiChatClient>,
     tool_registry: Arc<dyn ToolRegistry>,
     foreground_turn_timeout: Duration,
     max_live_turns: usize,
@@ -248,17 +249,13 @@ impl EmbeddedDaemonConfig {
         let model = model.into();
         let ai_config = CredentialedAiChatConfig::new(provider.clone(), model.clone(), base_url)
             .context("invalid embedded inference configuration")?;
-        let chat_client = Arc::new(
-            CredentialedAiChatClient::new(ai_config, credentials)
-                .context("initialize embedded inference client")?,
-        );
-        Ok(Self::with_chat_client(
-            root,
-            installation_id,
-            provider,
-            model,
-            chat_client,
-        ))
+        let credentialed_chat_client = CredentialedAiChatClient::new(ai_config, credentials)
+            .context("initialize embedded inference client")?;
+        let chat_client: Arc<dyn AiChatClient> = Arc::new(credentialed_chat_client.clone());
+        let mut config =
+            Self::with_chat_client(root, installation_id, provider, model, chat_client);
+        config.credentialed_chat_client = Some(credentialed_chat_client);
+        Ok(config)
     }
 
     /// Bind an existing Stasis inference port. Useful for alternate native
@@ -276,6 +273,7 @@ impl EmbeddedDaemonConfig {
             provider: provider.into(),
             model: model.into(),
             chat_client,
+            credentialed_chat_client: None,
             tool_registry: Arc::new(InMemoryToolRegistry::default()),
             foreground_turn_timeout: DEFAULT_FOREGROUND_TURN_TIMEOUT,
             max_live_turns: 1,
@@ -299,6 +297,49 @@ impl EmbeddedDaemonConfig {
     }
 }
 
+enum EmbeddedInferenceBinding {
+    Credentialed(CredentialedAiChatClient),
+    Fixed { provider: Arc<str>, model: Arc<str> },
+}
+
+impl EmbeddedInferenceBinding {
+    fn route(&self) -> (String, String) {
+        match self {
+            Self::Credentialed(client) => {
+                let config = client.config();
+                (config.provider().to_string(), config.model().to_string())
+            }
+            Self::Fixed { provider, model } => (provider.to_string(), model.to_string()),
+        }
+    }
+
+    fn reconfigure(
+        &self,
+        provider: impl Into<String>,
+        model: impl Into<String>,
+        base_url: Option<String>,
+    ) -> Result<()> {
+        let Self::Credentialed(client) = self else {
+            bail!("embedded inference binding is not reconfigurable");
+        };
+        let config = CredentialedAiChatConfig::new(provider, model, base_url)
+            .context("invalid embedded inference configuration")?;
+        client.reconfigure(config);
+        Ok(())
+    }
+}
+
+/// Validate a route before the native host commits it to workshop settings.
+pub fn validate_credentialed_inference_route(
+    provider: impl Into<String>,
+    model: impl Into<String>,
+    base_url: Option<String>,
+) -> Result<()> {
+    CredentialedAiChatConfig::new(provider, model, base_url)
+        .context("invalid embedded inference configuration")?;
+    Ok(())
+}
+
 impl std::fmt::Debug for EmbeddedDaemonConfig {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -320,8 +361,7 @@ pub struct EmbeddedDaemon {
     root: PathBuf,
     authority_id: medousa_types::session::AuthorityId,
     local_credential_id: Arc<str>,
-    provider: Arc<str>,
-    model: Arc<str>,
+    inference: EmbeddedInferenceBinding,
     chat_client: Arc<dyn AiChatClient>,
     tool_registry: Arc<dyn ToolRegistry>,
     session_store: Arc<dyn SessionStore>,
@@ -520,13 +560,19 @@ impl EmbeddedDaemon {
             "embedded-home:{}",
             config.installation_id.storage_key().as_str()
         ));
+        let inference = match config.credentialed_chat_client {
+            Some(client) => EmbeddedInferenceBinding::Credentialed(client),
+            None => EmbeddedInferenceBinding::Fixed {
+                provider: Arc::from(config.provider),
+                model: Arc::from(config.model),
+            },
+        };
 
         Ok(Arc::new(Self {
             root,
             authority_id,
             local_credential_id,
-            provider: Arc::from(config.provider),
-            model: Arc::from(config.model),
+            inference,
             chat_client: config.chat_client,
             tool_registry,
             session_store,
@@ -718,8 +764,8 @@ impl EmbeddedDaemon {
         note_stream_event(&self.turn_tickets, &turn_id, "status", "accepted", false).await;
         let _ = pipeline
             .emit(TurnStreamEventV2::ModelReceipt {
-                provider: self.provider.to_string(),
-                model: self.model.to_string(),
+                provider: context.route().provider().to_string(),
+                model: context.route().model().to_string(),
             })
             .await;
 
@@ -769,7 +815,7 @@ impl EmbeddedDaemon {
             system_prompt: None,
             context: PromptExecutionContext {
                 correlation_id: Some(context.correlation_id().to_string()),
-                model_hint: Some(self.model.to_string()),
+                model_hint: Some(context.route().model().to_string()),
                 ..PromptExecutionContext::default()
             },
             tool_name: String::new(),
@@ -924,12 +970,22 @@ impl EmbeddedDaemonClient {
         &self.daemon.authority_id
     }
 
-    pub fn inference_provider(&self) -> &str {
-        &self.daemon.provider
+    pub fn inference_provider(&self) -> String {
+        self.daemon.inference.route().0
     }
 
-    pub fn inference_model(&self) -> &str {
-        &self.daemon.model
+    pub fn inference_model(&self) -> String {
+        self.daemon.inference.route().1
+    }
+
+    pub fn reconfigure_inference(
+        &self,
+        provider: impl Into<String>,
+        model: impl Into<String>,
+        base_url: Option<String>,
+    ) -> Result<()> {
+        self.require(Capability::AdminRuntime)?;
+        self.daemon.inference.reconfigure(provider, model, base_url)
     }
 
     pub async fn health(&self) -> Result<HealthResponse> {
@@ -1476,14 +1532,15 @@ impl EmbeddedDaemonClient {
             }
         };
         let cancellation = CancellationToken::new();
+        let (provider, model) = self.daemon.inference.route();
         let scope = TurnContinuationScope {
             turn_correlation_id: turn_id.clone(),
             session_id: session_id.to_string(),
             identity_user_id: Some(identity_user_id),
             original_prompt: prompt.clone(),
             delivery_target: None,
-            provider: self.daemon.provider.to_string(),
-            model: self.daemon.model.to_string(),
+            provider: provider.clone(),
+            model: model.clone(),
             response_depth_mode: "standard".to_string(),
             supports_ui_artifacts: false,
             supports_liquid_markdown: true,
@@ -1495,7 +1552,7 @@ impl EmbeddedDaemonClient {
             turn_id.clone(),
             session_id,
             self.principal.clone(),
-            ProviderRoute::new(self.daemon.provider.clone(), self.daemon.model.clone()),
+            ProviderRoute::new(provider, model),
             SurfaceCapabilities {
                 ui_artifacts: false,
                 liquid_markdown: true,
@@ -1887,6 +1944,29 @@ query MobileProbe {
         ) -> std::result::Result<ProviderCredential, ProviderCredentialError> {
             ProviderCredential::new(SECRET_CANARY)
         }
+    }
+
+    #[test]
+    fn credentialed_binding_reconfigures_its_route() {
+        let client = CredentialedAiChatClient::new(
+            CredentialedAiChatConfig::new("openai", "gpt-5.4-mini", None).expect("initial route"),
+            Arc::new(CanaryCredentialProvider),
+        )
+        .expect("credentialed client");
+        let binding = EmbeddedInferenceBinding::Credentialed(client);
+
+        binding
+            .reconfigure(
+                "openai",
+                "gpt-4.1-mini",
+                Some("https://gateway.example/v1".to_string()),
+            )
+            .expect("reconfigure route");
+
+        assert_eq!(
+            binding.route(),
+            ("openai".to_string(), "gpt-4.1-mini".to_string())
+        );
     }
 
     async fn collect_to_eof(mut stream: EmbeddedTurnStream) -> Vec<TurnStreamEnvelopeV2> {

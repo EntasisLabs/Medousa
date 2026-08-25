@@ -13,7 +13,7 @@
 //! constructor exists upstream.
 
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -35,6 +35,7 @@ const MAX_CREDENTIAL_BYTES: usize = 16 * 1024;
 const MAX_STREAM_ACCUMULATED_BYTES: usize = 4 * 1024 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const READ_TIMEOUT: Duration = Duration::from_secs(90);
+const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1/";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum CredentialedAiChatConfigError {
@@ -61,7 +62,10 @@ impl CredentialedAiChatConfig {
     ) -> Result<Self, CredentialedAiChatConfigError> {
         let provider = normalize_provider(provider.into())?;
         let model = normalize_model(model.into())?;
-        let base_url = base_url.map(normalize_base_url).transpose()?;
+        let base_url = base_url
+            .map(normalize_base_url)
+            .transpose()?
+            .filter(|url| url != OPENAI_DEFAULT_BASE_URL);
         Ok(Self {
             provider,
             model,
@@ -158,7 +162,7 @@ pub enum CredentialedAiChatBuildError {
 
 #[derive(Clone)]
 pub struct CredentialedAiChatClient {
-    config: CredentialedAiChatConfig,
+    config: Arc<RwLock<CredentialedAiChatConfig>>,
     credentials: Arc<dyn CredentialProvider>,
     http_client: reqwest::Client,
 }
@@ -178,48 +182,75 @@ impl CredentialedAiChatClient {
             .build()
             .map_err(CredentialedAiChatBuildError::HttpClient)?;
         Ok(Self {
-            config,
+            config: Arc::new(RwLock::new(config)),
             credentials,
             http_client,
         })
     }
 
-    pub fn config(&self) -> &CredentialedAiChatConfig {
-        &self.config
+    pub fn config(&self) -> CredentialedAiChatConfig {
+        self.config
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
-    fn adapter_kind(&self) -> AdapterKind {
-        if self.config.base_url.is_none()
-            && self.config.model.to_ascii_lowercase().starts_with("gpt-5")
-        {
+    /// Atomically replace the route used by subsequent inference calls.
+    /// In-flight calls retain the snapshot they started with.
+    pub fn reconfigure(&self, config: CredentialedAiChatConfig) {
+        *self
+            .config
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = config;
+    }
+
+    fn adapter_kind_for(config: &CredentialedAiChatConfig) -> AdapterKind {
+        if config.base_url.is_none() && config.model.to_ascii_lowercase().starts_with("gpt-5") {
             AdapterKind::OpenAIResp
         } else {
             AdapterKind::OpenAI
         }
     }
 
-    fn model_target(&self) -> String {
-        let namespace = match self.adapter_kind() {
+    #[cfg(test)]
+    fn adapter_kind(&self) -> AdapterKind {
+        Self::adapter_kind_for(&self.config())
+    }
+
+    fn model_target_for(config: &CredentialedAiChatConfig) -> String {
+        let namespace = match Self::adapter_kind_for(config) {
             AdapterKind::OpenAIResp => "openai_resp",
             _ => "openai",
         };
-        format!("{namespace}::{}", self.config.model)
+        format!("{namespace}::{}", config.model)
     }
 
-    async fn load_credential(&self) -> StasisResult<ProviderCredential> {
+    #[cfg(test)]
+    fn model_target(&self) -> String {
+        Self::model_target_for(&self.config())
+    }
+
+    async fn load_credential(
+        &self,
+        config: &CredentialedAiChatConfig,
+    ) -> StasisResult<ProviderCredential> {
         self.credentials
-            .credential_for(&self.config.provider)
+            .credential_for(&config.provider)
             .await
             .map_err(|error| {
                 StasisError::PortFailure(format!(
                     "credential for provider '{}' is unavailable: {error}",
-                    self.config.provider
+                    config.provider
                 ))
             })
     }
 
-    fn request_client(&self, credential: ProviderCredential) -> Client {
-        let adapter_kind = self.adapter_kind();
+    fn request_client(
+        &self,
+        config: &CredentialedAiChatConfig,
+        credential: ProviderCredential,
+    ) -> Client {
+        let adapter_kind = Self::adapter_kind_for(config);
         let credential = Arc::new(credential);
         let mut builder = Client::builder()
             .with_reqwest(self.http_client.clone())
@@ -237,7 +268,7 @@ impl CredentialedAiChatClient {
                 )))
             });
 
-        if let Some(base_url) = self.config.base_url.clone() {
+        if let Some(base_url) = config.base_url.clone() {
             builder =
                 builder.with_service_target_resolver_fn(move |service_target: ServiceTarget| {
                     let ServiceTarget { auth, model, .. } = service_target;
@@ -251,12 +282,21 @@ impl CredentialedAiChatClient {
         builder.build()
     }
 
-    fn completion_options(&self, options: Option<&ChatOptions>) -> ChatOptions {
-        apply_model_reasoning_suffix(&self.model_target(), options.cloned().unwrap_or_default())
+    fn completion_options_for(
+        config: &CredentialedAiChatConfig,
+        options: Option<&ChatOptions>,
+    ) -> ChatOptions {
+        apply_model_reasoning_suffix(
+            &Self::model_target_for(config),
+            options.cloned().unwrap_or_default(),
+        )
     }
 
-    fn stream_options(&self, options: Option<&ChatOptions>) -> ChatOptions {
-        self.completion_options(options)
+    fn stream_options_for(
+        config: &CredentialedAiChatConfig,
+        options: Option<&ChatOptions>,
+    ) -> ChatOptions {
+        Self::completion_options_for(config, options)
             .with_capture_content(true)
             .with_capture_usage(true)
             .with_capture_tool_calls(true)
@@ -264,27 +304,42 @@ impl CredentialedAiChatClient {
             .with_normalize_reasoning_content(true)
     }
 
+    #[cfg(test)]
+    fn stream_options(&self, options: Option<&ChatOptions>) -> ChatOptions {
+        Self::stream_options_for(&self.config(), options)
+    }
+
     async fn complete_with_client(
         &self,
+        config: &CredentialedAiChatConfig,
         client: &Client,
         request: ChatRequest,
         options: Option<&ChatOptions>,
     ) -> StasisResult<ChatResponse> {
         client
             .exec_chat(
-                self.model_target(),
+                Self::model_target_for(config),
                 request,
-                Some(&self.completion_options(options)),
+                Some(&Self::completion_options_for(config, options)),
             )
             .await
-            .map_err(|error| self.transport_error("completion", error))
+            .map_err(|error| Self::transport_error_for(config, "completion", error))
     }
 
-    fn transport_error(&self, operation: &str, _error: genai::Error) -> StasisError {
+    fn transport_error_for(
+        config: &CredentialedAiChatConfig,
+        operation: &str,
+        _error: genai::Error,
+    ) -> StasisError {
         StasisError::PortFailure(format!(
             "credentialed AI {operation} failed for provider '{}' and model '{}'",
-            self.config.provider, self.config.model
+            config.provider, config.model
         ))
+    }
+
+    #[cfg(test)]
+    fn transport_error(&self, operation: &str, error: genai::Error) -> StasisError {
+        Self::transport_error_for(&self.config(), operation, error)
     }
 }
 
@@ -292,7 +347,7 @@ impl fmt::Debug for CredentialedAiChatClient {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("CredentialedAiChatClient")
-            .field("config", &self.config)
+            .field("config", &self.config())
             .field("credential_provider", &"REDACTED")
             .finish_non_exhaustive()
     }
@@ -305,9 +360,11 @@ impl AiChatClient for CredentialedAiChatClient {
         request: ChatRequest,
         options: Option<&ChatOptions>,
     ) -> StasisResult<ChatResponse> {
-        let credential = self.load_credential().await?;
-        let client = self.request_client(credential);
-        self.complete_with_client(&client, request, options).await
+        let config = self.config();
+        let credential = self.load_credential(&config).await?;
+        let client = self.request_client(&config, credential);
+        self.complete_with_client(&config, &client, request, options)
+            .await
     }
 
     async fn complete_stream(
@@ -316,17 +373,18 @@ impl AiChatClient for CredentialedAiChatClient {
         options: Option<&ChatOptions>,
         chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
     ) -> StasisResult<ChatResponse> {
-        let credential = self.load_credential().await?;
-        let client = self.request_client(credential);
+        let config = self.config();
+        let credential = self.load_credential(&config).await?;
+        let client = self.request_client(&config, credential);
         let fallback_request = request.clone();
         let mut stream_response = client
             .exec_chat_stream(
-                self.model_target(),
+                Self::model_target_for(&config),
                 request,
-                Some(&self.stream_options(options)),
+                Some(&Self::stream_options_for(&config, options)),
             )
             .await
-            .map_err(|error| self.transport_error("stream", error))?;
+            .map_err(|error| Self::transport_error_for(&config, "stream", error))?;
 
         let model_iden = stream_response.model_iden.clone();
         let mut streamed_text = String::new();
@@ -338,7 +396,9 @@ impl AiChatClient for CredentialedAiChatClient {
         let mut response_id = None;
 
         while let Some(event) = stream_response.stream.next().await {
-            match event.map_err(|error| self.transport_error("stream event", error))? {
+            match event
+                .map_err(|error| Self::transport_error_for(&config, "stream event", error))?
+            {
                 ChatStreamEvent::Chunk(chunk) => {
                     if !chunk.content.is_empty() {
                         append_bounded(&mut streamed_text, &chunk.content, "content")?;
@@ -379,7 +439,7 @@ impl AiChatClient for CredentialedAiChatClient {
         }
         if content.first_text().is_none() && content.tool_calls().is_empty() {
             let fallback = self
-                .complete_with_client(&client, fallback_request, options)
+                .complete_with_client(&config, &client, fallback_request, options)
                 .await?;
             if let (Some(tx), Some(text)) = (chunk_tx, fallback.first_text()) {
                 send_stream_delta(tx, StreamDelta::Content(text.to_string())).await?;
@@ -571,12 +631,33 @@ mod tests {
         assert_eq!(default.adapter_kind(), AdapterKind::OpenAIResp);
         assert_eq!(default.model_target(), "openai_resp::gpt-5.6-sol");
 
+        let explicit_default = client(
+            config("gpt-5.6-sol", Some("https://api.openai.com/v1")),
+            credentials.clone(),
+        );
+        assert_eq!(explicit_default.adapter_kind(), AdapterKind::OpenAIResp);
+
         let custom = client(
             config("gpt-5.6-sol", Some("https://gateway.example/v1")),
             credentials,
         );
         assert_eq!(custom.adapter_kind(), AdapterKind::OpenAI);
         assert_eq!(custom.model_target(), "openai::gpt-5.6-sol");
+    }
+
+    #[test]
+    fn reconfiguration_is_shared_by_clones_and_applies_to_future_calls() {
+        let client = client(
+            config("gpt-5.4-mini", None),
+            Arc::new(MissingCredentialProvider::default()),
+        );
+        let runtime_port = client.clone();
+
+        client.reconfigure(config("gpt-4.1-mini", Some("https://gateway.example/v1")));
+
+        assert_eq!(runtime_port.config().model(), "gpt-4.1-mini");
+        assert_eq!(runtime_port.adapter_kind(), AdapterKind::OpenAI);
+        assert_eq!(runtime_port.model_target(), "openai::gpt-4.1-mini");
     }
 
     #[test]

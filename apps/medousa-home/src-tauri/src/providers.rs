@@ -421,6 +421,7 @@ pub async fn providers_list_models(
     let provider_id = request.provider.trim().to_ascii_lowercase();
     let spec = provider_catalog::find_provider(&provider_id);
     let client = probe_http_client()?;
+    let local_config_allowed = active_workshop_allows_local_provider_config();
 
     if provider_id == "ollama" {
         let models = fetch_ollama_models(&client).await;
@@ -443,7 +444,11 @@ pub async fn providers_list_models(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
-        .or_else(|| load_provider_api_key_for_listing(&provider_id))
+        .or_else(|| {
+            local_config_allowed
+                .then(|| load_provider_api_key_for_listing(&provider_id))
+                .flatten()
+        })
         .unwrap_or_default();
     let needs_key = spec.map(|entry| entry.needs_api_key).unwrap_or(false);
     if needs_key && api_key.trim().is_empty() {
@@ -453,8 +458,16 @@ pub async fn providers_list_models(
     }
 
     let base_url = resolve_base_url(spec, request.base_url.as_deref())
-        .or_else(|| read_tui_defaults_base_url(&provider_id))
-        .or_else(|| load_provider_base_url_for_listing(&provider_id));
+        .or_else(|| {
+            local_config_allowed
+                .then(|| read_tui_defaults_base_url(&provider_id))
+                .flatten()
+        })
+        .or_else(|| {
+            local_config_allowed
+                .then(|| load_provider_base_url_for_listing(&provider_id))
+                .flatten()
+        });
 
     let validation = spec.map(|entry| entry.validation);
     match validation {
@@ -523,6 +536,16 @@ pub async fn providers_list_models(
             source: "unsupported".to_string(),
             models: vec![default_model_for_provider(&provider_id)],
         }),
+    }
+}
+
+fn active_workshop_allows_local_provider_config() -> bool {
+    match crate::active_workshop::resolve() {
+        Ok(crate::active_workshop::ActiveWorkshopTarget::EmbeddedPersonal) => true,
+        Ok(crate::active_workshop::ActiveWorkshopTarget::Transport { workshop, .. }) => {
+            workshop.kind == "local"
+        }
+        Err(_) => false,
     }
 }
 

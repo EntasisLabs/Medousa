@@ -1,6 +1,5 @@
 /** Composition-root binders. Feature stores must not import this module. */
 
-import { persistTuiRuntimePrefs } from "$lib/config";
 import { alignStageRoutingWithHost } from "$lib/utils/stageRouting";
 import { artifacts } from "$lib/stores/artifacts.svelte";
 import { automations } from "$lib/stores/automations.svelte";
@@ -59,13 +58,6 @@ export function bindAllFeaturePorts(): void {
       );
       runtime.stageRouting = stageRouting;
       voicePresets.applyFromDraft(payload);
-      await persistTuiRuntimePrefs(
-        runtime.provider,
-        runtime.model,
-        runtime.depthMode,
-        runtime.reasoningEffort,
-        stageRouting,
-      );
       runtime.defaultsLoaded = true;
     },
   });

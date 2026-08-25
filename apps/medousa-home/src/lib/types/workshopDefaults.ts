@@ -199,8 +199,8 @@ export function normalizeWorkshopDefaults(raw: TuiDefaults): TuiDefaults {
     reasoningEffort: raw.reasoningEffort?.trim() || null,
     stageRouting: alignStageRoutingWithHost(
       raw.stageRouting,
-      raw.provider?.trim() || defaults.provider,
-      raw.model?.trim() || defaults.model,
+      raw.provider?.trim() || defaults.provider || "ollama",
+      raw.model?.trim() || defaults.model || "qwen2.5:7b",
     ),
     webSearchPreferredProvider: raw.webSearchPreferredProvider?.trim() || "",
     webSearchTryFallbacks: raw.webSearchTryFallbacks ?? true,

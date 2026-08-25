@@ -6,8 +6,10 @@
   import { runtime } from "$lib/stores/runtime.svelte";
   import { voicePresets } from "$lib/stores/voicePresets.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
-  import { loadTuiDefaultsSummary } from "$lib/config";
-  import { isTauriMobilePlatform } from "$lib/platform";
+  import { workshops } from "$lib/stores/workshops.svelte";
+  import { getEngineTuiDefaults } from "$lib/daemon";
+  import { isTauriIos, isTauriMobilePlatform } from "$lib/platform";
+  import { PERSONAL_WORKSHOP_ID } from "$lib/types/workshopRegistry";
   import { modelPickKey } from "$lib/utils/formatModelDisplay";
   import {
     buildMobileModelDropdownOptions,
@@ -44,6 +46,11 @@
   let options = $state<ChatModelPickOption[]>([]);
   let catalogSnapshot = $state<Awaited<ReturnType<typeof listProviders>> | null>(null);
 
+  const embeddedPersonal = $derived(
+    isTauriIos() &&
+      workshops.activeWorkshop?.id === PERSONAL_WORKSHOP_ID &&
+      workshops.activeWorkshop?.kind === "local",
+  );
   const activeKey = $derived(modelPickKey(runtime.provider, runtime.model));
   const groupedOptions = $derived(
     groupChatModelOptions(options, catalogSnapshot, runtime.provider),
@@ -108,20 +115,29 @@
         probeProviders(),
         isTauriMobilePlatform()
           ? Promise.resolve(null)
-          : loadTuiDefaultsSummary().catch(() => null),
+          : getEngineTuiDefaults().catch(() => null),
       ]);
       let favorites = normalizeFavoriteModels(summary?.favoriteModels);
       if (workshopDefaults.loaded) {
         favorites = workshopDefaults.favoriteModels();
       }
-      catalogSnapshot = catalog;
-      options = buildMobileModelDropdownOptions(
-        catalog,
+      const visibleCatalog = embeddedPersonal
+        ? {
+            ...catalog,
+            providers: catalog.providers.filter((entry) => entry.id === "openai"),
+          }
+        : catalog;
+      catalogSnapshot = visibleCatalog;
+      const modelOptions = buildMobileModelDropdownOptions(
+        visibleCatalog,
         probe,
         runtime.provider,
         runtime.model,
         favorites,
       );
+      options = embeddedPersonal
+        ? modelOptions.filter((option) => option.provider === "openai")
+        : modelOptions;
     } catch {
       options = [];
     } finally {

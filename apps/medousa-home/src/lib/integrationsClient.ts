@@ -78,6 +78,11 @@ export async function integrationSecretConfigured(
   return Boolean(match.secrets?.[slot]);
 }
 
+export async function integrationBaseUrl(kind: string): Promise<string | null> {
+  const match = (await listConnections()).find((row) => row.kind === kind);
+  return match?.base_url?.trim() || null;
+}
+
 /** Map Home messaging secret ids onto integration kind + slot. */
 export function resolveSecretTarget(
   secretId: string,

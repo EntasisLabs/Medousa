@@ -67,23 +67,49 @@ impl EmbeddedDaemonState {
         let Some(client) = self.client_if_active().await? else {
             return Ok(None);
         };
+        let configured_provider = client.inference_provider();
+        let configured_model = client.inference_model();
         if let Some(provider) = provider.map(str::trim).filter(|value| !value.is_empty()) {
-            if !provider.eq_ignore_ascii_case(client.inference_provider()) {
+            if !provider.eq_ignore_ascii_case(&configured_provider) {
                 return Err(format!(
                     "the embedded daemon is configured for provider '{}' (requested '{provider}')",
-                    client.inference_provider()
+                    configured_provider
                 ));
             }
         }
         if let Some(model) = model.map(str::trim).filter(|value| !value.is_empty()) {
-            if model != client.inference_model() {
+            if model != configured_model {
                 return Err(format!(
                     "the embedded daemon is configured for model '{}' (requested '{model}')",
-                    client.inference_model()
+                    configured_model
                 ));
             }
         }
         Ok(Some(client))
+    }
+
+    #[cfg(target_os = "ios")]
+    pub fn validate_inference_defaults(
+        &self,
+        defaults: &crate::medousa_paths::TuiDefaultsDto,
+    ) -> Result<(), String> {
+        let _ = inference_route_from_defaults(defaults)?;
+        Ok(())
+    }
+
+    #[cfg(target_os = "ios")]
+    pub async fn reconfigure_active(
+        &self,
+        defaults: &crate::medousa_paths::TuiDefaultsDto,
+    ) -> Result<(), String> {
+        let (provider, model, base_url) = inference_route_from_defaults(defaults)?;
+        let Some(client) = self.client_if_active().await? else {
+            return Err("Embedded Personal is no longer the selected workshop".to_string());
+        };
+        client
+            .reconfigure_inference(provider, model, base_url)
+            .map_err(|error| format!("reconfigure embedded daemon inference: {error:#}"))?;
+        Ok(())
     }
 
     #[cfg(target_os = "ios")]
@@ -213,25 +239,56 @@ async fn embedded_workshop_selected() -> Result<bool, String> {
 }
 
 #[cfg(target_os = "ios")]
+fn inference_route_from_defaults(
+    defaults: &crate::medousa_paths::TuiDefaultsDto,
+) -> Result<(String, String, Option<String>), String> {
+    let provider = defaults
+        .provider
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("openai")
+        .to_string();
+    let model = defaults
+        .model
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("gpt-5.4-mini")
+        .to_string();
+    let base_url = crate::integration_secrets::load_connection_base_url(&provider).or_else(|| {
+        defaults
+            .base_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    });
+    medousa::embedded_daemon::validate_credentialed_inference_route(
+        provider.clone(),
+        model.clone(),
+        base_url.clone(),
+    )
+    .map_err(|error| format!("configure embedded daemon inference: {error:#}"))?;
+    Ok((provider, model, base_url))
+}
+
+#[cfg(target_os = "ios")]
+pub(crate) fn normalize_inference_defaults(
+    mut defaults: crate::medousa_paths::TuiDefaultsDto,
+) -> Result<crate::medousa_paths::TuiDefaultsDto, String> {
+    let (provider, model, _) = inference_route_from_defaults(&defaults)?;
+    defaults.provider = Some(provider);
+    defaults.model = Some(model);
+    Ok(defaults)
+}
+
+#[cfg(target_os = "ios")]
 async fn boot_embedded_daemon() -> Result<Arc<EmbeddedDaemon>, String> {
     let (installation_id, provider, model, base_url, root) = tokio::task::spawn_blocking(|| {
         let installation_id = crate::integration_secrets::ensure_secrets_bootstrapped()?;
-        let defaults = crate::medousa_paths::load_tui_defaults_summary();
-        let provider = defaults
-            .provider
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .unwrap_or("openai")
-            .to_string();
-        let model = defaults
-            .model
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .unwrap_or("gpt-5.4-mini")
-            .to_string();
-        let base_url = crate::integration_secrets::load_connection_base_url(&provider);
+        let defaults = crate::medousa_paths::load_tui_defaults();
+        let (provider, model, base_url) = inference_route_from_defaults(&defaults)?;
         let root = crate::paths::medousa_data_dir().join("embedded-daemon");
         Ok::<_, String>((installation_id, provider, model, base_url, root))
     })

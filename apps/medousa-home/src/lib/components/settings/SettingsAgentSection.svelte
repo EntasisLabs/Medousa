@@ -7,8 +7,9 @@
   import ModelsStagesTab from "$lib/components/settings/ModelsStagesTab.svelte";
   import ProvidersSettingsTab from "$lib/components/settings/ProvidersSettingsTab.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
+  import { workshops } from "$lib/stores/workshops.svelte";
   import { voicePresets } from "$lib/stores/voicePresets.svelte";
-  import { isTauriMobilePlatform } from "$lib/platform";
+  import { isTauriIos, isTauriMobilePlatform } from "$lib/platform";
   import { DEPTH_CHARTER_OPTIONS } from "$lib/types/settings";
   import {
     BUILTIN_VOICE_PRESETS,
@@ -19,6 +20,7 @@
     type VoicePreset,
   } from "$lib/types/voicePresets";
   import { depthModeLabel } from "$lib/utils/chatModelPicker";
+  import { PERSONAL_WORKSHOP_ID } from "$lib/types/workshopRegistry";
   import { formatModelDisplayName } from "$lib/utils/formatModelDisplay";
   import { listProviders, type ProvidersListResult } from "$lib/utils/providersApi";
   import { composerSttStatus } from "$lib/utils/composerStt";
@@ -43,6 +45,11 @@
   type Picker = "stance" | "depth" | null;
 
   const readOnly = $derived(mobile && isTauriMobilePlatform());
+  const embeddedPersonal = $derived(
+    isTauriIos() &&
+      workshops.activeWorkshop?.id === PERSONAL_WORKSHOP_ID &&
+      workshops.activeWorkshop?.kind === "local",
+  );
 
   const memoryPrimary = [
     {
@@ -112,6 +119,14 @@
   });
   let modePolicySaving = $state(false);
   let modePolicyFeedback = $state<string | null>(null);
+
+  const inferenceCatalog = $derived.by(() => {
+    if (!catalog || !embeddedPersonal) return catalog;
+    return {
+      ...catalog,
+      providers: catalog.providers.filter((entry) => entry.id === "openai"),
+    };
+  });
 
   let editorOpen = $state(false);
   let editingId = $state<string | null>(null);
@@ -427,18 +442,12 @@
     <div class="agent-models">
       <ModelsSettingsTab
         bind:this={modelsTab}
-        {catalog}
+        catalog={inferenceCatalog}
         {sttReady}
-        disabled={readOnly || workshopDefaults.saving}
+        disabled={workshopDefaults.saving}
         onKeyStatusChange={() => void refreshSttAndKeys()}
       />
     </div>
-
-    {#if readOnly}
-      <p class="workshop-faint mt-3 text-xs leading-relaxed">
-        Model picks are managed on your workshop host.
-      </p>
-    {/if}
 
     <details class="prefs-more mt-3" bind:open={modelsAdvancedOpen}>
       <summary class="prefs-more-summary">
@@ -478,8 +487,8 @@
         {:else if modelsExtra === "providers"}
           <div class="agent-extra-panel mt-3">
             <ProvidersSettingsTab
-              {catalog}
-              disabled={readOnly || workshopDefaults.saving}
+              catalog={inferenceCatalog}
+              disabled={workshopDefaults.saving}
               onKeysChanged={() => void refreshSttAndKeys()}
             />
           </div>

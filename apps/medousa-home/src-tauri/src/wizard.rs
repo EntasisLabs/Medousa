@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use tauri::State;
 
 use crate::daemon_service::{DaemonWaitHealthRequest, daemon_start, daemon_wait_healthy};
 use crate::medousa_paths::{
@@ -335,6 +336,7 @@ pub fn wizard_advance(request: WizardAdvanceRequest) -> Result<WizardBootstrap, 
 
 #[tauri::command]
 pub async fn wizard_apply_screen1(
+    embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     request: WizardApplyScreen1Request,
 ) -> Result<WizardApplyScreen1Result, String> {
     let provider = request.provider.trim().to_ascii_lowercase();
@@ -431,7 +433,8 @@ pub async fn wizard_apply_screen1(
             .map(str::trim)
             .filter(|value| !value.is_empty())
         {
-            messaging_save_secret("api_key".to_string(), Some(key.to_string()))?;
+            messaging_save_secret(embedded_state, "api_key".to_string(), Some(key.to_string()))
+                .await?;
         }
     }
 

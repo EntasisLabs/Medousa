@@ -17,7 +17,6 @@
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
   import { workshopModelOnHostHint } from "$lib/platformCopy";
-  import { loadTuiDefaultsSummary } from "$lib/config";
   import { modelPickKey } from "$lib/utils/formatModelDisplay";
   import {
     buildChatModelOptions,
@@ -41,7 +40,7 @@
     resolveModelDisplayLabel,
     type FavoriteModel,
   } from "$lib/utils/modelCatalog";
-  import type { AgentSessionConfigOption } from "$lib/daemon";
+  import { getEngineTuiDefaults, type AgentSessionConfigOption } from "$lib/daemon";
   import type { ChatAgentRuntime } from "$lib/utils/sessionAgentRuntime";
   import {
     agentModelConfigOption,
@@ -260,7 +259,7 @@
         probeProviders(),
         isTauriMobilePlatform()
           ? Promise.resolve(null)
-          : loadTuiDefaultsSummary().catch(() => null),
+          : getEngineTuiDefaults().catch(() => null),
       ]);
       catalogSnapshot = catalog;
       probeSnapshot = probe;

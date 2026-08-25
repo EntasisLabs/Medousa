@@ -40,11 +40,15 @@ pub mod persistent_locus;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod portable_daemon_tools;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod reasoning_effort;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod recurring_schedule;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod request_principal;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod runtime_composition_ext;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod runtime_config_command_runtime;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod runtime_job_spec;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]

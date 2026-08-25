@@ -192,7 +192,7 @@ export class WorkshopDefaultsStore {
   }
 
   async toggleFavorite(provider: string, model: string) {
-    if (!isTauri() || isTauriMobilePlatform()) return;
+    if (!isTauri()) return;
     const next = toggleFavoriteModel(this.favoriteModels(), provider, model);
     this.draft = { ...this.draft, favoriteModels: next };
     await putEngineTuiDefaults(syncFlatFieldsFromProfiles(this.draft));
@@ -209,10 +209,6 @@ export class WorkshopDefaultsStore {
 
   async saveInferenceProfiles() {
     if (!isTauri()) return;
-    if (isTauriMobilePlatform()) {
-      this.flashModelsNotice(workshopCharterOnHostHint());
-      return;
-    }
     this.saving = true;
     try {
       const payload: TuiDefaults = syncFlatFieldsFromProfiles({
