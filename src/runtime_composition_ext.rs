@@ -13,6 +13,61 @@ use stasis::ports::outbound::runtime::outbox_store::OutboxStore;
 use stasis::ports::outbound::runtime::recurring_store::RecurringStore;
 use stasis::prelude::{Result, RuntimeComposition};
 
+/// Process one default-queue job through either supported runtime backend.
+pub async fn process_once(
+    runtime: &RuntimeComposition,
+    worker_id: &str,
+) -> anyhow::Result<Option<String>> {
+    let now = Utc::now();
+    let result = match runtime {
+        RuntimeComposition::InMemory(runtime) => {
+            runtime.process_once("default", worker_id, now).await?
+        }
+        RuntimeComposition::Surreal(runtime) => {
+            runtime.process_once("default", worker_id, now).await?
+        }
+    };
+    Ok(result)
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RuntimeRecoveryReport {
+    pub materialized: usize,
+    pub processed_job_ids: Vec<String>,
+    /// The bounded wake pass consumed its full allowance. Any remaining work
+    /// stays durable in Stasis for the next foreground recovery pass.
+    pub job_limit_reached: bool,
+}
+
+/// Reconcile durable work after a deployment was unavailable.
+///
+/// Stasis owns due-definition leasing, missed-run coalescing, idempotency, and
+/// retry state. Mobile hosts only trigger that existing policy on boot/wake and
+/// perform a bounded number of canonical worker passes.
+pub async fn reconcile_after_unavailability(
+    runtime: &RuntimeComposition,
+    scheduler_id: &str,
+    worker_id: &str,
+    max_jobs: usize,
+) -> anyhow::Result<RuntimeRecoveryReport> {
+    let materialized = runtime
+        .materialize_recurring_now(scheduler_id)
+        .await
+        .map_err(anyhow::Error::new)?;
+    let mut processed_job_ids = Vec::with_capacity(max_jobs.min(materialized));
+    while processed_job_ids.len() < max_jobs {
+        let Some(job_id) = process_once(runtime, worker_id).await? else {
+            break;
+        };
+        processed_job_ids.push(job_id);
+    }
+    Ok(RuntimeRecoveryReport {
+        materialized,
+        job_limit_reached: max_jobs > 0 && processed_job_ids.len() == max_jobs,
+        processed_job_ids,
+    })
+}
+
 #[async_trait]
 pub trait RuntimeCompositionExt {
     async fn get_job(&self, job_id: &str) -> Result<Option<Job>>;

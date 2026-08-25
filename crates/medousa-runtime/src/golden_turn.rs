@@ -1,11 +1,11 @@
-//! Phase 0 — golden-turn characterization tests.
+//! Golden-turn characterization tests for the portable production loop.
 //!
 //! These lock the *observable* turn semantics of the real
 //! [`MedousaToolLoopPipeline`] FSM so the Phase 1 hexagonal extraction is
 //! provably behavior-preserving. Determinism comes from a scripted
 //! [`AiChatClient`] (there is no scripted model provider in the tree) feeding
-//! the genuine tool loop + completion gate + [`AgentStreamSink`] port — i.e. we
-//! exercise the production decision code, not a reimplementation of it.
+//! the genuine tool loop + completion gate + runtime presentation ports — i.e.
+//! we exercise the production decision code, not a reimplementation of it.
 //!
 //! What is locked here (the cases the plan calls out):
 //! * two consecutive non-tool replies commit (`content_pack_merged`),
@@ -20,7 +20,7 @@
 //! termination reason produces) is locked separately in `sink_golden` against
 //! `InteractiveTurnStreamSink`.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -44,17 +44,14 @@ use stasis::application::orchestration::tool_registry::{
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta};
 
-use crate::agent_runtime::execution_context::{
-    ProviderRoute, SurfaceCapabilities, TurnExecutionContext, with_turn_execution_context,
+use crate::execution_boundary::{TurnExecutionBoundary, with_turn_execution_boundary};
+use crate::loop_gate::ToolLoopCompletionGate;
+use crate::ports::{
+    RuntimePortFuture, RuntimePorts, ToolRunEventPort, ToolRunFinish, ToolRunStart,
+    TurnPresentationPort,
 };
-use crate::agent_runtime::stream_sink::{AgentStreamSink, SharedAgentStreamSink};
-use crate::agent_runtime::turn_completion::ToolLoopCompletionGate;
-use crate::medousa_tool_loop::MedousaToolLoopPipeline;
-use crate::payload_receipt::ArtifactReceiptMeta;
-use crate::request_principal::{RequestPrincipal, TransportClass};
-use crate::session_storage::SessionId;
-use crate::turn_api::CognitionTurnTool;
-use crate::turn_continuation::TurnContinuationScope;
+use crate::tool_loop::MedousaToolLoopPipeline;
+use crate::turn_control::COGNITION_TURN;
 
 // ── Scripted model provider ──────────────────────────────────────────────────
 
@@ -86,28 +83,20 @@ fn tool_call(name: &str, args: Value) -> ToolCall {
 
 fn finish_call(message: &str) -> ToolCall {
     tool_call(
-        crate::public_api::COGNITION_TURN,
+        COGNITION_TURN,
         json!({ "action": "turn.finish", "message": message }),
     )
 }
 
 fn checkpoint_call(message: &str) -> ToolCall {
     tool_call(
-        crate::public_api::COGNITION_TURN,
+        COGNITION_TURN,
         json!({ "action": "turn.checkpoint", "message": message }),
     )
 }
 
 fn register_golden_turn_tool(registry: &InMemoryToolRegistry) {
-    registry
-        .register_tool(CognitionTurnTool::new(
-            Arc::new(crate::agent_runtime::turn_worker::TurnWorkerScheduler::new(
-                crate::agent_runtime::turn_worker::turn_worker_store(),
-            )),
-            "golden".to_string(),
-            crate::agent_runtime::execution_context::TurnScopeAccess::default(),
-        ))
-        .unwrap();
+    registry.register_tool(GoldenTurnTool).unwrap();
 }
 
 fn tool_response(calls: Vec<ToolCall>) -> ChatResponse {
@@ -185,6 +174,19 @@ impl AiChatClient for ScriptedClient {
 
 struct DataProbeTool;
 
+struct GoldenTurnTool;
+
+#[async_trait]
+impl StasisTool for GoldenTurnTool {
+    fn name(&self) -> &'static str {
+        COGNITION_TURN
+    }
+
+    async fn invoke(&self, _input: Value) -> StasisResult<Value> {
+        Ok(json!({ "ok": true }))
+    }
+}
+
 #[async_trait]
 impl StasisTool for DataProbeTool {
     fn name(&self) -> &'static str {
@@ -255,7 +257,7 @@ impl ToolRegistry for RevealingRegistry {
     }
 }
 
-// ── Recording sink ───────────────────────────────────────────────────────────
+// ── Recording runtime ports ──────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Ev {
@@ -267,12 +269,13 @@ enum Ev {
     Content(String),
 }
 
-#[derive(Default)]
-struct CapturingSink {
-    events: Mutex<Vec<Ev>>,
+#[derive(Clone, Default)]
+struct CapturingPorts {
+    events: Arc<Mutex<Vec<Ev>>>,
+    next_tool_run_id: Arc<AtomicU64>,
 }
 
-impl CapturingSink {
+impl CapturingPorts {
     fn snapshot(&self) -> Vec<Ev> {
         self.events.lock().unwrap().clone()
     }
@@ -296,80 +299,53 @@ impl CapturingSink {
     }
 }
 
-#[async_trait]
-impl AgentStreamSink for CapturingSink {
-    async fn content_chunk(&self, _turn_id: u64, delta: String) {
-        self.push(Ev::Content(delta));
+impl ToolRunEventPort for CapturingPorts {
+    fn started(&self, event: ToolRunStart) -> RuntimePortFuture<String> {
+        let tool_run_id = self.next_tool_run_id.fetch_add(1, Ordering::Relaxed);
+        self.push(Ev::ToolStarted {
+            tool: event.tool_name,
+            round: event.tool_round,
+        });
+        Box::pin(async move { format!("golden-tool-run-{tool_run_id}") })
     }
 
-    async fn reasoning_chunk(&self, _turn_id: u64, _delta: String) {}
+    fn finished(&self, event: ToolRunFinish) -> RuntimePortFuture<()> {
+        self.push(Ev::ToolFinished {
+            tool: event.invocation.tool_name,
+            round: event.tool_round,
+        });
+        Box::pin(async {})
+    }
+}
 
-    async fn agent_response(&self, _turn_id: u64, _text: String, _tool_names: Vec<String>) {}
-
-    async fn agent_turn_progress(&self, _turn_id: u64, message: String, _tool_names: Vec<String>) {
-        self.push(Ev::Progress(message));
+impl TurnPresentationPort for CapturingPorts {
+    fn notice(&self, _message: String) -> RuntimePortFuture<()> {
+        Box::pin(async {})
     }
 
-    async fn agent_pack_hold(
+    fn scratch_reset(&self, _stream_turn_id: u64) -> RuntimePortFuture<()> {
+        self.push(Ev::ScratchReset);
+        Box::pin(async {})
+    }
+
+    fn turn_progress(
         &self,
-        _turn_id: u64,
+        _stream_turn_id: u64,
+        message: String,
+        _tool_names: Vec<String>,
+    ) -> RuntimePortFuture<()> {
+        self.push(Ev::Progress(message));
+        Box::pin(async {})
+    }
+
+    fn pack_hold(
+        &self,
+        _stream_turn_id: u64,
         fragments: Vec<String>,
         _tool_names: Vec<String>,
-    ) {
+    ) -> RuntimePortFuture<()> {
         self.push(Ev::PackHold(fragments.join("\n\n")));
-    }
-
-    async fn agent_error(&self, _turn_id: u64, _message: String) {}
-
-    async fn notice(&self, _message: String) {}
-
-    async fn scratch_reset(&self, _turn_id: u64) {
-        self.push(Ev::ScratchReset);
-    }
-
-    async fn tool_invoked(&self, _tool_name: String, _input_summary: String) {}
-
-    async fn tool_run_started(
-        &self,
-        _tool_run_id: String,
-        tool_name: String,
-        _input_summary: String,
-        _input_params: Vec<medousa_types::daemon_api::ToolInputParam>,
-        tool_round: usize,
-    ) {
-        self.push(Ev::ToolStarted {
-            tool: tool_name,
-            round: tool_round,
-        });
-    }
-
-    async fn tool_run_finished(
-        &self,
-        _tool_run_id: String,
-        tool_name: String,
-        _status: String,
-        _input_summary: String,
-        _output_summary: Option<String>,
-        _tool_input: Value,
-        _tool_output: Value,
-        _input_receipt: Option<ArtifactReceiptMeta>,
-        _output_receipt: Option<ArtifactReceiptMeta>,
-        tool_round: usize,
-    ) {
-        self.push(Ev::ToolFinished {
-            tool: tool_name,
-            round: tool_round,
-        });
-    }
-
-    async fn tool_payload(
-        &self,
-        _tool_name: String,
-        _tool_input: Value,
-        _tool_output: Value,
-        _input_receipt: Option<ArtifactReceiptMeta>,
-        _output_receipt: Option<ArtifactReceiptMeta>,
-    ) {
+        Box::pin(async {})
     }
 }
 
@@ -386,39 +362,16 @@ struct GoldenOutcome {
     request_count: usize,
 }
 
-fn golden_execution_context() -> Arc<TurnExecutionContext> {
-    let turn_id = "golden-turn";
-    let scope = TurnContinuationScope {
-        turn_correlation_id: turn_id.to_string(),
-        session_id: "golden-session".to_string(),
-        identity_user_id: None,
-        original_prompt: "golden fixture".to_string(),
-        delivery_target: None,
-        provider: "golden-provider".to_string(),
-        model: "golden-model".to_string(),
-        response_depth_mode: "standard".to_string(),
-        supports_ui_artifacts: false,
-        supports_liquid_markdown: false,
-        supports_browser_host: false,
-        channel_surface: None,
-    };
-    Arc::new(TurnExecutionContext::new(
-        turn_id,
-        turn_id,
-        SessionId::parse("golden-session").unwrap(),
-        RequestPrincipal::anonymous(TransportClass::Loopback),
-        ProviderRoute::new("golden-provider", "golden-model"),
-        SurfaceCapabilities::default(),
+fn golden_execution_boundary() -> Arc<TurnExecutionBoundary> {
+    Arc::new(TurnExecutionBoundary::new(
         CancellationToken::new(),
         Instant::now() + Duration::from_secs(60),
-        scope,
     ))
 }
 
 /// Run the real tool loop against a scripted model and capture the observable
-/// sink + outcome. `stream` toggles the streaming code path (and the bridge
-/// that forwards `StreamDelta::Content` to `content_chunk`, mirroring
-/// `execute_local_turn`).
+/// port events + outcome. `stream` toggles the streaming code path and the
+/// host-side delta bridge used by the full daemon.
 async fn run_golden(
     user_prompt: &str,
     steps: Vec<ChatResponse>,
@@ -435,10 +388,11 @@ async fn run_golden(
         Arc::new(registry),
     );
 
-    let sink_concrete = Arc::new(CapturingSink::default());
-    let sink: SharedAgentStreamSink = sink_concrete.clone();
-    let mut gate =
-        ToolLoopCompletionGate::new_for_execution(1, None, Some(sink.clone()), max_rounds);
+    let capturing_ports = Arc::new(CapturingPorts::default());
+    let runtime_ports = RuntimePorts::new()
+        .with_tool_run_events(capturing_ports.clone())
+        .with_turn_presentation(capturing_ports.clone());
+    let mut gate = ToolLoopCompletionGate::new_for_execution(1, runtime_ports, max_rounds);
 
     let request = ToolLoopExecutionRequest {
         user_prompt: user_prompt.to_string(),
@@ -449,22 +403,20 @@ async fn run_golden(
         tool_call_mode: ToolCallMode::Auto,
     };
 
-    // Bridge StreamDelta → content_chunk exactly like the daemon's execute_local_turn.
+    // Bridge StreamDelta through the same host-side presentation boundary as the daemon.
     let (chunk_tx, mut chunk_rx) = mpsc::channel::<StreamDelta>(32);
     let streamed: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let bridge = if stream {
-        let bridge_sink = sink.clone();
+        let bridge_ports = capturing_ports.clone();
         let collected = streamed.clone();
         Some(tokio::spawn(async move {
             while let Some(delta) = chunk_rx.recv().await {
-                if let StreamDelta::Content(text) = &delta {
-                    collected.lock().unwrap().push(text.clone());
-                }
                 match delta {
-                    StreamDelta::Content(text) => bridge_sink.content_chunk(1, text).await,
-                    StreamDelta::Reasoning(text) | StreamDelta::ThoughtSignature(text) => {
-                        bridge_sink.reasoning_chunk(1, text).await
+                    StreamDelta::Content(text) => {
+                        collected.lock().unwrap().push(text.clone());
+                        bridge_ports.push(Ev::Content(text));
                     }
+                    StreamDelta::Reasoning(_) | StreamDelta::ThoughtSignature(_) => {}
                 }
             }
         }))
@@ -473,8 +425,8 @@ async fn run_golden(
     };
 
     let chunk_tx_ref = if stream { Some(&chunk_tx) } else { None };
-    let response = with_turn_execution_context(
-        golden_execution_context(),
+    let response = with_turn_execution_boundary(
+        golden_execution_boundary(),
         pipeline.execute_with_stream_prior_messages_max_rounds(
             request,
             Vec::new(),
@@ -501,8 +453,8 @@ async fn run_golden(
             .iter()
             .map(|inv| inv.tool_name.clone())
             .collect(),
-        events: sink_concrete.snapshot(),
-        event_kinds: sink_concrete.kinds(),
+        events: capturing_ports.snapshot(),
+        event_kinds: capturing_ports.kinds(),
         streamed: streamed.lock().unwrap().clone(),
         request_count: client.requests().len(),
     }
@@ -523,7 +475,7 @@ async fn golden_round_context_is_injected_before_the_next_inference() {
         PromptExecutionPipeline::new(client.clone()),
         Arc::new(registry),
     );
-    let mut gate = ToolLoopCompletionGate::new_for_execution(1, None, None, 4);
+    let mut gate = ToolLoopCompletionGate::new_for_execution(1, RuntimePorts::new(), 4);
     gate.round_context_provider = Some(Arc::new(OneShotRoundContext::new()));
     let request = ToolLoopExecutionRequest {
         user_prompt: "probe then finish".to_string(),
@@ -534,8 +486,8 @@ async fn golden_round_context_is_injected_before_the_next_inference() {
         tool_call_mode: ToolCallMode::Auto,
     };
 
-    let response = with_turn_execution_context(
-        golden_execution_context(),
+    let response = with_turn_execution_boundary(
+        golden_execution_boundary(),
         pipeline.execute_with_stream_prior_messages_max_rounds(
             request,
             Vec::new(),
@@ -580,8 +532,8 @@ async fn golden_large_tool_output_is_bounded_for_model_but_preserved_in_receipt(
         tool_call_mode: ToolCallMode::Auto,
     };
 
-    let response = with_turn_execution_context(
-        golden_execution_context(),
+    let response = with_turn_execution_boundary(
+        golden_execution_boundary(),
         pipeline.execute_with_stream_prior_messages_max_rounds(
             request,
             Vec::new(),
@@ -629,8 +581,8 @@ async fn golden_model_visible_tools_refresh_after_a_tool_round() {
         tool_input: Value::Null,
         tool_call_mode: ToolCallMode::Auto,
     };
-    with_turn_execution_context(
-        golden_execution_context(),
+    with_turn_execution_boundary(
+        golden_execution_boundary(),
         pipeline.execute_with_stream_prior_messages_max_rounds(
             request,
             Vec::new(),

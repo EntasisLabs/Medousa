@@ -1,0 +1,24 @@
+[package]
+name = "medousa-runtime"
+version = "0.9.1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Portable Medousa foreground turn runtime and policy kernel"
+
+[dependencies]
+async-trait = "0.1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+futures-util = "0.3"
+genai = "0.6.5"
+medousa-engine = { path = "../medousa-engine" }
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+stasis-rs = { version = "=0.9.3", default-features = false }
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tracing = "0.1"
+url = "2"
+zeroize = "1"

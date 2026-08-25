@@ -42,6 +42,7 @@ use crate::daemon::types::{
     InteractiveTurnRequest, InteractiveTurnStreamEvent, StageRoutingMatrix, TurnSurfaceContext,
     WorkspaceStreamEvent, DEFAULT_DAEMON_URL,
 };
+use crate::embedded_daemon::EmbeddedDaemonState;
 use crate::workshop_transport;
 use medousa_types::turn_stream::{TurnStreamEnvelopeV2, TURN_STREAM_V2_MEDIA_TYPE};
 use std::collections::HashMap;
@@ -51,7 +52,7 @@ use tauri::{AppHandle, Emitter, State};
 use tokio::sync::watch;
 
 pub struct DaemonState {
-    pub daemon_url: Mutex<String>,
+    daemon_url: Mutex<String>,
     workspace_cancel: Mutex<Option<watch::Sender<bool>>>,
     environment_cancel: Mutex<Option<watch::Sender<bool>>>,
     /// One SSE listener per turn id — Tier 2c multi-stream bridge.
@@ -74,6 +75,30 @@ impl DaemonState {
             environment_cancel: Mutex::new(None),
             interactive_streams: Mutex::new(HashMap::new()),
             contract_streams: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub(crate) fn cancel_all_streams(&self) {
+        for slot in [&self.workspace_cancel, &self.environment_cancel] {
+            if let Some(tx) = slot.lock().expect("daemon cancel lock").take() {
+                let _ = tx.send(true);
+            }
+        }
+        for (_, tx) in self
+            .interactive_streams
+            .lock()
+            .expect("interactive streams lock")
+            .drain()
+        {
+            let _ = tx.send(true);
+        }
+        for (_, tx) in self
+            .contract_streams
+            .lock()
+            .expect("contract stream lock")
+            .drain()
+        {
+            let _ = tx.send(true);
         }
     }
 }
@@ -144,6 +169,12 @@ fn replace_cancel_slot(slot: &Mutex<Option<watch::Sender<bool>>>) -> watch::Rece
 }
 
 fn extract_turn_id_from_stream_url(stream_url: &str) -> Option<String> {
+    if let Some(rest) = stream_url.strip_prefix("medousa-embedded://turn/") {
+        let turn_id = rest.strip_suffix("/stream").unwrap_or(rest).trim();
+        if !turn_id.is_empty() {
+            return Some(turn_id.to_string());
+        }
+    }
     for marker in ["/v1/interactive/turn/", "/v1/agents/sessions/"] {
         let Some(found) = stream_url.find(marker) else {
             continue;
@@ -173,8 +204,8 @@ fn add_interactive_stream_slot(
 }
 
 #[tauri::command]
-pub fn daemon_url(state: State<'_, DaemonState>) -> String {
-    state.daemon_url.lock().expect("daemon url lock").clone()
+pub fn daemon_url(_state: State<'_, DaemonState>) -> Result<String, String> {
+    crate::active_workshop::display_url()
 }
 
 #[tauri::command]
@@ -183,9 +214,8 @@ pub fn set_daemon_url(state: State<'_, DaemonState>, url: String) -> Result<(), 
     if trimmed.is_empty() {
         return Err("daemon URL cannot be empty".to_string());
     }
-    apply_daemon_url(&state, &trimmed)?;
-    let _ = crate::workshop_registry::update_active_workshop_url(&trimmed);
-    Ok(())
+    crate::workshop_registry::update_active_workshop_url(&trimmed)?;
+    apply_daemon_url(&state, &trimmed)
 }
 
 pub fn apply_daemon_url(state: &DaemonState, url: &str) -> Result<(), String> {
@@ -208,58 +238,85 @@ pub fn invalidate_route_caches() {
     workshop_transport::invalidate_all_route_caches();
 }
 
-#[tauri::command]
-pub async fn daemon_health(state: State<'_, DaemonState>) -> Result<DaemonHealth, String> {
-    match self::sdk::client(&state).health().get().await {
-        Ok(detail) => Ok(DaemonHealth {
-            ok: true,
-            message: format!(
-                "connected to {} · {} tools",
-                state.daemon_url.lock().expect("daemon url lock"),
-                detail.tool_registry_count
-            ),
-            backend: Some(detail.backend),
-            worker_id: Some(detail.worker_id),
-            tool_registry_count: Some(detail.tool_registry_count),
-            agent_runtime_version: if detail.agent_runtime_version.is_empty() {
-                None
-            } else {
-                Some(detail.agent_runtime_version)
-            },
-            last_agent_turn_at_utc: detail.last_agent_turn_at_utc,
-            last_agent_turn_latency_ms: detail.last_agent_turn_latency_ms,
-            active_profile_id: if detail.active_profile_id.is_empty() {
-                None
-            } else {
-                Some(detail.active_profile_id)
-            },
-            active_profile_display_name: if detail.active_profile_display_name.is_empty() {
-                None
-            } else {
-                Some(detail.active_profile_display_name)
-            },
-        }),
-        Err(err) => Ok(DaemonHealth {
-            ok: false,
-            message: self::sdk::sdk_error(err),
-            backend: None,
-            worker_id: None,
-            tool_registry_count: None,
-            agent_runtime_version: None,
-            last_agent_turn_at_utc: None,
-            last_agent_turn_latency_ms: None,
-            active_profile_id: None,
-            active_profile_display_name: None,
-        }),
+fn connected_health(detail: medousa_types::HealthResponse, endpoint: &str) -> DaemonHealth {
+    DaemonHealth {
+        ok: true,
+        message: format!(
+            "connected to {endpoint} · {} tools · build {}",
+            detail.tool_registry_count, detail.runtime.build_revision,
+        ),
+        runtime: Some(detail.runtime),
+        backend: Some(detail.backend),
+        worker_id: Some(detail.worker_id),
+        tool_registry_count: Some(detail.tool_registry_count),
+        agent_runtime_version: if detail.agent_runtime_version.is_empty() {
+            None
+        } else {
+            Some(detail.agent_runtime_version)
+        },
+        last_agent_turn_at_utc: detail.last_agent_turn_at_utc,
+        last_agent_turn_latency_ms: detail.last_agent_turn_latency_ms,
+        active_profile_id: if detail.active_profile_id.is_empty() {
+            None
+        } else {
+            Some(detail.active_profile_id)
+        },
+        active_profile_display_name: if detail.active_profile_display_name.is_empty() {
+            None
+        } else {
+            Some(detail.active_profile_display_name)
+        },
     }
+}
+
+fn disconnected_health(message: String) -> DaemonHealth {
+    DaemonHealth {
+        ok: false,
+        message,
+        runtime: None,
+        backend: None,
+        worker_id: None,
+        tool_registry_count: None,
+        agent_runtime_version: None,
+        last_agent_turn_at_utc: None,
+        last_agent_turn_latency_ms: None,
+        active_profile_id: None,
+        active_profile_display_name: None,
+    }
+}
+
+#[tauri::command]
+pub async fn daemon_health(
+    state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
+) -> Result<DaemonHealth, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return Ok(match client.health().await {
+            Ok(detail) => connected_health(detail, "Personal"),
+            Err(error) => disconnected_health(error.to_string()),
+        });
+    }
+
+    let endpoint = crate::active_workshop::display_url()?;
+    Ok(match self::sdk::client(&state)?.health().get().await {
+        Ok(detail) => connected_health(detail, &endpoint),
+        Err(error) => disconnected_health(self::sdk::sdk_error(error)),
+    })
 }
 
 #[tauri::command]
 pub async fn workspace_stream_start(
     app: AppHandle,
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     since_revision: Option<u64>,
 ) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    if _embedded_state.client_if_active().await?.is_some() {
+        return Ok(());
+    }
+
     let mut query = Vec::new();
     if let Some(revision) = since_revision {
         query.push(("since_revision", revision.to_string()));
@@ -269,7 +326,7 @@ pub async fn workspace_stream_start(
         &query,
     );
 
-    let config = self::sdk::transport_config(&state);
+    let config = self::sdk::transport_config(&state)?;
     let cancel_rx = replace_cancel_slot(&state.workspace_cancel);
 
     tokio::spawn(async move {
@@ -310,9 +367,15 @@ pub fn workspace_stream_stop(state: State<'_, DaemonState>) -> Result<(), String
 pub async fn environment_stream_start(
     app: AppHandle,
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     since_revision: Option<u64>,
     profile_id: Option<String>,
 ) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    if _embedded_state.client_if_active().await?.is_some() {
+        return Ok(());
+    }
+
     let mut query = Vec::new();
     if let Some(revision) = since_revision {
         query.push(("since_revision", revision.to_string()));
@@ -325,7 +388,7 @@ pub async fn environment_stream_start(
         &query,
     );
 
-    let config = self::sdk::transport_config(&state);
+    let config = self::sdk::transport_config(&state)?;
     let cancel_rx = replace_cancel_slot(&state.environment_cancel);
 
     tokio::spawn(async move {
@@ -402,7 +465,6 @@ pub async fn interactive_turn_send(
     stage_routing: Option<StageRoutingMatrix>,
     channel_surface: Option<String>,
 ) -> Result<InteractiveTurnAccepted, String> {
-    let _base = state.daemon_url.lock().expect("daemon url lock").clone();
     let provider = provider
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
@@ -479,8 +541,8 @@ pub async fn interactive_turn_send(
         identity_user_id: None,
     };
 
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
-    let parsed = self::sdk::client(&state)
+    let base = crate::active_workshop::transport_base_url()?;
+    let parsed = self::sdk::client(&state)?
         .interactive()
         .start_turn(&request)
         .await
@@ -495,15 +557,69 @@ pub async fn interactive_turn_send(
 pub async fn interactive_stream_start(
     app: AppHandle,
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     stream_url: String,
 ) -> Result<(), String> {
-    let daemon_url = state.daemon_url.lock().expect("daemon url lock").clone();
+    #[cfg(target_os = "ios")]
+    if stream_url.starts_with("medousa-embedded://") {
+        let turn_id = extract_turn_id_from_stream_url(&stream_url)
+            .ok_or_else(|| "embedded stream URL missing turn id".to_string())?;
+        let client = _embedded_state.client_if_active().await?.ok_or_else(|| {
+            "embedded turn stream does not belong to the active workshop".to_string()
+        })?;
+        let mut cancel_rx = add_interactive_stream_slot(&state.interactive_streams, &turn_id);
+        tokio::spawn(async move {
+            let mut stream = match client.subscribe_turn(&turn_id, 0).await {
+                Ok(stream) => stream,
+                Err(error) => {
+                    let _ = app.emit(
+                        "interactive://error",
+                        serde_json::json!({ "message": error.to_string() }),
+                    );
+                    return;
+                }
+            };
+            loop {
+                tokio::select! {
+                    changed = cancel_rx.changed() => {
+                        if changed.is_err() || *cancel_rx.borrow() {
+                            break;
+                        }
+                    }
+                    event = stream.recv() => {
+                        match event {
+                            Ok(Some(event)) => {
+                                if let Err(error) = app.emit("interactive://event", event) {
+                                    let _ = app.emit(
+                                        "interactive://error",
+                                        serde_json::json!({ "message": error.to_string() }),
+                                    );
+                                    break;
+                                }
+                            }
+                            Ok(None) => break,
+                            Err(error) => {
+                                let _ = app.emit(
+                                    "interactive://error",
+                                    serde_json::json!({ "message": error.to_string() }),
+                                );
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        return Ok(());
+    }
+
+    let config = self::sdk::transport_config(&state)?;
+    let daemon_url = config.lan_base.clone();
     let stream_url = rewrite_stream_url_for_client(&stream_url, &daemon_url);
     let turn_id = extract_turn_id_from_stream_url(&stream_url)
         .ok_or_else(|| "stream URL missing turn id".to_string())?;
     let cancel_rx = add_interactive_stream_slot(&state.interactive_streams, &turn_id);
 
-    let config = self::sdk::transport_config(&state);
     let path = reqwest::Url::parse(&stream_url)
         .ok()
         .map(|url| {

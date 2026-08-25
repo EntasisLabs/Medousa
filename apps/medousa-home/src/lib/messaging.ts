@@ -1,11 +1,22 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ChannelId, ProductConfigSummary } from "$lib/types/messaging";
 import {
+  integrationBaseUrl,
   integrationSecretConfigured,
   patchIntegrationBaseUrl,
   resolveSecretTarget,
   upsertIntegrationSecret,
 } from "$lib/integrationsClient";
+import { isTauriIos } from "$lib/platform";
+import { loadWorkshopRegistry } from "$lib/workshops";
+import {
+  secretWorkshopScope,
+  type SecretWorkshopScope,
+} from "$lib/utils/secretWorkshopScope";
+
+async function activeSecretScope(): Promise<SecretWorkshopScope> {
+  return secretWorkshopScope(await loadWorkshopRegistry(), isTauriIos());
+}
 
 export async function loadProductConfigSummary(): Promise<ProductConfigSummary> {
   return invoke<ProductConfigSummary>("messaging_load_product_config_summary");
@@ -56,11 +67,18 @@ export async function saveWhatsAppConfig(config: {
 
 export async function messagingSecretStatus(secretId: string): Promise<boolean> {
   const target = resolveSecretTarget(secretId);
-  if (target && "slot" in target) {
+  const scope = await activeSecretScope();
+  if (scope === "embedded") {
+    return invoke<boolean>("messaging_secret_status", { secretId });
+  }
+  if (target) {
     try {
-      return await integrationSecretConfigured(target.kind, target.slot);
-    } catch {
-      // Fall through to local status when the workshop HTTP path is unavailable.
+      return "slot" in target
+        ? await integrationSecretConfigured(target.kind, target.slot)
+        : Boolean(await integrationBaseUrl(target.kind));
+    } catch (error) {
+      if (scope === "remote") throw error;
+      // Co-located desktop onboarding may run before the daemon socket exists.
     }
   }
   return invoke<boolean>("messaging_secret_status", { secretId });
@@ -71,6 +89,14 @@ export async function messagingSaveSecret(
   value: string | null,
 ): Promise<void> {
   const target = resolveSecretTarget(secretId);
+  const scope = await activeSecretScope();
+  if (scope === "embedded") {
+    await invoke("messaging_save_secret", {
+      secretId,
+      value: value?.trim() ? value.trim() : null,
+    });
+    return;
+  }
   if (target) {
     try {
       if ("baseUrl" in target) {
@@ -79,9 +105,15 @@ export async function messagingSaveSecret(
       }
       await upsertIntegrationSecret(target.kind, target.slot, value);
       return;
-    } catch {
-      // Fall through to local typed store (co-located / onboard before socket).
+    } catch (error) {
+      if (scope === "remote") throw error;
+      // Co-located desktop onboarding may run before the daemon socket exists.
     }
+  }
+  if (scope === "remote") {
+    throw new Error(
+      "This remote workshop setting has no daemon-owned secret mapping.",
+    );
   }
   await invoke("messaging_save_secret", {
     secretId,
@@ -94,7 +126,21 @@ export async function messagingClearSecret(secretId: string): Promise<void> {
 }
 
 export async function messagingReadSecret(secretId: string): Promise<string | null> {
-  // Secret values are never returned over daemon HTTP; local co-located read only.
+  const scope = await activeSecretScope();
+  if (scope === "embedded") {
+    return invoke<string | null>("messaging_read_secret", { secretId });
+  }
+  const target = resolveSecretTarget(secretId);
+  if (target && "baseUrl" in target) {
+    try {
+      return await integrationBaseUrl(target.kind);
+    } catch (error) {
+      if (scope === "remote") throw error;
+    }
+  }
+  // Secret values are never returned over daemon HTTP. Unknown remote-only
+  // client aliases must not read Embedded Personal's native secret store.
+  if (scope === "remote") return null;
   return invoke<string | null>("messaging_read_secret", { secretId });
 }
 

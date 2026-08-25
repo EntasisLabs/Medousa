@@ -18,9 +18,9 @@ use surrealdb::engine::any::Any;
 use surrealdb_types::SurrealValue;
 use tokio::runtime::Handle;
 
-use crate::identity_memory::DEFAULT_USER_ID;
 use crate::session::{ConversationTurn, SessionHistorySummary, medousa_data_dir};
 use crate::turn_parts::TurnPart;
+use crate::user_profiles::DEFAULT_USER_ID;
 use crate::verification_store::VerificationRunRecord;
 
 pub const PREVIEW_MAX_CHARS: usize = 72;

@@ -53,7 +53,8 @@ export type TurnPart =
       byte_size?: number | null;
       presentation?: string | null;
       height_px?: number | null;
-    };
+    }
+  | { kind: "unknown" };
 
 export function modelReceiptFromParts(
   parts?: TurnPart[] | null,
@@ -223,6 +224,7 @@ export function composeTurnMarkdown(
         );
         break;
       case "host_context":
+      case "unknown":
         break;
       case "user_media":
         sections.push(

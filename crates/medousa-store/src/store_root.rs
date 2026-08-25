@@ -671,6 +671,36 @@ impl StoreRoot {
         Ok(())
     }
 
+    /// Open an existing directory beneath this root and return its exact
+    /// capability rather than reopening an ambient pathname.
+    ///
+    /// Consumers that own capability-aware storage formats can retain this
+    /// handle without gaining authority above `path`. Every component is
+    /// opened without following symbolic links.
+    pub fn open_dir_capability(&self, path: &impl StoreRootPath) -> Result<Dir, StoreRootError> {
+        self.open_directory_chain(path.segments(), false, "open_dir_capability")
+    }
+
+    /// Derive a new store root beneath this already-opened capability.
+    ///
+    /// Mobile sandboxes may authorize an app container while refusing ambient
+    /// access to its filesystem ancestors. Deriving the child handle here
+    /// preserves no-follow confinement without reopening an absolute path from
+    /// the filesystem root.
+    pub fn open_or_create_subroot(
+        &self,
+        path: &impl StoreRootPath,
+    ) -> Result<Self, StoreRootError> {
+        let dir = self.open_directory_chain(path.segments(), true, "open_subroot")?;
+        Ok(Self {
+            dir,
+            #[cfg(windows)]
+            _ancestor_guards: Vec::new(),
+            #[cfg(windows)]
+            process_path_pinned: false,
+        })
+    }
+
     pub fn remove_file(&self, path: &impl StoreRootPath) -> Result<(), StoreRootError> {
         let (parent, leaf) = self.open_parent(path, false, "remove_file")?;
         match parent.symlink_metadata(leaf) {
@@ -1469,6 +1499,62 @@ mod tests {
         root.remove_file(&path("one/two/renamed.txt")).unwrap();
         root.remove_dir_all(&path("one")).unwrap();
         assert!(!temp.path().join("one").exists());
+    }
+
+    #[test]
+    fn opened_directory_capability_cannot_escape_its_subtree() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = StoreRoot::open(temp.path()).unwrap();
+        root.create_dir_all(&path("held")).unwrap();
+        root.atomic_write(&path("held/value.txt"), b"inside")
+            .unwrap();
+        root.atomic_write(&path("outside.txt"), b"outside").unwrap();
+
+        let held = root.open_dir_capability(&path("held")).unwrap();
+        assert_eq!(held.read("value.txt").unwrap(), b"inside");
+        assert!(held.read("../outside.txt").is_err());
+    }
+
+    #[test]
+    fn derived_subroot_creates_and_confines_storage_without_an_ambient_reopen() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = StoreRoot::open(temp.path()).unwrap();
+        let vault = root
+            .open_or_create_subroot(&path("embedded-daemon/vault"))
+            .unwrap();
+
+        root.atomic_write(&path("outside.txt"), b"outside").unwrap();
+        vault.atomic_write(&path("note.md"), b"inside").unwrap();
+
+        assert_eq!(vault.read(&path("note.md")).unwrap(), b"inside");
+        assert_eq!(
+            std::fs::read(temp.path().join("embedded-daemon/vault/note.md")).unwrap(),
+            b"inside"
+        );
+        assert!(vault.read(&path("outside.txt")).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn derived_subroot_refuses_a_symbolic_link_component() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        symlink(outside.path(), temp.path().join("vault")).unwrap();
+        let root = StoreRoot::open(temp.path()).unwrap();
+
+        let error = match root.open_or_create_subroot(&path("vault")) {
+            Ok(_) => panic!("symbolic-link subroot must fail"),
+            Err(error) => error,
+        };
+        assert!(matches!(
+            error,
+            StoreRootError::Confinement {
+                operation: "open_subroot",
+                reason: ConfinementReason::SymbolicLink,
+            }
+        ));
     }
 
     #[cfg(unix)]

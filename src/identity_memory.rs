@@ -26,7 +26,7 @@ use crate::identity_store_ext::{wrap_in_memory, wrap_surreal};
 use crate::runtime::surreal_startup::timed_step;
 
 const DEFAULT_PERSONA_ID: &str = "persona:default";
-pub const DEFAULT_USER_ID: &str = "user:default";
+pub use crate::user_profiles::DEFAULT_USER_ID;
 const DEFAULT_CHANNEL_ID: &str = "channel:default";
 const DEFAULT_PERSONA_DISPLAY_NAME: &str = "Medousa";
 

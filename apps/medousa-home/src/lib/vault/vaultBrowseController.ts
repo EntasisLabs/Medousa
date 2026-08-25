@@ -95,6 +95,7 @@ export type VaultBrowseHost = {
   searchQuery: string;
   searchHits: VaultSearchHit[];
   recentPaths: string[];
+  workshopEpoch: number;
   rebuildLookupSnapshot(): void;
 };
 
@@ -104,6 +105,11 @@ export class VaultBrowseController {
 
   constructor(host: VaultBrowseHost) {
     this.#host = host;
+  }
+
+  resetForWorkshopSwitch() {
+    if (this.#notesRefreshTimer) clearTimeout(this.#notesRefreshTimer);
+    this.#notesRefreshTimer = null;
   }
 
   rebuildTree() {
@@ -214,10 +220,13 @@ export class VaultBrowseController {
   }
 
   async refreshVaultTags() {
+    const workshopEpoch = this.#host.workshopEpoch;
     try {
       const response = await listVaultTags({ limit: 500 });
+      if (workshopEpoch !== this.#host.workshopEpoch) return;
       this.rebuildVaultTagsFromNotes(response.tags ?? []);
     } catch {
+      if (workshopEpoch !== this.#host.workshopEpoch) return;
       this.rebuildVaultTagsFromNotes();
     }
   }
@@ -278,6 +287,7 @@ export class VaultBrowseController {
 
   async refreshNotes() {
     const host = this.#host;
+    const workshopEpoch = host.workshopEpoch;
     host.error = null;
     try {
       if (host.vaultGeneration > 0) {
@@ -285,6 +295,7 @@ export class VaultBrowseController {
           sinceGeneration: host.vaultGeneration,
           limit: 500,
         });
+        if (workshopEpoch !== host.workshopEpoch) return;
         if (!delta.reset_required && delta.changes.every((change) => change.kind === "delete")) {
           const removed = new Set(delta.changes.map((change) => change.path));
           host.notes = host.notes.filter((note) => !removed.has(note.path));
@@ -310,6 +321,7 @@ export class VaultBrowseController {
           cursor,
           generation,
         });
+        if (workshopEpoch !== host.workshopEpoch) return;
         if (response.reset_required) {
           notes.length = 0;
           cursor = undefined;
@@ -361,12 +373,14 @@ export class VaultBrowseController {
         void this.refreshVaultTags();
       }
     } catch (err) {
+      if (workshopEpoch !== host.workshopEpoch) return;
       host.error = err instanceof Error ? err.message : String(err);
     }
   }
 
   async runSearch(query: string) {
     const host = this.#host;
+    const workshopEpoch = host.workshopEpoch;
     host.searchQuery = query;
     if (!query.trim()) {
       host.searchHits = [];
@@ -374,6 +388,7 @@ export class VaultBrowseController {
     }
     try {
       const response = await searchVaultNotes(query.trim(), 20);
+      if (workshopEpoch !== host.workshopEpoch) return;
       let hits = response.hits;
       if (host.activeSpaceFilter) {
         hits = hits.filter((hit) => {
@@ -388,6 +403,7 @@ export class VaultBrowseController {
       }
       host.searchHits = hits.slice(0, 12);
     } catch (err) {
+      if (workshopEpoch !== host.workshopEpoch) return;
       host.error = err instanceof Error ? err.message : String(err);
     }
   }

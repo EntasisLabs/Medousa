@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   defaultEnvironmentSpec,
+  ensureCalendarSurfaceInSpec,
   ensureCodeSurfaceInSpec,
   ensureMapSurfaceInSpec,
   ensurePeersSurfaceInSpec,
@@ -52,6 +53,15 @@ describe("ensureMapSurfaceInSpec", () => {
     expect(next.layoutPresets?.[0]?.surfaces).not.toContain("context");
     expect(next.surfaces.some((surface) => surface.id === "map")).toBe(true);
   });
+
+  it("preserves an intentionally hidden map destination", () => {
+    const spec = defaultEnvironmentSpec();
+    const preset = spec.layoutPresets![0]!;
+    preset.surfaces = preset.surfaces.filter((id) => id !== "map");
+
+    expect(ensureMapSurfaceInSpec(spec)).toBe(spec);
+    expect(preset.surfaces).not.toContain("map");
+  });
 });
 
 describe("ensureCodeSurfaceInSpec", () => {
@@ -80,6 +90,15 @@ describe("ensureCodeSurfaceInSpec", () => {
 
     expect(ensureCodeSurfaceInSpec(spec)).toBe(spec);
     expect(spec.layoutPresets![0]!.surfaces.at(-1)).toBe("code");
+  });
+
+  it("preserves an intentionally hidden Code destination", () => {
+    const spec = defaultEnvironmentSpec();
+    const preset = spec.layoutPresets![0]!;
+    preset.surfaces = preset.surfaces.filter((id) => id !== "code");
+
+    expect(ensureCodeSurfaceInSpec(spec)).toBe(spec);
+    expect(preset.surfaces).not.toContain("code");
   });
 });
 
@@ -118,5 +137,37 @@ describe("ensurePeersSurfaceInSpec", () => {
     const next = ensurePeersSurfaceInSpec(spec);
     expect(next).toBe(spec);
     expect(next.layoutPresets![0]!.surfaces.at(-1)).toBe("peers");
+  });
+
+  it("preserves an intentionally hidden Peers destination", () => {
+    const spec = defaultEnvironmentSpec();
+    const preset = spec.layoutPresets![0]!;
+    preset.surfaces = preset.surfaces.filter((id) => id !== "peers");
+
+    expect(ensurePeersSurfaceInSpec(spec)).toBe(spec);
+    expect(preset.surfaces).not.toContain("peers");
+  });
+});
+
+describe("ensureCalendarSurfaceInSpec", () => {
+  it("adds Calendar to presets only while introducing the older missing surface", () => {
+    const spec = defaultEnvironmentSpec();
+    spec.surfaces = spec.surfaces.filter((surface) => surface.id !== "calendar");
+    for (const preset of spec.layoutPresets ?? []) {
+      preset.surfaces = preset.surfaces.filter((id) => id !== "calendar");
+    }
+
+    const next = ensureCalendarSurfaceInSpec(spec);
+    expect(next.surfaces.some((surface) => surface.id === "calendar")).toBe(true);
+    expect(next.layoutPresets?.[0]?.surfaces).toContain("calendar");
+  });
+
+  it("preserves an intentionally hidden Calendar destination", () => {
+    const spec = defaultEnvironmentSpec();
+    const preset = spec.layoutPresets![0]!;
+    preset.surfaces = preset.surfaces.filter((id) => id !== "calendar");
+
+    expect(ensureCalendarSurfaceInSpec(spec)).toBe(spec);
+    expect(preset.surfaces).not.toContain("calendar");
   });
 });

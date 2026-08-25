@@ -12,13 +12,11 @@ use crate::daemon_api::{
     IdentityExportMarkdownRequest, IdentityExportMarkdownResponse, IdentityRememberRequest,
     IdentityRememberResponse, ImportUserProfileRequest, ImportUserProfileResponse,
     ListUserProfilesResponse, SetActiveUserProfileRequest, SetActiveUserProfileResponse,
-    UserProfileRecordDto,
 };
 use crate::identity_memory::{
     build_identity_context_request, full_identity_context_request,
     parse_identity_context_mode_label, resolve_identity_channel_id, resolve_identity_persona_id,
 };
-use crate::user_profiles::ProfileRecord;
 use stasis::ports::outbound::memory::identity_memory_models::{
     CommitEntityUpdateRequest, CommitEntityUpdateResponse, GetIdentityContextResponse,
     ListEntityHistoryRequest, ListEntityHistoryResponse, ProposeEntityUpdateRequest,
@@ -104,16 +102,6 @@ fn normalize_optional_text(value: Option<&str>) -> Option<String> {
         .map(ToString::to_string)
 }
 
-fn profile_record_to_dto(record: &ProfileRecord) -> UserProfileRecordDto {
-    UserProfileRecordDto {
-        profile_id: record.profile_id.clone(),
-        display_name: record.display_name.clone(),
-        created_at: record.created_at,
-        is_default: record.is_default,
-        archived: record.archived,
-    }
-}
-
 pub async fn list_user_profiles(
     State(state): State<AppState>,
 ) -> Result<Json<ListUserProfilesResponse>, (StatusCode, String)> {
@@ -125,7 +113,7 @@ pub async fn list_user_profiles(
         profiles: registry
             .list_profiles()
             .into_iter()
-            .map(|record| profile_record_to_dto(&record))
+            .map(|record| record.to_dto())
             .collect(),
         active_profile_id: registry.active_profile_id().to_string(),
         resolved_user_id: registry.resolve_active_user_id(),
@@ -158,7 +146,7 @@ pub async fn create_user_profile(
     let active_profile_id = registry.active_profile_id().to_string();
     let resolved_user_id = registry.resolve_active_user_id();
     Ok(Json(CreateUserProfileResponse {
-        profile: profile_record_to_dto(&profile),
+        profile: profile.to_dto(),
         active_profile_id,
         resolved_user_id,
     }))

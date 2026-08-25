@@ -63,7 +63,7 @@ flowchart TD
 
 ### Phase 1 — Core rule ✅
 
-**Files:** `src/medousa_tool_loop.rs`, `src/agent_runtime/turn_completion_fsm.rs`, `src/turn_control_tools.rs`
+**Files:** `crates/medousa-runtime/src/tool_loop.rs`, `crates/medousa-runtime/src/completion_fsm.rs`, `src/turn_control_tools.rs`
 
 - `decide_after_tools_text_round`: non-empty draft → `EndTurn` (`prose_requires_finish` after Phase 5; stub body)
 - Empty draft after tools → `ContinueLoop` with control message only
@@ -95,7 +95,7 @@ flowchart TD
 
 ### Phase 5 — Stricter commit ✅
 
-**Files:** `src/agent_runtime/turn_completion_fsm.rs`, `src/medousa_tool_loop.rs`, `src/turn_control_tools.rs`, prompts
+**Files:** `crates/medousa-runtime/src/completion_fsm.rs`, `crates/medousa-runtime/src/tool_loop.rs`, `src/turn_control_tools.rs`, prompts
 
 - After tools: `prose_requires_finish` replaces naked prose with `PROSE_REQUIRES_FINISH_STUB`
 - Clarifying questions after tools still commit prose (`clarifying_question`)
@@ -119,8 +119,8 @@ flowchart TD
 
 | Area | Path |
 |------|------|
-| Tool loop | `src/medousa_tool_loop.rs` |
-| FSM | `src/agent_runtime/turn_completion_fsm.rs` |
+| Tool loop | `crates/medousa-runtime/src/tool_loop.rs` |
+| FSM | `crates/medousa-runtime/src/completion_fsm.rs` |
 | Control tools | `src/turn_control_tools.rs` |
 | Stream commit | `src/agent_runtime/daemon_interactive_turn.rs` |
 | Turn timeline | `src/turn_parts.rs`, `crates/medousa-types/src/turn.rs` |

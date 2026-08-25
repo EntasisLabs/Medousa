@@ -1,8 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { DaemonRuntimeDescriptor } from "$lib/types/generated/daemon_api";
+
+export type { DaemonRuntimeDescriptor };
 
 export interface DaemonHealth {
   ok: boolean;
   message: string;
+  runtime?: DaemonRuntimeDescriptor | null;
   backend?: string | null;
   worker_id?: string | null;
   tool_registry_count?: number | null;

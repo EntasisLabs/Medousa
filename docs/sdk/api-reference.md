@@ -16,6 +16,13 @@ Rust async methods require `medousa-sdk` feature `async` (default). SSE requires
 |--------|------|---------------|
 | `get()` | `GET /v1/health` | `HealthResponse` |
 
+`HealthResponse.runtime` is a required `DaemonRuntimeDescriptor` containing the
+responder's workshop authority, build, contract/schema revisions, deployment
+target, and capabilities. Rust, Python, and TypeScript clients use protected
+`GET /v1/health` and return their typed compatibility error when the descriptor
+is absent, reports schema revision zero, or uses a different daemon contract
+revision.
+
 ---
 
 ## `http()`
@@ -93,6 +100,7 @@ this generic HTTP client rather than a dedicated typed SDK accessor. See the
 
 | Method | HTTP | Types |
 |--------|------|-------|
+| `create(request)` | `POST /v1/sessions` | `CreateSessionRequest` → `CreateSessionResponse` |
 | `list(limit)` | `GET /v1/sessions?limit=` | `SessionHistoryListResponse` |
 | `search_transcripts(query, limit)` | `GET /v1/sessions/search?q=&limit=` | `SessionTranscriptSearchResponse` |
 | `derive(request, idempotency_key)` | `POST /v1/sessions/derive` | `DeriveSessionResponse` |
@@ -118,6 +126,10 @@ History methods return `TranscriptEntry` items in
 legacy turn fields remain top-level. `entry_id` and one-based `entry_seq`
 provide durable transcript coordinates; `caused_by` and `source` carry
 execution and derivation provenance when known.
+`CreateSessionResponse.authority_id` and
+`SessionHistoryResponse.authority_id` are required. If either is absent, the
+async SDK probes canonical health on that same transport and returns a typed
+compatibility error naming the responder build when available.
 
 `derive` is the generic context-materialization primitive used by fork, bounded
 worker context, and future work-context flows. Source ranges are ordered and

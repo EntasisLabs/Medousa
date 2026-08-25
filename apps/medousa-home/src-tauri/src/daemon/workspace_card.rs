@@ -10,7 +10,7 @@ pub async fn workspace_get_card(
     state: State<'_, DaemonState>,
     card_id: String,
 ) -> Result<WorkCardDetail, String> {
-    client(&state)
+    client(&state)?
         .workspace()
         .get_card(card_id.trim())
         .await
@@ -22,7 +22,7 @@ pub async fn workspace_cancel_card(
     state: State<'_, DaemonState>,
     card_id: String,
 ) -> Result<WorkspaceCardActionResponse, String> {
-    client(&state)
+    client(&state)?
         .workspace()
         .cancel_card(card_id.trim())
         .await
@@ -38,7 +38,7 @@ pub async fn workspace_archive_card(
     let request = ArchiveAskJobRequest {
         purge_output: purge_output.unwrap_or(true),
     };
-    client(&state)
+    client(&state)?
         .workspace()
         .archive_card(card_id.trim(), &request)
         .await
@@ -50,7 +50,7 @@ pub async fn workspace_retry_card(
     state: State<'_, DaemonState>,
     card_id: String,
 ) -> Result<WorkspaceCardActionResponse, String> {
-    client(&state)
+    client(&state)?
         .workspace()
         .retry_card(card_id.trim())
         .await
@@ -62,7 +62,7 @@ pub async fn workspace_fetch_snapshot(
     state: State<'_, DaemonState>,
     since_revision: Option<u64>,
 ) -> Result<crate::daemon::types::WorkspaceSnapshot, String> {
-    client(&state)
+    client(&state)?
         .workspace()
         .snapshot(&WorkspaceSnapshotQuery {
             since_revision,

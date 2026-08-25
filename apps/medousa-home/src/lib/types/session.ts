@@ -1,3 +1,8 @@
+import type {
+  SessionHistoryResponse as DaemonSessionHistoryResponse,
+  TranscriptEntry,
+} from "$lib/types/generated/daemon_api";
+
 export interface SessionSetDisplayNameResponse {
   session_id: string;
   display_name: string;
@@ -31,36 +36,8 @@ export interface SessionSummary {
   has_code_work?: boolean;
 }
 
-export interface SessionHistoryResponse {
-  /** Stable daemon authority; absent only when connected to a pre-coordinate daemon. */
-  authority_id?: string;
-  session_id: string;
-  turns: SessionTurn[];
-}
-
-export interface SessionTurn {
-  entry_id?: string;
-  entry_seq?: number;
-  content_digest?: string;
-  caused_by?: {
-    authority_id: string;
-    session_id: string;
-    execution_id: string;
-  } | null;
-  source?: {
-    session: { authority_id: string; session_id: string };
-    entry_id: string;
-    entry_seq: number;
-  } | null;
-  role: string;
-  content: string;
-  timestamp: string;
-  tool_names?: string[];
-  answer_state?: string | null;
-  parts?: import("$lib/types/turnParts").TurnPart[] | null;
-  /** Shared-room human speaker (`user:alice`). Absent on assistant / personal turns. */
-  speaker_profile_id?: string | null;
-}
+export type SessionHistoryResponse = DaemonSessionHistoryResponse;
+export type SessionTurn = TranscriptEntry;
 
 export interface ActiveSessionTurn {
   turn_id: string;

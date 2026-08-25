@@ -99,13 +99,10 @@
         const trimmedKey = keyDraft.trim();
         if (trimmedKey) {
           await messagingSaveSecret(keySecret, trimmedKey);
-          if (entry.id === "openai" || entry.id === "deepseek") {
-            await messagingSaveSecret("api_key", trimmedKey);
-          }
         }
       }
 
-      message = "Saved on this device.";
+      message = "Saved to this workshop.";
       await onSaved();
       onClose();
     } catch (err) {
@@ -202,7 +199,7 @@
         <label class="model-catalog-custom-field">
           <span class="model-catalog-custom-label">API key</span>
           <span class="model-catalog-custom-hint">
-            {isCustom ? "Optional for local endpoints — required for most hosted APIs." : (entry.keyHint ? `Example: ${entry.keyHint}` : "Stored on this device only.")}
+            {isCustom ? "Optional for local endpoints — required for most hosted APIs." : (entry.keyHint ? `Example: ${entry.keyHint}` : "Stored by this workshop.")}
           </span>
           <input
             type="password"

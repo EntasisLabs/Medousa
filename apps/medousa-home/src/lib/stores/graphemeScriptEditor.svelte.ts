@@ -4,6 +4,7 @@ import {
   type CodeEditorLanguageId,
 } from "$lib/code/codeEditorLanguageRegistry";
 import { getGraphemeScript } from "$lib/daemon";
+import { randomUuid } from "$lib/utils/randomUuid";
 
 export interface GraphemeLspWorkspaceResponse {
   root_path: string;
@@ -25,14 +26,7 @@ export interface ScriptEditorTab {
 }
 
 function newTabId(): string {
-  try {
-    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-      return `tab-${crypto.randomUUID()}`;
-    }
-  } catch {
-    // fall through
-  }
-  return `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `tab-${randomUuid()}`;
 }
 
 function untitledName(existing: ScriptEditorTab[]): string {

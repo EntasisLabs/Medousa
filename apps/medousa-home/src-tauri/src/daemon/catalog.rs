@@ -15,7 +15,7 @@ pub async fn catalog_list_manuscripts(
     limit: Option<usize>,
     skills_only: Option<bool>,
 ) -> Result<ManuscriptCatalogResponse, String> {
-    client(&state)
+    client(&state)?
         .manuscripts()
         .list(&ManuscriptCatalogQuery {
             prefix,
@@ -30,7 +30,7 @@ pub async fn catalog_list_manuscripts(
 pub async fn catalog_list_capabilities(
     state: State<'_, DaemonState>,
 ) -> Result<CapabilityListResponse, String> {
-    client(&state)
+    client(&state)?
         .capabilities()
         .list()
         .await
@@ -42,7 +42,7 @@ pub async fn catalog_get_capability(
     state: State<'_, DaemonState>,
     capability_id: String,
 ) -> Result<CapabilityResolveResponse, String> {
-    client(&state)
+    client(&state)?
         .capabilities()
         .get(capability_id.trim())
         .await
@@ -53,7 +53,7 @@ pub async fn catalog_get_capability(
 pub async fn catalog_reindex_capabilities(
     state: State<'_, DaemonState>,
 ) -> Result<serde_json::Value, String> {
-    client(&state)
+    client(&state)?
         .capabilities()
         .reindex()
         .await
@@ -65,7 +65,7 @@ pub async fn catalog_get_manuscript(
     state: State<'_, DaemonState>,
     manuscript_id: String,
 ) -> Result<ManuscriptDetailResponse, String> {
-    client(&state)
+    client(&state)?
         .manuscripts()
         .get(manuscript_id.trim())
         .await
@@ -77,7 +77,7 @@ pub async fn catalog_create_manuscript(
     state: State<'_, DaemonState>,
     request: CreateManuscriptRequest,
 ) -> Result<ManuscriptDetailResponse, String> {
-    client(&state)
+    client(&state)?
         .manuscripts()
         .create(&request)
         .await
@@ -90,7 +90,7 @@ pub async fn catalog_update_manuscript(
     manuscript_id: String,
     request: UpdateManuscriptRequest,
 ) -> Result<ManuscriptDetailResponse, String> {
-    client(&state)
+    client(&state)?
         .manuscripts()
         .update(manuscript_id.trim(), &request)
         .await
@@ -102,7 +102,7 @@ pub async fn catalog_import_manuscripts(
     state: State<'_, DaemonState>,
     request: ManuscriptImportRequest,
 ) -> Result<ManuscriptImportResponse, String> {
-    client(&state)
+    client(&state)?
         .manuscripts()
         .import(&request)
         .await

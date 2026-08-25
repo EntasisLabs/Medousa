@@ -15,9 +15,8 @@ pub fn sdk_error(err: SdkError) -> String {
     err.to_string()
 }
 
-pub fn transport_config(state: &State<DaemonState>) -> WorkshopTransportConfig {
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
-    crate::workshop_transport::config_from_lan_base(&base)
+pub fn transport_config(_state: &State<DaemonState>) -> Result<WorkshopTransportConfig, String> {
+    crate::active_workshop::transport_config()
 }
 
 fn build_sdk_transport(config: &WorkshopTransportConfig) -> Arc<dyn Transport> {
@@ -33,8 +32,11 @@ fn build_sdk_transport(config: &WorkshopTransportConfig) -> Arc<dyn Transport> {
     Arc::new(transport)
 }
 
-pub fn client(state: &State<DaemonState>) -> MedousaClient {
-    let base_url = state.daemon_url.lock().expect("daemon url lock").clone();
-    let config = transport_config(state);
-    MedousaClient::with_transport(build_sdk_transport(&config), base_url)
+pub fn client(state: &State<DaemonState>) -> Result<MedousaClient, String> {
+    let config = transport_config(state)?;
+    let base_url = config.lan_base.clone();
+    Ok(MedousaClient::with_transport(
+        build_sdk_transport(&config),
+        base_url,
+    ))
 }

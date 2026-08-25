@@ -114,7 +114,7 @@ Host turn ends with `user_ack` (`worker_spawned`); composer unlocks. Multiple sp
 
 ## Turn completion FSM
 
-Implemented in `src/agent_runtime/turn_completion_fsm.rs`. Replaces legacy gatekeeper heuristics on the hot path.
+Implemented in `crates/medousa-runtime/src/completion_fsm.rs`. Replaces legacy gatekeeper heuristics on the hot path.
 
 ```mermaid
 stateDiagram-v2
@@ -278,8 +278,8 @@ Execution lane on the engine: `interactive`, `scheduled`, `worker`, …
 |---------|------|
 | Turn entry | `src/agent_runtime/daemon_interactive_turn.rs` — `run_agent_turn` |
 | Orchestration | `src/agent_runtime/turn_orchestrator.rs` — `execute_local_turn`, `prepare_turn_prompt` |
-| FSM | `src/agent_runtime/turn_completion_fsm.rs` |
-| Tool loop | `src/medousa_tool_loop.rs` |
+| FSM | `crates/medousa-runtime/src/completion_fsm.rs` |
+| Tool loop | `crates/medousa-runtime/src/tool_loop.rs` |
 | Host bus routing | `src/agent_runtime/turn_worker/routing.rs` |
 | Worker run | `src/agent_runtime/turn_worker/run.rs` |
 | Host resume | `src/agent_runtime/turn_worker/host_resume.rs` |

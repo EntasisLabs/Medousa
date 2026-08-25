@@ -81,11 +81,35 @@ impl WorkerSessionToolRegistry {
 pub struct AllowlistToolRegistry {
     inner: Arc<dyn ToolRegistry>,
     allowlist: HashSet<String>,
+    include_public_api: bool,
 }
 
 impl AllowlistToolRegistry {
     pub fn new(inner: Arc<dyn ToolRegistry>, allowlist: HashSet<String>) -> Self {
-        Self { inner, allowlist }
+        Self {
+            inner,
+            allowlist,
+            include_public_api: true,
+        }
+    }
+
+    /// Apply an exact deployment ceiling without implicitly expanding it to
+    /// every public API tool.
+    ///
+    /// This is a registry filter, not a capability grant or work-admission
+    /// boundary. The daemon must still admit the turn through Stasis and apply
+    /// any narrower authenticated policy.
+    pub fn new_exact(inner: Arc<dyn ToolRegistry>, allowlist: HashSet<String>) -> Self {
+        Self {
+            inner,
+            allowlist,
+            include_public_api: false,
+        }
+    }
+
+    fn allows(&self, tool_name: &str) -> bool {
+        (self.include_public_api && crate::public_api::is_public_api_tool(tool_name))
+            || tool_allowed(tool_name, &self.allowlist)
     }
 }
 
@@ -222,17 +246,12 @@ impl ToolRegistry for AllowlistToolRegistry {
         let tools = self.inner.list_tools().await?;
         Ok(tools
             .into_iter()
-            .filter(|tool| {
-                crate::public_api::is_public_api_tool(tool.name.as_str())
-                    || tool_allowed(tool.name.as_str(), &self.allowlist)
-            })
+            .filter(|tool| self.allows(tool.name.as_str()))
             .collect())
     }
 
     async fn invoke_tool(&self, tool_name: &str, input: Value) -> Result<Value> {
-        if !crate::public_api::is_public_api_tool(tool_name)
-            && !tool_allowed(tool_name, &self.allowlist)
-        {
+        if !self.allows(tool_name) {
             return Err(StasisError::PortFailure(format!(
                 "tool not allowed in this turn profile: {tool_name}"
             )));
@@ -299,5 +318,21 @@ mod tests {
         let allowed = registry.effective_allowlist();
         assert!(allowed.contains("cognition_web_search"));
         assert!(!allowed.contains(crate::browser_tools::COGNITION_BROWSER_FETCH));
+    }
+
+    #[test]
+    fn exact_allowlist_does_not_implicitly_expand_to_public_api_tools() {
+        use stasis::application::orchestration::tool_registry::InMemoryToolRegistry;
+
+        let inner = Arc::new(InMemoryToolRegistry::default());
+        let exact = AllowlistToolRegistry::new_exact(
+            inner.clone(),
+            HashSet::from(["cognition_utility_uuid".to_string()]),
+        );
+        assert!(exact.allows("cognition_utility_uuid"));
+        assert!(!exact.allows(crate::public_api::COGNITION_IDENTITY_QUERY));
+
+        let lane = AllowlistToolRegistry::new(inner, HashSet::new());
+        assert!(lane.allows(crate::public_api::COGNITION_IDENTITY_QUERY));
     }
 }

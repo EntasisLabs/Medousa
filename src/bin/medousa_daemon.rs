@@ -593,7 +593,7 @@ async fn main() -> Result<()> {
             .context("failed to load pairing device identity")?;
         #[cfg(feature = "iroh-transport")]
         let iroh_info = if medousa::iroh_transport::iroh_enabled_from_env() {
-            let upstream = format!("http://{addr}");
+            let upstream = medousa::daemon_self_url::daemon_self_base_url();
             let secret =
                 medousa::iroh_transport::secret_key_from_pairing_identity(identity.signing_key());
             match medousa::iroh_transport::spawn_workshop_gateway_with_secret(&upstream, secret)
@@ -727,11 +727,11 @@ async fn main() -> Result<()> {
         .merge(medousa::calendar_handlers::calendar_surface().with_state(()))
         .merge(medousa::manuscript_handlers::manuscript_surface().with_state(()))
         .merge(medousa::locus_handlers::locus_surface().with_state(
-            medousa::locus_handlers::LocusApiState {
-                locus_store: state.platform.agent_handle().locus_store.clone(),
-                semantic_index: state.platform.agent_handle().semantic_index.clone(),
-                memory_reader: state.platform.agent_handle().memory_reader.clone(),
-            },
+            medousa::locus_handlers::LocusApiState::new(
+                state.platform.agent_handle().locus_store.clone(),
+                state.platform.agent_handle().semantic_index.clone(),
+                state.platform.agent_handle().memory_reader.clone(),
+            ),
         ))
         .merge(
             medousa::feed_handlers::feed_surface().with_state(medousa::feed_handlers::FeedApiState),

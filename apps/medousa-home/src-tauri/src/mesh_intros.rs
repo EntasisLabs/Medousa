@@ -211,14 +211,8 @@ pub async fn mesh_decline_intro(
     .await
 }
 
-fn daemon_base_from_state(state: &State<'_, DaemonState>) -> String {
-    state
-        .daemon_url
-        .lock()
-        .expect("daemon url lock")
-        .clone()
-        .trim_end_matches('/')
-        .to_string()
+fn daemon_base_from_state(_state: &State<'_, DaemonState>) -> Result<String, String> {
+    crate::active_workshop::transport_base_url()
 }
 
 async fn fetch_local_mesh_peers(base: &str) -> Result<Vec<MeshPeerGrantRow>, String> {
@@ -286,7 +280,7 @@ async fn fetch_local_mesh_peers(base: &str) -> Result<Vec<MeshPeerGrantRow>, Str
 pub async fn mesh_list_local_peers(
     state: State<'_, DaemonState>,
 ) -> Result<Vec<MeshPeerGrantRow>, String> {
-    fetch_local_mesh_peers(&daemon_base_from_state(&state)).await
+    fetch_local_mesh_peers(&daemon_base_from_state(&state)?).await
 }
 
 #[tauri::command]
@@ -295,7 +289,7 @@ pub async fn mesh_set_peer_rendezvous(
     device_id: String,
     enabled: bool,
 ) -> Result<MeshPeerGrantRow, String> {
-    let base = daemon_base_from_state(&state);
+    let base = daemon_base_from_state(&state)?;
     let peers = fetch_local_mesh_peers(&base).await?;
     let current = peers
         .iter()

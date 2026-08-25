@@ -213,7 +213,7 @@ export default class MedousaPlugin extends Plugin {
     this.activeSessionId = created.session_id;
     this.activeSessionName = created.display_name ?? null;
     await this.saveState();
-    return { session_id: created.session_id, turns: [] };
+    return { authority_id: created.authority_id, session_id: created.session_id, turns: [] };
   }
 
   async newConversation(): Promise<void> {
@@ -225,7 +225,11 @@ export default class MedousaPlugin extends Plugin {
     this.activeSessionId = created.session_id;
     this.activeSessionName = created.display_name ?? null;
     await this.saveState();
-    this.chatView()?.showHistory({ session_id: created.session_id, turns: [] });
+    this.chatView()?.showHistory({
+      authority_id: created.authority_id,
+      session_id: created.session_id,
+      turns: [],
+    });
   }
 
   async listSessions(): Promise<SessionSummary[]> {
@@ -263,7 +267,7 @@ export default class MedousaPlugin extends Plugin {
     this.activeSessionId = created.session_id;
     this.activeSessionName = created.display_name ?? null;
     await this.saveState();
-    return { session_id: created.session_id, turns: [] };
+    return { authority_id: created.authority_id, session_id: created.session_id, turns: [] };
   }
 
   sessionTitle(): string {

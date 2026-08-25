@@ -100,6 +100,14 @@ export class StreamEventPump {
     for (const append of pending) this.apply(materializeAppend(append));
   }
 
+  /** Drop queued frames when their workshop authority is no longer active. */
+  reset(): void {
+    this.cancelScheduledFlush?.();
+    this.cancelScheduledFlush = null;
+    this.pendingAppends.clear();
+    this.acceptedSeq.clear();
+  }
+
   private flushKey(key: string): void {
     const pending = this.pendingAppends.get(key);
     if (!pending) return;

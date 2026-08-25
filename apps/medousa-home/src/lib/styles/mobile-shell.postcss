@@ -611,6 +611,55 @@
     @apply flex shrink-0 items-center justify-between border-b border-surface-500/40 px-4 py-3;
   }
 
+  .workshop-switcher-mobile-sheet {
+    @apply overflow-hidden rounded-t-3xl;
+    max-height: min(82dvh, 42rem);
+  }
+
+  .workshop-switcher-mobile-sheet .mobile-sheet-header {
+    @apply px-4 py-3.5;
+  }
+
+  .workshop-switcher-mobile-title {
+    @apply text-[16px] font-semibold leading-5 text-surface-50;
+  }
+
+  .workshop-switcher-mobile-subtitle {
+    @apply mt-0.5 text-[12px] leading-4 text-content-tertiary;
+  }
+
+  .workshop-switcher-mobile-list {
+    @apply min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-2 pt-2;
+  }
+
+  .workshop-switcher-mobile-sheet .workshop-switcher-row {
+    @apply min-h-[3.25rem] gap-3 rounded-xl px-2.5 py-2;
+  }
+
+  .workshop-switcher-mobile-sheet .workshop-switcher-avatar {
+    @apply h-9 w-9 rounded-lg text-[11px];
+  }
+
+  .workshop-switcher-mobile-sheet .workshop-switcher-row-name {
+    @apply text-[14px] leading-[18px];
+  }
+
+  .workshop-switcher-mobile-sheet .workshop-switcher-row-meta {
+    @apply text-[12px] leading-4 text-content-tertiary;
+  }
+
+  .workshop-switcher-mobile-footer {
+    @apply shrink-0 border-t border-surface-700/35 px-4 pb-4 pt-3;
+  }
+
+  .workshop-switcher-mobile-add {
+    @apply mt-0 min-h-11 w-full text-sm;
+  }
+
+  .workshop-switcher-mobile-manage {
+    @apply mt-1 inline-flex min-h-10 items-center px-1 text-[13px];
+  }
+
   .mobile-story-overlay {
     @apply fixed inset-0 z-40 flex min-w-0 flex-col overflow-hidden;
     background-color: rgb(var(--color-surface-950));

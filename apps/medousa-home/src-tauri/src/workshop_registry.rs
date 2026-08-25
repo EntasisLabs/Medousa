@@ -207,6 +207,9 @@ pub fn load_registry() -> Result<WorkshopRegistry, String> {
             migrated = true;
         }
     }
+    if normalize_embedded_personal(&mut registry, cfg!(target_os = "ios")) {
+        migrated = true;
+    }
     // Peer credentials must never be the active workshop.
     if let Some(active) = registry
         .workshops
@@ -224,6 +227,35 @@ pub fn load_registry() -> Result<WorkshopRegistry, String> {
         save_registry(&registry)?;
     }
     Ok(registry)
+}
+
+fn normalize_embedded_personal(
+    registry: &mut WorkshopRegistry,
+    embedded_personal: bool,
+) -> bool {
+    if !embedded_personal {
+        return false;
+    }
+    let Some(personal) = registry
+        .workshops
+        .iter_mut()
+        .find(|workshop| workshop.id == PERSONAL_WORKSHOP_ID)
+    else {
+        return false;
+    };
+    let mut changed = false;
+    if personal.kind != "local" {
+        personal.kind = "local".to_string();
+        changed = true;
+    }
+    if normalize_url(&personal.url) != normalize_url(DEFAULT_DAEMON_URL) {
+        personal.url = DEFAULT_DAEMON_URL.to_string();
+        changed = true;
+    }
+    if changed {
+        personal.updated_at = now_iso();
+    }
+    changed
 }
 
 fn validate_registry(registry: &WorkshopRegistry) -> Result<(), String> {
@@ -319,7 +351,11 @@ pub fn ensure_migrated() -> Result<WorkshopRegistry, String> {
     }
 
     let mut registry = default_registry();
-    let resolved = normalize_url(&resolve_daemon_url());
+    let resolved = if cfg!(target_os = "ios") {
+        DEFAULT_DAEMON_URL.to_string()
+    } else {
+        normalize_url(&resolve_daemon_url())
+    };
     if let Some(personal) = registry
         .workshops
         .iter_mut()
@@ -377,9 +413,6 @@ pub fn ensure_migrated() -> Result<WorkshopRegistry, String> {
             client_state: None,
         });
 
-        if !is_loopback_url(&url) || is_loopback_url(&resolved) && url != resolved {
-            registry.active_workshop_id = workshop_id;
-        }
     }
 
     save_registry(&registry)?;
@@ -421,6 +454,15 @@ pub fn update_active_workshop_url(url: &str) -> Result<(), String> {
     else {
         return Err("Active workshop not found".to_string());
     };
+    if cfg!(target_os = "ios")
+        && workshop.id == PERSONAL_WORKSHOP_ID
+        && workshop.kind == "local"
+    {
+        return Err(
+            "Personal uses the embedded daemon; add and select a remote workshop instead"
+                .to_string(),
+        );
+    }
     workshop.url = normalize_url(url);
     workshop.updated_at = now_iso();
     save_registry(&registry)
@@ -529,16 +571,24 @@ pub async fn workshops_set_active(
     }
 
     if workshop.kind == "local" {
-        let ensure = crate::workshop_runtime::ensure_local_engine(
-            &workshop,
-            crate::workshop_runtime::should_load_private_brain(false),
-        )
-        .await?;
-        if !ensure.ok {
-            return Err(ensure.message);
+        #[cfg(target_os = "ios")]
+        if workshop.id != PERSONAL_WORKSHOP_ID {
+            return Err("iOS supports only the personal embedded local workshop".to_string());
+        }
+        #[cfg(not(target_os = "ios"))]
+        {
+            let ensure = crate::workshop_runtime::ensure_local_engine(
+                &workshop,
+                crate::workshop_runtime::should_load_private_brain(false),
+            )
+            .await?;
+            if !ensure.ok {
+                return Err(ensure.message);
+            }
         }
     }
 
+    state.cancel_all_streams();
     registry.active_workshop_id = trimmed.to_string();
     let now = now_iso();
     if let Some(workshop) = registry
@@ -620,6 +670,7 @@ pub fn workshops_remove(
 
     let switched_active = previous_active == trimmed;
     if switched_active {
+        state.cancel_all_streams();
         registry.active_workshop_id = PERSONAL_WORKSHOP_ID.to_string();
     }
     save_registry(&registry)?;
@@ -819,6 +870,30 @@ mod tests {
         let registry = default_registry();
         assert_eq!(registry.active_workshop_id, PERSONAL_WORKSHOP_ID);
         assert_eq!(registry.workshops.len(), 1);
+    }
+
+    #[test]
+    fn embedded_personal_repairs_a_remote_development_url_only_for_personal() {
+        let mut registry = default_registry();
+        registry.workshops[0].url = "http://dev-mac.invalid:7419".to_string();
+        let mut remote = default_personal_workshop();
+        remote.id = "paired-canary".to_string();
+        remote.kind = "portal".to_string();
+        remote.url = "https://remote-canary.invalid".to_string();
+        registry.workshops.push(remote);
+
+        assert!(normalize_embedded_personal(&mut registry, true));
+        assert_eq!(registry.workshops[0].url, DEFAULT_DAEMON_URL);
+        assert_eq!(registry.workshops[1].url, "https://remote-canary.invalid");
+        assert_eq!(registry.active_workshop_id, PERSONAL_WORKSHOP_ID);
+    }
+
+    #[test]
+    fn desktop_personal_keeps_its_configured_local_address() {
+        let mut registry = default_registry();
+        registry.workshops[0].url = "http://127.0.0.1:8123".to_string();
+        assert!(!normalize_embedded_personal(&mut registry, false));
+        assert_eq!(registry.workshops[0].url, "http://127.0.0.1:8123");
     }
 
     #[test]

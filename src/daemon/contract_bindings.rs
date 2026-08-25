@@ -108,6 +108,10 @@ pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
             request: None,
             response: "SessionHistoryListResponse",
         },
+        "sessions.post" => WireBinding {
+            request: Some("CreateSessionRequest"),
+            response: "CreateSessionResponse",
+        },
         "sessions.search.get" => WireBinding {
             request: None,
             response: "SessionTranscriptSearchResponse",

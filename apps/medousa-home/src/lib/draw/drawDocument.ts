@@ -1,3 +1,5 @@
+import { randomUuid } from "$lib/utils/randomUuid";
+
 export const DRAW_SCHEMA = "medousa-draw" as const;
 export const DRAW_VERSION = 1 as const;
 export const DRAW_WIDTH = 1200;
@@ -92,7 +94,7 @@ function normalizeDocument(value: unknown): DrawDocument {
       }));
     if (points.length === 0) continue;
     strokes.push({
-      id: typeof stroke.id === "string" && stroke.id ? stroke.id.slice(0, 128) : cryptoId(),
+      id: typeof stroke.id === "string" && stroke.id ? stroke.id.slice(0, 128) : randomUuid(),
       color: typeof stroke.color === "string" ? stroke.color.slice(0, 64) : "#e7e5e4",
       width: clamp(finite(stroke.width, 4), 1, 80),
       points,
@@ -108,12 +110,6 @@ function normalizeDocument(value: unknown): DrawDocument {
       typeof input.background === "string" ? input.background.slice(0, 64) : "transparent",
     strokes,
   };
-}
-
-function cryptoId(): string {
-  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-    ? crypto.randomUUID()
-    : `stroke-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
 function bytesToBase64(bytes: Uint8Array): string {

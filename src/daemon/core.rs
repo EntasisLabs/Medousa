@@ -28,24 +28,36 @@ fn active_profile_snapshot(
         .unwrap_or_else(|| "Personal".to_string());
     (active_profile_id, active_profile_display_name)
 }
-pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
+pub async fn health(
+    State(state): State<AppState>,
+) -> Result<Json<HealthResponse>, (StatusCode, String)> {
     let (active_profile_id, active_profile_display_name) = state
         .profile_registry
         .read()
         .map(|registry| active_profile_snapshot(&registry))
         .unwrap_or_default();
-    Json(HealthResponse {
-        status: "ok".to_string(),
-        backend: state.backend,
-        worker_id: state.worker_id,
-        now_utc: Utc::now(),
-        agent_runtime_version: crate::agent_runtime::AGENT_RUNTIME_VERSION.to_string(),
-        tool_registry_count: state.agent_tool_registry_count,
-        last_agent_turn_latency_ms: *state.last_agent_turn_latency_ms.read().await,
-        last_agent_turn_at_utc: *state.last_agent_turn_at.read().await,
-        active_profile_id,
-        active_profile_display_name,
-    })
+    let authority_id = crate::workshop_authority::current()
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?
+        .clone();
+    let advertised_capabilities = ["deployment.native-workloads", "transport.http"]
+        .into_iter()
+        .chain(cfg!(feature = "iroh-transport").then_some("transport.iroh"));
+
+    Ok(Json(crate::daemon_runtime::health_response(
+        authority_id,
+        "full",
+        advertised_capabilities,
+        crate::daemon_runtime::DaemonHealthSnapshot {
+            backend: state.backend,
+            worker_id: state.worker_id,
+            agent_runtime_version: crate::daemon_runtime::AGENT_RUNTIME_VERSION.to_string(),
+            tool_registry_count: state.agent_tool_registry_count,
+            last_agent_turn_latency_ms: *state.last_agent_turn_latency_ms.read().await,
+            last_agent_turn_at_utc: *state.last_agent_turn_at.read().await,
+            active_profile_id,
+            active_profile_display_name,
+        },
+    )))
 }
 
 pub async fn stats(
@@ -59,20 +71,16 @@ pub async fn stats(
     let last_tick_at_utc = *state.last_tick_at.read().await;
     let execution_registry = &state.platform.agent_handle().execution_registry;
 
-    Ok(Json(DaemonStatsResponse {
-        enqueued_jobs: snapshot.enqueued_jobs,
-        running_jobs: snapshot.running_jobs,
-        succeeded_jobs: snapshot.succeeded_jobs,
-        failed_jobs: snapshot.failed_jobs,
-        dead_letter_jobs: snapshot.dead_letter_jobs,
-        pending_outbox_events: snapshot.pending_outbox_events,
-        recurring_definitions: snapshot.recurring_definitions,
-        last_tick_at_utc,
-        active_turn_executions: execution_registry.live_count(),
-        active_turn_executions_high_water: execution_registry.high_water(),
-        missing_turn_context_invocations:
-            crate::agent_runtime::execution_context::missing_turn_context_invocations(),
-    }))
+    Ok(Json(crate::daemon_runtime::stats_response(
+        snapshot,
+        crate::daemon_runtime::DaemonStatsObservation {
+            last_tick_at_utc,
+            active_turn_executions: execution_registry.live_count(),
+            active_turn_executions_high_water: execution_registry.high_water(),
+            missing_turn_context_invocations:
+                crate::agent_runtime::execution_context::missing_turn_context_invocations(),
+        },
+    )))
 }
 
 pub async fn runtime_defaults(state: State<AppState>) -> Json<RuntimeDefaultsResponse> {

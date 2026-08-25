@@ -165,6 +165,7 @@ describe("multi-live chat session runtimes", () => {
           role: "assistant",
           content: "Derived answer",
           timestamp: "2026-08-21T12:00:00Z",
+          tool_names: [],
           source: {
             session: {
               authority_id: "auth_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -236,6 +237,37 @@ describe("multi-live chat session runtimes", () => {
     expect(store.messages).toEqual([msg("a1", "from A")]);
     expect(store.messagesFor("sess-b")).toEqual([msg("b1", "from B")]);
     expect(store.draft).toBe("draft-a");
+  });
+
+  it("clears the old workshop before activating scoped session and draft canaries", async () => {
+    const { store } = await loadStore();
+    const { persistDraftForSession } = await import("$lib/chat/draftPersistence");
+    const { SESSION_KEY } = await import("$lib/chat/sessionController");
+    const { workshopScopedStorageKey } = await import("$lib/utils/workshopLocality");
+
+    const sessionId = "same-session-id";
+    localStorage.setItem(
+      workshopScopedStorageKey(SESSION_KEY, "authority-remote"),
+      sessionId,
+    );
+    persistDraftForSession(sessionId, "remote draft", "authority-remote");
+
+    store.workshopScopeId = "authority-personal";
+    store.sessionId = sessionId;
+    store.messages = [msg("personal-message", "personal transcript")];
+    store.draft = "personal draft";
+
+    store.prepareForWorkshopSwitch();
+    expect(store.workshopScopeId).toBe("");
+    expect(store.sessionId).toBe("");
+    expect(store.messages).toEqual([]);
+    expect(store.draft).toBe("");
+
+    store.activateWorkshopScope("authority-remote");
+    expect(store.workshopScopeId).toBe("authority-remote");
+    expect(store.sessionId).toBe(sessionId);
+    expect(store.messages).toEqual([]);
+    expect(store.draft).toBe("remote draft");
   });
 
   it("withSessionFields applies mutations to a non-focused runtime", async () => {

@@ -1,11 +1,9 @@
 import {
-  loadTuiDefaultsSummary,
-  persistTuiRuntimePrefs,
-} from "$lib/config";
-import {
   getContinuationStatus,
   getDeliveryStatus,
+  getEngineTuiDefaults,
   getRuntimeStats,
+  putEngineTuiDefaults,
   sendRuntimeConfigCommand,
   sendStageRouteCommand,
 } from "$lib/daemon";
@@ -55,6 +53,7 @@ export class RuntimeStore {
 
   private refreshInFlight = false;
   private refreshRequestId = 0;
+  private defaultsLoadEpoch = 0;
 
   modelLabel(): string {
     return `${this.provider}:${this.model}`;
@@ -87,8 +86,10 @@ export class RuntimeStore {
       return;
     }
 
+    const loadEpoch = ++this.defaultsLoadEpoch;
     try {
-      const summary = await loadTuiDefaultsSummary();
+      const summary = await getEngineTuiDefaults();
+      if (loadEpoch !== this.defaultsLoadEpoch) return;
       this.applyRuntimeDefaults({
         provider: summary.provider?.trim() || DEFAULT_PROVIDER,
         model: summary.model?.trim() || DEFAULT_MODEL,
@@ -106,9 +107,12 @@ export class RuntimeStore {
         ),
       });
     } catch {
+      if (loadEpoch !== this.defaultsLoadEpoch) return;
       // Local defaults are optional.
     }
-    this.defaultsLoaded = true;
+    if (loadEpoch === this.defaultsLoadEpoch) {
+      this.defaultsLoaded = true;
+    }
   }
 
   /** @deprecated use loadWorkshopRuntime */
@@ -117,10 +121,27 @@ export class RuntimeStore {
   }
 
   resetWorkshopRuntime() {
+    this.defaultsLoadEpoch += 1;
+    this.refreshRequestId += 1;
+    this.refreshInFlight = false;
+    this.loading = false;
+    this.provider = DEFAULT_PROVIDER;
+    this.model = DEFAULT_MODEL;
+    this.depthMode = DEFAULT_DEPTH;
+    this.reasoningEffort = DEFAULT_REASONING;
+    this.stageRouting = defaultStageRouting(DEFAULT_PROVIDER, DEFAULT_MODEL);
+    this.inferenceProfiles = null;
     this.defaultsLoaded = false;
+    this.stats = null;
+    this.delivery = null;
+    this.continuations = null;
+    this.error = null;
+    this.errorDetail = null;
+    this.controlsMessage = null;
+    this.savingControls = false;
   }
 
-  /** Copy workshop charter into runtime controls (companion shells — read-only host snapshot). */
+  /** Copy the selected workshop charter into the client-side runtime controls. */
   applyFromWorkshopDraft(draft: import("$lib/types/workshopDefaults").TuiDefaults) {
     const provider = draft.provider?.trim() || DEFAULT_PROVIDER;
     const model = draft.model?.trim() || DEFAULT_MODEL;
@@ -222,14 +243,16 @@ export class RuntimeStore {
         command: { command: "routes", role: null },
       });
       this.stageRouting = response.stage_routing;
-      if (isTauri() && !isTauriMobilePlatform()) {
-        await persistTuiRuntimePrefs(
-          this.provider,
-          this.model,
-          this.depthMode,
-          this.reasoningEffort,
-          this.stageRouting,
-        );
+      if (isTauri()) {
+        const defaults = await getEngineTuiDefaults();
+        await putEngineTuiDefaults({
+          ...defaults,
+          provider: this.provider,
+          model: this.model,
+          responseDepthMode: this.depthMode,
+          reasoningEffort: this.reasoningEffort,
+          stageRouting: this.stageRouting,
+        });
       }
     } catch {
       // Keep last known routes — routing refresh is best-effort.
@@ -347,19 +370,26 @@ export class RuntimeStore {
   ) {
     if (
       !isTauri() ||
-      isTauriMobilePlatform() ||
       (!shouldApplySettings && !shouldPersistDepth && !shouldPersistReasoning)
     ) {
       return;
     }
     try {
-      await persistTuiRuntimePrefs(
-        this.provider,
-        this.model,
-        this.depthMode,
-        shouldPersistReasoning || shouldApplySettings ? this.reasoningEffort : undefined,
-        shouldApplySettings ? this.stageRouting : undefined,
-      );
+      const defaults = await getEngineTuiDefaults();
+      await putEngineTuiDefaults({
+        ...defaults,
+        ...(shouldApplySettings
+          ? {
+              provider: this.provider,
+              model: this.model,
+              stageRouting: this.stageRouting,
+            }
+          : {}),
+        ...(shouldPersistDepth ? { responseDepthMode: this.depthMode } : {}),
+        ...(shouldPersistReasoning
+          ? { reasoningEffort: this.reasoningEffort }
+          : {}),
+      });
     } catch (err) {
       this.controlsMessage =
         err instanceof Error ? err.message : String(err);

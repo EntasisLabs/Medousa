@@ -11,6 +11,9 @@ use medousa_types::session::{AuthorityId, ExecutionId, ExecutionRef, SessionId};
 
 static WORKSHOP_AUTHORITY_ID: OnceLock<AuthorityId> = OnceLock::new();
 
+#[cfg(test)]
+pub(crate) const TEST_INSTALLATION_ID: &str = "550e8400-e29b-41d4-a716-446655440000";
+
 pub fn initialize(installation_id: &InstallationId) -> Result<&'static AuthorityId, String> {
     let authority_id = AuthorityId::from_installation_id(installation_id);
     if let Some(existing) = WORKSHOP_AUTHORITY_ID.get() {
@@ -45,7 +48,7 @@ mod tests {
 
     #[test]
     fn initialization_is_idempotent_for_the_same_installation() {
-        let installation = InstallationId::parse("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let installation = InstallationId::parse(TEST_INSTALLATION_ID).unwrap();
         let first = initialize(&installation).unwrap();
         let second = initialize(&installation).unwrap();
         assert_eq!(first, second);

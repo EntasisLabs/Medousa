@@ -127,12 +127,19 @@ import {
   clearPendingMedia,
   removePendingMedia,
 } from "$lib/chat/mediaAttachController";
+import { activeWorkshopId } from "$lib/utils/workshopLocality";
+import { chatScenes } from "$lib/liquid/surfaces/chat/chatScenes.svelte";
+import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
 
 export class ChatStore implements ChatStoreHost {
   askHydrationInFlight = new Set<string>();
-  sessionId = $state(loadSessionId());
+  workshopScopeId = activeWorkshopId();
+  workshopEpoch = 0;
+  sessionId = $state(loadSessionId(this.workshopScopeId));
   messages = $state<ChatMessage[]>([]);
-  draft = $state(loadDraftForSession(loadSessionId()));
+  draft = $state(
+    loadDraftForSession(this.sessionId, this.workshopScopeId),
+  );
   vaultNoteContext = $state<VaultNoteContextScope | null>(null);
   pinVaultNoteContext = $state(false);
   scriptWorkbenchContext = $state<ScriptWorkbenchContextScope | null>(null);
@@ -145,12 +152,12 @@ export class ChatStore implements ChatStoreHost {
   sessionListQuery = $state("");
   sessionsError = $state<string | null>(null);
   sessionsRefreshing = $state(false);
-  pinnedIds = $state<string[]>(loadPinnedIds());
+  pinnedIds = $state<string[]>(loadPinnedIds(this.workshopScopeId));
   historyLoading = $state(true);
   sessionPristine = $state(false);
   historyNotice = $state<string | null>(null);
   askHandoffNotice = $state<string | null>(null);
-  promotedAskIds = loadPromotedAskIds();
+  promotedAskIds = loadPromotedAskIds(this.workshopScopeId);
   budgetAlert = $state<PendingBudgetApproval | null>(null);
   permissionAlert = $state<PendingAgentPermission | null>(null);
   secretAlert = $state<PendingAgentSecret | null>(null);
@@ -182,6 +189,72 @@ export class ChatStore implements ChatStoreHost {
   });
   private multiLiveBootstrapped = false;
   private streamApplyPrincipalId: string | null = null;
+
+  prepareForWorkshopSwitch() {
+    this.flushDraftPersist();
+    this.workshopEpoch += 1;
+    this.workshopScopeId = "";
+    if (this.sessionsRefreshTimer) clearTimeout(this.sessionsRefreshTimer);
+    this.sessionsRefreshTimer = null;
+    this.sessionsRefreshInFlight = null;
+    this.sessionBootstrapInFlight = null;
+    this.sessionsRefreshDesiredQuery = null;
+    for (const timer of this.contentRevealTimers.values()) clearTimeout(timer);
+    for (const timer of this.terminalReconcileTimers.values()) clearTimeout(timer);
+    this.contentRevealTimers.clear();
+    this.terminalReconcileTimers.clear();
+    this.recentlySettledTurns.clear();
+    this.streamEventPump.reset();
+    this.streamOwners.clear();
+    this.sessionRuntimes.clear();
+    this.messageIndexes.clear();
+    this.askHydrationInFlight.clear();
+    chatStreamPool.clear();
+    this.multiLiveBootstrapped = false;
+    this.loadRuntimeIntoFocused(emptySessionRuntime(""));
+    this.transcriptEpoch = this.workshopEpoch;
+    this.sessions = [];
+    this.sessionListQuery = "";
+    this.sessionsError = null;
+    this.sessionsRefreshing = false;
+    this.pinnedIds = [];
+    this.promotedAskIds = new Set();
+    this.vaultNoteContext = null;
+    this.pinVaultNoteContext = false;
+    this.scriptWorkbenchContext = null;
+    this.pinScriptWorkbenchContext = false;
+    this.pendingMediaRefs = [];
+    this.pendingMediaUploading = false;
+    this.budgetAlert = null;
+    this.permissionAlert = null;
+    this.secretAlert = null;
+    this.browserChallenge = null;
+    this.contextUsage = null;
+    this.contextUsagePanelOpen = false;
+    this.askHandoffNotice = null;
+    this.historyNotice = null;
+    chatScenes.reset();
+    chatInteractions.reset();
+    this.bumpRuntimeRevision();
+  }
+
+  activateWorkshopScope(workshopId: string) {
+    const scope = workshopId.trim();
+    if (!scope) throw new Error("workshop id is required");
+    if (this.workshopScopeId === scope) return;
+    this.workshopScopeId = scope;
+    const sessionId = loadSessionId(scope);
+    const runtime = emptySessionRuntime(
+      sessionId,
+      loadDraftForSession(sessionId, scope),
+    );
+    runtime.transcriptEpoch = this.workshopEpoch;
+    this.loadRuntimeIntoFocused(runtime);
+    this.pinnedIds = loadPinnedIds(scope);
+    this.promotedAskIds = loadPromotedAskIds(scope);
+    this.historyLoading = false;
+    this.bumpRuntimeRevision();
+  }
 
   setStreamRole(role: "owner" | "observer") {
     this.streamRole = role;
@@ -218,6 +291,7 @@ export class ChatStore implements ChatStoreHost {
 
   private selectorSnapshot() {
     return {
+      workshopScopeId: this.workshopScopeId,
       sessionId: this.sessionId,
       focusedSessionId: this.focusedSessionId,
       streamApplyPrincipalId: this.streamApplyPrincipalId,
@@ -328,7 +402,10 @@ export class ChatStore implements ChatStoreHost {
     const focusedId = this.sessionId;
     const target =
       this.sessionRuntimes.get(trimmed) ??
-      emptySessionRuntime(trimmed, loadDraftForSession(trimmed));
+      emptySessionRuntime(
+        trimmed,
+        loadDraftForSession(trimmed, this.workshopScopeId),
+      );
     this.streamApplyPrincipalId = focusedId;
     this.loadRuntimeIntoFocused(target);
     try {
@@ -846,12 +923,12 @@ export class ChatStore implements ChatStoreHost {
       clearTimeout(this.draftPersistTimer);
       this.draftPersistTimer = null;
     }
-    persistDraftForSession(this.sessionId, this.draft);
+    persistDraftForSession(this.sessionId, this.draft, this.workshopScopeId);
   }
 
   clearComposerDraft() {
     this.draft = "";
-    clearDraftForSession(this.sessionId);
+    clearDraftForSession(this.sessionId, this.workshopScopeId);
   }
 
   removePendingMedia(mediaId: string) {

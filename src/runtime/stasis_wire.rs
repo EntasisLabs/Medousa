@@ -2,26 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use stasis::application::orchestration::prompt_pipeline::PromptExecutionPipeline;
-use stasis::application::runtime::agent_session_job_handler::AgentSessionJobHandler;
-use stasis::application::runtime::agent_turn_job_handler::AgentTurnJobHandler;
 use stasis::application::runtime::agent_turn_waitable_job_handler::AgentTurnWaitableJobHandler;
-use stasis::application::runtime::concurrent_pattern_job_handler::ConcurrentPatternJobHandler;
-use stasis::application::runtime::coordinator_failover_job_handler::CoordinatorFailoverJobHandler;
-use stasis::application::runtime::grapheme_echo_job_handler::GraphemeEchoJobHandler;
-use stasis::application::runtime::grapheme_healthcheck_job_handler::GraphemeHealthcheckJobHandler;
-use stasis::application::runtime::grapheme_job_handler::GraphemeJobHandler;
-use stasis::application::runtime::grapheme_textops_job_handler::GraphemeTextOpsJobHandler;
-use stasis::application::runtime::handoff_pattern_job_handler::HandoffPatternJobHandler;
-use stasis::application::runtime::memory_aggregate_job_handler::MemoryAggregateJobHandler;
-use stasis::application::runtime::memory_recall_job_handler::MemoryRecallJobHandler;
-use stasis::application::runtime::memory_rollup_job_handler::MemoryRollupJobHandler;
-use stasis::application::runtime::memory_schema_job_handler::MemorySchemaJobHandler;
-use stasis::application::runtime::memory_transform_job_handler::MemoryTransformJobHandler;
-use stasis::application::runtime::orchestrator_pattern_job_handler::OrchestratorPatternJobHandler;
-use stasis::application::runtime::prompt_chat_job_handler::PromptChatJobHandler;
-use stasis::application::runtime::queue_ownership_rebalance_job_handler::QueueOwnershipRebalanceJobHandler;
-use stasis::application::runtime::sequential_pattern_job_handler::SequentialPatternJobHandler;
-use stasis::application::runtime::tool_loop_job_handler::ToolLoopJobHandler;
 use stasis::infrastructure::runtime::http_webhook_event_publisher::HttpWebhookTransportPublisher;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
 use stasis::ports::outbound::runtime::delivery_endpoint_store::DeliveryEndpointStore;
@@ -29,9 +10,11 @@ use stasis::prelude::{RuntimeBackend, RuntimeComposition, RuntimeFactory, Stasis
 use stasis::runtime_prelude_ext::InMemoryDeliveryEndpointStore;
 
 use crate::channel_delivery;
+use crate::daemon_runtime_handlers::{DaemonRuntimeRegistrar, register_daemon_runtime_handlers};
 use crate::grapheme_medousa_bridge::{self, MedousaBridgeDeps};
 use crate::runtime::memory_bundle::MemoryAdapterBundle;
 use crate::runtime::stasis_otel::attach_otel_to_builder;
+use crate::runtime::stasis_surreal_schema::ensure_stasis_runtime_schema;
 use crate::runtime::surreal_startup::timed_step;
 use crate::workflow;
 
@@ -133,6 +116,7 @@ pub async fn build_daemon_stasis_composition(
                 },
             )
             .await?;
+            ensure_stasis_runtime_schema(&shell).await?;
             eprintln!("medousa-daemon: surreal runtime connected, initializing memory adapters…");
             let memory = MemoryAdapterBundle::from_runtime_shell(&shell).await?;
             eprintln!("medousa-daemon: wiring job handlers and delivery…");
@@ -233,6 +217,7 @@ pub async fn build_local_stasis_composition(
         | RuntimeBackend::SurrealMem { .. } => {
             crate::ensure_runtime_backend_prerequisites(&config.backend)?;
             let shell = RuntimeFactory::build(config.backend.clone()).await?;
+            ensure_stasis_runtime_schema(&shell).await?;
             let memory = MemoryAdapterBundle::from_runtime_shell(&shell).await?;
             let composition = wire_local_stasis_composition(shell, &config, &memory).await?;
             Ok((composition, memory))
@@ -560,116 +545,28 @@ fn register_daemon_handlers<R>(
 where
     R: DaemonRuntimeRegistrar,
 {
-    rt.register_handler(GraphemeJobHandler::new(workflow_engine.clone()))?;
-    rt.register_handler(GraphemeHealthcheckJobHandler::new(workflow_engine.clone()))?;
-    rt.register_handler(GraphemeEchoJobHandler::new(workflow_engine.clone()))?;
-    rt.register_handler(GraphemeTextOpsJobHandler::new(workflow_engine.clone()))?;
-
-    rt.register_handler(PromptChatJobHandler::new_with_memory_and_identity(
-        chat_client.clone(),
-        memory_context_reader.clone(),
-        memory_context_writer.clone(),
-        identity_memory_store.clone(),
-    ))?;
-
-    rt.register_handler(ToolLoopJobHandler::new_with_memory_and_identity(
-        chat_client.clone(),
-        tool_registry.clone(),
-        memory_context_reader.clone(),
-        memory_context_writer.clone(),
-        identity_memory_store.clone(),
-    ))?;
-
-    rt.register_handler(AgentTurnJobHandler::new_with_memory_and_identity(
-        chat_client.clone(),
-        tool_registry.clone(),
-        memory_context_reader.clone(),
-        memory_context_writer.clone(),
-        identity_memory_store.clone(),
-    ))?;
-    rt.register_handler(AgentSessionJobHandler::new_with_memory_and_identity(
-        chat_client.clone(),
-        tool_registry.clone(),
-        memory_context_reader.clone(),
-        memory_context_writer.clone(),
-        identity_memory_store.clone(),
-    ))?;
+    let tool_registry_dyn: Arc<
+        dyn stasis::application::orchestration::tool_registry::ToolRegistry,
+    > = tool_registry.clone();
+    register_daemon_runtime_handlers(
+        rt,
+        chat_client,
+        &tool_registry_dyn,
+        workflow_engine,
+        memory_context_reader,
+        memory_context_writer,
+        identity_memory_store,
+        memory_operations,
+        thread_store,
+        cluster_store,
+    )?;
 
     // Process-local waitable external turns (Stasis 0.8). Surreal backends still
     // use the in-memory TurnWaitStore unless a durable store is injected later.
     let agent_ports = crate::runtime::agent_platform::shared_agent_platform_ports();
-    rt.register_handler(AgentTurnWaitableJobHandler::new(
+    rt.register_daemon_handler(AgentTurnWaitableJobHandler::new(
         agent_ports.wait_store.clone(),
         agent_ports.codec.clone(),
         Some(agent_ports.ingress.clone()),
-    ))?;
-
-    if let Some(reader) = memory_context_reader.clone() {
-        rt.register_handler(MemoryRecallJobHandler::new(reader))?;
-    }
-    if let Some(operations) = memory_operations.clone() {
-        rt.register_handler(MemoryAggregateJobHandler::new(operations.clone()))?;
-        rt.register_handler(MemoryTransformJobHandler::new(operations.clone()))?;
-        rt.register_handler(MemoryRollupJobHandler::new(operations.clone()))?;
-        rt.register_handler(MemorySchemaJobHandler::new(operations.clone()))?;
-    }
-
-    rt.register_handler(
-        ConcurrentPatternJobHandler::new_with_thread_store_and_memory(
-            chat_client.clone(),
-            tool_registry.clone(),
-            Some(thread_store.clone()),
-            memory_context_reader.clone(),
-            memory_context_writer.clone(),
-            identity_memory_store.clone(),
-        ),
-    )?;
-    rt.register_handler(HandoffPatternJobHandler::new_with_thread_store(
-        chat_client.clone(),
-        Some(thread_store.clone()),
-    ))?;
-    rt.register_handler(OrchestratorPatternJobHandler::new_with_thread_store(
-        chat_client.clone(),
-        Some(thread_store.clone()),
-    ))?;
-    rt.register_handler(SequentialPatternJobHandler::new_with_thread_store(
-        chat_client.clone(),
-        Some(thread_store.clone()),
-    ))?;
-
-    rt.register_handler(CoordinatorFailoverJobHandler::new(cluster_store.clone()))?;
-    rt.register_handler(QueueOwnershipRebalanceJobHandler::new(
-        cluster_store.clone(),
-    ))?;
-
-    Ok(())
-}
-
-trait DaemonRuntimeRegistrar {
-    fn register_handler<H: stasis::application::runtime::in_memory_runtime::JobHandler + 'static>(
-        &self,
-        handler: H,
-    ) -> stasis::prelude::Result<()>;
-}
-
-impl DaemonRuntimeRegistrar for stasis::application::runtime::in_memory_runtime::InMemoryRuntime {
-    fn register_handler<
-        H: stasis::application::runtime::in_memory_runtime::JobHandler + 'static,
-    >(
-        &self,
-        handler: H,
-    ) -> stasis::prelude::Result<()> {
-        self.register_handler(handler)
-    }
-}
-
-impl DaemonRuntimeRegistrar for stasis::application::runtime::surreal_runtime::SurrealRuntime {
-    fn register_handler<
-        H: stasis::application::runtime::in_memory_runtime::JobHandler + 'static,
-    >(
-        &self,
-        handler: H,
-    ) -> stasis::prelude::Result<()> {
-        self.register_handler(handler)
-    }
+    ))
 }

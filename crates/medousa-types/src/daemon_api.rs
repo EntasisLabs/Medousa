@@ -12,6 +12,8 @@ use crate::turn::HostTurnContext;
 pub const DEFAULT_DAEMON_BIND: &str = "127.0.0.1:7419";
 pub const DEFAULT_DAEMON_URL: &str = "http://127.0.0.1:7419";
 pub const DEFAULT_DAEMON_PORT: u16 = 7419;
+/// Wire contract implemented by the daemon and all first-party clients.
+pub const DAEMON_API_CONTRACT_REVISION: u32 = 1;
 
 pub fn parse_daemon_bind_port(bind: &str) -> u16 {
     bind.rsplit(':')
@@ -89,7 +91,21 @@ pub fn resolve_daemon_public_base_url(bind: &str) -> String {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct DaemonRuntimeDescriptor {
+    pub authority_id: AuthorityId,
+    pub product_version: String,
+    pub build_revision: String,
+    pub contract_revision: u32,
+    pub base_schema_revision: u32,
+    pub deployment_profile: String,
+    pub deployment_target: String,
+    pub advertised_capabilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct HealthResponse {
+    pub runtime: DaemonRuntimeDescriptor,
     pub status: String,
     pub backend: String,
     pub worker_id: String,
@@ -545,7 +561,7 @@ pub struct SessionSetDisplayNameResponse {
     pub display_name: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SessionDeleteQuery {
     /// When false, keep Locus nodes for this session (transcript/catalog only).
@@ -575,6 +591,14 @@ pub struct SessionDeletionSurfaceResult {
 
 fn default_purge_memory() -> bool {
     true
+}
+
+impl Default for SessionDeleteQuery {
+    fn default() -> Self {
+        Self {
+            purge_memory: default_purge_memory(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3833,4 +3857,16 @@ pub struct AgentSecretDenyRequest {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct AgentSecretResolveResponse {
     pub request: AgentSecretRequestRecord,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SessionDeleteQuery;
+
+    #[test]
+    fn session_delete_default_matches_the_wire_default() {
+        assert!(SessionDeleteQuery::default().purge_memory);
+        let decoded: SessionDeleteQuery = serde_json::from_str("{}").unwrap();
+        assert!(decoded.purge_memory);
+    }
 }

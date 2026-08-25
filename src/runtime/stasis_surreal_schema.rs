@@ -8,6 +8,8 @@ use stasis::prelude::RuntimeComposition;
 use surrealdb::Surreal;
 use surrealdb::engine::any::Any;
 
+pub const DAEMON_PERSISTENCE_SCHEMA_REVISION: u32 = 1;
+
 /// Schemaless table definitions for Stasis runtime stores. Matches table names in stasis-rs
 /// (`surreal_recurring_store`, `surreal_workflow_definition_store`, etc.).
 const STASIS_RUNTIME_TABLES: &[&str] = &[
@@ -29,7 +31,11 @@ const STASIS_RUNTIME_TABLES: &[&str] = &[
 
 async fn apply_schema_statements(db: &Surreal<Any>, statements: &[&str]) -> anyhow::Result<()> {
     for statement in statements {
-        if let Err(err) = db.query(*statement).await {
+        let result = match db.query(*statement).await {
+            Ok(response) => response.check().map(|_| ()),
+            Err(error) => Err(error),
+        };
+        if let Err(err) = result {
             let text = err.to_string();
             if text.contains("already exists")
                 || text.contains("already defined")
@@ -41,6 +47,49 @@ async fn apply_schema_statements(db: &Surreal<Any>, statements: &[&str]) -> anyh
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use stasis::prelude::{RuntimeBackend, RuntimeComposition, RuntimeFactory};
+
+    #[tokio::test]
+    async fn common_runtime_schema_is_fresh_and_idempotent() {
+        let runtime = RuntimeFactory::build(RuntimeBackend::surreal_mem(
+            "medousa-schema-tests",
+            uuid::Uuid::new_v4().simple().to_string(),
+        ))
+        .await
+        .expect("runtime");
+
+        ensure_stasis_runtime_schema(&runtime)
+            .await
+            .expect("fresh schema");
+        ensure_stasis_runtime_schema(&runtime)
+            .await
+            .expect("idempotent schema");
+
+        let RuntimeComposition::Surreal(runtime) = runtime else {
+            panic!("expected Surreal runtime");
+        };
+        for table in [
+            "delivery_endpoint",
+            "endpoint_delivery_status",
+            "recurring_definition",
+            "cluster_node",
+        ] {
+            runtime
+                .job_store
+                .db()
+                .query(format!("SELECT * FROM {table} LIMIT 1"))
+                .await
+                .expect("query runtime table")
+                .check()
+                .expect("runtime table exists");
+        }
+        assert_eq!(DAEMON_PERSISTENCE_SCHEMA_REVISION, 1);
+    }
 }
 
 pub async fn ensure_stasis_runtime_schema(runtime: &RuntimeComposition) -> anyhow::Result<()> {

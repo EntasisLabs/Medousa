@@ -6,4 +6,4 @@ pub mod store;
 
 pub use entry::GraphemeScriptEntry;
 pub use service::GraphemeScriptService;
-pub use store::grapheme_script_store;
+pub use store::{configure_grapheme_script_root, grapheme_script_store};

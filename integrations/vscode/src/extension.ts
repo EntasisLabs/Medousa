@@ -677,7 +677,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
     }
     const created = await client.createSession({ catalog: "single" });
     await this.context.workspaceState.update(SESSION_KEY, created.session_id);
-    return { session_id: created.session_id, turns: [] };
+    return { authority_id: created.authority_id, session_id: created.session_id, turns: [] };
   }
 
   private async handleMessage(message: unknown): Promise<void> {

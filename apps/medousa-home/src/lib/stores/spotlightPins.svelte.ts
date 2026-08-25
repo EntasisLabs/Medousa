@@ -25,6 +25,10 @@ function storageKey(): string {
   return `${STORAGE_PREFIX}${workshopKey()}`;
 }
 
+function lastScriptStorageKey(): string {
+  return `${LAST_SCRIPT_KEY}:${workshopKey()}`;
+}
+
 function readSlots(): Array<SpotlightPin | null> {
   if (typeof localStorage === "undefined") {
     return Array.from({ length: MAX_SLOTS }, () => null);
@@ -85,6 +89,7 @@ class SpotlightPinsStore {
     if (key === this.#boundWorkshopId) return;
     this.#boundWorkshopId = key;
     this.slots = readSlots();
+    this.lastScriptId = readLastScriptId();
   }
 
   /** @deprecated use ensureWorkshopSynced */
@@ -130,8 +135,8 @@ class SpotlightPinsStore {
     this.lastScriptId = scriptId;
     if (typeof localStorage === "undefined") return;
     try {
-      if (scriptId) localStorage.setItem(LAST_SCRIPT_KEY, scriptId);
-      else localStorage.removeItem(LAST_SCRIPT_KEY);
+      if (scriptId) localStorage.setItem(lastScriptStorageKey(), scriptId);
+      else localStorage.removeItem(lastScriptStorageKey());
     } catch {
       // ignore
     }
@@ -141,7 +146,7 @@ class SpotlightPinsStore {
 function readLastScriptId(): string | null {
   if (typeof localStorage === "undefined") return null;
   try {
-    return localStorage.getItem(LAST_SCRIPT_KEY);
+    return localStorage.getItem(lastScriptStorageKey());
   } catch {
     return null;
   }

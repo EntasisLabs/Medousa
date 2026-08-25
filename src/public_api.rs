@@ -11,7 +11,7 @@ pub const COGNITION_CAPABILITY: &str = "cognition_capability";
 pub const COGNITION_SCHEMA: &str = "cognition_schema";
 pub const COGNITION_RUNTIME_QUERY: &str = "cognition_runtime_query";
 pub const COGNITION_RUNTIME_MUTATE: &str = "cognition_runtime_mutate";
-pub const COGNITION_TURN: &str = "cognition_turn";
+pub use medousa_runtime::turn_control::{COGNITION_TURN, COGNITION_WORKSHOP_MUTATE};
 pub const COGNITION_MEMORY_QUERY: &str = "cognition_memory_query";
 pub const COGNITION_MEMORY_MUTATE: &str = "cognition_memory_mutate";
 pub const COGNITION_IDENTITY_QUERY: &str = "cognition_identity_query";
@@ -19,7 +19,6 @@ pub const COGNITION_IDENTITY_MUTATE: &str = "cognition_identity_mutate";
 pub const COGNITION_CALENDAR_QUERY: &str = "cognition_calendar_query";
 pub const COGNITION_CALENDAR_MUTATE: &str = "cognition_calendar_mutate";
 pub const COGNITION_WORKSHOP_QUERY: &str = "cognition_workshop_query";
-pub const COGNITION_WORKSHOP_MUTATE: &str = "cognition_workshop_mutate";
 
 /// Primitives that every mode may call. Grows as families collapse.
 pub const PUBLIC_API_TOOLS: &[&str] = &[

@@ -22,6 +22,7 @@ import { mergeTranscript } from "$lib/utils/mergeTranscript";
 import { shouldReattachTurnRecord } from "$lib/utils/streamOwnership";
 import { streamPathWithSince } from "$lib/stream/reconnect";
 import { friendlyUserError } from "$lib/utils/normieErrors";
+import { randomUuid } from "$lib/utils/randomUuid";
 import { beginTurnMessages, turnStateFromTicket } from "$lib/chat/turnController";
 import { mapTurns } from "$lib/chat/sessionController";
 import { workerLinkForTurn } from "$lib/chat/workerLaneController";
@@ -56,7 +57,7 @@ export function beginTurn(
   host.transcriptEpoch += 1;
   host.historyNotice = null;
   host.askHandoffNotice = null;
-  const assistantId = crypto.randomUUID();
+  const assistantId = randomUuid();
   host.messages = [
     ...host.messages,
     ...beginTurnMessages({
@@ -64,7 +65,7 @@ export function beginTurn(
       ticket,
       mediaRefs,
       speakerProfileId,
-      userMessageId: crypto.randomUUID(),
+      userMessageId: randomUuid(),
       assistantId,
     }),
   ];
@@ -328,7 +329,7 @@ async function attachTurnStream(host: ChatStoreHost, record: TurnTicketRecord): 
   )?.id;
 
   if (!messageId && !record.composer_handoff) {
-    messageId = crypto.randomUUID();
+    messageId = randomUuid();
     const lane = record.mode === "background" ? ("ask" as const) : ("chat" as const);
     const askJobId =
       record.mode === "background" ? (record.workspace_card_id ?? record.turn_id) : null;

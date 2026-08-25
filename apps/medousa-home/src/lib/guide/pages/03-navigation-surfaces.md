@@ -135,6 +135,11 @@ Spotlight: **Toggle desktop toolbar**. Closing a pop-out usually **hides** it so
 
 **Home header:** menu (left) · workshop switcher (right). Destinations open from the menu — there is no bottom tab bar.
 
+The menu follows the active layout preset. Tap **Edit** in the menu to show or
+hide mobile-supported destinations; the same preset also shapes the desktop
+rail. Home, You, Preferences, and Workshop stay available. A hidden door can
+still open from a direct link — hiding navigation does not disable the feature.
+
 **Home** is a calm landing: brand + status, Peers / Daily note glance tiles, a **Continue** strip (one lead chat + up to two quieter sessions), and a single **Last activity** beat when something is live or just finished. Heat only appears when earned — no equal-weight dashboard.
 
 **More hub** (also reachable from the destinations menu)

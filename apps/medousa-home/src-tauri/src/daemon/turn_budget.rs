@@ -38,7 +38,7 @@ pub async fn turn_budget_approve(
                 .unwrap_or_else(default_home_resolved_by),
         ),
     };
-    client(&state)
+    client(&state)?
         .budget()
         .approve(request_id.trim(), &body)
         .await
@@ -59,7 +59,7 @@ pub async fn turn_budget_deny(
                 .unwrap_or_else(default_home_resolved_by),
         ),
     };
-    client(&state)
+    client(&state)?
         .budget()
         .deny(request_id.trim(), &body)
         .await
@@ -71,7 +71,7 @@ pub async fn turn_budget_list(
     state: State<'_, DaemonState>,
     pending_only: Option<bool>,
 ) -> Result<TurnBudgetRequestListResponse, String> {
-    client(&state)
+    client(&state)?
         .budget()
         .list(pending_only.unwrap_or(true))
         .await

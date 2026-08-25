@@ -29,8 +29,9 @@ const MAX_PENDING_RUNS: usize = 128;
 const MAX_RESPONSE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_REQUEST_HEADERS: usize = 32;
 const MAX_AUTHORIZED_HTTP_CALLS: usize = 8;
-const GRANT_PREFIX: &[u8] = b"sgrant-";
-const GRANT_HEX_LEN: usize = 32;
+pub use crate::grapheme_grants::{
+    redact_secret_grant_references, secret_grant_references, source_contains_secret_grant,
+};
 
 static RUNS: Lazy<Mutex<HashMap<String, PendingRun>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
@@ -148,47 +149,6 @@ pub fn cancel_run(token: &str) {
     RUNS.lock()
         .expect("Grapheme secret run store")
         .remove(token);
-}
-
-/// Find concrete opaque grant ids embedded in source. Placeholders such as
-/// `sgrant-…` are intentionally ignored; real ids are the prefix plus a UUID's
-/// 32 lowercase hexadecimal digits.
-pub fn secret_grant_references(source: &str) -> Vec<String> {
-    let bytes = source.as_bytes();
-    let total_len = GRANT_PREFIX.len() + GRANT_HEX_LEN;
-    let mut references = Vec::new();
-    let mut index = 0;
-    while index + total_len <= bytes.len() {
-        if &bytes[index..index + GRANT_PREFIX.len()] != GRANT_PREFIX {
-            index += 1;
-            continue;
-        }
-        let end = index + total_len;
-        let hex = &bytes[index + GRANT_PREFIX.len()..end];
-        let boundary_ok = end == bytes.len() || !bytes[end].is_ascii_hexdigit();
-        if hex.iter().all(u8::is_ascii_hexdigit) && boundary_ok {
-            let grant = source[index..end].to_string();
-            if !references.contains(&grant) {
-                references.push(grant);
-            }
-            index = end;
-        } else {
-            index += GRANT_PREFIX.len();
-        }
-    }
-    references
-}
-
-pub fn source_contains_secret_grant(source: &str) -> bool {
-    !secret_grant_references(source).is_empty()
-}
-
-pub fn redact_secret_grant_references(text: &str) -> String {
-    secret_grant_references(text)
-        .into_iter()
-        .fold(text.to_string(), |redacted, grant| {
-            redacted.replace(&grant, "[REDACTED_GRANT]")
-        })
 }
 
 /// Remove Medousa's internal run token from user-visible Grapheme state.

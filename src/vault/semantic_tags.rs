@@ -16,7 +16,7 @@ pub fn default_vault_semantic_tags(chat_session_id: Option<&str>) -> Vec<String>
     } else {
         let profile_id = crate::user_profiles::resolve_workshop_identity_user_id();
         if let Some(slug) = crate::user_profiles::profile_slug_from_id(&profile_id)
-            && slug != crate::locus_memory::LOCUS_DEFAULT_TENANT
+            && slug != crate::locus_semantic_tags::LOCUS_DEFAULT_TENANT
         {
             tags.push(format!("profile:{slug}"));
         }

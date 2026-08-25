@@ -14,7 +14,7 @@ pub async fn recurring_list(
     state: State<'_, DaemonState>,
     enabled_only: Option<bool>,
 ) -> Result<RecurringListResponse, String> {
-    client(&state)
+    client(&state)?
         .recurring()
         .list(&RecurringListQuery { enabled_only })
         .await
@@ -26,7 +26,7 @@ pub async fn recurring_register_prompt(
     state: State<'_, DaemonState>,
     request: RegisterRecurringPromptRequest,
 ) -> Result<RegisterRecurringResponse, String> {
-    client(&state)
+    client(&state)?
         .recurring()
         .register_prompt(&request)
         .await
@@ -39,7 +39,7 @@ pub async fn recurring_update(
     recurring_id: String,
     request: UpdateRecurringRequest,
 ) -> Result<UpdateRecurringResponse, String> {
-    client(&state)
+    client(&state)?
         .recurring()
         .update(recurring_id.trim(), &request)
         .await
@@ -51,7 +51,7 @@ pub async fn recurring_delete(
     state: State<'_, DaemonState>,
     recurring_id: String,
 ) -> Result<DeleteRecurringResponse, String> {
-    client(&state)
+    client(&state)?
         .recurring()
         .delete(recurring_id.trim())
         .await
@@ -64,7 +64,7 @@ pub async fn recurring_list_runs(
     recurring_id: String,
     limit: Option<usize>,
 ) -> Result<RecurringRunsResponse, String> {
-    client(&state)
+    client(&state)?
         .recurring()
         .runs(recurring_id.trim(), &RecurringRunsQuery { limit })
         .await
@@ -76,7 +76,7 @@ pub async fn recurring_get_delivery(
     state: State<'_, DaemonState>,
     recurring_id: String,
 ) -> Result<RecurringDeliveryResponse, String> {
-    client(&state)
+    client(&state)?
         .recurring()
         .delivery_status(recurring_id.trim())
         .await

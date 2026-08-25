@@ -12,7 +12,7 @@ pub async fn job_get_result(
     state: State<'_, DaemonState>,
     job_id: String,
 ) -> Result<JobResultResponse, String> {
-    client(&state)
+    client(&state)?
         .jobs()
         .result(job_id.trim())
         .await
@@ -40,7 +40,7 @@ pub async fn job_enqueue_ask(
         additional_manuscript_ids,
         suggested_capability_ids,
     };
-    client(&state)
+    client(&state)?
         .jobs()
         .enqueue_ask(&request)
         .await
@@ -58,7 +58,7 @@ pub async fn job_complete_actions(
         write_journal_path,
         notify_channel,
     };
-    client(&state)
+    client(&state)?
         .jobs()
         .complete_actions(job_id.trim(), &request)
         .await
@@ -74,7 +74,7 @@ pub async fn job_archive_ask(
     let request = ArchiveAskJobRequest {
         purge_output: purge_output.unwrap_or(true),
     };
-    client(&state)
+    client(&state)?
         .jobs()
         .archive(job_id.trim(), &request)
         .await

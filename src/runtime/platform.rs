@@ -13,7 +13,6 @@ use crate::openshell_sandbox_run;
 use crate::recurring_agent_turn;
 use crate::recurring_delivery;
 use crate::recurring_feed;
-use crate::runtime::stasis_surreal_schema::ensure_stasis_runtime_schema;
 use crate::runtime::stasis_wire::{DaemonStasisWireConfig, build_daemon_stasis_composition};
 use crate::runtime::vault_surreal_schema::ensure_vault_surreal_schema;
 use crate::session_meta_store;
@@ -133,16 +132,14 @@ async fn build_platform_inner(
         .await
         .context("failed to build stasis daemon composition")?;
 
-    eprintln!("medousa-daemon: ensuring Stasis runtime schema…");
-    ensure_stasis_runtime_schema(&composition)
-        .await
-        .context("failed to ensure Stasis SurrealDB runtime tables")?;
     ensure_vault_surreal_schema(&composition)
         .await
         .context("failed to ensure vault SurrealDB tables")?;
 
     eprintln!("medousa-daemon: initializing session and delivery stores…");
-    session_store::init_session_store_with_runtime(&composition).await;
+    session_store::init_session_store_with_runtime(&composition)
+        .await
+        .context("failed to initialize session store")?;
     session_meta_store::init_session_meta_store_with_runtime(&composition).await;
     verification_store::init_verification_store_with_runtime(&composition).await;
     crate::session_catalog::init_session_catalog_with_runtime(&composition).await;

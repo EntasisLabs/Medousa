@@ -16,6 +16,16 @@ def test_sync_client_health(monkeypatch):
         def get_json(self, base_url, path):
             calls.append((base_url, path))
             return {
+                "runtime": {
+                    "authority_id": f"auth_{'a' * 64}",
+                    "product_version": "0.9.1",
+                    "build_revision": "test-build-42",
+                    "contract_revision": 1,
+                    "base_schema_revision": 1,
+                    "deployment_profile": "full",
+                    "deployment_target": "full:macos:aarch64",
+                    "advertised_capabilities": ["transport.http"],
+                },
                 "status": "ok",
                 "backend": "sqlite",
                 "worker_id": "w1",

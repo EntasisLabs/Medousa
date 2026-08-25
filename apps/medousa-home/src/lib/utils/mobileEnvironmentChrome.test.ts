@@ -7,7 +7,7 @@ import {
 } from "$lib/utils/mobileEnvironmentChrome";
 
 describe("mobileEnvironmentChrome", () => {
-  it("shows full tab bar by default", () => {
+  it("shows all mobile navigation doors by default", () => {
     expect(visibleMobileTabs(defaultEnvironmentSpec())).toEqual([
       "home",
       "chat",
@@ -17,7 +17,7 @@ describe("mobileEnvironmentChrome", () => {
     ]);
   });
 
-  it("keeps Notes and Web reachable even in legacy minimal tab bar mode", () => {
+  it("ignores retired tab-bar density and uses shared layout membership", () => {
     const spec = defaultEnvironmentSpec();
     spec.shellChrome = {
       mobile: {
@@ -26,11 +26,12 @@ describe("mobileEnvironmentChrome", () => {
         tabBar: "minimal",
       },
     };
+    spec.layoutPresets![0]!.surfaces = spec.layoutPresets![0]!.surfaces.filter(
+      (id) => id !== "notes" && id !== "web",
+    );
     expect(visibleMobileTabs(spec)).toEqual([
       "home",
       "chat",
-      "notes",
-      "web",
       "more",
     ]);
   });

@@ -13,9 +13,10 @@ use crate::daemon::sdk::{client, sdk_error};
 use crate::pairing_client::WorkshopTransportConfig;
 use crate::workshop_transport::{self, MultipartField, WorkshopByteStream};
 
-pub fn transport_config(state: &State<'_, DaemonState>) -> WorkshopTransportConfig {
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
-    workshop_transport::config_from_lan_base(&base)
+pub fn transport_config(
+    _state: &State<'_, DaemonState>,
+) -> Result<WorkshopTransportConfig, String> {
+    crate::active_workshop::transport_config()
 }
 
 pub fn path_with_query(path: &str, query: &[(&str, String)]) -> String {
@@ -26,7 +27,7 @@ pub async fn get_json<T: DeserializeOwned>(
     state: &State<'_, DaemonState>,
     path: &str,
 ) -> Result<T, String> {
-    client(state).http().get(path).await.map_err(sdk_error)
+    client(state)?.http().get(path).await.map_err(sdk_error)
 }
 
 pub async fn get_json_query<T: DeserializeOwned>(
@@ -34,7 +35,7 @@ pub async fn get_json_query<T: DeserializeOwned>(
     path: &str,
     query: &[(&str, String)],
 ) -> Result<T, String> {
-    client(state)
+    client(state)?
         .http()
         .get_query(path, query)
         .await
@@ -46,7 +47,7 @@ pub async fn post_json<T: DeserializeOwned, B: serde::Serialize>(
     path: &str,
     body: &B,
 ) -> Result<T, String> {
-    client(state)
+    client(state)?
         .http()
         .post(path, body)
         .await
@@ -57,7 +58,7 @@ pub async fn post_empty_json<T: DeserializeOwned>(
     state: &State<'_, DaemonState>,
     path: &str,
 ) -> Result<T, String> {
-    client(state)
+    client(state)?
         .http()
         .post_empty(path)
         .await
@@ -69,7 +70,7 @@ pub async fn put_json<T: DeserializeOwned, B: serde::Serialize>(
     path: &str,
     body: &B,
 ) -> Result<T, String> {
-    client(state)
+    client(state)?
         .http()
         .put(path, body)
         .await
@@ -84,7 +85,7 @@ pub async fn put_raw<T: DeserializeOwned>(
     extra_headers: &[(&str, &str)],
 ) -> Result<T, String> {
     workshop_transport::workshop_put_raw(
-        &transport_config(state),
+        &transport_config(state)?,
         path,
         content_type,
         body,
@@ -98,7 +99,7 @@ pub async fn patch_json<T: DeserializeOwned, B: serde::Serialize>(
     path: &str,
     body: &B,
 ) -> Result<T, String> {
-    client(state)
+    client(state)?
         .http()
         .patch(path, body)
         .await
@@ -109,7 +110,7 @@ pub async fn delete_json<T: DeserializeOwned>(
     state: &State<'_, DaemonState>,
     path: &str,
 ) -> Result<T, String> {
-    client(state).http().delete(path).await.map_err(sdk_error)
+    client(state)?.http().delete(path).await.map_err(sdk_error)
 }
 
 pub async fn post_multipart<T: DeserializeOwned>(
@@ -117,14 +118,14 @@ pub async fn post_multipart<T: DeserializeOwned>(
     path: &str,
     fields: &[MultipartField],
 ) -> Result<T, String> {
-    workshop_transport::workshop_post_multipart(&transport_config(state), path, fields).await
+    workshop_transport::workshop_post_multipart(&transport_config(state)?, path, fields).await
 }
 
 pub async fn get_bytes_stream(
     state: &State<'_, DaemonState>,
     path: &str,
 ) -> Result<WorkshopByteStream, String> {
-    workshop_transport::workshop_get_bytes_stream(&transport_config(state), path).await
+    workshop_transport::workshop_get_bytes_stream(&transport_config(state)?, path).await
 }
 
 pub async fn get_bytes_stream_for_config(

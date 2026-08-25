@@ -1,5 +1,9 @@
 import { getDaemonUrl, setDaemonUrl } from "$lib/daemon";
 import { isTauriMobilePlatform } from "$lib/platform";
+import {
+  activeWorkshopId,
+  isCoLocatedWorkshop,
+} from "$lib/utils/workshopLocality";
 
 const DAEMON_PORT = 7419;
 
@@ -27,6 +31,7 @@ export function inferDevDaemonUrl(): string | null {
 export async function ensureMobileDaemonUrl(): Promise<string> {
   const current = (await getDaemonUrl()).trim();
   if (!isTauriMobilePlatform()) return current;
+  if (activeWorkshopId() === "personal" || isCoLocatedWorkshop()) return current;
 
   if (!isLoopbackDaemonUrl(current)) return current;
 

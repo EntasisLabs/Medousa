@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use genai::chat::{ChatMessage, ChatRequest};
+use medousa_runtime::MedousaToolLoopPipeline;
 use serde_json::Value;
 use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionContext, PromptExecutionPipeline,
@@ -1203,28 +1203,57 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
                 .unwrap_or(turn_loop_settings.configured_max_tool_rounds)
                 .min(super::turn_loop_settings::DEFAULT_CODER_MAX_TOOL_ROUNDS)
         });
+    let runtime_ports = medousa_runtime::RuntimePorts::new()
+        .with_optional_ledger_sink(super::turn_ledger::session_turn_ledger_sink(
+            ledger_session_id.as_deref(),
+        ))
+        .with_tool_run_events(Arc::new(super::tool_stream::DaemonToolRunEventPort::new(
+            sink.clone(),
+        )))
+        .with_turn_presentation(Arc::new(
+            super::turn_presentation::DaemonTurnPresentationPort::new(sink.clone()),
+        ))
+        .with_budget_approval(Arc::new(
+            crate::turn_budget_request::DaemonTurnBudgetApprovalPort::new(
+                parent_turn_correlation_id.clone(),
+                turn_id,
+                ledger_session_id.clone(),
+                origin_channel.clone(),
+                origin_delivery_target.clone(),
+                Some(sink.clone()),
+            ),
+        ))
+        .with_host_handoff(Arc::new(super::turn_context::DaemonHostHandoffPort::new(
+            ledger_session_id.clone(),
+            turn_id,
+            parent_turn_correlation_id.clone(),
+            original_prompt.clone(),
+            host_handoff_slot.clone(),
+            Some(handoff_vibe_signature.clone()),
+            Some(handoff_model_avec),
+            handoff_continuity_bundle.clone(),
+        )));
+    let runtime_ports = match evidence_undertaking_id.clone() {
+        Some(undertaking_id) => runtime_ports.with_perception_evidence(Arc::new(
+            super::perception_governor::DaemonPerceptionEvidencePort::for_coder_undertaking(
+                undertaking_id,
+                compact_evidence_receipt_sink.clone(),
+            ),
+        )),
+        None => runtime_ports,
+    };
     let completion_gate_config = ToolLoopCompletionGateConfig {
         stream_turn_id: turn_id,
-        session_id: ledger_session_id.clone(),
-        sink: Some(sink.clone()),
+        runtime_ports,
         max_text_only_stuck_continues: turn_loop_settings.max_text_only_stuck_continues,
-        host_handoff_slot: Some(host_handoff_slot.clone()),
         parent_turn_correlation_id: parent_turn_correlation_id.clone(),
-        handoff_parent_user_prompt: Some(original_prompt.clone()),
-        handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
-        handoff_model_avec: Some(handoff_model_avec),
-        handoff_continuity_bundle: handoff_continuity_bundle.clone(),
         skip_avec_ritual_check: false,
-        channel: origin_channel.clone(),
-        delivery_target: origin_delivery_target.clone(),
         hard_tool_round_ceiling,
         require_operator_budget_gate: require_operator_budget_gate(),
         completion_profile,
         cancel_poll_work_id: None,
         steer_poll_work_id: None,
         round_context_provider: round_context_provider.clone(),
-        evidence_undertaking_id: evidence_undertaking_id.clone(),
-        compact_evidence_receipt_sink: compact_evidence_receipt_sink.clone(),
     };
     let mut last_tool_scratch: Option<TurnScratchpad> = None;
     let loop_max_rounds = pending_active_turn_resume

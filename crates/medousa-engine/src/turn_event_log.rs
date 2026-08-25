@@ -161,6 +161,14 @@ impl TurnEventLog {
     pub fn open_in(root: impl AsRef<Path>, envelope: TurnEnvelope) -> std::io::Result<Self> {
         std::fs::create_dir_all(root.as_ref())?;
         let root = Dir::open_ambient_dir(root.as_ref(), ambient_authority())?;
+        Self::open_in_dir(root, envelope)
+    }
+
+    /// Open a durable turn log inside an already-confined directory.
+    ///
+    /// Deployment hosts use this entry point so the journal never needs to
+    /// recover ambient filesystem authority from a path string.
+    pub fn open_in_dir(root: Dir, envelope: TurnEnvelope) -> std::io::Result<Self> {
         let turn_id = TurnEventId::parse(&envelope.turn_id).map_err(std::io::Error::other)?;
         let journal_path = journal_name(&turn_id);
         let mut options = OpenOptions::new();
@@ -1034,6 +1042,22 @@ mod tests {
         assert_eq!(seqs, vec![1, 2, 3]);
         let tail: Vec<u64> = log.snapshot_since(2).iter().map(|e| e.seq()).collect();
         assert_eq!(tail, vec![3]);
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn capability_entrypoint_writes_inside_the_held_directory() {
+        let root = tmp_root("capability");
+        fs::create_dir_all(&root).unwrap();
+        let directory = Dir::open_ambient_dir(&root, ambient_authority()).unwrap();
+        let log = TurnEventLog::open_in_dir(directory, env("turn-capability")).unwrap();
+        log.append(final_ev("held", Vec::new())).unwrap();
+        log.mark_committed().unwrap();
+        log.close_journal();
+
+        let turn_id = TurnEventId::parse("turn-capability").unwrap();
+        assert!(root.join(journal_name(&turn_id)).is_file());
+        assert!(root.join(commit_marker_name(&turn_id)).is_file());
         fs::remove_dir_all(&root).ok();
     }
 

@@ -5,6 +5,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
+pub use medousa_types::daemon_api::{
+    ActiveSessionTurn, ActiveSessionTurnResponse, CancelActiveSessionTurnResponse,
+};
 pub use medousa_types::turn_ticket::{
     TurnTicket, TurnTicketConflict, TurnTicketMode, TurnTicketPhase,
 };
@@ -28,32 +31,6 @@ pub struct TurnTicketResponse {
 pub struct SessionActiveTurnsResponse {
     pub session_id: String,
     pub turns: Vec<TurnTicket>,
-}
-
-/// Tier 1 compat — primary interactive turn for reconnect.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ActiveSessionTurn {
-    pub turn_id: String,
-    pub session_id: String,
-    pub stream_url: String,
-    pub phase: String,
-    pub composer_handoff: bool,
-    pub started_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ActiveSessionTurnResponse {
-    pub active: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub turn: Option<ActiveSessionTurn>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct CancelActiveSessionTurnResponse {
-    pub cancelled: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub turn_id: Option<String>,
-    pub message: String,
 }
 
 pub struct TurnTicketRegistryInner {
@@ -291,7 +268,7 @@ pub async fn get_active_turn(
     get_active_interactive_turn(registry, session_id).await
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 mod tests {
     use super::*;
 

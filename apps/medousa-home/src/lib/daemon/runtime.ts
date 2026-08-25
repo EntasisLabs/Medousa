@@ -49,12 +49,6 @@ export async function fetchHostCharter(): Promise<TuiDefaults> {
 }
 
 export async function putEngineTuiDefaults(dto: TuiDefaults): Promise<void> {
-  const { isTauriMobilePlatform } = await import("$lib/platform");
-  if (isTauriMobilePlatform()) {
-    throw new Error(
-      "Workshop charter is read-only on mobile — change Memory, Reach, and Voice on the host.",
-    );
-  }
   await invoke("runtime_put_tui_defaults", { dto });
 }
 

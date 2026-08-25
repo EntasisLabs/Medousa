@@ -1,4 +1,5 @@
 import type { RecurringRunEntry } from "$lib/types/recurring";
+import { randomUuid } from "$lib/utils/randomUuid";
 
 export type WorkflowStepKind = "grapheme" | "prompt" | "mcp";
 
@@ -161,7 +162,7 @@ export interface FlowComposerDraft {
 }
 
 export function newStepId(prefix: string): string {
-  return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
+  return `${prefix}-${randomUuid().slice(0, 8)}`;
 }
 
 export function emptyFlowDraft(): FlowComposerDraft {

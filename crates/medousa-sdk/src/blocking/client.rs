@@ -305,7 +305,9 @@ impl BlockingMedousaClient {
 #[cfg(feature = "blocking")]
 impl BlockingHealthApi<'_> {
     pub fn get(&self) -> Result<HealthResponse, SdkError> {
-        self.http.get(crate::generated::ops::HEALTH_GET.path)
+        let path = crate::generated::ops::HEALTH_GET.path;
+        let value = self.http.request(reqwest::Method::GET, path, None)?;
+        crate::health::decode_health(value, path)
     }
 }
 

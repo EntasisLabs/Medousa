@@ -23,7 +23,7 @@ const MATCH_ALL_TAGS_QUERY: &str = r#"
         FROM semantic_tag_index
         WHERE tenant_id = $tenant_id
           AND tag IN $tags
-          AND ($session_id IS NONE OR session_id = $session_id)
+          AND ($all_sessions = true OR session_id = $session_id)
         GROUP BY sync_key
     )
     WHERE TagCount = array::len($tags)
@@ -35,7 +35,7 @@ const MATCH_ANY_TAGS_QUERY: &str = r#"
     FROM semantic_tag_index
     WHERE tenant_id = $tenant_id
       AND tag IN $tags
-      AND ($session_id IS NONE OR session_id = $session_id)
+      AND ($all_sessions = true OR session_id = $session_id)
     GROUP BY sync_key
     LIMIT $limit;
 "#;
@@ -104,7 +104,7 @@ struct SyncKeyRecord {
 
 /// Typed compatibility adapter for the Locus semantic-index port.
 ///
-/// Locus 0.4.2 emits SQL-style `HAVING`, `SELECT DISTINCT`, and table-level
+/// Locus 0.5.0 emits SQL-style `HAVING`, `SELECT DISTINCT`, and table-level
 /// `UPSERT ... WHERE` statements that are not compatible with the bundled
 /// SurrealDB. Keep those dialect details behind the semantic port while
 /// delegating the rest of Locus's implementation unchanged.
@@ -260,9 +260,10 @@ impl SemanticIndexStore for MedousaSurrealSemanticIndexStore {
         let mut params = QueryParams::new();
         params.insert("tenant_id".to_string(), json!(tenant_id));
         params.insert("tags".to_string(), json!(canonical_tags));
+        params.insert("all_sessions".to_string(), json!(session_id.is_none()));
         params.insert(
             "session_id".to_string(),
-            session_id.map_or(Value::Null, |value| json!(value)),
+            session_id.map_or_else(|| json!(""), |value| json!(value)),
         );
         params.insert("limit".to_string(), json!(limit.max(1)));
 
@@ -301,4 +302,67 @@ fn decode_rows<T: DeserializeOwned>(rows: Vec<Value>) -> Result<Vec<T>> {
         .map(serde_json::from_value)
         .collect::<std::result::Result<Vec<T>, _>>()
         .map_err(Into::into)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use super::*;
+
+    #[derive(Default)]
+    struct RecordingClient {
+        calls: Mutex<Vec<(String, QueryParams)>>,
+    }
+
+    #[async_trait]
+    impl SurrealDbClient for RecordingClient {
+        async fn raw_query(&self, query: &str, parameters: QueryParams) -> Result<Vec<Value>> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((query.to_string(), parameters));
+            Ok(vec![json!({ "SyncKey": "node-1" })])
+        }
+    }
+
+    #[tokio::test]
+    async fn tag_query_uses_an_explicit_all_sessions_flag() {
+        let client = Arc::new(RecordingClient::default());
+        let store = MedousaSurrealSemanticIndexStore::new(client.clone());
+
+        let keys = store
+            .find_sync_keys_by_tags_async("tenant", &[" durable ".to_string()], true, None, 8)
+            .await
+            .unwrap();
+        assert_eq!(keys, ["node-1"]);
+
+        let calls = client.calls.lock().unwrap();
+        let (query, parameters) = calls.last().unwrap();
+        assert!(query.contains("$all_sessions = true"));
+        assert_eq!(parameters.get("all_sessions"), Some(&json!(true)));
+        assert_eq!(parameters.get("session_id"), Some(&json!("")));
+    }
+
+    #[tokio::test]
+    async fn tag_query_preserves_a_scoped_session_filter() {
+        let client = Arc::new(RecordingClient::default());
+        let store = MedousaSurrealSemanticIndexStore::new(client.clone());
+
+        store
+            .find_sync_keys_by_tags_async(
+                "tenant",
+                &["durable".to_string()],
+                false,
+                Some("session-1"),
+                8,
+            )
+            .await
+            .unwrap();
+
+        let calls = client.calls.lock().unwrap();
+        let (_, parameters) = calls.last().unwrap();
+        assert_eq!(parameters.get("all_sessions"), Some(&json!(false)));
+        assert_eq!(parameters.get("session_id"), Some(&json!("session-1")));
+    }
 }

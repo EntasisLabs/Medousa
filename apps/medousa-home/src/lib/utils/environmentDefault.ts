@@ -100,21 +100,26 @@ function placeCodeAfterWork(surfaceIds: string[]): string[] {
 
 /** Ensure Code has a first-class destination on older saved layouts. */
 export function ensureCodeSurfaceInSpec(spec: EnvironmentSpec): EnvironmentSpec {
+  const hasCode = spec.surfaces.some((surface) => surface.id === "code");
   let surfaces = [...spec.surfaces];
-  if (!surfaces.some((surface) => surface.id === "code")) {
+  if (!hasCode) {
     const workAt = surfaces.findIndex((surface) => surface.id === "work");
     const libraryAt = surfaces.findIndex((surface) => surface.id === "library");
     const insertAt = workAt >= 0 ? workAt + 1 : libraryAt >= 0 ? libraryAt : surfaces.length;
     surfaces.splice(insertAt, 0, codeSurfaceDef());
   }
 
-  const layoutPresets = (spec.layoutPresets ?? []).map((preset) => ({
-    ...preset,
-    surfaces: placeCodeAfterWork(preset.surfaces),
-  }));
-  const surfacesChanged = surfaces.some(
-    (surface, index) => surface.id !== spec.surfaces[index]?.id,
-  );
+  // Only seed preset membership while introducing the SurfaceDef. Once the
+  // definition exists, absence from a preset is an intentional nav choice.
+  const layoutPresets = hasCode
+    ? (spec.layoutPresets ?? [])
+    : (spec.layoutPresets ?? []).map((preset) => ({
+        ...preset,
+        surfaces: placeCodeAfterWork(preset.surfaces),
+      }));
+  const surfacesChanged =
+    surfaces.length !== spec.surfaces.length ||
+    surfaces.some((surface, index) => surface.id !== spec.surfaces[index]?.id);
   const presetsChanged = (spec.layoutPresets ?? []).some((preset, index) => {
     const next = layoutPresets[index];
     return !next || preset.surfaces.join("\0") !== next.surfaces.join("\0");
@@ -264,10 +269,12 @@ export function ensurePeersSurfaceInSpec(spec: EnvironmentSpec): EnvironmentSpec
     surfaces.splice(insertAt, 0, peersSurfaceDef());
   }
 
-  const layoutPresets = (spec.layoutPresets ?? []).map((preset) => ({
-    ...preset,
-    surfaces: ensurePeersInPresetSurfaces(preset.surfaces),
-  }));
+  const layoutPresets = hasPeers
+    ? (spec.layoutPresets ?? [])
+    : (spec.layoutPresets ?? []).map((preset) => ({
+        ...preset,
+        surfaces: ensurePeersInPresetSurfaces(preset.surfaces),
+      }));
 
   const surfacesChanged =
     surfaces.length !== spec.surfaces.length ||
@@ -333,10 +340,12 @@ export function ensureCalendarSurfaceInSpec(spec: EnvironmentSpec): EnvironmentS
     surfaces.splice(insertAt, 0, calendarSurfaceDef());
   }
 
-  const layoutPresets = (spec.layoutPresets ?? []).map((preset) => ({
-    ...preset,
-    surfaces: placeCalendarAfterLibrary(preset.surfaces),
-  }));
+  const layoutPresets = hasCalendar
+    ? (spec.layoutPresets ?? [])
+    : (spec.layoutPresets ?? []).map((preset) => ({
+        ...preset,
+        surfaces: placeCalendarAfterLibrary(preset.surfaces),
+      }));
 
   const surfacesChanged =
     surfaces.length !== spec.surfaces.length ||
@@ -374,9 +383,14 @@ function mapSurfaceDef(): SurfaceDef {
   );
 }
 
-function stripRetiredContextSurface(surfaceIds: string[]): string[] {
+function replaceRetiredContextSurface(
+  surfaceIds: string[],
+  seedMissingMap: boolean,
+): string[] {
+  const hadContext = surfaceIds.includes("context");
   const withoutContext = surfaceIds.filter((id) => id !== "context");
   if (withoutContext.includes("map")) return withoutContext;
+  if (!hadContext && !seedMissingMap) return withoutContext;
   const next = [...withoutContext];
   const libraryAt = next.indexOf("library");
   if (libraryAt >= 0) {
@@ -406,7 +420,7 @@ export function ensureMapSurfaceInSpec(spec: EnvironmentSpec): EnvironmentSpec {
 
   const layoutPresets = (spec.layoutPresets ?? []).map((preset) => ({
     ...preset,
-    surfaces: stripRetiredContextSurface(preset.surfaces),
+    surfaces: replaceRetiredContextSurface(preset.surfaces, !hasMap),
   }));
 
   const surfacesChanged =

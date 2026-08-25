@@ -15,7 +15,7 @@ use super::sdk::{client, sdk_error};
 pub async fn agents_list_runtimes(
     state: State<'_, DaemonState>,
 ) -> Result<AgentRuntimeListResponse, String> {
-    client(&state)
+    client(&state)?
         .agents()
         .list_runtimes()
         .await
@@ -27,7 +27,7 @@ pub async fn agents_create_session(
     state: State<'_, DaemonState>,
     request: CreateAgentSessionRequest,
 ) -> Result<CreateAgentSessionResponse, String> {
-    client(&state)
+    client(&state)?
         .agents()
         .create_session(&request)
         .await
@@ -40,7 +40,7 @@ pub async fn agents_prompt(
     agent_session_id: String,
     request: AgentSessionPromptRequest,
 ) -> Result<AgentSessionPromptResponse, String> {
-    client(&state)
+    client(&state)?
         .agents()
         .prompt(agent_session_id.trim(), &request)
         .await
@@ -53,7 +53,7 @@ pub async fn agents_set_config_option(
     agent_session_id: String,
     request: SetAgentSessionConfigOptionRequest,
 ) -> Result<SetAgentSessionConfigOptionResponse, String> {
-    client(&state)
+    client(&state)?
         .agents()
         .set_config_option(agent_session_id.trim(), &request)
         .await
@@ -65,7 +65,7 @@ pub async fn agents_cancel(
     state: State<'_, DaemonState>,
     agent_session_id: String,
 ) -> Result<CancelAgentSessionResponse, String> {
-    client(&state)
+    client(&state)?
         .agents()
         .cancel(agent_session_id.trim())
         .await
@@ -78,7 +78,7 @@ pub async fn agents_list_permission_requests(
     status: Option<String>,
     limit: Option<usize>,
 ) -> Result<AgentPermissionRequestListResponse, String> {
-    client(&state)
+    client(&state)?
         .agents()
         .list_permission_requests(status.as_deref(), limit)
         .await
@@ -92,7 +92,7 @@ pub async fn agents_approve_permission(
     resolved_by: Option<String>,
 ) -> Result<AgentPermissionResolveResponse, String> {
     let request = AgentPermissionResolveRequest { resolved_by };
-    client(&state)
+    client(&state)?
         .agents()
         .approve_permission(request_id.trim(), &request)
         .await
@@ -106,7 +106,7 @@ pub async fn agents_deny_permission(
     resolved_by: Option<String>,
 ) -> Result<AgentPermissionResolveResponse, String> {
     let request = AgentPermissionResolveRequest { resolved_by };
-    client(&state)
+    client(&state)?
         .agents()
         .deny_permission(request_id.trim(), &request)
         .await
@@ -119,7 +119,7 @@ pub async fn agents_list_secret_requests(
     status: Option<String>,
     limit: Option<usize>,
 ) -> Result<AgentSecretRequestListResponse, String> {
-    client(&state)
+    client(&state)?
         .agents()
         .list_secret_requests(status.as_deref(), limit)
         .await
@@ -134,7 +134,7 @@ pub async fn agents_fulfill_secret_request(
     resolved_by: Option<String>,
 ) -> Result<AgentSecretResolveResponse, String> {
     let request = AgentSecretFulfillRequest { value, resolved_by };
-    client(&state)
+    client(&state)?
         .agents()
         .fulfill_secret_request(request_id.trim(), &request)
         .await
@@ -148,7 +148,7 @@ pub async fn agents_deny_secret_request(
     resolved_by: Option<String>,
 ) -> Result<AgentSecretResolveResponse, String> {
     let request = AgentSecretDenyRequest { resolved_by };
-    client(&state)
+    client(&state)?
         .agents()
         .deny_secret_request(request_id.trim(), &request)
         .await

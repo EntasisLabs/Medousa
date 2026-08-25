@@ -1,15 +1,59 @@
 //! Multi-vault root registry (Phase 3).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 
-use anyhow::{Context, Result, bail};
+#[cfg(feature = "full-daemon")]
+use anyhow::Context;
+use anyhow::{Result, bail};
 
+use crate::store_root::StoreRoot;
+
+#[cfg(feature = "full-daemon")]
 use crate::load_product_config;
+#[cfg(feature = "full-daemon")]
 use crate::product_config::{VaultProductConfig, VaultRootEntry, save_product_config};
-use crate::vault::path::{VaultPath, vault_capability_for_root};
+#[cfg(feature = "full-daemon")]
+use crate::vault::path::VaultPath;
+#[cfg(feature = "full-daemon")]
+use crate::vault::path::vault_capability_for_root;
+#[cfg(feature = "full-daemon")]
 use crate::vault::store::vault_store;
 
 pub const DEFAULT_VAULT_ROOT_ID: &str = "personal";
+
+struct DeploymentVaultRoot {
+    path: PathBuf,
+    files: Arc<StoreRoot>,
+}
+
+static DEPLOYMENT_VAULT_ROOT: OnceLock<DeploymentVaultRoot> = OnceLock::new();
+
+/// Bind the daemon's default vault to a deployment-owned filesystem root.
+/// Embedded hosts call this during boot before the lazy vault store opens.
+pub fn configure_deployment_vault_root(root: PathBuf, files: Arc<StoreRoot>) -> Result<()> {
+    if let Some(existing) = DEPLOYMENT_VAULT_ROOT.get() {
+        if existing.path == root {
+            return Ok(());
+        }
+        bail!(
+            "vault root already configured for another daemon deployment: {}",
+            existing.path.display()
+        );
+    }
+    DEPLOYMENT_VAULT_ROOT
+        .set(DeploymentVaultRoot { path: root, files })
+        .map_err(|_| anyhow::anyhow!("vault root configuration raced"))
+}
+
+pub(crate) fn deployment_vault_capability(root: &Path) -> Option<Arc<StoreRoot>> {
+    let deployment = DEPLOYMENT_VAULT_ROOT.get()?;
+    (deployment.path == root).then(|| Arc::clone(&deployment.files))
+}
+
+pub fn deployment_vault_root_configured() -> bool {
+    DEPLOYMENT_VAULT_ROOT.get().is_some()
+}
 
 mod root_override {
     use std::cell::RefCell;
@@ -34,6 +78,7 @@ pub fn set_test_vault_root_override(path: Option<PathBuf>) {
     root_override::set(path);
 }
 
+#[cfg(feature = "full-daemon")]
 pub fn default_vault_roots() -> Vec<VaultRootEntry> {
     vec![VaultRootEntry {
         id: DEFAULT_VAULT_ROOT_ID.to_string(),
@@ -42,6 +87,7 @@ pub fn default_vault_roots() -> Vec<VaultRootEntry> {
     }]
 }
 
+#[cfg(feature = "full-daemon")]
 pub fn normalize_vault_config(vault: &VaultProductConfig) -> VaultProductConfig {
     let mut normalized = vault.clone();
     if normalized.roots.is_empty() {
@@ -62,6 +108,7 @@ pub fn normalize_vault_config(vault: &VaultProductConfig) -> VaultProductConfig 
     normalized
 }
 
+#[cfg(feature = "full-daemon")]
 pub fn resolve_root_path(entry: &VaultRootEntry) -> PathBuf {
     match entry
         .path
@@ -78,95 +125,142 @@ pub fn active_vault_root() -> PathBuf {
     if let Some(path) = root_override::get() {
         return path;
     }
-    let config = normalize_vault_config(&load_product_config().vault);
-    let entry = config
-        .roots
-        .iter()
-        .find(|root| root.id == config.active_root_id)
-        .cloned()
-        .unwrap_or_else(|| default_vault_roots().remove(0));
-    resolve_root_path(&entry)
+    if let Some(path) = DEPLOYMENT_VAULT_ROOT.get() {
+        return path.path.clone();
+    }
+    #[cfg(feature = "full-daemon")]
+    {
+        let config = normalize_vault_config(&load_product_config().vault);
+        let entry = config
+            .roots
+            .iter()
+            .find(|root| root.id == config.active_root_id)
+            .cloned()
+            .unwrap_or_else(|| default_vault_roots().remove(0));
+        resolve_root_path(&entry)
+    }
+    #[cfg(not(feature = "full-daemon"))]
+    panic!("embedded vault root must be configured before use")
 }
 
 pub fn list_vault_root_views() -> crate::daemon_api::VaultRootsResponse {
-    let config = normalize_vault_config(&load_product_config().vault);
-    let roots = config
-        .roots
-        .iter()
-        .map(|entry| {
-            let absolute = resolve_root_path(entry);
-            let is_default = entry
-                .path
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .is_none();
-            crate::daemon_api::VaultRootView {
-                id: entry.id.clone(),
-                label: entry.label.clone(),
-                path: absolute.display().to_string(),
-                is_default,
-                active: entry.id == config.active_root_id,
-                is_obsidian: vault_capability_for_root(absolute.clone())
-                    .and_then(|root| {
-                        root.is_dir(&VaultPath::internal(".obsidian")?)
-                            .map_err(Into::into)
-                    })
-                    .unwrap_or(false),
-            }
-        })
-        .collect();
-    crate::daemon_api::VaultRootsResponse {
-        active_root_id: config.active_root_id,
-        roots,
+    if let Some(path) = DEPLOYMENT_VAULT_ROOT.get() {
+        return crate::daemon_api::VaultRootsResponse {
+            active_root_id: DEFAULT_VAULT_ROOT_ID.to_string(),
+            roots: vec![crate::daemon_api::VaultRootView {
+                id: DEFAULT_VAULT_ROOT_ID.to_string(),
+                label: "Personal".to_string(),
+                path: path.path.display().to_string(),
+                is_default: true,
+                active: true,
+                is_obsidian: false,
+            }],
+        };
     }
+    #[cfg(feature = "full-daemon")]
+    {
+        let config = normalize_vault_config(&load_product_config().vault);
+        let roots = config
+            .roots
+            .iter()
+            .map(|entry| {
+                let absolute = resolve_root_path(entry);
+                let is_default = entry
+                    .path
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .is_none();
+                crate::daemon_api::VaultRootView {
+                    id: entry.id.clone(),
+                    label: entry.label.clone(),
+                    path: absolute.display().to_string(),
+                    is_default,
+                    active: entry.id == config.active_root_id,
+                    is_obsidian: vault_capability_for_root(absolute.clone())
+                        .and_then(|root| {
+                            root.is_dir(&VaultPath::internal(".obsidian")?)
+                                .map_err(Into::into)
+                        })
+                        .unwrap_or(false),
+                }
+            })
+            .collect();
+        crate::daemon_api::VaultRootsResponse {
+            active_root_id: config.active_root_id,
+            roots,
+        }
+    }
+    #[cfg(not(feature = "full-daemon"))]
+    unreachable!("embedded vault root must be configured before use")
 }
 
 /// True when the active vault root is an external (non-default) folder and/or Obsidian.
 pub fn active_root_skips_auto_workshop_tags() -> bool {
+    if DEPLOYMENT_VAULT_ROOT.get().is_some() {
+        return false;
+    }
+    #[cfg(feature = "full-daemon")]
     let config = normalize_vault_config(&load_product_config().vault);
+    #[cfg(feature = "full-daemon")]
     let entry = config
         .roots
         .iter()
         .find(|root| root.id == config.active_root_id)
         .cloned()
         .unwrap_or_else(|| default_vault_roots().remove(0));
+    #[cfg(feature = "full-daemon")]
     let is_external = entry
         .path
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .is_some();
+    #[cfg(feature = "full-daemon")]
     if is_external {
         return true;
     }
-    vault_capability_for_root(resolve_root_path(&entry))
+    #[cfg(feature = "full-daemon")]
+    return vault_capability_for_root(resolve_root_path(&entry))
         .and_then(|root| {
             root.is_dir(&VaultPath::internal(".obsidian")?)
                 .map_err(Into::into)
         })
-        .unwrap_or(false)
+        .unwrap_or(false);
+    #[cfg(not(feature = "full-daemon"))]
+    false
 }
 
 pub fn set_active_vault_root(root_id: &str) -> Result<crate::daemon_api::VaultRootsResponse> {
-    let trimmed = root_id.trim();
-    if trimmed.is_empty() {
-        bail!("root_id is required");
+    if DEPLOYMENT_VAULT_ROOT.get().is_some() {
+        if root_id.trim() == DEFAULT_VAULT_ROOT_ID {
+            return Ok(list_vault_root_views());
+        }
+        bail!("embedded deployment owns one app-sandbox vault root");
     }
+    #[cfg(not(feature = "full-daemon"))]
+    bail!("embedded vault root is not configured");
+    #[cfg(feature = "full-daemon")]
+    {
+        let trimmed = root_id.trim();
+        if trimmed.is_empty() {
+            bail!("root_id is required");
+        }
 
-    let mut product = load_product_config();
-    let vault = normalize_vault_config(&product.vault);
-    if !vault.roots.iter().any(|root| root.id == trimmed) {
-        bail!("vault root not found: {trimmed}");
+        let mut product = load_product_config();
+        let vault = normalize_vault_config(&product.vault);
+        if !vault.roots.iter().any(|root| root.id == trimmed) {
+            bail!("vault root not found: {trimmed}");
+        }
+
+        product.vault = vault;
+        product.vault.active_root_id = trimmed.to_string();
+        save_product_config(&product).context("save product config")?;
+        vault_store()
+            .refresh_from_disk()
+            .context("refresh vault after root switch")?;
+        Ok(list_vault_root_views())
     }
-
-    product.vault = vault;
-    product.vault.active_root_id = trimmed.to_string();
-    save_product_config(&product).context("save product config")?;
-    vault_store()
-        .refresh_from_disk()
-        .context("refresh vault after root switch")?;
-    Ok(list_vault_root_views())
 }
 
 pub fn add_vault_root(
@@ -174,36 +268,48 @@ pub fn add_vault_root(
     path: &str,
     id: Option<&str>,
 ) -> Result<crate::daemon_api::VaultRootsResponse> {
-    let trimmed_label = label.trim();
-    if trimmed_label.is_empty() {
-        bail!("label is required");
+    if DEPLOYMENT_VAULT_ROOT.get().is_some() {
+        bail!("embedded deployment cannot add an external vault root");
     }
-
-    let absolute = normalize_vault_root_path(path)?;
-    vault_capability_for_root(absolute.clone())
-        .with_context(|| format!("create vault root directory {}", absolute.display()))?;
-
-    let root_id = match id.map(str::trim).filter(|value| !value.is_empty()) {
-        Some(explicit) => validate_vault_root_id(explicit)?,
-        None => slugify_vault_root_id(trimmed_label),
-    };
-
-    let mut product = load_product_config();
-    let mut vault = normalize_vault_config(&product.vault);
-    if vault.roots.iter().any(|root| root.id == root_id) {
-        bail!("vault root id already exists: {root_id}");
+    #[cfg(not(feature = "full-daemon"))]
+    {
+        let _ = (label, path, id);
+        bail!("embedded vault root is not configured");
     }
+    #[cfg(feature = "full-daemon")]
+    {
+        let trimmed_label = label.trim();
+        if trimmed_label.is_empty() {
+            bail!("label is required");
+        }
 
-    vault.roots.push(VaultRootEntry {
-        id: root_id,
-        label: trimmed_label.to_string(),
-        path: Some(absolute.display().to_string()),
-    });
-    product.vault = vault;
-    save_product_config(&product).context("save product config")?;
-    Ok(list_vault_root_views())
+        let absolute = normalize_vault_root_path(path)?;
+        vault_capability_for_root(absolute.clone())
+            .with_context(|| format!("create vault root directory {}", absolute.display()))?;
+
+        let root_id = match id.map(str::trim).filter(|value| !value.is_empty()) {
+            Some(explicit) => validate_vault_root_id(explicit)?,
+            None => slugify_vault_root_id(trimmed_label),
+        };
+
+        let mut product = load_product_config();
+        let mut vault = normalize_vault_config(&product.vault);
+        if vault.roots.iter().any(|root| root.id == root_id) {
+            bail!("vault root id already exists: {root_id}");
+        }
+
+        vault.roots.push(VaultRootEntry {
+            id: root_id,
+            label: trimmed_label.to_string(),
+            path: Some(absolute.display().to_string()),
+        });
+        product.vault = vault;
+        save_product_config(&product).context("save product config")?;
+        Ok(list_vault_root_views())
+    }
 }
 
+#[cfg(feature = "full-daemon")]
 fn normalize_vault_root_path(raw: &str) -> Result<PathBuf> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -216,6 +322,7 @@ fn normalize_vault_root_path(raw: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
+#[cfg(feature = "full-daemon")]
 fn validate_vault_root_id(raw: &str) -> Result<String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -233,6 +340,7 @@ fn validate_vault_root_id(raw: &str) -> Result<String> {
     Ok(trimmed.to_string())
 }
 
+#[cfg(feature = "full-daemon")]
 fn slugify_vault_root_id(label: &str) -> String {
     let slug: String = label
         .chars()
@@ -256,7 +364,7 @@ fn slugify_vault_root_id(label: &str) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 mod tests {
     use super::*;
     use std::fs;

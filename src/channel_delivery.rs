@@ -9,38 +9,15 @@ use stasis::prelude::RuntimeComposition;
 use stasis::runtime_prelude_ext::{
     DeliveryProtocol, NewDeliveryEndpoint, SurrealDeliveryEndpointStore,
 };
-use surrealdb::Surreal;
-use surrealdb::engine::any::Any;
 
 use crate::session::{load_discord_bot_token, load_slack_bot_token, load_telegram_bot_token};
 
-const DELIVERY_SCHEMA_STATEMENTS: &[&str] = &[
-    "DEFINE TABLE delivery_endpoint SCHEMALESS",
-    "DEFINE TABLE endpoint_delivery_status SCHEMALESS",
-];
+pub use crate::turn_scope::ChannelDeliveryTarget;
 
 /// True when Surreal returns a missing-table error for runtime control-plane tables.
 pub fn is_missing_runtime_table_error(message: &str) -> bool {
     let lowered = message.to_ascii_lowercase();
     lowered.contains("the table '") && lowered.contains("does not exist")
-}
-
-/// Ensure delivery control-plane tables exist on Surreal backends.
-pub async fn ensure_surreal_delivery_schema(db: &Surreal<Any>) -> Result<()> {
-    for statement in DELIVERY_SCHEMA_STATEMENTS {
-        if let Err(err) = db.query(*statement).await {
-            let text = err.to_string();
-            if text.contains("already exists")
-                || text.contains("already defined")
-                || text.contains("Overwrite index")
-            {
-                continue;
-            }
-            return Err(anyhow!("delivery schema bootstrap ({statement}): {text}"));
-        }
-    }
-
-    Ok(())
 }
 
 pub const INTERNAL_OUTBOX_ENDPOINT_ID: &str = "medousa.internal.outbox";
@@ -123,52 +100,6 @@ pub fn delivery_target_from_interactive_turn(
         session_id,
         turn_id,
     )
-}
-
-/// Where to deliver a completed ingest job (keyed by `job_id` in the daemon).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChannelDeliveryTarget {
-    pub channel: String,
-    pub user_id: String,
-    pub channel_id: String,
-    pub session_id: String,
-    pub stream_id: Option<String>,
-}
-
-impl ChannelDeliveryTarget {
-    /// Construct a target from already-resolved channel identity. Resolution
-    /// and policy remain explicit at the call site.
-    pub fn new(
-        channel: impl Into<String>,
-        user_id: impl Into<String>,
-        channel_id: impl Into<String>,
-        session_id: impl Into<String>,
-        stream_id: Option<String>,
-    ) -> Self {
-        Self {
-            channel: channel.into(),
-            user_id: user_id.into(),
-            channel_id: channel_id.into(),
-            session_id: session_id.into(),
-            stream_id,
-        }
-    }
-
-    pub fn interactive(
-        channel: impl Into<String>,
-        user_id: impl Into<String>,
-        channel_id: impl Into<String>,
-        session_id: impl Into<String>,
-        turn_id: impl Into<String>,
-    ) -> Self {
-        Self::new(
-            channel,
-            user_id,
-            channel_id,
-            session_id,
-            Some(turn_id.into()),
-        )
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -302,10 +233,6 @@ pub async fn seed_internal_outbox_endpoint_for_runtime(
             }
             RuntimeComposition::Surreal(rt) => {
                 let db = rt.job_store.db();
-                timed_step("delivery_endpoint schema", || async {
-                    ensure_surreal_delivery_schema(&db).await
-                })
-                .await?;
                 Arc::new(SurrealDeliveryEndpointStore::new(db))
             }
         },

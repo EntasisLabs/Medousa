@@ -46,36 +46,61 @@ export class AutomationsStore {
   runsById = $state<Record<string, RecurringRunEntry[]>>({});
   runsLoadingId = $state<string | null>(null);
   runsErrorById = $state<Record<string, string>>({});
+  private workshopEpoch = 0;
+
+  resetForWorkshopSwitch() {
+    this.workshopEpoch += 1;
+    this.definitions = [];
+    this.loading = false;
+    this.error = null;
+    this.registerMessage = null;
+    this.registering = false;
+    this.updatingId = null;
+    this.deletingId = null;
+    this.runsById = {};
+    this.runsLoadingId = null;
+    this.runsErrorById = {};
+  }
 
   async refresh(enabledOnly = false) {
+    const workshopEpoch = this.workshopEpoch;
     this.loading = true;
     try {
       const response = await listRecurring(enabledOnly);
+      if (workshopEpoch !== this.workshopEpoch) return;
       this.definitions = response.recurring;
       this.error = null;
     } catch (err) {
+      if (workshopEpoch !== this.workshopEpoch) return;
       if (this.definitions.length === 0) {
         this.error = formatDaemonErrorSummary(err);
       }
     } finally {
-      this.loading = false;
+      if (workshopEpoch === this.workshopEpoch) {
+        this.loading = false;
+      }
     }
   }
 
   async loadRuns(recurringId: string, limit = 20) {
+    const workshopEpoch = this.workshopEpoch;
     this.runsLoadingId = recurringId;
     try {
       const response = await listRecurringRuns(recurringId, limit);
+      if (workshopEpoch !== this.workshopEpoch) return;
       this.runsById = { ...this.runsById, [recurringId]: response.runs };
       const { [recurringId]: _removed, ...rest } = this.runsErrorById;
       this.runsErrorById = rest;
     } catch (err) {
+      if (workshopEpoch !== this.workshopEpoch) return;
       this.runsErrorById = {
         ...this.runsErrorById,
         [recurringId]: err instanceof Error ? err.message : String(err),
       };
     } finally {
-      this.runsLoadingId = null;
+      if (workshopEpoch === this.workshopEpoch) {
+        this.runsLoadingId = null;
+      }
     }
   }
 
@@ -174,6 +199,7 @@ export class AutomationsStore {
   }
 
   async register(request: RegisterRecurringRequest) {
+    const workshopEpoch = this.workshopEpoch;
     this.registering = true;
     this.registerMessage = null;
     try {
@@ -195,24 +221,30 @@ export class AutomationsStore {
         queue: "default",
         delivery,
       });
+      if (workshopEpoch !== this.workshopEpoch) return response;
       this.registerMessage = `Scheduled · next ${this.formatNextRun(response.next_run_at_utc)}`;
       await this.refresh();
       return response;
     } catch (err) {
+      if (workshopEpoch !== this.workshopEpoch) throw err;
       this.registerMessage = err instanceof Error ? err.message : String(err);
       throw err;
     } finally {
-      this.registering = false;
+      if (workshopEpoch === this.workshopEpoch) {
+        this.registering = false;
+      }
     }
   }
 
   async setEnabled(recurringId: string, enabled: boolean) {
+    const workshopEpoch = this.workshopEpoch;
     this.updatingId = recurringId;
     try {
       await updateRecurring(recurringId, { enabled });
+      if (workshopEpoch !== this.workshopEpoch) return;
       await this.refresh();
     } finally {
-      this.updatingId = null;
+      if (workshopEpoch === this.workshopEpoch) this.updatingId = null;
     }
   }
 
@@ -221,14 +253,17 @@ export class AutomationsStore {
     mode: AutomationDeliveryMode,
     telegramChatId?: string,
   ) {
+    const workshopEpoch = this.workshopEpoch;
     this.updatingId = recurringId;
     try {
       const delivery = this.buildDeliveryPayload(mode, telegramChatId);
       await updateRecurring(recurringId, { delivery });
+      if (workshopEpoch !== this.workshopEpoch) return;
       await this.refresh();
+      if (workshopEpoch !== this.workshopEpoch) return;
       await getRecurringDelivery(recurringId);
     } finally {
-      this.updatingId = null;
+      if (workshopEpoch === this.workshopEpoch) this.updatingId = null;
     }
   }
 
@@ -236,24 +271,29 @@ export class AutomationsStore {
     recurringId: string,
     patch: Pick<UpdateRecurringRequest, "cron_expr" | "timezone" | "display_name">,
   ) {
+    const workshopEpoch = this.workshopEpoch;
     this.updatingId = recurringId;
     try {
       await updateRecurring(recurringId, patch);
+      if (workshopEpoch !== this.workshopEpoch) return;
       await this.refresh();
     } finally {
-      this.updatingId = null;
+      if (workshopEpoch === this.workshopEpoch) this.updatingId = null;
     }
   }
 
   async remove(recurringId: string) {
+    const workshopEpoch = this.workshopEpoch;
     this.deletingId = recurringId;
     try {
       await deleteRecurring(recurringId);
+      if (workshopEpoch !== this.workshopEpoch) return;
       await this.refresh();
+      if (workshopEpoch !== this.workshopEpoch) return;
       const { [recurringId]: _runs, ...restRuns } = this.runsById;
       this.runsById = restRuns;
     } finally {
-      this.deletingId = null;
+      if (workshopEpoch === this.workshopEpoch) this.deletingId = null;
     }
   }
 }

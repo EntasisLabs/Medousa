@@ -1,10 +1,12 @@
 //! Grapheme script index records.
 
 use chrono::{DateTime, Utc};
+#[cfg(feature = "full-daemon")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "full-daemon", derive(JsonSchema))]
 pub struct GraphemeScriptEntry {
     pub id: String,
     pub name: String,

@@ -5,6 +5,7 @@ import {
   scanExternalRoot,
 } from "$lib/utils/externalDeskApi";
 import { guessMimeFromPath } from "$lib/utils/vaultAttachments";
+import { randomUuid } from "$lib/utils/randomUuid";
 import {
   isCoLocatedWorkshop,
   vaultPinFolderRemoteHint,
@@ -112,7 +113,7 @@ export class ExternalDeskStore {
       return false;
     }
     const root: PinnedRoot = {
-      id: crypto.randomUUID(),
+      id: randomUuid(),
       path,
       label: rootLabelFromPath(path),
     };

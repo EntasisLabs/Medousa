@@ -22,7 +22,7 @@ pub async fn component_runtime_append_events(
     if component_id.is_empty() {
         return Err("component_id is required".to_string());
     }
-    client(&state)
+    client(&state)?
         .components()
         .runtime_append_events(component_id, &request)
         .await
@@ -41,7 +41,7 @@ pub async fn component_runtime_tail_events(
         return Err("component_id is required".to_string());
     }
 
-    client(&state)
+    client(&state)?
         .components()
         .runtime_tail_events(
             component_id,
@@ -64,7 +64,7 @@ pub async fn component_runtime_complete_probe(
     if component_id.is_empty() || probe_id.is_empty() {
         return Err("component_id and probe_id are required".to_string());
     }
-    client(&state)
+    client(&state)?
         .components()
         .runtime_complete_probe(component_id, probe_id, &result)
         .await

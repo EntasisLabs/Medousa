@@ -6,6 +6,8 @@ pub enum SdkError {
     Http(String),
     #[error("serialization error: {0}")]
     Serde(String),
+    #[error("compatibility error: {0}")]
+    Compatibility(String),
     #[error("transport error: {0}")]
     Transport(String),
 }

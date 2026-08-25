@@ -1,11 +1,15 @@
 //! Authenticated request identity produced once at the daemon boundary.
 
-use std::net::IpAddr;
 use std::sync::Arc;
 
+#[cfg(feature = "full-daemon")]
 use axum::http::HeaderMap;
+#[cfg(feature = "full-daemon")]
+use std::net::IpAddr;
 
+#[cfg(feature = "full-daemon")]
 use crate::pairing::store::{PairedDeviceRecord, PairingRole};
+#[cfg(feature = "full-daemon")]
 use crate::shared_mode::root_profile_id;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,6 +32,7 @@ pub enum TransportClass {
 }
 
 impl TransportClass {
+    #[cfg(feature = "full-daemon")]
     pub fn from_request(ip: IpAddr, headers: &HeaderMap) -> Self {
         if crate::remote_trust::transport_is_iroh(headers) {
             Self::Iroh
@@ -123,6 +128,7 @@ impl CapabilitySet {
             .with(Capability::AdminExecute)
     }
 
+    #[cfg(feature = "full-daemon")]
     const fn peer() -> Self {
         Self::empty().with(Capability::PeerExchange)
     }
@@ -207,6 +213,7 @@ impl RequestPrincipal {
         }
     }
 
+    #[cfg(feature = "full-daemon")]
     pub fn from_pairing_record(
         record: PairedDeviceRecord,
         transport: TransportClass,
@@ -257,6 +264,7 @@ impl RequestPrincipal {
     }
 }
 
+#[cfg(feature = "full-daemon")]
 fn is_root_portal(record: &PairedDeviceRecord) -> bool {
     record.role.allows_full_portal()
         && record
@@ -266,7 +274,7 @@ fn is_root_portal(record: &PairedDeviceRecord) -> bool {
             .is_some_and(|id| id == root_profile_id())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 mod tests {
     use chrono::Utc;
 

@@ -9,7 +9,7 @@ use grapheme_sdk::{GraphemeEngine, GraphemeRuntimeSession, GraphemeSdkError};
 use tokio::sync::Mutex;
 
 use crate::capability_catalog::{grapheme_allowed_modules, set_grapheme_allowed_modules};
-use crate::tools::extract_module_ops_from_source;
+use crate::grapheme_source::extract_module_ops_from_source;
 
 pub use medousa_types::grapheme_extras::*;
 
@@ -22,10 +22,10 @@ struct WorkshopGraphemeSession {
 
 fn workshop_session() -> &'static Mutex<WorkshopGraphemeSession> {
     WORKSHOP_SESSION.get_or_init(|| {
-        let engine = crate::grapheme_medousa_bridge::configure_grapheme_engine_builder(
-            GraphemeEngine::builder(),
-        )
-        .build();
+        let builder = GraphemeEngine::builder();
+        #[cfg(feature = "full-daemon")]
+        let builder = crate::grapheme_medousa_bridge::configure_grapheme_engine_builder(builder);
+        let engine = builder.build();
         let session = engine.runtime_session();
         Mutex::new(WorkshopGraphemeSession { engine, session })
     })
@@ -89,7 +89,7 @@ pub fn save_script(
     )
     .map_err(|err| err.to_string())?;
     Ok(GraphemeScriptSaveResponse {
-        script: crate::grapheme_handlers::script_entry_dto(entry),
+        script: crate::grapheme_api::script_entry_dto(entry),
     })
 }
 
@@ -111,7 +111,7 @@ pub fn rename_script(script_id: &str, name: &str) -> Result<GraphemeScriptSaveRe
     let entry = crate::grapheme_script::service::GraphemeScriptService::rename(script_id, name)
         .map_err(|err| err.to_string())?;
     Ok(GraphemeScriptSaveResponse {
-        script: crate::grapheme_handlers::script_entry_dto(entry),
+        script: crate::grapheme_api::script_entry_dto(entry),
     })
 }
 

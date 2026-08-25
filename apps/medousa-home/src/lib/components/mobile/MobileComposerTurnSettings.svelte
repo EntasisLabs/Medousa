@@ -6,7 +6,7 @@
   import { runtime } from "$lib/stores/runtime.svelte";
   import { voicePresets } from "$lib/stores/voicePresets.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
-  import { loadTuiDefaultsSummary } from "$lib/config";
+  import { getEngineTuiDefaults } from "$lib/daemon";
   import { isTauriMobilePlatform } from "$lib/platform";
   import { modelPickKey } from "$lib/utils/formatModelDisplay";
   import {
@@ -108,19 +108,23 @@
         probeProviders(),
         isTauriMobilePlatform()
           ? Promise.resolve(null)
-          : loadTuiDefaultsSummary().catch(() => null),
+          : getEngineTuiDefaults().catch(() => null),
       ]);
       let favorites = normalizeFavoriteModels(summary?.favoriteModels);
       if (workshopDefaults.loaded) {
         favorites = workshopDefaults.favoriteModels();
       }
       catalogSnapshot = catalog;
-      options = buildMobileModelDropdownOptions(
+      const modelOptions = buildMobileModelDropdownOptions(
         catalog,
         probe,
         runtime.provider,
         runtime.model,
         favorites,
+      );
+      const availableProviders = new Set(catalog.providers.map((entry) => entry.id));
+      options = modelOptions.filter(
+        (option) => option.key === activeKey || availableProviders.has(option.provider),
       );
     } catch {
       options = [];

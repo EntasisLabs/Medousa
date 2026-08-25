@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -12,7 +11,7 @@ use uuid::Uuid;
 
 use crate::request_principal::RequestPrincipal;
 use crate::session_storage::SessionId;
-use crate::turn_continuation::TurnContinuationScope;
+use crate::turn_scope::TurnContinuationScope;
 
 /// Daemon-issued identity for one live turn generation.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -329,6 +328,7 @@ struct RegistryState {
 struct RegistryInner {
     max_live: usize,
     state: Mutex<RegistryState>,
+    changed: tokio::sync::Notify,
 }
 
 /// Bounded registry for live execution owners. Locks never cross an await.
@@ -347,6 +347,7 @@ impl TurnExecutionRegistry {
                     live: HashMap::with_capacity(max_live),
                     high_water: 0,
                 }),
+                changed: tokio::sync::Notify::new(),
             }),
         }
     }
@@ -422,6 +423,48 @@ impl TurnExecutionRegistry {
         }
     }
 
+    /// Cancel every execution currently owned by this daemon deployment.
+    ///
+    /// Mobile lifecycle hosts use this at suspension boundaries. The exact
+    /// leases remain registered until their foreground tasks unwind.
+    pub fn cancel_all(&self) -> usize {
+        let contexts = self
+            .inner
+            .state
+            .lock()
+            .expect("turn registry poisoned")
+            .live
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        let cancelled = contexts.len();
+        for context in contexts {
+            context.cancellation().cancel();
+        }
+        cancelled
+    }
+
+    /// Wait for every exact execution lease to leave the registry.
+    ///
+    /// Suspension callers cancel first, then use this bounded wait to let the
+    /// normal turn owner publish its one terminal event and release its lease.
+    pub async fn wait_for_idle(&self, timeout: std::time::Duration) -> bool {
+        if self.live_count() == 0 {
+            return true;
+        }
+        tokio::time::timeout(timeout, async {
+            loop {
+                let changed = self.inner.changed.notified();
+                if self.live_count() == 0 {
+                    break;
+                }
+                changed.await;
+            }
+        })
+        .await
+        .is_ok()
+    }
+
     fn remove_exact(&self, handle: TurnHandle, expected: &Arc<TurnExecutionContext>) {
         let mut state = self.inner.state.lock().expect("turn registry poisoned");
         if state
@@ -430,6 +473,8 @@ impl TurnExecutionRegistry {
             .is_some_and(|current| Arc::ptr_eq(current, expected))
         {
             state.live.remove(&handle);
+            drop(state);
+            self.inner.changed.notify_waiters();
         }
     }
 }
@@ -460,12 +505,6 @@ impl Drop for TurnExecutionLease {
     }
 }
 
-tokio::task_local! {
-    static ACTIVE_TURN_CONTEXT: Arc<TurnExecutionContext>;
-}
-
-static MISSING_TURN_CONTEXT_INVOCATIONS: AtomicU64 = AtomicU64::new(0);
-
 /// Zero-sized compatibility token for tools whose upstream trait cannot yet
 /// accept a typed invocation context. It carries no mutable fallback state.
 #[derive(Clone, Debug, Default)]
@@ -474,7 +513,7 @@ pub struct TurnScopeAccess {
     test_scope: Option<Arc<TurnContinuationScope>>,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 impl TurnScopeAccess {
     pub(crate) fn for_test(scope: TurnContinuationScope) -> Self {
         Self {
@@ -490,59 +529,25 @@ pub async fn with_turn_execution_context<F>(
 where
     F: Future,
 {
-    ACTIVE_TURN_CONTEXT.scope(context, future).await
+    let boundary = Arc::new(
+        medousa_runtime::TurnExecutionBoundary::new(
+            context.cancellation().clone(),
+            context.deadline(),
+        )
+        .with_host_context(context),
+    );
+    medousa_runtime::with_turn_execution_boundary(boundary, future).await
 }
 
 pub fn active_turn_execution_context() -> Option<Arc<TurnExecutionContext>> {
-    ACTIVE_TURN_CONTEXT.try_with(Arc::clone).ok()
+    medousa_runtime::active_turn_execution_boundary()?.host_context::<TurnExecutionContext>()
 }
 
 pub fn missing_turn_context_invocations() -> u64 {
-    MISSING_TURN_CONTEXT_INVOCATIONS.load(Ordering::Relaxed)
+    medousa_runtime::missing_turn_execution_boundary_invocations()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TurnExecutionBoundaryError {
-    MissingContext,
-    Cancelled,
-    DeadlineExceeded,
-}
-
-impl fmt::Display for TurnExecutionBoundaryError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::MissingContext => formatter.write_str("turn execution context is missing"),
-            Self::Cancelled => formatter.write_str("turn cancelled"),
-            Self::DeadlineExceeded => formatter.write_str("turn execution deadline exceeded"),
-        }
-    }
-}
-
-impl std::error::Error for TurnExecutionBoundaryError {}
-
-/// Await one provider/tool leaf under the active turn's cancellation root and
-/// absolute deadline. An unscoped leaf fails closed before it is polled.
-pub async fn await_turn_boundary<F, T>(future: F) -> Result<T, TurnExecutionBoundaryError>
-where
-    F: Future<Output = T>,
-{
-    let Some(context) = active_turn_execution_context() else {
-        MISSING_TURN_CONTEXT_INVOCATIONS.fetch_add(1, Ordering::Relaxed);
-        return Err(TurnExecutionBoundaryError::MissingContext);
-    };
-    let cancellation = context.cancellation().clone();
-    let deadline = tokio::time::Instant::from_std(context.deadline());
-    tokio::pin!(future);
-    tokio::select! {
-        biased;
-        () = cancellation.cancelled() => Err(TurnExecutionBoundaryError::Cancelled),
-        () = tokio::time::sleep_until(deadline) => {
-            cancellation.cancel();
-            Err(TurnExecutionBoundaryError::DeadlineExceeded)
-        }
-        output = &mut future => Ok(output),
-    }
-}
+pub use medousa_runtime::{TurnExecutionBoundaryError, await_turn_boundary};
 
 /// Compatibility read for tools whose upstream trait cannot yet accept context.
 /// The marker carries no fallback: an unscoped invocation fails closed.
@@ -560,6 +565,7 @@ pub async fn turn_continuation_scope(access: &TurnScopeAccess) -> Option<TurnCon
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::Ordering;
     use std::time::Duration;
 
     use super::*;
@@ -664,6 +670,27 @@ mod tests {
         drop(first);
         assert_eq!(registry.live_count(), 0);
         assert!(registry.admit(context("session-b", "provider-b")).is_ok());
+    }
+
+    #[tokio::test]
+    async fn bounded_idle_wait_observes_exact_lease_release() {
+        let registry = TurnExecutionRegistry::new(1);
+        let lease = registry.admit(context("session-a", "provider-a")).unwrap();
+        let waiting = {
+            let registry = registry.clone();
+            tokio::spawn(async move { registry.wait_for_idle(Duration::from_secs(1)).await })
+        };
+        let second_waiting = {
+            let registry = registry.clone();
+            tokio::spawn(async move { registry.wait_for_idle(Duration::from_secs(1)).await })
+        };
+
+        tokio::task::yield_now().await;
+        drop(lease);
+
+        assert!(waiting.await.expect("idle waiter"));
+        assert!(second_waiting.await.expect("second idle waiter"));
+        assert_eq!(registry.live_count(), 0);
     }
 
     #[test]

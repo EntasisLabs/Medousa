@@ -18,7 +18,11 @@ import { setProfileSwitchPorts } from "./profileSwitchPorts";
 import { setWorkshopSwitchPorts } from "./workshopSwitchPorts";
 import { setWorkspaceChatPort } from "./workspaceChatPort";
 import { setWorkCardHideAfterHoursPort } from "./workCardHideAfterHoursPort";
-import { reconnectWorkshop } from "$lib/workshopConnection";
+import {
+  activateWorkshopScope,
+  prepareForWorkshopSwitch,
+  reconnectWorkshop,
+} from "$lib/workshopConnection";
 import {
   applyNativeMobileShellLayout,
   isTauri,
@@ -66,6 +70,8 @@ export function startShellRootResources(): () => void {
       const { vault } = await import("$lib/stores/vault.svelte");
       return vault.flushBeforeLeave();
     },
+    prepareForWorkshopSwitch,
+    activateWorkshopScope,
     hasLiveInteractiveTurn: () => chat.hasLiveInteractiveTurn(),
     chatSessionId: () => chat.sessionId,
     chatHasSession: (sessionId) =>
@@ -139,10 +145,7 @@ export function startShellRootResources(): () => void {
         void workshops
           .joinFromPairLink(pairUrl)
           .then((result) => {
-            toast.show(`Connected to ${result.workshopPeerName}`);
-            if (result.workshopId) {
-              void workshops.selectWorkshop(result.workshopId);
-            }
+            toast.show(`Paired with ${result.workshopPeerName}`);
           })
           .catch((err) => {
             toast.show(err instanceof Error ? err.message : String(err), {

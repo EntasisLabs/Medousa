@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use crate::{
+    grapheme_source::extract_module_ops_from_source,
     settings_guard::{invalid_module_ids, parse_allowed_modules},
-    tools::extract_module_ops_from_source,
 };
 
 #[derive(Debug, Clone)]

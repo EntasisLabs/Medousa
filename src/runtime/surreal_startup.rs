@@ -1,14 +1,89 @@
 //! Surreal daemon startup step runner — labels, timeouts, and real errors only.
 
 use std::future::Future;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use stasis::prelude::RuntimeBackend;
 use surrealdb::Surreal;
 use surrealdb::engine::any::Any;
 use tokio::time::timeout;
 
 const DEFAULT_STEP_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Bytes before `?` so filesystem operations do not treat SurrealKV engine
+/// settings as part of the database path.
+pub fn surrealkv_filesystem_path(path: &str) -> &str {
+    path.split_once('?')
+        .map(|(prefix, _)| prefix)
+        .unwrap_or(path)
+}
+
+/// Prepare a persistent runtime backend before Stasis opens it.
+pub fn ensure_runtime_backend_prerequisites(backend: &RuntimeBackend) -> Result<()> {
+    if let RuntimeBackend::SurrealKv { path, .. } = backend {
+        let path_buf = PathBuf::from(surrealkv_filesystem_path(path));
+        if let Some(parent) = path_buf.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "failed to create SurrealKV runtime directory {}",
+                    parent.display()
+                )
+            })?;
+        }
+
+        clear_stale_surrealkv_lock(backend)?;
+    }
+
+    Ok(())
+}
+
+/// Remove a leftover SurrealKV `LOCK` file before opening the database.
+pub fn clear_stale_surrealkv_lock(backend: &RuntimeBackend) -> Result<()> {
+    let Some(lock_path) = surrealkv_lock_path(backend) else {
+        return Ok(());
+    };
+    if !lock_path.exists() {
+        return Ok(());
+    }
+
+    std::fs::remove_file(&lock_path).with_context(|| {
+        format!(
+            "failed to remove stale SurrealKV lock at {} — another medousa_daemon may be running. \
+             Stop it before retrying, or remove the lock manually if no daemon is running.",
+            lock_path.display()
+        )
+    })
+}
+
+/// Path to the SurrealKV lock file for diagnostics (`None` for non-KV backends).
+pub fn surrealkv_lock_path(backend: &RuntimeBackend) -> Option<PathBuf> {
+    match backend {
+        RuntimeBackend::SurrealKv { path, .. } => {
+            Some(PathBuf::from(surrealkv_filesystem_path(path)).join("LOCK"))
+        }
+        _ => None,
+    }
+}
+
+/// Remove the SurrealKV lock file during graceful shutdown.
+pub fn remove_surrealkv_lock(backend: &RuntimeBackend) {
+    let Some(lock_path) = surrealkv_lock_path(backend) else {
+        return;
+    };
+    if lock_path.exists()
+        && let Err(err) = std::fs::remove_file(&lock_path)
+    {
+        tracing::warn!(
+            path = %lock_path.display(),
+            error = %err,
+            "failed to remove SurrealKV lock file during shutdown"
+        );
+    }
+}
 
 fn resolve_step_timeout() -> Duration {
     std::env::var("MEDOUSA_SURREAL_STEP_TIMEOUT_SECS")
@@ -87,7 +162,7 @@ pub async fn verify_surreal_responsive(db: &Surreal<Any>) -> Result<()> {
     .await
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -134,5 +209,28 @@ mod tests {
         .expect("step should succeed");
         assert_eq!(value, 7);
         assert_eq!(CALLS.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[cfg(test)]
+mod backend_tests {
+    use super::*;
+
+    #[test]
+    fn persistent_prerequisites_strip_query_and_clear_stale_lock() {
+        let sandbox = tempfile::tempdir().expect("sandbox");
+        let database = sandbox.path().join("runtime.surrealkv");
+        std::fs::create_dir_all(&database).expect("database directory");
+        std::fs::write(database.join("LOCK"), b"stale").expect("stale lock");
+        let backend = RuntimeBackend::surreal_kv(
+            format!("{}?surrealkv_max_memtable_size=1048576", database.display()),
+            "medousa",
+            "runtime",
+        );
+
+        ensure_runtime_backend_prerequisites(&backend).expect("runtime prerequisites");
+
+        assert_eq!(surrealkv_lock_path(&backend), Some(database.join("LOCK")));
+        assert!(!database.join("LOCK").exists());
     }
 }

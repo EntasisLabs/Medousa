@@ -2,6 +2,29 @@
 
 use std::collections::HashSet;
 
+/// Compile/deployment ceiling for the first mobile daemon foreground turn.
+///
+/// This list filters the daemon's existing tool registry. It neither registers
+/// alternate implementations nor grants a Stasis capability or admits work.
+/// The deployed daemon remains responsible for applying the authenticated
+/// turn's narrower runtime policy.
+pub const MOBILE_FOREGROUND_TOOL_CEILING: &[&str] = &[
+    "cognition_grapheme_run",
+    "cognition_memory_mutate",
+    "cognition_memory_query",
+    "cognition_turn",
+    "cognition_utility_day_of_week",
+    "cognition_utility_time_now",
+    "cognition_utility_uuid",
+];
+
+pub fn mobile_foreground_tool_ceiling() -> HashSet<String> {
+    MOBILE_FOREGROUND_TOOL_CEILING
+        .iter()
+        .map(|name| (*name).to_string())
+        .collect()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TurnWorkerIntent {
     MemoryAvecCalibrate,
@@ -330,5 +353,33 @@ mod tests {
         assert!(names.contains("cognition_component_create"));
         assert!(names.contains("cognition_turn"));
         assert!(names.contains("cognition_tools_discover"));
+    }
+
+    #[test]
+    fn mobile_ceiling_is_small_and_contains_only_existing_daemon_tools() {
+        let names = mobile_foreground_tool_ceiling();
+        assert_eq!(names.len(), MOBILE_FOREGROUND_TOOL_CEILING.len());
+        for required in [
+            "cognition_grapheme_run",
+            "cognition_memory_query",
+            "cognition_memory_mutate",
+            "cognition_turn",
+        ] {
+            assert!(
+                names.contains(required),
+                "mobile ceiling missing {required}"
+            );
+        }
+        for host_only in [
+            "cognition_shell_run",
+            "cognition_browser_act",
+            "cognition_workshop_mutate",
+            "cognition_job_enqueue",
+        ] {
+            assert!(
+                !names.contains(host_only),
+                "host-only tool leaked into mobile ceiling: {host_only}"
+            );
+        }
     }
 }

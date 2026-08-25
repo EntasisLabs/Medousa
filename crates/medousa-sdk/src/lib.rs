@@ -21,7 +21,6 @@ mod components;
 mod environment;
 #[cfg(feature = "async")]
 mod feeds;
-#[cfg(feature = "async")]
 mod health;
 #[cfg(feature = "async")]
 mod http;
@@ -59,6 +58,7 @@ pub mod blocking;
 pub use client::MedousaClient;
 pub use error::SdkError;
 pub use generated::ops as operations;
+pub use medousa_types::DAEMON_API_CONTRACT_REVISION;
 pub use transport::{HttpTransport, Transport, path_with_query};
 
 #[cfg(feature = "async")]

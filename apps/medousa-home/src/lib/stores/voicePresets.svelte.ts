@@ -11,14 +11,20 @@ import {
 } from "$lib/types/voicePresets";
 import { isTauriMobilePlatform } from "$lib/platform";
 import { isTauri } from "$lib/window";
+import { workshopScopedStorageKey } from "$lib/utils/workshopLocality";
 
 const MOBILE_ACTIVE_VOICE_KEY = "medousa.activeVoiceId";
+
+function mobileActiveVoiceKey(): string {
+  return workshopScopedStorageKey(MOBILE_ACTIVE_VOICE_KEY);
+}
 
 export class VoicePresetsStore {
   activeVoiceId = $state(DEFAULT_VOICE_ID);
   customPresets = $state<VoicePreset[]>([]);
   loaded = $state(false);
   saving = $state(false);
+  private loadEpoch = 0;
 
   allPresets = $derived(allVoicePresets(this.customPresets));
 
@@ -30,8 +36,10 @@ export class VoicePresetsStore {
 
   async load(force = false) {
     if (!isTauri() || (this.loaded && !force)) return;
+    const loadEpoch = ++this.loadEpoch;
     try {
       const summary = await loadTuiDefaultsSummary();
+      if (loadEpoch !== this.loadEpoch) return;
       this.applyFromDraft({
         activeVoiceId: summary.activeVoiceId,
         customVoicePresets: summary.customVoicePresets,
@@ -39,14 +47,17 @@ export class VoicePresetsStore {
       if (isTauriMobilePlatform()) {
         const stored =
           typeof localStorage !== "undefined"
-            ? localStorage.getItem(MOBILE_ACTIVE_VOICE_KEY)?.trim()
+            ? localStorage.getItem(mobileActiveVoiceKey())?.trim()
             : null;
         if (stored) this.activeVoiceId = stored;
       }
     } catch {
+      if (loadEpoch !== this.loadEpoch) return;
       // Keep built-in default when offline.
     }
-    this.loaded = true;
+    if (loadEpoch === this.loadEpoch) {
+      this.loaded = true;
+    }
   }
 
   applyFromDraft(draft: {
@@ -62,7 +73,7 @@ export class VoicePresetsStore {
     if (preset.id === this.activeVoiceId) return;
     this.activeVoiceId = preset.id;
     if (isTauriMobilePlatform() && typeof localStorage !== "undefined") {
-      localStorage.setItem(MOBILE_ACTIVE_VOICE_KEY, preset.id);
+      localStorage.setItem(mobileActiveVoiceKey(), preset.id);
     }
     await this.persistActiveVoice();
   }
@@ -86,6 +97,14 @@ export class VoicePresetsStore {
     } finally {
       this.saving = false;
     }
+  }
+
+  resetForWorkshopSwitch() {
+    this.loadEpoch += 1;
+    this.activeVoiceId = DEFAULT_VOICE_ID;
+    this.customPresets = [];
+    this.loaded = false;
+    this.saving = false;
   }
 }
 

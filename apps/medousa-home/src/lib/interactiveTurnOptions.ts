@@ -10,8 +10,7 @@ export function buildInteractiveTurnOptions(): InteractiveTurnOptions {
     responseDepthMode: runtime.depthMode,
     reasoningEffort: runtime.reasoningEffort,
     channelSurface,
-    identityUserId:
-      userProfiles.activeProfileId ?? userProfiles.resolvedUserId ?? undefined,
+    identityUserId: userProfiles.turnIdentityUserId(),
   };
 
   // Companion shells load runtime from the workshop daemon — pass explicit routing so

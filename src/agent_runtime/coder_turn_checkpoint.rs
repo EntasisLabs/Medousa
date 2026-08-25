@@ -24,7 +24,6 @@ use once_cell::sync::{Lazy, OnceCell};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
-use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 
 use crate::persistence::{
     CommitReceipt, DurabilityLevel, FileTransaction, StoreKind, TransactionFaultPoint,
@@ -39,7 +38,11 @@ use super::turn_context::TurnScratchpad;
 
 pub const ACTIVE_TURN_CHECKPOINT_SCHEMA_VERSION: u32 = 1;
 pub const LOGICAL_CHECKPOINT_JOURNAL_SCHEMA_VERSION: u32 = 1;
-pub const TOOL_ROUND_BUDGET_EXHAUSTED_REASON: &str = "tool_round_budget_exhausted";
+pub use medousa_runtime::checkpoint::{
+    ActiveTurnCheckpointSink, ActiveTurnCheckpointStatus, ActiveTurnCounters,
+    ActiveTurnResumeState, ActiveTurnTranscript, CheckpointToolInvocation, OutstandingTurnBoundary,
+    SafeCheckpointBoundary, TOOL_ROUND_BUDGET_EXHAUSTED_REASON, ToolLoopCheckpointState,
+};
 
 const CHECKPOINT_DIR: &str = "coder_turn_checkpoints";
 const CHECKPOINT_OBJECT_DOMAIN: &[u8] = b"coder-turn-checkpoint";
@@ -62,103 +65,6 @@ static CODER_TURN_CHECKPOINT_STORE: Lazy<Arc<CoderTurnCheckpointStore>> = Lazy::
         crate::session::medousa_data_dir().join(CHECKPOINT_DIR),
     ))
 });
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ActiveTurnCheckpointStatus {
-    Active,
-    AwaitingUser,
-    BudgetExhausted,
-    RecoverableFailure,
-    Completed,
-    Superseded,
-}
-
-impl ActiveTurnCheckpointStatus {
-    pub fn is_resume_candidate(self) -> bool {
-        matches!(
-            self,
-            Self::Active | Self::AwaitingUser | Self::BudgetExhausted | Self::RecoverableFailure
-        )
-    }
-
-    pub fn restores_interrupted_budget(self) -> bool {
-        matches!(self, Self::Active | Self::RecoverableFailure)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SafeCheckpointBoundary {
-    TurnStarted,
-    ModelResponseCompleted,
-    ToolBatchCompleted,
-    PackHold,
-    AwaitingApproval,
-    AwaitingUser,
-    BudgetExhausted,
-    RecoverableFailure,
-    Terminal,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum OutstandingTurnBoundary {
-    UserInput {
-        reason: String,
-    },
-    BudgetApproval {
-        request_id: String,
-        requested_rounds: usize,
-    },
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ActiveTurnCounters {
-    pub model_rounds_executed: usize,
-    pub max_tool_rounds: usize,
-    pub tool_batches_completed: usize,
-    pub interim_continues_used: usize,
-    pub empty_after_tools_continues_used: usize,
-    pub text_only_continues_without_new_tools: usize,
-    pub invocations_at_last_text_continue: usize,
-    pub user_responses_sent: usize,
-    pub last_response_preview: Option<String>,
-    pub pending_final_answer: bool,
-    pub retry_count: usize,
-    pub orchestration: Option<TurnOrchestrationState>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ActiveTurnTranscript {
-    pub user_lane_prefix: Vec<ChatMessage>,
-    pub tool_lane_messages: Vec<ChatMessage>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CheckpointToolInvocation {
-    pub tool_name: String,
-    pub tool_input: Value,
-    pub tool_output: Value,
-}
-
-impl CheckpointToolInvocation {
-    pub fn from_runtime(invocation: &ToolInvocation) -> Self {
-        Self {
-            tool_name: truncate(&invocation.tool_name, 256),
-            tool_input: bounded_json_value(&invocation.tool_input),
-            tool_output: bounded_json_value(&invocation.tool_output),
-        }
-    }
-
-    pub fn into_runtime(self) -> ToolInvocation {
-        ToolInvocation {
-            tool_name: self.tool_name,
-            tool_input: self.tool_input,
-            tool_output: self.tool_output,
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompletedToolBoundary {
@@ -251,47 +157,6 @@ impl ActiveTurnCheckpoint {
             scratch: self.scratch.clone(),
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct ActiveTurnResumeState {
-    pub source_daemon_turn_id: String,
-    pub restore_turn_budget: bool,
-    pub append_current_user_message: bool,
-    pub counters: ActiveTurnCounters,
-    pub transcript: ActiveTurnTranscript,
-    pub invocations: Vec<CheckpointToolInvocation>,
-    pub pack_hold_fragments: Vec<String>,
-    pub scratch: TurnScratchpad,
-}
-
-#[derive(Debug, Clone)]
-pub struct ToolLoopCheckpointState {
-    pub boundary: SafeCheckpointBoundary,
-    pub status: ActiveTurnCheckpointStatus,
-    pub counters: ActiveTurnCounters,
-    pub user_lane_prefix: Vec<ChatMessage>,
-    pub tool_lane_messages: Vec<ChatMessage>,
-    pub invocations: Vec<CheckpointToolInvocation>,
-    pub pack_hold_fragments: Vec<String>,
-    pub scratch: TurnScratchpad,
-    pub outstanding_boundary: Option<OutstandingTurnBoundary>,
-    pub tool_names: Vec<String>,
-    pub provider_call_ids: Vec<String>,
-    pub termination_reason: Option<String>,
-}
-
-pub trait ActiveTurnCheckpointSink: Send + Sync {
-    fn persist_boundary(&self, state: ToolLoopCheckpointState) -> Result<(), String>;
-    fn mark_status(
-        &self,
-        status: ActiveTurnCheckpointStatus,
-        boundary: SafeCheckpointBoundary,
-        reason: Option<&str>,
-        orchestration: Option<&TurnOrchestrationState>,
-    ) -> Result<(), String>;
-    fn latest_safe_resume(&self) -> Result<Option<ActiveTurnResumeState>, String>;
-    fn set_model_route(&self, provider: &str, model: &str) -> Result<(), String>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

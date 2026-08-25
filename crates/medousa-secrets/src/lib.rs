@@ -134,6 +134,40 @@ pub fn delete_client_secret(data_dir: &Path, path: &ClientSecretPath) -> Result<
     )
 }
 
+/// Prove that the platform keyring can write, read, and delete a client-owned
+/// credential without using Medousa's file fallback.
+///
+/// This diagnostic never returns or logs its random probe value. It is intended
+/// for release qualification on Apple targets before embedded inference
+/// credentials are admitted.
+pub fn probe_client_keyring_roundtrip() -> Result<()> {
+    refuse_host_keyring()?;
+    let probe_id = uuid::Uuid::new_v4();
+    let account = format!("v1/diagnostics/keyring-roundtrip/{probe_id}");
+    let value = format!("medousa-keyring-probe-{probe_id}");
+
+    write_keyring(CLIENT_SERVICE, &account, &value).context("write client keyring diagnostic")?;
+
+    let read_result = read_keyring(CLIENT_SERVICE, &account);
+    let delete_result = delete_keyring(CLIENT_SERVICE, &account);
+
+    let loaded = read_result.context("read client keyring diagnostic")?;
+    if loaded.as_deref() != Some(value.as_str()) {
+        let _ = delete_result;
+        bail!("client keyring diagnostic read-back mismatch");
+    }
+
+    delete_result.context("delete client keyring diagnostic")?;
+    if read_keyring(CLIENT_SERVICE, &account)
+        .context("verify client keyring diagnostic deletion")?
+        .is_some()
+    {
+        bail!("client keyring diagnostic remained after deletion");
+    }
+
+    Ok(())
+}
+
 /// Low-level legacy keyring read (migration only). Refuses host keyring when hermetic.
 pub fn load_legacy_keyring(service: &str, account: &str) -> Result<Option<String>> {
     if hermetic() {
@@ -400,5 +434,11 @@ mod tests {
         unsafe {
             std::env::remove_var("MEDOUSA_TEST_HERMETIC");
         }
+    }
+
+    #[test]
+    #[ignore = "touches the host OS keyring; run explicitly for release qualification"]
+    fn host_keyring_roundtrip() {
+        probe_client_keyring_roundtrip().unwrap();
     }
 }

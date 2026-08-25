@@ -8,6 +8,7 @@ import type { WorkCardDetail } from "$lib/types/card";
 import type { WorkCard } from "$lib/types/workspace";
 import { isAskJobId, askJobIdFromSession, askSessionId } from "$lib/types/askJob";
 import { workerStatusLineForColumn } from "$lib/utils/workerThreads";
+import { randomUuid } from "$lib/utils/randomUuid";
 import type { WorkerLink } from "$lib/chat/chatSessionRuntime";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
 
@@ -372,7 +373,7 @@ export function ensureWorkerFollowUpBubble(
     }
   }
 
-  const id = crypto.randomUUID();
+  const id = randomUuid();
   host.messages = [
     ...host.messages,
     {
@@ -568,7 +569,7 @@ function appendWorkerSynthesisMessage(
     }
   }
 
-  const id = crypto.randomUUID();
+  const id = randomUuid();
   host.messages = [
     ...host.messages,
     {

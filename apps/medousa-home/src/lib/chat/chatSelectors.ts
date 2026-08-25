@@ -8,6 +8,7 @@ import type { ChatSessionRuntime } from "$lib/chat/chatSessionRuntime";
 import { loadDraftForSession } from "$lib/chat/draftPersistence";
 
 export type ChatSelectorSnapshot = {
+  workshopScopeId: string;
   sessionId: string;
   focusedSessionId: string;
   streamApplyPrincipalId: string | null;
@@ -54,10 +55,12 @@ export function selectDraftFor(
     snapshot.streamApplyPrincipalId &&
     trimmed === snapshot.streamApplyPrincipalId
   ) {
-    return snapshot.runtimes.get(trimmed)?.draft ?? loadDraftForSession(trimmed);
+    return snapshot.runtimes.get(trimmed)?.draft ??
+      loadDraftForSession(trimmed, snapshot.workshopScopeId);
   }
   if (trimmed === snapshot.sessionId) return snapshot.draft;
-  return snapshot.runtimes.get(trimmed)?.draft ?? loadDraftForSession(trimmed);
+  return snapshot.runtimes.get(trimmed)?.draft ??
+    loadDraftForSession(trimmed, snapshot.workshopScopeId);
 }
 
 export function selectStreamErrorFor(

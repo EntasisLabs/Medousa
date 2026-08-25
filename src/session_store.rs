@@ -1,13 +1,17 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::future::IntoFuture;
+use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::sync::{Arc, Mutex, RwLock};
 
 use async_trait::async_trait;
 use medousa_types::SessionId;
 use medousa_types::session::{
-    ExecutionRef, SessionDerivation, TranscriptEntry, TranscriptEntryId, TranscriptEntryRef,
+    ConversationTurn, ExecutionRef, SessionDerivation, SessionHistorySummary, TranscriptEntry,
+    TranscriptEntryId, TranscriptEntryRef,
 };
+use medousa_types::turn::{TurnPart, TurnSliceSummary};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use stasis::prelude::RuntimeComposition;
@@ -16,13 +20,63 @@ use surrealdb::engine::any::Any;
 use surrealdb_types::SurrealValue;
 use tokio::runtime::Handle;
 
-use crate::session::{ConversationTurn, SessionHistorySummary};
-use crate::turn_parts::TurnPart;
-use crate::turn_slice::TurnSliceSummary;
-
 const TRANSCRIPT_ENTRY_TABLE: &str = "transcript_entry";
 const SESSION_ENTRY_TABLE: &str = "session_entry";
 pub const MAX_TRANSCRIPT_SEARCH_QUERY_CHARS: usize = 512;
+
+static FILE_SESSION_ROOT: OnceLock<PathBuf> = OnceLock::new();
+
+/// Configure the daemon-owned fallback transcript directory before the global
+/// store is first accessed. Embedded deployments pass their sandbox root;
+/// full daemon deployments retain the existing path resolver by default.
+pub fn configure_file_session_root(root: PathBuf) -> Result<(), String> {
+    if let Some(existing) = FILE_SESSION_ROOT.get() {
+        return (existing == &root)
+            .then_some(())
+            .ok_or_else(|| "session store root was already configured".to_string());
+    }
+    FILE_SESSION_ROOT
+        .set(root)
+        .map_err(|_| "session store root configuration failed".to_string())
+}
+
+fn file_session_root() -> PathBuf {
+    if let Some(root) = FILE_SESSION_ROOT.get() {
+        return root.clone();
+    }
+    #[cfg(feature = "full-daemon")]
+    {
+        crate::paths::medousa_data_dir().join("history")
+    }
+    #[cfg(not(feature = "full-daemon"))]
+    {
+        panic!("embedded daemon must configure its session store root before boot")
+    }
+}
+
+#[cfg(feature = "full-daemon")]
+fn record_catalog_append(session_id: &SessionId, turn: &ConversationTurn) {
+    crate::session_catalog::record_turn_appended_for_id(session_id, turn);
+}
+
+#[cfg(not(feature = "full-daemon"))]
+fn record_catalog_append(_session_id: &SessionId, _turn: &ConversationTurn) {}
+
+fn preview_from_turn(turn: &ConversationTurn) -> Option<String> {
+    #[cfg(feature = "full-daemon")]
+    {
+        crate::session_catalog::preview_from_turn(turn)
+    }
+    #[cfg(not(feature = "full-daemon"))]
+    {
+        let text = turn.content.trim();
+        if text.is_empty() {
+            None
+        } else {
+            Some(text.lines().next().unwrap_or("").chars().take(72).collect())
+        }
+    }
+}
 
 const SESSION_SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE TABLE session_turn SCHEMAFULL",
@@ -101,27 +155,29 @@ const SESSION_SCHEMA_MIGRATIONS: &[&str] = &[
     "UPDATE session_turn SET search_text = content WHERE search_text = NONE OR search_text = NULL",
 ];
 
-/// Initialize the session store based on the runtime composition.
-/// When a Surreal runtime is active, swaps the file-backed store for a
-/// SurrealDB-backed implementation.
-pub async fn init_session_store_with_runtime(runtime: &RuntimeComposition) {
+/// Bind the session store to the runtime composition.
+///
+/// Persistent schema failures are fatal to daemon boot; silently selecting a
+/// different store would create a second workshop history.
+pub async fn init_session_store_with_runtime(
+    runtime: &RuntimeComposition,
+) -> Result<(), StoreError> {
     match runtime {
         RuntimeComposition::Surreal(rt) => {
             let db = rt.job_store.db();
             let store = SurrealSessionStore::new(db);
-            if let Err(err) = store.ensure_schema().await {
-                eprintln!(
-                    "Surreal session store schema init error: {err}; falling back to file-backed store"
-                );
-                return;
-            }
+            store
+                .ensure_schema()
+                .await
+                .map_err(|error| StoreError::Backend(error.to_string()))?;
             set_session_store(Arc::new(store));
             eprintln!("Surreal runtime detected; session store switched to SurrealDB backend");
         }
-        _ => {
+        RuntimeComposition::InMemory(_) => {
             // Keep file-backed store for in-memory runtimes.
         }
     }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, SurrealValue)]
@@ -752,7 +808,7 @@ struct FileSessionStore {
 
 impl FileSessionStore {
     fn new() -> Self {
-        Self::at(crate::session::medousa_data_dir().join("history"))
+        Self::at(file_session_root())
     }
 
     fn at(root: std::path::PathBuf) -> Self {
@@ -863,7 +919,7 @@ impl SessionStore for FileSessionStore {
                     .map_err(|error| StoreError::Backend(error.to_string()))?;
             }
             for append in &appends {
-                crate::session_catalog::record_turn_appended_for_id(&session_id, &append.turn);
+                record_catalog_append(&session_id, &append.turn);
             }
             Ok(CommitReceipt {
                 turns: appends.len(),
@@ -981,7 +1037,14 @@ impl SessionStore for FileSessionStore {
     }
 
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary> {
-        crate::session_catalog::list_sessions(limit)
+        #[cfg(feature = "full-daemon")]
+        {
+            crate::session_catalog::list_sessions(limit)
+        }
+        #[cfg(not(feature = "full-daemon"))]
+        {
+            self.build_backfill_summaries(limit)
+        }
     }
 
     fn search_transcripts(
@@ -1018,13 +1081,21 @@ impl SessionStore for FileSessionStore {
                     })
             })
             .collect::<Vec<_>>();
-        hits.sort_by(|left, right| right.timestamp.cmp(&left.timestamp));
+        hits.sort_by_key(|hit| std::cmp::Reverse(hit.timestamp));
         hits.truncate(limit);
         Ok(hits)
     }
 
     fn build_backfill_summaries(&self, limit: usize) -> Vec<SessionHistorySummary> {
-        crate::session::file_build_history_summaries_from_files(&self.files, limit)
+        #[cfg(feature = "full-daemon")]
+        {
+            crate::session::file_build_history_summaries_from_files(&self.files, limit)
+        }
+        #[cfg(not(feature = "full-daemon"))]
+        {
+            let _ = limit;
+            Vec::new()
+        }
     }
 
     fn has_persisted_sessions(&self) -> bool {
@@ -1288,7 +1359,7 @@ impl SessionStore for SurrealSessionStore {
             .map_err(|error| StoreError::Backend(error.to_string()))?;
 
         for append in appends {
-            crate::session_catalog::record_turn_appended_for_id(session_id, &append.turn);
+            record_catalog_append(session_id, &append.turn);
         }
         Ok(CommitReceipt {
             turns: appends.len(),
@@ -1525,7 +1596,14 @@ impl SessionStore for SurrealSessionStore {
     }
 
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary> {
-        crate::session_catalog::list_sessions(limit)
+        #[cfg(feature = "full-daemon")]
+        {
+            crate::session_catalog::list_sessions(limit)
+        }
+        #[cfg(not(feature = "full-daemon"))]
+        {
+            self.build_backfill_summaries(limit)
+        }
     }
 
     fn search_transcripts(
@@ -1674,7 +1752,7 @@ impl SurrealSessionStore {
             .rev()
             .take(8)
         {
-            if let Some(preview) = crate::session_catalog::preview_from_turn(&entry.turn) {
+            if let Some(preview) = preview_from_turn(&entry.turn) {
                 return Some(preview);
             }
         }
@@ -1696,6 +1774,17 @@ pub fn set_session_store(store: Arc<dyn SessionStore>) {
 
 pub fn get_session_store() -> Arc<dyn SessionStore> {
     SESSION_STORE.read().unwrap().clone()
+}
+
+/// Release a test deployment's database-backed global handle so a same-process
+/// reboot can model the handle teardown that happens at process exit.
+#[cfg(all(
+    test,
+    feature = "embedded-daemon",
+    not(feature = "full-daemon")
+))]
+pub(crate) fn reset_session_store_for_test() {
+    set_session_store(Arc::new(FileSessionStore::new()));
 }
 
 pub fn build_backfill_summaries(limit: usize) -> Vec<SessionHistorySummary> {

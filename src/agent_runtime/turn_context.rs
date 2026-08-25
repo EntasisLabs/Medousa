@@ -1,228 +1,25 @@
 //! Tiered context pools: user lane prefix vs mutable tool lane + turn scratchpad.
 
-use std::hash::{Hash, Hasher};
-
+#[cfg(test)]
 use genai::chat::ChatMessage;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 use stasis::ports::outbound::memory::memory_models::MemoryAvecState;
 
 use super::vibe_signature::HandoffModelAvec;
 
-pub const SCRATCH_PREFIX: &str = "[MEDOUSA_SCRATCH]";
 pub const WORKER_HANDOFF_PREFIX: &str = "[MEDOUSA_WORKER_HANDOFF]";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TurnScratchPhase {
-    #[default]
-    Discover,
-    Execute,
-    Finalize,
-}
+pub use medousa_engine::{TurnScratchPhase, TurnScratchpad, WorkerDelegateScratch};
+pub use medousa_runtime::turn_context::{
+    HostTurnContext, SCRATCH_PREFIX, ToolLaneState, ToolRoundContextProvider,
+    compact_tool_receipt_hint, push_turn_scratch_message, push_turn_scratch_message_with_budget,
+    record_round_digest_from_invocations, scratch_digest_hash, scratch_seed_for_tool_loop,
+    strip_prior_scratch_messages, tool_output_ok, tool_results_from_invocations,
+};
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct WorkerDelegateScratch {
-    pub work_id: String,
-    pub intent: String,
-}
-
-/// Ephemeral working memory for one host or worker tool-loop execution.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct TurnScratchpad {
-    pub goal: String,
-    pub phase: TurnScratchPhase,
-    pub step: usize,
-    pub last_tools: Vec<String>,
-    pub last_error: Option<String>,
-    pub open_gaps: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub delegate: Option<WorkerDelegateScratch>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub round_digests: Vec<String>,
-    /// Union of tool names invoked this turn (deduped, insertion order).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub tools_this_turn: Vec<String>,
-    /// Agent-pinned sticky notes (via begin_work note= or runtime).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub working_notes: Vec<String>,
-}
-
-const GOAL_DISPLAY_MAX_CHARS: usize = 480;
-const WORKING_NOTES_MAX: usize = 5;
-const WORKING_NOTE_MAX_CHARS: usize = 120;
-const DIGESTS_RECENT_SHOWN: usize = 5;
-
-impl TurnScratchpad {
-    pub fn from_user_prompt(user_prompt: &str) -> Self {
-        Self {
-            goal: infer_goal_from_prompt(user_prompt),
-            phase: TurnScratchPhase::Discover,
-            ..Default::default()
-        }
-    }
-
-    pub fn set_goal(&mut self, goal: impl Into<String>) {
-        let g = goal.into();
-        if !g.trim().is_empty() {
-            self.goal = g;
-        }
-    }
-
-    pub fn set_open_gaps(&mut self, gaps: &[String]) {
-        self.open_gaps = gaps.to_vec();
-    }
-
-    pub fn push_working_note(&mut self, note: impl Into<String>) {
-        let note = truncate_field(&note.into(), WORKING_NOTE_MAX_CHARS);
-        if note.trim().is_empty() {
-            return;
-        }
-        if self.working_notes.len() >= WORKING_NOTES_MAX {
-            self.working_notes.remove(0);
-        }
-        self.working_notes.push(note);
-    }
-
-    pub fn accumulate_tools(&mut self, tool_names: &[String]) {
-        for name in tool_names {
-            let trimmed = name.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            if !self
-                .tools_this_turn
-                .iter()
-                .any(|existing| existing == trimmed)
-            {
-                self.tools_this_turn.push(trimmed.to_string());
-            }
-        }
-    }
-
-    pub fn set_delegate(&mut self, work_id: impl Into<String>, intent: impl Into<String>) {
-        self.delegate = Some(WorkerDelegateScratch {
-            work_id: work_id.into(),
-            intent: intent.into(),
-        });
-        self.phase = TurnScratchPhase::Finalize;
-    }
-
-    pub fn on_tool_round_start(&mut self, round: usize) {
-        self.step = round;
-        if self.phase == TurnScratchPhase::Discover {
-            self.phase = TurnScratchPhase::Execute;
-        }
-    }
-
-    pub fn record_round_digest(&mut self, tool_results: &[(String, bool)]) {
-        let names: Vec<String> = tool_results.iter().map(|(n, _)| n.clone()).collect();
-        self.accumulate_tools(&names);
-        let tools: Vec<String> = tool_results
-            .iter()
-            .map(|(name, ok)| format_tool_digest_entry(name, *ok, None))
-            .collect();
-        self.apply_round_digest(&names, &tools);
-    }
-
-    /// Record a tool round with compact receipt hints so workers inherit host evidence.
-    pub fn record_round_digest_from_invocations(&mut self, invocations: &[ToolInvocation]) {
-        let tool_results: Vec<(String, bool)> = invocations
-            .iter()
-            .map(|inv| (inv.tool_name.clone(), tool_output_ok(&inv.tool_output)))
-            .collect();
-        let tools: Vec<String> = invocations
-            .iter()
-            .map(|inv| {
-                let ok = tool_output_ok(&inv.tool_output);
-                let hint = compact_tool_receipt_hint(&inv.tool_name, &inv.tool_output);
-                format_tool_digest_entry(&inv.tool_name, ok, hint.as_deref())
-            })
-            .collect();
-        let names: Vec<String> = tool_results.iter().map(|(n, _)| n.clone()).collect();
-        self.accumulate_tools(&names);
-        self.apply_round_digest(&names, &tools);
-    }
-
-    fn apply_round_digest(&mut self, tool_names: &[String], digest_entries: &[String]) {
-        self.last_tools = tool_names.to_vec();
-        if let Some(name) = tool_names
-            .iter()
-            .zip(digest_entries.iter())
-            .find(|(_, entry)| entry.contains(":fail"))
-            .map(|(name, _)| name.clone())
-        {
-            self.last_error = Some(format!("{name} returned ok=false"));
-        } else {
-            self.last_error = None;
-        }
-        let digest = format!("round={} tools=[{}]", self.step, digest_entries.join(", "));
-        self.round_digests.push(digest);
-        const MAX_DIGESTS: usize = 12;
-        if self.round_digests.len() > MAX_DIGESTS {
-            let drain = self.round_digests.len() - MAX_DIGESTS;
-            self.round_digests.drain(0..drain);
-        }
-    }
-
-    pub fn format_control_body(&self, tool_rounds_remaining: usize) -> String {
-        let phase = match self.phase {
-            TurnScratchPhase::Discover => "discover",
-            TurnScratchPhase::Execute => "execute",
-            TurnScratchPhase::Finalize => "finalize",
-        };
-        let mut lines = vec![
-            format!(
-                "goal={}",
-                truncate_field(&self.goal, GOAL_DISPLAY_MAX_CHARS)
-            ),
-            format!(
-                "phase={phase} step={} rounds_remaining={tool_rounds_remaining}",
-                self.step
-            ),
-        ];
-        if !self.tools_this_turn.is_empty() {
-            lines.push(format!(
-                "tools_this_turn={}",
-                self.tools_this_turn.join(", ")
-            ));
-        } else if !self.last_tools.is_empty() {
-            lines.push(format!("last_tools={}", self.last_tools.join(", ")));
-        }
-        if let Some(err) = self.last_error.as_deref() {
-            lines.push(format!("last_error={err}"));
-        }
-        if !self.open_gaps.is_empty() {
-            lines.push(format!("open_gaps={}", self.open_gaps.join(", ")));
-        }
-        if !self.working_notes.is_empty() {
-            lines.push(format!("working_notes={}", self.working_notes.join(" | ")));
-        }
-        if let Some(delegate) = self.delegate.as_ref() {
-            lines.push(format!(
-                "delegate work_id={} intent={}",
-                delegate.work_id, delegate.intent
-            ));
-        }
-        if !self.round_digests.is_empty() {
-            let start = self
-                .round_digests
-                .len()
-                .saturating_sub(DIGESTS_RECENT_SHOWN);
-            let recent: Vec<_> = self.round_digests[start..].to_vec();
-            lines.push(format!("digests_recent={}", recent.join(" · ")));
-        }
-        lines.join("\n")
-    }
-
-    pub fn digest_hash(&self) -> String {
-        scratch_digest_hash(self)
-    }
-
-    pub fn summarize_for_user_footer(invocations: &[ToolInvocation]) -> Option<String> {
-        super::presentation::format_tools_footer_markdown_from_invocations(invocations)
-    }
+pub fn summarize_for_user_footer(invocations: &[ToolInvocation]) -> Option<String> {
+    super::presentation::format_tools_footer_markdown_from_invocations(invocations)
 }
 
 /// Host → worker context passed at `cognition_workshop_mutate action=workshop.spawn` (Phase 3).
@@ -425,94 +222,6 @@ impl WorkerHandoffCapsule {
     }
 }
 
-/// Mutable tool-lane transcript (control, scratch, tool calls/responses).
-#[derive(Debug, Clone, Default)]
-pub struct ToolLaneState {
-    pub messages: Vec<ChatMessage>,
-}
-
-/// Optional mode-owned context refresh compiled after a completed tool batch
-/// and injected as a system observation before the next model inference.
-pub trait ToolRoundContextProvider: Send + Sync {
-    fn context_for_next_round(&self) -> stasis::prelude::Result<Option<String>>;
-}
-
-/// Host turn: fixed user-visible prefix + growing tool lane.
-#[derive(Debug, Clone)]
-pub struct HostTurnContext {
-    pub user_lane_prefix: Vec<ChatMessage>,
-    pub tool_lane: ToolLaneState,
-    pub scratchpad: TurnScratchpad,
-}
-
-impl HostTurnContext {
-    pub fn new(prior_messages: Vec<ChatMessage>, user_prompt: String) -> Self {
-        Self::new_with_user_message(prior_messages, ChatMessage::user(user_prompt))
-    }
-
-    pub fn new_with_user_message(
-        prior_messages: Vec<ChatMessage>,
-        user_message: ChatMessage,
-    ) -> Self {
-        let scratch_source = user_message.content.first_text().unwrap_or("").to_string();
-        let scratchpad = TurnScratchpad::from_user_prompt(&scratch_source);
-        let mut user_lane_prefix = prior_messages;
-        user_lane_prefix.push(user_message);
-        Self {
-            user_lane_prefix,
-            tool_lane: ToolLaneState::default(),
-            scratchpad,
-        }
-    }
-
-    pub fn build_model_messages(&self, system_prompt: Option<&str>) -> Vec<ChatMessage> {
-        let mut messages =
-            Vec::with_capacity(self.user_lane_prefix.len() + self.tool_lane.messages.len() + 1);
-        if let Some(system) = system_prompt.filter(|s| !s.trim().is_empty()) {
-            messages.push(ChatMessage::system(system.to_string()));
-        }
-        messages.extend(self.user_lane_prefix.clone());
-        messages.extend(self.tool_lane.messages.clone());
-        messages
-    }
-}
-
-pub fn strip_prior_scratch_messages(messages: &mut Vec<ChatMessage>) {
-    messages.retain(|message| {
-        message
-            .content
-            .first_text()
-            .is_none_or(|text| !text.trim_start().starts_with(SCRATCH_PREFIX))
-    });
-}
-
-pub fn push_turn_scratch_message(messages: &mut Vec<ChatMessage>, scratchpad: &TurnScratchpad) {
-    let body = scratchpad.format_control_body(0);
-    push_scratch_body(messages, &body);
-}
-
-pub fn push_turn_scratch_message_with_budget(
-    messages: &mut Vec<ChatMessage>,
-    scratchpad: &TurnScratchpad,
-    tool_rounds_remaining: usize,
-) {
-    strip_prior_scratch_messages(messages);
-    let body = scratchpad.format_control_body(tool_rounds_remaining);
-    push_scratch_body(messages, &body);
-}
-
-fn push_scratch_body(messages: &mut Vec<ChatMessage>, body: &str) {
-    let trimmed = body.trim();
-    if trimmed.is_empty() {
-        return;
-    }
-    messages.push(ChatMessage::system(format!("{SCRATCH_PREFIX}\n{trimmed}")));
-}
-
-pub fn tool_output_ok(output: &Value) -> bool {
-    !matches!(output.get("ok").and_then(|v| v.as_bool()), Some(false))
-}
-
 #[allow(clippy::too_many_arguments)]
 /// Snapshot host scratch for the next `cognition_workshop_mutate action=workshop.spawn` (updated each tool round).
 pub async fn publish_host_handoff_snapshot(
@@ -548,11 +257,68 @@ pub async fn publish_host_handoff_snapshot(
     *slot.write().await = Some(capsule);
 }
 
-pub fn tool_results_from_invocations(invocations: &[ToolInvocation]) -> Vec<(String, bool)> {
-    invocations
-        .iter()
-        .map(|inv| (inv.tool_name.clone(), tool_output_ok(&inv.tool_output)))
-        .collect()
+#[derive(Clone)]
+pub struct DaemonHostHandoffPort {
+    session_id: Option<String>,
+    stream_turn_id: u64,
+    parent_turn_correlation_id: Option<String>,
+    parent_user_prompt: String,
+    handoff_slot: std::sync::Arc<tokio::sync::RwLock<Option<WorkerHandoffCapsule>>>,
+    vibe_signature: Option<String>,
+    model_avec: Option<MemoryAvecState>,
+    host_continuity: Option<super::worker_continuity::HostContinuityBundle>,
+}
+
+impl DaemonHostHandoffPort {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        session_id: Option<String>,
+        stream_turn_id: u64,
+        parent_turn_correlation_id: Option<String>,
+        parent_user_prompt: String,
+        handoff_slot: std::sync::Arc<tokio::sync::RwLock<Option<WorkerHandoffCapsule>>>,
+        vibe_signature: Option<String>,
+        model_avec: Option<MemoryAvecState>,
+        host_continuity: Option<super::worker_continuity::HostContinuityBundle>,
+    ) -> Self {
+        Self {
+            session_id,
+            stream_turn_id,
+            parent_turn_correlation_id,
+            parent_user_prompt,
+            handoff_slot,
+            vibe_signature,
+            model_avec,
+            host_continuity,
+        }
+    }
+}
+
+impl medousa_runtime::HostHandoffPort for DaemonHostHandoffPort {
+    fn publish(&self, scratch: TurnScratchpad) -> medousa_runtime::RuntimePortFuture<()> {
+        let session_id = self.session_id.clone();
+        let stream_turn_id = self.stream_turn_id;
+        let parent_turn_correlation_id = self.parent_turn_correlation_id.clone();
+        let parent_user_prompt = self.parent_user_prompt.clone();
+        let handoff_slot = self.handoff_slot.clone();
+        let vibe_signature = self.vibe_signature.clone();
+        let model_avec = self.model_avec;
+        let host_continuity = self.host_continuity.clone();
+        Box::pin(async move {
+            publish_host_handoff_snapshot(
+                session_id.as_deref(),
+                stream_turn_id,
+                parent_turn_correlation_id,
+                &parent_user_prompt,
+                &scratch,
+                Some(&handoff_slot),
+                vibe_signature,
+                model_avec,
+                host_continuity,
+            )
+            .await;
+        })
+    }
 }
 
 fn default_worker_constraints() -> Vec<String> {
@@ -563,169 +329,6 @@ fn default_worker_constraints() -> Vec<String> {
         "Ground final worker text in tool receipts; do not invent results".to_string(),
         "After tools: cognition_turn action=turn.finish commits the final reply — naked prose ends the turn with a stub. cognition_turn action=turn.update_user for mid-turn status; cognition_turn action=turn.begin_work before heavy work; cognition_turn action=turn.checkpoint for mid-task handoff; call tools for more work, never plan-only prose".to_string(),
     ]
-}
-
-fn format_tool_digest_entry(name: &str, ok: bool, hint: Option<&str>) -> String {
-    let status = if ok { "ok" } else { "fail" };
-    match hint.filter(|value| !value.trim().is_empty()) {
-        Some(hint) => format!("{name}:{status} ({hint})"),
-        None => format!("{name}:{status}"),
-    }
-}
-
-/// One-line receipt hint for host→worker handoff digests.
-pub fn compact_tool_receipt_hint(tool_name: &str, output: &Value) -> Option<String> {
-    if matches!(
-        output.get("ok").and_then(|value| value.as_bool()),
-        Some(false)
-    ) {
-        return output
-            .get("error")
-            .or_else(|| output.get("message"))
-            .and_then(|value| value.as_str())
-            .map(|text| truncate_field(text, 96));
-    }
-
-    let normalized = tool_name.trim().to_ascii_lowercase();
-    match normalized.as_str() {
-        "cognition_capability_resolve"
-        | "cognition.capability.resolve"
-        | "cognition_capability" => {
-            if let Some(hint) = output
-                .get("recommended")
-                .and_then(|value| value.get("reference"))
-                .and_then(|value| value.as_str())
-                .or_else(|| output.get("capability").and_then(|value| value.as_str()))
-                .map(|reference| format!("recommended={reference}"))
-            {
-                Some(hint)
-            } else if let Some(hint) = output
-                .get("matches")
-                .and_then(|value| value.as_array())
-                .and_then(|matches| matches.first())
-                .and_then(|entry| entry.get("capability"))
-                .and_then(|value| value.as_str())
-                .map(|capability| format!("top={capability}"))
-            {
-                Some(hint)
-            } else {
-                output
-                    .get("binding")
-                    .and_then(|value| value.get("reference"))
-                    .and_then(|value| value.as_str())
-                    .or_else(|| output.get("capability").and_then(|value| value.as_str()))
-                    .map(|reference| format!("binding={reference}"))
-            }
-        }
-        "cognition_capability_search" | "cognition.capability.search" => output
-            .get("matches")
-            .and_then(|value| value.as_array())
-            .and_then(|matches| matches.first())
-            .and_then(|entry| entry.get("capability"))
-            .and_then(|value| value.as_str())
-            .map(|capability| format!("top={capability}")),
-        "cognition_memory_query" => output
-            .get("status")
-            .and_then(|value| value.as_str())
-            .map(|status| format!("status={status}"))
-            .or_else(|| {
-                output
-                    .get("hits")
-                    .or_else(|| output.get("snippets"))
-                    .and_then(|value| value.as_array())
-                    .map(|hits| format!("hits={}", hits.len()))
-            }),
-        "cognition_capability_invoke" | "cognition.capability.invoke" => output
-            .get("binding")
-            .and_then(|value| value.get("reference"))
-            .and_then(|value| value.as_str())
-            .or_else(|| output.get("capability").and_then(|value| value.as_str()))
-            .map(|reference| format!("binding={reference}")),
-        "cognition_workshop_mutate" => output
-            .get("intent")
-            .and_then(|value| value.as_str())
-            .map(|intent| format!("intent={intent}")),
-        _ if normalized.contains("cognition_environment") => output
-            .get("revision")
-            .and_then(|value| value.as_u64())
-            .map(|revision| format!("revision={revision}"))
-            .or_else(|| {
-                output
-                    .get("errors")
-                    .and_then(|value| value.as_array())
-                    .and_then(|errors| errors.first())
-                    .and_then(|value| value.as_str())
-                    .map(|error| format!("error={}", truncate_field(error, 80)))
-            }),
-        _ if normalized.contains("cognition_component") => output
-            .get("component")
-            .and_then(|value| value.get("id"))
-            .and_then(|value| value.as_str())
-            .map(|id| format!("component={id}"))
-            .or_else(|| {
-                output
-                    .get("revision")
-                    .and_then(|value| value.as_u64())
-                    .map(|revision| format!("revision={revision}"))
-            }),
-        _ if normalized.contains("grapheme_modules") => output
-            .get("stdout")
-            .and_then(|value| value.as_str())
-            .and_then(extract_grapheme_module_ids_from_stdout)
-            .map(|modules| format!("modules={modules}")),
-        _ => None,
-    }
-}
-
-fn extract_grapheme_module_ids_from_stdout(stdout: &str) -> Option<String> {
-    let mut modules = Vec::new();
-    for line in stdout.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("module_id:") {
-            let id = rest.trim();
-            if !id.is_empty() {
-                modules.push(id.to_string());
-            }
-        }
-    }
-    if modules.is_empty() {
-        return None;
-    }
-    modules.sort();
-    modules.dedup();
-    Some(truncate_field(&modules.join(","), 96))
-}
-
-pub fn scratch_digest_hash(scratch: &TurnScratchpad) -> String {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    scratch.goal.hash(&mut hasher);
-    scratch.step.hash(&mut hasher);
-    for digest in &scratch.round_digests {
-        digest.hash(&mut hasher);
-    }
-    format!("{:016x}", hasher.finish())
-}
-
-/// Prefer in-turn scratch progress over session seed on inference retry / continuation.
-pub fn scratch_seed_for_tool_loop(
-    session_seed: &TurnScratchpad,
-    last_in_turn: Option<&TurnScratchpad>,
-) -> TurnScratchpad {
-    match last_in_turn {
-        Some(scratch)
-            if scratch.step > 0
-                || !scratch.round_digests.is_empty()
-                || !scratch.working_notes.is_empty() =>
-        {
-            scratch.clone()
-        }
-        _ => session_seed.clone(),
-    }
-}
-
-fn infer_goal_from_prompt(user_prompt: &str) -> String {
-    let collapsed: String = user_prompt.split_whitespace().collect::<Vec<_>>().join(" ");
-    truncate_field(&collapsed, GOAL_DISPLAY_MAX_CHARS)
 }
 
 fn truncate_field(text: &str, max_chars: usize) -> String {
@@ -743,6 +346,7 @@ fn truncate_field(text: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use medousa_runtime::HostHandoffPort as _;
     use serde_json::json;
 
     #[test]
@@ -808,6 +412,34 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn daemon_handoff_port_publishes_the_portable_scratch_snapshot() {
+        let slot = std::sync::Arc::new(tokio::sync::RwLock::new(None));
+        let port = DaemonHostHandoffPort::new(
+            Some("sess-port".to_string()),
+            7,
+            Some("corr-port".to_string()),
+            "ship the portable loop".to_string(),
+            slot.clone(),
+            Some("focused".to_string()),
+            None,
+            None,
+        );
+        let mut scratch = TurnScratchpad::from_user_prompt("ship the portable loop");
+        scratch.on_tool_round_start(2);
+
+        port.publish(scratch).await;
+
+        let published = slot.read().await.clone().expect("handoff capsule");
+        assert_eq!(published.session_id, "sess-port");
+        assert_eq!(published.parent_stream_turn_id, 7);
+        assert_eq!(published.host_scratch.step, 2);
+        assert_eq!(
+            published.parent_turn_correlation_id.as_deref(),
+            Some("corr-port")
+        );
+    }
+
     #[test]
     fn tool_output_ok_detects_failure() {
         assert!(!tool_output_ok(&json!({"ok": false, "error": "x"})));
@@ -821,14 +453,17 @@ mod tests {
 
         let mut scratch = TurnScratchpad::default();
         scratch.on_tool_round_start(1);
-        scratch.record_round_digest_from_invocations(&[ToolInvocation {
-            tool_name: "cognition_capability".to_string(),
-            tool_input: json!({}),
-            tool_output: json!({
-                "capability": "web_research",
-                "recommended": { "reference": "web.duckduckgo" }
-            }),
-        }]);
+        record_round_digest_from_invocations(
+            &mut scratch,
+            &[ToolInvocation {
+                tool_name: "cognition_capability".to_string(),
+                tool_input: json!({}),
+                tool_output: json!({
+                    "capability": "web_research",
+                    "recommended": { "reference": "web.duckduckgo" }
+                }),
+            }],
+        );
         assert!(scratch.round_digests[0].contains("recommended=web.duckduckgo"));
     }
 

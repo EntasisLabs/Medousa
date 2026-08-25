@@ -16,3 +16,7 @@ class SdkError(Exception):
         if self.status_code is not None:
             return f"{self.message} (HTTP {self.status_code})"
         return self.message
+
+
+class CompatibilityError(SdkError):
+    """The responder does not implement the daemon contract expected by this SDK."""

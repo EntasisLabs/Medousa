@@ -77,7 +77,7 @@ export function resolveMobileChromeSurface(
 export function mobileChromeLeading(
   surface: MobileChromeSurface,
 ): MobileChromeActionId | null {
-  if (surface === "home") return null;
+  if (surface === "home") return "menu";
   return surface === "notes-reader" ||
     surface === "more-nested" ||
     surface === "automations" ||
@@ -95,7 +95,7 @@ export function mobileChromeTrailing(
 ): MobileChromeActionId[] {
   switch (surface) {
     case "home":
-      return ["menu"];
+      return [];
     case "chat":
       return ["sessions", "identity"];
     case "notes":

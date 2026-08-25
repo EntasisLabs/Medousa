@@ -81,6 +81,7 @@ export class EnvironmentStore {
   canvasStatusError = $state<string | null>(null);
   canvasStatusLoading = $state(false);
   private builtinNavMigrationPersisted = false;
+  private workshopEpoch = 0;
 
   get loaded(): boolean {
     return this.spec !== null;
@@ -112,14 +113,6 @@ export class EnvironmentStore {
     const ordered = orderedIds
       .map((id) => byId.get(id))
       .filter((surface): surface is SurfaceDef => Boolean(surface));
-
-    // Peers is a Life destination — surface it when present on the spec but missing
-    // from the preset. Do not force its index so operators can reorder the rail.
-    const peers = byId.get("peers");
-    if (peers && !ordered.some((surface) => surface.id === "peers")) {
-      const chatAt = ordered.findIndex((surface) => surface.id === "chat");
-      ordered.splice(chatAt >= 0 ? chatAt + 1 : 0, 0, peers);
-    }
 
     for (const safetyId of [SAFETY_SURFACE_SETTINGS, SAFETY_SURFACE_RUNTIME]) {
       if (!ordered.some((surface) => surface.id === safetyId)) {
@@ -166,23 +159,32 @@ export class EnvironmentStore {
   }
 
   async load(profileId?: string): Promise<void> {
+    const workshopEpoch = this.workshopEpoch;
     this.loading = true;
     try {
       const response = await getEnvironmentSpec(profileId);
+      if (workshopEpoch !== this.workshopEpoch) return;
       this.applySpec(response.spec, response.revision);
       await this.persistBuiltinNavMigrationIfNeeded(response.spec);
+      if (workshopEpoch !== this.workshopEpoch) return;
       await this.seedDesktopChromeFromPreferredModeIfNeeded(profileId);
+      if (workshopEpoch !== this.workshopEpoch) return;
       this.syncDesktopChromeToLayout();
       await this.syncShellThemeFromSpec();
-      await this.refreshPending(profileId);
+      if (workshopEpoch !== this.workshopEpoch) return;
+      await this.refreshPending(profileId, workshopEpoch);
+      if (workshopEpoch !== this.workshopEpoch) return;
       this.streamError = null;
     } catch (err) {
+      if (workshopEpoch !== this.workshopEpoch) return;
       this.spec = migrateBuiltinNavSurfaces(defaultEnvironmentSpec(profileId));
       this.revision = 0;
       this.streamError =
         err instanceof Error ? err.message : "Could not load environment spec";
     } finally {
-      this.loading = false;
+      if (workshopEpoch === this.workshopEpoch) {
+        this.loading = false;
+      }
     }
   }
 
@@ -274,6 +276,7 @@ export class EnvironmentStore {
   }
 
   resetForReconnect() {
+    this.workshopEpoch += 1;
     this.spec = null;
     this.revision = 0;
     this.streamError = null;
@@ -281,30 +284,42 @@ export class EnvironmentStore {
     this.feedStateByComponentId = new Map();
     this.pendingRuntimeProbes = new Map();
     this.builtinNavMigrationPersisted = false;
+    this.loading = false;
+    this.canvasStatus = null;
+    this.canvasStatusError = null;
+    this.canvasStatusLoading = false;
   }
 
-  async refreshPending(profileId?: string): Promise<void> {
+  async refreshPending(profileId?: string, workshopEpoch = this.workshopEpoch): Promise<void> {
     try {
       const response = await getEnvironmentPending(profileId);
+      if (workshopEpoch !== this.workshopEpoch) return;
       this.pendingProposal = response.pending ?? null;
     } catch {
+      if (workshopEpoch !== this.workshopEpoch) return;
       this.pendingProposal = null;
     }
   }
 
   async refreshCanvasStatus(profileId?: string): Promise<void> {
+    const workshopEpoch = this.workshopEpoch;
     this.canvasStatusLoading = true;
     try {
-      this.canvasStatus = await getEnvironmentStatus(profileId, undefined, {
+      const status = await getEnvironmentStatus(profileId, undefined, {
         includeRuntime: true,
       });
+      if (workshopEpoch !== this.workshopEpoch) return;
+      this.canvasStatus = status;
       this.canvasStatusError = null;
     } catch (err) {
+      if (workshopEpoch !== this.workshopEpoch) return;
       this.canvasStatus = null;
       this.canvasStatusError =
         err instanceof Error ? err.message : "Could not load canvas status";
     } finally {
-      this.canvasStatusLoading = false;
+      if (workshopEpoch === this.workshopEpoch) {
+        this.canvasStatusLoading = false;
+      }
     }
   }
 

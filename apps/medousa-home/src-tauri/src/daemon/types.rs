@@ -16,6 +16,8 @@ pub struct DaemonHealth {
     pub ok: bool,
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<DaemonRuntimeDescriptor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backend: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worker_id: Option<String>,

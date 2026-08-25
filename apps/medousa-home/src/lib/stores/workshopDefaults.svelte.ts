@@ -41,6 +41,7 @@ export class WorkshopDefaultsStore {
   loaded = $state(false);
   /** Serialized snapshot after last load/save — for dirty detection. */
   private baseline = $state<string | null>(null);
+  private loadEpoch = 0;
 
   selectedRouteRole = $state("orchestrator");
 
@@ -71,9 +72,21 @@ export class WorkshopDefaultsStore {
   }
 
   resetForReconnect() {
+    this.loadEpoch += 1;
+    this.draft = defaultWorkshopDefaults();
+    this.allowedModulesText = "";
+    this.apiKeySet = false;
+    this.apiKeyDraft = "";
+    this.clearApiKey = false;
+    this.sttApiKeySet = false;
+    this.sttApiKeyDraft = "";
+    this.clearSttApiKey = false;
     this.loaded = false;
     this.baseline = null;
     this.message = null;
+    this.modelsNotice = null;
+    this.loading = false;
+    this.saving = false;
   }
 
   async load(force = false) {
@@ -82,11 +95,13 @@ export class WorkshopDefaultsStore {
       return;
     }
     if (this.loaded && !force) return;
+    const loadEpoch = ++this.loadEpoch;
     this.loading = true;
     this.message = null;
     try {
       if (isTauriMobilePlatform()) {
         const raw = await fetchHostCharter();
+        if (loadEpoch !== this.loadEpoch) return;
         this.draft = plainCharterCopy(normalizeWorkshopDefaults(raw));
         this.allowedModulesText = allowedModulesToText(this.draft.allowedModules);
         this.apiKeySet = false;
@@ -99,7 +114,9 @@ export class WorkshopDefaultsStore {
       }
 
       await migrateGlobalTuiDefaultsToEngine().catch(() => false);
+      if (loadEpoch !== this.loadEpoch) return;
       const raw = await getEngineTuiDefaults();
+      if (loadEpoch !== this.loadEpoch) return;
       this.draft = normalizeWorkshopDefaults(raw);
       this.allowedModulesText = allowedModulesToText(this.draft.allowedModules);
       if (!this.draft.stageRouting?.orchestrator?.role) {
@@ -108,21 +125,28 @@ export class WorkshopDefaultsStore {
           this.draft.model ?? "qwen2.5:7b",
         );
       }
-      this.apiKeySet = await messagingSecretStatus("api_key");
+      const apiKeySet = await messagingSecretStatus("api_key");
+      if (loadEpoch !== this.loadEpoch) return;
+      this.apiKeySet = apiKeySet;
       this.apiKeyDraft = "";
       this.clearApiKey = false;
-      this.sttApiKeySet = await messagingSecretStatus("stt_api_key");
+      const sttApiKeySet = await messagingSecretStatus("stt_api_key");
+      if (loadEpoch !== this.loadEpoch) return;
+      this.sttApiKeySet = sttApiKeySet;
       this.sttApiKeyDraft = "";
       this.clearSttApiKey = false;
       workshopDefaultsSyncPort().applyVoiceDraft(this.draft);
       this.loaded = true;
       this.markClean();
     } catch (err) {
+      if (loadEpoch !== this.loadEpoch) return;
       this.message = err instanceof Error ? err.message : String(err);
       this.loaded = false;
       this.baseline = null;
     } finally {
-      this.loading = false;
+      if (loadEpoch === this.loadEpoch) {
+        this.loading = false;
+      }
     }
   }
 
@@ -168,7 +192,7 @@ export class WorkshopDefaultsStore {
   }
 
   async toggleFavorite(provider: string, model: string) {
-    if (!isTauri() || isTauriMobilePlatform()) return;
+    if (!isTauri()) return;
     const next = toggleFavoriteModel(this.favoriteModels(), provider, model);
     this.draft = { ...this.draft, favoriteModels: next };
     await putEngineTuiDefaults(syncFlatFieldsFromProfiles(this.draft));
@@ -185,10 +209,6 @@ export class WorkshopDefaultsStore {
 
   async saveInferenceProfiles() {
     if (!isTauri()) return;
-    if (isTauriMobilePlatform()) {
-      this.flashModelsNotice(workshopCharterOnHostHint());
-      return;
-    }
     this.saving = true;
     try {
       const payload: TuiDefaults = syncFlatFieldsFromProfiles({

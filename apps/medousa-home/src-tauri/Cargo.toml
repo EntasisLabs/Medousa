@@ -40,6 +40,7 @@ sha2 = "0.10"
 bytes = "1"
 url = "2"
 medousa-types = { path = "../../../crates/medousa-types" }
+medousa-runtime = { path = "../../../crates/medousa-runtime" }
 medousa-secrets = { path = "../../../crates/medousa-secrets" }
 medousa-sdk = { path = "../../../crates/medousa-sdk", default-features = false, features = ["async", "sse"] }
 medousa-sdk-iroh = { path = "../../../crates/medousa-sdk-iroh", default-features = false, features = ["async", "sse"] }
@@ -60,6 +61,8 @@ tauri-plugin-window-state = "2"
 libc = "0.2"
 
 [target.'cfg(target_os = "ios")'.dependencies]
+async-trait = "0.1"
+medousa = { path = "../../..", default-features = false, features = ["embedded-daemon"] }
 objc2 = "0.6"
 block2 = "0.6"
 objc2-core-foundation = { version = "0.3", features = ["CFCGTypes", "objc2"] }
@@ -69,8 +72,12 @@ objc2-foundation = { version = "0.3", features = [
   "NSURLRequest",
   "NSGeometry",
   "NSDate",
+  "NSNotification",
+  "NSObject",
+  "NSOperation",
   "NSRunLoop",
   "NSObjCRuntime",
+  "block2",
   "objc2-core-foundation",
 ] }
 objc2-ui-kit = { version = "0.3", features = [
@@ -78,6 +85,7 @@ objc2-ui-kit = { version = "0.3", features = [
   "UIViewController",
   "UIWindow",
   "UIApplication",
+  "block2",
 ] }
 tauri-plugin-ios-webview-insets = "0.1"
 

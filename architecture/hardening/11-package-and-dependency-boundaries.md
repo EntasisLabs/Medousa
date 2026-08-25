@@ -34,16 +34,72 @@ H12 owns making these checks required CI.
 
 | Metric | Audit 2026-08-12 | Frozen H11 inventory |
 | --- | ---: | ---: |
-| Unique normal name/version pairs | 932 | 944 pre-cut / **899** after unused root deps |
+| Unique normal name/version pairs | 932 | 944 pre-cut / **900** after unused root deps and the runtime boundary |
 | Duplicate-version crate names | 93 | 94 pre-cut / **90** after unused root deps |
 
 The audit ceilings are historical. The binding ratchet is the checked-in
 [`scripts/ci/dependency-budget.json`](../../scripts/ci/dependency-budget.json)
-file; later cars may only lower it. Profiles recorded separately: default
+file; later changes lower it or carry a reviewed budget-change record. Profiles recorded separately: default
 engine, `iroh-transport`, adapter workspace (`telegram`/`discord`/`slack`), and
 Home Tauri. Duplicate-version *names* are ratcheted; notable stacks
 (`reqwest`/`rustls`/`tungstenite`/`tonic`/`genai`/`schemars`/`sysinfo`) have
 owner + revisit dates in `duplicateVersionLedger`.
+
+### 2026-08-23 `medousa-runtime` boundary
+
+- **Metric/workload:** P09 package closure for `medousa-default` and
+  `medousa-iroh-transport`.
+- **Raw comparison:** default unique name/version pairs `899 -> 900`; Iroh
+  `980 -> 981`; Home Tauri `490 -> 491`; duplicate-version names remain `90`,
+  `96`, and `33`. The added package is the local `medousa-runtime` crate.
+  Its dedicated normal dependency closure is ratcheted at `537` unique
+  name/version pairs and `43` duplicate-version names; this is the current broad
+  Stasis native graph, not the desired mobile minimum. Phase 1B added `chrono`, `serde`,
+  `serde_json`, and `medousa-engine` edges to that crate, but every package was
+  already in both measured closures. Phase 1C added direct lean Stasis, `genai`,
+  `tracing`, `sha2`, Tokio, and `tokio-util` edges for the production
+  transcript/checkpoint, perception-policy, and cancellation/deadline seams;
+  the portable loop-gate and foreground-presentation-port seam adds no
+  production dependency. Physically moving the production loop and golden suite
+  adds only a test-only `async-trait` edge, whose package was already present in
+  the measured workspace closures. The ratchets therefore remain `900` and
+  `981`.
+- **Product/users/hardware:** the boundary lets desktop/server and iOS
+  deployments of the daemon share one foreground-turn kernel. Default and Iroh builds see one
+  additional workspace package node; no external library, runtime service, or
+  binary service was added. The initial policy kernel checked for
+  `aarch64-apple-ios` in 0.32 seconds; after the portable state/engine edges,
+  target-local checks completed in 10.69 seconds for device and 6.87 seconds for
+  simulator. With the direct lean Stasis/`genai` seam, clean dedicated-cache
+  checks completed in 68 seconds for device and 54 seconds for simulator; this
+  measures the current broad Stasis native graph and is not a release-size
+  claim.
+- **Correctness/security/durability:** production completion policy moved rather
+  than forked, existing in-tree imports use compatibility re-exports, the root
+  library check and golden suite pass, and concrete credential, daemon
+  filesystem, network, delivery, and worker authority remain outside the
+  portable loop through explicit ports. The daemon's typed execution identity
+  is carried only as an opaque context token while the portable boundary owns
+  cancellation and absolute-deadline enforcement. The completion gate now
+  carries only portable state and ports; daemon stream presentation is an
+  adapter and remains optional for adapter-minimal compositions. The production tool loop
+  now has one implementation in `medousa-runtime`, its 12 golden turns execute
+  with only the adapters they exercise, and the root module is a compatibility re-export.
+  Daemon/TUI consumers import that implementation directly while assembly
+  retains live product and environment settings through an injected
+  parallel-execution-settings provider.
+- **Alternatives:** leaving the FSM coupled to host-only daemon modules prevents
+  target-specific daemon composition; copying it creates a second completion authority; placing
+  foreground policy in the event-spine crate conflates orchestration with
+  persistence.
+- **Owner/revisit:** iOS embedded-daemon and daemon composition maintainers; revisit
+  when the mobile daemon composition lands or 2026-11-01, whichever comes
+  first.
+- **Workstream/finding:** the portable-runtime milestone is tracked in the iOS
+  embedded-daemon plan. DEP-001 remains mitigated because P09 still
+  ratchets the updated counts, duplicate counts did not grow, and the extraction
+  introduced no new package. Stasis feature pruning remains explicit mobile
+  size debt rather than a second Medousa runtime implementation.
 
 Root [`Cargo.toml`](../../Cargo.toml) listed `teloxide`, `serenity`, and
 `slack-morphism` with no uses under `src/`. Adapter crates already own those
@@ -83,7 +139,7 @@ document extract stay in the Home-first engine.
 
 | Package id | Workspace crates | Cargo features | Binaries | Default engine link |
 | --- | --- | --- | --- | --- |
-| `engine` | `medousa` | default `[]` | `medousa`, `medousa_daemon`, `medousa_cli`, `medousa_tui` | yes |
+| `engine` | `medousa`, `medousa-runtime` | default `[]` | `medousa`, `medousa_daemon`, `medousa_cli`, `medousa_tui` | yes |
 | `desktop` | `medousa-home` (Tauri, excluded workspace) | n/a | Medousa.app | no |
 | `local-brain` | `medousa-local-inference` | n/a | `medousa_local` | thin client only |
 | `mcp-gateway` | `medousa-mcp-gateway` | n/a | `medousa_mcp_gateway` | thin client only |

@@ -2,65 +2,64 @@ use crate::daemon::types::{
     ActiveSessionTurnResponse, AgentModeId, AgentModeListResponse, AgentModeProposalListResponse,
     AgentModeProposalResponse, AgentModeScope, AgentModeTransitionPolicy,
     CancelActiveSessionTurnResponse, CodeIntentContext, CreatePromptStashRequest,
-    DeletePromptStashResponse, DeriveSessionRequest, DeriveSessionResponse, MediaRef, PromptStash,
-    PromptStashListResponse, SessionAgentModeResponse, SessionCodeBindingResponse,
-    SessionCodeProjectResponse, SessionDeleteQuery, SessionDeleteResponse,
-    SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameResponse,
-    SetSessionAgentModeRequest, StageRoutingMatrix, StartSessionCodeProjectRequest,
-    TurnSurfaceContext,
+    CreateSessionRequest, CreateSessionResponse, DeletePromptStashResponse, DeriveSessionRequest,
+    DeriveSessionResponse, MediaRef, PromptStash, PromptStashListResponse,
+    SessionAgentModeResponse, SessionCodeBindingResponse, SessionCodeProjectResponse,
+    SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
+    SessionSetDisplayNameResponse, SetSessionAgentModeRequest, StageRoutingMatrix,
+    StartSessionCodeProjectRequest, TurnSurfaceContext,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
+
+use crate::embedded_daemon::EmbeddedDaemonState;
 
 use super::DaemonState;
 use super::sdk::{client, sdk_error};
 use super::workshop_http;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateSessionRequest {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub catalog: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub member_profile_ids: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_profile_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub display_name: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateSessionResponse {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub authority_id: Option<String>,
-    pub session_id: String,
-    pub catalog: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub display_name: Option<String>,
-    #[serde(default)]
-    pub member_profile_ids: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_profile_id: Option<String>,
-}
-
 #[tauri::command]
 pub async fn session_create(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     catalog: Option<String>,
     member_profile_ids: Option<Vec<String>>,
     agent_profile_id: Option<String>,
     display_name: Option<String>,
 ) -> Result<CreateSessionResponse, String> {
-    workshop_http::post_json(
-        &state,
-        "/v1/sessions",
-        &CreateSessionRequest {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        if catalog
+            .as_deref()
+            .is_some_and(|value| value.trim() != "single")
+            || member_profile_ids
+                .as_ref()
+                .is_some_and(|values| !values.is_empty())
+            || agent_profile_id
+                .as_deref()
+                .is_some_and(|value| !value.trim().is_empty())
+            || display_name
+                .as_deref()
+                .is_some_and(|value| !value.trim().is_empty())
+        {
+            return Err(
+                "the first embedded daemon profile supports plain single-seat sessions".to_string(),
+            );
+        }
+        return client.create_session().map_err(|error| error.to_string());
+    }
+
+    client(&state)?
+        .sessions()
+        .create(&CreateSessionRequest {
+            session_id: None,
             catalog,
             member_profile_ids,
             agent_profile_id,
             display_name,
-        },
-    )
-    .await
+        })
+        .await
+        .map_err(sdk_error)
 }
 
 #[tauri::command]
@@ -69,7 +68,7 @@ pub async fn session_derive(
     request: DeriveSessionRequest,
     idempotency_key: String,
 ) -> Result<DeriveSessionResponse, String> {
-    client(&state)
+    client(&state)?
         .sessions()
         .derive(&request, idempotency_key.trim())
         .await
@@ -79,6 +78,7 @@ pub async fn session_derive(
 #[tauri::command]
 pub async fn session_list(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     limit: Option<usize>,
     include_verification: Option<bool>,
     q: Option<String>,
@@ -86,6 +86,33 @@ pub async fn session_list(
 ) -> Result<SessionHistoryListResponse, String> {
     let capped = limit.unwrap_or(50).clamp(1, 200);
     let include_verification = include_verification.unwrap_or(false);
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        if q.as_deref().is_some_and(|value| !value.trim().is_empty())
+            || cursor
+                .as_deref()
+                .is_some_and(|value| !value.trim().is_empty())
+        {
+            return Err(
+                "search and paginated session history are not enabled in the first embedded daemon profile"
+                    .to_string(),
+            );
+        }
+        let mut sessions = client
+            .list_sessions(capped)
+            .map_err(|error| error.to_string())?;
+        if !include_verification {
+            sessions = sessions
+                .into_iter()
+                .map(|session| session.without_verification_fields())
+                .collect();
+        }
+        return Ok(SessionHistoryListResponse {
+            sessions,
+            next_cursor: None,
+        });
+    }
+
     let mut query = vec![
         ("limit", capped.to_string()),
         ("include_verification", include_verification.to_string()),
@@ -122,7 +149,7 @@ pub async fn session_set_display_name(
         return Err("display name must not be empty".to_string());
     }
 
-    client(&state)
+    client(&state)?
         .sessions()
         .set_display_name(trimmed_id, trimmed_name)
         .await
@@ -133,7 +160,7 @@ pub async fn session_set_display_name(
 pub async fn agent_mode_list(
     state: State<'_, DaemonState>,
 ) -> Result<AgentModeListResponse, String> {
-    client(&state)
+    client(&state)?
         .runtime()
         .agent_modes()
         .await
@@ -144,7 +171,7 @@ pub async fn agent_mode_list(
 pub async fn agent_mode_transition_policy_get(
     state: State<'_, DaemonState>,
 ) -> Result<AgentModeTransitionPolicy, String> {
-    client(&state)
+    client(&state)?
         .runtime()
         .agent_mode_transition_policy()
         .await
@@ -156,7 +183,7 @@ pub async fn agent_mode_transition_policy_set(
     state: State<'_, DaemonState>,
     policy: AgentModeTransitionPolicy,
 ) -> Result<AgentModeTransitionPolicy, String> {
-    client(&state)
+    client(&state)?
         .runtime()
         .set_agent_mode_transition_policy(&policy)
         .await
@@ -166,13 +193,20 @@ pub async fn agent_mode_transition_policy_set(
 #[tauri::command]
 pub async fn session_get_agent_mode(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
 ) -> Result<SessionAgentModeResponse, String> {
     let trimmed = session_id.trim();
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
-    client(&state)
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .session_agent_mode(trimmed)
+            .map_err(|error| error.to_string());
+    }
+    client(&state)?
         .sessions()
         .agent_mode(trimmed)
         .await
@@ -189,7 +223,7 @@ pub async fn session_set_agent_mode(
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
-    client(&state)
+    client(&state)?
         .sessions()
         .set_agent_mode(
             trimmed,
@@ -213,7 +247,7 @@ pub async fn session_list_agent_mode_proposals(
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
-    client(&state)
+    client(&state)?
         .sessions()
         .agent_mode_proposals(trimmed)
         .await
@@ -227,7 +261,7 @@ pub async fn session_decide_agent_mode_proposal(
     proposal_id: String,
     accept: bool,
 ) -> Result<AgentModeProposalResponse, String> {
-    client(&state)
+    client(&state)?
         .sessions()
         .decide_agent_mode_proposal(session_id.trim(), proposal_id.trim(), accept)
         .await
@@ -237,9 +271,16 @@ pub async fn session_decide_agent_mode_proposal(
 #[tauri::command]
 pub async fn session_get_code_binding(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
 ) -> Result<SessionCodeBindingResponse, String> {
-    client(&state)
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .session_code_binding(session_id.trim())
+            .map_err(|error| error.to_string());
+    }
+    client(&state)?
         .sessions()
         .code_binding(session_id.trim())
         .await
@@ -252,7 +293,7 @@ pub async fn session_set_code_binding(
     session_id: String,
     work_id: String,
 ) -> Result<SessionCodeBindingResponse, String> {
-    client(&state)
+    client(&state)?
         .sessions()
         .set_code_binding(session_id.trim(), work_id.trim())
         .await
@@ -264,7 +305,7 @@ pub async fn session_clear_code_binding(
     state: State<'_, DaemonState>,
     session_id: String,
 ) -> Result<SessionCodeBindingResponse, String> {
-    client(&state)
+    client(&state)?
         .sessions()
         .clear_code_binding(session_id.trim())
         .await
@@ -277,7 +318,7 @@ pub async fn session_start_code_project(
     session_id: String,
     request: StartSessionCodeProjectRequest,
 ) -> Result<SessionCodeProjectResponse, String> {
-    client(&state)
+    client(&state)?
         .sessions()
         .start_code_project(session_id.trim(), &request)
         .await
@@ -297,7 +338,7 @@ pub async fn session_delete(
     let query = SessionDeleteQuery {
         purge_memory: purge_memory.unwrap_or(true),
     };
-    client(&state)
+    client(&state)?
         .sessions()
         .delete(trimmed, &query)
         .await
@@ -308,7 +349,7 @@ pub async fn session_delete(
 pub async fn prompt_stash_list(
     state: State<'_, DaemonState>,
 ) -> Result<PromptStashListResponse, String> {
-    client(&state)
+    client(&state)?
         .prompt_stashes()
         .list()
         .await
@@ -320,7 +361,7 @@ pub async fn prompt_stash_create(
     state: State<'_, DaemonState>,
     request: CreatePromptStashRequest,
 ) -> Result<PromptStash, String> {
-    client(&state)
+    client(&state)?
         .prompt_stashes()
         .create(&request)
         .await
@@ -332,7 +373,7 @@ pub async fn prompt_stash_delete(
     state: State<'_, DaemonState>,
     stash_id: String,
 ) -> Result<DeletePromptStashResponse, String> {
-    client(&state)
+    client(&state)?
         .prompt_stashes()
         .delete(stash_id.trim())
         .await
@@ -342,13 +383,27 @@ pub async fn prompt_stash_delete(
 #[tauri::command]
 pub async fn session_get_history(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
 ) -> Result<SessionHistoryResponse, String> {
     let trimmed = session_id.trim();
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
-    client(&state)
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        let turns = client
+            .load_transcript_entries(trimmed)
+            .map_err(|error| error.to_string())?;
+        return Ok(SessionHistoryResponse {
+            // Conversation authority belongs to the embedded daemon, not the
+            // local UI principal.
+            authority_id: client.authority_id().clone(),
+            session_id: trimmed.to_string(),
+            turns,
+        });
+    }
+    client(&state)?
         .sessions()
         .history(trimmed)
         .await
@@ -358,13 +413,21 @@ pub async fn session_get_history(
 #[tauri::command]
 pub async fn session_get_active_turn(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
 ) -> Result<ActiveSessionTurnResponse, String> {
     let trimmed = session_id.trim();
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
-    client(&state)
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .active_turn(trimmed)
+            .await
+            .map_err(|error| error.to_string());
+    }
+    client(&state)?
         .sessions()
         .active_turn(trimmed)
         .await
@@ -374,6 +437,7 @@ pub async fn session_get_active_turn(
 #[tauri::command]
 pub async fn session_cancel_active_turn(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     activation_state: State<'_, super::local_inference::LocalInferenceActivationState>,
     session_id: String,
 ) -> Result<CancelActiveSessionTurnResponse, String> {
@@ -388,7 +452,14 @@ pub async fn session_cancel_active_turn(
             message: "Cancelled local model loading".to_string(),
         });
     }
-    client(&state)
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .cancel_active_turn(trimmed)
+            .await
+            .map_err(|error| error.to_string());
+    }
+    client(&state)?
         .sessions()
         .cancel_active_turn(trimmed)
         .await
@@ -533,6 +604,7 @@ fn default_response_depth_mode() -> String {
 #[tauri::command]
 pub async fn turn_create(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     activation_state: State<'_, super::local_inference::LocalInferenceActivationState>,
     session_id: String,
     prompt: String,
@@ -584,6 +656,67 @@ pub async fn turn_create(
     } else {
         Some(model.as_str())
     };
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state
+        .client_if_active_for_route(
+            (!selected_provider.is_empty()).then_some(selected_provider),
+            selected_model,
+        )
+        .await?
+    {
+        if !matches!(ticket_mode, TurnTicketMode::Interactive) {
+            return Err(
+                "background turns are not enabled in the first embedded daemon profile".to_string(),
+            );
+        }
+        if matches!(agent_mode, Some(AgentModeId::Coder))
+            || code_context.is_some()
+            || code_project_setup_authorized.unwrap_or(false)
+        {
+            return Err(
+                "code work is not enabled in the first embedded daemon profile".to_string(),
+            );
+        }
+        if media_refs.as_ref().is_some_and(|refs| !refs.is_empty()) {
+            return Err(
+                "media turns are not enabled in the first embedded daemon profile".to_string(),
+            );
+        }
+        if response_depth_mode
+            .as_deref()
+            .is_some_and(|value| !matches!(value.trim(), "" | "standard"))
+            || reasoning_effort
+                .as_deref()
+                .is_some_and(|value| !matches!(value.trim(), "" | "default"))
+        {
+            return Err(
+                "custom depth and reasoning controls are not enabled in the first embedded daemon profile"
+                    .to_string(),
+            );
+        }
+        let accepted = client
+            .start_turn_with_presentation_context(
+                trimmed_session,
+                prompt.clone(),
+                identity_user_id.clone(),
+                channel_surface.clone(),
+                voice_preset_id.clone(),
+                voice_appendix.clone(),
+            )
+            .await
+            .map_err(|error| error.to_string())?;
+        return Ok(TurnTicketResponse {
+            turn_id: accepted.turn_id,
+            session_id: trimmed_session.to_string(),
+            mode: TurnTicketMode::Interactive,
+            phase: TurnTicketPhase::Accepted,
+            accepted_at_utc: accepted.accepted_at_utc,
+            stream_url: accepted.stream_url,
+            stream_ready: accepted.stream_ready,
+            workspace_card_id: None,
+            daemon_notice: accepted.daemon_notice,
+        });
+    }
     if selected_provider.eq_ignore_ascii_case("medousa-local") {
         super::local_inference::ensure_local_engine_for_turn(
             &activation_state,

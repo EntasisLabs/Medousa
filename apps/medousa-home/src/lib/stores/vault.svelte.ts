@@ -123,6 +123,7 @@ export class VaultStore {
   /** Shared per-generation lookup maps — rebuilt when notes/generation change. */
   lookupSnapshot = $state<VaultLookupSnapshot>(buildVaultLookupSnapshot([], 0));
   vaultGeneration = $state(0);
+  workshopEpoch = 0;
   listingIncomplete = $state(false);
   tree = $state<VaultTreeNode[]>([]);
   selectedPath = $state<string | null>(loadLastNote());
@@ -443,7 +444,14 @@ export class VaultStore {
   closeCardDetail() { this.#bridge.closeCardDetail(); }
   insertImageEmbed(imagePath: string) { return this.#bridge.insertImageEmbed(imagePath); }
 
-  resetForWorkshopSwitch() { this.#roots.resetForWorkshopSwitch(); }
+  resetForWorkshopSwitch() {
+    this.workshopEpoch += 1;
+    this.openGeneration += 1;
+    this.vaultGeneration = 0;
+    this.listingIncomplete = false;
+    this.#browse.resetForWorkshopSwitch();
+    this.#roots.resetForWorkshopSwitch();
+  }
   clearLooseFile() { this.#roots.clearLooseFile(); }
   openLooseMarkdownFile() { return this.#roots.openLooseMarkdownFile(); }
   openLooseFile(absolutePath: string, options?: { skipLeaveFlush?: boolean }) {

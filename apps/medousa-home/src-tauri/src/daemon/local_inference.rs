@@ -93,7 +93,7 @@ impl LocalInferenceActivationState {
 pub async fn local_inference_hardware(
     state: State<'_, DaemonState>,
 ) -> Result<LocalHardwareResponse, String> {
-    sdk::client(&state)
+    sdk::client(&state)?
         .local_models()
         .hardware()
         .await
@@ -104,7 +104,7 @@ pub async fn local_inference_hardware(
 pub async fn local_inference_catalog(
     state: State<'_, DaemonState>,
 ) -> Result<LocalCatalogResponse, String> {
-    sdk::client(&state)
+    sdk::client(&state)?
         .local_models()
         .catalog()
         .await
@@ -115,7 +115,7 @@ pub async fn local_inference_catalog(
 pub async fn local_inference_models(
     state: State<'_, DaemonState>,
 ) -> Result<LocalModelsResponse, String> {
-    sdk::client(&state)
+    sdk::client(&state)?
         .local_models()
         .list()
         .await
@@ -127,7 +127,7 @@ pub async fn local_inference_start_download(
     state: State<'_, DaemonState>,
     model_id: String,
 ) -> Result<ModelDownloadProgress, String> {
-    sdk::client(&state)
+    sdk::client(&state)?
         .local_models()
         .start_download(model_id.trim())
         .await
@@ -140,7 +140,7 @@ pub async fn local_inference_download_status(
     state: State<'_, DaemonState>,
     job_id: String,
 ) -> Result<ModelDownloadProgress, String> {
-    sdk::client(&state)
+    sdk::client(&state)?
         .local_models()
         .download_status(job_id.trim())
         .await
@@ -169,7 +169,7 @@ pub async fn local_inference_spawn_engine(
 
     workshop_runtime::ensure_local_brain(&workshop.id, &data_dir, model.as_deref()).await?;
 
-    sdk::client(&state)
+    sdk::client(&state)?
         .local_models()
         .engine_status()
         .await
@@ -229,7 +229,7 @@ pub async fn local_inference_unload_engine(
     state: State<'_, DaemonState>,
 ) -> Result<LocalEngineStatus, String> {
     workshop_runtime::stop_local_brain_bounded(PERSONAL_WORKSHOP_ID).await?;
-    sdk::client(&state)
+    sdk::client(&state)?
         .local_models()
         .engine_status()
         .await
@@ -240,7 +240,7 @@ pub async fn local_inference_unload_engine(
 pub async fn local_inference_engine_status(
     state: State<'_, DaemonState>,
 ) -> Result<LocalEngineStatus, String> {
-    let mut status = sdk::client(&state)
+    let mut status = sdk::client(&state)?
         .local_models()
         .engine_status()
         .await
@@ -263,7 +263,7 @@ pub async fn local_inference_remove_model(
     state: State<'_, DaemonState>,
     model_id: String,
 ) -> Result<serde_json::Value, String> {
-    sdk::client(&state)
+    sdk::client(&state)?
         .local_models()
         .remove_model(model_id.trim())
         .await
@@ -283,7 +283,7 @@ pub async fn local_inference_stream_download(
     let (cancel_tx, cancel_rx) = watch::channel(false);
     *stream_state.cancel.lock().expect("lock") = Some(cancel_tx);
 
-    let config = workshop_http::transport_config(&state);
+    let config = workshop_http::transport_config(&state)?;
     let path = medousa_sdk::generated::expand_path(
         medousa_sdk::generated::ops::LOCAL_MODELS_DOWNLOAD_BY_JOB_ID_EVENTS_GET.path,
         &[("job_id", job_id.trim())],

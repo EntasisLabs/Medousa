@@ -107,11 +107,14 @@ fn ws_url_for(daemon_url: &str, path: &str) -> String {
 }
 
 pub(crate) fn authenticated_ws_request(
-    daemon_url: &str,
     path: &str,
 ) -> Result<tokio_tungstenite::tungstenite::http::Request<()>, String> {
-    let config = crate::workshop_transport::config_from_lan_base(daemon_url);
-    ws_request_with_bearer(daemon_url, path, config.session_token.as_deref())
+    let config = crate::active_workshop::transport_config()?;
+    ws_request_with_bearer(
+        &config.lan_base,
+        path,
+        config.session_token.as_deref(),
+    )
 }
 
 fn ws_request_with_bearer(
@@ -137,7 +140,7 @@ async fn daemon_get<T: serde::de::DeserializeOwned>(
     state: &State<'_, DaemonState>,
     path: &str,
 ) -> Result<T, String> {
-    client(state)
+    client(state)?
         .http()
         .get(path)
         .await
@@ -149,7 +152,7 @@ async fn daemon_post<T: serde::de::DeserializeOwned, B: serde::Serialize>(
     path: &str,
     body: &B,
 ) -> Result<T, String> {
-    client(state)
+    client(state)?
         .http()
         .post(path, body)
         .await
@@ -207,19 +210,13 @@ pub async fn terminal_create(
 #[tauri::command]
 pub async fn terminal_attach(
     app: AppHandle,
-    state: State<'_, DaemonState>,
+    _state: State<'_, DaemonState>,
     registry: State<'_, TerminalRegistry>,
     session_id: String,
     cols: u16,
     rows: u16,
 ) -> Result<TerminalAttachResponse, String> {
-    let daemon_url = state
-        .daemon_url
-        .lock()
-        .map_err(|_| "daemon url lock")?
-        .clone();
     let request = authenticated_ws_request(
-        &daemon_url,
         &format!("/v1/sessions/shell/{}", urlencoding::encode(&session_id)),
     )?;
     let (websocket, _) = connect_async(request)

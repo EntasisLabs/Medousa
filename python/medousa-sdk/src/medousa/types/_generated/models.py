@@ -654,6 +654,17 @@ class FeedListEntry(MedousaModel):
     subscriberComponentIds: list[str]
 
 
+class DaemonRuntimeDescriptor(MedousaModel):
+    advertised_capabilities: list[str]
+    authority_id: AuthorityId
+    base_schema_revision: int = Field(..., ge=0)
+    build_revision: str
+    contract_revision: int = Field(..., ge=0)
+    deployment_profile: str
+    deployment_target: str
+    product_version: str
+
+
 class IngestAttachment(MedousaModel):
     content: str
     kind: str
@@ -2164,6 +2175,31 @@ class CreatePromptStashRequest(MedousaModel):
     source_session: SessionRef | None = None
 
 
+class CreateSessionRequest(MedousaModel):
+    agent_profile_id: str | None = Field(
+        None,
+        description='Agent persona for shared rooms (defaults to `user:general` in Shared mode).',
+    )
+    catalog: str | None = Field(None, description='`single` (default) or `shared`.')
+    display_name: str | None = None
+    member_profile_ids: list[str] | None = Field(
+        None, description='Required for `catalog: shared` — member seat profile ids.'
+    )
+    session_id: str | None = Field(
+        None,
+        description='Deprecated compatibility field. New sessions are always daemon-generated.',
+    )
+
+
+class CreateSessionResponse(MedousaModel):
+    agent_profile_id: str | None = None
+    authority_id: AuthorityId
+    catalog: str
+    display_name: str | None = None
+    member_profile_ids: list[str] | None = None
+    session_id: str
+
+
 class DecideAgentModeProposalRequest(MedousaModel):
     accept: bool
 
@@ -2267,6 +2303,7 @@ class HealthResponse(MedousaModel):
     last_agent_turn_at_utc: AwareDatetime | None = None
     last_agent_turn_latency_ms: int | None = Field(None, ge=0)
     now_utc: AwareDatetime
+    runtime: DaemonRuntimeDescriptor
     status: str
     tool_registry_count: int | None = Field(0, ge=0)
     worker_id: str

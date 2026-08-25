@@ -298,12 +298,7 @@ fn decode_userinfo_component(value: &str) -> String {
     out
 }
 
-/// Bytes before `?` so LOCK / mkdir treat the engine query string as not part of the path.
-pub fn surrealkv_filesystem_path(path: &str) -> &str {
-    path.split_once('?')
-        .map(|(prefix, _)| prefix)
-        .unwrap_or(path)
-}
+pub use crate::runtime::surreal_startup::surrealkv_filesystem_path;
 
 pub fn desktop_surrealkv_memtable_bytes() -> u64 {
     parse_positive_bytes_env(ENV_DETAMU_MEMTABLE_BYTES)

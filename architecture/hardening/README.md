@@ -156,7 +156,7 @@ one without retaining the history.
 | PERF-006 | High | H07 | C | Mitigated; P07 multi-OS Validated evidence pending | Large-vault tree/link; Home pages to completion and virtualizes recents at fixed height |
 | ARCH-002 | High | H09 | D | Mitigated on unit/CI | Lifecycle races are covered and no source owner is above 2,000 lines; Validated/Shipped still need P08 |
 | CONTRACT-001 | High | H10 | D | Mitigated on unit/CI | Regen-and-diff, exact-set equality, no-literal, and released-baseline `diff_contracts`; Validated/Shipped still need packaged multi-client evidence |
-| DEP-001 | High | H11 | D | Mitigated on unit/CI | Feature/dependency graph, cargo deny/machete, and P09 unique/duplicate ratchets |
+| DEP-001 | High | H11 | D | Mitigated on unit/CI | Feature/dependency graph, cargo deny/machete, and P09 unique/duplicate ratchets; reviewed local runtime boundary remains 900/90 |
 | CI-001 | High | H12 | D | Mitigated on unit/CI | Required PR matrix: hermetic lib, workspace lib, Home test/build, docs, deny, Tauri Ubuntu; nightly macos/windows Tauri |
 | TEST-001 | High | H12 | D | Mitigated on unit/CI | Credential injection, env RAII lock, repeated parallel `cargo test -p medousa --lib` |
 | PERF-007 | High | H12 | D | Mitigated on unit/CI | P01/P03 micro-CI ratchets; P08/P09 required; nightly P04–P06 |

@@ -8,7 +8,6 @@ use tokio::sync::mpsc;
 use crate::artifact_store;
 use crate::client_tools::ClientRegistry;
 use crate::events::TuiEvent;
-use crate::runtime::stasis_surreal_schema::ensure_stasis_runtime_schema;
 use crate::runtime::stasis_wire::LocalStasisWireConfig;
 use crate::runtime::stasis_wire::build_local_stasis_composition;
 use crate::runtime::vault_surreal_schema::ensure_vault_surreal_schema;
@@ -134,18 +133,19 @@ async fn build_tui_local_platform(
     };
 
     let (composition, memory) = build_local_stasis_composition(wire_config).await?;
-    ensure_stasis_runtime_schema(&composition)
-        .await
-        .context("failed to ensure Stasis SurrealDB runtime tables")?;
     ensure_vault_surreal_schema(&composition)
         .await
         .context("failed to ensure vault SurrealDB tables")?;
-    init_local_platform_stores(&composition).await;
+    init_local_platform_stores(&composition).await?;
     assemble_tui_agent(composition, memory, config, event_tx).await
 }
 
-async fn init_local_platform_stores(composition: &stasis::prelude::RuntimeComposition) {
-    session_store::init_session_store_with_runtime(composition).await;
+async fn init_local_platform_stores(
+    composition: &stasis::prelude::RuntimeComposition,
+) -> Result<()> {
+    session_store::init_session_store_with_runtime(composition)
+        .await
+        .context("failed to initialize session store")?;
     session_meta_store::init_session_meta_store_with_runtime(composition).await;
     artifact_store::init_artifact_store_with_runtime(composition).await;
     crate::component_store::init_component_store_with_runtime(composition).await;
@@ -154,6 +154,7 @@ async fn init_local_platform_stores(composition: &stasis::prelude::RuntimeCompos
     verification_store::init_verification_store_with_runtime(composition).await;
     crate::session_catalog::init_session_catalog_with_runtime(composition).await;
     crate::turn_continuation::init_turn_continuation_store_with_runtime(composition).await;
+    Ok(())
 }
 
 async fn assemble_tui_agent(

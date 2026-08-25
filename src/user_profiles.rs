@@ -7,12 +7,11 @@ use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::identity_memory::DEFAULT_USER_ID;
-use crate::session;
-
+#[cfg(feature = "full-daemon")]
 const PROFILES_FILENAME: &str = "user_profiles.json";
 const DEFAULT_PROFILE_DISPLAY_NAME: &str = "Personal";
 const MAX_PROFILE_SLUG_LEN: usize = 32;
+pub const DEFAULT_USER_ID: &str = "user:default";
 
 use std::sync::{Arc, OnceLock, RwLock as StdRwLock};
 
@@ -55,7 +54,14 @@ fn registry_active_identity_user_id() -> String {
             .expect("profile registry lock")
             .active_identity_user_id();
     }
-    UserProfileRegistry::load_or_bootstrap().active_identity_user_id()
+    #[cfg(feature = "full-daemon")]
+    {
+        UserProfileRegistry::load_or_bootstrap().active_identity_user_id()
+    }
+    #[cfg(not(feature = "full-daemon"))]
+    {
+        DEFAULT_USER_ID.to_string()
+    }
 }
 
 /// Canonical workshop operator identity: env override, then active profile from settings.
@@ -76,9 +82,16 @@ pub fn resolve_workshop_active_profile_id() -> String {
             .active_profile_id()
             .to_string();
     }
-    UserProfileRegistry::load_or_bootstrap()
-        .active_profile_id()
-        .to_string()
+    #[cfg(feature = "full-daemon")]
+    {
+        UserProfileRegistry::load_or_bootstrap()
+            .active_profile_id()
+            .to_string()
+    }
+    #[cfg(not(feature = "full-daemon"))]
+    {
+        DEFAULT_USER_ID.to_string()
+    }
 }
 
 /// Profile id for a specific registry record (export/import), not the active profile.
@@ -105,6 +118,18 @@ pub struct ProfileRecord {
     pub archived: bool,
 }
 
+impl ProfileRecord {
+    pub fn to_dto(&self) -> medousa_types::daemon_api::UserProfileRecordDto {
+        medousa_types::daemon_api::UserProfileRecordDto {
+            profile_id: self.profile_id.clone(),
+            display_name: self.display_name.clone(),
+            created_at: self.created_at,
+            is_default: self.is_default,
+            archived: self.archived,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UserProfilesDocument {
     pub active_profile_id: String,
@@ -123,11 +148,23 @@ impl Default for UserProfilesDocument {
 #[derive(Debug, Clone)]
 pub struct UserProfileRegistry {
     document: UserProfilesDocument,
+    storage_path: PathBuf,
 }
 
 impl UserProfileRegistry {
+    #[cfg(feature = "full-daemon")]
     pub fn load_or_bootstrap() -> Self {
-        match Self::load_from_disk() {
+        Self::load_or_bootstrap_at(profiles_path())
+    }
+
+    /// Load the canonical profile registry at a daemon-owned path.
+    ///
+    /// Full deployments keep using [`Self::load_or_bootstrap`]. Embedded hosts
+    /// inject an app-sandbox path instead of borrowing Home's process-global
+    /// data directory.
+    pub fn load_or_bootstrap_at(path: impl Into<PathBuf>) -> Self {
+        let path = path.into();
+        match Self::load_from_disk(&path) {
             Ok(mut registry) => {
                 registry.ensure_default_profile();
                 if let Err(err) = registry.save_to_disk() {
@@ -139,6 +176,7 @@ impl UserProfileRegistry {
                 eprintln!("user profiles: using defaults ({err})");
                 let registry = Self {
                     document: UserProfilesDocument::default(),
+                    storage_path: path,
                 };
                 if let Err(save_err) = registry.save_to_disk() {
                     eprintln!("user profiles: failed to write defaults: {save_err}");
@@ -148,26 +186,29 @@ impl UserProfileRegistry {
         }
     }
 
-    fn load_from_disk() -> Result<Self> {
-        let path = profiles_path();
+    fn load_from_disk(path: &std::path::Path) -> Result<Self> {
         if !path.exists() {
             return Ok(Self {
                 document: UserProfilesDocument::default(),
+                storage_path: path.to_path_buf(),
             });
         }
-        let raw = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+        let raw = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
         let document: UserProfilesDocument =
             serde_json::from_str(&raw).context("parse user_profiles.json")?;
-        Ok(Self { document })
+        Ok(Self {
+            document,
+            storage_path: path.to_path_buf(),
+        })
     }
 
     fn save_to_disk(&self) -> Result<()> {
-        let path = profiles_path();
+        let path = &self.storage_path;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
         }
         let encoded = serde_json::to_string_pretty(&self.document).context("encode profiles")?;
-        fs::write(&path, encoded).with_context(|| format!("write {}", path.display()))?;
+        fs::write(path, encoded).with_context(|| format!("write {}", path.display()))?;
         Ok(())
     }
 
@@ -189,7 +230,7 @@ impl UserProfileRegistry {
     }
 
     pub fn profiles_path(&self) -> PathBuf {
-        profiles_path()
+        self.storage_path.clone()
     }
 
     pub fn list_profiles(&self) -> Vec<ProfileRecord> {
@@ -263,8 +304,9 @@ impl UserProfileRegistry {
     }
 }
 
+#[cfg(feature = "full-daemon")]
 fn profiles_path() -> PathBuf {
-    session::medousa_data_dir().join(PROFILES_FILENAME)
+    crate::session::medousa_data_dir().join(PROFILES_FILENAME)
 }
 
 fn default_profile_record() -> ProfileRecord {
@@ -319,7 +361,7 @@ pub fn profile_slug_from_id(profile_id: &str) -> Option<&str> {
 
 pub fn is_reserved_profile_slug(slug: &str) -> bool {
     slug.starts_with("medousa-prompts")
-        || crate::runtime_session::is_runtime_bootstrap_session_id(slug)
+        || crate::daemon_runtime::is_runtime_bootstrap_session_id(slug)
 }
 
 fn normalize_display_name(raw: &str) -> Result<String> {
@@ -334,6 +376,7 @@ fn normalize_display_name(raw: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "full-daemon")]
     use std::sync::{Arc, RwLock as StdRwLock};
 
     #[test]
@@ -347,10 +390,10 @@ mod tests {
     fn rejects_reserved_slug() {
         assert!(is_reserved_profile_slug("medousa-prompts-system"));
         assert!(is_reserved_profile_slug(
-            crate::runtime_session::RUNTIME_BOOTSTRAP_SESSION_ID
+            crate::daemon_runtime::RUNTIME_BOOTSTRAP_SESSION_ID
         ));
         assert!(is_reserved_profile_slug(
-            crate::runtime_session::LEGACY_RUNTIME_BOOTSTRAP_SESSION_ID
+            crate::daemon_runtime::LEGACY_RUNTIME_BOOTSTRAP_SESSION_ID
         ));
     }
 
@@ -363,6 +406,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "full-daemon")]
     fn workshop_interactive_channel_uses_profile_slug() {
         let registry = Arc::new(StdRwLock::new(UserProfileRegistry {
             document: UserProfilesDocument {
@@ -378,6 +422,7 @@ mod tests {
                     },
                 ],
             },
+            storage_path: PathBuf::from("user_profiles.test.json"),
         }));
         init_workshop_profile_registry(registry);
         assert_eq!(
@@ -402,6 +447,7 @@ mod tests {
                     },
                 ],
             },
+            storage_path: PathBuf::from("user_profiles.test.json"),
         };
         assert_eq!(registry.active_identity_user_id(), "user:work");
     }

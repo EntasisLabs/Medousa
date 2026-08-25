@@ -1209,7 +1209,7 @@ pub fn frozen_v2_replay_event(event: &TurnStreamEventV2) -> Option<TurnStreamEve
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 mod tests {
     use super::*;
     use crate::daemon_api::StreamUiArtifact;

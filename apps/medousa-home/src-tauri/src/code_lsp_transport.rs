@@ -57,17 +57,12 @@ fn validate_lsp_path(path: &str) -> Result<(), String> {
 #[tauri::command]
 pub async fn code_lsp_attach(
     app: AppHandle,
-    state: State<'_, DaemonState>,
+    _state: State<'_, DaemonState>,
     registry: State<'_, CodeLspTransportRegistry>,
     path: String,
 ) -> Result<CodeLspAttachResponse, String> {
     validate_lsp_path(&path)?;
-    let daemon_url = state
-        .daemon_url
-        .lock()
-        .map_err(|_| "daemon url lock")?
-        .clone();
-    let request = crate::terminal::authenticated_ws_request(&daemon_url, &path)?;
+    let request = crate::terminal::authenticated_ws_request(&path)?;
     let (websocket, _) = connect_async(request)
         .await
         .map_err(|error| error.to_string())?;

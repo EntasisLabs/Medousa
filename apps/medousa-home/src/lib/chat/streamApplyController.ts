@@ -31,6 +31,7 @@ import {
   isWorkshopHandoffStreamEvent,
 } from "$lib/utils/streamEvents";
 import { budgetRequestIdFromStreamEvent } from "$lib/notifications";
+import { randomUuid } from "$lib/utils/randomUuid";
 import { handleWorkerSynthesisStreamEvent, workerLinkForTurn } from "$lib/chat/workerLaneController";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
 import {
@@ -329,7 +330,7 @@ export function attachOrphanStream(host: ChatStoreHost, event: InteractiveTurnSt
     return;
   }
 
-  const id = crypto.randomUUID();
+  const id = randomUuid();
   const turn = host.turns.get(event.turn_id);
   host.appendMessage({
     id,

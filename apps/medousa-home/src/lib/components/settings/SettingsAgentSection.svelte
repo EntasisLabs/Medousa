@@ -43,7 +43,6 @@
   type Picker = "stance" | "depth" | null;
 
   const readOnly = $derived(mobile && isTauriMobilePlatform());
-
   const memoryPrimary = [
     {
       key: "sliceHotWindowTurns" as const,
@@ -112,6 +111,8 @@
   });
   let modePolicySaving = $state(false);
   let modePolicyFeedback = $state<string | null>(null);
+
+  const inferenceCatalog = $derived(catalog);
 
   let editorOpen = $state(false);
   let editingId = $state<string | null>(null);
@@ -427,18 +428,12 @@
     <div class="agent-models">
       <ModelsSettingsTab
         bind:this={modelsTab}
-        {catalog}
+        catalog={inferenceCatalog}
         {sttReady}
-        disabled={readOnly || workshopDefaults.saving}
+        disabled={workshopDefaults.saving}
         onKeyStatusChange={() => void refreshSttAndKeys()}
       />
     </div>
-
-    {#if readOnly}
-      <p class="workshop-faint mt-3 text-xs leading-relaxed">
-        Model picks are managed on your workshop host.
-      </p>
-    {/if}
 
     <details class="prefs-more mt-3" bind:open={modelsAdvancedOpen}>
       <summary class="prefs-more-summary">
@@ -478,8 +473,8 @@
         {:else if modelsExtra === "providers"}
           <div class="agent-extra-panel mt-3">
             <ProvidersSettingsTab
-              {catalog}
-              disabled={readOnly || workshopDefaults.saving}
+              catalog={inferenceCatalog}
+              disabled={workshopDefaults.saving}
               onKeysChanged={() => void refreshSttAndKeys()}
             />
           </div>

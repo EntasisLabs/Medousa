@@ -23,7 +23,7 @@ pub async fn calendar_list_events(
         to: parse_optional_datetime(to)?,
         path: path.filter(|value| !value.trim().is_empty()),
     };
-    client(&state)
+    client(&state)?
         .calendar()
         .list_events(&query)
         .await
@@ -35,7 +35,7 @@ pub async fn calendar_create_event(
     state: State<'_, DaemonState>,
     request: CalendarWriteRequest,
 ) -> Result<CalendarWriteResponse, String> {
-    client(&state)
+    client(&state)?
         .calendar()
         .create_event(&request)
         .await
@@ -48,7 +48,7 @@ pub async fn calendar_update_event(
     uid: String,
     request: CalendarWriteRequest,
 ) -> Result<CalendarWriteResponse, String> {
-    client(&state)
+    client(&state)?
         .calendar()
         .update_event(uid.trim(), &request)
         .await
@@ -64,7 +64,7 @@ pub async fn calendar_delete_event(
     let query = CalendarExportQuery {
         path: path.filter(|value| !value.trim().is_empty()),
     };
-    client(&state)
+    client(&state)?
         .calendar()
         .delete_event(uid.trim(), &query)
         .await
@@ -81,7 +81,7 @@ pub async fn calendar_import_ics(
         ics,
         calendar_path: path.filter(|value| !value.trim().is_empty()),
     };
-    client(&state)
+    client(&state)?
         .calendar()
         .import_ics(&request)
         .await
@@ -96,7 +96,7 @@ pub async fn calendar_export(
     let query = CalendarExportQuery {
         path: path.filter(|value| !value.trim().is_empty()),
     };
-    client(&state)
+    client(&state)?
         .calendar()
         .export(&query)
         .await

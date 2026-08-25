@@ -9,11 +9,16 @@
  */
 
 import { operationPath } from "$lib/daemon/opPath";
+import { workshopScopedStorageKey } from "$lib/utils/workshopLocality";
 
 const STORAGE_KEY = "medousa-home-agent-runtime-v1";
 const AGENT_SESSION_KEY = "medousa-home-agent-session-v1";
 const AGENT_CONFIG_KEY = "medousa-home-agent-config-v1";
 const AGENT_WORK_KEY = "medousa-home-agent-work-v1";
+
+function scopedKey(key: string): string {
+  return workshopScopedStorageKey(key);
+}
 
 export type ChatAgentRuntime = "medousa" | "cursor" | "codex";
 
@@ -27,7 +32,7 @@ export function isExternalAgentRuntime(runtime: ChatAgentRuntime): boolean {
 function loadMap(): Record<string, ChatAgentRuntime> {
   if (typeof localStorage === "undefined") return {};
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(scopedKey(STORAGE_KEY));
     if (!raw) return {};
     const parsed = JSON.parse(raw) as Record<string, string>;
     const out: Record<string, ChatAgentRuntime> = {};
@@ -42,13 +47,13 @@ function loadMap(): Record<string, ChatAgentRuntime> {
 
 function saveMap(map: Record<string, ChatAgentRuntime>) {
   if (typeof localStorage === "undefined") return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
+  localStorage.setItem(scopedKey(STORAGE_KEY), JSON.stringify(map));
 }
 
 function loadAgentSessionMap(): Record<string, string> {
   if (typeof localStorage === "undefined") return {};
   try {
-    const raw = localStorage.getItem(AGENT_SESSION_KEY);
+    const raw = localStorage.getItem(scopedKey(AGENT_SESSION_KEY));
     if (!raw) return {};
     const parsed = JSON.parse(raw) as Record<string, string>;
     const out: Record<string, string> = {};
@@ -63,13 +68,13 @@ function loadAgentSessionMap(): Record<string, string> {
 
 function saveAgentSessionMap(map: Record<string, string>) {
   if (typeof localStorage === "undefined") return;
-  localStorage.setItem(AGENT_SESSION_KEY, JSON.stringify(map));
+  localStorage.setItem(scopedKey(AGENT_SESSION_KEY), JSON.stringify(map));
 }
 
 function loadAgentWorkMap(): Record<string, string | null> {
   if (typeof localStorage === "undefined") return {};
   try {
-    const raw = localStorage.getItem(AGENT_WORK_KEY);
+    const raw = localStorage.getItem(scopedKey(AGENT_WORK_KEY));
     if (!raw) return {};
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const out: Record<string, string | null> = {};
@@ -85,7 +90,7 @@ function loadAgentWorkMap(): Record<string, string | null> {
 
 function saveAgentWorkMap(map: Record<string, string | null>) {
   if (typeof localStorage === "undefined") return;
-  localStorage.setItem(AGENT_WORK_KEY, JSON.stringify(map));
+  localStorage.setItem(scopedKey(AGENT_WORK_KEY), JSON.stringify(map));
 }
 
 export function getSessionAgentRuntime(sessionId: string): ChatAgentRuntime {
@@ -147,7 +152,7 @@ export function clearSessionAgentSessionId(sessionId: string) {
 export function getSessionAgentConfigOptions(sessionId: string): unknown[] {
   if (typeof localStorage === "undefined") return [];
   try {
-    const all = JSON.parse(localStorage.getItem(AGENT_CONFIG_KEY) ?? "{}") as Record<
+    const all = JSON.parse(localStorage.getItem(scopedKey(AGENT_CONFIG_KEY)) ?? "{}") as Record<
       string,
       unknown
     >;
@@ -161,13 +166,13 @@ export function getSessionAgentConfigOptions(sessionId: string): unknown[] {
 export function setSessionAgentConfigOptions(sessionId: string, options: unknown[]) {
   if (typeof localStorage === "undefined" || !sessionId.trim()) return;
   try {
-    const all = JSON.parse(localStorage.getItem(AGENT_CONFIG_KEY) ?? "{}") as Record<
+    const all = JSON.parse(localStorage.getItem(scopedKey(AGENT_CONFIG_KEY)) ?? "{}") as Record<
       string,
       unknown
     >;
     if (options.length > 0) all[sessionId.trim()] = options;
     else delete all[sessionId.trim()];
-    localStorage.setItem(AGENT_CONFIG_KEY, JSON.stringify(all));
+    localStorage.setItem(scopedKey(AGENT_CONFIG_KEY), JSON.stringify(all));
   } catch {
     // Storage is a convenience cache; the daemon remains authoritative.
   }

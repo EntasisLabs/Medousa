@@ -5,6 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Utc};
 use locus_core_rs::NodeStore;
+use medousa_runtime::MedousaToolLoopPipeline;
 use schemars::JsonSchema;
 use schemars::schema::{InstanceType, Schema, SchemaObject};
 use serde::{Deserialize, Serialize};
@@ -12,7 +13,6 @@ use serde_json::{Value, json};
 use tokio::sync::{RwLock, mpsc};
 use uuid::Uuid;
 
-use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use stasis::application::orchestration::tool_registry::{StasisTool, ToolRegistry};
 use stasis::domain::runtime::job_attempt::JobAttemptOutcome;
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
@@ -93,100 +93,9 @@ fn grapheme_inline_payload_source(payload_ref: &str) -> Option<&str> {
     payload_ref.strip_prefix("grapheme:inline:")
 }
 
-fn truncate_for_error(text: &str, max_chars: usize) -> String {
-    let out: String = text.chars().take(max_chars).collect();
-    if text.chars().count() > max_chars {
-        format!("{out}...")
-    } else {
-        out
-    }
-}
-
-pub(crate) async fn run_grapheme_via_runtime(
-    runtime: &Arc<RuntimeComposition>,
-    source: &str,
-    causation: &str,
-) -> stasis::prelude::Result<Value> {
-    if crate::grapheme_secret_bridge::source_contains_secret_grant(source) {
-        return Err(StasisError::PortFailure(
-            "ephemeral Grapheme grants require grapheme.invoke with matching secret_grant_ids"
-                .to_string(),
-        ));
-    }
-    let job_id = format!("cognition-gph-runtime-{}", Uuid::new_v4().simple());
-    let now = Utc::now();
-
-    let job = ToolJobSpec::new(
-        job_id.clone(),
-        "default",
-        "workflow.grapheme.run",
-        format!("grapheme:inline:{source}"),
-        causation,
-        "sttp:in:cognition:grapheme:runtime",
-        now,
-    )
-    .build();
-
-    runtime.enqueue_job(job).await?;
-
-    let _ = process_once(runtime, causation)
-        .await
-        .map_err(|e| StasisError::PortFailure(format!("runtime process_once failed: {e}")))?;
-
-    let attempts = runtime.as_ref().list_job_attempts(&job_id).await?;
-
-    let last = attempts.last().ok_or_else(|| {
-        StasisError::PortFailure(
-            "runtime preflight did not produce a job attempt for grapheme source".to_string(),
-        )
-    })?;
-
-    let succeeded = last.outcome == JobAttemptOutcome::Succeeded;
-    let diagnostics = last
-        .diagnostics
-        .as_deref()
-        .and_then(|d| serde_json::from_str::<Value>(d).ok())
-        .unwrap_or_else(|| json!({ "raw": last.diagnostics.clone().unwrap_or_default() }));
-
-    Ok(json!({
-        "mode": "runtime",
-        "job_id": job_id,
-        "succeeded": succeeded,
-        "attempt_outcome": format!("{:?}", last.outcome),
-        "execution_id": last.execution_id,
-        "diagnostics": diagnostics
-    }))
-}
-
-pub(crate) async fn validate_grapheme_source_for_schedule(
-    runtime: &Arc<RuntimeComposition>,
-    source: &str,
-) -> stasis::prelude::Result<Value> {
-    let result = run_grapheme_via_runtime(runtime, source, "cognition_tui_preflight").await?;
-    let succeeded = result
-        .get("succeeded")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-
-    let diagnostics_value = result
-        .get("diagnostics")
-        .cloned()
-        .unwrap_or_else(|| json!({}));
-    let diagnostics_preview = truncate_for_error(
-        &serde_json::to_string_pretty(&diagnostics_value).unwrap_or_else(|_| "{}".to_string()),
-        1600,
-    );
-
-    Ok(json!({
-        "validated": succeeded,
-        "mode": "runtime_preflight",
-        "job_id": result.get("job_id").cloned().unwrap_or(Value::Null),
-        "execution_id": result.get("execution_id").cloned().unwrap_or(Value::Null),
-        "attempt_outcome": result.get("attempt_outcome").cloned().unwrap_or(Value::Null),
-        "diagnostics": diagnostics_value,
-        "diagnostics_preview": diagnostics_preview
-    }))
-}
+pub(crate) use crate::grapheme_runtime::{
+    run_grapheme_via_runtime, validate_grapheme_source_for_schedule,
+};
 
 async fn remember_last_grapheme_source(source: &str) {
     if let Some(context) = crate::agent_runtime::execution_context::active_turn_execution_context()
@@ -2941,54 +2850,7 @@ fn referenced_module_ops_for_tool_call(
     }
 }
 
-pub fn extract_module_ops_from_source(source: &str) -> Vec<String> {
-    let mut ops = Vec::new();
-    let chars = source.chars().collect::<Vec<_>>();
-    let mut idx = 0usize;
-
-    while idx < chars.len() {
-        if !chars[idx].is_ascii_alphabetic() && chars[idx] != '_' {
-            idx += 1;
-            continue;
-        }
-
-        let start = idx;
-        idx += 1;
-        while idx < chars.len() && (chars[idx].is_ascii_alphanumeric() || chars[idx] == '_') {
-            idx += 1;
-        }
-        let left = chars[start..idx].iter().collect::<String>();
-
-        if idx >= chars.len() || chars[idx] != '.' {
-            continue;
-        }
-        idx += 1;
-
-        if idx >= chars.len() || (!chars[idx].is_ascii_alphabetic() && chars[idx] != '_') {
-            continue;
-        }
-
-        let right_start = idx;
-        idx += 1;
-        while idx < chars.len() && (chars[idx].is_ascii_alphanumeric() || chars[idx] == '_') {
-            idx += 1;
-        }
-        let right = chars[right_start..idx].iter().collect::<String>();
-
-        let mut lookahead = idx;
-        while lookahead < chars.len() && chars[lookahead].is_ascii_whitespace() {
-            lookahead += 1;
-        }
-
-        if lookahead < chars.len() && chars[lookahead] == '(' {
-            ops.push(format!("{left}.{right}"));
-        }
-    }
-
-    ops.sort();
-    ops.dedup();
-    ops
-}
+pub use crate::grapheme_source::extract_module_ops_from_source;
 
 // ── Registry builder ─────────────────────────────────────────────────────────
 

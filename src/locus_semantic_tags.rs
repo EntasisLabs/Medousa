@@ -3,6 +3,22 @@
 use serde_json::Value;
 use stasis::ports::outbound::memory::memory_models::MemoryFilter;
 
+pub const LOCUS_TENANT_SCOPE_PREFIX: &str = "tenant:";
+pub const LOCUS_TENANT_SCOPE_SEPARATOR: &str = "::session:";
+pub const LOCUS_DEFAULT_TENANT: &str = "default";
+
+/// Mirror Locus tenant derivation without pulling the model-facing memory tool
+/// layer into every daemon deployment.
+pub fn derive_locus_tenant_id(session_id: &str) -> String {
+    session_id
+        .strip_prefix(LOCUS_TENANT_SCOPE_PREFIX)
+        .and_then(|remainder| remainder.split_once(LOCUS_TENANT_SCOPE_SEPARATOR))
+        .map(|(tenant, _)| tenant)
+        .filter(|tenant| !tenant.trim().is_empty())
+        .unwrap_or(LOCUS_DEFAULT_TENANT)
+        .to_string()
+}
+
 /// Lowercase, trim, dedupe tag strings (matches Locus index normalization).
 pub fn normalize_semantic_tags<I, S>(tags: I) -> Vec<String>
 where
@@ -60,13 +76,13 @@ pub fn input_has_tag_filters(input: &Value) -> bool {
 /// Resolve Locus tenant id for tag vocabulary queries (profile slug or default).
 pub fn resolve_workshop_tag_tenant_id(session_id: Option<&str>) -> String {
     if let Some(session) = session_id.filter(|s| !s.trim().is_empty()) {
-        return crate::locus_memory::derive_locus_tenant_id(session);
+        return derive_locus_tenant_id(session);
     }
     let profile_id = crate::user_profiles::resolve_workshop_identity_user_id();
     crate::user_profiles::profile_slug_from_id(&profile_id)
-        .filter(|slug| *slug != crate::locus_memory::LOCUS_DEFAULT_TENANT)
+        .filter(|slug| *slug != LOCUS_DEFAULT_TENANT)
         .map(|slug| slug.to_string())
-        .unwrap_or_else(|| crate::locus_memory::LOCUS_DEFAULT_TENANT.to_string())
+        .unwrap_or_else(|| LOCUS_DEFAULT_TENANT.to_string())
 }
 
 /// Inject or merge `semantic_tags: [...]` into the prime layer of an STTP node.
@@ -107,7 +123,7 @@ pub fn default_workshop_semantic_tags(chat_session_id: &str) -> Vec<String> {
     let mut tags = vec!["medousa".to_string(), "session".to_string()];
     let profile_id = crate::user_profiles::resolve_workshop_identity_user_id();
     if let Some(slug) = crate::user_profiles::profile_slug_from_id(&profile_id)
-        && slug != crate::locus_memory::LOCUS_DEFAULT_TENANT
+        && slug != LOCUS_DEFAULT_TENANT
     {
         tags.push(format!("profile:{slug}"));
     }

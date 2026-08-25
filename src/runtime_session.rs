@@ -7,19 +7,13 @@ use crate::turn_continuation::TurnContinuationScope;
 use serde_json::Value;
 use stasis::prelude::{Result as StasisResult, StasisError};
 
-/// Assembly-time label for the singleton daemon agent runtime — not a chat session.
-pub const RUNTIME_BOOTSTRAP_SESSION_ID: &str = "__runtime_bootstrap__";
-
-/// Legacy bootstrap label retained for reserved-slug checks and migration guards.
-pub const LEGACY_RUNTIME_BOOTSTRAP_SESSION_ID: &str = "daemon-agent-runtime";
+pub use crate::daemon_runtime::{
+    LEGACY_RUNTIME_BOOTSTRAP_SESSION_ID, RUNTIME_BOOTSTRAP_SESSION_ID,
+    is_runtime_bootstrap_session_id,
+};
 
 pub fn runtime_bootstrap_session_id() -> &'static str {
     RUNTIME_BOOTSTRAP_SESSION_ID
-}
-
-pub fn is_runtime_bootstrap_session_id(session_id: &str) -> bool {
-    let trimmed = session_id.trim();
-    trimmed == RUNTIME_BOOTSTRAP_SESSION_ID || trimmed == LEGACY_RUNTIME_BOOTSTRAP_SESSION_ID
 }
 
 pub fn explicit_chat_session_id_from_input(input: &Value) -> Option<String> {

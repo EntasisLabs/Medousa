@@ -7,6 +7,7 @@
     type DrawPoint,
     type DrawStroke,
   } from "$lib/draw/drawDocument";
+  import { randomUuid } from "$lib/utils/randomUuid";
   import { untrack } from "svelte";
 
   interface Props {
@@ -90,9 +91,7 @@
     }
 
     activeStroke = {
-      id: typeof crypto !== "undefined" && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `stroke-${Date.now()}-${Math.random()}`,
+      id: randomUuid(),
       color,
       width,
       points: [point],

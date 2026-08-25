@@ -10,7 +10,7 @@ pub use crate::tui::settings::{
 };
 
 pub const DEFAULT_HOST_BUS_MAX_TOOL_ROUNDS: usize = 8;
-pub const DEFAULT_GENERAL_MAX_TOOL_ROUNDS: usize = 30;
+pub use medousa_runtime::DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS as DEFAULT_GENERAL_MAX_TOOL_ROUNDS;
 pub const DEFAULT_CODER_MAX_TOOL_ROUNDS: usize = 100;
 pub const DEFAULT_ACTIVATION_TOOL_INTENT_MAX_ROUNDS: usize = 12;
 pub const DEFAULT_ACTIVATION_SHORT_TURN_MAX_TOOL_ROUNDS: usize = 1;

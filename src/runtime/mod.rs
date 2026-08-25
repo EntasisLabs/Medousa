@@ -2,6 +2,7 @@ pub mod agent_platform;
 pub mod locus_semantic_index_store;
 pub mod locus_surreal_client;
 pub mod memory_bundle;
+pub mod persistent_locus;
 pub mod platform;
 pub mod stasis_otel;
 pub mod stasis_surreal_schema;
