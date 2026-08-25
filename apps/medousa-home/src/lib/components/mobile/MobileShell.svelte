@@ -1,6 +1,6 @@
 <script lang="ts">
   import "$lib/styles/mobile-shell.postcss";
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import MobileToast from "$lib/components/mobile/MobileToast.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import ActivitySheet from "$lib/components/mobile/ActivitySheet.svelte";
@@ -143,7 +143,7 @@
 
   $effect(() => {
     if (layout.mobileTab === "chat" && daemonHealth?.ok) {
-      void chat.ensureSessionHydrated();
+      void untrack(() => chat.ensureSessionHydrated());
     }
   });
 
