@@ -651,7 +651,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         let slice = self.streamed_markdown();
         if !slice.trim().is_empty() {
             if let Ok(mut parts) = self.parts.lock() {
-                parts.archive_progress_note(&slice);
+                parts.close_legacy_text_draft(&slice);
             }
             self.publish_tracked(TurnStreamEventV2::Progress {
                 message: slice.trim().to_string(),
@@ -776,7 +776,9 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         if self.emit_cancelled_if_needed().await {
             return;
         }
+        let draft = self.streamed_markdown();
         if let Ok(mut parts) = self.parts.lock() {
+            parts.commit_legacy_text_draft(&draft);
             parts.tool_started(&tool_run_id, &tool_name, &input_summary, tool_round);
         }
         self.publish_tracked(TurnStreamEventV2::ToolStarted {

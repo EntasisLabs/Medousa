@@ -1,5 +1,7 @@
 //! Ordered turn timeline parts (P3 presentation envelope).
 
+use std::collections::HashMap;
+
 use chrono::{DateTime, Utc};
 
 pub use medousa_types::turn::{TurnArtifactRef, TurnPart};
@@ -7,27 +9,15 @@ pub use medousa_types::turn::{TurnArtifactRef, TurnPart};
 use crate::daemon_api::StreamToolArtifactRef;
 use crate::session::ConversationTurn;
 
-#[derive(Debug, Default)]
-struct PendingToolRun {
-    run_id: String,
-    tool_name: String,
-    input_summary: String,
-    tool_round: usize,
-    started_at: DateTime<Utc>,
-    status: Option<String>,
-    output_summary: Option<String>,
-    artifact_refs: Vec<TurnArtifactRef>,
-    finished_at: Option<DateTime<Utc>>,
-}
-
 /// Accumulates structured timeline parts for one persisted assistant turn.
 #[derive(Debug, Default)]
 pub struct TurnPartsAccumulator {
-    reasoning: String,
-    model_receipt: Option<(String, String)>,
-    tool_runs: Vec<PendingToolRun>,
+    parts: Vec<TurnPart>,
+    tool_run_indexes: HashMap<String, usize>,
+    reasoning_index: Option<usize>,
+    model_receipt_index: Option<usize>,
     progress_notes: Vec<String>,
-    attachment_parts: Vec<TurnPart>,
+    open_legacy_draft: Option<String>,
 }
 
 impl TurnPartsAccumulator {
@@ -36,18 +26,46 @@ impl TurnPartsAccumulator {
     }
 
     pub fn push_reasoning_delta(&mut self, delta: &str) {
-        self.reasoning.push_str(delta);
+        if delta.is_empty() {
+            return;
+        }
+        if let Some(index) = self.reasoning_index
+            && let Some(TurnPart::Reasoning { markdown }) = self.parts.get_mut(index)
+        {
+            markdown.push_str(delta);
+            return;
+        }
+        self.reasoning_index = Some(self.parts.len());
+        self.parts.push(TurnPart::Reasoning {
+            markdown: delta.to_string(),
+        });
     }
 
     pub fn scratch_reset(&mut self) {
-        self.reasoning.clear();
+        if let Some(index) = self.reasoning_index.take()
+            && let Some(TurnPart::Reasoning { markdown }) = self.parts.get_mut(index)
+        {
+            markdown.clear();
+        }
     }
 
     pub fn set_model_receipt(&mut self, provider: &str, model: &str) {
-        self.model_receipt = Some((provider.to_string(), model.to_string()));
+        let receipt = TurnPart::ModelReceipt {
+            provider: provider.to_string(),
+            model: model.to_string(),
+        };
+        if let Some(index) = self.model_receipt_index
+            && let Some(part) = self.parts.get_mut(index)
+        {
+            *part = receipt;
+            return;
+        }
+        self.model_receipt_index = Some(self.parts.len());
+        self.parts.push(receipt);
     }
 
-    /// Preserve streamed prose before the next tool round clears the live draft buffer.
+    /// Preserve an explicit ephemeral-style progress update without treating it
+    /// as model-authored visible prose.
     pub fn archive_progress_note(&mut self, markdown: &str) {
         let trimmed = markdown.trim();
         if trimmed.is_empty() {
@@ -61,6 +79,50 @@ impl TurnPartsAccumulator {
             return;
         }
         self.progress_notes.push(trimmed.to_string());
+        self.parts.push(TurnPart::Progress {
+            markdown: trimmed.to_string(),
+        });
+    }
+
+    /// Commit model-authored visible prose at its current timeline position.
+    /// V2 callers may omit identity metadata; V3 callers provide both fields.
+    pub fn commit_text_segment(
+        &mut self,
+        markdown: &str,
+        segment_id: Option<&str>,
+        model_round: Option<usize>,
+    ) {
+        if markdown.trim().is_empty() {
+            return;
+        }
+        self.parts.push(TurnPart::Text {
+            markdown: markdown.to_string(),
+            segment_id: segment_id.map(str::to_string),
+            model_round,
+        });
+    }
+
+    /// Commit the current V2 draft once before its first chronological fence.
+    /// Parallel tool starts and the later scratch reset may observe the same
+    /// buffer, so this compatibility path must be idempotent within a draft.
+    pub fn commit_legacy_text_draft(&mut self, markdown: &str) {
+        if markdown.trim().is_empty()
+            || self
+                .open_legacy_draft
+                .as_deref()
+                .is_some_and(|open| open == markdown)
+        {
+            return;
+        }
+        self.commit_text_segment(markdown, None, None);
+        self.open_legacy_draft = Some(markdown.to_string());
+    }
+
+    /// Close a V2 draft at reset, committing it only if no earlier tool fence
+    /// already did so.
+    pub fn close_legacy_text_draft(&mut self, markdown: &str) {
+        self.commit_legacy_text_draft(markdown);
+        self.open_legacy_draft = None;
     }
 
     pub fn push_attachment_ref(
@@ -72,7 +134,7 @@ impl TurnPartsAccumulator {
         presentation: Option<String>,
         height_px: Option<u32>,
     ) {
-        self.attachment_parts.push(TurnPart::AttachmentRef {
+        self.parts.push(TurnPart::AttachmentRef {
             artifact_id: artifact_id.to_string(),
             mime: mime.to_string(),
             label: label.to_string(),
@@ -93,7 +155,7 @@ impl TurnPartsAccumulator {
         presentation: Option<String>,
         height_px: Option<u32>,
     ) {
-        for part in &mut self.attachment_parts {
+        for part in &mut self.parts {
             if let TurnPart::AttachmentRef {
                 artifact_id: existing,
                 ..
@@ -121,14 +183,22 @@ impl TurnPartsAccumulator {
         input_summary: &str,
         tool_round: usize,
     ) {
-        self.tool_runs.push(PendingToolRun {
+        if self.tool_run_indexes.contains_key(run_id) {
+            return;
+        }
+        let index = self.parts.len();
+        self.parts.push(TurnPart::ToolRun {
             run_id: run_id.to_string(),
             tool_name: tool_name.to_string(),
+            status: "running".to_string(),
             input_summary: input_summary.to_string(),
-            tool_round,
+            output_summary: None,
+            artifact_refs: Vec::new(),
+            tool_round: Some(tool_round),
             started_at: Utc::now(),
-            ..PendingToolRun::default()
+            finished_at: None,
         });
+        self.tool_run_indexes.insert(run_id.to_string(), index);
     }
 
     pub fn tool_finished(
@@ -138,45 +208,39 @@ impl TurnPartsAccumulator {
         output_summary: Option<String>,
         artifact_refs: Vec<TurnArtifactRef>,
     ) {
-        let Some(run) = self.tool_runs.iter_mut().find(|run| run.run_id == run_id) else {
+        let Some(index) = self.tool_run_indexes.get(run_id).copied() else {
             return;
         };
-        run.status = Some(status.to_string());
-        run.output_summary = output_summary;
-        run.artifact_refs = artifact_refs;
-        run.finished_at = Some(Utc::now());
+        let Some(TurnPart::ToolRun {
+            status: run_status,
+            output_summary: run_output_summary,
+            artifact_refs: run_artifact_refs,
+            finished_at,
+            ..
+        }) = self.parts.get_mut(index)
+        else {
+            return;
+        };
+        *run_status = status.to_string();
+        *run_output_summary = output_summary;
+        *run_artifact_refs = artifact_refs;
+        *finished_at = Some(Utc::now());
     }
 
     pub fn preview_tool_runs(&self) -> Vec<TurnPart> {
-        self.tool_run_parts()
+        self.parts
+            .iter()
+            .filter(|part| matches!(part, TurnPart::ToolRun { .. }))
+            .cloned()
+            .collect()
     }
 
     pub fn has_pending_tool_runs(&self) -> bool {
-        !self.tool_runs.is_empty()
+        !self.tool_run_indexes.is_empty()
     }
 
     pub fn reset(&mut self) {
         *self = Self::default();
-    }
-
-    fn tool_run_parts(&self) -> Vec<TurnPart> {
-        self.tool_runs
-            .iter()
-            .map(|run| TurnPart::ToolRun {
-                run_id: run.run_id.clone(),
-                tool_name: run.tool_name.clone(),
-                status: run
-                    .status
-                    .clone()
-                    .unwrap_or_else(|| "succeeded".to_string()),
-                input_summary: run.input_summary.clone(),
-                output_summary: run.output_summary.clone(),
-                artifact_refs: run.artifact_refs.clone(),
-                tool_round: Some(run.tool_round),
-                started_at: run.started_at,
-                finished_at: run.finished_at,
-            })
-            .collect()
     }
 
     fn finalize_parts(
@@ -184,32 +248,22 @@ impl TurnPartsAccumulator {
         text: &str,
         handoff: Option<(String, Option<String>)>,
     ) -> Vec<TurnPart> {
-        let mut parts = self.tool_run_parts();
-        if let Some((provider, model)) = self.model_receipt.take() {
-            parts.push(TurnPart::ModelReceipt { provider, model });
-        }
-        parts.extend(std::mem::take(&mut self.attachment_parts));
-        for note in std::mem::take(&mut self.progress_notes) {
-            parts.push(TurnPart::Progress { markdown: note });
-        }
+        self.parts.retain(
+            |part| !matches!(part, TurnPart::Reasoning { markdown } if markdown.is_empty()),
+        );
         if let Some((kind, work_id)) = handoff {
-            parts.push(TurnPart::Handoff {
+            self.parts.push(TurnPart::Handoff {
                 handoff_kind: kind,
                 text: text.to_string(),
                 work_id,
             });
         }
-        if !self.reasoning.is_empty() {
-            parts.push(TurnPart::Reasoning {
-                markdown: std::mem::take(&mut self.reasoning),
-            });
-        }
-        parts.push(TurnPart::Text {
+        self.parts.push(TurnPart::Text {
             markdown: text.to_string(),
             segment_id: None,
             model_round: None,
         });
-        parts
+        std::mem::take(&mut self.parts)
     }
 
     pub fn finalize_assistant_turn(
@@ -458,13 +512,158 @@ mod tests {
 
         let turn = acc.finalize_assistant_turn("Final answer.".into(), vec!["search".into()], None);
         let parts = turn.parts.expect("parts");
-        assert!(matches!(&parts[0], TurnPart::ToolRun { .. }));
         assert!(
-            matches!(&parts[1], TurnPart::Progress { markdown } if markdown == "Pulling context…")
+            matches!(&parts[0], TurnPart::Progress { markdown } if markdown == "Pulling context…")
         );
+        assert!(matches!(&parts[1], TurnPart::ToolRun { .. }));
         assert!(
             matches!(&parts[2], TurnPart::Text { markdown, .. } if markdown == "Final answer.")
         );
+    }
+
+    #[test]
+    fn text_and_parallel_tools_remain_in_declared_chronological_order() {
+        let mut acc = TurnPartsAccumulator::default();
+        acc.commit_text_segment("Let me check.", Some("segment-1"), Some(1));
+        acc.tool_started("run-1", "search", "first query", 1);
+        acc.tool_started("run-2", "fetch", "second query", 1);
+
+        // Completion timing must not move the declared runs.
+        acc.tool_finished("run-2", "succeeded", Some("second result".into()), vec![]);
+        acc.tool_finished("run-1", "failed", Some("first failed".into()), vec![]);
+        acc.commit_text_segment("I recovered.", Some("segment-2"), Some(2));
+        acc.tool_started("run-3", "search", "fallback query", 2);
+        acc.tool_finished("run-3", "succeeded", Some("found".into()), vec![]);
+
+        let turn = acc.finalize_assistant_turn("Here is the answer.".into(), vec![], None);
+        let parts = turn.parts.expect("parts");
+        assert_eq!(parts.len(), 6);
+        assert!(matches!(
+            &parts[0],
+            TurnPart::Text { markdown, segment_id: Some(id), model_round: Some(1) }
+                if markdown == "Let me check." && id == "segment-1"
+        ));
+        assert!(matches!(
+            &parts[1],
+            TurnPart::ToolRun { run_id, status, .. } if run_id == "run-1" && status == "failed"
+        ));
+        assert!(matches!(
+            &parts[2],
+            TurnPart::ToolRun { run_id, status, .. }
+                if run_id == "run-2" && status == "succeeded"
+        ));
+        assert!(matches!(
+            &parts[3],
+            TurnPart::Text { markdown, segment_id: Some(id), model_round: Some(2) }
+                if markdown == "I recovered." && id == "segment-2"
+        ));
+        assert!(matches!(&parts[4], TurnPart::ToolRun { run_id, .. } if run_id == "run-3"));
+        assert!(matches!(
+            &parts[5],
+            TurnPart::Text { markdown, segment_id: None, model_round: None }
+                if markdown == "Here is the answer."
+        ));
+    }
+
+    #[test]
+    fn legacy_draft_commits_before_parallel_tools_without_reset_duplication() {
+        let mut acc = TurnPartsAccumulator::default();
+        acc.commit_legacy_text_draft("I will inspect this.");
+        acc.tool_started("run-1", "search", "first", 1);
+        acc.commit_legacy_text_draft("I will inspect this.");
+        acc.tool_started("run-2", "fetch", "second", 1);
+        acc.close_legacy_text_draft("I will inspect this.");
+        acc.tool_finished("run-2", "succeeded", None, vec![]);
+        acc.tool_finished("run-1", "succeeded", None, vec![]);
+
+        let parts = acc
+            .finalize_assistant_turn("Both checks passed.".into(), vec![], None)
+            .parts
+            .expect("parts");
+        assert_eq!(parts.len(), 4);
+        assert!(matches!(
+            &parts[0],
+            TurnPart::Text { markdown, .. } if markdown == "I will inspect this."
+        ));
+        assert!(matches!(&parts[1], TurnPart::ToolRun { run_id, .. } if run_id == "run-1"));
+        assert!(matches!(&parts[2], TurnPart::ToolRun { run_id, .. } if run_id == "run-2"));
+        assert!(matches!(
+            &parts[3],
+            TurnPart::Text { markdown, .. } if markdown == "Both checks passed."
+        ));
+    }
+
+    #[test]
+    fn closing_a_legacy_draft_allows_identical_prose_in_a_later_round() {
+        let mut acc = TurnPartsAccumulator::default();
+        acc.commit_legacy_text_draft("Still checking.");
+        acc.close_legacy_text_draft("Still checking.");
+        acc.commit_legacy_text_draft("Still checking.");
+
+        let text_count = acc
+            .finalize_assistant_turn("Done.".into(), vec![], None)
+            .parts
+            .expect("parts")
+            .into_iter()
+            .filter(|part| matches!(part, TurnPart::Text { markdown, .. } if markdown == "Still checking."))
+            .count();
+        assert_eq!(text_count, 2);
+    }
+
+    #[test]
+    fn attachment_update_preserves_its_original_timeline_position() {
+        let mut acc = TurnPartsAccumulator::default();
+        acc.commit_text_segment("Chart incoming.", Some("segment-1"), Some(1));
+        acc.push_attachment_ref("artifact-old", "text/html", "Old chart", None, None, None);
+        acc.tool_started("run-1", "chart", "refresh", 1);
+        acc.replace_attachment_ref(
+            "artifact-old",
+            "artifact-new",
+            "text/html",
+            "New chart",
+            Some(42),
+            Some("inline".into()),
+            Some(240),
+        );
+
+        let parts = acc
+            .finalize_assistant_turn("Updated.".into(), vec![], None)
+            .parts
+            .expect("parts");
+        assert!(matches!(&parts[0], TurnPart::Text { .. }));
+        assert!(matches!(
+            &parts[1],
+            TurnPart::AttachmentRef { artifact_id, label, .. }
+                if artifact_id == "artifact-new" && label == "New chart"
+        ));
+        assert!(matches!(&parts[2], TurnPart::ToolRun { .. }));
+        assert!(matches!(&parts[3], TurnPart::Text { .. }));
+    }
+
+    #[test]
+    fn reasoning_reset_does_not_reorder_later_parts_or_tool_indexes() {
+        let mut acc = TurnPartsAccumulator::default();
+        acc.push_reasoning_delta("discard me");
+        acc.tool_started("run-1", "search", "query", 1);
+        acc.scratch_reset();
+        acc.push_reasoning_delta("keep me");
+        acc.tool_finished("run-1", "succeeded", None, vec![]);
+
+        let parts = acc
+            .finalize_assistant_turn("Done.".into(), vec![], None)
+            .parts
+            .expect("parts");
+        assert_eq!(parts.len(), 3);
+        assert!(matches!(
+            &parts[0],
+            TurnPart::ToolRun { run_id, status, .. }
+                if run_id == "run-1" && status == "succeeded"
+        ));
+        assert!(matches!(
+            &parts[1],
+            TurnPart::Reasoning { markdown } if markdown == "keep me"
+        ));
+        assert!(matches!(&parts[2], TurnPart::Text { .. }));
     }
 
     #[test]

@@ -116,7 +116,7 @@ async fn handle_tui_event_for_focused(event: TuiEvent, state: &mut TuiState) {
                     .map(|turn| turn.content.trim().to_string())
                     .unwrap_or_default();
                 if !draft.is_empty() {
-                    state.turn_parts.archive_progress_note(&draft);
+                    state.turn_parts.close_legacy_text_draft(&draft);
                     super::push_obs(state, format!("◈ {draft}"));
                 }
                 if let Some(turn) = state.conversation.get_mut(idx) {
@@ -453,6 +453,13 @@ async fn handle_tui_event_for_focused(event: TuiEvent, state: &mut TuiState) {
             input_summary,
             tool_round,
         } => {
+            if let Some(draft) = state
+                .active_agent_stream_turn
+                .and_then(|index| state.conversation.get(index))
+                .map(|turn| turn.content.clone())
+            {
+                state.turn_parts.commit_legacy_text_draft(&draft);
+            }
             state
                 .turn_parts
                 .tool_started(&tool_run_id, &tool_name, &input_summary, tool_round);
