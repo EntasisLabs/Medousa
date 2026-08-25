@@ -594,11 +594,8 @@ export function connectWorkshop(options: {
       workshops.applyThemeForActiveWorkshop();
     } catch (err) {
       // Projection/bootstrap failures do not make a healthy daemon offline.
-      // Keep the composer usable and recover the failed stream independently.
+      // Keep the composer usable; existing stream errors own their recovery.
       chat.noteResumeFailure(err);
-      if (health.ok && mode === "full") {
-        scheduleWorkspaceStreamReconnect();
-      }
     }
   })();
 

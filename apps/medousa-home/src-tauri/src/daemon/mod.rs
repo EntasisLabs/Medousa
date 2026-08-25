@@ -309,8 +309,14 @@ pub async fn daemon_health(
 pub async fn workspace_stream_start(
     app: AppHandle,
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     since_revision: Option<u64>,
 ) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    if _embedded_state.client_if_active().await?.is_some() {
+        return Ok(());
+    }
+
     let mut query = Vec::new();
     if let Some(revision) = since_revision {
         query.push(("since_revision", revision.to_string()));
@@ -361,9 +367,15 @@ pub fn workspace_stream_stop(state: State<'_, DaemonState>) -> Result<(), String
 pub async fn environment_stream_start(
     app: AppHandle,
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     since_revision: Option<u64>,
     profile_id: Option<String>,
 ) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    if _embedded_state.client_if_active().await?.is_some() {
+        return Ok(());
+    }
+
     let mut query = Vec::new();
     if let Some(revision) = since_revision {
         query.push(("since_revision", revision.to_string()));
