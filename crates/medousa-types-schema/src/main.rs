@@ -194,6 +194,9 @@ fn main() {
     );
     export_type!(schemas, TurnStreamEnvelopeV2, "TurnStreamEnvelopeV2");
     export_type!(schemas, TurnStreamEventV2, "TurnStreamEventV2");
+    export_type!(schemas, TurnStreamEnvelopeV3, "TurnStreamEnvelopeV3");
+    export_type!(schemas, TurnStreamEventV3, "TurnStreamEventV3");
+    export_type!(schemas, TurnCompletionOutcomeV3, "TurnCompletionOutcomeV3");
 
     // Recurring
     export_type!(

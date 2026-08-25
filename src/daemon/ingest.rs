@@ -1555,6 +1555,8 @@ impl AgentStreamSink for ApiAgentStreamSink {
                 None,
                 vec![crate::turn_parts::TurnPart::Text {
                     markdown: text.clone(),
+                    segment_id: None,
+                    model_round: None,
                 }],
             ),
         )
@@ -1750,6 +1752,8 @@ impl AgentStreamSink for IngestAgentStreamSink {
                     Some("worker_ack".to_string()),
                     vec![crate::turn_parts::TurnPart::Text {
                         markdown: text.clone(),
+                        segment_id: None,
+                        model_round: None,
                     }],
                 )
             });

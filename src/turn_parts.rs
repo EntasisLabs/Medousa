@@ -206,6 +206,8 @@ impl TurnPartsAccumulator {
         }
         parts.push(TurnPart::Text {
             markdown: text.to_string(),
+            segment_id: None,
+            model_round: None,
         });
         parts
     }
@@ -254,10 +256,14 @@ pub fn user_conversation_turn_with_media(
     if !content.trim().is_empty() {
         parts.push(TurnPart::Text {
             markdown: content.clone(),
+            segment_id: None,
+            model_round: None,
         });
     } else if parts.is_empty() {
         parts.push(TurnPart::Text {
             markdown: String::new(),
+            segment_id: None,
+            model_round: None,
         });
     }
     conversation_turn_from_parts("user", content, Vec::new(), None, parts)
@@ -354,7 +360,7 @@ pub fn compose_parts_markdown(parts: &[TurnPart]) -> String {
     for part in parts {
         match part {
             TurnPart::ModelReceipt { .. } => {}
-            TurnPart::Text { markdown } => {
+            TurnPart::Text { markdown, .. } => {
                 if !out.is_empty() && !out.ends_with('\n') {
                     out.push('\n');
                 }
@@ -456,7 +462,9 @@ mod tests {
         assert!(
             matches!(&parts[1], TurnPart::Progress { markdown } if markdown == "Pulling context…")
         );
-        assert!(matches!(&parts[2], TurnPart::Text { markdown } if markdown == "Final answer."));
+        assert!(
+            matches!(&parts[2], TurnPart::Text { markdown, .. } if markdown == "Final answer.")
+        );
     }
 
     #[test]
@@ -471,7 +479,7 @@ mod tests {
         assert_eq!(parts.len(), 3);
         assert!(matches!(&parts[0], TurnPart::ToolRun { tool_name, .. } if tool_name == "search"));
         assert!(matches!(&parts[1], TurnPart::Reasoning { .. }));
-        assert!(matches!(&parts[2], TurnPart::Text { markdown } if markdown == "Hello"));
+        assert!(matches!(&parts[2], TurnPart::Text { markdown, .. } if markdown == "Hello"));
     }
 
     #[test]
@@ -491,6 +499,8 @@ mod tests {
         let markdown = compose_parts_markdown(&[
             TurnPart::Text {
                 markdown: "Answer".into(),
+                segment_id: None,
+                model_round: None,
             },
             TurnPart::ToolRun {
                 run_id: "tr-1".into(),
@@ -516,6 +526,8 @@ mod tests {
             },
             TurnPart::Text {
                 markdown: "Final.".to_string(),
+                segment_id: None,
+                model_round: None,
             },
         ];
         let raw = serde_json::to_string(&parts).expect("serialize");

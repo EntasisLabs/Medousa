@@ -463,6 +463,8 @@ mod tests {
                 tool_names: vec!["data_probe".into()],
                 parts: vec![TurnPart::Text {
                     markdown: "the answer".into(),
+                    segment_id: None,
+                    model_round: None,
                 }],
                 committed_at: Utc::now(),
             },

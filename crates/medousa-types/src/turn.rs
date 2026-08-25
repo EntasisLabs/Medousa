@@ -87,6 +87,10 @@ pub enum TurnPart {
     },
     Text {
         markdown: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        segment_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model_round: Option<usize>,
     },
     /// Ephemeral-style progress captured between tool rounds (not the final answer).
     Progress {
@@ -163,4 +167,45 @@ pub struct TurnSliceSummary {
     pub recent_digests: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub working_notes: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TurnPart;
+    use serde_json::json;
+
+    #[test]
+    fn legacy_text_part_defaults_segment_metadata() {
+        let part: TurnPart = serde_json::from_value(json!({
+            "kind": "text",
+            "markdown": "legacy answer"
+        }))
+        .unwrap();
+
+        assert_eq!(
+            part,
+            TurnPart::Text {
+                markdown: "legacy answer".into(),
+                segment_id: None,
+                model_round: None,
+            }
+        );
+        assert_eq!(
+            serde_json::to_value(part).unwrap(),
+            json!({"kind": "text", "markdown": "legacy answer"})
+        );
+    }
+
+    #[test]
+    fn text_part_roundtrips_segment_metadata() {
+        let part = TurnPart::Text {
+            markdown: "first segment".into(),
+            segment_id: Some("segment-1".into()),
+            model_round: Some(2),
+        };
+        let encoded = serde_json::to_value(&part).unwrap();
+        assert_eq!(encoded["segment_id"], "segment-1");
+        assert_eq!(encoded["model_round"], 2);
+        assert_eq!(serde_json::from_value::<TurnPart>(encoded).unwrap(), part);
+    }
 }

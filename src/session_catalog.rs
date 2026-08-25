@@ -194,7 +194,7 @@ fn turn_text_line(turn: &ConversationTurn, max_chars: usize) -> Option<String> {
     turn.parts.as_ref().and_then(|parts| {
         for part in parts {
             let text = match part {
-                TurnPart::Text { markdown } | TurnPart::Reasoning { markdown } => markdown,
+                TurnPart::Text { markdown, .. } | TurnPart::Reasoning { markdown } => markdown,
                 TurnPart::Progress { markdown } => markdown,
                 TurnPart::Handoff { text, .. } => text,
                 TurnPart::UserMedia {
@@ -1336,6 +1336,8 @@ mod tests {
             answer_state: None,
             parts: Some(vec![TurnPart::Text {
                 markdown: "From parts timeline".into(),
+                segment_id: None,
+                model_round: None,
             }]),
             slice_summary: None,
             speaker_profile_id: None,

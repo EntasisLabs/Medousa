@@ -96,7 +96,9 @@ fn visible_turn_text(turn: &ConversationTurn) -> Option<String> {
     let visible = parts
         .iter()
         .filter_map(|part| match part {
-            TurnPart::Text { markdown } | TurnPart::Progress { markdown } => Some(markdown.trim()),
+            TurnPart::Text { markdown, .. } | TurnPart::Progress { markdown } => {
+                Some(markdown.trim())
+            }
             TurnPart::Handoff { text, .. } => Some(text.trim()),
             TurnPart::Reasoning { .. }
             | TurnPart::ModelReceipt { .. }
@@ -486,6 +488,8 @@ mod tests {
                 },
                 TurnPart::Text {
                     markdown: "visible answer".to_string(),
+                    segment_id: None,
+                    model_round: None,
                 },
             ]),
         );

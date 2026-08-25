@@ -751,6 +751,8 @@ fn history_turn(
     let parts = if parts.is_empty() {
         vec![TurnPart::Text {
             markdown: text.to_string(),
+            segment_id: None,
+            model_round: None,
         }]
     } else {
         parts.to_vec()

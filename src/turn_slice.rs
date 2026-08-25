@@ -589,6 +589,8 @@ mod tests {
                 },
                 TurnPart::Text {
                     markdown: "I'll spin up workers next.".to_string(),
+                    segment_id: None,
+                    model_round: None,
                 },
             ]),
             slice_summary: None,

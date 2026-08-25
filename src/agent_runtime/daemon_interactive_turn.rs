@@ -439,6 +439,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                     None,
                     vec![crate::turn_parts::TurnPart::Text {
                         markdown: body.clone(),
+                        segment_id: None,
+                        model_round: None,
                     }],
                 )
             });
@@ -490,6 +492,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                     Some("checkpoint".to_string()),
                     vec![crate::turn_parts::TurnPart::Text {
                         markdown: body.clone(),
+                        segment_id: None,
+                        model_round: None,
                     }],
                 )
             });
@@ -539,6 +543,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                     Some("needs_input".to_string()),
                     vec![crate::turn_parts::TurnPart::Text {
                         markdown: body.clone(),
+                        segment_id: None,
+                        model_round: None,
                     }],
                 )
             });

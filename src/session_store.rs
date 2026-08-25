@@ -342,7 +342,9 @@ fn turn_search_text(turn: &ConversationTurn) -> Option<String> {
         .as_deref()?
         .iter()
         .filter_map(|part| match part {
-            TurnPart::Text { markdown } | TurnPart::Progress { markdown } => Some(markdown.trim()),
+            TurnPart::Text { markdown, .. } | TurnPart::Progress { markdown } => {
+                Some(markdown.trim())
+            }
             TurnPart::Handoff { text, .. } => Some(text.trim()),
             _ => None,
         })
