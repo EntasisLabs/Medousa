@@ -48,6 +48,7 @@ pub mod host_context;
 pub mod modes;
 pub mod perception_governor;
 pub mod presentation;
+pub(crate) mod prompt_policy;
 pub mod prompt_prep;
 #[cfg(test)]
 mod prompt_footprint_baseline;
