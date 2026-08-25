@@ -54,11 +54,11 @@ pub use loop_gate::{
     collect_tool_names,
 };
 pub use ports::{
-    DelegationControlPort, HostHandoffPort, PendingTurnBudgetApproval, PerceptionEvidencePort,
-    PerceptionEvidenceRequest, PersistedPerceptionEvidence, RuntimePortFuture, RuntimePorts,
-    ToolRunEventPort, ToolRunFinish, ToolRunStart, TurnBudgetApprovalPort,
-    TurnBudgetApprovalRequest, TurnBudgetApprovalResolution, TurnLedgerSink, TurnPresentationPort,
-    TurnSteerMessage,
+    DelegationControlPort, HostHandoffPort, ModelResponseCompleted, ModelResponseEventPort,
+    PendingTurnBudgetApproval, PerceptionEvidencePort, PerceptionEvidenceRequest,
+    PersistedPerceptionEvidence, RuntimePortFuture, RuntimePorts, ToolRunEventPort, ToolRunFinish,
+    ToolRunStart, TurnBudgetApprovalPort, TurnBudgetApprovalRequest, TurnBudgetApprovalResolution,
+    TurnLedgerSink, TurnPresentationPort, TurnSteerMessage,
 };
 pub use tool_loop::MedousaToolLoopPipeline;
 pub use turn_context::{HostTurnContext, ToolLaneState, ToolRoundContextProvider};

@@ -81,6 +81,8 @@ pub mod surreal_startup;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod turn_event_channel;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod turn_parts;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod turn_pipeline_output;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod turn_recovery;

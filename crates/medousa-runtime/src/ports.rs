@@ -48,6 +48,18 @@ pub trait ToolRunEventPort: Send + Sync {
     fn finished(&self, event: ToolRunFinish) -> RuntimePortFuture<()>;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModelResponseCompleted {
+    pub model_round: usize,
+}
+
+/// Optional fence after every complete model response and before its tools or
+/// completion decision. Hosts use it to flush streamed prose without inferring
+/// response boundaries from chunks or final aggregate text.
+pub trait ModelResponseEventPort: Send + Sync {
+    fn completed(&self, event: ModelResponseCompleted) -> RuntimePortFuture<()>;
+}
+
 /// Foreground-loop presentation events. Runtime state and receipts remain
 /// authoritative when this optional port is absent.
 pub trait TurnPresentationPort: Send + Sync {
@@ -149,6 +161,7 @@ pub struct RuntimePorts {
     ledger_sink: Option<Arc<dyn TurnLedgerSink>>,
     delegation_control: Option<Arc<dyn DelegationControlPort>>,
     tool_run_events: Option<Arc<dyn ToolRunEventPort>>,
+    model_response_events: Option<Arc<dyn ModelResponseEventPort>>,
     turn_presentation: Option<Arc<dyn TurnPresentationPort>>,
     budget_approval: Option<Arc<dyn TurnBudgetApprovalPort>>,
     host_handoff: Option<Arc<dyn HostHandoffPort>>,
@@ -185,6 +198,19 @@ impl RuntimePorts {
         events: Option<Arc<dyn ToolRunEventPort>>,
     ) -> Self {
         self.tool_run_events = events;
+        self
+    }
+
+    pub fn with_model_response_events(mut self, events: Arc<dyn ModelResponseEventPort>) -> Self {
+        self.model_response_events = Some(events);
+        self
+    }
+
+    pub fn with_optional_model_response_events(
+        mut self,
+        events: Option<Arc<dyn ModelResponseEventPort>>,
+    ) -> Self {
+        self.model_response_events = events;
         self
     }
 
@@ -236,6 +262,10 @@ impl RuntimePorts {
         self.tool_run_events.as_deref()
     }
 
+    pub fn model_response_events(&self) -> Option<&dyn ModelResponseEventPort> {
+        self.model_response_events.as_deref()
+    }
+
     pub fn turn_presentation(&self) -> Option<&dyn TurnPresentationPort> {
         self.turn_presentation.as_deref()
     }
@@ -285,6 +315,14 @@ mod tests {
         }
 
         fn finished(&self, _event: ToolRunFinish) -> RuntimePortFuture<()> {
+            Box::pin(async {})
+        }
+    }
+
+    struct NoopModelResponses;
+
+    impl ModelResponseEventPort for NoopModelResponses {
+        fn completed(&self, _event: ModelResponseCompleted) -> RuntimePortFuture<()> {
             Box::pin(async {})
         }
     }
@@ -347,6 +385,13 @@ mod tests {
         assert!(ports.delegation_control().is_none());
         assert!(ports.host_handoff().is_none());
         assert!(ports.perception_evidence().is_none());
+        assert!(ports.model_response_events().is_none());
+    }
+
+    #[test]
+    fn composition_accepts_model_response_fences() {
+        let ports = RuntimePorts::new().with_model_response_events(Arc::new(NoopModelResponses));
+        assert!(ports.model_response_events().is_some());
     }
 
     #[test]

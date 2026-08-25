@@ -480,6 +480,11 @@ impl MedousaToolLoopPipeline {
                         {
                             ChatCompletionOutcome::Ok(response) => *response,
                             ChatCompletionOutcome::MalformedToolJson => {
+                                complete_model_response(
+                                    completion_gate.as_deref(),
+                                    rounds_executed,
+                                )
+                                .await;
                                 inject_malformed_tool_json_guidance(
                                     &mut turn_ctx.tool_lane.messages,
                                     completion_gate.as_deref(),
@@ -511,6 +516,11 @@ impl MedousaToolLoopPipeline {
                         {
                             ChatCompletionOutcome::Ok(response) => *response,
                             ChatCompletionOutcome::MalformedToolJson => {
+                                complete_model_response(
+                                    completion_gate.as_deref(),
+                                    rounds_executed,
+                                )
+                                .await;
                                 inject_malformed_tool_json_guidance(
                                     &mut turn_ctx.tool_lane.messages,
                                     completion_gate.as_deref(),
@@ -530,6 +540,7 @@ impl MedousaToolLoopPipeline {
                         }
                     }
                 };
+                complete_model_response(completion_gate.as_deref(), rounds_executed).await;
                 let maybe_text = response
                     .first_text()
                     .map(|value| value.trim().to_string())
@@ -1701,6 +1712,15 @@ async fn start_tool_run(
             })
             .await,
     )
+}
+
+async fn complete_model_response(gate: Option<&ToolLoopCompletionGate<'_>>, model_round: usize) {
+    let Some(events) = gate.and_then(|gate| gate.runtime_ports.model_response_events()) else {
+        return;
+    };
+    events
+        .completed(crate::ports::ModelResponseCompleted { model_round })
+        .await;
 }
 
 async fn finish_tool_run(

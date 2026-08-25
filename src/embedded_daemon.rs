@@ -16,8 +16,10 @@ use chrono::Utc;
 use genai::chat::ChatMessage;
 use medousa_engine::{TurnPipelineHandle, TurnStreamRegistryPort};
 use medousa_runtime::{
-    CredentialedAiChatClient, CredentialedAiChatConfig, MAX_REQUEST_PROMPT_CHARS,
-    MedousaToolLoopPipeline,
+    CredentialedAiChatClient, CredentialedAiChatConfig, DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS,
+    MAX_REQUEST_PROMPT_CHARS, MedousaToolLoopPipeline, ModelResponseCompleted,
+    ModelResponseEventPort, RuntimePortFuture, RuntimePorts, ToolLoopCompletionGate,
+    ToolRunEventPort, ToolRunFinish, ToolRunStart, TurnPresentationPort,
 };
 use medousa_types::daemon_api::{
     AgentModeId, AgentModeSource, CancelActiveSessionTurnResponse, ContinuationStatusResponse,
@@ -41,7 +43,11 @@ use medousa_types::environment::{
 use medousa_types::environment_validate::validate_environment_spec;
 use medousa_types::secrets::InstallationId;
 use medousa_types::session::{ConversationTurn, SessionHistorySummary, TranscriptEntry};
-use medousa_types::turn_stream::{TurnStreamEnvelopeV2, TurnStreamEventV2};
+#[cfg(test)]
+use medousa_types::turn_stream::TurnStreamEventV2;
+use medousa_types::turn_stream::{
+    TurnCompletionOutcomeV3, TurnStreamEnvelopeV2, TurnStreamEnvelopeV3, TurnStreamEventV3,
+};
 use medousa_types::turn_ticket::{TurnTicket, TurnTicketMode, TurnTicketPhase};
 use medousa_types::{
     GraphemeAllowlistResponse, GraphemeAllowlistUpdateRequest, GraphemeCompileRequest,
@@ -49,7 +55,7 @@ use medousa_types::{
     GraphemeModuleLoadResponse, GraphemeScriptDeleteResponse, GraphemeScriptSaveRequest,
     GraphemeScriptSaveResponse,
 };
-use serde_json::json;
+use serde_json::{Value, json};
 use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionContext, PromptExecutionPipeline,
 };
@@ -70,7 +76,7 @@ use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
 use stasis::ports::outbound::memory::memory_operations::MemoryOperations;
 use stasis::ports::outbound::runtime::cluster_node_store::ClusterNodeStore;
 use stasis::prelude::{RuntimeBackend, RuntimeComposition, RuntimeFactory, RuntimeSdk};
-use tokio::sync::{Mutex as AsyncMutex, mpsc};
+use tokio::sync::{Mutex as AsyncMutex, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -108,6 +114,497 @@ const DEFAULT_FOREGROUND_TURN_TIMEOUT: Duration = Duration::from_secs(180);
 const EMBEDDED_SUSPEND_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 const EMBEDDED_RECOVERY_MAX_JOBS: usize = 32;
 const STREAM_DELTA_CAPACITY: usize = 128;
+const EMBEDDED_RUNTIME_EVENT_CAPACITY: usize = 64;
+const EMBEDDED_TOOL_PARAM_LIMIT: usize = 6;
+const EMBEDDED_TOOL_VALUE_CHARS: usize = 120;
+
+fn embedded_sensitive_key(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    [
+        "token",
+        "secret",
+        "password",
+        "credential",
+        "authorization",
+        "api_key",
+    ]
+    .iter()
+    .any(|marker| key.contains(marker))
+}
+
+fn embedded_bounded_text(value: &str) -> (String, bool) {
+    let mut chars = value.chars();
+    let text = chars
+        .by_ref()
+        .take(EMBEDDED_TOOL_VALUE_CHARS)
+        .collect::<String>();
+    let truncated = chars.next().is_some();
+    (text, truncated)
+}
+
+fn embedded_tool_value(key: &str, value: &Value) -> (String, bool) {
+    if embedded_sensitive_key(key) {
+        return ("[redacted]".to_string(), false);
+    }
+    match value {
+        Value::String(value) => embedded_bounded_text(value),
+        Value::Null | Value::Bool(_) | Value::Number(_) => {
+            embedded_bounded_text(&value.to_string())
+        }
+        Value::Array(values) => (format!("[{} items]", values.len()), false),
+        Value::Object(values) => (format!("{{{} fields}}", values.len()), false),
+    }
+}
+
+fn embedded_tool_input_params(input: &Value) -> Vec<medousa_types::daemon_api::ToolInputParam> {
+    let Some(object) = input.as_object() else {
+        return Vec::new();
+    };
+    object
+        .iter()
+        .take(EMBEDDED_TOOL_PARAM_LIMIT)
+        .map(|(key, value)| {
+            let (value, truncated) = embedded_tool_value(key, value);
+            medousa_types::daemon_api::ToolInputParam {
+                key: key.clone(),
+                value,
+                truncated,
+            }
+        })
+        .collect()
+}
+
+fn embedded_tool_input_summary(tool_name: &str, input: &Value) -> String {
+    for key in ["query", "task", "prompt", "action", "intent", "path", "url"] {
+        if let Some(value) = input.get(key).and_then(Value::as_str) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return embedded_bounded_text(trimmed).0;
+            }
+        }
+    }
+    tool_name.to_string()
+}
+
+fn embedded_tool_output_summary(_output: &Value) -> Option<String> {
+    // Tool outputs remain model evidence. The embedded presentation path does
+    // not surface arbitrary payload values without the full receipt/redaction
+    // services used by a server daemon.
+    None
+}
+
+fn embedded_tool_status(output: &Value) -> &'static str {
+    if output
+        .get("ok")
+        .and_then(Value::as_bool)
+        .is_some_and(|ok| !ok)
+        || output.get("error").is_some()
+    {
+        "failed"
+    } else {
+        "succeeded"
+    }
+}
+
+#[derive(Debug)]
+struct EmbeddedActiveTextSegment {
+    segment_id: String,
+    model_round: usize,
+    markdown: String,
+}
+
+#[derive(Debug)]
+struct EmbeddedTextState {
+    model_round: usize,
+    next_ordinal: usize,
+    active: Option<EmbeddedActiveTextSegment>,
+    committed_markdown: Vec<String>,
+}
+
+impl Default for EmbeddedTextState {
+    fn default() -> Self {
+        Self {
+            model_round: 1,
+            next_ordinal: 0,
+            active: None,
+            committed_markdown: Vec::new(),
+        }
+    }
+}
+
+struct EmbeddedChronologicalTurn {
+    turn_id: String,
+    pipeline: TurnPipelineHandle,
+    parts: std::sync::Mutex<crate::turn_parts::TurnPartsAccumulator>,
+    text: std::sync::Mutex<EmbeddedTextState>,
+}
+
+impl EmbeddedChronologicalTurn {
+    fn new(turn_id: &str, pipeline: TurnPipelineHandle) -> Self {
+        Self {
+            turn_id: turn_id.to_string(),
+            pipeline,
+            parts: std::sync::Mutex::new(crate::turn_parts::TurnPartsAccumulator::default()),
+            text: std::sync::Mutex::new(EmbeddedTextState::default()),
+        }
+    }
+
+    async fn publish(
+        &self,
+        event: TurnStreamEventV3,
+    ) -> Result<(), medousa_engine::TurnPipelineError> {
+        if matches!(
+            event,
+            TurnStreamEventV3::ContentAppend { .. } | TurnStreamEventV3::ReasoningAppend { .. }
+        ) {
+            self.pipeline.admit_v3(event).await
+        } else {
+            self.pipeline.emit_v3(event).await.map(|_| ())
+        }
+    }
+
+    async fn content_delta(&self, text: String) -> Result<(), medousa_engine::TurnPipelineError> {
+        if text.is_empty() {
+            return Ok(());
+        }
+        let (started, append) = {
+            let mut state = self
+                .text
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let started = if state.active.is_none() {
+                state.next_ordinal = state.next_ordinal.saturating_add(1);
+                let segment_id = format!("{}:text:{}", self.turn_id, state.next_ordinal);
+                let model_round = state.model_round;
+                state.active = Some(EmbeddedActiveTextSegment {
+                    segment_id: segment_id.clone(),
+                    model_round,
+                    markdown: String::new(),
+                });
+                Some(TurnStreamEventV3::AssistantTextStarted {
+                    segment_id,
+                    model_round,
+                })
+            } else {
+                None
+            };
+            let active = state.active.as_mut().expect("active text initialized");
+            active.markdown.push_str(&text);
+            let append = TurnStreamEventV3::ContentAppend {
+                segment_id: active.segment_id.clone(),
+                text,
+            };
+            (started, append)
+        };
+        if let Some(started) = started {
+            self.publish(started).await?;
+        }
+        self.publish(append).await
+    }
+
+    async fn reasoning_delta(&self, text: String) -> Result<(), medousa_engine::TurnPipelineError> {
+        if text.is_empty() {
+            return Ok(());
+        }
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.push_reasoning_delta(&text);
+        }
+        self.publish(TurnStreamEventV3::ReasoningAppend { text })
+            .await
+    }
+
+    async fn commit_active(
+        &self,
+        advance_model_round: bool,
+    ) -> Result<(), medousa_engine::TurnPipelineError> {
+        let committed = {
+            let mut state = self
+                .text
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let active = state.active.take();
+            if advance_model_round {
+                state.model_round = state.model_round.saturating_add(1);
+            }
+            active
+                .filter(|segment| !segment.markdown.is_empty())
+                .inspect(|segment| {
+                    state.committed_markdown.push(segment.markdown.clone());
+                })
+        };
+        let Some(committed) = committed else {
+            return Ok(());
+        };
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.commit_text_segment(
+                &committed.markdown,
+                Some(&committed.segment_id),
+                Some(committed.model_round),
+            );
+        }
+        self.publish(TurnStreamEventV3::AssistantTextCommitted {
+            segment_id: committed.segment_id,
+        })
+        .await
+    }
+
+    async fn tool_started(
+        &self,
+        tool_run_id: String,
+        event: ToolRunStart,
+    ) -> Result<(), medousa_engine::TurnPipelineError> {
+        self.commit_active(false).await?;
+        let input_summary = embedded_tool_input_summary(&event.tool_name, &event.tool_input);
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.tool_started(
+                &tool_run_id,
+                &event.tool_name,
+                &input_summary,
+                event.tool_round,
+            );
+        }
+        self.publish(TurnStreamEventV3::ToolStarted {
+            tool_run_id,
+            tool_name: event.tool_name,
+            input_summary,
+            input_params: embedded_tool_input_params(&event.tool_input),
+            tool_round: event.tool_round,
+        })
+        .await
+    }
+
+    async fn tool_finished(
+        &self,
+        event: ToolRunFinish,
+    ) -> Result<(), medousa_engine::TurnPipelineError> {
+        let invocation = event.invocation;
+        let input_summary =
+            embedded_tool_input_summary(&invocation.tool_name, &invocation.tool_input);
+        let output_summary = embedded_tool_output_summary(&invocation.tool_output);
+        let status = embedded_tool_status(&invocation.tool_output).to_string();
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.tool_finished(
+                &event.tool_run_id,
+                &status,
+                output_summary.clone(),
+                Vec::new(),
+            );
+        }
+        self.publish(TurnStreamEventV3::ToolFinished {
+            tool_run_id: event.tool_run_id,
+            tool_name: invocation.tool_name,
+            status,
+            input_summary,
+            input_params: embedded_tool_input_params(&invocation.tool_input),
+            output_summary,
+            tool_round: event.tool_round,
+            artifact_refs: Vec::new(),
+        })
+        .await
+    }
+
+    async fn progress(
+        &self,
+        message: String,
+        tool_names: Vec<String>,
+    ) -> Result<(), medousa_engine::TurnPipelineError> {
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.archive_progress_note(&message);
+        }
+        self.publish(TurnStreamEventV3::Progress {
+            message,
+            tool_names,
+        })
+        .await
+    }
+
+    async fn pack_hold(
+        &self,
+        _fragments: Vec<String>,
+    ) -> Result<(), medousa_engine::TurnPipelineError> {
+        // The model-response completion fence already committed streamed prose
+        // and advanced the round. Re-emitting the compatibility fragments here
+        // would duplicate that segment and fabricate a later occurrence.
+        self.commit_active(false).await
+    }
+
+    fn aggregate_text(&self) -> String {
+        self.text
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .committed_markdown
+            .join("\n\n")
+    }
+
+    async fn terminal_body(
+        &self,
+        fallback: &str,
+    ) -> Result<String, medousa_engine::TurnPipelineError> {
+        self.commit_active(false).await?;
+        if self.aggregate_text().trim().is_empty() && !fallback.trim().is_empty() {
+            self.content_delta(fallback.to_string()).await?;
+            self.commit_active(false).await?;
+        }
+        Ok(self.aggregate_text())
+    }
+
+    fn set_model_receipt(&self, provider: &str, model: &str) {
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.set_model_receipt(provider, model);
+        }
+    }
+
+    fn partial_tool_names(&self) -> Vec<String> {
+        self.parts
+            .lock()
+            .map(|parts| {
+                parts
+                    .preview_tool_runs()
+                    .into_iter()
+                    .filter_map(|part| match part {
+                        medousa_types::turn::TurnPart::ToolRun { tool_name, .. } => Some(tool_name),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn has_partial_timeline(&self) -> bool {
+        !self.aggregate_text().trim().is_empty() || !self.partial_tool_names().is_empty()
+    }
+
+    fn finalize_turn(
+        &self,
+        body: String,
+        tool_names: Vec<String>,
+        answer_state: Option<String>,
+    ) -> ConversationTurn {
+        match self.parts.lock() {
+            Ok(mut parts) => parts.finalize_chronological_turn(body, tool_names, answer_state),
+            Err(_) => {
+                ConversationTurn::plain("assistant", body, Utc::now(), tool_names, answer_state)
+            }
+        }
+    }
+}
+
+enum EmbeddedRuntimeEvent {
+    ModelResponseCompleted {
+        event: ModelResponseCompleted,
+        acknowledged: oneshot::Sender<()>,
+    },
+    ToolStarted {
+        tool_run_id: String,
+        event: ToolRunStart,
+    },
+    ToolFinished(ToolRunFinish),
+    Notice(String),
+    Progress {
+        message: String,
+        tool_names: Vec<String>,
+    },
+    PackHold(Vec<String>),
+}
+
+#[derive(Clone)]
+struct EmbeddedModelResponseEvents {
+    tx: mpsc::Sender<EmbeddedRuntimeEvent>,
+}
+
+impl ModelResponseEventPort for EmbeddedModelResponseEvents {
+    fn completed(&self, event: ModelResponseCompleted) -> RuntimePortFuture<()> {
+        let tx = self.tx.clone();
+        Box::pin(async move {
+            let (acknowledged, wait) = oneshot::channel();
+            if tx
+                .send(EmbeddedRuntimeEvent::ModelResponseCompleted {
+                    event,
+                    acknowledged,
+                })
+                .await
+                .is_ok()
+            {
+                let _ = wait.await;
+            }
+        })
+    }
+}
+
+#[derive(Clone)]
+struct EmbeddedToolRunEvents {
+    tx: mpsc::Sender<EmbeddedRuntimeEvent>,
+}
+
+impl ToolRunEventPort for EmbeddedToolRunEvents {
+    fn started(&self, event: ToolRunStart) -> RuntimePortFuture<String> {
+        let tx = self.tx.clone();
+        Box::pin(async move {
+            let tool_run_id = format!("tr-{}", Uuid::new_v4().simple());
+            let _ = tx
+                .send(EmbeddedRuntimeEvent::ToolStarted {
+                    tool_run_id: tool_run_id.clone(),
+                    event,
+                })
+                .await;
+            tool_run_id
+        })
+    }
+
+    fn finished(&self, event: ToolRunFinish) -> RuntimePortFuture<()> {
+        let tx = self.tx.clone();
+        Box::pin(async move {
+            let _ = tx.send(EmbeddedRuntimeEvent::ToolFinished(event)).await;
+        })
+    }
+}
+
+#[derive(Clone)]
+struct EmbeddedTurnPresentation {
+    tx: mpsc::Sender<EmbeddedRuntimeEvent>,
+}
+
+impl TurnPresentationPort for EmbeddedTurnPresentation {
+    fn notice(&self, message: String) -> RuntimePortFuture<()> {
+        let tx = self.tx.clone();
+        Box::pin(async move {
+            let _ = tx.send(EmbeddedRuntimeEvent::Notice(message)).await;
+        })
+    }
+
+    fn scratch_reset(&self, _stream_turn_id: u64) -> RuntimePortFuture<()> {
+        Box::pin(async {})
+    }
+
+    fn turn_progress(
+        &self,
+        _stream_turn_id: u64,
+        message: String,
+        tool_names: Vec<String>,
+    ) -> RuntimePortFuture<()> {
+        let tx = self.tx.clone();
+        Box::pin(async move {
+            let _ = tx
+                .send(EmbeddedRuntimeEvent::Progress {
+                    message,
+                    tool_names,
+                })
+                .await;
+        })
+    }
+
+    fn pack_hold(
+        &self,
+        _stream_turn_id: u64,
+        fragments: Vec<String>,
+        _tool_names: Vec<String>,
+    ) -> RuntimePortFuture<()> {
+        let tx = self.tx.clone();
+        Box::pin(async move {
+            let _ = tx.send(EmbeddedRuntimeEvent::PackHold(fragments)).await;
+        })
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EmbeddedSuspendReport {
@@ -780,9 +1277,10 @@ impl EmbeddedDaemon {
                 stream.log.clone(),
             )),
         );
+        let chronological = EmbeddedChronologicalTurn::new(&turn_id, pipeline.clone());
 
-        if pipeline
-            .emit(TurnStreamEventV2::Status {
+        if chronological
+            .publish(TurnStreamEventV3::Status {
                 phase: "accepted".to_string(),
                 operator_message: Some("foreground turn accepted".to_string()),
                 debug_message: None,
@@ -794,11 +1292,11 @@ impl EmbeddedDaemon {
             return;
         }
         note_stream_event(&self.turn_tickets, &turn_id, "status", "accepted", false).await;
-        let _ = pipeline
-            .emit(TurnStreamEventV2::ModelReceipt {
-                provider: context.route().provider().to_string(),
-                model: context.route().model().to_string(),
-            })
+        let provider = context.route().provider().to_string();
+        let model = context.route().model().to_string();
+        chronological.set_model_receipt(&provider, &model);
+        let _ = chronological
+            .publish(TurnStreamEventV3::ModelReceipt { provider, model })
             .await;
 
         let execution_ref =
@@ -807,7 +1305,7 @@ impl EmbeddedDaemon {
                 Err(error) => {
                     self.finish_with_error(
                         &turn_id,
-                        &pipeline,
+                        &chronological,
                         "turn identity unavailable",
                         &error,
                     )
@@ -831,7 +1329,7 @@ impl EmbeddedDaemon {
         {
             self.finish_with_error(
                 &turn_id,
-                &pipeline,
+                &chronological,
                 "could not persist the user turn",
                 &error.to_string(),
             )
@@ -855,13 +1353,32 @@ impl EmbeddedDaemon {
             tool_call_mode: ToolCallMode::Auto,
         };
         let (delta_tx, mut delta_rx) = mpsc::channel(STREAM_DELTA_CAPACITY);
+        let (runtime_tx, mut runtime_rx) = mpsc::channel(EMBEDDED_RUNTIME_EVENT_CAPACITY);
+        let runtime_ports = RuntimePorts::new()
+            .with_model_response_events(Arc::new(EmbeddedModelResponseEvents {
+                tx: runtime_tx.clone(),
+            }))
+            .with_tool_run_events(Arc::new(EmbeddedToolRunEvents {
+                tx: runtime_tx.clone(),
+            }))
+            .with_turn_presentation(Arc::new(EmbeddedTurnPresentation {
+                tx: runtime_tx.clone(),
+            }));
+        let mut completion_gate = ToolLoopCompletionGate::new_for_execution(
+            0,
+            runtime_ports,
+            DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS,
+        );
         let outcome = {
             let execution = with_turn_execution_context(
                 context.clone(),
-                tool_loop.execute_with_stream_prior_messages(
+                tool_loop.execute_with_stream_prior_messages_max_rounds(
                     request,
                     prior_messages,
                     Some(&delta_tx),
+                    DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS,
+                    Some(&mut completion_gate),
+                    None,
                 ),
             );
             tokio::pin!(execution);
@@ -872,7 +1389,13 @@ impl EmbeddedDaemon {
                     () = context.cancellation().cancelled() => break ForegroundOutcome::Cancelled,
                     delta = delta_rx.recv() => {
                         let Some(delta) = delta else { continue; };
-                        if let Err(error) = emit_provider_delta(&pipeline, delta).await {
+                        if let Err(error) = emit_provider_delta(&chronological, delta).await {
+                            break ForegroundOutcome::Failed(error.to_string());
+                        }
+                    }
+                    runtime_event = runtime_rx.recv() => {
+                        let Some(runtime_event) = runtime_event else { continue; };
+                        if let Err(error) = emit_embedded_runtime_event(&chronological, runtime_event).await {
                             break ForegroundOutcome::Failed(error.to_string());
                         }
                     }
@@ -885,6 +1408,7 @@ impl EmbeddedDaemon {
                                     .into_iter()
                                     .map(|invocation| invocation.tool_name)
                                     .collect(),
+                                termination_reason: response.termination_reason,
                             },
                             Err(error) => ForegroundOutcome::Failed(error.to_string()),
                         };
@@ -894,19 +1418,47 @@ impl EmbeddedDaemon {
         };
         drop(delta_tx);
         while let Ok(delta) = delta_rx.try_recv() {
-            if emit_provider_delta(&pipeline, delta).await.is_err() {
+            if emit_provider_delta(&chronological, delta).await.is_err() {
+                break;
+            }
+        }
+        drop(runtime_tx);
+        while let Ok(runtime_event) = runtime_rx.try_recv() {
+            if emit_embedded_runtime_event(&chronological, runtime_event)
+                .await
+                .is_err()
+            {
                 break;
             }
         }
 
         match outcome {
-            ForegroundOutcome::Completed { text, tool_names } => {
-                let assistant_turn = ConversationTurn::plain(
-                    "assistant",
-                    text.clone(),
-                    Utc::now(),
+            ForegroundOutcome::Completed {
+                text,
+                tool_names,
+                termination_reason,
+            } => {
+                let completion_outcome = embedded_completion_outcome(&termination_reason);
+                let answer_state = embedded_answer_state(completion_outcome);
+                let body = match chronological.terminal_body(&text).await {
+                    Ok(body) => body,
+                    Err(error) => {
+                        self.finish_with_error(
+                            &turn_id,
+                            &chronological,
+                            "could not finalize the assistant response",
+                            &error.to_string(),
+                        )
+                        .await;
+                        self.turn_stream_port.mark_stream_closed(&turn_id).await;
+                        drop(lease);
+                        return;
+                    }
+                };
+                let assistant_turn = chronological.finalize_turn(
+                    body.clone(),
                     tool_names.clone(),
-                    None,
+                    answer_state.map(str::to_string),
                 );
                 match self
                     .session_store
@@ -914,25 +1466,37 @@ impl EmbeddedDaemon {
                         &session_id,
                         &[TranscriptAppend::native(
                             assistant_turn,
-                            Some(execution_ref),
+                            Some(execution_ref.clone()),
                         )],
                     )
                     .await
                 {
                     Ok(_) => {
-                        if pipeline
-                            .emit(TurnStreamEventV2::Final { text, tool_names })
+                        if chronological
+                            .publish(TurnStreamEventV3::TurnCompleted {
+                                outcome: completion_outcome,
+                                aggregate_text: body,
+                                tool_names,
+                                operator_message: None,
+                                debug_message: None,
+                            })
                             .await
                             .is_ok()
                         {
-                            note_stream_event(&self.turn_tickets, &turn_id, "final", "done", true)
-                                .await;
+                            note_stream_event(
+                                &self.turn_tickets,
+                                &turn_id,
+                                "turn_completed",
+                                embedded_ticket_phase(completion_outcome),
+                                true,
+                            )
+                            .await;
                         }
                     }
                     Err(error) => {
                         self.finish_with_error(
                             &turn_id,
-                            &pipeline,
+                            &chronological,
                             "could not persist the assistant turn",
                             &error.to_string(),
                         )
@@ -941,16 +1505,38 @@ impl EmbeddedDaemon {
                 }
             }
             ForegroundOutcome::Cancelled => {
-                let _ = pipeline
-                    .emit(TurnStreamEventV2::Error {
+                let _ = chronological.commit_active(false).await;
+                let _ = self
+                    .persist_partial_timeline(
+                        &session_id,
+                        &execution_ref,
+                        &chronological,
+                        "cancelled",
+                    )
+                    .await;
+                let _ = chronological
+                    .publish(TurnStreamEventV3::Error {
                         operator_message: "foreground turn cancelled".to_string(),
+                        debug_message: None,
+                    })
+                    .await;
+                let _ = chronological
+                    .publish(TurnStreamEventV3::TurnCompleted {
+                        outcome: TurnCompletionOutcomeV3::Cancelled,
+                        aggregate_text: chronological.aggregate_text(),
+                        tool_names: Vec::new(),
+                        operator_message: Some("foreground turn cancelled".to_string()),
                         debug_message: None,
                     })
                     .await;
                 mark_cancelled(&self.turn_tickets, &turn_id).await;
             }
             ForegroundOutcome::Failed(error) => {
-                self.finish_with_error(&turn_id, &pipeline, "foreground turn failed", &error)
+                let _ = chronological.commit_active(false).await;
+                let _ = self
+                    .persist_partial_timeline(&session_id, &execution_ref, &chronological, "failed")
+                    .await;
+                self.finish_with_error(&turn_id, &chronological, "foreground turn failed", &error)
                     .await;
             }
         }
@@ -959,21 +1545,57 @@ impl EmbeddedDaemon {
         drop(lease);
     }
 
+    async fn persist_partial_timeline(
+        &self,
+        session_id: &SessionId,
+        execution_ref: &medousa_types::session::ExecutionRef,
+        chronological: &EmbeddedChronologicalTurn,
+        answer_state: &str,
+    ) -> Result<()> {
+        if !chronological.has_partial_timeline() {
+            return Ok(());
+        }
+        let body = chronological
+            .terminal_body("")
+            .await
+            .map_err(|error| anyhow!(error.to_string()))?;
+        let tool_names = chronological.partial_tool_names();
+        let turn = chronological.finalize_turn(body, tool_names, Some(answer_state.to_string()));
+        self.session_store
+            .append_transcript_batch(
+                session_id,
+                &[TranscriptAppend::native(turn, Some(execution_ref.clone()))],
+            )
+            .await
+            .map_err(|error| anyhow!(error.to_string()))?;
+        Ok(())
+    }
+
     async fn finish_with_error(
         &self,
         turn_id: &str,
-        pipeline: &TurnPipelineHandle,
+        chronological: &EmbeddedChronologicalTurn,
         operator_message: &str,
         debug_message: &str,
     ) {
         tracing::warn!(turn_id, error = %debug_message, "{operator_message}");
-        let _ = pipeline
-            .emit(TurnStreamEventV2::Error {
+        let _ = chronological.commit_active(false).await;
+        let _ = chronological
+            .publish(TurnStreamEventV3::Error {
                 operator_message: operator_message.to_string(),
-                debug_message: None,
+                debug_message: Some(debug_message.to_string()),
             })
             .await;
-        note_stream_event(&self.turn_tickets, turn_id, "error", "error", true).await;
+        let _ = chronological
+            .publish(TurnStreamEventV3::TurnCompleted {
+                outcome: TurnCompletionOutcomeV3::Failed,
+                aggregate_text: chronological.aggregate_text(),
+                tool_names: Vec::new(),
+                operator_message: Some(operator_message.to_string()),
+                debug_message: Some(debug_message.to_string()),
+            })
+            .await;
+        note_stream_event(&self.turn_tickets, turn_id, "turn_completed", "error", true).await;
     }
 }
 
@@ -981,6 +1603,7 @@ enum ForegroundOutcome {
     Completed {
         text: String,
         tool_names: Vec<String>,
+        termination_reason: String,
     },
     Cancelled,
     Failed(String),
@@ -2035,6 +2658,47 @@ impl EmbeddedDaemonClient {
             .collect()
     }
 
+    pub async fn subscribe_turn_v3(
+        &self,
+        turn_id: &str,
+        since: u64,
+    ) -> Result<EmbeddedTurnStreamV3> {
+        self.require(Capability::ContentRead)?;
+        let entry = self.daemon.ensure_turn_stream(turn_id).await?;
+        let live = entry
+            .channel
+            .try_subscribe()
+            .ok_or_else(|| anyhow!("turn stream subscriber limit reached"))?;
+        let replay = entry
+            .log
+            .snapshot_since(since)
+            .into_iter()
+            .filter_map(|event| crate::sse_turn_projection::sequenced_to_v3(&event).ok())
+            .collect();
+        Ok(EmbeddedTurnStreamV3 {
+            replay,
+            live,
+            last_seq: since,
+        })
+    }
+
+    pub async fn replay_turn_v3(
+        &self,
+        turn_id: &str,
+        since: u64,
+    ) -> Result<Vec<TurnStreamEnvelopeV3>> {
+        self.require(Capability::ContentRead)?;
+        self.daemon.ensure_turn_stream(turn_id).await?;
+        let log = turn_stream_log(&self.daemon.turn_streams, turn_id)
+            .await
+            .ok_or_else(|| anyhow!("turn journal is unavailable"))?;
+        Ok(log
+            .snapshot_since(since)
+            .into_iter()
+            .filter_map(|event| crate::sse_turn_projection::sequenced_to_v3(&event).ok())
+            .collect())
+    }
+
     fn require(&self, capability: Capability) -> Result<()> {
         if self.principal.capabilities().contains(capability) {
             Ok(())
@@ -2052,6 +2716,49 @@ pub struct EmbeddedTurnStream {
     replay: VecDeque<TurnStreamEnvelopeV2>,
     live: TurnEventSubscription,
     last_seq: u64,
+}
+
+/// Replay-first native V3 stream for the co-located Medousa client.
+pub struct EmbeddedTurnStreamV3 {
+    replay: VecDeque<TurnStreamEnvelopeV3>,
+    live: TurnEventSubscription,
+    last_seq: u64,
+}
+
+impl EmbeddedTurnStreamV3 {
+    pub fn last_seq(&self) -> u64 {
+        self.last_seq
+    }
+
+    pub async fn recv(&mut self) -> Result<Option<TurnStreamEnvelopeV3>> {
+        while let Some(event) = self.replay.pop_front() {
+            if event.seq > self.last_seq {
+                self.last_seq = event.seq;
+                return Ok(Some(event));
+            }
+        }
+        loop {
+            match self.live.recv().await {
+                Ok(event) => {
+                    if event.seq() <= self.last_seq {
+                        continue;
+                    }
+                    self.last_seq = event.seq();
+                    let Some(envelope) = event.v3 else {
+                        continue;
+                    };
+                    return Ok(Some(envelope));
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return Ok(None),
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    bail!(
+                        "turn stream lagged by {skipped} events; replay from sequence {}",
+                        self.last_seq
+                    )
+                }
+            }
+        }
+    }
 }
 
 impl EmbeddedTurnStream {
@@ -2175,23 +2882,82 @@ fn history_to_chat_messages(history: Vec<ConversationTurn>) -> Vec<ChatMessage> 
 }
 
 async fn emit_provider_delta(
-    pipeline: &TurnPipelineHandle,
+    chronological: &EmbeddedChronologicalTurn,
     delta: StreamDelta,
 ) -> Result<(), medousa_engine::TurnPipelineError> {
     match delta {
-        StreamDelta::Content(text) => {
-            pipeline
-                .emit(TurnStreamEventV2::ContentAppend { text })
-                .await?;
-        }
-        StreamDelta::Reasoning(text) => {
-            pipeline
-                .emit(TurnStreamEventV2::ReasoningAppend { text })
-                .await?;
-        }
+        StreamDelta::Content(text) => chronological.content_delta(text).await?,
+        StreamDelta::Reasoning(text) => chronological.reasoning_delta(text).await?,
         StreamDelta::ThoughtSignature(_) => {}
     }
     Ok(())
+}
+
+async fn emit_embedded_runtime_event(
+    chronological: &EmbeddedChronologicalTurn,
+    event: EmbeddedRuntimeEvent,
+) -> Result<(), medousa_engine::TurnPipelineError> {
+    match event {
+        EmbeddedRuntimeEvent::ModelResponseCompleted {
+            event,
+            acknowledged,
+        } => {
+            let result = chronological.commit_active(true).await;
+            let _ = acknowledged.send(());
+            debug_assert!(event.model_round > 0);
+            result
+        }
+        EmbeddedRuntimeEvent::ToolStarted { tool_run_id, event } => {
+            chronological.tool_started(tool_run_id, event).await
+        }
+        EmbeddedRuntimeEvent::ToolFinished(event) => chronological.tool_finished(event).await,
+        EmbeddedRuntimeEvent::Notice(message) => {
+            chronological
+                .publish(TurnStreamEventV3::Status {
+                    phase: "orchestration".to_string(),
+                    operator_message: None,
+                    debug_message: Some(message),
+                })
+                .await
+        }
+        EmbeddedRuntimeEvent::Progress {
+            message,
+            tool_names,
+        } => chronological.progress(message, tool_names).await,
+        EmbeddedRuntimeEvent::PackHold(fragments) => chronological.pack_hold(fragments).await,
+    }
+}
+
+fn embedded_completion_outcome(termination_reason: &str) -> TurnCompletionOutcomeV3 {
+    match termination_reason {
+        "cognition_turn_checkpoint" => TurnCompletionOutcomeV3::Checkpointed,
+        medousa_runtime::TOOL_ROUND_BUDGET_EXHAUSTED_REASON | "stuck_text_only_continue" => {
+            TurnCompletionOutcomeV3::FuseExhausted
+        }
+        _ => TurnCompletionOutcomeV3::Completed,
+    }
+}
+
+fn embedded_answer_state(outcome: TurnCompletionOutcomeV3) -> Option<&'static str> {
+    match outcome {
+        TurnCompletionOutcomeV3::Checkpointed => Some("checkpoint"),
+        TurnCompletionOutcomeV3::NeedsInput => Some("needs_input"),
+        TurnCompletionOutcomeV3::FuseExhausted => Some("fuse_exhausted"),
+        TurnCompletionOutcomeV3::Failed => Some("failed"),
+        TurnCompletionOutcomeV3::Cancelled => Some("cancelled"),
+        TurnCompletionOutcomeV3::Completed => None,
+    }
+}
+
+fn embedded_ticket_phase(outcome: TurnCompletionOutcomeV3) -> &'static str {
+    match outcome {
+        TurnCompletionOutcomeV3::Completed => "done",
+        TurnCompletionOutcomeV3::NeedsInput => "awaiting_operator",
+        TurnCompletionOutcomeV3::Checkpointed => "handoff",
+        TurnCompletionOutcomeV3::Failed
+        | TurnCompletionOutcomeV3::Cancelled
+        | TurnCompletionOutcomeV3::FuseExhausted => "error",
+    }
 }
 
 #[cfg(test)]
@@ -2357,6 +3123,14 @@ query MobileProbe {
                 None => return events,
             }
         }
+    }
+
+    async fn collect_v3_to_eof(mut stream: EmbeddedTurnStreamV3) -> Vec<TurnStreamEnvelopeV3> {
+        let mut events = Vec::new();
+        while let Some(event) = stream.recv().await.expect("read embedded v3 stream") {
+            events.push(event);
+        }
+        events
     }
 
     async fn wait_until(mut predicate: impl FnMut() -> bool) {
@@ -2695,9 +3469,8 @@ query MobileProbe {
         )
         .await;
         assert!(!events.is_empty());
-        assert!(events.iter().enumerate().all(|(index, event)| {
-            event.turn_id == accepted.turn_id && event.seq == index as u64 + 1
-        }));
+        assert!(events.iter().all(|event| event.turn_id == accepted.turn_id));
+        assert!(events.windows(2).all(|pair| pair[0].seq < pair[1].seq));
         let final_text = format!("{FIRST_REPLY}\n\n{SECOND_REPLY}");
         assert!(
             matches!(
@@ -2716,6 +3489,44 @@ query MobileProbe {
             serde_json::to_value(&replay).expect("serialize replay"),
             serde_json::to_value(&events).expect("serialize live events")
         );
+        let v3 = collect_v3_to_eof(
+            client
+                .subscribe_turn_v3(&accepted.turn_id, 0)
+                .await
+                .expect("subscribe native v3 foreground turn"),
+        )
+        .await;
+        assert!(v3.iter().enumerate().all(|(index, event)| {
+            event.turn_id == accepted.turn_id && event.seq == index as u64 + 1
+        }));
+        assert_eq!(
+            v3.iter()
+                .filter_map(|event| match &event.event {
+                    TurnStreamEventV3::AssistantTextStarted { model_round, .. } => {
+                        Some(*model_round)
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+        assert_eq!(
+            v3.iter()
+                .filter_map(|event| match &event.event {
+                    TurnStreamEventV3::ContentAppend { text, .. } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            vec![FIRST_REPLY, SECOND_REPLY]
+        );
+        assert!(matches!(
+            v3.last().map(|event| &event.event),
+            Some(TurnStreamEventV3::TurnCompleted {
+                outcome: TurnCompletionOutcomeV3::Completed,
+                aggregate_text,
+                ..
+            }) if aggregate_text == &final_text
+        ));
 
         let transcript = client
             .load_transcript_entries(&session.session_id)
@@ -2726,6 +3537,20 @@ query MobileProbe {
         assert_eq!(transcript[1].entry_seq, 2);
         assert_eq!(transcript[1].turn.role, "assistant");
         assert_eq!(transcript[1].turn.content, final_text);
+        assert_eq!(
+            transcript[1]
+                .turn
+                .parts
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|part| match part {
+                    medousa_types::turn::TurnPart::Text { model_round, .. } => *model_round,
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
         let user_execution = transcript[0]
             .caused_by
             .as_ref()
@@ -3104,10 +3929,7 @@ query MobileProbe {
         .await;
         assert!(matches!(
             credential_events.last().map(|event| &event.event),
-            Some(TurnStreamEventV2::Error {
-                debug_message: None,
-                ..
-            })
+            Some(TurnStreamEventV2::Error { .. })
         ));
         assert_eq!(
             credential_events

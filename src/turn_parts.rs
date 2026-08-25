@@ -3,11 +3,11 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
+use medousa_types::session::ConversationTurn;
 
 pub use medousa_types::turn::{TurnArtifactRef, TurnPart};
 
 use crate::daemon_api::StreamToolArtifactRef;
-use crate::session::ConversationTurn;
 
 /// Accumulates structured timeline parts for one persisted assistant turn.
 #[derive(Debug, Default)]
