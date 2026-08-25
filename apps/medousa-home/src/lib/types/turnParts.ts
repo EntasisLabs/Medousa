@@ -1,4 +1,4 @@
-import type { ToolArtifactRef, ToolRunState, UiArtifact } from "$lib/types/chat";
+import type { ChatSegment, ToolArtifactRef, ToolRunState, UiArtifact } from "$lib/types/chat";
 import type { ChatMediaAttachment } from "$lib/types/media";
 import type { HostTurnContext } from "$lib/types/generated/daemon_api";
 
@@ -13,7 +13,12 @@ export interface TurnArtifactRef {
 
 export type TurnPart =
   | { kind: "model_receipt"; provider: string; model: string }
-  | { kind: "text"; markdown: string }
+  | {
+      kind: "text";
+      markdown: string;
+      segment_id?: string | null;
+      model_round?: number | null;
+    }
   | { kind: "progress"; markdown: string }
   | { kind: "reasoning"; markdown: string }
   | {
@@ -93,6 +98,101 @@ export function toolRunsFromParts(parts?: TurnPart[] | null): ToolRunState[] | u
     } satisfies ToolRunState));
 
   return runs.length > 0 ? runs : undefined;
+}
+
+/**
+ * Project native chronological parts into Medousa's segment model.
+ *
+ * Legacy turns intentionally return `undefined`: their grouped parts cannot
+ * prove where prose occurred relative to tools, so the legacy layout remains
+ * preferable to fabricated chronology.
+ */
+export function chatSegmentsFromParts(parts?: TurnPart[] | null): ChatSegment[] | undefined {
+  if (!parts?.length) return undefined;
+  const textParts = parts.filter(
+    (part): part is Extract<TurnPart, { kind: "text" }> => part.kind === "text",
+  );
+  if (!textParts.length || textParts.some((part) => !part.segment_id?.trim())) {
+    return undefined;
+  }
+
+  const segments: ChatSegment[] = [];
+  for (const part of parts) {
+    switch (part.kind) {
+      case "text": {
+        const segmentId = part.segment_id?.trim();
+        if (!segmentId) break;
+        segments.push({
+          kind: "text",
+          segmentId,
+          modelRound: part.model_round ?? null,
+          markdown: part.markdown,
+          committed: true,
+        });
+        break;
+      }
+      case "tool_run": {
+        const run: ToolRunState = {
+          runId: part.run_id,
+          toolName: part.tool_name,
+          status:
+            part.status === "failed"
+              ? "failed"
+              : part.status === "running"
+                ? "running"
+                : "succeeded",
+          round: part.tool_round ?? 1,
+          inputSummary: part.input_summary ?? null,
+          outputSummary: part.output_summary ?? null,
+          artifactRefs: part.artifact_refs?.map((ref) => ({
+            role: ref.role,
+            content_type: ref.content_type,
+            byte_size: ref.byte_size,
+            hash64: ref.hash64,
+            artifact_id: ref.artifact_id ?? null,
+            label: ref.label ?? null,
+          })),
+        };
+        const previous = segments.at(-1);
+        if (previous?.kind === "tool_group" && previous.toolRound === run.round) {
+          previous.runs.push(run);
+        } else {
+          segments.push({
+            kind: "tool_group",
+            groupId: `history-tool-group:${part.run_id}`,
+            toolRound: run.round,
+            runs: [run],
+          });
+        }
+        break;
+      }
+      case "attachment_ref":
+        segments.push({
+          kind: "artifact",
+          artifact: {
+            artifactId: part.artifact_id,
+            mime: part.mime,
+            label: part.label,
+            presentation: normalizePresentation(part.presentation),
+            byteSize: part.byte_size ?? null,
+            heightPx: part.height_px ?? null,
+            rootArtifactId: null,
+          },
+        });
+        break;
+      case "handoff":
+        segments.push({
+          kind: "handoff",
+          handoffKind: part.handoff_kind,
+          text: part.text,
+          workId: part.work_id ?? null,
+        });
+        break;
+      default:
+        break;
+    }
+  }
+  return segments.length > 0 ? segments : undefined;
 }
 
 export function reasoningFromParts(parts?: TurnPart[] | null): string | null {
