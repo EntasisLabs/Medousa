@@ -741,8 +741,9 @@ medousa-cli daemon-ask "Summarize open risks" --daemon-url http://127.0.0.1:7419
 **Streaming chat:**
 
 1. `POST /v1/interactive/turn`
-2. `GET` the returned `stream_url` as SSE. Use `Accept: text/event-stream` for
-   v1 or `Accept: text/event-stream; medousa-version=2` for the typed v2
-   envelope; both retain `?since=<seq>` replay semantics.
+2. `GET` the returned `stream_url` as SSE. Use
+   `Accept: text/event-stream; medousa-version=3` for native chronological
+   facts, `medousa-version=2` for the typed compatibility envelope, or the
+   unversioned media type for v1. All retain `?since=<seq>` replay semantics.
 
 More: [integrate-without-the-app.md](../cookbook/integrate-without-the-app.md)

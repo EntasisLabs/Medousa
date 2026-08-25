@@ -272,6 +272,63 @@ async fn typed_v2_stream_reconnects_with_cursor_and_dedupes_replay() {
 
 #[cfg(feature = "sse")]
 #[tokio::test]
+async fn typed_v3_stream_reconnects_with_raw_fact_cursor_and_dedupes_replay() {
+    use futures_util::StreamExt;
+    use medousa_sdk::{BackoffPolicy, ReconnectPolicy};
+    use std::time::Duration;
+
+    let started = r#"{"schema_version":3,"turn_id":"turn-1","seq":1,"emitted_at_utc":"2026-08-14T00:00:00Z","event":{"type":"assistant_text_started","segment_id":"segment-1","model_round":1}}"#;
+    let append = r#"{"schema_version":3,"turn_id":"turn-1","seq":2,"emitted_at_utc":"2026-08-14T00:00:01Z","event":{"type":"content_append","segment_id":"segment-1","text":"Hello"}}"#;
+    let completed = r#"{"schema_version":3,"turn_id":"turn-1","seq":3,"emitted_at_utc":"2026-08-14T00:00:02Z","event":{"type":"turn_completed","outcome":"completed","aggregate_text":"Hello"}}"#;
+    let first = bytes::Bytes::from(format!("data: {started}\n\n"));
+    let replay_and_terminal = bytes::Bytes::from(format!(
+        "data: {started}\n\ndata: {append}\n\ndata: {completed}\n\n"
+    ));
+    let transport = Arc::new(
+        MockTransport::new().with_sse_batches(vec![vec![first], vec![replay_and_terminal]]),
+    );
+    let client =
+        medousa_sdk::MedousaClient::with_transport(transport.clone(), "http://127.0.0.1:8080");
+    let policy = ReconnectPolicy {
+        backoff: BackoffPolicy {
+            base: Duration::ZERO,
+            max: Duration::ZERO,
+            ..BackoffPolicy::default()
+        },
+        ..ReconnectPolicy::default()
+    };
+
+    let events: Vec<_> = client
+        .interactive()
+        .stream_reconnecting_v3_with_policy(
+            "https://workshop.example/v1/interactive/turn/turn-1/stream",
+            policy,
+        )
+        .map(|event| event.expect("v3 event"))
+        .collect()
+        .await;
+
+    assert_eq!(
+        events.iter().map(|event| event.seq).collect::<Vec<_>>(),
+        [1, 2, 3]
+    );
+    assert_eq!(
+        transport.calls.lock().expect("calls lock").as_slice(),
+        [
+            (
+                medousa_types::turn_stream::TURN_STREAM_V3_MEDIA_TYPE.to_string(),
+                "https://workshop.example/v1/interactive/turn/turn-1/stream".to_string(),
+            ),
+            (
+                medousa_types::turn_stream::TURN_STREAM_V3_MEDIA_TYPE.to_string(),
+                "https://workshop.example/v1/interactive/turn/turn-1/stream?since=1".to_string(),
+            ),
+        ]
+    );
+}
+
+#[cfg(feature = "sse")]
+#[tokio::test]
 async fn typed_v2_stream_exhausts_retries_without_sequence_progress() {
     use futures_util::StreamExt;
     use medousa_sdk::{BackoffPolicy, ReconnectPolicy};

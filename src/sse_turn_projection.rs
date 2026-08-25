@@ -575,6 +575,8 @@ fn v3_event_to_v2(event: &TurnStreamEventV3) -> Option<TurnStreamEventV2> {
             outcome,
             aggregate_text,
             tool_names,
+            operator_message,
+            debug_message,
         } => match outcome {
             TurnCompletionOutcomeV3::Completed => TurnStreamEventV2::Final {
                 text: aggregate_text.clone(),
@@ -591,8 +593,10 @@ fn v3_event_to_v2(event: &TurnStreamEventV3) -> Option<TurnStreamEventV2> {
             TurnCompletionOutcomeV3::Failed
             | TurnCompletionOutcomeV3::Cancelled
             | TurnCompletionOutcomeV3::FuseExhausted => TurnStreamEventV2::Error {
-                operator_message: aggregate_text.clone(),
-                debug_message: None,
+                operator_message: operator_message
+                    .clone()
+                    .unwrap_or_else(|| "turn did not complete".to_string()),
+                debug_message: debug_message.clone(),
             },
         },
     })
@@ -659,6 +663,8 @@ pub fn journal_turn_event_for_v3(envelope: &TurnStreamEnvelopeV3) -> TurnEvent {
             outcome,
             aggregate_text,
             tool_names,
+            operator_message,
+            ..
         } => match outcome {
             TurnCompletionOutcomeV3::Completed => TurnEvent::FinalResponse {
                 text: aggregate_text.clone(),
@@ -681,7 +687,9 @@ pub fn journal_turn_event_for_v3(envelope: &TurnStreamEnvelopeV3) -> TurnEvent {
             TurnCompletionOutcomeV3::Failed
             | TurnCompletionOutcomeV3::Cancelled
             | TurnCompletionOutcomeV3::FuseExhausted => TurnEvent::Error {
-                message: aggregate_text.clone(),
+                message: operator_message
+                    .clone()
+                    .unwrap_or_else(|| "turn did not complete".to_string()),
             },
         },
         other => TurnEvent::StreamMirror(serde_json::to_value(other).unwrap_or_default()),
@@ -1782,6 +1790,44 @@ mod tests {
         assert!(matches!(
             v2.event,
             TurnStreamEventV2::ContentAppend { text } if text == "visible now"
+        ));
+    }
+
+    #[test]
+    fn v3_failure_settlement_projects_diagnostic_metadata_not_partial_prose() {
+        let diagnostic = TurnStreamEnvelopeV3::new(
+            "turn-v3-failed",
+            6,
+            Utc::now(),
+            TurnStreamEventV3::Error {
+                operator_message: "Could not finish the turn.".into(),
+                debug_message: Some("provider disconnected".into()),
+            },
+        )
+        .unwrap();
+        assert!(v3_to_v2(&diagnostic).unwrap().is_none());
+
+        let completed = TurnStreamEnvelopeV3::new(
+            "turn-v3-failed",
+            7,
+            Utc::now(),
+            TurnStreamEventV3::TurnCompleted {
+                outcome: TurnCompletionOutcomeV3::Failed,
+                aggregate_text: "I checked the first source.".into(),
+                tool_names: vec!["search".into()],
+                operator_message: Some("Could not finish the turn.".into()),
+                debug_message: Some("provider disconnected".into()),
+            },
+        )
+        .unwrap();
+        let projected = v3_to_v2(&completed).unwrap().unwrap();
+
+        assert_eq!(projected.seq, 7);
+        assert!(matches!(
+            projected.event,
+            TurnStreamEventV2::Error { operator_message, debug_message }
+                if operator_message == "Could not finish the turn."
+                    && debug_message.as_deref() == Some("provider disconnected")
         ));
     }
 

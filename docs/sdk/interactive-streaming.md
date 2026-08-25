@@ -68,7 +68,41 @@ while let Some(envelope) = events.next().await {
 `stream_v2` is one-shot. Use the typed reconnecting helpers below for durable
 replay across connection drops.
 
-### Reconnecting typed v2 stream (recommended)
+### Reconnecting chronological v3 stream (recommended)
+
+V3 returns the raw timeline facts in observation order while leaving filtering,
+forking, aggregation, and presentation choices to the client:
+
+```rust
+use futures_util::StreamExt;
+use medousa_types::{InteractiveTurnRequest, TurnStreamEventV3};
+
+let mut events = client
+    .interactive()
+    .stream_turn_reconnecting_v3(&InteractiveTurnRequest {
+        session_id: "my-session".into(),
+        prompt: "Hello".into(),
+        ..Default::default()
+    })
+    .await?;
+
+while let Some(event) = events.next().await {
+    let envelope = event?;
+    match envelope.event {
+        TurnStreamEventV3::ContentAppend { segment_id, text } => {
+            consume_text(segment_id, text);
+        }
+        TurnStreamEventV3::TurnCompleted { .. } => break,
+        _ => {}
+    }
+}
+```
+
+Use `stream_v3` for a one-shot connection or
+`stream_reconnecting_v3_with_policy` for an existing stream URL and custom
+reconnect policy.
+
+### Reconnecting typed v2 compatibility stream
 
 Tracks `event.seq`, reattaches with `?since=<last_seq>` after drops, and applies bounded exponential backoff + circuit breaker + overlap guard.
 

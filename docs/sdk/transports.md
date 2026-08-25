@@ -78,7 +78,7 @@ daemon `stream_url` responses. `WorkshopTransport` forwards the negotiated
 media type over LAN and Iroh, converting an absolute URL to a route path only
 for the Iroh hook.
 
-Custom transports that support typed turn stream v2 must override
+Custom transports that support typed turn stream v2 or v3 must override
 `stream_sse_with_accept`; the trait default intentionally rejects media types
 other than plain `text/event-stream` instead of silently returning the v1
 projection.

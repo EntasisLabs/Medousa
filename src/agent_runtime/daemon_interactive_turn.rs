@@ -321,14 +321,16 @@ impl InteractiveTurnStreamSink {
         debug_message: Option<String>,
     ) {
         self.publish_tracked(TurnStreamEventV3::Error {
-            operator_message,
-            debug_message,
+            operator_message: operator_message.clone(),
+            debug_message: debug_message.clone(),
         })
         .await;
         self.publish_tracked(TurnStreamEventV3::TurnCompleted {
             outcome,
             aggregate_text: self.aggregate_text(),
             tool_names: Vec::new(),
+            operator_message: Some(operator_message),
+            debug_message,
         })
         .await;
     }
@@ -586,6 +588,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             outcome: TurnCompletionOutcomeV3::Completed,
             aggregate_text: body.clone(),
             tool_names: tool_names.clone(),
+            operator_message: None,
+            debug_message: None,
         };
         let event = super::turn_event::TurnEvent::final_response_from_turn(&assistant_turn);
         if !self
@@ -638,6 +642,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             outcome: TurnCompletionOutcomeV3::Checkpointed,
             aggregate_text: body.clone(),
             tool_names: tool_names.clone(),
+            operator_message: None,
+            debug_message: None,
         };
         let event = super::turn_event::TurnEvent::checkpoint_from_turn(&assistant_turn);
         if !self
@@ -690,6 +696,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             outcome: TurnCompletionOutcomeV3::NeedsInput,
             aggregate_text: body.clone(),
             tool_names: tool_names.clone(),
+            operator_message: None,
+            debug_message: None,
         };
         let event = super::turn_event::TurnEvent::needs_input_from_turn(&assistant_turn);
         if !self
@@ -2231,6 +2239,8 @@ mod chronological_sink_tests {
             outcome: TurnCompletionOutcomeV3::Completed,
             aggregate_text: body.clone(),
             tool_names: Vec::new(),
+            operator_message: None,
+            debug_message: None,
         })
         .await;
 

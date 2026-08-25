@@ -485,6 +485,10 @@ pub enum TurnStreamEventV3 {
         aggregate_text: String,
         #[serde(default)]
         tool_names: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        operator_message: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        debug_message: Option<String>,
     },
 }
 
@@ -728,6 +732,8 @@ mod tests {
                 outcome: TurnCompletionOutcomeV3::Completed,
                 aggregate_text: "Let me check.\n\nFound it.".into(),
                 tool_names: vec!["search".into()],
+                operator_message: None,
+                debug_message: None,
             },
         ];
 
@@ -775,6 +781,8 @@ mod tests {
                 outcome: TurnCompletionOutcomeV3::Failed,
                 aggregate_text: "partial answer".into(),
                 tool_names: Vec::new(),
+                operator_message: Some("turn failed".into()),
+                debug_message: None,
             }
             .is_terminal()
         );
@@ -797,6 +805,8 @@ mod tests {
             outcome: TurnCompletionOutcomeV3::Completed,
             aggregate_text: "done".into(),
             tool_names: vec!["search".into()],
+            operator_message: None,
+            debug_message: None,
         })
         .unwrap();
         assert_eq!(completed["tool_names"], json!(["search"]));

@@ -21139,6 +21139,18 @@
               "aggregate_text": {
                 "type": "string"
               },
+              "debug_message": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "operator_message": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "outcome": {
                 "$ref": "#/definitions/TurnCompletionOutcomeV3"
               },
@@ -22769,6 +22781,18 @@
         "properties": {
           "aggregate_text": {
             "type": "string"
+          },
+          "debug_message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operator_message": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "outcome": {
             "$ref": "#/definitions/TurnCompletionOutcomeV3"

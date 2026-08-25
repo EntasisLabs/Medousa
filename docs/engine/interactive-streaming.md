@@ -74,9 +74,16 @@ late detached deltas from outliving the cancelled turn.
 
 Types: `medousa_types::daemon_api::InteractiveTurnStreamEvent`
 
-### Typed v2 negotiation
+### Typed stream negotiation
 
-The existing stream URLs also serve the typed v2 contract. Request it explicitly:
+The existing stream URLs serve both compatibility v2 and native chronological
+v3 contracts. Request the required representation explicitly:
+
+```http
+Accept: text/event-stream; medousa-version=3
+```
+
+or:
 
 ```http
 Accept: text/event-stream; medousa-version=2
@@ -86,13 +93,25 @@ The response repeats that media type in `Content-Type` and includes
 `Vary: Accept`. An unsupported explicit `medousa-version` returns `406 Not
 Acceptable`. Missing version negotiation remains v1 for compatibility.
 
+Each v3 SSE message uses `event: turn_stream_v3`; its `data` is a
+`TurnStreamEnvelopeV3`. V3 exposes raw chronological facts such as
+`assistant_text_started`, addressed `content_append`,
+`assistant_text_committed`, tool receipts, and `turn_completed`. The cursor is
+for replay and deduplication only; clients may filter or project facts without
+adopting a mandatory transcript reducer.
+
+V3 replay contains only facts authored natively as V3. The daemon does not
+invent segment identity or chronology for older V1/V2-only journal records;
+use the matching compatibility representation when reading those turns.
+
 Each v2 SSE message uses `event: turn_stream_v2`; its `data` is a
 `TurnStreamEnvelopeV2` with `schema_version`, `turn_id`, monotonic `seq`,
 `emitted_at_utc`, and a required tagged `event`. Terminality comes from the
 typed event variant instead of a separate boolean. Live delivery and
 `?since=` replay use the same sequenced journal projection.
 
-Types: `medousa_types::turn_stream::{TurnStreamEnvelopeV2, TurnStreamEventV2}`
+Types: `medousa_types::turn_stream::{TurnStreamEnvelopeV3, TurnStreamEventV3,
+TurnStreamEnvelopeV2, TurnStreamEventV2}`
 
 ---
 
@@ -104,7 +123,7 @@ The daemon journals every turn event to a **durable spine** (`TurnEventLog` on d
 
 ```
 GET /v1/interactive/turn/{turn_id}/stream?since=42
-Accept: text/event-stream; medousa-version=2
+Accept: text/event-stream; medousa-version=3
 ```
 
 The server replays events with `seq > 42`, then continues live. Dedupe any duplicate `seq` client-side after replay.

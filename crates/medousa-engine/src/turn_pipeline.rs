@@ -1004,6 +1004,8 @@ mod tests {
                     outcome: medousa_types::TurnCompletionOutcomeV3::Completed,
                     aggregate_text: "I’ll check.".into(),
                     tool_names: vec!["search".into()],
+                    operator_message: None,
+                    debug_message: None,
                 })
                 .await
                 .unwrap(),
