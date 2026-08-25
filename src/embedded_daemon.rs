@@ -20,8 +20,11 @@ use medousa_runtime::{
     MedousaToolLoopPipeline,
 };
 use medousa_types::daemon_api::{
-    AgentModeId, AgentModeSource, CancelActiveSessionTurnResponse, CreateSessionResponse,
-    CreateUserProfileResponse, HealthResponse, InteractiveTurnResponse, ListUserProfilesResponse,
+    AgentModeId, AgentModeSource, CancelActiveSessionTurnResponse, ContinuationStatusResponse,
+    CreateSessionResponse, CreateUserProfileResponse, DaemonStatsResponse, DeliveryHealthResponse,
+    GraphemeModuleDetailResponse, GraphemeModuleOpsResponse, GraphemeModulesListResponse,
+    GraphemeRunResponse, GraphemeScriptDetailResponse, GraphemeScriptsListQuery,
+    GraphemeScriptsListResponse, HealthResponse, InteractiveTurnResponse, ListUserProfilesResponse,
     LocusNodeDetailResponse, LocusNodesListResponse, LocusNodesQuery, LocusTagsListResponse,
     LocusTagsQuery, RecurringDefinitionEntry, RecurringListResponse, RegisterRecurringResponse,
     SessionAgentModeResponse, SessionCodeBindingResponse, SetActiveUserProfileResponse,
@@ -35,6 +38,12 @@ use medousa_types::secrets::InstallationId;
 use medousa_types::session::{ConversationTurn, SessionHistorySummary, TranscriptEntry};
 use medousa_types::turn_stream::{TurnStreamEnvelopeV2, TurnStreamEventV2};
 use medousa_types::turn_ticket::{TurnTicket, TurnTicketMode, TurnTicketPhase};
+use medousa_types::{
+    GraphemeAllowlistResponse, GraphemeAllowlistUpdateRequest, GraphemeCompileRequest,
+    GraphemeCompileResponse, GraphemeLifecycleResponse, GraphemeModuleLoadRequest,
+    GraphemeModuleLoadResponse, GraphemeScriptDeleteResponse, GraphemeScriptSaveRequest,
+    GraphemeScriptSaveResponse,
+};
 use serde_json::json;
 use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionContext, PromptExecutionPipeline,
@@ -55,7 +64,7 @@ use stasis::ports::outbound::memory::memory_context_reader::MemoryContextReader;
 use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
 use stasis::ports::outbound::memory::memory_operations::MemoryOperations;
 use stasis::ports::outbound::runtime::cluster_node_store::ClusterNodeStore;
-use stasis::prelude::{RuntimeBackend, RuntimeComposition, RuntimeFactory};
+use stasis::prelude::{RuntimeBackend, RuntimeComposition, RuntimeFactory, RuntimeSdk};
 use tokio::sync::{Mutex as AsyncMutex, mpsc};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -387,6 +396,12 @@ impl EmbeddedDaemon {
     pub async fn boot(config: EmbeddedDaemonConfig) -> Result<Arc<Self>> {
         let root = prepare_root(&config.root).await?;
         configure_file_session_root(root.join("history")).map_err(|error| anyhow!(error))?;
+        crate::capability_catalog::configure_capabilities_manifest_path(
+            root.join("capabilities.toml"),
+        )
+        .map_err(|error| anyhow!(error))?;
+        crate::grapheme_script::configure_grapheme_script_root(root.join("grapheme-scripts"))
+            .map_err(|error| anyhow!(error))?;
         let sandbox_files = crate::store_root::StoreRoot::open(&root)
             .context("open embedded daemon root capability")?;
         let vault_path =
@@ -1035,6 +1050,156 @@ impl EmbeddedDaemonClient {
                 active_profile_display_name,
             },
         ))
+    }
+
+    pub async fn runtime_stats(&self) -> Result<DaemonStatsResponse> {
+        self.require(Capability::WorkshopRead)?;
+        let snapshot = RuntimeSdk::new(self.daemon.runtime.as_ref().clone())
+            .stats_snapshot(5000)
+            .await
+            .map_err(anyhow::Error::new)?;
+        Ok(crate::daemon_runtime::stats_response(
+            snapshot,
+            crate::daemon_runtime::DaemonStatsObservation {
+                last_tick_at_utc: None,
+                active_turn_executions: self.daemon.executions.live_count(),
+                active_turn_executions_high_water: self.daemon.executions.high_water(),
+                missing_turn_context_invocations:
+                    crate::execution_context::missing_turn_context_invocations(),
+            },
+        ))
+    }
+
+    pub async fn runtime_delivery_status(&self) -> Result<DeliveryHealthResponse> {
+        self.require(Capability::WorkshopRead)?;
+        let pending_job_deliveries = RuntimeSdk::new(self.daemon.runtime.as_ref().clone())
+            .pending_outbox_count(5000)
+            .await
+            .map_err(anyhow::Error::new)?;
+        Ok(DeliveryHealthResponse {
+            endpoint_id: "medousa.internal.outbox".to_string(),
+            endpoint_seeded: false,
+            endpoint_target: String::new(),
+            deliver_webhook_auth_configured: false,
+            pending_job_deliveries,
+            last_delivery_at_utc: None,
+            last_delivery_latency_ms: None,
+        })
+    }
+
+    pub fn runtime_continuation_status(&self) -> Result<ContinuationStatusResponse> {
+        self.require(Capability::WorkshopRead)?;
+        Ok(ContinuationStatusResponse {
+            pending_count: 0,
+            consumed_count: 0,
+            resumed_count: 0,
+            dead_letter_pending_count: 0,
+            total_count: 0,
+            last_resume_at_utc: None,
+            last_resume_child_job_id: None,
+            last_resume_turn_correlation_id: None,
+        })
+    }
+
+    pub fn grapheme_list_modules(&self) -> Result<GraphemeModulesListResponse> {
+        self.require(Capability::WorkshopRead)?;
+        Ok(crate::grapheme_api::list_modules())
+    }
+
+    pub fn grapheme_get_module(&self, module_id: &str) -> Result<GraphemeModuleDetailResponse> {
+        self.require(Capability::WorkshopRead)?;
+        crate::grapheme_api::get_module(module_id).map_err(anyhow::Error::msg)
+    }
+
+    pub fn grapheme_get_module_ops(
+        &self,
+        module_id: &str,
+        query: Option<&str>,
+    ) -> Result<GraphemeModuleOpsResponse> {
+        self.require(Capability::WorkshopRead)?;
+        Ok(crate::grapheme_api::get_module_ops(module_id, query))
+    }
+
+    pub fn grapheme_list_scripts(
+        &self,
+        query: GraphemeScriptsListQuery,
+    ) -> Result<GraphemeScriptsListResponse> {
+        self.require(Capability::ContentRead)?;
+        Ok(crate::grapheme_api::list_scripts(query))
+    }
+
+    pub fn grapheme_get_script(&self, script_id: &str) -> Result<GraphemeScriptDetailResponse> {
+        self.require(Capability::ContentRead)?;
+        crate::grapheme_api::get_script(script_id).map_err(anyhow::Error::msg)
+    }
+
+    pub async fn grapheme_run_source(&self, source: &str) -> Result<GraphemeRunResponse> {
+        self.require(Capability::AdminExecute)?;
+        crate::grapheme_api::run_source(&self.daemon.runtime, source)
+            .await
+            .map_err(anyhow::Error::msg)
+    }
+
+    pub async fn grapheme_get_allowlist(&self) -> Result<GraphemeAllowlistResponse> {
+        self.require(Capability::AdminRuntime)?;
+        Ok(crate::grapheme_workshop::get_allowlist().await)
+    }
+
+    pub async fn grapheme_update_allowlist(
+        &self,
+        request: GraphemeAllowlistUpdateRequest,
+    ) -> Result<GraphemeAllowlistResponse> {
+        self.require(Capability::AdminRuntime)?;
+        crate::grapheme_workshop::update_allowlist(request)
+            .await
+            .map_err(anyhow::Error::msg)
+    }
+
+    pub fn grapheme_save_script(
+        &self,
+        request: GraphemeScriptSaveRequest,
+    ) -> Result<GraphemeScriptSaveResponse> {
+        self.require(Capability::ContentWrite)?;
+        crate::grapheme_workshop::save_script(request).map_err(anyhow::Error::msg)
+    }
+
+    pub fn grapheme_delete_script(&self, script_id: &str) -> Result<GraphemeScriptDeleteResponse> {
+        self.require(Capability::ContentWrite)?;
+        crate::grapheme_workshop::delete_script(script_id).map_err(anyhow::Error::msg)
+    }
+
+    pub fn grapheme_rename_script(
+        &self,
+        script_id: &str,
+        name: &str,
+    ) -> Result<GraphemeScriptSaveResponse> {
+        self.require(Capability::ContentWrite)?;
+        crate::grapheme_workshop::rename_script(script_id, name).map_err(anyhow::Error::msg)
+    }
+
+    pub async fn grapheme_compile_source(
+        &self,
+        request: GraphemeCompileRequest,
+    ) -> Result<GraphemeCompileResponse> {
+        self.require(Capability::AdminExecute)?;
+        crate::grapheme_workshop::compile_source(request)
+            .await
+            .map_err(anyhow::Error::msg)
+    }
+
+    pub async fn grapheme_load_module(
+        &self,
+        request: GraphemeModuleLoadRequest,
+    ) -> Result<GraphemeModuleLoadResponse> {
+        self.require(Capability::AdminRuntime)?;
+        crate::grapheme_workshop::load_wasm_module(request)
+            .await
+            .map_err(anyhow::Error::msg)
+    }
+
+    pub async fn grapheme_lifecycle(&self) -> Result<GraphemeLifecycleResponse> {
+        self.require(Capability::WorkshopRead)?;
+        Ok(crate::grapheme_workshop::lifecycle_events().await)
     }
 
     pub fn list_profiles(&self) -> Result<ListUserProfilesResponse> {
@@ -2108,6 +2273,71 @@ query MobileProbe {
                 .principal()
                 .capabilities()
                 .contains(Capability::AdminExecute)
+        );
+
+        let runtime_stats = client.runtime_stats().await.expect("read runtime stats");
+        assert_eq!(runtime_stats.active_turn_executions, 0);
+        assert_eq!(runtime_stats.recurring_definitions, 0);
+        assert!(
+            !client
+                .runtime_delivery_status()
+                .await
+                .expect("read embedded delivery stats")
+                .endpoint_seeded
+        );
+        assert_eq!(
+            client
+                .runtime_continuation_status()
+                .expect("read embedded continuation stats")
+                .total_count,
+            0
+        );
+
+        let modules = client
+            .grapheme_list_modules()
+            .expect("list embedded Grapheme modules");
+        assert!(
+            modules
+                .modules
+                .iter()
+                .any(|module| module.module_id == "core")
+        );
+        assert!(
+            !client
+                .grapheme_get_allowlist()
+                .await
+                .expect("read embedded Grapheme allowlist")
+                .enforce
+        );
+        client
+            .grapheme_compile_source(GraphemeCompileRequest {
+                source: GRAPHEME_SOURCE.to_string(),
+                mode: Some("check".to_string()),
+            })
+            .await
+            .expect("compile Grapheme source through embedded daemon");
+        client
+            .grapheme_run_source(GRAPHEME_SOURCE)
+            .await
+            .expect("run Grapheme source through embedded daemon");
+        let saved_script = client
+            .grapheme_save_script(GraphemeScriptSaveRequest {
+                name: "Mobile Probe".to_string(),
+                body: GRAPHEME_SOURCE.to_string(),
+                id: Some("mobile-probe".to_string()),
+                modules: vec!["core".to_string()],
+                tags: vec!["mobile".to_string()],
+                intent: Some("embedded runtime probe".to_string()),
+                source_session_id: None,
+            })
+            .expect("save embedded Grapheme script");
+        assert_eq!(saved_script.script.id, "mobile-probe");
+        assert_eq!(
+            client
+                .grapheme_get_script("mobile-probe")
+                .expect("load embedded Grapheme script")
+                .body_preview,
+            GRAPHEME_SOURCE.trim()
         );
 
         let initial_profiles = client.list_profiles().expect("list embedded profiles");

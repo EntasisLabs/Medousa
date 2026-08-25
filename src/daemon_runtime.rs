@@ -2,6 +2,9 @@
 
 use chrono::{DateTime, Utc};
 use medousa_types::{AuthorityId, DaemonRuntimeDescriptor, HealthResponse};
+use stasis::sdk::runtime_sdk::RuntimeStatsSnapshot;
+
+use crate::daemon_api::DaemonStatsResponse;
 
 pub const AGENT_RUNTIME_VERSION: &str = "centralized-v1";
 
@@ -41,6 +44,32 @@ pub struct DaemonHealthSnapshot {
     pub last_agent_turn_at_utc: Option<DateTime<Utc>>,
     pub active_profile_id: String,
     pub active_profile_display_name: String,
+}
+
+pub struct DaemonStatsObservation {
+    pub last_tick_at_utc: Option<DateTime<Utc>>,
+    pub active_turn_executions: usize,
+    pub active_turn_executions_high_water: usize,
+    pub missing_turn_context_invocations: u64,
+}
+
+pub fn stats_response(
+    snapshot: RuntimeStatsSnapshot,
+    observation: DaemonStatsObservation,
+) -> DaemonStatsResponse {
+    DaemonStatsResponse {
+        enqueued_jobs: snapshot.enqueued_jobs,
+        running_jobs: snapshot.running_jobs,
+        succeeded_jobs: snapshot.succeeded_jobs,
+        failed_jobs: snapshot.failed_jobs,
+        dead_letter_jobs: snapshot.dead_letter_jobs,
+        pending_outbox_events: snapshot.pending_outbox_events,
+        recurring_definitions: snapshot.recurring_definitions,
+        last_tick_at_utc: observation.last_tick_at_utc,
+        active_turn_executions: observation.active_turn_executions,
+        active_turn_executions_high_water: observation.active_turn_executions_high_water,
+        missing_turn_context_invocations: observation.missing_turn_context_invocations,
+    }
 }
 
 pub fn health_response(

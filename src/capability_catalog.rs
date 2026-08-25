@@ -4,10 +4,14 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+const TRIP_LONDON_TRAINS_FEED_ID: &str = "trip.london.trains";
+static CAPABILITIES_MANIFEST_PATH: OnceLock<PathBuf> = OnceLock::new();
 
 /// Where a capability binding is implemented.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -750,10 +754,37 @@ fn collect_definition_tokens(def: &CapabilityDefinition) -> HashSet<String> {
 }
 
 pub fn capabilities_manifest_path() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("medousa")
-        .join("capabilities.toml")
+    if let Some(path) = CAPABILITIES_MANIFEST_PATH.get() {
+        return path.clone();
+    }
+    #[cfg(feature = "full-daemon")]
+    {
+        dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("medousa")
+            .join("capabilities.toml")
+    }
+    #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+    {
+        panic!("embedded capability manifest path must be configured before use")
+    }
+}
+
+/// Bind capability preferences to the active daemon deployment root.
+pub fn configure_capabilities_manifest_path(path: PathBuf) -> Result<(), String> {
+    if let Some(existing) = CAPABILITIES_MANIFEST_PATH.get() {
+        return if existing == &path {
+            Ok(())
+        } else {
+            Err(format!(
+                "capability manifest path is already configured as {}",
+                existing.display()
+            ))
+        };
+    }
+    CAPABILITIES_MANIFEST_PATH
+        .set(path)
+        .map_err(|_| "capability manifest path was configured concurrently".to_string())
 }
 
 /// Load embedded seed merged with optional `~/.config/medousa/capabilities.toml`.
@@ -848,17 +879,20 @@ pub fn web_search_settings() -> WebSearchSettings {
             settings.preferred_provider = Some(trimmed.to_string());
         }
     }
-    let defaults = crate::session::load_tui_defaults();
-    if settings.preferred_provider.is_none() {
-        settings.preferred_provider = defaults
-            .web_search_preferred_provider
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
-    }
-    if let Some(try_fallbacks) = defaults.web_search_try_fallbacks {
-        settings.try_fallbacks = try_fallbacks;
+    #[cfg(feature = "full-daemon")]
+    {
+        let defaults = crate::session::load_tui_defaults();
+        if settings.preferred_provider.is_none() {
+            settings.preferred_provider = defaults
+                .web_search_preferred_provider
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+        }
+        if let Some(try_fallbacks) = defaults.web_search_try_fallbacks {
+            settings.try_fallbacks = try_fallbacks;
+        }
     }
     settings
 }
@@ -1012,7 +1046,7 @@ pub fn embedded_capability_manifest() -> CapabilityManifest {
                 ],
                 publish_feeds: vec![
                     medousa_types::feed::WORKSHOP_PULSE_FEED_ID.to_string(),
-                    crate::feed_adapters::TRIP_LONDON_TRAINS_FEED_ID.to_string(),
+                    TRIP_LONDON_TRAINS_FEED_ID.to_string(),
                 ],
                 can_feed_component: Some("workshop-status".to_string()),
                 available_jobs: vec![
@@ -1147,7 +1181,7 @@ mod tests {
             entry.capability_id == "environment_canvas"
                 && entry
                     .publish_feeds
-                    .contains(&crate::feed_adapters::TRIP_LONDON_TRAINS_FEED_ID.to_string())
+                    .contains(&TRIP_LONDON_TRAINS_FEED_ID.to_string())
         }));
     }
 

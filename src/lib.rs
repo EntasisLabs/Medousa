@@ -8,6 +8,8 @@
 include!("full_daemon.rs");
 
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod capability_catalog;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod daemon_api;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod daemon_runtime;
@@ -19,9 +21,17 @@ pub mod embedded_daemon;
 #[path = "agent_runtime/execution_context.rs"]
 pub mod execution_context;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod grapheme_api;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod grapheme_grants;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod grapheme_runtime;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod grapheme_script;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod grapheme_source;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod grapheme_workshop;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod locus_memory;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]

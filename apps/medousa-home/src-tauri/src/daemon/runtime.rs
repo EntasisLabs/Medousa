@@ -56,7 +56,15 @@ use super::DaemonState;
 #[tauri::command]
 pub async fn runtime_get_stats(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
 ) -> Result<DaemonStatsResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .runtime_stats()
+            .await
+            .map_err(|error| format!("embedded runtime stats: {error:#}"));
+    }
     workshop_http::get_json(&state, "/v1/stats").await
 }
 
@@ -163,14 +171,29 @@ pub async fn runtime_put_worker_config(
 #[tauri::command]
 pub async fn runtime_get_delivery_status(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
 ) -> Result<DeliveryHealthResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .runtime_delivery_status()
+            .await
+            .map_err(|error| format!("embedded delivery stats: {error:#}"));
+    }
     workshop_http::get_json(&state, "/v1/delivery/status").await
 }
 
 #[tauri::command]
 pub async fn runtime_get_continuation_status(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
 ) -> Result<ContinuationStatusResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .runtime_continuation_status()
+            .map_err(|error| format!("embedded continuation stats: {error:#}"));
+    }
     workshop_http::get_json(&state, "/v1/continuations/status").await
 }
 

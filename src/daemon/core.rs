@@ -71,20 +71,16 @@ pub async fn stats(
     let last_tick_at_utc = *state.last_tick_at.read().await;
     let execution_registry = &state.platform.agent_handle().execution_registry;
 
-    Ok(Json(DaemonStatsResponse {
-        enqueued_jobs: snapshot.enqueued_jobs,
-        running_jobs: snapshot.running_jobs,
-        succeeded_jobs: snapshot.succeeded_jobs,
-        failed_jobs: snapshot.failed_jobs,
-        dead_letter_jobs: snapshot.dead_letter_jobs,
-        pending_outbox_events: snapshot.pending_outbox_events,
-        recurring_definitions: snapshot.recurring_definitions,
-        last_tick_at_utc,
-        active_turn_executions: execution_registry.live_count(),
-        active_turn_executions_high_water: execution_registry.high_water(),
-        missing_turn_context_invocations:
-            crate::agent_runtime::execution_context::missing_turn_context_invocations(),
-    }))
+    Ok(Json(crate::daemon_runtime::stats_response(
+        snapshot,
+        crate::daemon_runtime::DaemonStatsObservation {
+            last_tick_at_utc,
+            active_turn_executions: execution_registry.live_count(),
+            active_turn_executions_high_water: execution_registry.high_water(),
+            missing_turn_context_invocations:
+                crate::agent_runtime::execution_context::missing_turn_context_invocations(),
+        },
+    )))
 }
 
 pub async fn runtime_defaults(state: State<AppState>) -> Json<RuntimeDefaultsResponse> {

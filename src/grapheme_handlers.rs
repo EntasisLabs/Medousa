@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use axum::Json;
@@ -11,25 +10,19 @@ use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
 use crate::daemon_api::{
-    GraphemeModuleDetailResponse, GraphemeModuleOpsResponse, GraphemeModuleSummary,
-    GraphemeModulesListResponse, GraphemeRunRequest, GraphemeRunResponse,
-    GraphemeScriptDetailResponse, GraphemeScriptEntryDto, GraphemeScriptsListQuery,
-    GraphemeScriptsListResponse,
-};
-use crate::grapheme_host_catalog::{
-    discover_modules_with_host, examples_for_module, modules_info_with_host, modules_ops_with_host,
+    GraphemeModuleDetailResponse, GraphemeModuleOpsResponse, GraphemeModulesListResponse,
+    GraphemeRunRequest, GraphemeRunResponse, GraphemeScriptDetailResponse,
+    GraphemeScriptsListQuery, GraphemeScriptsListResponse,
 };
 use crate::grapheme_lsp_bridge::{get_lsp_workspace, grapheme_lsp_ws};
-use crate::grapheme_script::service::GraphemeScriptService;
 use crate::grapheme_workshop::{
     GraphemeAllowlistResponse, GraphemeAllowlistUpdateRequest, GraphemeCompileRequest,
     GraphemeCompileResponse, GraphemeLifecycleResponse, GraphemeModuleLoadRequest,
     GraphemeModuleLoadResponse, GraphemeScriptDeleteResponse, GraphemeScriptRenameRequest,
     GraphemeScriptSaveRequest, GraphemeScriptSaveResponse, compile_source, delete_script,
-    enforce_grapheme_allowlist, get_allowlist, lifecycle_events, load_wasm_module, rename_script,
-    save_script, update_allowlist,
+    get_allowlist, lifecycle_events, load_wasm_module, rename_script, save_script,
+    update_allowlist,
 };
-use crate::tools::run_grapheme_via_runtime;
 
 #[derive(Clone)]
 pub struct GraphemeApiState {
@@ -43,194 +36,72 @@ pub struct GraphemeModuleOpsQuery {
 }
 
 pub async fn list_grapheme_modules() -> Json<GraphemeModulesListResponse> {
-    let modules = discover_modules_with_host()
-        .into_iter()
-        .map(|manifest| {
-            let effects = manifest
-                .exported_ops
-                .iter()
-                .filter_map(|op| {
-                    serde_json::to_value(&op.effect)
-                        .ok()
-                        .and_then(|value| value.as_str().map(str::to_string))
-                })
-                .collect::<BTreeSet<_>>()
-                .into_iter()
-                .collect();
-
-            GraphemeModuleSummary {
-                module_id: manifest.module_id,
-                version: manifest.version,
-                abi: serde_json::to_value(&manifest.abi)
-                    .ok()
-                    .and_then(|value| value.as_str().map(str::to_string))
-                    .unwrap_or_else(|| "unknown".to_string()),
-                entrypoint: manifest.entrypoint,
-                op_count: manifest.exported_ops.len(),
-                effects,
-                required_capabilities: manifest.required_capabilities,
-            }
-        })
-        .collect::<Vec<_>>();
-    let count = modules.len();
-    Json(GraphemeModulesListResponse { count, modules })
+    Json(crate::grapheme_api::list_modules())
 }
 
 pub async fn get_grapheme_module(
     Path(module_id): Path<String>,
 ) -> Result<Json<GraphemeModuleDetailResponse>, (StatusCode, String)> {
-    let module_id = module_id.trim();
-    if module_id.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "module_id is required".to_string()));
-    }
-
-    let info = modules_info_with_host(module_id).ok_or_else(|| {
-        (
-            StatusCode::NOT_FOUND,
-            format!("unknown grapheme module '{module_id}'"),
-        )
-    })?;
-
-    let examples = examples_for_module(module_id);
-
-    Ok(Json(GraphemeModuleDetailResponse {
-        info: serde_json::to_value(info).unwrap_or(serde_json::Value::Null),
-        examples,
-    }))
+    crate::grapheme_api::get_module(&module_id)
+        .map(Json)
+        .map_err(|error| {
+            let status = if error.starts_with("unknown grapheme module") {
+                StatusCode::NOT_FOUND
+            } else {
+                StatusCode::BAD_REQUEST
+            };
+            (status, error)
+        })
 }
 
 pub async fn get_grapheme_module_ops(
     Path(module_id): Path<String>,
     Query(query): Query<GraphemeModuleOpsQuery>,
 ) -> Json<GraphemeModuleOpsResponse> {
-    let module_id = module_id.trim();
-    let search = query
-        .q
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or(module_id);
-    let payload = modules_ops_with_host(search);
-    Json(GraphemeModuleOpsResponse {
-        module_id: module_id.to_string(),
-        query: payload.query,
-        matches: payload
-            .matches
-            .into_iter()
-            .filter_map(|row| serde_json::to_value(row).ok())
-            .collect(),
-    })
+    Json(crate::grapheme_api::get_module_ops(
+        &module_id,
+        query.q.as_deref(),
+    ))
 }
 
 pub async fn list_grapheme_scripts(
     Query(query): Query<GraphemeScriptsListQuery>,
 ) -> Json<GraphemeScriptsListResponse> {
-    let limit = query.limit.unwrap_or(50).clamp(1, 200);
-    let scripts: Vec<GraphemeScriptEntryDto> = if let Some(search) = query
-        .query
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        GraphemeScriptService::search_ranked(
-            search,
-            query.module.as_deref(),
-            query.tag.as_deref(),
-            limit,
-        )
-        .into_iter()
-        .map(|hit| GraphemeScriptEntryDto {
-            id: hit.id,
-            name: hit.name,
-            modules: hit.modules,
-            tags: hit.tags,
-            intent: hit.intent,
-            version: hit.version,
-            score: Some(hit.score),
-            line: Some(hit.line),
-            body_path: None,
-            body_hash: None,
-            created_at_utc: None,
-            updated_at_utc: None,
-            source_session_id: None,
-            body_preview: None,
-        })
-        .collect()
-    } else {
-        GraphemeScriptService::list(query.module.as_deref(), query.tag.as_deref(), limit)
-            .into_iter()
-            .map(script_entry_dto)
-            .collect()
-    };
-
-    Json(GraphemeScriptsListResponse {
-        count: scripts.len(),
-        scripts,
-    })
+    Json(crate::grapheme_api::list_scripts(query))
 }
 
 pub async fn get_grapheme_script(
     Path(script_id): Path<String>,
 ) -> Result<Json<GraphemeScriptDetailResponse>, (StatusCode, String)> {
-    let script_id = script_id.trim();
-    if script_id.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "script_id is required".to_string()));
-    }
-
-    let (entry, body) = GraphemeScriptService::load(script_id)
-        .map_err(|err| (StatusCode::NOT_FOUND, err.to_string()))?;
-
-    let body_preview = truncate_body(&body, 4000);
-    Ok(Json(GraphemeScriptDetailResponse {
-        script: script_entry_dto(entry),
-        body_preview,
-        body_truncated: body.len() > 4000,
-    }))
+    crate::grapheme_api::get_script(&script_id)
+        .map(Json)
+        .map_err(|error| {
+            let status = if error.contains("not found") {
+                StatusCode::NOT_FOUND
+            } else {
+                StatusCode::BAD_REQUEST
+            };
+            (status, error)
+        })
 }
 
 pub async fn run_grapheme_source(
     State(state): State<GraphemeApiState>,
     Json(request): Json<GraphemeRunRequest>,
 ) -> Result<Json<GraphemeRunResponse>, (StatusCode, String)> {
-    let source = request.source.trim();
-    if source.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "source is required".to_string()));
-    }
-    enforce_grapheme_allowlist(source).map_err(|err| (StatusCode::FORBIDDEN, err))?;
-
-    let result = run_grapheme_via_runtime(&state.composition, source, "workshop_grapheme_run")
+    crate::grapheme_api::run_source(&state.composition, &request.source)
         .await
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
-
-    Ok(Json(GraphemeRunResponse { result }))
-}
-
-pub fn script_entry_dto(
-    entry: crate::grapheme_script::entry::GraphemeScriptEntry,
-) -> GraphemeScriptEntryDto {
-    GraphemeScriptEntryDto {
-        id: entry.id,
-        name: entry.name,
-        modules: entry.modules,
-        tags: entry.tags,
-        intent: entry.intent,
-        version: entry.version,
-        score: None,
-        line: None,
-        body_path: Some(entry.body_path),
-        body_hash: Some(entry.body_hash),
-        created_at_utc: Some(entry.created_at_utc),
-        updated_at_utc: Some(entry.updated_at_utc),
-        source_session_id: entry.source_session_id,
-        body_preview: None,
-    }
-}
-
-fn truncate_body(body: &str, max_len: usize) -> String {
-    if body.len() <= max_len {
-        return body.to_string();
-    }
-    format!("{}…", &body[..max_len])
+        .map(Json)
+        .map_err(|error| {
+            let status = if error == "source is required" {
+                StatusCode::BAD_REQUEST
+            } else if error.contains("allowlist") {
+                StatusCode::FORBIDDEN
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            };
+            (status, error)
+        })
 }
 
 pub async fn get_grapheme_allowlist() -> Json<GraphemeAllowlistResponse> {

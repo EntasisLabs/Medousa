@@ -250,7 +250,11 @@ full-daemon = [
 ]
 embedded-daemon = [
     "dep:base64",
+    "dep:grapheme-compiler",
+    "dep:grapheme-runtime",
+    "dep:grapheme-sdk",
     "dep:schemars",
+    "dep:toml",
     "dep:unicode-normalization",
 ]
 otel-export = [

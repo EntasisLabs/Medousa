@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::sync::RwLock;
+use std::sync::{OnceLock, RwLock};
 
 use anyhow::{Context, Result, bail};
 use chrono::Utc;
@@ -13,7 +13,6 @@ use sha2::{Digest, Sha256};
 
 use medousa_types::authority_id::GraphemeScriptId;
 
-use crate::session;
 use crate::store_root::{StorePath, StoreRoot};
 
 use super::entry::{GraphemeScriptEntry, slugify_script_id};
@@ -22,6 +21,24 @@ const INDEX_FILE: &str = "index.jsonl";
 const SCRIPTS_DIR: &str = "scripts";
 
 static STORE: Lazy<GraphemeScriptStore> = Lazy::new(GraphemeScriptStore::new);
+static GRAPHEME_SCRIPT_ROOT: OnceLock<PathBuf> = OnceLock::new();
+
+/// Bind the script library to the active daemon deployment root.
+pub fn configure_grapheme_script_root(root: PathBuf) -> Result<(), String> {
+    if let Some(existing) = GRAPHEME_SCRIPT_ROOT.get() {
+        return if existing == &root {
+            Ok(())
+        } else {
+            Err(format!(
+                "grapheme script root is already configured as {}",
+                existing.display()
+            ))
+        };
+    }
+    GRAPHEME_SCRIPT_ROOT
+        .set(root)
+        .map_err(|_| "grapheme script root was configured concurrently".to_string())
+}
 
 #[cfg(test)]
 mod test_override {
@@ -99,7 +116,17 @@ impl GraphemeScriptStore {
         if let Some(path) = test_override::get() {
             return path;
         }
-        session::medousa_data_dir().join("grapheme-scripts")
+        if let Some(root) = GRAPHEME_SCRIPT_ROOT.get() {
+            return root.clone();
+        }
+        #[cfg(feature = "full-daemon")]
+        {
+            crate::session::medousa_data_dir().join("grapheme-scripts")
+        }
+        #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+        {
+            panic!("embedded grapheme script root must be configured before use")
+        }
     }
 
     fn index_path() -> PathBuf {
