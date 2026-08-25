@@ -53,10 +53,8 @@
   import { switchMobileTab } from "$lib/mobileNavigation";
   import { resolveJournalDailyHeroPath } from "$lib/utils/vaultNoteBridge";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
-  import {
-    shellAskFabVisible,
-    visibleMobileTabs,
-  } from "$lib/utils/mobileEnvironmentChrome";
+  import { shellAskFabVisible } from "$lib/utils/mobileEnvironmentChrome";
+  import { MOBILE_TABS } from "$lib/types/mobile";
   import "$lib/styles/mobile-home-convergence.postcss";
 
   // Destinations menu pulls extra switchers + Lucide icons — keep it off the cold path.
@@ -162,14 +160,10 @@
   });
 
   $effect(() => {
-    const order = visibleMobileTabs(environment.spec);
     const tab = layout.mobileTab;
-    if (order.length === 0) return;
-    if (order.includes(tab)) return;
-    // Prefer home when correcting invalid/legacy tabs (e.g. stored "work").
-    const next = order.includes("home") ? "home" : order[0];
-    if (next === tab) return;
-    switchMobileTab(next);
+    if (MOBILE_TABS.some((entry) => entry.id === tab)) return;
+    // Correct invalid/legacy stored tabs, but leave hidden valid views open.
+    switchMobileTab("home");
   });
 
   onMount(() => {
@@ -288,7 +282,6 @@
     {#await destinationsMenuMod() then { default: MobileDestinationsMenu }}
       <MobileDestinationsMenu
         open={true}
-        align={layout.mobileTab === "home" ? "end" : "start"}
         onClose={() => layout.setMobileDestinationsMenuOpen(false)}
         onToggleActivity={() => layout.toggleActivitySheet()}
       />

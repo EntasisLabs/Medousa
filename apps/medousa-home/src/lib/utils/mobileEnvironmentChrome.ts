@@ -1,24 +1,23 @@
-import type { MobileAskEntry } from "$lib/types/environment";
+import type { EnvironmentSpec, MobileAskEntry } from "$lib/types/environment";
 import { MOBILE_TABS, type MobileTab } from "$lib/types/mobile";
+import { activePresetSurfaceIds } from "$lib/utils/environmentLayout";
 
-/**
- * Primary mobile destinations (destinations menu). Always reachable —
- * layout presets / legacy `tabBar: "minimal"` used to hide Notes/Web from the
- * retired bottom tab bar, which bounced those destinations back to Home.
- */
-const PRIMARY_MOBILE_TABS = new Set<MobileTab>([
-  "home",
-  "chat",
-  "notes",
-  "web",
-  "more",
-]);
+const MOBILE_TAB_SURFACE_IDS: Partial<Record<MobileTab, string>> = {
+  chat: "chat",
+  notes: "notes",
+  web: "web",
+};
 
-/** Mobile tabs reachable from the destinations menu / swipe order. */
-export function visibleMobileTabs(_spec?: unknown): MobileTab[] {
-  return MOBILE_TABS.map((tab) => tab.id).filter((tab) =>
-    PRIMARY_MOBILE_TABS.has(tab),
-  );
+/** Mobile swipe/chrome order projected from the shared active layout preset. */
+export function visibleMobileTabs(spec?: EnvironmentSpec | null): MobileTab[] {
+  if (!spec) return MOBILE_TABS.map((tab) => tab.id);
+  const visibleIds = new Set(activePresetSurfaceIds(spec));
+  return MOBILE_TABS.map((tab) => tab.id).filter((tab) => {
+    // Home is the safe landing; More is the doorway to pinned utilities.
+    if (tab === "home" || tab === "more") return true;
+    const surfaceId = MOBILE_TAB_SURFACE_IDS[tab];
+    return Boolean(surfaceId && visibleIds.has(surfaceId));
+  });
 }
 
 export function showBuiltinHomeInlineAsk(askEntry: MobileAskEntry | null | undefined): boolean {

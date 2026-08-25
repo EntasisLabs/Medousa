@@ -104,9 +104,10 @@ export function switchMobileTab(tab: MobileTab): void {
     layout.setSessionDrawerOpen(false);
     layout.setIdentityDrawerOpen(false);
   }
-  const order = mobileTabOrder();
-  if (!order.includes(tab)) {
-    layout.setMobileTab(order[0] ?? "home", { bump: true });
+  // Layout membership controls menu/swipe chrome, not whether a valid direct
+  // link may open the underlying view.
+  if (!MOBILE_TABS.some((entry) => entry.id === tab)) {
+    layout.setMobileTab("home", { bump: true });
     return;
   }
   // More tab no longer shows a hub list — open the destinations menu instead.

@@ -6,6 +6,13 @@ import {
   resolveMobileChromeSurface,
 } from "./mobileTopChrome";
 
+describe("mobile menu placement", () => {
+  it("keeps the Home menu trigger on the leading edge", () => {
+    expect(mobileChromeLeading("home")).toBe("menu");
+    expect(mobileChromeTrailing("home")).toEqual([]);
+  });
+});
+
 describe("mobile Code chrome", () => {
   it("resolves the Code destination to its own surface", () => {
     expect(resolveMobileChromeSurface("more", "list", "code")).toBe("code");

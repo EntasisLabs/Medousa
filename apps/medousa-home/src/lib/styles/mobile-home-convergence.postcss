@@ -291,17 +291,9 @@
 }
 
 .mobile-dest-menu-backdrop {
-  @apply fixed inset-0 z-[60] flex items-start p-3;
+  @apply fixed inset-0 z-[60] flex items-start justify-start p-3;
   padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
   background-color: rgb(var(--color-surface-950) / 0.55);
-}
-
-.mobile-dest-menu-backdrop--start {
-  @apply justify-start;
-}
-
-.mobile-dest-menu-backdrop--end {
-  @apply justify-end;
 }
 
 .mobile-dest-menu {
@@ -315,6 +307,14 @@
 
 .mobile-dest-menu-title {
   @apply text-[16px] font-semibold leading-5 text-surface-50;
+}
+
+.mobile-dest-menu-head-actions {
+  @apply flex items-center gap-1;
+}
+
+.mobile-dest-menu-edit-toggle {
+  @apply inline-flex min-h-11 items-center rounded-full px-3 text-[13px] font-medium text-content-secondary transition active:bg-surface-800 disabled:opacity-40;
 }
 
 .mobile-dest-menu-switchers {
@@ -336,6 +336,14 @@
 
 .mobile-dest-menu-scroll {
   @apply min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-1;
+}
+
+.mobile-dest-menu-edit-intro {
+  @apply mx-1 mt-3 flex flex-col gap-1 rounded-2xl border border-surface-600/35 bg-surface-800/35 px-3 py-3 text-[12px] leading-4 text-content-tertiary;
+}
+
+.mobile-dest-menu-edit-intro strong {
+  @apply text-[13px] font-semibold text-surface-100;
 }
 
 .mobile-dest-menu-section {
@@ -365,6 +373,27 @@
 
 .mobile-dest-menu-row-hint {
   @apply mt-0.5 block text-[12px] leading-4 text-content-tertiary;
+}
+
+.mobile-dest-menu-edit-row {
+  @apply pr-1.5;
+}
+
+.mobile-dest-menu-edit-row-hidden .mobile-dest-menu-icon,
+.mobile-dest-menu-edit-row-hidden .mobile-dest-menu-row-title {
+  @apply text-content-tertiary;
+}
+
+.mobile-dest-menu-edit-state {
+  @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-surface-600/50 text-content-tertiary;
+}
+
+.mobile-dest-menu-edit-state-active {
+  @apply border-surface-400/50 bg-surface-700/50 text-content-link;
+}
+
+.mobile-dest-menu-edit-error {
+  @apply mx-1 mt-3 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12px] leading-4 text-red-300;
 }
 
 .mobile-notes-active-filter {

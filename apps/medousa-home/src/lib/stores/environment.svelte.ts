@@ -114,14 +114,6 @@ export class EnvironmentStore {
       .map((id) => byId.get(id))
       .filter((surface): surface is SurfaceDef => Boolean(surface));
 
-    // Peers is a Life destination — surface it when present on the spec but missing
-    // from the preset. Do not force its index so operators can reorder the rail.
-    const peers = byId.get("peers");
-    if (peers && !ordered.some((surface) => surface.id === "peers")) {
-      const chatAt = ordered.findIndex((surface) => surface.id === "chat");
-      ordered.splice(chatAt >= 0 ? chatAt + 1 : 0, 0, peers);
-    }
-
     for (const safetyId of [SAFETY_SURFACE_SETTINGS, SAFETY_SURFACE_RUNTIME]) {
       if (!ordered.some((surface) => surface.id === safetyId)) {
         const safety = byId.get(safetyId);

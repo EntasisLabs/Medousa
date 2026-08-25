@@ -107,7 +107,11 @@ ordinary per-conversation draft recovery remains private to the app.
 | **Workshop / Automations** | Scripts, flows, schedules |
 | **Settings** | Room, models, memory, phone, packages, connection |
 
-Mobile uses a compact shell with the same engine behind it.
+Mobile uses a compact shell with the same engine behind it. Its menu button
+stays on the left. Open the menu and choose **Edit** to show or hide supported
+destinations for the active layout. That edits the same workshop-owned layout
+preset used by the desktop rail; it does not create a separate phone profile or
+disable hidden features. Home, You, Preferences, and Workshop remain available.
 
 ---
 
