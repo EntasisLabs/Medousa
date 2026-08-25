@@ -396,6 +396,33 @@ cannot represent multiple ordered prose segments without destructive buffer
 semantics, so the target is Turn Stream V3 with a compatibility projection to
 V2 during migration.
 
+### V3 is V2, but honest
+
+V3 preserves the useful shape and freedom of V2: a raw typed event envelope,
+an observation cursor, durable replay, and a live tail. It does not introduce a
+mandatory server-side fold, transcript layout, branch model, or client reducer.
+Occurrence order is retained data, not a consumer constraint.
+
+- `seq` means only "this turn fact was observed after the preceding sequence
+  value." It is a replay and deduplication cursor, not event identity,
+  causality, ownership, branch topology, or permission to interpret an event.
+- Each event remains independently addressable and useful. Consumers may
+  filter tools, select text segments, aggregate turns, fork context, build
+  threads, or ignore presentation events without first reconstructing one
+  canonical transcript.
+- Fields and event shapes that were already honest in V2 remain unchanged.
+  V3 adds identity only where V2 discarded it, and removes only mechanics that
+  conceal, erase, or replace facts.
+- V3 facts are created at the point where the runtime observes them. V3 must
+  never be reconstructed from a lossy V2 event after PackHold, ScratchReset,
+  or terminal replacement has already changed the meaning.
+- The bounded pipeline assigns a cursor, journals one native V3 fact, and
+  publishes that fact. A V2 compatibility event may be projected downstream
+  from V3; V2 is never the semantic source of V3.
+- Reconnect returns the raw facts after a cursor. The API does not require
+  consumers to replay earlier facts or adopt Medousa's presentation reducer in
+  order to use the returned events.
+
 ### Required semantic events
 
 Names may follow repository conventions, but V3 must represent these facts:
@@ -405,7 +432,7 @@ assistant_text_started(segment_id, model_round)
 content_append(segment_id, text)
 assistant_text_committed(segment_id)
 
-tool_started(run_id, model_round, ...)
+tool_started(run_id, tool_round, ...)
 tool_finished(run_id, ...)
 
 turn_completed(outcome, aggregate_text)
@@ -417,7 +444,8 @@ ambiguous.
 
 ### Ordering and durability
 
-1. The bounded turn pipeline remains the sole sequence owner.
+1. The bounded turn pipeline remains the sole sequence-cursor owner and emits
+   one native V3 event per journal record.
 2. Pending content is flushed before segment commit, tool start, tool finish,
    attempt transition, approval, terminal, error, cancellation, or replay
    fence.
@@ -425,8 +453,9 @@ ambiguous.
    second unrelated receipt.
 4. Terminal events mark outcome and durability. They do not replace preceding
    segments with an authoritative flat body.
-5. Replay plus live tail produces the same ordered segment state as uninterrupted
-   streaming.
+5. Replay plus live tail exposes the same raw facts in the same observation
+   order as uninterrupted streaming. Consumers remain free to project those
+   facts differently.
 6. A committed visible segment remains part of history even if the later turn
    outcome is failure, cancellation, checkpoint, or fuse exhaustion.
 

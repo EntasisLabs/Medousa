@@ -84,7 +84,7 @@ enum ContractEvent {
     ToolStarted {
         run_id: String,
         name: String,
-        model_round: usize,
+        tool_round: usize,
     },
     ToolFinished {
         run_id: String,
@@ -174,7 +174,7 @@ impl TargetProjector {
                             self.events.push(ContractEvent::ToolStarted {
                                 run_id: tool.run_id.clone(),
                                 name: tool.name.clone(),
-                                model_round: round.model_round,
+                                tool_round: round.model_round,
                             });
                         }
                         for tool in tools {
@@ -340,4 +340,48 @@ fn target_contract_rejects_terminal_and_ordinary_actions_in_one_round() {
         .project_case(&case)
         .expect_err("mixed terminal action must be rejected");
     assert!(error.contains("mixes terminal and ordinary actions"));
+}
+
+#[test]
+fn raw_v3_facts_support_consumer_defined_projections() {
+    let fixture: ContractFixture =
+        serde_json::from_str(CONTRACT_FIXTURE).expect("parse chronological V3 fixture");
+    let case = fixture
+        .cases
+        .iter()
+        .find(|case| case.id == "chronological_work_with_naked_prose")
+        .expect("projection fixture case");
+    let events = TargetProjector::default()
+        .project_case(case)
+        .expect("project target case");
+
+    let tool_runs = events
+        .iter()
+        .filter_map(|event| match event {
+            ContractEvent::ToolStarted { run_id, .. }
+            | ContractEvent::ToolFinished { run_id, .. } => Some(run_id.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        tool_runs,
+        [
+            "probe-a", "probe-b", "probe-a", "probe-b", "probe-c", "probe-c"
+        ]
+    );
+
+    let selected_segment = "chronological_work_with_naked_prose:text:3";
+    let selected_text = events
+        .iter()
+        .filter_map(|event| match event {
+            ContractEvent::ContentAppend { segment_id, text } if segment_id == selected_segment => {
+                Some(text.as_str())
+            }
+            _ => None,
+        })
+        .collect::<String>();
+    assert_eq!(
+        selected_text,
+        "I’m checking that gap against the durable record."
+    );
 }

@@ -20759,8 +20759,8 @@
             "type": "object",
             "required": [
               "input_summary",
-              "model_round",
               "tool_name",
+              "tool_round",
               "tool_run_id",
               "type"
             ],
@@ -20775,13 +20775,13 @@
               "input_summary": {
                 "type": "string"
               },
-              "model_round": {
+              "tool_name": {
+                "type": "string"
+              },
+              "tool_round": {
                 "type": "integer",
                 "format": "uint",
                 "minimum": 0.0
-              },
-              "tool_name": {
-                "type": "string"
               },
               "tool_run_id": {
                 "type": "string"
@@ -20799,9 +20799,9 @@
             "type": "object",
             "required": [
               "input_summary",
-              "model_round",
               "status",
               "tool_name",
+              "tool_round",
               "tool_run_id",
               "type"
             ],
@@ -20823,11 +20823,6 @@
               "input_summary": {
                 "type": "string"
               },
-              "model_round": {
-                "type": "integer",
-                "format": "uint",
-                "minimum": 0.0
-              },
               "output_summary": {
                 "type": [
                   "string",
@@ -20839,6 +20834,11 @@
               },
               "tool_name": {
                 "type": "string"
+              },
+              "tool_round": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
               },
               "tool_run_id": {
                 "type": "string"
@@ -21141,6 +21141,13 @@
               },
               "outcome": {
                 "$ref": "#/definitions/TurnCompletionOutcomeV3"
+              },
+              "tool_names": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               },
               "type": {
                 "type": "string",
@@ -22383,8 +22390,8 @@
         "type": "object",
         "required": [
           "input_summary",
-          "model_round",
           "tool_name",
+          "tool_round",
           "tool_run_id",
           "type"
         ],
@@ -22399,13 +22406,13 @@
           "input_summary": {
             "type": "string"
           },
-          "model_round": {
+          "tool_name": {
+            "type": "string"
+          },
+          "tool_round": {
             "type": "integer",
             "format": "uint",
             "minimum": 0.0
-          },
-          "tool_name": {
-            "type": "string"
           },
           "tool_run_id": {
             "type": "string"
@@ -22423,9 +22430,9 @@
         "type": "object",
         "required": [
           "input_summary",
-          "model_round",
           "status",
           "tool_name",
+          "tool_round",
           "tool_run_id",
           "type"
         ],
@@ -22447,11 +22454,6 @@
           "input_summary": {
             "type": "string"
           },
-          "model_round": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0.0
-          },
           "output_summary": {
             "type": [
               "string",
@@ -22463,6 +22465,11 @@
           },
           "tool_name": {
             "type": "string"
+          },
+          "tool_round": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
           },
           "tool_run_id": {
             "type": "string"
@@ -22765,6 +22772,13 @@
           },
           "outcome": {
             "$ref": "#/definitions/TurnCompletionOutcomeV3"
+          },
+          "tool_names": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "type": {
             "type": "string",

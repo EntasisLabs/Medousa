@@ -407,7 +407,7 @@ pub enum TurnStreamEventV3 {
         input_summary: String,
         #[serde(default)]
         input_params: Vec<ToolInputParam>,
-        model_round: usize,
+        tool_round: usize,
     },
     ToolFinished {
         tool_run_id: String,
@@ -418,7 +418,7 @@ pub enum TurnStreamEventV3 {
         input_params: Vec<ToolInputParam>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         output_summary: Option<String>,
-        model_round: usize,
+        tool_round: usize,
         #[serde(default)]
         artifact_refs: Vec<StreamToolArtifactRef>,
     },
@@ -483,6 +483,8 @@ pub enum TurnStreamEventV3 {
     TurnCompleted {
         outcome: TurnCompletionOutcomeV3,
         aggregate_text: String,
+        #[serde(default)]
+        tool_names: Vec<String>,
     },
 }
 
@@ -699,7 +701,7 @@ mod tests {
                 tool_name: "search".into(),
                 input_summary: "query".into(),
                 input_params: Vec::new(),
-                model_round: 1,
+                tool_round: 1,
             },
             TurnStreamEventV3::ToolFinished {
                 tool_run_id: "run-1".into(),
@@ -708,7 +710,7 @@ mod tests {
                 input_summary: "query".into(),
                 input_params: Vec::new(),
                 output_summary: Some("found".into()),
-                model_round: 1,
+                tool_round: 1,
                 artifact_refs: Vec::new(),
             },
             TurnStreamEventV3::AssistantTextStarted {
@@ -725,6 +727,7 @@ mod tests {
             TurnStreamEventV3::TurnCompleted {
                 outcome: TurnCompletionOutcomeV3::Completed,
                 aggregate_text: "Let me check.\n\nFound it.".into(),
+                tool_names: vec!["search".into()],
             },
         ];
 
@@ -771,8 +774,78 @@ mod tests {
             TurnStreamEventV3::TurnCompleted {
                 outcome: TurnCompletionOutcomeV3::Failed,
                 aggregate_text: "partial answer".into(),
+                tool_names: Vec::new(),
             }
             .is_terminal()
         );
+    }
+
+    #[test]
+    fn v3_preserves_honest_v2_tool_and_terminal_fields() {
+        let started = serde_json::to_value(TurnStreamEventV3::ToolStarted {
+            tool_run_id: "run-1".into(),
+            tool_name: "search".into(),
+            input_summary: "query".into(),
+            input_params: Vec::new(),
+            tool_round: 2,
+        })
+        .unwrap();
+        assert_eq!(started["tool_round"], 2);
+        assert!(started.get("model_round").is_none());
+
+        let completed = serde_json::to_value(TurnStreamEventV3::TurnCompleted {
+            outcome: TurnCompletionOutcomeV3::Completed,
+            aggregate_text: "done".into(),
+            tool_names: vec!["search".into()],
+        })
+        .unwrap();
+        assert_eq!(completed["tool_names"], json!(["search"]));
+    }
+
+    #[test]
+    fn v3_replay_suffix_does_not_require_a_contiguous_sequence_or_prior_fold() {
+        let suffix = [
+            TurnStreamEnvelopeV3::new(
+                "turn-1",
+                41,
+                Utc::now(),
+                TurnStreamEventV3::ContentAppend {
+                    segment_id: "segment-created-before-cursor".into(),
+                    text: "remaining delta".into(),
+                },
+            )
+            .unwrap(),
+            TurnStreamEnvelopeV3::new(
+                "turn-1",
+                45,
+                Utc::now(),
+                TurnStreamEventV3::ToolFinished {
+                    tool_run_id: "run-created-before-cursor".into(),
+                    tool_name: "search".into(),
+                    status: "succeeded".into(),
+                    input_summary: "query".into(),
+                    input_params: Vec::new(),
+                    output_summary: Some("found".into()),
+                    tool_round: 2,
+                    artifact_refs: Vec::new(),
+                },
+            )
+            .unwrap(),
+        ];
+
+        assert_eq!(
+            suffix.iter().map(|event| event.seq).collect::<Vec<_>>(),
+            [41, 45]
+        );
+        assert!(matches!(
+            &suffix[0].event,
+            TurnStreamEventV3::ContentAppend { segment_id, .. }
+                if segment_id == "segment-created-before-cursor"
+        ));
+        assert!(matches!(
+            &suffix[1].event,
+            TurnStreamEventV3::ToolFinished { tool_run_id, .. }
+                if tool_run_id == "run-created-before-cursor"
+        ));
     }
 }

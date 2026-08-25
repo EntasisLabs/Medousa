@@ -1902,8 +1902,8 @@ class TurnStreamEventV311(MedousaModel):
     )
     input_params: list[ToolInputParam] | None = Field([], validate_default=True)
     input_summary: str
-    model_round: int = Field(..., ge=0)
     tool_name: str
+    tool_round: int = Field(..., ge=0)
     tool_run_id: str
     type: Type40
 
@@ -1919,10 +1919,10 @@ class TurnStreamEventV312(MedousaModel):
     artifact_refs: list[StreamToolArtifactRef] | None = Field([], validate_default=True)
     input_params: list[ToolInputParam] | None = Field([], validate_default=True)
     input_summary: str
-    model_round: int = Field(..., ge=0)
     output_summary: str | None = None
     status: str
     tool_name: str
+    tool_round: int = Field(..., ge=0)
     tool_run_id: str
     type: Type41
 
@@ -2066,6 +2066,7 @@ class TurnStreamEventV322(MedousaModel):
     )
     aggregate_text: str
     outcome: TurnCompletionOutcomeV3
+    tool_names: list[str] | None = []
     type: Type51
 
 

@@ -106,13 +106,13 @@
           "type": "tool_started",
           "run_id": "probe-a",
           "name": "data_probe",
-          "model_round": 1
+          "tool_round": 1
         },
         {
           "type": "tool_started",
           "run_id": "probe-b",
           "name": "schema_probe",
-          "model_round": 1
+          "tool_round": 1
         },
         {
           "type": "tool_finished",
@@ -156,7 +156,7 @@
           "type": "tool_started",
           "run_id": "probe-c",
           "name": "history_probe",
-          "model_round": 3
+          "tool_round": 3
         },
         {
           "type": "tool_finished",
@@ -217,7 +217,7 @@
           "type": "tool_started",
           "run_id": "fallback-probe",
           "name": "data_probe",
-          "model_round": 1
+          "tool_round": 1
         },
         {
           "type": "tool_finished",
@@ -293,7 +293,7 @@
           "type": "tool_started",
           "run_id": "authority-probe",
           "name": "authority_probe",
-          "model_round": 1
+          "tool_round": 1
         },
         {
           "type": "tool_finished",
@@ -363,7 +363,7 @@
           "type": "tool_started",
           "run_id": "service-probe",
           "name": "service_probe",
-          "model_round": 1
+          "tool_round": 1
         },
         {
           "type": "tool_finished",
@@ -410,7 +410,7 @@
           "type": "tool_started",
           "run_id": "scope-probe",
           "name": "scope_probe",
-          "model_round": 1
+          "tool_round": 1
         },
         {
           "type": "tool_finished",
