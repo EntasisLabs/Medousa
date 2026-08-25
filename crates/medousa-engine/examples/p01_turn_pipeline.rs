@@ -4,10 +4,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use medousa_engine::{
-    TURN_PIPELINE_BYTE_CAPACITY, TurnPipelineEmission, TurnPipelineError, TurnPipelineHandle,
-    TurnPipelineOutput,
+    TURN_PIPELINE_BYTE_CAPACITY, TurnPipelineEmission, TurnPipelineEnvelope, TurnPipelineError,
+    TurnPipelineHandle, TurnPipelineOutput,
 };
-use medousa_types::turn_stream::TurnStreamEventV2;
+use medousa_types::turn_stream::{TurnStreamEnvelopeV2, TurnStreamEventV2};
 use serde::Serialize;
 use tokio::sync::Semaphore;
 
@@ -53,7 +53,11 @@ impl TurnPipelineOutput for BenchmarkOutput {
             Ordering::Relaxed,
             Ordering::Relaxed,
         );
-        if let TurnStreamEventV2::ContentAppend { text } = emission.envelope.event {
+        if let TurnPipelineEnvelope::V2(TurnStreamEnvelopeV2 {
+            event: TurnStreamEventV2::ContentAppend { text },
+            ..
+        }) = emission.envelope
+        {
             self.content_bytes.fetch_add(
                 u64::try_from(text.len()).unwrap_or(u64::MAX),
                 Ordering::Relaxed,

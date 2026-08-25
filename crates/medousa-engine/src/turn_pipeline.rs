@@ -2,7 +2,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
-use medousa_types::{TurnStreamEnvelopeV2, TurnStreamEventV2};
+use medousa_types::{
+    TurnStreamEnvelopeV2, TurnStreamEnvelopeV3, TurnStreamEventV2, TurnStreamEventV3,
+};
 use tokio::sync::{Semaphore, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
@@ -50,12 +52,51 @@ pub trait TurnPipelineOutput: Send + Sync + 'static {
 
 /// An actor-owned public emission plus optional richer journal-only state.
 pub struct TurnPipelineEmission {
-    pub envelope: TurnStreamEnvelopeV2,
+    pub envelope: TurnPipelineEnvelope,
     pub journal_override: Option<TurnEvent>,
 }
 
+/// One native stream fact. The actor sequences either version directly; it
+/// never reconstructs V3 meaning from a V2 event.
+#[derive(Debug, Clone)]
+pub enum TurnPipelineEnvelope {
+    V2(TurnStreamEnvelopeV2),
+    V3(TurnStreamEnvelopeV3),
+}
+
+impl TurnPipelineEnvelope {
+    pub fn seq(&self) -> u64 {
+        match self {
+            Self::V2(envelope) => envelope.seq,
+            Self::V3(envelope) => envelope.seq,
+        }
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        match self {
+            Self::V2(envelope) => envelope.event.is_terminal(),
+            Self::V3(envelope) => envelope.event.is_terminal(),
+        }
+    }
+}
+
+#[derive(Debug)]
+enum TurnPipelineEvent {
+    V2(TurnStreamEventV2),
+    V3(TurnStreamEventV3),
+}
+
+impl TurnPipelineEvent {
+    fn is_terminal(&self) -> bool {
+        match self {
+            Self::V2(event) => event.is_terminal(),
+            Self::V3(event) => event.is_terminal(),
+        }
+    }
+}
+
 struct PipelineCommand {
-    event: TurnStreamEventV2,
+    event: TurnPipelineEvent,
     journal_override: Option<TurnEvent>,
     admission: PipelineAdmission,
     ack: oneshot::Sender<Result<u64, TurnPipelineError>>,
@@ -159,19 +200,52 @@ impl TurnPipelineHandle {
     }
 
     pub async fn emit(&self, event: TurnStreamEventV2) -> Result<u64, TurnPipelineError> {
-        self.emit_with_journal(event, None).await
+        self.emit_event_with_journal(TurnPipelineEvent::V2(event), None)
+            .await
     }
 
     /// Transfers an event into the bounded actor without waiting for output.
     /// Semantic and terminal producers should use [`Self::emit`]; this is for
     /// high-frequency provider text whose final fence is a later semantic event.
     pub async fn admit(&self, event: TurnStreamEventV2) -> Result<(), TurnPipelineError> {
-        self.send(event, None).await.map(drop)
+        self.send(TurnPipelineEvent::V2(event), None)
+            .await
+            .map(drop)
+    }
+
+    pub async fn emit_v3(&self, event: TurnStreamEventV3) -> Result<u64, TurnPipelineError> {
+        self.emit_v3_with_journal(event, None).await
+    }
+
+    /// Transfers a V3 provider fragment into the actor without waiting for
+    /// output. A later semantic event or explicit flush remains its fence.
+    pub async fn admit_v3(&self, event: TurnStreamEventV3) -> Result<(), TurnPipelineError> {
+        self.send(TurnPipelineEvent::V3(event), None)
+            .await
+            .map(drop)
     }
 
     pub async fn emit_with_journal(
         &self,
         event: TurnStreamEventV2,
+        journal_override: Option<TurnEvent>,
+    ) -> Result<u64, TurnPipelineError> {
+        self.emit_event_with_journal(TurnPipelineEvent::V2(event), journal_override)
+            .await
+    }
+
+    pub async fn emit_v3_with_journal(
+        &self,
+        event: TurnStreamEventV3,
+        journal_override: Option<TurnEvent>,
+    ) -> Result<u64, TurnPipelineError> {
+        self.emit_event_with_journal(TurnPipelineEvent::V3(event), journal_override)
+            .await
+    }
+
+    async fn emit_event_with_journal(
+        &self,
+        event: TurnPipelineEvent,
         journal_override: Option<TurnEvent>,
     ) -> Result<u64, TurnPipelineError> {
         let receipt = self.send(event, journal_override).await?;
@@ -184,12 +258,15 @@ impl TurnPipelineHandle {
 
     async fn send(
         &self,
-        event: TurnStreamEventV2,
+        event: TurnPipelineEvent,
         journal_override: Option<TurnEvent>,
     ) -> Result<oneshot::Receiver<Result<u64, TurnPipelineError>>, TurnPipelineError> {
         let mut encoded_size = EncodedSize::default();
-        serde_json::to_writer(&mut encoded_size, &event)
-            .map_err(|error| TurnPipelineError::Output(error.to_string()))?;
+        match &event {
+            TurnPipelineEvent::V2(event) => serde_json::to_writer(&mut encoded_size, event),
+            TurnPipelineEvent::V3(event) => serde_json::to_writer(&mut encoded_size, event),
+        }
+        .map_err(|error| TurnPipelineError::Output(error.to_string()))?;
         let bytes = encoded_size.bytes.max(1);
         if bytes > TURN_PIPELINE_BYTE_CAPACITY {
             self.metrics
@@ -389,7 +466,7 @@ async fn coalesce_text(
     rx: &mut mpsc::Receiver<PipelineMessage>,
     metrics: &TurnPipelineMetrics,
 ) -> (
-    TurnStreamEventV2,
+    TurnPipelineEvent,
     Option<TurnEvent>,
     Vec<PipelineReceipt>,
     Option<PipelineMessage>,
@@ -439,7 +516,7 @@ async fn coalesce_text(
 async fn publish_event(
     turn_id: &str,
     current_seq: u64,
-    event: TurnStreamEventV2,
+    event: TurnPipelineEvent,
     journal_override: Option<TurnEvent>,
     receipts: Vec<PipelineReceipt>,
     metrics: &TurnPipelineMetrics,
@@ -447,7 +524,17 @@ async fn publish_event(
     cancellation: &CancellationToken,
 ) -> u64 {
     let seq = current_seq.saturating_add(1);
-    let result = match TurnStreamEnvelopeV2::new(turn_id, seq, chrono::Utc::now(), event) {
+    let envelope = match event {
+        TurnPipelineEvent::V2(event) => {
+            TurnStreamEnvelopeV2::new(turn_id, seq, chrono::Utc::now(), event)
+                .map(TurnPipelineEnvelope::V2)
+        }
+        TurnPipelineEvent::V3(event) => {
+            TurnStreamEnvelopeV3::new(turn_id, seq, chrono::Utc::now(), event)
+                .map(TurnPipelineEnvelope::V3)
+        }
+    };
+    let result = match envelope {
         Ok(envelope) => tokio::select! {
             biased;
             () = cancellation.cancelled() => Err(TurnPipelineError::Cancelled),
@@ -480,44 +567,75 @@ fn reject_command(
     let _ = command.ack.send(Err(error));
 }
 
-fn is_text_event(event: &TurnStreamEventV2) -> bool {
+fn is_text_event(event: &TurnPipelineEvent) -> bool {
     matches!(
         event,
-        TurnStreamEventV2::ContentAppend { .. } | TurnStreamEventV2::ReasoningAppend { .. }
-    )
-}
-
-fn text_events_compatible(left: &TurnStreamEventV2, right: &TurnStreamEventV2) -> bool {
-    matches!(
-        (left, right),
-        (
-            TurnStreamEventV2::ContentAppend { .. },
-            TurnStreamEventV2::ContentAppend { .. }
-        ) | (
-            TurnStreamEventV2::ReasoningAppend { .. },
-            TurnStreamEventV2::ReasoningAppend { .. }
+        TurnPipelineEvent::V2(
+            TurnStreamEventV2::ContentAppend { .. } | TurnStreamEventV2::ReasoningAppend { .. }
+        ) | TurnPipelineEvent::V3(
+            TurnStreamEventV3::ContentAppend { .. } | TurnStreamEventV3::ReasoningAppend { .. }
         )
     )
 }
 
-fn text_len(event: &TurnStreamEventV2) -> usize {
+fn text_events_compatible(left: &TurnPipelineEvent, right: &TurnPipelineEvent) -> bool {
+    matches!(
+        (left, right),
+        (
+            TurnPipelineEvent::V2(TurnStreamEventV2::ContentAppend { .. }),
+            TurnPipelineEvent::V2(TurnStreamEventV2::ContentAppend { .. })
+        ) | (
+            TurnPipelineEvent::V2(TurnStreamEventV2::ReasoningAppend { .. }),
+            TurnPipelineEvent::V2(TurnStreamEventV2::ReasoningAppend { .. })
+        ) | (
+            TurnPipelineEvent::V3(TurnStreamEventV3::ReasoningAppend { .. }),
+            TurnPipelineEvent::V3(TurnStreamEventV3::ReasoningAppend { .. })
+        )
+    ) || matches!(
+        (left, right),
+        (
+            TurnPipelineEvent::V3(TurnStreamEventV3::ContentAppend {
+                segment_id: left_id,
+                ..
+            }),
+            TurnPipelineEvent::V3(TurnStreamEventV3::ContentAppend {
+                segment_id: right_id,
+                ..
+            })
+        ) if left_id == right_id
+    )
+}
+
+fn text_len(event: &TurnPipelineEvent) -> usize {
     match event {
-        TurnStreamEventV2::ContentAppend { text } | TurnStreamEventV2::ReasoningAppend { text } => {
-            text.len()
-        }
+        TurnPipelineEvent::V2(
+            TurnStreamEventV2::ContentAppend { text } | TurnStreamEventV2::ReasoningAppend { text },
+        )
+        | TurnPipelineEvent::V3(
+            TurnStreamEventV3::ContentAppend { text, .. }
+            | TurnStreamEventV3::ReasoningAppend { text },
+        ) => text.len(),
         _ => 0,
     }
 }
 
-fn append_text(target: &mut TurnStreamEventV2, source: TurnStreamEventV2) {
+fn append_text(target: &mut TurnPipelineEvent, source: TurnPipelineEvent) {
     match (target, source) {
         (
-            TurnStreamEventV2::ContentAppend { text },
-            TurnStreamEventV2::ContentAppend { text: next },
+            TurnPipelineEvent::V2(TurnStreamEventV2::ContentAppend { text }),
+            TurnPipelineEvent::V2(TurnStreamEventV2::ContentAppend { text: next }),
         )
         | (
-            TurnStreamEventV2::ReasoningAppend { text },
-            TurnStreamEventV2::ReasoningAppend { text: next },
+            TurnPipelineEvent::V2(TurnStreamEventV2::ReasoningAppend { text }),
+            TurnPipelineEvent::V2(TurnStreamEventV2::ReasoningAppend { text: next }),
+        )
+        | (
+            TurnPipelineEvent::V3(TurnStreamEventV3::ContentAppend { text, .. }),
+            TurnPipelineEvent::V3(TurnStreamEventV3::ContentAppend { text: next, .. }),
+        )
+        | (
+            TurnPipelineEvent::V3(TurnStreamEventV3::ReasoningAppend { text }),
+            TurnPipelineEvent::V3(TurnStreamEventV3::ReasoningAppend { text: next }),
         ) => text.push_str(&next),
         _ => unreachable!("text compatibility checked before append"),
     }
@@ -531,7 +649,7 @@ mod tests {
 
     #[derive(Default)]
     struct RecordingOutput {
-        events: Mutex<Vec<TurnStreamEnvelopeV2>>,
+        events: Mutex<Vec<TurnPipelineEnvelope>>,
     }
 
     impl TurnPipelineOutput for RecordingOutput {
@@ -607,8 +725,11 @@ mod tests {
         let events = output.events.lock().unwrap();
         assert_eq!(events.len(), 1);
         assert!(matches!(
-            &events[0].event,
-            TurnStreamEventV2::ContentAppend { text } if text == "hello world"
+            &events[0],
+            TurnPipelineEnvelope::V2(TurnStreamEnvelopeV2 {
+                event: TurnStreamEventV2::ContentAppend { text },
+                ..
+            }) if text == "hello world"
         ));
         assert_eq!(pipeline.metrics().coalesced_commands, 1);
     }
@@ -625,8 +746,11 @@ mod tests {
         let events = output.events.lock().unwrap();
         assert_eq!(events.len(), 1);
         assert!(matches!(
-            &events[0].event,
-            TurnStreamEventV2::ContentAppend { text } if text == "one two"
+            &events[0],
+            TurnPipelineEnvelope::V2(TurnStreamEnvelopeV2 {
+                event: TurnStreamEventV2::ContentAppend { text },
+                ..
+            }) if text == "one two"
         ));
     }
 
@@ -643,18 +767,34 @@ mod tests {
 
         let events = output.events.lock().unwrap();
         assert_eq!(events.len(), 4);
-        assert!(
-            matches!(&events[0].event, TurnStreamEventV2::ContentAppend { text } if text == "a")
-        );
-        assert!(
-            matches!(&events[1].event, TurnStreamEventV2::Status { phase, .. } if phase == "working")
-        );
-        assert!(
-            matches!(&events[2].event, TurnStreamEventV2::ContentAppend { text } if text == "b")
-        );
-        assert!(
-            matches!(&events[3].event, TurnStreamEventV2::ContentAppend { text } if text == "c")
-        );
+        assert!(matches!(
+            &events[0],
+            TurnPipelineEnvelope::V2(TurnStreamEnvelopeV2 {
+                event: TurnStreamEventV2::ContentAppend { text },
+                ..
+            }) if text == "a"
+        ));
+        assert!(matches!(
+            &events[1],
+            TurnPipelineEnvelope::V2(TurnStreamEnvelopeV2 {
+                event: TurnStreamEventV2::Status { phase, .. },
+                ..
+            }) if phase == "working"
+        ));
+        assert!(matches!(
+            &events[2],
+            TurnPipelineEnvelope::V2(TurnStreamEnvelopeV2 {
+                event: TurnStreamEventV2::ContentAppend { text },
+                ..
+            }) if text == "b"
+        ));
+        assert!(matches!(
+            &events[3],
+            TurnPipelineEnvelope::V2(TurnStreamEnvelopeV2 {
+                event: TurnStreamEventV2::ContentAppend { text },
+                ..
+            }) if text == "c"
+        ));
     }
 
     #[tokio::test]
@@ -764,5 +904,124 @@ mod tests {
         assert!(matches!(error, TurnPipelineError::PayloadTooLarge { .. }));
         assert_eq!(pipeline.metrics().queued_messages, 0);
         assert!(output.events.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn v3_batches_only_deltas_for_the_same_segment() {
+        let output = Arc::new(RecordingOutput::default());
+        let pipeline = pipeline(Arc::clone(&output));
+
+        pipeline
+            .admit_v3(TurnStreamEventV3::ContentAppend {
+                segment_id: "segment-1".into(),
+                text: "hello ".into(),
+            })
+            .await
+            .unwrap();
+        pipeline
+            .admit_v3(TurnStreamEventV3::ContentAppend {
+                segment_id: "segment-1".into(),
+                text: "world".into(),
+            })
+            .await
+            .unwrap();
+        pipeline
+            .emit_v3(TurnStreamEventV3::ContentAppend {
+                segment_id: "segment-2".into(),
+                text: "separate".into(),
+            })
+            .await
+            .unwrap();
+
+        let events = output.events.lock().unwrap();
+        assert_eq!(events.len(), 2);
+        assert!(matches!(
+            &events[0],
+            TurnPipelineEnvelope::V3(TurnStreamEnvelopeV3 {
+                event: TurnStreamEventV3::ContentAppend { segment_id, text },
+                ..
+            }) if segment_id == "segment-1" && text == "hello world"
+        ));
+        assert!(matches!(
+            &events[1],
+            TurnPipelineEnvelope::V3(TurnStreamEnvelopeV3 {
+                event: TurnStreamEventV3::ContentAppend { segment_id, text },
+                ..
+            }) if segment_id == "segment-2" && text == "separate"
+        ));
+    }
+
+    #[tokio::test]
+    async fn v3_native_facts_receive_one_cursor_each_in_observation_order() {
+        let output = Arc::new(RecordingOutput::default());
+        let pipeline = pipeline(Arc::clone(&output));
+
+        assert_eq!(
+            pipeline
+                .emit_v3(TurnStreamEventV3::AssistantTextStarted {
+                    segment_id: "segment-1".into(),
+                    model_round: 1,
+                })
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            pipeline
+                .emit_v3(TurnStreamEventV3::ContentAppend {
+                    segment_id: "segment-1".into(),
+                    text: "I’ll check.".into(),
+                })
+                .await
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            pipeline
+                .emit_v3(TurnStreamEventV3::AssistantTextCommitted {
+                    segment_id: "segment-1".into(),
+                })
+                .await
+                .unwrap(),
+            3
+        );
+        assert_eq!(
+            pipeline
+                .emit_v3(TurnStreamEventV3::ToolStarted {
+                    tool_run_id: "run-1".into(),
+                    tool_name: "search".into(),
+                    input_summary: "query".into(),
+                    input_params: Vec::new(),
+                    tool_round: 1,
+                })
+                .await
+                .unwrap(),
+            4
+        );
+        assert_eq!(
+            pipeline
+                .emit_v3(TurnStreamEventV3::TurnCompleted {
+                    outcome: medousa_types::TurnCompletionOutcomeV3::Completed,
+                    aggregate_text: "I’ll check.".into(),
+                    tool_names: vec!["search".into()],
+                })
+                .await
+                .unwrap(),
+            5
+        );
+
+        let events = output.events.lock().unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .map(TurnPipelineEnvelope::seq)
+                .collect::<Vec<_>>(),
+            [1, 2, 3, 4, 5]
+        );
+        assert!(
+            events
+                .iter()
+                .all(|event| matches!(event, TurnPipelineEnvelope::V3(_)))
+        );
     }
 }

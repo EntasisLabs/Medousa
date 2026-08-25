@@ -1997,7 +1997,13 @@ impl EmbeddedDaemonClient {
             .log
             .snapshot_since(since)
             .into_iter()
-            .map(|event| crate::sse_turn_projection::sequenced_to_v2(&event))
+            .filter_map(|event| {
+                match crate::sse_turn_projection::sequenced_to_v2_optional(&event) {
+                    Ok(Some(envelope)) => Some(Ok(envelope)),
+                    Ok(None) => None,
+                    Err(error) => Some(Err(error)),
+                }
+            })
             .collect::<std::result::Result<VecDeque<_>, _>>()
             .map_err(|error| anyhow!(error))?;
         Ok(EmbeddedTurnStream {
@@ -2019,8 +2025,12 @@ impl EmbeddedDaemonClient {
             .ok_or_else(|| anyhow!("turn journal is unavailable"))?;
         log.snapshot_since(since)
             .into_iter()
-            .map(|event| {
-                crate::sse_turn_projection::sequenced_to_v2(&event).map_err(anyhow::Error::msg)
+            .filter_map(|event| {
+                match crate::sse_turn_projection::sequenced_to_v2_optional(&event) {
+                    Ok(Some(envelope)) => Some(Ok(envelope)),
+                    Ok(None) => None,
+                    Err(error) => Some(Err(anyhow::Error::msg(error))),
+                }
             })
             .collect()
     }
@@ -2062,10 +2072,16 @@ impl EmbeddedTurnStream {
                     if event.seq() <= self.last_seq {
                         continue;
                     }
+                    let event_seq = event.seq();
                     let envelope = match event.v2 {
                         Some(envelope) => envelope,
-                        None => crate::sse_turn_projection::v1_to_v2(&event.v1)
-                            .map_err(anyhow::Error::msg)?,
+                        None => {
+                            self.last_seq = event_seq;
+                            let Some(v1) = event.v1 else {
+                                continue;
+                            };
+                            crate::sse_turn_projection::v1_to_v2(&v1).map_err(anyhow::Error::msg)?
+                        }
                     };
                     self.last_seq = envelope.seq;
                     return Ok(Some(envelope));

@@ -161,6 +161,7 @@ mod tests {
             event,
             emitted_at_utc: None,
             stream_event_v2: None,
+            stream_event_v3: None,
         }
     }
 

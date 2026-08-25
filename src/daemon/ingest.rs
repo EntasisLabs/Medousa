@@ -155,24 +155,25 @@ fn try_acquire_replay_reader() -> Option<OwnedSemaphorePermit> {
         .ok()
 }
 
-fn sse_event_from_payload(payload: PublishedTurnEvent, version: StreamWireVersion) -> Event {
-    let encoded = match (version, payload.v2) {
-        (StreamWireVersion::V1, _) => Event::default()
-            .event(payload.v1.event_type.clone())
-            .json_data(payload.v1),
-        (StreamWireVersion::V2, Some(v2)) => Event::default().event("turn_stream_v2").json_data(v2),
-        (StreamWireVersion::V2, None) => {
-            return Event::default()
-                .event("error")
-                .data("turn event has no v2 projection");
+fn sse_event_from_payload(
+    payload: PublishedTurnEvent,
+    version: StreamWireVersion,
+) -> Option<Event> {
+    let encoded = match version {
+        StreamWireVersion::V1 => {
+            let v1 = payload.v1?;
+            Event::default().event(v1.event_type.clone()).json_data(v1)
         }
+        StreamWireVersion::V2 => Event::default()
+            .event("turn_stream_v2")
+            .json_data(payload.v2?),
     };
-    match encoded {
+    Some(match encoded {
         Ok(value) => value,
         Err(err) => Event::default()
             .event("error")
             .data(format!("stream serialization error: {err}")),
-    }
+    })
 }
 
 pub async fn stream_events_from_registry(
@@ -244,10 +245,10 @@ pub async fn stream_events_from_registry(
                     continue;
                 }
                 state.last_seq = state.last_seq.max(payload.seq());
-                return Some((
-                    Ok::<Event, Infallible>(sse_event_from_payload(payload, state.wire_version)),
-                    state,
-                ));
+                if let Some(event) = sse_event_from_payload(payload, state.wire_version) {
+                    return Some((Ok::<Event, Infallible>(event), state));
+                }
+                continue;
             }
             if state.drained {
                 return None;
@@ -274,15 +275,20 @@ pub async fn stream_events_from_registry(
                             .events
                             .iter()
                             .map(|event| {
-                                let v1 =
-                                    crate::sse_turn_projection::sequenced_to_stream_event(event);
                                 let v2 = match state.wire_version {
-                                    StreamWireVersion::V1 => None,
-                                    StreamWireVersion::V2 => {
-                                        Some(crate::sse_turn_projection::sequenced_to_v2(event)?)
+                                    StreamWireVersion::V1 | StreamWireVersion::V2 => {
+                                        crate::sse_turn_projection::sequenced_to_v2_optional(event)?
                                     }
                                 };
-                                Ok::<PublishedTurnEvent, String>(PublishedTurnEvent { v1, v2 })
+                                let v1 = matches!(state.wire_version, StreamWireVersion::V1)
+                                    .then(|| v2.as_ref().map(crate::sse_turn_projection::v2_to_v1))
+                                    .flatten();
+                                Ok::<PublishedTurnEvent, String>(PublishedTurnEvent {
+                                    seq: event.seq(),
+                                    v1,
+                                    v2,
+                                    v3: None,
+                                })
                             })
                             .collect::<Result<VecDeque<_>, _>>();
                         let Ok(projected) = projected else {
@@ -291,7 +297,7 @@ pub async fn stream_events_from_registry(
                                 Ok::<Event, Infallible>(
                                     Event::default()
                                         .event("error")
-                                        .data("turn replay has no v2 projection"),
+                                        .data("turn replay has no requested stream projection"),
                                 ),
                                 state,
                             ));
@@ -339,13 +345,10 @@ pub async fn stream_events_from_registry(
                         continue;
                     }
                     state.last_seq = state.last_seq.max(payload.seq());
-                    return Some((
-                        Ok::<Event, Infallible>(sse_event_from_payload(
-                            payload,
-                            state.wire_version,
-                        )),
-                        state,
-                    ));
+                    if let Some(event) = sse_event_from_payload(payload, state.wire_version) {
+                        return Some((Ok::<Event, Infallible>(event), state));
+                    }
+                    continue;
                 }
                 Err(broadcast::error::RecvError::Lagged(_)) => {
                     // We fell behind the live ring; recover the gap from the
@@ -407,11 +410,14 @@ pub async fn stream_events_from_registry(
     response
         .headers_mut()
         .insert(VARY, axum::http::HeaderValue::from_static("Accept"));
-    if matches!(wire_version, StreamWireVersion::V2) {
-        response.headers_mut().insert(
-            CONTENT_TYPE,
-            axum::http::HeaderValue::from_static(TURN_STREAM_V2_MEDIA_TYPE),
-        );
+    match wire_version {
+        StreamWireVersion::V1 => {}
+        StreamWireVersion::V2 => {
+            response.headers_mut().insert(
+                CONTENT_TYPE,
+                axum::http::HeaderValue::from_static(TURN_STREAM_V2_MEDIA_TYPE),
+            );
+        }
     }
     Ok(response)
 }
@@ -2444,6 +2450,75 @@ mod stream_version_tests {
         assert_eq!(body.matches("\"seq\":1").count(), 1, "{body}");
         assert_eq!(body.matches("\"seq\":2").count(), 1, "{body}");
         assert!(body.find("\"seq\":1").unwrap() < body.find("\"seq\":2").unwrap());
+
+        entry.log.close_journal();
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[tokio::test]
+    async fn v2_replay_skips_v3_only_facts_without_fabricating_events() {
+        let root = std::env::temp_dir().join(format!("medousa-v2-from-v3-{}", Uuid::new_v4()));
+        let turn_id = "turn-v2-from-v3";
+        let entry = TurnStreamEntry {
+            channel: TurnEventChannel::new(8),
+            log: Arc::new(
+                TurnEventLog::open_in(&root, TurnEnvelope::new(turn_id, Principal::operator()))
+                    .unwrap(),
+            ),
+        };
+        let started = medousa_types::TurnStreamEventV3::AssistantTextStarted {
+            segment_id: "segment-1".into(),
+            model_round: 1,
+        };
+        entry
+            .log
+            .append_sequenced_with_stream_v3(
+                1,
+                medousa_engine::TurnEvent::StreamMirror(serde_json::to_value(&started).unwrap()),
+                Some(Utc::now()),
+                started,
+                None,
+            )
+            .unwrap();
+        let append = medousa_types::TurnStreamEventV3::ContentAppend {
+            segment_id: "segment-1".into(),
+            text: "visible".into(),
+        };
+        entry
+            .log
+            .append_sequenced_with_stream_v3(
+                2,
+                medousa_engine::TurnEvent::ContentDelta {
+                    delta: "visible".into(),
+                },
+                Some(Utc::now()),
+                append,
+                None,
+            )
+            .unwrap();
+        let registry = crate::daemon::turn_stream_registry::new_turn_stream_registry();
+        registry
+            .write()
+            .await
+            .insert(turn_id.to_string(), entry.clone());
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("text/event-stream; medousa-version=2"),
+        );
+
+        let response =
+            stream_events_from_registry(&registry, turn_id, "test stream", Some(0), &headers)
+                .await
+                .unwrap();
+        entry.channel.mark_closed();
+        let body = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+
+        assert!(!body.contains("assistant_text_started"), "{body}");
+        assert!(!body.contains("\"seq\":1"), "{body}");
+        assert_eq!(body.matches("\"seq\":2").count(), 1, "{body}");
+        assert!(body.contains("\"text\":\"visible\""), "{body}");
 
         entry.log.close_journal();
         std::fs::remove_dir_all(root).ok();
