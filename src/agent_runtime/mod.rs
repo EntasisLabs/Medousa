@@ -49,6 +49,8 @@ pub mod modes;
 pub mod perception_governor;
 pub mod presentation;
 pub mod prompt_prep;
+#[cfg(test)]
+mod prompt_footprint_baseline;
 pub mod runtime;
 pub mod settings;
 pub mod sttp;

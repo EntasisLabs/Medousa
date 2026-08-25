@@ -26,6 +26,8 @@ pub const MAX_REQUEST_PROMPT_CHARS: usize = 48_000;
 
 #[cfg(test)]
 mod golden_turn;
+#[cfg(test)]
+mod target_chronological_contract;
 
 pub use budget::{TurnBudget, TurnOrchestrationState};
 pub use checkpoint::{
