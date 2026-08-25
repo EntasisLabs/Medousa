@@ -158,11 +158,9 @@
                 <button type="button" class="mobile-dest-menu-row" onclick={() => pick(item)}>
                   <Icon size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
                   <span class="min-w-0 flex-1 text-left">
-                    <span class="block text-[15px] font-medium text-surface-50">{item.label}</span>
+                    <span class="mobile-dest-menu-row-title">{item.label}</span>
                     {#if item.hint}
-                      <span class="text-content-quiet mt-0.5 block line-clamp-2 text-[11px] leading-snug"
-                        >{item.hint}</span
-                      >
+                      <span class="mobile-dest-menu-row-hint line-clamp-2">{item.hint}</span>
                     {/if}
                   </span>
                 </button>
@@ -182,7 +180,7 @@
                   onclick={() => pickCustom(view.id)}
                 >
                   <Sparkles size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
-                  <span class="text-[15px] font-medium text-surface-50">{view.label}</span>
+                  <span class="mobile-dest-menu-row-title">{view.label}</span>
                 </button>
               </li>
             {/each}
@@ -198,11 +196,9 @@
                 <button type="button" class="mobile-dest-menu-row" onclick={() => pick(item)}>
                   <Icon size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
                   <span class="min-w-0 flex-1 text-left">
-                    <span class="block text-[15px] font-medium text-surface-50">{item.label}</span>
+                    <span class="mobile-dest-menu-row-title">{item.label}</span>
                     {#if item.hint}
-                      <span class="text-content-quiet mt-0.5 block line-clamp-2 text-[11px] leading-snug"
-                        >{item.hint}</span
-                      >
+                      <span class="mobile-dest-menu-row-hint line-clamp-2">{item.hint}</span>
                     {/if}
                   </span>
                 </button>
@@ -220,11 +216,11 @@
             >
               <Settings size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
               <span class="min-w-0 flex-1 text-left">
-                <span class="block text-[15px] font-medium text-surface-50">
+                <span class="mobile-dest-menu-row-title">
                   {settingsItem.label}
                 </span>
                 {#if settingsItem.hint}
-                  <span class="text-content-quiet mt-0.5 block line-clamp-2 text-[11px] leading-snug">
+                  <span class="mobile-dest-menu-row-hint line-clamp-2">
                     {settingsItem.hint}
                   </span>
                 {/if}

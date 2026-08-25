@@ -353,17 +353,19 @@
     >
       <div
         bind:this={railMenuEl}
-        class="{isFloatingMenu ? 'workshop-rail-sheet workshop-switcher-menu' : 'mobile-sheet'}"
+        class="{isFloatingMenu
+          ? 'workshop-rail-sheet workshop-switcher-menu'
+          : 'mobile-sheet workshop-switcher-mobile-sheet'}"
         role="menu"
         aria-label="Switch workshop"
       >
       <header class="{isFloatingMenu ? 'workshop-switcher-header' : 'mobile-sheet-header'}">
         <div class="min-w-0">
-          <h2 class="{isFloatingMenu ? 'workshop-switcher-title' : 'text-sm font-semibold text-surface-50'}">
+          <h2 class="{isFloatingMenu ? 'workshop-switcher-title' : 'workshop-switcher-mobile-title'}">
             Workshops
           </h2>
           {#if !isFloatingMenu}
-            <p class="workshop-faint mt-0.5 text-xs">Switch between your workshops</p>
+            <p class="workshop-switcher-mobile-subtitle">Switch between your workshops</p>
           {/if}
         </div>
         {#if !isFloatingMenu}
@@ -379,7 +381,11 @@
         {/if}
       </header>
 
-      <div class="{isFloatingMenu ? 'workshop-switcher-list' : 'mobile-you-scroll px-4 pb-6 pt-2'}">
+      <div
+        class="{isFloatingMenu
+          ? 'workshop-switcher-list'
+          : 'mobile-you-scroll workshop-switcher-mobile-list'}"
+      >
         {#if workshops.loading && workshops.workshops.length === 0}
           <p class="workshop-faint px-2 text-sm">Loading…</p>
         {:else if workshops.error}
@@ -428,11 +434,17 @@
       </div>
 
       {#if !workshops.loading && !workshops.error}
-        <div class="{isFloatingMenu ? 'workshop-switcher-footer' : 'px-4 pb-4'}">
+        <div
+          class="{isFloatingMenu
+            ? 'workshop-switcher-footer'
+            : 'workshop-switcher-mobile-footer'}"
+        >
           <button
             type="button"
             role="menuitem"
-            class="{isFloatingMenu ? 'workshop-switcher-action' : 'btn btn-sm variant-soft-primary mt-4 w-full'}"
+            class="{isFloatingMenu
+              ? 'workshop-switcher-action'
+              : 'btn btn-sm variant-soft-primary workshop-switcher-mobile-add'}"
             disabled={workshops.atWorkshopLimit}
             onclick={() => {
               joinOpen = true;
@@ -452,7 +464,7 @@
             role="menuitem"
             class="{isFloatingMenu
               ? 'workshop-switcher-action workshop-switcher-manage'
-              : 'workshop-text-action mt-3 text-sm'}"
+              : 'workshop-text-action workshop-switcher-mobile-manage'}"
             onclick={openConnectionSettings}
           >
             {#if isFloatingMenu}

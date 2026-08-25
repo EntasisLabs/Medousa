@@ -25,4 +25,106 @@
   .settings-depth-card:disabled {
     @apply cursor-not-allowed opacity-70;
   }
+
+  /* Shared by desktop popovers and the mobile workshop sheet. Keep these
+     primitives app-wide so the switcher never depends on a destination CSS chunk. */
+  .workshop-switcher-menu {
+    @apply flex min-h-0 flex-col;
+  }
+
+  .workshop-switcher-header {
+    @apply shrink-0 px-3 pb-2 pt-3;
+  }
+
+  .workshop-switcher-title {
+    @apply text-[13px] font-semibold tracking-tight text-surface-50;
+  }
+
+  .workshop-switcher-subtitle {
+    @apply mt-0.5 text-[11px] leading-snug text-content-quiet;
+  }
+
+  .workshop-switcher-list {
+    @apply min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-1.5 pt-0.5;
+  }
+
+  .workshop-switcher-row {
+    @apply flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition;
+    transition-property: background-color, box-shadow, color;
+    transition-duration: 140ms;
+    transition-timing-function: ease;
+  }
+
+  .workshop-switcher-row:hover {
+    @apply bg-surface-800/35;
+  }
+
+  .workshop-switcher-row-active {
+    background-color: rgb(var(--color-surface-800) / 0.58);
+    box-shadow: none;
+  }
+
+  .workshop-switcher-row-active:hover {
+    background-color: rgb(var(--color-surface-800) / 0.7);
+  }
+
+  .workshop-switcher-avatar {
+    @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[10px] font-semibold tracking-tight text-surface-50;
+    background-color: rgb(var(--color-surface-800) / 0.62);
+    box-shadow: inset 0 0 0 1px rgb(var(--color-surface-500) / 0.18);
+  }
+
+  .workshop-switcher-avatar[style*="--workshop-brand"] {
+    background-color: color-mix(in srgb, var(--workshop-brand) 16%, rgb(var(--color-surface-900)));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--workshop-brand) 26%, transparent);
+  }
+
+  .workshop-switcher-row-active .workshop-switcher-avatar {
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.26);
+  }
+
+  .workshop-switcher-row-body {
+    @apply flex min-w-0 flex-1 flex-col justify-center gap-0.5;
+  }
+
+  .workshop-switcher-row-name {
+    @apply truncate text-[13px] font-medium leading-tight text-surface-50;
+  }
+
+  .workshop-switcher-row-meta {
+    @apply truncate text-[11px] leading-tight text-content-quiet;
+  }
+
+  .workshop-switcher-row-check {
+    @apply shrink-0;
+    color: color-mix(in srgb, rgb(var(--theme-link)) 78%, transparent);
+  }
+
+  .workshop-switcher-divider {
+    @apply mx-2 my-1.5 h-px bg-surface-700/35;
+  }
+
+  .workshop-switcher-action {
+    @apply flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] text-surface-200 transition hover:bg-surface-800/35;
+  }
+
+  .workshop-switcher-action-icon {
+    @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-surface-800/45 text-content-tertiary;
+  }
+
+  .workshop-switcher-manage {
+    @apply mt-0 text-content-tertiary;
+  }
+
+  .workshop-switcher-footer {
+    @apply shrink-0 border-t border-surface-700/30 px-2 pb-2 pt-1.5;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .workshop-switcher-row,
+    .workshop-switcher-action,
+    .workshop-switcher-manage {
+      transition: none;
+    }
+  }
 }
