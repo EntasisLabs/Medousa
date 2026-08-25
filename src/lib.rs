@@ -18,6 +18,8 @@ pub mod daemon_runtime_handlers;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod embedded_daemon;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod environment_store;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 #[path = "agent_runtime/execution_context.rs"]
 pub mod execution_context;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]

@@ -1,7 +1,7 @@
 //! Persistent environment spec store per profile.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -16,6 +16,7 @@ use tokio::sync::{RwLock as AsyncRwLock, broadcast};
 
 use crate::store_root::{StorePath, StoreRoot};
 
+#[cfg(feature = "full-daemon")]
 const STORE_DIR: &str = "environment";
 const MAX_ENVIRONMENT_SPEC_BYTES: u64 = 4 * 1024 * 1024;
 
@@ -27,12 +28,14 @@ pub struct EnvironmentRecord {
 
 #[derive(Clone)]
 pub struct EnvironmentHub {
+    store_root: Arc<PathBuf>,
     inner: Arc<AsyncRwLock<HashMap<String, EnvironmentRecord>>>,
     pending: Arc<AsyncRwLock<HashMap<String, EnvironmentPendingProposal>>>,
     revision: Arc<AsyncRwLock<u64>>,
     tx: broadcast::Sender<EnvironmentStreamEvent>,
 }
 
+#[cfg(feature = "full-daemon")]
 impl Default for EnvironmentHub {
     fn default() -> Self {
         Self::new()
@@ -40,9 +43,16 @@ impl Default for EnvironmentHub {
 }
 
 impl EnvironmentHub {
+    #[cfg(feature = "full-daemon")]
     pub fn new() -> Self {
+        Self::new_at(Self::default_store_root())
+    }
+
+    /// Build an environment authority rooted inside one daemon deployment.
+    pub fn new_at(store_root: impl Into<PathBuf>) -> Self {
         let (tx, _) = broadcast::channel(64);
         Self {
+            store_root: Arc::new(store_root.into()),
             inner: Arc::new(AsyncRwLock::new(HashMap::new())),
             pending: Arc::new(AsyncRwLock::new(HashMap::new())),
             revision: Arc::new(AsyncRwLock::new(0)),
@@ -54,12 +64,13 @@ impl EnvironmentHub {
         self.tx.subscribe()
     }
 
-    fn store_root() -> PathBuf {
+    #[cfg(feature = "full-daemon")]
+    fn default_store_root() -> PathBuf {
         crate::paths::medousa_data_dir().join(STORE_DIR)
     }
 
-    fn store() -> Result<StoreRoot> {
-        StoreRoot::open_or_create_nofollow(&Self::store_root()).map_err(anyhow::Error::from)
+    fn store_at(store_root: &Path) -> Result<StoreRoot> {
+        StoreRoot::open_or_create_nofollow(store_root).map_err(anyhow::Error::from)
     }
 
     fn spec_path(profile_id: &EnvironmentProfileId) -> StorePath {
@@ -71,15 +82,20 @@ impl EnvironmentHub {
         StorePath::parse(&format!("{}.json", profile_id.as_str())).ok()
     }
 
+    #[cfg(feature = "full-daemon")]
     pub async fn load_or_default(profile_id: &str) -> Result<EnvironmentRecord> {
+        Self::load_or_default_at(&Self::default_store_root(), profile_id).await
+    }
+
+    async fn load_or_default_at(store_root: &Path, profile_id: &str) -> Result<EnvironmentRecord> {
         let typed_profile = EnvironmentProfileId::parse(profile_id)?;
-        let store = Self::store()?;
+        let store = Self::store_at(store_root)?;
         let path = Self::spec_path(&typed_profile);
         let raw = match store.read_limited(&path, MAX_ENVIRONMENT_SPEC_BYTES) {
             Ok(raw) => Some(raw),
             Err(error) if error.is_not_found() => {
                 let Some(legacy_path) = Self::legacy_spec_path(&typed_profile) else {
-                    return Self::persist_default(profile_id).await;
+                    return Self::persist_default_at(store_root, profile_id).await;
                 };
                 match store.read_limited(&legacy_path, MAX_ENVIRONMENT_SPEC_BYTES) {
                     Ok(raw) => Some(raw),
@@ -103,19 +119,23 @@ impl EnvironmentHub {
                 "invalid environment spec on disk; falling back to default"
             );
         }
-        Self::persist_default(profile_id).await
+        Self::persist_default_at(store_root, profile_id).await
     }
 
-    async fn persist_default(profile_id: &str) -> Result<EnvironmentRecord> {
+    async fn persist_default_at(store_root: &Path, profile_id: &str) -> Result<EnvironmentRecord> {
         let spec = default_environment_spec(profile_id);
         let record = EnvironmentRecord { revision: 1, spec };
-        Self::persist_record(profile_id, &record).await?;
+        Self::persist_record_at(store_root, profile_id, &record).await?;
         Ok(record)
     }
 
-    async fn persist_record(profile_id: &str, record: &EnvironmentRecord) -> Result<()> {
+    async fn persist_record_at(
+        store_root: &Path,
+        profile_id: &str,
+        record: &EnvironmentRecord,
+    ) -> Result<()> {
         let profile_id = EnvironmentProfileId::parse(profile_id)?;
-        let store = Self::store()?;
+        let store = Self::store_at(store_root)?;
         let path = Self::spec_path(&profile_id);
         let json = serde_json::to_string_pretty(&record.spec)?;
         store.atomic_write(&path, json.as_bytes())?;
@@ -129,7 +149,11 @@ impl EnvironmentHub {
                 return Ok(record.clone());
             }
         }
-        let record = Self::load_or_default(profile_id).await?;
+        let record = Self::load_or_default_at(self.store_root.as_ref(), profile_id).await?;
+        {
+            let mut revision = self.revision.write().await;
+            *revision = (*revision).max(record.revision);
+        }
         let mut guard = self.inner.write().await;
         guard.insert(profile_id.to_string(), record.clone());
         Ok(record)
@@ -151,7 +175,7 @@ impl EnvironmentHub {
             revision: *revision,
             spec: spec.clone(),
         };
-        Self::persist_record(&spec.profile_id, &record).await?;
+        Self::persist_record_at(self.store_root.as_ref(), &spec.profile_id, &record).await?;
         {
             let mut guard = self.inner.write().await;
             guard.insert(spec.profile_id.clone(), record.clone());
@@ -199,8 +223,10 @@ impl EnvironmentHub {
     }
 }
 
+#[cfg(feature = "full-daemon")]
 static ENVIRONMENT_HUB: std::sync::OnceLock<EnvironmentHub> = std::sync::OnceLock::new();
 
+#[cfg(feature = "full-daemon")]
 pub fn environment_hub() -> &'static EnvironmentHub {
     ENVIRONMENT_HUB.get_or_init(EnvironmentHub::new)
 }
@@ -213,8 +239,9 @@ pub fn resolve_profile_id(profile_id: Option<&str>) -> String {
         .unwrap_or_else(|| DEFAULT_PROFILE_ID.to_string())
 }
 
+#[cfg(feature = "full-daemon")]
 pub fn ensure_store_dir() -> Result<()> {
-    EnvironmentHub::store()?;
+    EnvironmentHub::store_at(&EnvironmentHub::default_store_root())?;
     Ok(())
 }
 
@@ -237,5 +264,61 @@ mod tests {
         let worker_path = EnvironmentHub::spec_path(&worker);
         assert_ne!(work_path, worker_path);
         assert!(!work_path.file_name().contains("work"));
+    }
+
+    #[tokio::test]
+    async fn deployment_roots_persist_without_crossing_hubs() {
+        let first_root = tempfile::tempdir().unwrap();
+        let second_root = tempfile::tempdir().unwrap();
+        let first_path = first_root
+            .path()
+            .canonicalize()
+            .unwrap()
+            .join("environment");
+        let second_path = second_root
+            .path()
+            .canonicalize()
+            .unwrap()
+            .join("environment");
+        let first = EnvironmentHub::new_at(first_path.clone());
+        let second = EnvironmentHub::new_at(second_path);
+
+        let initial = first.get(DEFAULT_PROFILE_ID).await.unwrap();
+        let mut updated = initial.spec;
+        updated
+            .surfaces
+            .iter_mut()
+            .find(|surface| surface.id == "chat")
+            .unwrap()
+            .label = "Embedded chat".to_string();
+        let saved = first.put(updated, "test").await.unwrap();
+        assert!(saved.revision > initial.revision);
+
+        let reloaded = EnvironmentHub::new_at(first_path)
+            .get(DEFAULT_PROFILE_ID)
+            .await
+            .unwrap();
+        assert_eq!(
+            reloaded
+                .spec
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == "chat")
+                .unwrap()
+                .label,
+            "Embedded chat"
+        );
+
+        let untouched = second.get(DEFAULT_PROFILE_ID).await.unwrap();
+        assert_eq!(
+            untouched
+                .spec
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == "chat")
+                .unwrap()
+                .label,
+            "Chat"
+        );
     }
 }

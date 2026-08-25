@@ -34,6 +34,11 @@ use medousa_types::daemon_api::{
     VaultTagsQuery, VaultTrashListResponse, VaultTrashRestoreResponse, VaultWriteRequest,
     VaultWriteResponse,
 };
+use medousa_types::environment::{
+    CustomViewComponentStatus, CustomViewSurfaceStatus, EnvironmentPendingResponse,
+    EnvironmentSpecPutRequest, EnvironmentSpecResponse, EnvironmentStatusResponse, SurfaceKind,
+};
+use medousa_types::environment_validate::validate_environment_spec;
 use medousa_types::secrets::InstallationId;
 use medousa_types::session::{ConversationTurn, SessionHistorySummary, TranscriptEntry};
 use medousa_types::turn_stream::{TurnStreamEnvelopeV2, TurnStreamEventV2};
@@ -368,6 +373,7 @@ impl std::fmt::Debug for EmbeddedDaemonConfig {
 /// One in-process deployment of `medousa_daemon`.
 pub struct EmbeddedDaemon {
     root: PathBuf,
+    environment_hub: crate::environment_store::EnvironmentHub,
     authority_id: medousa_types::session::AuthorityId,
     local_credential_id: Arc<str>,
     inference: EmbeddedInferenceBinding,
@@ -395,6 +401,8 @@ impl EmbeddedDaemon {
     /// Boot the daemon against one app-sandbox root.
     pub async fn boot(config: EmbeddedDaemonConfig) -> Result<Arc<Self>> {
         let root = prepare_root(&config.root).await?;
+        let environment_hub =
+            crate::environment_store::EnvironmentHub::new_at(root.join("environment"));
         configure_file_session_root(root.join("history")).map_err(|error| anyhow!(error))?;
         crate::capability_catalog::configure_capabilities_manifest_path(
             root.join("capabilities.toml"),
@@ -585,6 +593,7 @@ impl EmbeddedDaemon {
 
         Ok(Arc::new(Self {
             root,
+            environment_hub,
             authority_id,
             local_credential_id,
             inference,
@@ -1002,6 +1011,159 @@ impl EmbeddedDaemonClient {
     ) -> Result<()> {
         self.require(Capability::AdminRuntime)?;
         self.daemon.inference.reconfigure(provider, model, base_url)
+    }
+
+    pub async fn environment_spec(
+        &self,
+        profile_id: Option<&str>,
+    ) -> Result<EnvironmentSpecResponse> {
+        self.require(Capability::AdminRuntime)?;
+        let profile_id = crate::environment_store::resolve_profile_id(profile_id);
+        let record = self.daemon.environment_hub.get(&profile_id).await?;
+        Ok(EnvironmentSpecResponse {
+            spec: record.spec,
+            revision: record.revision,
+        })
+    }
+
+    pub async fn put_environment_spec(
+        &self,
+        request: EnvironmentSpecPutRequest,
+    ) -> Result<EnvironmentSpecResponse> {
+        self.require(Capability::AdminRuntime)?;
+        let errors = validate_environment_spec(&request.spec);
+        if !errors.is_empty() {
+            bail!(errors.join("; "));
+        }
+        let record = self
+            .daemon
+            .environment_hub
+            .put(request.spec, "user")
+            .await?;
+        Ok(EnvironmentSpecResponse {
+            spec: record.spec,
+            revision: record.revision,
+        })
+    }
+
+    pub async fn environment_pending(
+        &self,
+        profile_id: Option<&str>,
+    ) -> Result<EnvironmentPendingResponse> {
+        self.require(Capability::AdminRuntime)?;
+        let profile_id = crate::environment_store::resolve_profile_id(profile_id);
+        Ok(EnvironmentPendingResponse {
+            pending: self.daemon.environment_hub.pending(&profile_id).await,
+        })
+    }
+
+    pub async fn apply_environment_pending(
+        &self,
+        profile_id: Option<&str>,
+    ) -> Result<EnvironmentSpecResponse> {
+        self.require(Capability::AdminRuntime)?;
+        let profile_id = crate::environment_store::resolve_profile_id(profile_id);
+        let record = self
+            .daemon
+            .environment_hub
+            .apply_pending(&profile_id)
+            .await?;
+        Ok(EnvironmentSpecResponse {
+            spec: record.spec,
+            revision: record.revision,
+        })
+    }
+
+    pub async fn dismiss_environment_pending(&self, profile_id: Option<&str>) -> Result<()> {
+        self.require(Capability::AdminRuntime)?;
+        let profile_id = crate::environment_store::resolve_profile_id(profile_id);
+        self.daemon.environment_hub.clear_pending(&profile_id).await;
+        Ok(())
+    }
+
+    pub async fn environment_status(
+        &self,
+        profile_id: Option<&str>,
+        surface_id: Option<&str>,
+    ) -> Result<EnvironmentStatusResponse> {
+        self.require(Capability::AdminRuntime)?;
+        let profile_id = crate::environment_store::resolve_profile_id(profile_id);
+        let record = self.daemon.environment_hub.get(&profile_id).await?;
+        let visible_surface_ids = record
+            .spec
+            .layout_presets
+            .as_ref()
+            .and_then(|presets| {
+                presets.iter().find(|preset| preset.active).or_else(|| {
+                    record
+                        .spec
+                        .active_preset_id
+                        .as_deref()
+                        .and_then(|id| presets.iter().find(|preset| preset.id == id))
+                })
+            })
+            .map(|preset| preset.surfaces.as_slice())
+            .unwrap_or_default();
+        let surface_filter = surface_id.map(str::trim).filter(|id| !id.is_empty());
+        let mut nav_orphan_count = 0;
+        let custom_surfaces = record
+            .spec
+            .surfaces
+            .iter()
+            .filter(|surface| surface.kind == SurfaceKind::Custom)
+            .filter(|surface| surface_filter.is_none_or(|id| surface.id == id))
+            .map(|surface| {
+                let nav_visible = visible_surface_ids.contains(&surface.id);
+                if !nav_visible {
+                    nav_orphan_count += 1;
+                }
+                let components = record
+                    .spec
+                    .components
+                    .iter()
+                    .filter(|component| component.surface_id == surface.id)
+                    .map(|component| CustomViewComponentStatus {
+                        component_id: component.id.clone(),
+                        artifact_id: None,
+                        feeds: component.feeds.clone(),
+                        runtime: None,
+                    })
+                    .collect::<Vec<_>>();
+                let mut subscribed_feed_ids = components
+                    .iter()
+                    .flat_map(|component| component.feeds.iter().cloned())
+                    .collect::<Vec<_>>();
+                subscribed_feed_ids.sort();
+                subscribed_feed_ids.dedup();
+                CustomViewSurfaceStatus {
+                    surface_id: surface.id.clone(),
+                    label: surface.label.clone(),
+                    nav_visible,
+                    components,
+                    subscribed_feed_ids,
+                    feed_status: Vec::new(),
+                    feed_mismatches: Vec::new(),
+                    recurring_bindings: Vec::new(),
+                    layout_root: surface.layout_root.clone(),
+                }
+            })
+            .collect();
+        let pending_proposal = self
+            .daemon
+            .environment_hub
+            .pending(&profile_id)
+            .await
+            .is_some();
+        Ok(EnvironmentStatusResponse {
+            profile_id,
+            revision: record.revision,
+            active_preset_id: record.spec.active_preset_id,
+            pending_proposal,
+            custom_surfaces,
+            feed_mismatch_count: 0,
+            nav_orphan_count,
+            hints: Vec::new(),
+        })
     }
 
     pub async fn health(&self) -> Result<HealthResponse> {
@@ -2275,6 +2437,38 @@ query MobileProbe {
                 .contains(Capability::AdminExecute)
         );
 
+        let initial_environment = client
+            .environment_spec(None)
+            .await
+            .expect("read embedded environment");
+        let mut edited_environment = initial_environment.spec;
+        edited_environment
+            .layout_presets
+            .as_mut()
+            .and_then(|presets| presets.iter_mut().find(|preset| preset.active))
+            .expect("active embedded layout")
+            .surfaces
+            .retain(|surface_id| surface_id != "web");
+        let saved_environment = client
+            .put_environment_spec(EnvironmentSpecPutRequest {
+                spec: edited_environment,
+            })
+            .await
+            .expect("save embedded environment");
+        assert!(saved_environment.revision > initial_environment.revision);
+        assert!(
+            !saved_environment
+                .spec
+                .layout_presets
+                .as_ref()
+                .and_then(|presets| presets.iter().find(|preset| preset.active))
+                .expect("saved active embedded layout")
+                .surfaces
+                .iter()
+                .any(|surface_id| surface_id == "web")
+        );
+        assert!(sandbox.path().join("environment").is_dir());
+
         let runtime_stats = client.runtime_stats().await.expect("read runtime stats");
         assert_eq!(runtime_stats.active_turn_executions, 0);
         assert_eq!(runtime_stats.recurring_definitions, 0);
@@ -2741,6 +2935,20 @@ query MobileProbe {
         assert_eq!(rebooted.authority_id(), &authority_id);
         assert_eq!(rebooted.cluster_node().node_id, node_id);
         let rebooted_client = rebooted.local_client();
+        assert!(
+            !rebooted_client
+                .environment_spec(None)
+                .await
+                .expect("reload embedded environment")
+                .spec
+                .layout_presets
+                .as_ref()
+                .and_then(|presets| presets.iter().find(|preset| preset.active))
+                .expect("reloaded active embedded layout")
+                .surfaces
+                .iter()
+                .any(|surface_id| surface_id == "web")
+        );
         assert_eq!(
             rebooted_client
                 .list_profiles()
