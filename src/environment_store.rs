@@ -27,8 +27,26 @@ pub struct EnvironmentRecord {
 }
 
 #[derive(Clone)]
+enum EnvironmentStoreAuthority {
+    Ambient(Arc<PathBuf>),
+    Opened(Arc<StoreRoot>),
+}
+
+impl EnvironmentStoreAuthority {
+    fn with_store<T>(&self, operation: impl FnOnce(&StoreRoot) -> Result<T>) -> Result<T> {
+        match self {
+            Self::Ambient(path) => {
+                let store = EnvironmentHub::store_at(path)?;
+                operation(&store)
+            }
+            Self::Opened(store) => operation(store),
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct EnvironmentHub {
-    store_root: Arc<PathBuf>,
+    store: EnvironmentStoreAuthority,
     inner: Arc<AsyncRwLock<HashMap<String, EnvironmentRecord>>>,
     pending: Arc<AsyncRwLock<HashMap<String, EnvironmentPendingProposal>>>,
     revision: Arc<AsyncRwLock<u64>>,
@@ -50,9 +68,20 @@ impl EnvironmentHub {
 
     /// Build an environment authority rooted inside one daemon deployment.
     pub fn new_at(store_root: impl Into<PathBuf>) -> Self {
+        Self::with_store(EnvironmentStoreAuthority::Ambient(Arc::new(
+            store_root.into(),
+        )))
+    }
+
+    /// Retain an already-opened, capability-confined deployment root.
+    pub(crate) fn new_with_store(store: Arc<StoreRoot>) -> Self {
+        Self::with_store(EnvironmentStoreAuthority::Opened(store))
+    }
+
+    fn with_store(store: EnvironmentStoreAuthority) -> Self {
         let (tx, _) = broadcast::channel(64);
         Self {
-            store_root: Arc::new(store_root.into()),
+            store,
             inner: Arc::new(AsyncRwLock::new(HashMap::new())),
             pending: Arc::new(AsyncRwLock::new(HashMap::new())),
             revision: Arc::new(AsyncRwLock::new(0)),
@@ -84,18 +113,18 @@ impl EnvironmentHub {
 
     #[cfg(feature = "full-daemon")]
     pub async fn load_or_default(profile_id: &str) -> Result<EnvironmentRecord> {
-        Self::load_or_default_at(&Self::default_store_root(), profile_id).await
+        let store = Self::store_at(&Self::default_store_root())?;
+        Self::load_or_default_from(&store, profile_id)
     }
 
-    async fn load_or_default_at(store_root: &Path, profile_id: &str) -> Result<EnvironmentRecord> {
+    fn load_or_default_from(store: &StoreRoot, profile_id: &str) -> Result<EnvironmentRecord> {
         let typed_profile = EnvironmentProfileId::parse(profile_id)?;
-        let store = Self::store_at(store_root)?;
         let path = Self::spec_path(&typed_profile);
         let raw = match store.read_limited(&path, MAX_ENVIRONMENT_SPEC_BYTES) {
             Ok(raw) => Some(raw),
             Err(error) if error.is_not_found() => {
                 let Some(legacy_path) = Self::legacy_spec_path(&typed_profile) else {
-                    return Self::persist_default_at(store_root, profile_id).await;
+                    return Self::persist_default_in(store, profile_id);
                 };
                 match store.read_limited(&legacy_path, MAX_ENVIRONMENT_SPEC_BYTES) {
                     Ok(raw) => Some(raw),
@@ -119,23 +148,22 @@ impl EnvironmentHub {
                 "invalid environment spec on disk; falling back to default"
             );
         }
-        Self::persist_default_at(store_root, profile_id).await
+        Self::persist_default_in(store, profile_id)
     }
 
-    async fn persist_default_at(store_root: &Path, profile_id: &str) -> Result<EnvironmentRecord> {
+    fn persist_default_in(store: &StoreRoot, profile_id: &str) -> Result<EnvironmentRecord> {
         let spec = default_environment_spec(profile_id);
         let record = EnvironmentRecord { revision: 1, spec };
-        Self::persist_record_at(store_root, profile_id, &record).await?;
+        Self::persist_record_in(store, profile_id, &record)?;
         Ok(record)
     }
 
-    async fn persist_record_at(
-        store_root: &Path,
+    fn persist_record_in(
+        store: &StoreRoot,
         profile_id: &str,
         record: &EnvironmentRecord,
     ) -> Result<()> {
         let profile_id = EnvironmentProfileId::parse(profile_id)?;
-        let store = Self::store_at(store_root)?;
         let path = Self::spec_path(&profile_id);
         let json = serde_json::to_string_pretty(&record.spec)?;
         store.atomic_write(&path, json.as_bytes())?;
@@ -149,7 +177,9 @@ impl EnvironmentHub {
                 return Ok(record.clone());
             }
         }
-        let record = Self::load_or_default_at(self.store_root.as_ref(), profile_id).await?;
+        let record = self
+            .store
+            .with_store(|store| Self::load_or_default_from(store, profile_id))?;
         {
             let mut revision = self.revision.write().await;
             *revision = (*revision).max(record.revision);
@@ -175,7 +205,8 @@ impl EnvironmentHub {
             revision: *revision,
             spec: spec.clone(),
         };
-        Self::persist_record_at(self.store_root.as_ref(), &spec.profile_id, &record).await?;
+        self.store
+            .with_store(|store| Self::persist_record_in(store, &spec.profile_id, &record))?;
         {
             let mut guard = self.inner.write().await;
             guard.insert(spec.profile_id.clone(), record.clone());

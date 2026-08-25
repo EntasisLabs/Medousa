@@ -401,8 +401,6 @@ impl EmbeddedDaemon {
     /// Boot the daemon against one app-sandbox root.
     pub async fn boot(config: EmbeddedDaemonConfig) -> Result<Arc<Self>> {
         let root = prepare_root(&config.root).await?;
-        let environment_hub =
-            crate::environment_store::EnvironmentHub::new_at(root.join("environment"));
         configure_file_session_root(root.join("history")).map_err(|error| anyhow!(error))?;
         crate::capability_catalog::configure_capabilities_manifest_path(
             root.join("capabilities.toml"),
@@ -412,6 +410,15 @@ impl EmbeddedDaemon {
             .map_err(|error| anyhow!(error))?;
         let sandbox_files = crate::store_root::StoreRoot::open(&root)
             .context("open embedded daemon root capability")?;
+        let environment_path = crate::store_root::StorePath::parse("environment")
+            .context("validate embedded environment path")?;
+        let environment_files = Arc::new(
+            sandbox_files
+                .open_or_create_subroot(&environment_path)
+                .context("derive embedded environment capability")?,
+        );
+        let environment_hub =
+            crate::environment_store::EnvironmentHub::new_with_store(environment_files);
         let vault_path =
             crate::store_root::StorePath::parse("vault").context("validate embedded vault path")?;
         let vault_files = Arc::new(
