@@ -23,6 +23,63 @@ fn tool_status_glyph(status: &str) -> (&'static str, Color) {
     }
 }
 
+pub fn chronological_parts(
+    turn: &ConversationTurn,
+    live_parts: Option<&TurnPartsAccumulator>,
+) -> Option<Vec<TurnPart>> {
+    let parts = live_parts
+        .map(TurnPartsAccumulator::preview_parts)
+        .filter(|items| !items.is_empty())
+        .or_else(|| turn.parts.clone())?;
+    parts
+        .iter()
+        .any(|part| {
+            matches!(
+                part,
+                TurnPart::Text {
+                    segment_id: Some(_),
+                    ..
+                }
+            )
+        })
+        .then_some(parts)
+}
+
+pub fn render_tool_part_line(part: &TurnPart) -> Option<Line<'static>> {
+    let TurnPart::ToolRun {
+        tool_name,
+        status,
+        input_summary,
+        output_summary,
+        ..
+    } = part
+    else {
+        return None;
+    };
+    let (glyph, color) = tool_status_glyph(status);
+    let name = format_tool_name(tool_name);
+    let mut spans = vec![
+        Span::raw("  "),
+        Span::styled(format!("{glyph} "), Style::default().fg(color)),
+        Span::styled(name, Style::default().fg(Color::Cyan)),
+        Span::styled(
+            format!("  {input_summary}"),
+            Style::default().fg(Color::DarkGray),
+        ),
+    ];
+    if let Some(summary) = output_summary
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        spans.push(Span::raw(" → "));
+        spans.push(Span::styled(
+            summary.to_string(),
+            Style::default().fg(Color::Gray),
+        ));
+    }
+    Some(Line::from(spans))
+}
+
 pub fn render_turn_tool_lines(
     turn: &ConversationTurn,
     live_parts: Option<&TurnPartsAccumulator>,
@@ -157,4 +214,35 @@ pub fn progress_notes(turn: &ConversationTurn) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+
+    use super::*;
+
+    #[test]
+    fn chronological_parts_preserve_text_tool_text_order() {
+        let mut live = TurnPartsAccumulator::default();
+        live.start_text_segment("segment-1", Some(1));
+        live.append_text_segment("segment-1", "first");
+        live.tool_started("run-1", "search", "query", 1);
+        live.tool_finished("run-1", "failed", Some("offline".into()), vec![]);
+        live.start_text_segment("segment-2", Some(2));
+        live.append_text_segment("segment-2", "recovered");
+        let turn = ConversationTurn::plain("assistant", String::new(), Utc::now(), vec![], None);
+
+        let parts = chronological_parts(&turn, Some(&live)).expect("chronological parts");
+        assert!(matches!(&parts[0], TurnPart::Text { markdown, .. } if markdown == "first"));
+        assert!(matches!(&parts[1], TurnPart::ToolRun { status, .. } if status == "failed"));
+        assert!(matches!(&parts[2], TurnPart::Text { markdown, .. } if markdown == "recovered"));
+    }
+
+    #[test]
+    fn legacy_flat_text_keeps_legacy_presentation_path() {
+        let turn =
+            ConversationTurn::plain("assistant", "answer".to_string(), Utc::now(), vec![], None);
+        assert!(chronological_parts(&turn, None).is_none());
+    }
 }

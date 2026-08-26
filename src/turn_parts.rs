@@ -1,6 +1,6 @@
 //! Ordered turn timeline parts (P3 presentation envelope).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
 use medousa_types::session::ConversationTurn;
@@ -14,6 +14,8 @@ use crate::daemon_api::StreamToolArtifactRef;
 pub struct TurnPartsAccumulator {
     parts: Vec<TurnPart>,
     tool_run_indexes: HashMap<String, usize>,
+    text_segment_indexes: HashMap<String, usize>,
+    open_text_segments: HashSet<String>,
     reasoning_index: Option<usize>,
     model_receipt_index: Option<usize>,
     progress_notes: Vec<String>,
@@ -21,6 +23,67 @@ pub struct TurnPartsAccumulator {
 }
 
 impl TurnPartsAccumulator {
+    /// Snapshot the live ordered timeline without settling the turn.
+    pub fn preview_parts(&self) -> Vec<TurnPart> {
+        self.parts.clone()
+    }
+
+    /// Open a V3 text segment at the point where it was observed.
+    pub fn start_text_segment(&mut self, segment_id: &str, model_round: Option<usize>) {
+        if self.text_segment_indexes.contains_key(segment_id) {
+            return;
+        }
+        let index = self.parts.len();
+        self.parts.push(TurnPart::Text {
+            markdown: String::new(),
+            segment_id: Some(segment_id.to_string()),
+            model_round,
+        });
+        self.text_segment_indexes
+            .insert(segment_id.to_string(), index);
+        self.open_text_segments.insert(segment_id.to_string());
+    }
+
+    /// Append only to the addressed V3 segment. A suffix-only replay may omit
+    /// its start fact, so preserve the append at its observation position with
+    /// unknown round metadata instead of discarding visible prose.
+    pub fn append_text_segment(&mut self, segment_id: &str, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        if !self.text_segment_indexes.contains_key(segment_id) {
+            self.start_text_segment(segment_id, None);
+        }
+        if !self.open_text_segments.contains(segment_id) {
+            return;
+        }
+        let Some(index) = self.text_segment_indexes.get(segment_id).copied() else {
+            return;
+        };
+        if let Some(TurnPart::Text { markdown, .. }) = self.parts.get_mut(index) {
+            markdown.push_str(text);
+        }
+    }
+
+    /// Segment commits are fences, not new content. Keeping the identity index
+    /// makes a duplicate/replayed lifecycle fact idempotent.
+    pub fn finish_text_segment(&mut self, segment_id: &str) {
+        self.open_text_segments.remove(segment_id);
+    }
+
+    pub fn chronological_text(&self) -> String {
+        self.parts
+            .iter()
+            .filter_map(|part| match part {
+                TurnPart::Text { markdown, .. } if !markdown.trim().is_empty() => {
+                    Some(markdown.as_str())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    }
+
     pub fn live_progress_notes(&self) -> &[String] {
         &self.progress_notes
     }
@@ -84,6 +147,14 @@ impl TurnPartsAccumulator {
         });
     }
 
+    pub fn push_handoff(&mut self, handoff_kind: &str, text: &str, work_id: Option<String>) {
+        self.parts.push(TurnPart::Handoff {
+            handoff_kind: handoff_kind.to_string(),
+            text: text.to_string(),
+            work_id,
+        });
+    }
+
     /// Commit model-authored visible prose at its current timeline position.
     /// V2 callers may omit identity metadata; V3 callers provide both fields.
     pub fn commit_text_segment(
@@ -95,11 +166,18 @@ impl TurnPartsAccumulator {
         if markdown.trim().is_empty() {
             return;
         }
+        if segment_id.is_some_and(|id| self.text_segment_indexes.contains_key(id)) {
+            return;
+        }
         self.parts.push(TurnPart::Text {
             markdown: markdown.to_string(),
             segment_id: segment_id.map(str::to_string),
             model_round,
         });
+        if let Some(segment_id) = segment_id {
+            self.text_segment_indexes
+                .insert(segment_id.to_string(), self.parts.len() - 1);
+        }
     }
 
     /// Commit the current V2 draft once before its first chronological fence.
@@ -227,6 +305,25 @@ impl TurnPartsAccumulator {
         *finished_at = Some(Utc::now());
     }
 
+    /// Apply a V3 finish fact even when a reconnect suffix did not include the
+    /// corresponding start. The receipt stays exactly where it was observed.
+    #[allow(clippy::too_many_arguments)]
+    pub fn tool_finished_observed(
+        &mut self,
+        run_id: &str,
+        tool_name: &str,
+        input_summary: &str,
+        tool_round: usize,
+        status: &str,
+        output_summary: Option<String>,
+        artifact_refs: Vec<TurnArtifactRef>,
+    ) {
+        if !self.tool_run_indexes.contains_key(run_id) {
+            self.tool_started(run_id, tool_name, input_summary, tool_round);
+        }
+        self.tool_finished(run_id, status, output_summary, artifact_refs);
+    }
+
     pub fn preview_tool_runs(&self) -> Vec<TurnPart> {
         self.parts
             .iter()
@@ -286,9 +383,10 @@ impl TurnPartsAccumulator {
         tool_names: Vec<String>,
         answer_state: Option<String>,
     ) -> ConversationTurn {
-        self.parts.retain(
-            |part| !matches!(part, TurnPart::Reasoning { markdown } if markdown.is_empty()),
-        );
+        self.parts.retain(|part| {
+            !matches!(part, TurnPart::Reasoning { markdown } if markdown.is_empty())
+                && !matches!(part, TurnPart::Text { markdown, .. } if markdown.is_empty())
+        });
         let has_visible_text = self.parts.iter().any(
             |part| matches!(part, TurnPart::Text { markdown, .. } if !markdown.trim().is_empty()),
         );
@@ -614,6 +712,87 @@ mod tests {
             &parts[2],
             TurnPart::Text { markdown, segment_id: Some(id), model_round: Some(2) }
                 if markdown == "Found it." && id == "segment-2"
+        ));
+    }
+
+    #[test]
+    fn live_v3_segments_and_failed_receipts_keep_observation_order() {
+        let mut acc = TurnPartsAccumulator::default();
+        acc.start_text_segment("segment-1", Some(1));
+        acc.append_text_segment("segment-1", "Let me check.");
+        acc.finish_text_segment("segment-1");
+        acc.tool_started("run-1", "search", "first", 1);
+        acc.tool_started("run-2", "fetch", "second", 1);
+        acc.tool_finished("run-2", "succeeded", Some("ok".into()), vec![]);
+        acc.tool_finished("run-1", "failed", Some("timeout".into()), vec![]);
+        acc.start_text_segment("segment-2", Some(2));
+        acc.append_text_segment("segment-2", "I can recover.");
+        acc.finish_text_segment("segment-2");
+        acc.tool_started("run-3", "search", "fallback", 2);
+        acc.tool_finished("run-3", "succeeded", Some("found".into()), vec![]);
+        acc.start_text_segment("segment-3", Some(3));
+        acc.append_text_segment("segment-3", "Done.");
+
+        let parts = acc
+            .finalize_chronological_turn(
+                "Let me check.\n\nI can recover.\n\nDone.".into(),
+                vec!["search".into(), "fetch".into()],
+                None,
+            )
+            .parts
+            .expect("parts");
+        let identities = parts
+            .iter()
+            .map(|part| match part {
+                TurnPart::Text {
+                    segment_id: Some(id),
+                    ..
+                } => id.as_str(),
+                TurnPart::ToolRun { run_id, .. } => run_id.as_str(),
+                _ => "other",
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            identities,
+            [
+                "segment-1",
+                "run-1",
+                "run-2",
+                "segment-2",
+                "run-3",
+                "segment-3"
+            ]
+        );
+        assert!(matches!(
+            &parts[1],
+            TurnPart::ToolRun { status, .. } if status == "failed"
+        ));
+    }
+
+    #[test]
+    fn reconnect_suffix_preserves_unknown_segment_and_finish_facts() {
+        let mut acc = TurnPartsAccumulator::default();
+        acc.append_text_segment("segment-gap", "suffix prose");
+        acc.tool_finished_observed(
+            "run-gap",
+            "search",
+            "replayed suffix",
+            4,
+            "failed",
+            Some("offline".into()),
+            vec![],
+        );
+
+        let parts = acc.preview_parts();
+        assert!(matches!(
+            &parts[0],
+            TurnPart::Text { markdown, segment_id: Some(id), model_round: None }
+                if markdown == "suffix prose" && id == "segment-gap"
+        ));
+        assert!(matches!(
+            &parts[1],
+            TurnPart::ToolRun { run_id, status, .. }
+                if run_id == "run-gap" && status == "failed"
         ));
     }
 

@@ -6,6 +6,7 @@ use ratatui::{
 };
 
 use medousa::tui::workspace::{ShellTabKind, SplitBranchDirection, SplitNode};
+use medousa::turn_parts::TurnPart;
 
 use super::{
     ConversationTurn, ObservabilityFilter, TuiState, UiMode, api_key_storage_backend_label,
@@ -1815,6 +1816,10 @@ fn build_conversation_text(
     let mut lines: Vec<Line<'static>> = Vec::new();
 
     for (index, turn) in turns.iter().enumerate() {
+        let live_parts = state
+            .active_agent_stream_turn
+            .filter(|active| *active == index)
+            .map(|_| &state.turn_parts);
         match turn.role.as_str() {
             "user" => {
                 lines.push(Line::from(Span::styled(
@@ -1862,40 +1867,87 @@ fn build_conversation_text(
                     ),
                 ]));
             }
-            lines.extend(render_markdown_lines_cached(state, content_body, width));
-            if let Some(handoff) = super::tui_presentation::render_handoff_line(turn) {
-                lines.push(handoff);
-            }
-            for note in super::tui_presentation::progress_notes(turn) {
-                lines.push(Line::from(Span::styled(
-                    format!("  · {note}"),
-                    Style::default().fg(Color::DarkGray),
-                )));
-            }
-            if state
-                .active_agent_stream_turn
-                .is_some_and(|active| active == index)
-            {
-                for note in state.turn_parts.live_progress_notes() {
-                    let trimmed = note.trim();
-                    if trimmed.is_empty() {
-                        continue;
+            if let Some(parts) = super::tui_presentation::chronological_parts(turn, live_parts) {
+                for part in parts {
+                    match part {
+                        TurnPart::Text { markdown, .. } => {
+                            if !markdown.is_empty() {
+                                lines.extend(render_markdown_lines_cached(state, &markdown, width));
+                            }
+                        }
+                        part @ TurnPart::ToolRun { .. } => {
+                            if let Some(line) =
+                                super::tui_presentation::render_tool_part_line(&part)
+                            {
+                                lines.push(line);
+                            }
+                        }
+                        TurnPart::Progress { markdown } => {
+                            if !markdown.trim().is_empty() {
+                                lines.push(Line::from(Span::styled(
+                                    format!("  · {}", markdown.trim()),
+                                    Style::default().fg(Color::DarkGray),
+                                )));
+                            }
+                        }
+                        TurnPart::Handoff {
+                            handoff_kind,
+                            text,
+                            work_id,
+                        } => {
+                            let work_hint =
+                                work_id.map(|id| format!(" · {id}")).unwrap_or_default();
+                            lines.push(Line::from(vec![
+                                Span::styled("  ↗ ", Style::default().fg(Color::Magenta)),
+                                Span::styled(
+                                    format!("handoff ({handoff_kind}){work_hint}"),
+                                    Style::default()
+                                        .fg(Color::Magenta)
+                                        .add_modifier(Modifier::BOLD),
+                                ),
+                                Span::styled(format!("  {text}"), Style::default().fg(Color::Gray)),
+                            ]));
+                        }
+                        TurnPart::AttachmentRef { label, mime, .. } => {
+                            lines.push(Line::from(Span::styled(
+                                format!("  ◇ {label}  {mime}"),
+                                Style::default().fg(Color::Cyan),
+                            )));
+                        }
+                        _ => {}
                     }
+                }
+            } else {
+                lines.extend(render_markdown_lines_cached(state, content_body, width));
+                if let Some(handoff) = super::tui_presentation::render_handoff_line(turn) {
+                    lines.push(handoff);
+                }
+                for note in super::tui_presentation::progress_notes(turn) {
                     lines.push(Line::from(Span::styled(
-                        format!("  · {trimmed}"),
+                        format!("  · {note}"),
                         Style::default().fg(Color::DarkGray),
                     )));
                 }
+                if state
+                    .active_agent_stream_turn
+                    .is_some_and(|active| active == index)
+                {
+                    for note in state.turn_parts.live_progress_notes() {
+                        let trimmed = note.trim();
+                        if trimmed.is_empty() {
+                            continue;
+                        }
+                        lines.push(Line::from(Span::styled(
+                            format!("  · {trimmed}"),
+                            Style::default().fg(Color::DarkGray),
+                        )));
+                    }
+                }
+                lines.extend(super::tui_presentation::render_turn_tool_lines(
+                    turn, live_parts,
+                ));
             }
         }
-
-        let live_parts = state
-            .active_agent_stream_turn
-            .filter(|active| *active == index)
-            .map(|_| &state.turn_parts);
-        lines.extend(super::tui_presentation::render_turn_tool_lines(
-            turn, live_parts,
-        ));
 
         lines.push(Line::from(""));
     }

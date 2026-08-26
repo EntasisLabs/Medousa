@@ -27,6 +27,12 @@ impl ToolEventSenderExt for mpsc::Sender<TuiEvent> {
 /// Events emitted by cognition tools and background agent tasks back to the TUI event loop.
 #[derive(Debug, Clone)]
 pub enum TuiEvent {
+    /// One native chronological daemon fact. `turn_id` is the TUI-local routing
+    /// id; the envelope retains the daemon turn id and replay cursor.
+    TurnStreamV3 {
+        turn_id: u64,
+        envelope: medousa_types::TurnStreamEnvelopeV3,
+    },
     /// Structured tool run started (P1/P4 presentation).
     ToolRunStarted {
         tool_run_id: String,

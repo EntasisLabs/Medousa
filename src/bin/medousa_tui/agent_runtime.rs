@@ -26,7 +26,9 @@ use medousa::{
     turn_continuation::TurnContinuationScope,
 };
 use medousa_sdk::{HttpTransport, MedousaClient};
-use medousa_types::{TurnStreamEnvelopeV2, TurnStreamEventV2};
+use medousa_types::{
+    TurnCompletionOutcomeV3, TurnStreamEnvelopeV3, TurnStreamEventV3, WorkerAckKind,
+};
 use serde_json::Value;
 
 use super::daemon_commands::daemon_start_interactive_turn;
@@ -38,18 +40,117 @@ const INTENT_CLASSIFIER_CONTEXT_LINE_CHARS: usize = 260;
 
 struct TuiStreamSink {
     tx: mpsc::Sender<TuiEvent>,
+    local_turn_id: u64,
+    chronology: tokio::sync::Mutex<TuiChronology>,
+}
+
+struct TuiChronology {
+    seq: u64,
+    model_round: usize,
+    next_segment: usize,
+    active_segment: Option<String>,
+}
+
+impl Default for TuiChronology {
+    fn default() -> Self {
+        Self {
+            seq: 0,
+            model_round: 1,
+            next_segment: 0,
+            active_segment: None,
+        }
+    }
+}
+
+impl TuiStreamSink {
+    fn new(tx: mpsc::Sender<TuiEvent>, local_turn_id: u64) -> Self {
+        Self {
+            tx,
+            local_turn_id,
+            chronology: tokio::sync::Mutex::new(TuiChronology::default()),
+        }
+    }
+
+    async fn publish_locked(
+        &self,
+        turn_id: u64,
+        state: &mut TuiChronology,
+        event: TurnStreamEventV3,
+    ) {
+        state.seq = state.seq.saturating_add(1);
+        let envelope = TurnStreamEnvelopeV3::new(
+            format!("tui-local-{turn_id}"),
+            state.seq,
+            chrono::Utc::now(),
+            event,
+        )
+        .expect("valid local TUI V3 envelope");
+        let _ = self
+            .tx
+            .send(TuiEvent::TurnStreamV3 { turn_id, envelope })
+            .await;
+    }
+
+    async fn publish(&self, turn_id: u64, event: TurnStreamEventV3) {
+        let mut state = self.chronology.lock().await;
+        self.publish_locked(turn_id, &mut state, event).await;
+    }
+
+    async fn commit_active_segment(&self, turn_id: u64, advance_round: bool) {
+        let mut state = self.chronology.lock().await;
+        if let Some(segment_id) = state.active_segment.take() {
+            self.publish_locked(
+                turn_id,
+                &mut state,
+                TurnStreamEventV3::AssistantTextCommitted { segment_id },
+            )
+            .await;
+        }
+        if advance_round {
+            state.model_round = state.model_round.saturating_add(1);
+        }
+    }
 }
 
 #[async_trait]
 impl AgentStreamSink for TuiStreamSink {
     async fn content_chunk(&self, turn_id: u64, delta: String) {
-        let _ = self.tx.send(TuiEvent::AgentChunk { turn_id, delta }).await;
+        if delta.is_empty() {
+            return;
+        }
+        let mut state = self.chronology.lock().await;
+        if state.active_segment.is_none() {
+            state.next_segment = state.next_segment.saturating_add(1);
+            let segment_id = format!("tui-local-{turn_id}:text:{}", state.next_segment);
+            state.active_segment = Some(segment_id.clone());
+            let model_round = state.model_round;
+            self.publish_locked(
+                turn_id,
+                &mut state,
+                TurnStreamEventV3::AssistantTextStarted {
+                    segment_id,
+                    model_round,
+                },
+            )
+            .await;
+        }
+        let segment_id = state
+            .active_segment
+            .clone()
+            .expect("active local TUI segment");
+        self.publish_locked(
+            turn_id,
+            &mut state,
+            TurnStreamEventV3::ContentAppend {
+                segment_id,
+                text: delta,
+            },
+        )
+        .await;
     }
 
     async fn reasoning_chunk(&self, turn_id: u64, delta: String) {
-        let _ = self
-            .tx
-            .send(TuiEvent::AgentReasoningChunk { turn_id, delta })
+        self.publish(turn_id, TurnStreamEventV3::ReasoningAppend { text: delta })
             .await;
     }
 
@@ -60,40 +161,65 @@ impl AgentStreamSink for TuiStreamSink {
         tool_names: Vec<String>,
         work_id: Option<String>,
     ) {
-        let _ = self
-            .tx
-            .send(TuiEvent::AgentResponse {
-                turn_id,
+        self.publish(
+            turn_id,
+            TurnStreamEventV3::WorkerAck {
+                ack_kind: WorkerAckKind::Worker,
                 text,
                 tool_names,
-                terminal: false,
                 work_id,
-            })
-            .await;
+            },
+        )
+        .await;
+    }
+
+    async fn agent_workshop_ack(
+        &self,
+        turn_id: u64,
+        text: String,
+        tool_names: Vec<String>,
+        work_id: Option<String>,
+    ) {
+        self.publish(
+            turn_id,
+            TurnStreamEventV3::WorkerAck {
+                ack_kind: WorkerAckKind::Workshop,
+                text,
+                tool_names,
+                work_id,
+            },
+        )
+        .await;
     }
 
     async fn agent_response(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
-        let _ = self
-            .tx
-            .send(TuiEvent::AgentResponse {
-                turn_id,
-                text,
+        self.commit_active_segment(turn_id, false).await;
+        self.publish(
+            turn_id,
+            TurnStreamEventV3::TurnCompleted {
+                outcome: TurnCompletionOutcomeV3::Completed,
+                aggregate_text: text,
                 tool_names,
-                terminal: true,
-                work_id: None,
-            })
-            .await;
+                operator_message: None,
+                debug_message: None,
+            },
+        )
+        .await;
     }
 
     async fn agent_needs_input(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
-        let _ = self
-            .tx
-            .send(TuiEvent::AgentNeedsInput {
-                turn_id,
-                text,
+        self.commit_active_segment(turn_id, false).await;
+        self.publish(
+            turn_id,
+            TurnStreamEventV3::TurnCompleted {
+                outcome: TurnCompletionOutcomeV3::NeedsInput,
+                aggregate_text: text,
                 tool_names,
-            })
-            .await;
+                operator_message: None,
+                debug_message: None,
+            },
+        )
+        .await;
     }
 
     async fn agent_final_pending(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
@@ -101,37 +227,74 @@ impl AgentStreamSink for TuiStreamSink {
     }
 
     async fn agent_turn_progress(&self, turn_id: u64, message: String, tool_names: Vec<String>) {
-        let _ = self
-            .tx
-            .send(TuiEvent::AgentTurnProgress {
-                turn_id,
+        self.publish(
+            turn_id,
+            TurnStreamEventV3::Progress {
                 message,
                 tool_names,
-            })
-            .await;
+            },
+        )
+        .await;
+    }
+
+    async fn agent_pack_hold(
+        &self,
+        turn_id: u64,
+        _fragments: Vec<String>,
+        _tool_names: Vec<String>,
+    ) {
+        self.publish(
+            turn_id,
+            TurnStreamEventV3::Status {
+                phase: "pack_hold".to_string(),
+                operator_message: None,
+                debug_message: Some("held model response awaiting tool resolution".to_string()),
+            },
+        )
+        .await;
     }
 
     async fn agent_turn_checkpoint(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
-        let _ = self
-            .tx
-            .send(TuiEvent::AgentResponse {
-                turn_id,
-                text,
+        self.commit_active_segment(turn_id, false).await;
+        self.publish(
+            turn_id,
+            TurnStreamEventV3::TurnCompleted {
+                outcome: TurnCompletionOutcomeV3::Checkpointed,
+                aggregate_text: text,
                 tool_names,
-                terminal: true,
-                work_id: None,
-            })
-            .await;
+                operator_message: None,
+                debug_message: None,
+            },
+        )
+        .await;
     }
 
     async fn agent_error(&self, turn_id: u64, message: String) {
         let failure = medousa::turn_failure::TurnFailure::from_debug(&message);
-        let _ = self
-            .tx
-            .send(TuiEvent::AgentError {
-                turn_id,
-                message: failure.operator_message,
-            })
+        self.publish(
+            turn_id,
+            TurnStreamEventV3::Error {
+                operator_message: failure.operator_message.clone(),
+                debug_message: Some(message),
+            },
+        )
+        .await;
+        self.commit_active_segment(turn_id, false).await;
+        self.publish(
+            turn_id,
+            TurnStreamEventV3::TurnCompleted {
+                outcome: TurnCompletionOutcomeV3::Failed,
+                aggregate_text: String::new(),
+                tool_names: Vec::new(),
+                operator_message: Some(failure.operator_message),
+                debug_message: None,
+            },
+        )
+        .await;
+    }
+
+    async fn model_receipt(&self, turn_id: u64, provider: String, model: String) {
+        self.publish(turn_id, TurnStreamEventV3::ModelReceipt { provider, model })
             .await;
     }
 
@@ -144,18 +307,20 @@ impl AgentStreamSink for TuiStreamSink {
         tool_run_id: String,
         tool_name: String,
         input_summary: String,
-        _input_params: Vec<medousa_types::daemon_api::ToolInputParam>,
+        input_params: Vec<medousa_types::daemon_api::ToolInputParam>,
         tool_round: usize,
     ) {
-        let _ = self
-            .tx
-            .send(TuiEvent::ToolRunStarted {
+        self.publish(
+            self.local_turn_id,
+            TurnStreamEventV3::ToolStarted {
                 tool_run_id,
                 tool_name,
                 input_summary,
+                input_params,
                 tool_round,
-            })
-            .await;
+            },
+        )
+        .await;
     }
 
     async fn tool_run_finished(
@@ -171,17 +336,20 @@ impl AgentStreamSink for TuiStreamSink {
         _output_receipt: Option<ArtifactReceiptMeta>,
         tool_round: usize,
     ) {
-        let _ = self
-            .tx
-            .send(TuiEvent::ToolRunFinished {
+        self.publish(
+            self.local_turn_id,
+            TurnStreamEventV3::ToolFinished {
                 tool_run_id,
                 tool_name,
                 status,
                 input_summary,
+                input_params: Vec::new(),
                 output_summary,
                 tool_round,
-            })
-            .await;
+                artifact_refs: Vec::new(),
+            },
+        )
+        .await;
     }
 
     async fn tool_invoked(&self, tool_name: String, input_summary: String) {
@@ -215,7 +383,11 @@ impl AgentStreamSink for TuiStreamSink {
     }
 
     async fn scratch_reset(&self, turn_id: u64) {
-        let _ = self.tx.send(TuiEvent::AgentScratchReset { turn_id }).await;
+        self.commit_active_segment(turn_id, true).await;
+    }
+
+    async fn reset_streamed_markdown(&self) {
+        self.commit_active_segment(self.local_turn_id, false).await;
     }
 
     async fn turn_budget_approval_required(
@@ -228,18 +400,18 @@ impl AgentStreamSink for TuiStreamSink {
         reason: String,
         progress_summary: Option<String>,
     ) {
-        let _ = self
-            .tx
-            .send(TuiEvent::TurnBudgetApprovalRequired {
-                turn_id,
+        self.publish(
+            turn_id,
+            TurnStreamEventV3::BudgetApprovalRequired {
                 request_id,
                 rounds_executed,
                 max_tool_rounds,
                 requested_rounds,
                 reason,
                 progress_summary,
-            })
-            .await;
+            },
+        )
+        .await;
     }
 }
 
@@ -609,7 +781,7 @@ pub(crate) async fn start_prompt_run(
     );
     let session_scratch_seed =
         medousa::turn_slice::session_scratch_seed_from_history(&state.conversation, &prompt);
-    let sink: Arc<dyn AgentStreamSink> = Arc::new(TuiStreamSink { tx: tx.clone() });
+    let sink: Arc<dyn AgentStreamSink> = Arc::new(TuiStreamSink::new(tx.clone(), turn_id));
     let turn_scope = medousa::agent_runtime::execution_context::TurnScopeAccess::default();
     let execution_registry = tui_rt.execution_registry.clone();
     let worker_scheduler = tui_rt.worker_scheduler.clone();
@@ -841,7 +1013,7 @@ async fn consume_daemon_interactive_stream(
     let sdk =
         MedousaClient::with_transport(Arc::new(HttpTransport::with_client(client)), stream_url);
     let interactive = sdk.interactive();
-    let mut events = interactive.stream_reconnecting_v2(stream_url);
+    let mut events = interactive.stream_reconnecting_v3(stream_url);
     let mut saw_terminal = false;
 
     while let Some(payload) = events.next().await {
@@ -859,276 +1031,20 @@ async fn consume_daemon_interactive_stream(
 }
 
 async fn dispatch_daemon_stream_event(
-    payload: TurnStreamEnvelopeV2,
+    payload: TurnStreamEnvelopeV3,
     turn_id: u64,
     event_tx: &mpsc::Sender<TuiEvent>,
 ) -> std::result::Result<bool, String> {
     let terminal = payload.event.is_terminal();
-    match payload.event {
-        TurnStreamEventV2::ScratchReset => {
-            event_tx
-                .send(TuiEvent::AgentScratchReset { turn_id })
-                .await
-                .map_err(|err| err.to_string())?;
-        }
-        TurnStreamEventV2::PackHold {
-            text: held,
-            tool_names,
-        } => {
-            event_tx
-                .send(TuiEvent::AgentPackHold {
-                    turn_id,
-                    held,
-                    tool_names,
-                })
-                .await
-                .map_err(|err| err.to_string())?;
-        }
-        TurnStreamEventV2::ContentAppend { text } => {
-            if !text.is_empty() {
-                event_tx
-                    .send(TuiEvent::AgentChunk {
-                        turn_id,
-                        delta: text,
-                    })
-                    .await
-                    .map_err(|err| err.to_string())?;
-            }
-        }
-        TurnStreamEventV2::ReasoningAppend { text } => {
-            if !text.is_empty() {
-                event_tx
-                    .send(TuiEvent::AgentReasoningChunk {
-                        turn_id,
-                        delta: text,
-                    })
-                    .await
-                    .map_err(|err| err.to_string())?;
-            }
-        }
-        TurnStreamEventV2::ToolStarted {
-            tool_run_id,
-            tool_name,
-            input_summary,
-            tool_round,
-            ..
-        } => {
-            event_tx
-                .send(TuiEvent::ToolRunStarted {
-                    tool_run_id,
-                    tool_name,
-                    input_summary,
-                    tool_round,
-                })
-                .await
-                .map_err(|err| err.to_string())?;
-        }
-        TurnStreamEventV2::ToolFinished {
-            tool_run_id,
-            tool_name,
-            status,
-            input_summary,
-            output_summary,
-            tool_round,
-            ..
-        } => {
-            event_tx
-                .send(TuiEvent::ToolRunFinished {
-                    tool_run_id,
-                    tool_name,
-                    status,
-                    input_summary,
-                    output_summary,
-                    tool_round,
-                })
-                .await
-                .map_err(|err| err.to_string())?;
-        }
-        TurnStreamEventV2::NeedsInput { text, tool_names } => {
-            let text = fallback_text(text, "(empty clarification request)");
-            event_tx
-                .send(TuiEvent::AgentNeedsInput {
-                    turn_id,
-                    text,
-                    tool_names,
-                })
-                .await
-                .map_err(|err| err.to_string())?;
-        }
-        TurnStreamEventV2::Checkpoint { text, tool_names } => {
-            event_tx
-                .send(TuiEvent::AgentResponse {
-                    turn_id,
-                    text: fallback_text(text, "(empty checkpoint update)"),
-                    tool_names,
-                    terminal: true,
-                    work_id: None,
-                })
-                .await
-                .map_err(|err| err.to_string())?;
-        }
-        TurnStreamEventV2::FinalPending { text, tool_names }
-        | TurnStreamEventV2::Progress {
-            message: text,
-            tool_names,
-        } => {
-            let message = text.trim();
-            if message.is_empty() {
-                return Ok(false);
-            }
-            event_tx
-                .send(TuiEvent::AgentTurnProgress {
-                    turn_id,
-                    message: message.to_string(),
-                    tool_names,
-                })
-                .await
-                .map_err(|err| err.to_string())?;
-        }
-        TurnStreamEventV2::WorkerAck {
-            text,
-            tool_names,
-            work_id,
-            ..
-        } => {
-            event_tx
-                .send(TuiEvent::AgentResponse {
-                    turn_id,
-                    text: fallback_text(text, "(worker handoff)"),
-                    tool_names,
-                    terminal: false,
-                    work_id,
-                })
-                .await
-                .map_err(|err| err.to_string())?;
-        }
-        TurnStreamEventV2::WorkerSynthesis {
-            text,
-            tool_names,
-            work_id,
-        } => {
-            event_tx
-                .send(TuiEvent::AgentResponse {
-                    turn_id,
-                    text: fallback_text(text, "(empty worker synthesis)"),
-                    tool_names,
-                    terminal: true,
-                    work_id,
-                })
-                .await
-                .map_err(|err| err.to_string())?;
-        }
-        TurnStreamEventV2::Final { text, tool_names } => {
-            event_tx
-                .send(TuiEvent::AgentResponse {
-                    turn_id,
-                    text: fallback_text(text, "(empty daemon final response)"),
-                    tool_names,
-                    terminal: true,
-                    work_id: None,
-                })
-                .await
-                .map_err(|err| err.to_string())?;
-        }
-        TurnStreamEventV2::Error {
-            operator_message, ..
-        } => {
-            event_tx
-                .send(TuiEvent::AgentError {
-                    turn_id,
-                    message: fallback_text(operator_message, "daemon interactive stream failed"),
-                })
-                .await
-                .map_err(|err| err.to_string())?;
-        }
-        TurnStreamEventV2::ContextUsage { report, .. } => {
-            event_tx
-                .send(TuiEvent::ContextUsage { report })
-                .await
-                .map_err(|err| err.to_string())?;
-        }
-        TurnStreamEventV2::Status {
-            phase,
-            operator_message: Some(message),
-            ..
-        } => {
-            send_daemon_notice(event_tx, &phase, &message).await?;
-        }
-        TurnStreamEventV2::BudgetApprovalRequired {
-            request_id,
-            rounds_executed,
-            max_tool_rounds,
-            requested_rounds,
-            progress_summary,
-            reason,
-        } => {
-            event_tx
-                .send(TuiEvent::TurnBudgetApprovalRequired {
-                    turn_id,
-                    request_id,
-                    rounds_executed,
-                    max_tool_rounds,
-                    requested_rounds,
-                    reason,
-                    progress_summary,
-                })
-                .await
-                .map_err(|err| err.to_string())?;
-        }
-        TurnStreamEventV2::BrowserChallenge { reason, .. } => {
-            send_daemon_notice(event_tx, "browser challenge", &reason).await?;
-        }
-        TurnStreamEventV2::BrowserNavigated { title, url, .. } => {
-            send_daemon_notice(
-                event_tx,
-                "browser navigated",
-                title.as_deref().unwrap_or(&url),
-            )
-            .await?;
-        }
-        TurnStreamEventV2::PermissionRequest { message, .. } => {
-            send_daemon_notice(event_tx, "permission required", &message).await?;
-        }
-        TurnStreamEventV2::SecretRequest { label, reason, .. } => {
-            send_daemon_notice(
-                event_tx,
-                "secure credential entry requires Medousa",
-                &format!("{label}: {reason}"),
-            )
-            .await?;
-        }
-        TurnStreamEventV2::Status { .. }
-        | TurnStreamEventV2::ModelReceipt { .. }
-        | TurnStreamEventV2::ArtifactPresented { .. }
-        | TurnStreamEventV2::ArtifactUpdated { .. }
-        | TurnStreamEventV2::UiScene { .. } => {}
-    }
+    event_tx
+        .send(TuiEvent::TurnStreamV3 {
+            turn_id,
+            envelope: payload,
+        })
+        .await
+        .map_err(|err| err.to_string())?;
 
     Ok(terminal)
-}
-
-fn fallback_text(text: String, fallback: &str) -> String {
-    if text.trim().is_empty() {
-        fallback.to_string()
-    } else {
-        text
-    }
-}
-
-async fn send_daemon_notice(
-    event_tx: &mpsc::Sender<TuiEvent>,
-    phase: &str,
-    message: &str,
-) -> std::result::Result<(), String> {
-    if !message.trim().is_empty() {
-        event_tx
-            .send(TuiEvent::UiNotice(format!(
-                "◈ daemon interactive {phase} {message}"
-            )))
-            .await
-            .map_err(|err| err.to_string())?;
-    }
-    Ok(())
 }
 
 fn build_prior_messages(
@@ -1178,21 +1094,24 @@ pub(crate) fn stop_active_generation(state: &mut TuiState) {
 }
 
 #[cfg(test)]
-mod stream_v2_tests {
+mod stream_v3_tests {
     use super::*;
 
     #[tokio::test]
-    async fn typed_final_dispatches_one_terminal_response() {
-        let envelope = TurnStreamEnvelopeV2::new(
+    async fn typed_completion_dispatches_one_native_terminal_fact() {
+        let envelope = TurnStreamEnvelopeV3::new(
             "daemon-turn-1",
             1,
             chrono::Utc::now(),
-            TurnStreamEventV2::Final {
-                text: "done".to_string(),
+            TurnStreamEventV3::TurnCompleted {
+                outcome: medousa_types::TurnCompletionOutcomeV3::Completed,
+                aggregate_text: "done".to_string(),
                 tool_names: vec!["search".to_string()],
+                operator_message: None,
+                debug_message: None,
             },
         )
-        .expect("v2 envelope");
+        .expect("v3 envelope");
         let (event_tx, mut event_rx) = mpsc::channel(1);
 
         let terminal = dispatch_daemon_stream_event(envelope, 7, &event_tx)
@@ -1202,12 +1121,83 @@ mod stream_v2_tests {
         assert!(terminal);
         assert!(matches!(
             event_rx.recv().await,
-            Some(TuiEvent::AgentResponse {
+            Some(TuiEvent::TurnStreamV3 {
                 turn_id: 7,
-                text,
-                terminal: true,
-                ..
-            }) if text == "done"
+                envelope: TurnStreamEnvelopeV3 {
+                    event: TurnStreamEventV3::TurnCompleted { aggregate_text, .. },
+                    ..
+                },
+            }) if aggregate_text == "done"
+        ));
+    }
+
+    #[tokio::test]
+    async fn local_sink_emits_response_tools_response_as_native_v3_facts() {
+        let (event_tx, mut event_rx) = mpsc::channel(16);
+        let sink = TuiStreamSink::new(event_tx, 7);
+
+        sink.content_chunk(7, "Let me check.".into()).await;
+        sink.scratch_reset(7).await;
+        sink.tool_run_started("run-1".into(), "search".into(), "query".into(), vec![], 1)
+            .await;
+        sink.tool_run_finished(
+            "run-1".into(),
+            "search".into(),
+            "failed".into(),
+            "query".into(),
+            Some("offline".into()),
+            Value::Null,
+            Value::Null,
+            None,
+            None,
+            1,
+        )
+        .await;
+        sink.content_chunk(7, "I recovered.".into()).await;
+        sink.agent_response(
+            7,
+            "Let me check.\n\nI recovered.".into(),
+            vec!["search".into()],
+        )
+        .await;
+
+        let mut envelopes = Vec::new();
+        while let Ok(event) = event_rx.try_recv() {
+            let TuiEvent::TurnStreamV3 { turn_id, envelope } = event else {
+                panic!("expected native V3 event");
+            };
+            assert_eq!(turn_id, 7);
+            envelopes.push(envelope);
+        }
+
+        assert_eq!(envelopes.len(), 9);
+        assert_eq!(
+            envelopes.iter().map(|item| item.seq).collect::<Vec<_>>(),
+            (1..=9).collect::<Vec<_>>()
+        );
+        assert!(matches!(
+            &envelopes[0].event,
+            TurnStreamEventV3::AssistantTextStarted { model_round: 1, .. }
+        ));
+        assert!(matches!(
+            &envelopes[2].event,
+            TurnStreamEventV3::AssistantTextCommitted { .. }
+        ));
+        assert!(matches!(
+            &envelopes[3].event,
+            TurnStreamEventV3::ToolStarted { .. }
+        ));
+        assert!(matches!(
+            &envelopes[4].event,
+            TurnStreamEventV3::ToolFinished { status, .. } if status == "failed"
+        ));
+        assert!(matches!(
+            &envelopes[5].event,
+            TurnStreamEventV3::AssistantTextStarted { model_round: 2, .. }
+        ));
+        assert!(matches!(
+            &envelopes[8].event,
+            TurnStreamEventV3::TurnCompleted { .. }
         ));
     }
 }
