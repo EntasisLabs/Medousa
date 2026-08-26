@@ -289,8 +289,6 @@ enum Ev {
     ToolStarted { tool: String, round: usize },
     ToolFinished { tool: String, round: usize },
     Progress(String),
-    PackHold(String),
-    ScratchReset,
     Content(String),
 }
 
@@ -312,8 +310,6 @@ impl CapturingPorts {
                 Ev::ToolStarted { tool, .. } => format!("tool_started:{tool}"),
                 Ev::ToolFinished { tool, .. } => format!("tool_finished:{tool}"),
                 Ev::Progress(_) => "progress".to_string(),
-                Ev::PackHold(_) => "pack_hold".to_string(),
-                Ev::ScratchReset => "scratch_reset".to_string(),
                 Ev::Content(_) => "content".to_string(),
             })
             .collect()
@@ -348,11 +344,6 @@ impl TurnPresentationPort for CapturingPorts {
         Box::pin(async {})
     }
 
-    fn scratch_reset(&self, _stream_turn_id: u64) -> RuntimePortFuture<()> {
-        self.push(Ev::ScratchReset);
-        Box::pin(async {})
-    }
-
     fn turn_progress(
         &self,
         _stream_turn_id: u64,
@@ -360,16 +351,6 @@ impl TurnPresentationPort for CapturingPorts {
         _tool_names: Vec<String>,
     ) -> RuntimePortFuture<()> {
         self.push(Ev::Progress(message));
-        Box::pin(async {})
-    }
-
-    fn pack_hold(
-        &self,
-        _stream_turn_id: u64,
-        fragments: Vec<String>,
-        _tool_names: Vec<String>,
-    ) -> RuntimePortFuture<()> {
-        self.push(Ev::PackHold(fragments.join("\n\n")));
         Box::pin(async {})
     }
 }

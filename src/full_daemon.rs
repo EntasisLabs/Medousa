@@ -74,7 +74,6 @@ pub mod turn_recovery;
 pub mod turn_scope;
 pub mod turn_slice;
 pub mod turn_stream_registry;
-pub mod turn_text_heuristics;
 pub mod turn_worker_notify;
 pub mod typed_tools;
 pub mod workshop_authority;

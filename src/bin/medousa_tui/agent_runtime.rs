@@ -222,33 +222,12 @@ impl AgentStreamSink for TuiStreamSink {
         .await;
     }
 
-    async fn agent_final_pending(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
-        self.agent_turn_progress(turn_id, text, tool_names).await;
-    }
-
     async fn agent_turn_progress(&self, turn_id: u64, message: String, tool_names: Vec<String>) {
         self.publish(
             turn_id,
             TurnStreamEventV3::Progress {
                 message,
                 tool_names,
-            },
-        )
-        .await;
-    }
-
-    async fn agent_pack_hold(
-        &self,
-        turn_id: u64,
-        _fragments: Vec<String>,
-        _tool_names: Vec<String>,
-    ) {
-        self.publish(
-            turn_id,
-            TurnStreamEventV3::Status {
-                phase: "pack_hold".to_string(),
-                operator_message: None,
-                debug_message: Some("held model response awaiting tool resolution".to_string()),
             },
         )
         .await;
@@ -382,7 +361,7 @@ impl AgentStreamSink for TuiStreamSink {
             .await;
     }
 
-    async fn scratch_reset(&self, turn_id: u64) {
+    async fn model_response_completed(&self, turn_id: u64, _model_round: usize) {
         self.commit_active_segment(turn_id, true).await;
     }
 
@@ -1137,7 +1116,7 @@ mod stream_v3_tests {
         let sink = TuiStreamSink::new(event_tx, 7);
 
         sink.content_chunk(7, "Let me check.".into()).await;
-        sink.scratch_reset(7).await;
+        sink.model_response_completed(7, 1).await;
         sink.tool_run_started("run-1".into(), "search".into(), "query".into(), vec![], 1)
             .await;
         sink.tool_run_finished(

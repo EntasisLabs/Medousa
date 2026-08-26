@@ -18,7 +18,7 @@ import {
   operatorStreamStatusLine,
   shouldSuppressStreamContentDelta,
 } from "$lib/utils/chatStreamDisplay";
-import { stageWhisperAfterFinish, statusLineAfterScratchReset } from "$lib/utils/turnInterimDisplay";
+import { stageWhisperAfterFinish } from "$lib/utils/turnInterimDisplay";
 import {
   isBudgetApprovalStreamEvent,
   isBrowserChallengeStreamEvent,
@@ -275,23 +275,6 @@ export function applyStreamEventToMessage(
     };
   }
 
-  if (event.event_type === "assistant_pack_hold") {
-    const held = event.final_text?.trim() || event.message?.trim() || current.content;
-    return {
-      messages: replaceMessage(messages, index, {
-        ...current,
-        content: held || current.content,
-        phase: "pack_hold",
-        streaming: true,
-        statusLine: event.operator_message?.trim() || "Medousa is finishing this thought…",
-        tools: event.tool_names?.length
-          ? [...new Set([...(current.tools ?? []), ...event.tool_names])]
-          : current.tools,
-      }),
-      followUp: "none",
-    };
-  }
-
   if (event.event_type === "turn_checkpoint") {
     const checkpointBody =
       event.final_text?.trim() || event.message?.trim() || current.content;
@@ -310,21 +293,6 @@ export function applyStreamEventToMessage(
     return {
       messages: next,
       followUp: event.terminal ? "checkpoint_terminal" : "none",
-    };
-  }
-
-  if (event.event_type === "scratch_reset") {
-    if (current.phase === "pack_hold") {
-      return { messages, followUp: "none" };
-    }
-    return {
-      messages: replaceMessage(messages, index, {
-        ...current,
-        content: "",
-        phase: "tool_loop",
-        statusLine: statusLineAfterScratchReset(current.content, current.statusLine),
-      }),
-      followUp: "none",
     };
   }
 

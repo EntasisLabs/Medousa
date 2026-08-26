@@ -17,14 +17,11 @@ use crate::schema_api::{
 };
 use crate::turn_control_tools::{
     CognitionTurnBeginWorkTool, CognitionTurnCheckpointTool, CognitionTurnFinishTool,
-    CognitionTurnPrepareFinalTool, CognitionTurnProposeModeTool,
-    CognitionTurnRequestMoreRoundsTool, CognitionTurnUpdateUserTool, TurnBeginWorkInput,
-    TurnCheckpointInput, TurnFinishInput, TurnModeInput, TurnModeScopeInput, TurnPrepareFinalInput,
+    CognitionTurnProposeModeTool, CognitionTurnRequestMoreRoundsTool, CognitionTurnUpdateUserTool,
+    TurnBeginWorkInput, TurnCheckpointInput, TurnFinishInput, TurnModeInput, TurnModeScopeInput,
     TurnProposeModeInput, TurnRequestMoreRoundsInput, TurnUpdateUserInput,
 };
-use crate::typed_tools::{
-    CompatOption, ExternalJson, ToolId, TypedTool, medousa_tool, serialize_output,
-};
+use crate::typed_tools::{ExternalJson, ToolId, TypedTool, medousa_tool, serialize_output};
 
 const TURN_ID: ToolId = ToolId::new(COGNITION_TURN);
 
@@ -41,8 +38,6 @@ pub enum TurnAction {
     RequestInput(TurnRequestInput),
     #[serde(rename = "turn.finish")]
     Finish(TurnFinish),
-    #[serde(rename = "turn.prepare_final")]
-    PrepareFinal(TurnPrepareFinal),
     #[serde(rename = "turn.request_more_rounds")]
     RequestMoreRounds(TurnRequestMoreRounds),
     #[serde(rename = "turn.propose_mode")]
@@ -92,13 +87,6 @@ pub struct TurnFinish {
     /// Fallback final answer when this response has no assistant prose
     #[serde(default)]
     message: Option<String>,
-    /// Optional short note for logs
-    #[serde(default)]
-    reason: Option<String>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-pub struct TurnPrepareFinal {
     /// Optional short note for logs
     #[serde(default)]
     reason: Option<String>,
@@ -237,7 +225,6 @@ async fn dispatch(tool: &CognitionTurnTool, action: TurnAction) -> stasis::prelu
         TurnAction::Checkpoint(params) => params.execute().await,
         TurnAction::RequestInput(params) => params.execute().await,
         TurnAction::Finish(params) => params.execute().await,
-        TurnAction::PrepareFinal(params) => params.execute().await,
         TurnAction::RequestMoreRounds(params) => params.execute().await,
         TurnAction::ProposeMode(params) => params.execute(tool).await,
     }
@@ -305,17 +292,6 @@ impl TurnFinish {
     }
 }
 
-impl TurnPrepareFinal {
-    async fn execute(self) -> stasis::prelude::Result<Value> {
-        let output = CognitionTurnPrepareFinalTool
-            .invoke_typed(TurnPrepareFinalInput {
-                reason: CompatOption::from(self.reason),
-            })
-            .await?;
-        serialize_output(CognitionTurnPrepareFinalTool::tool_id(), output)
-    }
-}
-
 impl TurnRequestMoreRounds {
     async fn execute(self) -> stasis::prelude::Result<Value> {
         let output = CognitionTurnRequestMoreRoundsTool
@@ -378,7 +354,6 @@ mod tests {
             .as_array()
             .expect("action enum");
         assert!(actions.iter().any(|value| value == "turn.request_input"));
-        assert!(!actions.iter().any(|value| value == "turn.prepare_final"));
     }
 
     #[test]

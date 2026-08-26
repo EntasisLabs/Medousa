@@ -64,17 +64,10 @@ pub trait ModelResponseEventPort: Send + Sync {
 /// authoritative when this optional port is absent.
 pub trait TurnPresentationPort: Send + Sync {
     fn notice(&self, message: String) -> RuntimePortFuture<()>;
-    fn scratch_reset(&self, stream_turn_id: u64) -> RuntimePortFuture<()>;
     fn turn_progress(
         &self,
         stream_turn_id: u64,
         message: String,
-        tool_names: Vec<String>,
-    ) -> RuntimePortFuture<()>;
-    fn pack_hold(
-        &self,
-        stream_turn_id: u64,
-        fragments: Vec<String>,
         tool_names: Vec<String>,
     ) -> RuntimePortFuture<()>;
 }
@@ -334,23 +327,10 @@ mod tests {
             Box::pin(async {})
         }
 
-        fn scratch_reset(&self, _stream_turn_id: u64) -> RuntimePortFuture<()> {
-            Box::pin(async {})
-        }
-
         fn turn_progress(
             &self,
             _stream_turn_id: u64,
             _message: String,
-            _tool_names: Vec<String>,
-        ) -> RuntimePortFuture<()> {
-            Box::pin(async {})
-        }
-
-        fn pack_hold(
-            &self,
-            _stream_turn_id: u64,
-            _fragments: Vec<String>,
             _tool_names: Vec<String>,
         ) -> RuntimePortFuture<()> {
             Box::pin(async {})

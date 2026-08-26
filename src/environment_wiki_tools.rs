@@ -1,7 +1,7 @@
 //! `cognition_environment_wiki` — agent-facing canvas/environment SDK docs as STTP nodes.
 //!
 //! Spatio-Temporal Transfer Protocol compresses policy into cognitive latent space —
-//! same representation family as `DEFAULT_SYSTEM_PROMPT`, not markdown tables.
+//! same compact structured representation family as the compiled system policy.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};

@@ -485,6 +485,10 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             .await;
     }
 
+    async fn model_response_completed(&self, _turn_id: u64, _model_round: usize) {
+        self.commit_active_segment(true).await;
+    }
+
     async fn agent_worker_ack(
         &self,
         _turn_id: u64,
@@ -714,19 +718,6 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         }
     }
 
-    async fn agent_final_pending(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
-        let _ = (turn_id, tool_names);
-        if self.emit_cancelled_if_needed().await {
-            return;
-        }
-        self.publish_tracked(TurnStreamEventV3::Status {
-            phase: "wrapping_up".into(),
-            operator_message: Some(text),
-            debug_message: None,
-        })
-        .await;
-    }
-
     async fn agent_turn_progress(&self, _turn_id: u64, message: String, tool_names: Vec<String>) {
         if self.emit_cancelled_if_needed().await {
             return;
@@ -737,44 +728,6 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             tool_names,
         })
         .await;
-    }
-
-    async fn agent_pack_hold(
-        &self,
-        _turn_id: u64,
-        fragments: Vec<String>,
-        _tool_names: Vec<String>,
-    ) {
-        if self.emit_cancelled_if_needed().await {
-            return;
-        }
-
-        let held = fragments
-            .iter()
-            .map(|value| value.trim())
-            .filter(|value| !value.is_empty())
-            .collect::<Vec<_>>()
-            .join("\n\n");
-        let needs_fallback_segment = {
-            let state = self
-                .text
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            state.active.is_none()
-                && !held.is_empty()
-                && state
-                    .committed_markdown
-                    .last()
-                    .is_none_or(|last| last != &held)
-        };
-        if needs_fallback_segment && let Some((started, append)) = self.prepare_content_delta(held)
-        {
-            if let Some(started) = started {
-                self.publish_tracked(started).await;
-            }
-            self.publish_tracked(append).await;
-        }
-        self.commit_active_segment(true).await;
     }
 
     async fn agent_error(&self, _turn_id: u64, message: String) {
@@ -813,10 +766,6 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             debug_message: Some(message),
         })
         .await;
-    }
-
-    async fn scratch_reset(&self, _turn_id: u64) {
-        self.commit_active_segment(true).await;
     }
 
     async fn reset_streamed_markdown(&self) {
@@ -2017,6 +1966,12 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
         self.inner.reasoning_chunk(turn_id, delta).await;
     }
 
+    async fn model_response_completed(&self, turn_id: u64, model_round: usize) {
+        self.inner
+            .model_response_completed(turn_id, model_round)
+            .await;
+    }
+
     async fn agent_worker_ack(
         &self,
         turn_id: u64,
@@ -2053,21 +2008,9 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
             .await;
     }
 
-    async fn agent_final_pending(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
-        self.inner
-            .agent_final_pending(turn_id, text, tool_names)
-            .await;
-    }
-
     async fn agent_turn_progress(&self, turn_id: u64, message: String, tool_names: Vec<String>) {
         self.inner
             .agent_turn_progress(turn_id, message, tool_names)
-            .await;
-    }
-
-    async fn agent_pack_hold(&self, turn_id: u64, fragments: Vec<String>, tool_names: Vec<String>) {
-        self.inner
-            .agent_pack_hold(turn_id, fragments, tool_names)
             .await;
     }
 
@@ -2158,10 +2101,6 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
             .await;
     }
 
-    async fn scratch_reset(&self, turn_id: u64) {
-        self.inner.scratch_reset(turn_id).await;
-    }
-
     async fn reset_streamed_markdown(&self) {
         self.inner.reset_streamed_markdown().await;
     }
@@ -2214,15 +2153,14 @@ mod chronological_sink_tests {
     }
 
     #[tokio::test]
-    async fn pack_hold_becomes_a_committed_segment_not_a_hidden_event() {
+    async fn completed_model_responses_commit_chronological_segments() {
         let output = Arc::new(RecordingOutput::default());
         let sink = sink(Arc::clone(&output));
 
         sink.content_chunk(1, "First response.".into()).await;
-        sink.agent_pack_hold(1, vec!["First response.".into()], Vec::new())
-            .await;
-        sink.agent_pack_hold(1, vec!["Second response.".into()], Vec::new())
-            .await;
+        sink.model_response_completed(1, 1).await;
+        sink.content_chunk(1, "Second response.".into()).await;
+        sink.model_response_completed(1, 2).await;
         let body = sink
             .terminal_body("First response.\n\nSecond response.")
             .await;

@@ -343,7 +343,6 @@ fn validate_strict_policy(rendered: &str) -> Result<(), SttpPolicyCompileError> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent_runtime::system_prompt::DEFAULT_SYSTEM_PROMPT;
 
     fn selections() -> [SttpPolicySelection; 6] {
         [
@@ -363,10 +362,7 @@ mod tests {
                 .unwrap_or_else(|error| panic!("{selection:?}: {error}"));
             assert!(compiled.rendered.contains("schema_version: \"sttp-1.2\""));
             assert!(!compiled.rendered.contains("⏣0"));
-            assert!(
-                compiled.rendered.chars().count() < DEFAULT_SYSTEM_PROMPT.chars().count(),
-                "{selection:?} shadow policy should remain smaller than legacy General"
-            );
+            assert!(compiled.rendered.chars().count() < 12_000);
         }
     }
 

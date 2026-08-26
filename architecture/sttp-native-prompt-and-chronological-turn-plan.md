@@ -1,6 +1,6 @@
 # STTP-native prompt and chronological turn runtime
 
-> **Status:** Proposed (product and architecture decisions locked 2026-08-25)
+> **Status:** Implemented (Phases 1–6 shipped 2026-08-25)
 >
 > **Scope:** System-prompt composition, agent modes, foreground tool-loop
 > completion, streamed turn events, durable turn parts, replay, Medousa, and TUI
@@ -13,8 +13,8 @@
 > [Worker continuity](worker-continuity-plan.md)
 >
 > **Supersedes as a target design:** PackHold and prose-completion guidance in
-> [Turn loop — prose terminates](turn-prose-terminates-plan.md). The existing
-> documents remain descriptions of shipped behavior until this plan lands.
+> [Turn loop — prose terminates](archive/turn-prose-terminates-plan.md), now
+> retained only as implementation history.
 
 ## Decision
 

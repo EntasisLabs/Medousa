@@ -30,10 +30,6 @@ pub fn is_turn_control_call(tool_name: &str) -> bool {
     tool_name.trim() == COGNITION_TURN
 }
 
-pub fn is_prepare_final_tool_name(tool_name: &str, input: &Value) -> bool {
-    turn_action(tool_name, input) == Some("turn.prepare_final")
-}
-
 pub fn is_finish_turn_tool_name(tool_name: &str, input: &Value) -> bool {
     turn_action(tool_name, input) == Some("turn.finish")
 }

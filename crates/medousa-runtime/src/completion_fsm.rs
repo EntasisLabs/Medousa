@@ -5,10 +5,6 @@
 //! on prose is a chronological response segment, not an implicit terminal.
 //! ActiveWork ends only through a typed terminal outcome or a runtime fuse.
 
-/// Retained for checkpoint compatibility. ActiveWork now uses the normal round
-/// fuse rather than a special empty-response allowance.
-pub const HOST_EMPTY_AFTER_TOOLS_CONTINUE_CAP: usize = 1;
-
 /// Delivery profiles remain part of the public runtime contract, but they no
 /// longer change the Direct/ActiveWork completion physics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,12 +12,6 @@ pub enum TurnCompletionProfile {
     HostScheduler,
     ForegroundPrincipal,
     WorkerSynthesis,
-}
-
-impl TurnCompletionProfile {
-    pub fn uses_host_scheduler_rules(self) -> bool {
-        matches!(self, Self::HostScheduler)
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,37 +42,20 @@ pub fn continue_control_message(reason: ContinueReason, _missing_tools: &[String
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NoToolDebtRoundContext {
     pub draft_text: String,
-    pub pending_final_answer: bool,
-    pub rounds_executed: usize,
-    pub max_tool_rounds: usize,
-    pub interim_continues_used: usize,
-    pub interim_continue_cap: usize,
     pub completion_profile: TurnCompletionProfile,
 }
 
 #[derive(Debug, Clone)]
 pub struct AfterToolsRoundContext {
     pub draft_text: String,
-    pub pending_final_answer: bool,
     pub rounds_executed: usize,
     pub max_tool_rounds: usize,
-    pub workshop_lane: bool,
-    pub interim_continues_used: usize,
-    pub interim_continue_cap: usize,
     pub completion_profile: TurnCompletionProfile,
-    pub empty_after_tools_continues_used: usize,
 }
 
 /// Direct prose is the answer. Its wording never changes this decision.
 pub fn decide_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> TurnRoundAction {
-    let _compat = (
-        ctx.pending_final_answer,
-        ctx.rounds_executed,
-        ctx.max_tool_rounds,
-        ctx.interim_continues_used,
-        ctx.interim_continue_cap,
-        ctx.completion_profile,
-    );
+    let _profile = ctx.completion_profile;
     TurnRoundAction::EndTurn {
         termination_reason: "direct_prose",
     }
@@ -91,14 +64,7 @@ pub fn decide_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> TurnRound
 /// Once any nonterminal action has occurred, prose is committed but cannot
 /// implicitly close the turn.
 pub fn decide_after_tools_text_round(ctx: &AfterToolsRoundContext) -> TurnRoundAction {
-    let _compat = (
-        ctx.pending_final_answer,
-        ctx.workshop_lane,
-        ctx.interim_continues_used,
-        ctx.interim_continue_cap,
-        ctx.completion_profile,
-        ctx.empty_after_tools_continues_used,
-    );
+    let _profile = ctx.completion_profile;
     if ctx.rounds_executed >= ctx.max_tool_rounds.max(1) {
         return TurnRoundAction::EndTurn {
             termination_reason: "max_rounds_fuse",
@@ -123,11 +89,6 @@ mod event_driven_tests {
     fn direct(draft: &str, profile: TurnCompletionProfile) -> NoToolDebtRoundContext {
         NoToolDebtRoundContext {
             draft_text: draft.to_string(),
-            pending_final_answer: false,
-            rounds_executed: 1,
-            max_tool_rounds: 10,
-            interim_continues_used: 0,
-            interim_continue_cap: 0,
             completion_profile: profile,
         }
     }
@@ -135,14 +96,9 @@ mod event_driven_tests {
     fn active(draft: &str, round: usize, max: usize) -> AfterToolsRoundContext {
         AfterToolsRoundContext {
             draft_text: draft.to_string(),
-            pending_final_answer: false,
             rounds_executed: round,
             max_tool_rounds: max,
-            workshop_lane: false,
-            interim_continues_used: 0,
-            interim_continue_cap: 0,
             completion_profile: TurnCompletionProfile::HostScheduler,
-            empty_after_tools_continues_used: 0,
         }
     }
 

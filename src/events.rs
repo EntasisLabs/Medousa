@@ -86,12 +86,6 @@ pub enum TuiEvent {
         text: String,
         tool_names: Vec<String>,
     },
-    /// Non-terminal: `prepare_final` fired — still composing the user-facing answer.
-    AgentFinalPending {
-        turn_id: u64,
-        text: String,
-        tool_names: Vec<String>,
-    },
     /// Non-terminal: `begin_work` progress line — status only.
     AgentTurnProgress {
         turn_id: u64,
@@ -100,14 +94,6 @@ pub enum TuiEvent {
     },
     /// Partial assistant output chunk streamed from the model.
     AgentChunk { turn_id: u64, delta: String },
-    /// Host PackHold: held assistant draft is still visible; await tools / finish / short ack.
-    AgentPackHold {
-        turn_id: u64,
-        held: String,
-        tool_names: Vec<String>,
-    },
-    /// Replace in-flight assistant scratch text (new model round / gatekeeper continue).
-    AgentScratchReset { turn_id: u64 },
     /// Partial model reasoning chunk streamed from the model.
     AgentReasoningChunk { turn_id: u64, delta: String },
     /// The tool loop failed with an error.

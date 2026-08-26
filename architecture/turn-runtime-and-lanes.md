@@ -114,43 +114,48 @@ Host turn ends with `user_ack` (`worker_spawned`); composer unlocks. Multiple sp
 
 ## Turn completion FSM
 
-Implemented in `crates/medousa-runtime/src/completion_fsm.rs`. Replaces legacy gatekeeper heuristics on the hot path.
+Implemented in `crates/medousa-runtime/src/completion_fsm.rs`. Completion is
+structural; the runtime never classifies prose wording.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Running: user message
-    Running --> ToolRound: model calls tools
-    ToolRound --> Running: tool results
-    Running --> End: cognition_turn_finish
-    Running --> End: FSM EndTurn
-    Running --> Delegated: cognition_spawn_turn_worker
-    Delegated --> End: worker_ack
-    Running --> Continue: FSM ContinueLoop / PackHold
-    Continue --> Running: next round or tool
-    Running --> End: max_rounds fuse
+    [*] --> Direct: user message
+    Direct --> End: complete response with prose and no action
+    Direct --> ActiveWork: first nonterminal action
+    ActiveWork --> ActiveWork: response segment committed
+    ActiveWork --> ActiveWork: tool batch completed
+    ActiveWork --> End: turn.finish / request_input / checkpoint
+    ActiveWork --> End: runtime fuse
 ```
 
-**Rules (principal PackHold, shipped 2026-08):**
+The model may answer directly and end its turn, or enter `ActiveWork` by taking
+an action. Once active, every complete response is delivered and durably
+committed where it occurred; naked prose does not silently close the loop.
+Tools follow that response in observation order. A typed terminal outcome ends
+the work, and its optional message is only a fallback when the same response
+contained no prose.
 
-General (`HostScheduler`) and Coder (`ForegroundPrincipal`) use the same event rules before and after tools. Wording is never classified. Workers (`WorkerSynthesis`) keep first-prose / explicit-finish.
+Canonical order is therefore:
 
-| Situation | Principal (General / Coder) | Worker synthesis |
-|-----------|-----------------------------|------------------|
-| Non-tool prose (no PackHold yet) | **ContinueLoop** (`PackHold`) | **EndTurn** (`no_tools_prose` before tools; `prose_requires_finish` after tools) |
-| Second consecutive non-tool reply | **EndTurn** (`content_pack_merged`) — both replies kept | n/a (already ended) |
-| Tool call | Continues work and **resets** the held fragment | Continues work |
-| `cognition_turn_finish` | **EndTurn** (immediate; appends onto one held fragment) | **EndTurn** |
-| `cognition_turn_checkpoint` | Mid-task handoff (not a terminal commit) | Same |
-| Empty after tools | Host cap / Coder continue + stuck fuse | Continue + stuck fuse |
-| Completely empty first round, no tools | Empty-response error | Empty-response error |
-| `cognition_spawn_turn_worker` | **EndTurn** (`worker_spawned` + `user_ack`); later host-resume | n/a |
-| Max tool rounds | **EndTurn** (`max_rounds_fuse`) | **EndTurn** (`max_rounds_fuse`) |
+```text
+response A
+tools 1/2/3
+response B
+tools 4/5
+response C + turn.finish
+```
 
-**Progress:** Use `cognition_turn_update_user` in a tool round for visible interim status; announcements no longer end the turn. Between tool rounds, streamed draft is archived to `TurnPart::Progress` before the next round.
+`ModelResponseCompleted` is the response fence. It commits the active text
+segment before tool receipts execute. `PackHold`, destructive `scratch_reset`,
+`prepare_final`, held-fragment merging, and prose/gatekeeper heuristics are not
+part of the shipped runtime.
 
-**Single writer:** Terminal chat body is the merged pack (two consecutive non-tool replies) or `cognition_turn_finish`. Stream deltas alone are not final.
+V3 records raw chronological facts with stable segment and run identifiers.
+Reconnect returns facts after the cursor; API consumers may fork, aggregate,
+or present them however they choose. V2 remains a bounded compatibility
+projection for supported clients and is never the semantic source of V3.
 
-History: [archive/turn-loop-single-writer-plan.md](archive/turn-loop-single-writer-plan.md), [archive/turn-state-machine-plan.md](archive/turn-state-machine-plan.md).
+History: [archive/turn-loop-single-writer-plan.md](archive/turn-loop-single-writer-plan.md), [archive/turn-state-machine-plan.md](archive/turn-state-machine-plan.md), [archive/turn-prose-terminates-plan.md](archive/turn-prose-terminates-plan.md).
 
 ---
 
@@ -221,14 +226,19 @@ YAML files declare **specialties** — same pack can drive host turns, worker sp
 | CLI | `medousa manuscript-list`, `validate`, `install` |
 | Home | Workshop → Specialists; Skills panel; Cron panel |
 
-**Merge at prompt prep:**
+**Policy and context composition:**
 
 ```
-DEFAULT_SYSTEM_PROMPT
-→ manuscript STTP appendix + voice
-→ [MEDOUSA_RELATIONAL_MEMORY] (ranked + pins)
-→ ambient / recall / scratch
+compiled STTP core
+→ exactly one mode slice
+→ exactly one actor slice
+→ turn protocol + presentation slices
+→ plain HUD facts and authorized context pointers
 ```
+
+The Locus compiler validates the policy as one strict typed document. Ambient
+context, recall, manuscript facts, capability flags, and scratch remain outside
+the policy document so retrieved evidence cannot become authority.
 
 **Worker spawn resolution order:** spawn args → manuscript `spec.worker.*` → intent defaults → `StageRoutingMatrix`.
 
@@ -244,12 +254,14 @@ Tiered pools — do not mix user transcript, host tool transcript, and worker ha
 
 | Lane | Holds | Persisted to session? |
 |------|-------|------------------------|
-| **User lane** | Final assistant answers, user messages | Yes |
+| **User lane** | User messages and every committed assistant response segment | Yes |
 | **Host tool lane** | Tool call/result pairs, scratch, turn control | No (inner loop) |
-| **Progress slices** | Between-round prose archived as `TurnPart::Progress` in persisted `parts` | Yes (timeline metadata; surfaced as status line in Home) |
+| **Progress slices** | Explicit `turn.update_user` / `turn.begin_work` status | Yes (typed status metadata) |
 | **Worker lane** | Handoff capsule + worker tool transcript | No |
 
-Implemented: scratchpad + host user/tool split (Phases 1–2). Formal event-loop runtime (Ph 3+) still planned — [context-lanes-and-scratchpad-plan.md](context-lanes-and-scratchpad-plan.md).
+Assistant text and tool receipts persist as an append-only ordered `TurnPart`
+timeline. Tool finishes update the run identified by `run_id`; finalization does
+not regroup parts by variant.
 
 ### Policy lanes (where tools may run)
 

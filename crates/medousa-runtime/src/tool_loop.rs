@@ -5,7 +5,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use genai::chat::{ChatMessage, ChatRequest, ChatRole, ContentPart, MessageContent, ToolResponse};
-use medousa_engine::{TurnScratchPhase, TurnScratchpad};
+use medousa_engine::TurnScratchpad;
 use serde_json::Value;
 use tokio::sync::mpsc;
 
@@ -54,9 +54,8 @@ use crate::turn_context::{
 use crate::turn_control::{
     ABSOLUTE_MAX_TOOL_ROUNDS, COGNITION_TURN, COGNITION_WORKSHOP_MUTATE,
     begin_work_note_from_invocations, checkpoint_turn_from_invocations,
-    finish_turn_from_invocations, is_begin_work_tool_name, is_prepare_final_tool_name,
-    is_terminal_turn_tool_name, is_turn_control_call, is_workshop_spawn_call,
-    request_input_from_invocations, request_more_rounds_from_invocations,
+    finish_turn_from_invocations, is_begin_work_tool_name, is_terminal_turn_tool_name,
+    is_workshop_spawn_call, request_input_from_invocations, request_more_rounds_from_invocations,
     terminal_text_for_fsm_end, turn_progress_message_from_invocations,
     worker_spawn_from_invocations, workshop_entered_from_invocations,
 };
@@ -294,16 +293,11 @@ impl MedousaToolLoopPipeline {
         {
             effective_max_tool_rounds = resume.counters.max_tool_rounds;
         }
-        let mut pending_final_answer = resume_state
-            .as_ref()
-            .filter(|resume| resume.restore_turn_budget)
-            .is_some_and(|resume| resume.counters.pending_final_answer);
         let mut tool_batches_completed = resume_state
             .as_ref()
             .filter(|resume| resume.restore_turn_budget)
             .map(|resume| resume.counters.tool_batches_completed)
             .unwrap_or(0);
-        let streaming_enabled = chunk_tx.is_some();
         let max_text_only_stuck = completion_gate
             .as_ref()
             .map(|gate| gate.max_text_only_stuck_continues)
@@ -328,19 +322,6 @@ impl MedousaToolLoopPipeline {
             .as_ref()
             .map(|gate| gate.completion_profile)
             .unwrap_or(TurnCompletionProfile::ForegroundPrincipal);
-        // Retained in checkpoints for wire compatibility; semantic prose
-        // auto-continues are no longer part of completion policy.
-        let interim_continue_cap = 0;
-        let interim_continues_used = resume_state
-            .as_ref()
-            .filter(|resume| resume.restore_turn_budget)
-            .map(|resume| resume.counters.interim_continues_used)
-            .unwrap_or(0);
-        let mut empty_after_tools_continues_used = resume_state
-            .as_ref()
-            .filter(|resume| resume.restore_turn_budget)
-            .map(|resume| resume.counters.empty_after_tools_continues_used)
-            .unwrap_or(0);
         let perception_evidence = completion_gate
             .as_ref()
             .and_then(|gate| gate.runtime_ports.perception_evidence());
@@ -361,9 +342,6 @@ impl MedousaToolLoopPipeline {
                     rounds_executed,
                     effective_max_tool_rounds,
                     tool_batches_completed,
-                    pending_final_answer,
-                    interim_continues_used,
-                    empty_after_tools_continues_used,
                     &discipline,
                     &loop_awareness,
                     $tools,
@@ -429,11 +407,6 @@ impl MedousaToolLoopPipeline {
                             );
                         }
                     }
-                }
-                if rounds_executed > 1
-                    && let Some(gate) = completion_gate.as_ref()
-                {
-                    gate.reset_scratch(streaming_enabled).await;
                 }
                 let tool_rounds_remaining =
                     effective_max_tool_rounds.saturating_sub(rounds_executed);
@@ -553,31 +526,17 @@ impl MedousaToolLoopPipeline {
                     if !invocations.is_empty() || maybe_text.is_some() {
                         let text = maybe_text.unwrap_or_default();
 
-                        let workshop_lane = completion_gate
-                            .as_ref()
-                            .map(|gate| gate.skip_avec_ritual_check)
-                            .unwrap_or(false);
                         let action = if invocations.is_empty() {
                             decide_no_tool_debt_text_round(&NoToolDebtRoundContext {
                                 draft_text: text.clone(),
-                                pending_final_answer,
-                                rounds_executed,
-                                max_tool_rounds: effective_max_tool_rounds,
-                                interim_continues_used,
-                                interim_continue_cap,
                                 completion_profile,
                             })
                         } else {
                             decide_after_tools_text_round(&AfterToolsRoundContext {
                                 draft_text: text.clone(),
-                                pending_final_answer,
                                 rounds_executed,
                                 max_tool_rounds: effective_max_tool_rounds,
-                                workshop_lane,
-                                interim_continues_used,
-                                interim_continue_cap,
                                 completion_profile,
-                                empty_after_tools_continues_used,
                             })
                         };
 
@@ -628,12 +587,6 @@ impl MedousaToolLoopPipeline {
                                 control_message,
                                 missing_tools,
                             } => {
-                                if completion_profile.uses_host_scheduler_rules()
-                                    && reason == ContinueReason::EmptyAfterTools
-                                    && !invocations.is_empty()
-                                {
-                                    empty_after_tools_continues_used += 1;
-                                }
                                 if let Some(response) = apply_fsm_continue_loop(
                                     &text,
                                     reason,
@@ -685,14 +638,6 @@ impl MedousaToolLoopPipeline {
                     .count();
                 let mixed_terminal_batch =
                     terminal_calls_in_batch > 0 && terminal_calls_in_batch < tool_calls.len();
-                if pending_final_answer
-                    && tool_calls
-                        .iter()
-                        .any(|call| !is_turn_control_call(&call.fn_name))
-                {
-                    pending_final_answer = false;
-                }
-
                 turn_ctx
                     .tool_lane
                     .messages
@@ -711,7 +656,6 @@ impl MedousaToolLoopPipeline {
                 let model_result_budget =
                     perception_governor.result_budget_for_batch(tool_calls.len());
 
-                let mut prepare_final_in_batch = false;
                 let round_tool_names: Vec<String> =
                     tool_calls.iter().map(|call| call.fn_name.clone()).collect();
                 let round_provider_call_ids: Vec<String> =
@@ -784,9 +728,6 @@ impl MedousaToolLoopPipeline {
                                 tool_output_text,
                             )));
                         completed_provider_call_ids.insert(call.call_id.clone());
-                        if is_prepare_final_tool_name(&call.fn_name, &call.fn_arguments) {
-                            prepare_final_in_batch = true;
-                        }
                         invocations.push(ToolInvocation {
                             tool_name: call.fn_name.clone(),
                             tool_input: call.fn_arguments.clone(),
@@ -816,10 +757,6 @@ impl MedousaToolLoopPipeline {
                         .await
                         .map_err(|error| turn_boundary_failure("tool invocation", error))?;
                         let tool_output = tool_output_from_invoke(output);
-
-                        if is_prepare_final_tool_name(&call.fn_name, &call.fn_arguments) {
-                            prepare_final_in_batch = true;
-                        }
 
                         let tool_output_text = perception_governor
                             .observe_for_call(
@@ -928,27 +865,6 @@ impl MedousaToolLoopPipeline {
                 }
                 if let Some(note) = begin_work_note_from_invocations(round_invocations) {
                     turn_ctx.scratchpad.push_working_note(note);
-                }
-
-                if prepare_final_in_batch {
-                    let workshop_lane = completion_gate
-                        .as_ref()
-                        .map(|gate| gate.skip_avec_ritual_check)
-                        .unwrap_or(false);
-                    if workshop_lane {
-                        pending_final_answer = true;
-                        turn_ctx.scratchpad.phase = TurnScratchPhase::Finalize;
-                    } else if let Some(gate) = completion_gate.as_ref()
-                        && let Some(presentation) = gate.runtime_ports.turn_presentation()
-                    {
-                        presentation
-                            .turn_progress(
-                                gate.stream_turn_id,
-                                "Wrapping up your answer…".to_string(),
-                                round_tool_names.clone(),
-                            )
-                            .await;
-                    }
                 }
 
                 discipline.on_tool_round();
@@ -1638,9 +1554,6 @@ fn persist_loop_checkpoint(
     rounds_executed: usize,
     max_tool_rounds: usize,
     tool_batches_completed: usize,
-    pending_final_answer: bool,
-    interim_continues_used: usize,
-    empty_after_tools_continues_used: usize,
     discipline: &TurnLoopDiscipline,
     awareness: &TurnLoopAwareness,
     tool_names: &[String],
@@ -1667,13 +1580,10 @@ fn persist_loop_checkpoint(
             model_rounds_executed: rounds_executed,
             max_tool_rounds,
             tool_batches_completed,
-            interim_continues_used,
-            empty_after_tools_continues_used,
             text_only_continues_without_new_tools,
             invocations_at_last_text_continue,
             user_responses_sent,
             last_response_preview,
-            pending_final_answer,
             retry_count,
             orchestration,
         },
@@ -1683,9 +1593,6 @@ fn persist_loop_checkpoint(
             .iter()
             .map(CheckpointToolInvocation::from_runtime)
             .collect(),
-        // V2 checkpoints retain the field, but chronological turns never hold
-        // or merge assistant prose.
-        pack_hold_fragments: Vec::new(),
         scratch: turn_ctx.scratchpad.clone(),
         outstanding_boundary,
         tool_names: tool_names.to_vec(),
@@ -2029,14 +1936,9 @@ mod tests {
                           once the full calibration summary is ready for you to read.";
         let action = decide_after_tools_text_round(&AfterToolsRoundContext {
             draft_text: preamble.to_string(),
-            pending_final_answer: false,
             rounds_executed: 3,
             max_tool_rounds: 10,
-            workshop_lane: false,
-            interim_continues_used: 0,
-            interim_continue_cap: 2,
             completion_profile: TurnCompletionProfile::ForegroundPrincipal,
-            empty_after_tools_continues_used: 0,
         });
         assert!(matches!(
             action,
@@ -2103,11 +2005,6 @@ mod tests {
         };
         let action = decide_no_tool_debt_text_round(&NoToolDebtRoundContext {
             draft_text: "Let me check.".to_string(),
-            pending_final_answer: false,
-            rounds_executed: 10,
-            max_tool_rounds: 10,
-            interim_continues_used: 0,
-            interim_continue_cap: 2,
             completion_profile: TurnCompletionProfile::ForegroundPrincipal,
         });
         assert!(matches!(

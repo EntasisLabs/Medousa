@@ -1,7 +1,8 @@
 # Turn loop — prose terminates
 
-**Status:** Phase 1–5 shipped (2026-06-25)  
-**Related:** [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [archive/turn-loop-single-writer-plan.md](archive/turn-loop-single-writer-plan.md), [archive/tool-loop-interim-text-fix.md](archive/tool-loop-interim-text-fix.md)
+**Status:** Superseded and archived (2026-08-25). The chronological ActiveWork runtime replaced this design.
+**Canonical behavior:** [turn-runtime-and-lanes.md](../turn-runtime-and-lanes.md)
+**Related history:** [turn-loop-single-writer-plan.md](turn-loop-single-writer-plan.md), [tool-loop-interim-text-fix.md](tool-loop-interim-text-fix.md)
 
 ---
 

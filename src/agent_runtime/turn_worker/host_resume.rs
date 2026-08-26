@@ -360,6 +360,12 @@ impl AgentStreamSink for HostResumeSink {
         self.inner.reasoning_chunk(turn_id, delta).await;
     }
 
+    async fn model_response_completed(&self, turn_id: u64, model_round: usize) {
+        self.inner
+            .model_response_completed(turn_id, model_round)
+            .await;
+    }
+
     async fn agent_response(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
         self.capture_delivery(&text);
         self.inner
@@ -386,21 +392,9 @@ impl AgentStreamSink for HostResumeSink {
         .await;
     }
 
-    async fn agent_final_pending(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
-        self.inner
-            .agent_final_pending(turn_id, text, tool_names)
-            .await;
-    }
-
     async fn agent_turn_progress(&self, turn_id: u64, message: String, tool_names: Vec<String>) {
         self.inner
             .agent_turn_progress(turn_id, message, tool_names)
-            .await;
-    }
-
-    async fn agent_pack_hold(&self, turn_id: u64, fragments: Vec<String>, tool_names: Vec<String>) {
-        self.inner
-            .agent_pack_hold(turn_id, fragments, tool_names)
             .await;
     }
 
@@ -526,10 +520,6 @@ impl AgentStreamSink for HostResumeSink {
 
     async fn reset_streamed_markdown(&self) {
         self.inner.reset_streamed_markdown().await;
-    }
-
-    async fn scratch_reset(&self, turn_id: u64) {
-        self.inner.scratch_reset(turn_id).await;
     }
 
     async fn stage_persist_scratch(&self, scratch: Value) {

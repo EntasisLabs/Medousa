@@ -165,7 +165,6 @@ mod tests {
         ] {
             assert!(tool_allowed(tool, &host), "host bus missing {tool}");
         }
-        assert!(!tool_allowed("cognition_turn_prepare_final", &host));
         assert!(!tool_allowed("cognition_grapheme_run", &host));
         assert!(tool_allowed("cognition_capability", &host));
         assert!(tool_allowed("cognition_identity_query", &host));

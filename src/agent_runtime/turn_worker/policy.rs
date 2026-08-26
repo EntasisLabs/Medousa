@@ -335,7 +335,6 @@ mod tests {
         assert!(!names.contains("cognition_grapheme_run"));
         assert!(!names.contains("cognition_capability_invoke"));
         assert!(!names.contains("cognition_mcp_invoke"));
-        assert!(!names.contains("cognition_turn_prepare_final"));
         assert!(names.contains("cognition_turn"));
         assert!(names.contains("cognition_tools_discover"));
         assert!(names.contains("cognition_web_search"));

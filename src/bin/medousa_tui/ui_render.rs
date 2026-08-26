@@ -1856,7 +1856,6 @@ fn build_conversation_text(
                     "needs_input" => ("asking", Color::Cyan),
                     "final_pending" => ("wrapping up", Color::Magenta),
                     "tool_loop" => ("running tools", Color::Cyan),
-                    "pack_hold" => ("held", Color::DarkGray),
                     _ => (answer_state, Color::Gray),
                 };
                 lines.push(Line::from(vec![

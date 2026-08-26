@@ -48,10 +48,10 @@ pub mod host_context;
 pub mod modes;
 pub mod perception_governor;
 pub mod presentation;
-pub(crate) mod prompt_policy;
-pub mod prompt_prep;
 #[cfg(test)]
 mod prompt_footprint_baseline;
+pub(crate) mod prompt_policy;
+pub mod prompt_prep;
 pub mod runtime;
 pub mod settings;
 pub mod sttp;
@@ -135,17 +135,14 @@ pub use runtime::{
 pub use settings::{default_daemon_runtime_settings, runtime_settings_for_interactive_turn};
 pub use stream_sink::{AgentStreamSink, SharedAgentStreamSink};
 pub use sttp::{SttpValidationError, validate_canonical_sttp_node};
-pub use system_prompt::{DEFAULT_SYSTEM_PROMPT, LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT};
+pub use system_prompt::lightweight_channel_system_prompt;
 pub use turn_budget::{
     TurnBudget, TurnOrchestrationState, emit_budget_deny, emit_orchestration_summary,
     try_consume_classifier_budget, try_consume_continuation_budget, try_consume_gatekeeper_budget,
     try_consume_prompt_only_budget, try_consume_retry_budget, try_consume_tool_loop_budget,
     turn_budget_for_lane,
 };
-pub use turn_completion::{
-    ToolLoopCompletionGate, TurnCompletionDecision, build_turn_completion_docket,
-    resolve_turn_completion,
-};
+pub use turn_completion::ToolLoopCompletionGate;
 pub use turn_context::{
     HostTurnContext, SCRATCH_PREFIX, ToolLaneState, ToolRoundContextProvider, TurnScratchPhase,
     TurnScratchpad, WORKER_HANDOFF_PREFIX, WorkerHandoffCapsule, publish_host_handoff_snapshot,

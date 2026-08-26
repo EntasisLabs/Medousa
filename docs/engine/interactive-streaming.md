@@ -110,6 +110,10 @@ Each v2 SSE message uses `event: turn_stream_v2`; its `data` is a
 typed event variant instead of a separate boolean. Live delivery and
 `?since=` replay use the same sequenced journal projection.
 
+V2 is a supported compatibility projection during the client migration
+window. New runtime turns do not author PackHold or destructive ScratchReset
+semantics; those variants remain decodable only for older streams and history.
+
 Types: `medousa_types::turn_stream::{TurnStreamEnvelopeV3, TurnStreamEventV3,
 TurnStreamEnvelopeV2, TurnStreamEventV2}`
 

@@ -15,8 +15,6 @@ use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 /// Canonical registry name (snake_case). Inner tools stay unregistered; the
 /// public wire is `cognition_turn` + `action`. These names remain termination
 /// reasons and inner ToolIds.
-pub const COGNITION_TURN_PREPARE_FINAL: &str = "cognition_turn_prepare_final";
-
 /// Hard-stop: deliver final user-facing text in the tool call and end the loop immediately.
 pub const COGNITION_TURN_FINISH: &str = "cognition_turn_finish";
 
@@ -37,7 +35,6 @@ pub const COGNITION_TURN_PROPOSE_MODE: &str = "cognition_turn_propose_mode";
 const COGNITION_TURN_UPDATE_USER_ID: ToolId = ToolId::new(COGNITION_TURN_UPDATE_USER);
 const COGNITION_TURN_BEGIN_WORK_ID: ToolId = ToolId::new(COGNITION_TURN_BEGIN_WORK);
 const COGNITION_TURN_PROPOSE_MODE_ID: ToolId = ToolId::new(COGNITION_TURN_PROPOSE_MODE);
-const COGNITION_TURN_PREPARE_FINAL_ID: ToolId = ToolId::new(COGNITION_TURN_PREPARE_FINAL);
 const COGNITION_TURN_FINISH_ID: ToolId = ToolId::new(COGNITION_TURN_FINISH);
 const COGNITION_TURN_CHECKPOINT_ID: ToolId = ToolId::new(COGNITION_TURN_CHECKPOINT);
 const COGNITION_TURN_REQUEST_MORE_ROUNDS_ID: ToolId =
@@ -47,11 +44,10 @@ pub use medousa_runtime::turn_control::{
     RequestMoreRoundsPayload, begin_work_message_from_invocations,
     begin_work_note_from_invocations, checkpoint_turn_from_invocations,
     finish_turn_from_invocations, is_begin_work_tool_name, is_checkpoint_turn_tool_name,
-    is_finish_turn_tool_name, is_prepare_final_tool_name, is_propose_mode_tool_name,
-    is_request_more_rounds_tool_name, is_turn_control_call, is_update_user_tool_name,
-    request_more_rounds_from_invocations, terminal_text_for_fsm_end,
-    turn_progress_message_from_invocations, update_user_message_from_invocations,
-    workshop_entered_from_invocations,
+    is_finish_turn_tool_name, is_propose_mode_tool_name, is_request_more_rounds_tool_name,
+    is_turn_control_call, is_update_user_tool_name, request_more_rounds_from_invocations,
+    terminal_text_for_fsm_end, turn_progress_message_from_invocations,
+    update_user_message_from_invocations, workshop_entered_from_invocations,
 };
 
 fn optional_trimmed(value: Option<String>) -> Option<TrimmedText> {
@@ -108,19 +104,6 @@ impl From<TurnProposeModeInput> for TurnProposeModeCommand {
             scope: input.scope.into(),
             task_id: optional_trimmed(input.task_id),
             reason: TrimmedText::new(input.reason).ok(),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct TurnPrepareFinalCommand {
-    reason: Option<TrimmedText>,
-}
-
-impl From<TurnPrepareFinalInput> for TurnPrepareFinalCommand {
-    fn from(input: TurnPrepareFinalInput) -> Self {
-        Self {
-            reason: optional_trimmed(input.reason.into_option()),
         }
     }
 }
@@ -444,47 +427,6 @@ impl CognitionTurnProposeModeTool {
             ok: true,
             mode_proposal: proposal,
             message: message.to_string(),
-        })
-    }
-}
-
-/// Signal that the **next** assistant message (text-only) should be the user-facing final answer.
-pub struct CognitionTurnPrepareFinalTool;
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct TurnPrepareFinalInput {
-    /// Optional short note for logs (not shown to the user)
-    #[serde(default)]
-    #[schemars(
-        with = "String",
-        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
-    )]
-    pub(crate) reason: CompatOption<String>,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct TurnPrepareFinalOutput {
-    ok: bool,
-    prepare_final: bool,
-    deprecated: bool,
-    message: String,
-    reason: Option<String>,
-}
-
-#[medousa_tool(id = COGNITION_TURN_PREPARE_FINAL_ID)]
-impl CognitionTurnPrepareFinalTool {
-    /// Deprecated — prefer cognition_turn_finish with the complete answer. Workshop workers may still call this; host turns should use cognition_turn_update_user for quick status, cognition_turn_begin_work before heavy work, and cognition_turn_finish to commit.
-    pub(crate) async fn invoke_typed(
-        &self,
-        input: TurnPrepareFinalInput,
-    ) -> stasis::prelude::Result<TurnPrepareFinalOutput> {
-        let command = TurnPrepareFinalCommand::from(input);
-        Ok(TurnPrepareFinalOutput {
-            ok: true,
-            prepare_final: true,
-            deprecated: true,
-            message: "Deprecated — call cognition_turn action=turn.finish with the complete principal-facing reply. Workshop lane may still send one final prose round.".to_string(),
-            reason: command.reason.map(TrimmedText::into_string),
         })
     }
 }
@@ -827,10 +769,6 @@ mod tests {
         assert!(is_begin_work_tool_name(
             turn,
             &json!({ "action": "turn.begin_work" })
-        ));
-        assert!(is_prepare_final_tool_name(
-            turn,
-            &json!({ "action": "turn.prepare_final" })
         ));
         assert!(is_finish_turn_tool_name(
             turn,

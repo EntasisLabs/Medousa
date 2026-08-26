@@ -18,7 +18,6 @@ pub mod ports;
 pub mod tool_loop;
 pub mod turn_context;
 pub mod turn_control;
-pub mod turn_policy;
 pub mod turn_presentation;
 
 /// Maximum user prompt admitted to one foreground production turn.
@@ -36,9 +35,9 @@ pub use checkpoint::{
     SafeCheckpointBoundary, TOOL_ROUND_BUDGET_EXHAUSTED_REASON, ToolLoopCheckpointState,
 };
 pub use completion_fsm::{
-    AfterToolsRoundContext, ContinueReason, HOST_EMPTY_AFTER_TOOLS_CONTINUE_CAP,
-    NoToolDebtRoundContext, TurnCompletionProfile, TurnRoundAction, continue_control_message,
-    decide_after_tools_text_round, decide_no_tool_debt_text_round,
+    AfterToolsRoundContext, ContinueReason, NoToolDebtRoundContext, TurnCompletionProfile,
+    TurnRoundAction, continue_control_message, decide_after_tools_text_round,
+    decide_no_tool_debt_text_round,
 };
 pub use credentialed_ai::{
     CredentialProvider, CredentialedAiChatBuildError, CredentialedAiChatClient,

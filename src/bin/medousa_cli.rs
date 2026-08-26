@@ -565,7 +565,7 @@ async fn run_daemon_watch_add(
         id: None,
         queue: Some("default".to_string()),
         prompt: prompt.to_string(),
-        system_prompt: Some(medousa::agent_runtime::LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT.to_string()),
+        system_prompt: Some(medousa::agent_runtime::lightweight_channel_system_prompt()),
         cron_expr: cron_expr.to_string(),
         timezone: Some(timezone.to_string()),
         jitter_seconds: Some(0),
@@ -1542,7 +1542,7 @@ async fn run_llm(
     let identity_user_id = resolve_identity_user_id(None);
     let payload = PromptJobPayload {
         user_prompt: compile_lane_prompt(EngineExecutionLane::Interactive, prompt),
-        system_prompt: Some(medousa::agent_runtime::LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT.to_string()),
+        system_prompt: Some(medousa::agent_runtime::lightweight_channel_system_prompt()),
         policy_profile: Some(
             default_policy_profile_for_lane(EngineExecutionLane::Interactive).to_string(),
         ),
@@ -1601,9 +1601,7 @@ async fn run_ask(runtime: &RuntimeComposition, prompt: &str) -> Result<()> {
         participants: vec![AgentSessionParticipantPayload {
             agent_id: "medousa.researcher".to_string(),
             kind: Default::default(),
-            system_prompt: Some(
-                medousa::agent_runtime::LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT.to_string(),
-            ),
+            system_prompt: Some(medousa::agent_runtime::lightweight_channel_system_prompt()),
             tool_name: "stasis.web.search.mock".to_string(),
             tool_input: Some(json!({ "query": prompt })),
             endpoint_ref: None,

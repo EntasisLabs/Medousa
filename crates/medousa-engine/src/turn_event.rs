@@ -155,8 +155,6 @@ pub enum TurnEvent {
         #[serde(default)]
         tool_names: Vec<String>,
     },
-    /// In-flight assistant scratch was reset before the next model round.
-    ScratchReset,
     /// A tool run began.
     ToolRunStarted {
         tool_run_id: String,
@@ -276,7 +274,6 @@ impl TurnEvent {
             TurnEvent::ContentDelta { .. } => "content_delta",
             TurnEvent::ReasoningDelta { .. } => "reasoning_delta",
             TurnEvent::Progress { .. } => "turn_progress",
-            TurnEvent::ScratchReset => "scratch_reset",
             TurnEvent::ToolRunStarted { .. } => "tool_started",
             TurnEvent::ToolRunFinished { .. } => "tool_finished",
             TurnEvent::Notice { .. } => "status",

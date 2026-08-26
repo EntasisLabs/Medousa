@@ -104,14 +104,6 @@ impl TurnPartsAccumulator {
         });
     }
 
-    pub fn scratch_reset(&mut self) {
-        if let Some(index) = self.reasoning_index.take()
-            && let Some(TurnPart::Reasoning { markdown }) = self.parts.get_mut(index)
-        {
-            markdown.clear();
-        }
-    }
-
     pub fn set_model_receipt(&mut self, provider: &str, model: &str) {
         let receipt = TurnPart::ModelReceipt {
             provider: provider.to_string(),
@@ -887,12 +879,10 @@ mod tests {
     }
 
     #[test]
-    fn reasoning_reset_does_not_reorder_later_parts_or_tool_indexes() {
+    fn reasoning_does_not_reorder_later_parts_or_tool_indexes() {
         let mut acc = TurnPartsAccumulator::default();
-        acc.push_reasoning_delta("discard me");
-        acc.tool_started("run-1", "search", "query", 1);
-        acc.scratch_reset();
         acc.push_reasoning_delta("keep me");
+        acc.tool_started("run-1", "search", "query", 1);
         acc.tool_finished("run-1", "succeeded", None, vec![]);
 
         let parts = acc

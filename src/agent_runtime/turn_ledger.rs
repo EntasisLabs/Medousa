@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use medousa_runtime::TurnLedgerSink;
 pub use medousa_runtime::loop_state::*;
-pub use medousa_runtime::turn_policy::{PACK_HOLD_PREFIX, pack_hold_resolution_control_message};
 
 fn turn_ledger_files() -> crate::session_storage::SessionFileStore {
     crate::session_storage::SessionFileStore::new(
@@ -109,18 +108,5 @@ mod tests {
             serde_json::from_slice(raw.split(|byte| *byte == b'\n').next().unwrap()).expect("json");
         assert!(parsed.active_profile_id.is_some());
         let _ = delete_turn_ledger(&session);
-    }
-
-    #[test]
-    fn transcript_adapter_uses_portable_pack_hold_policy() {
-        let mut messages = Vec::new();
-        push_pack_hold_message(&mut messages);
-        assert!(
-            messages[0]
-                .content
-                .first_text()
-                .unwrap()
-                .starts_with(PACK_HOLD_PREFIX)
-        );
     }
 }

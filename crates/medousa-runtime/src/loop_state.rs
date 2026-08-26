@@ -7,43 +7,14 @@ use serde::{Deserialize, Serialize};
 use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 
 use crate::completion_fsm::ContinueReason;
-use crate::turn_policy::pack_hold_resolution_control_message;
 
 /// Default when a composition does not provide its own text-only limit.
 pub const MAX_TEXT_ONLY_STUCK_CONTINUES: usize = 3;
 pub const USER_RESPONSE_PREVIEW_MAX_CHARS: usize = 100;
 pub const TURN_CONTROL_PREFIX: &str = "[MEDOUSA_TURN_CONTROL]";
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct AssistantPackHold {
-    pub fragments: Vec<String>,
-}
-
-/// Legacy exports retained until V2 prompt consumers are removed. Production
-/// V3 behavior lives only in the compiled STTP policy.
-pub const TURN_RUNTIME_BOUNDARY_APPENDIX: &str = "";
-pub const TURN_SCRATCH_APPENDIX: &str = "";
-
-/// Merge held assistant fragments with the resolution prose into one body.
-pub fn merge_assistant_pack_fragments(fragments: &[String], resolution: &str) -> String {
-    let mut parts: Vec<String> = fragments
-        .iter()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .collect();
-    let trimmed_resolution = resolution.trim();
-    if !trimmed_resolution.is_empty() {
-        parts.push(trimmed_resolution.to_string());
-    }
-    parts.join("\n\n")
-}
-
 pub fn resolve_max_text_only_stuck_continues(max_tool_rounds: usize) -> usize {
     max_tool_rounds.max(1)
-}
-
-pub fn push_pack_hold_message(messages: &mut Vec<ChatMessage>) {
-    messages.push(ChatMessage::system(pack_hold_resolution_control_message()));
 }
 
 pub fn push_turn_control_message(messages: &mut Vec<ChatMessage>, body: &str) {
@@ -333,17 +304,6 @@ mod tests {
         restored.restore(state.0, state.1);
         assert_eq!(restored.checkpoint_state().0, 1);
         assert!(restored.loop_budget_message(2).contains("2"));
-    }
-
-    #[test]
-    fn assistant_pack_preserves_every_non_empty_fragment() {
-        assert_eq!(
-            merge_assistant_pack_fragments(
-                &["Which repo?".to_string(), "".to_string()],
-                "Medousa."
-            ),
-            "Which repo?\n\nMedousa."
-        );
     }
 
     #[test]

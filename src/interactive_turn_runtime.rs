@@ -220,26 +220,6 @@ pub fn turn_progress_stream_event(
     Ok(event)
 }
 
-/// Host content-pack hold — keep streamed draft visible; turn not terminal yet.
-pub fn pack_hold_stream_event(
-    turn_id: &str,
-    fragments: &[String],
-    tool_names: Vec<String>,
-) -> Result<InteractiveTurnStreamEvent> {
-    let held = fragments
-        .iter()
-        .map(|value| value.trim())
-        .filter(|value| !value.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n\n");
-    let messages = classify_stream_messages("pack_hold", &held);
-    let mut event = build_event_messages(turn_id, "assistant_pack_hold", "pack_hold", messages)?;
-    event.final_text = Some(held);
-    event.tool_names = Some(tool_names);
-    event.terminal = false;
-    Ok(event)
-}
-
 /// Mid-task handoff: principal sees a durable update; turn ends without claiming final completion.
 pub fn turn_checkpoint_stream_event(
     turn_id: &str,
@@ -367,23 +347,6 @@ pub fn final_stream_event_terminal_commit(
     Ok(event)
 }
 
-pub fn final_pending_stream_event_with_tools(
-    turn_id: &str,
-    status_text: &str,
-    tool_names: Vec<String>,
-) -> Result<InteractiveTurnStreamEvent> {
-    let mut event = build_event(
-        turn_id,
-        "final_pending",
-        "wrapping_up",
-        "Medousa is preparing your final answer",
-    )?;
-    event.final_text = Some(status_text.to_string());
-    event.tool_names = Some(tool_names);
-    event.terminal = false;
-    Ok(event)
-}
-
 pub fn needs_input_stream_event_with_tools(
     turn_id: &str,
     question_text: &str,
@@ -423,19 +386,6 @@ pub fn error_stream_event_from_failure(
     )?;
     event.terminal = true;
     Ok(event)
-}
-
-/// Clear in-flight assistant draft in the TUI before the next model round (tool-loop interim).
-pub fn scratch_reset_stream_event(turn_id: &str) -> Result<InteractiveTurnStreamEvent> {
-    build_event_messages(
-        turn_id,
-        "scratch_reset",
-        "streaming",
-        StreamMessages {
-            operator_message: None,
-            debug_message: Some("assistant scratch cleared".to_string()),
-        },
-    )
 }
 
 pub fn tool_started_stream_event(

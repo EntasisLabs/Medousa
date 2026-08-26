@@ -193,7 +193,7 @@ pub fn render_handoff_line(turn: &ConversationTurn) -> Option<Line<'static>> {
     ]))
 }
 
-/// Settled interim whispers archived from scratch_reset / turn_progress (Home stageWhisper).
+/// Settled status notes archived from explicit turn-progress events.
 pub fn progress_notes(turn: &ConversationTurn) -> Vec<String> {
     turn.parts
         .as_ref()

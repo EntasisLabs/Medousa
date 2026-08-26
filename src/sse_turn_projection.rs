@@ -35,7 +35,12 @@ pub fn stream_event_to_turn_event(event: &InteractiveTurnStreamEvent) -> TurnEve
             operator_message: event.operator_message.clone(),
             debug_message: event.debug_message.clone(),
         },
-        "scratch_reset" => TurnEvent::ScratchReset,
+        "scratch_reset" => TurnEvent::Status {
+            phase: "legacy_compat".to_string(),
+            message: String::new(),
+            operator_message: None,
+            debug_message: Some("ignored legacy scratch_reset event".to_string()),
+        },
         "tool_started" => TurnEvent::ToolRunStarted {
             tool_run_id: event
                 .tool_run_id
@@ -230,7 +235,6 @@ pub fn sequenced_to_v2(sequenced: &SequencedTurnEvent) -> Result<TurnStreamEnvel
             message: message.clone(),
             tool_names: tool_names.clone(),
         },
-        TurnEvent::ScratchReset => TurnStreamEventV2::ScratchReset,
         TurnEvent::ToolRunStarted {
             tool_run_id,
             tool_name,
@@ -734,10 +738,6 @@ fn typed_turn_event_to_stream(
             base.message = message.clone();
             base.operator_message = operator_message.clone();
             base.debug_message = debug_message.clone();
-        }
-        TurnEvent::ScratchReset => {
-            base.event_type = "scratch_reset".to_string();
-            base.phase = "streaming".to_string();
         }
         TurnEvent::ToolRunStarted {
             tool_run_id,
@@ -1419,7 +1419,12 @@ pub fn journal_turn_event_for_v2(envelope: &TurnStreamEnvelopeV2) -> TurnEvent {
             message: message.clone(),
             tool_names: tool_names.clone(),
         },
-        TurnStreamEventV2::ScratchReset => TurnEvent::ScratchReset,
+        TurnStreamEventV2::ScratchReset => TurnEvent::Status {
+            phase: "legacy_compat".to_string(),
+            message: String::new(),
+            operator_message: None,
+            debug_message: Some("ignored legacy scratch_reset event".to_string()),
+        },
         TurnStreamEventV2::ToolStarted {
             tool_run_id,
             tool_name,

@@ -8,11 +8,8 @@ use super::{ConversationTurn, JobHistoryEntry, TuiState};
 
 fn event_turn_id(event: &TuiEvent) -> Option<u64> {
     match event {
-        TuiEvent::AgentScratchReset { turn_id }
-        | TuiEvent::AgentPackHold { turn_id, .. }
-        | TuiEvent::AgentChunk { turn_id, .. }
+        TuiEvent::AgentChunk { turn_id, .. }
         | TuiEvent::AgentReasoningChunk { turn_id, .. }
-        | TuiEvent::AgentFinalPending { turn_id, .. }
         | TuiEvent::AgentNeedsInput { turn_id, .. }
         | TuiEvent::AgentResponse { turn_id, .. }
         | TuiEvent::AgentError { turn_id, .. }
@@ -47,10 +44,6 @@ async fn handle_tui_event_for_focused(event: TuiEvent, state: &mut TuiState) {
         event,
         TuiEvent::AgentChunk { .. } | TuiEvent::AgentReasoningChunk { .. }
     ) {
-        flush_pending_agent_chunks(state);
-    }
-
-    if matches!(event, TuiEvent::AgentScratchReset { .. }) {
         flush_pending_agent_chunks(state);
     }
 
@@ -100,67 +93,6 @@ async fn handle_tui_event_for_focused(event: TuiEvent, state: &mut TuiState) {
                 ),
             );
         }
-        TuiEvent::AgentScratchReset { turn_id } => {
-            if !is_active_stream_turn(state, turn_id) {
-                return;
-            }
-            if let Some(idx) = state.active_agent_stream_turn {
-                let answer_state = state
-                    .conversation
-                    .get(idx)
-                    .and_then(|turn| turn.answer_state.as_deref());
-                // Home skips scratch_reset while PackHold holds the visible draft.
-                if answer_state == Some("pack_hold") {
-                    state.pending_agent_chunk_delta.clear();
-                    state.pending_agent_chunk_count = 0;
-                    return;
-                }
-                let draft = state
-                    .conversation
-                    .get(idx)
-                    .map(|turn| turn.content.trim().to_string())
-                    .unwrap_or_default();
-                if !draft.is_empty() {
-                    state.turn_parts.close_legacy_text_draft(&draft);
-                    super::push_obs(state, format!("◈ {draft}"));
-                }
-                if let Some(turn) = state.conversation.get_mut(idx) {
-                    turn.content.clear();
-                    turn.answer_state = Some("tool_loop".to_string());
-                }
-            }
-            state.pending_agent_chunk_delta.clear();
-            state.pending_agent_chunk_count = 0;
-            super::invalidate_markdown_cache(state);
-        }
-        TuiEvent::AgentPackHold {
-            turn_id,
-            held,
-            tool_names,
-        } => {
-            if !is_active_stream_turn(state, turn_id) {
-                return;
-            }
-            if let Some(idx) = state.active_agent_stream_turn
-                && let Some(turn) = state.conversation.get_mut(idx)
-            {
-                let body = held.trim();
-                if !body.is_empty() {
-                    turn.content = body.to_string();
-                }
-                if !tool_names.is_empty() {
-                    turn.tool_names = tool_names;
-                }
-                turn.answer_state = Some("pack_hold".to_string());
-                turn.timestamp = Utc::now();
-            }
-            state.pending_agent_chunk_delta.clear();
-            state.pending_agent_chunk_count = 0;
-            if state.auto_scroll {
-                state.conv_scroll = state.conv_max_scroll;
-            }
-            super::invalidate_markdown_cache(state);
-        }
         TuiEvent::AgentChunk { turn_id, delta } => {
             if !is_active_stream_turn(state, turn_id) {
                 return;
@@ -186,29 +118,6 @@ async fn handle_tui_event_for_focused(event: TuiEvent, state: &mut TuiState) {
                 super::push_thinking(state, delta);
             }
         }
-        TuiEvent::AgentFinalPending {
-            turn_id,
-            text,
-            tool_names,
-        } => {
-            if !is_active_stream_turn(state, turn_id) {
-                return;
-            }
-            // Progress whispers stay out of the answer body (Home shouldMirrorStatusIntoContent=false).
-            state.turn_parts.archive_progress_note(&text);
-            super::push_obs(state, format!("◈ {text}"));
-            if let Some(idx) = state.active_agent_stream_turn
-                && let Some(turn) = state.conversation.get_mut(idx)
-            {
-                turn.tool_names = tool_names;
-                turn.answer_state = Some("final_pending".to_string());
-                turn.timestamp = Utc::now();
-            }
-            if state.auto_scroll {
-                state.conv_scroll = state.conv_max_scroll;
-            }
-            super::invalidate_markdown_cache(state);
-        }
         TuiEvent::AgentTurnProgress {
             turn_id,
             message,
@@ -217,8 +126,7 @@ async fn handle_tui_event_for_focused(event: TuiEvent, state: &mut TuiState) {
             if !is_active_stream_turn(state, turn_id) {
                 return;
             }
-            // Never mirror status into the answer bubble — that re-injected archived
-            // interim after scratch_reset and duplicated final text.
+            // Never mirror status into the answer bubble; status is separate chrome.
             state.turn_parts.archive_progress_note(&message);
             super::push_obs(state, format!("◈ {message}"));
             if let Some(idx) = state.active_agent_stream_turn

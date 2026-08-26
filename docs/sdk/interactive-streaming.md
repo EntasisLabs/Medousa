@@ -102,7 +102,16 @@ Use `stream_v3` for a one-shot connection or
 `stream_reconnecting_v3_with_policy` for an existing stream URL and custom
 reconnect policy.
 
+Each `assistant_text_committed` fence precedes tool receipts produced by that
+model response. Preserve `segment_id` and `tool_run_id` if you build a custom
+projection; terminal aggregate text is a compatibility/search field, not a
+replacement for the preceding facts.
+
 ### Reconnecting typed v2 compatibility stream
+
+V2 remains supported during the client migration window. It is projected from
+the chronological runtime; new turns do not generate PackHold or destructive
+ScratchReset behavior.
 
 Tracks `event.seq`, reattaches with `?since=<last_seq>` after drops, and applies bounded exponential backoff + circuit breaker + overlap guard.
 

@@ -418,16 +418,6 @@ impl EmbeddedChronologicalTurn {
         .await
     }
 
-    async fn pack_hold(
-        &self,
-        _fragments: Vec<String>,
-    ) -> Result<(), medousa_engine::TurnPipelineError> {
-        // The model-response completion fence already committed streamed prose
-        // and advanced the round. Re-emitting the compatibility fragments here
-        // would duplicate that segment and fabricate a later occurrence.
-        self.commit_active(false).await
-    }
-
     fn aggregate_text(&self) -> String {
         self.text
             .lock()
@@ -504,7 +494,6 @@ enum EmbeddedRuntimeEvent {
         message: String,
         tool_names: Vec<String>,
     },
-    PackHold(Vec<String>),
 }
 
 #[derive(Clone)]
@@ -572,10 +561,6 @@ impl TurnPresentationPort for EmbeddedTurnPresentation {
         })
     }
 
-    fn scratch_reset(&self, _stream_turn_id: u64) -> RuntimePortFuture<()> {
-        Box::pin(async {})
-    }
-
     fn turn_progress(
         &self,
         _stream_turn_id: u64,
@@ -590,18 +575,6 @@ impl TurnPresentationPort for EmbeddedTurnPresentation {
                     tool_names,
                 })
                 .await;
-        })
-    }
-
-    fn pack_hold(
-        &self,
-        _stream_turn_id: u64,
-        fragments: Vec<String>,
-        _tool_names: Vec<String>,
-    ) -> RuntimePortFuture<()> {
-        let tx = self.tx.clone();
-        Box::pin(async move {
-            let _ = tx.send(EmbeddedRuntimeEvent::PackHold(fragments)).await;
         })
     }
 }
@@ -677,9 +650,7 @@ impl StasisTool for EmbeddedTurnControlTool {
     }
 
     fn description(&self) -> Option<&'static str> {
-        Some(
-            "Control this foreground turn: update the user, checkpoint for input, prepare a final response, or finish.",
-        )
+        Some("Control this foreground turn: update the user, request input, checkpoint, or finish.")
     }
 
     fn input_schema(&self) -> Option<serde_json::Value> {
@@ -691,8 +662,8 @@ impl StasisTool for EmbeddedTurnControlTool {
                     "type": "string",
                     "enum": [
                         "turn.update_user",
+                        "turn.request_input",
                         "turn.checkpoint",
-                        "turn.prepare_final",
                         "turn.finish"
                     ]
                 },
@@ -710,8 +681,8 @@ impl StasisTool for EmbeddedTurnControlTool {
             .and_then(serde_json::Value::as_str)
             .map(str::trim);
         match action {
-            Some("turn.prepare_final") => Ok(json!({ "ok": true })),
-            Some("turn.update_user" | "turn.checkpoint" | "turn.finish")
+            Some("turn.finish") => Ok(json!({ "ok": true })),
+            Some("turn.update_user" | "turn.request_input" | "turn.checkpoint")
                 if input
                     .get("message")
                     .and_then(serde_json::Value::as_str)
@@ -719,7 +690,7 @@ impl StasisTool for EmbeddedTurnControlTool {
             {
                 Ok(json!({ "ok": true }))
             }
-            Some("turn.update_user" | "turn.checkpoint" | "turn.finish") => Err(
+            Some("turn.update_user" | "turn.request_input" | "turn.checkpoint") => Err(
                 StasisError::PortFailure("turn-control message must be non-empty".to_string()),
             ),
             _ => Err(StasisError::PortFailure(
@@ -2924,7 +2895,6 @@ async fn emit_embedded_runtime_event(
             message,
             tool_names,
         } => chronological.progress(message, tool_names).await,
-        EmbeddedRuntimeEvent::PackHold(fragments) => chronological.pack_hold(fragments).await,
     }
 }
 

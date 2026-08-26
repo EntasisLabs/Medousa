@@ -1,7 +1,7 @@
 //! Executable target contract for chronological turns.
 //!
 //! The production golden tests in `golden_turn` characterize the currently
-//! shipped PackHold loop. These fixtures describe the locked V3 destination
+//! legacy held-prose loop. These fixtures describe the locked V3 destination
 //! without changing production behavior during Phase 0. Later runtime, stream,
 //! persistence, and client tests should consume the same fixture cases.
 
