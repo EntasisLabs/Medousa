@@ -16,6 +16,15 @@ pub trait AgentStreamSink: Send + Sync {
     async fn model_response_completed(&self, turn_id: u64, model_round: usize) {
         let _ = (turn_id, model_round);
     }
+    async fn model_response_completed_with_text(
+        &self,
+        turn_id: u64,
+        model_round: usize,
+        response_text: Option<String>,
+    ) {
+        let _ = response_text;
+        self.model_response_completed(turn_id, model_round).await;
+    }
     async fn agent_response(&self, turn_id: u64, text: String, tool_names: Vec<String>);
     async fn agent_needs_input(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
         self.agent_response(turn_id, text, tool_names).await;

@@ -41,6 +41,23 @@ impl ModelResponseEventPort for DaemonModelResponseEventPort {
                 .await;
         })
     }
+
+    fn completed_with_text(
+        &self,
+        event: ModelResponseCompleted,
+        response_text: Option<String>,
+    ) -> RuntimePortFuture<()> {
+        let sink = self.sink.clone();
+        let stream_turn_id = self.stream_turn_id;
+        Box::pin(async move {
+            sink.model_response_completed_with_text(
+                stream_turn_id,
+                event.model_round,
+                response_text,
+            )
+            .await;
+        })
+    }
 }
 
 impl TurnPresentationPort for DaemonTurnPresentationPort {

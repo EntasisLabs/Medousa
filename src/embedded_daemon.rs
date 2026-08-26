@@ -482,6 +482,7 @@ impl EmbeddedChronologicalTurn {
 enum EmbeddedRuntimeEvent {
     ModelResponseCompleted {
         event: ModelResponseCompleted,
+        response_text: Option<String>,
         acknowledged: oneshot::Sender<()>,
     },
     ToolStarted {
@@ -503,12 +504,21 @@ struct EmbeddedModelResponseEvents {
 
 impl ModelResponseEventPort for EmbeddedModelResponseEvents {
     fn completed(&self, event: ModelResponseCompleted) -> RuntimePortFuture<()> {
+        self.completed_with_text(event, None)
+    }
+
+    fn completed_with_text(
+        &self,
+        event: ModelResponseCompleted,
+        response_text: Option<String>,
+    ) -> RuntimePortFuture<()> {
         let tx = self.tx.clone();
         Box::pin(async move {
             let (acknowledged, wait) = oneshot::channel();
             if tx
                 .send(EmbeddedRuntimeEvent::ModelResponseCompleted {
                     event,
+                    response_text,
                     acknowledged,
                 })
                 .await
@@ -2871,8 +2881,24 @@ async fn emit_embedded_runtime_event(
     match event {
         EmbeddedRuntimeEvent::ModelResponseCompleted {
             event,
+            response_text,
             acknowledged,
         } => {
+            let needs_fallback = chronological
+                .text
+                .lock()
+                .map(|state| {
+                    state
+                        .active
+                        .as_ref()
+                        .is_none_or(|segment| segment.markdown.is_empty())
+                })
+                .unwrap_or(false);
+            if needs_fallback
+                && let Some(text) = response_text.filter(|text| !text.trim().is_empty())
+            {
+                chronological.content_delta(text).await?;
+            }
             let result = chronological.commit_active(true).await;
             let _ = acknowledged.send(());
             debug_assert!(event.model_round > 0);

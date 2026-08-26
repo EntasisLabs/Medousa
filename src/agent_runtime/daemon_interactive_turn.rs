@@ -195,6 +195,32 @@ impl InteractiveTurnStreamSink {
         .await;
     }
 
+    async fn ensure_response_text(&self, response_text: Option<String>) {
+        let Some(response_text) = response_text.filter(|text| !text.trim().is_empty()) else {
+            return;
+        };
+        let needs_fallback = self
+            .text
+            .lock()
+            .map(|state| {
+                state
+                    .active
+                    .as_ref()
+                    .is_none_or(|segment| segment.markdown.is_empty())
+            })
+            .unwrap_or(false);
+        if !needs_fallback {
+            return;
+        }
+        let Some((started, append)) = self.prepare_content_delta(response_text) else {
+            return;
+        };
+        if let Some(started) = started {
+            self.publish_tracked(started).await;
+        }
+        self.publish_tracked(append).await;
+    }
+
     fn aggregate_text(&self) -> String {
         self.text
             .lock()
@@ -485,7 +511,13 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             .await;
     }
 
-    async fn model_response_completed(&self, _turn_id: u64, _model_round: usize) {
+    async fn model_response_completed_with_text(
+        &self,
+        _turn_id: u64,
+        _model_round: usize,
+        response_text: Option<String>,
+    ) {
+        self.ensure_response_text(response_text).await;
         self.commit_active_segment(true).await;
     }
 
@@ -1966,9 +1998,14 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
         self.inner.reasoning_chunk(turn_id, delta).await;
     }
 
-    async fn model_response_completed(&self, turn_id: u64, model_round: usize) {
+    async fn model_response_completed_with_text(
+        &self,
+        turn_id: u64,
+        model_round: usize,
+        response_text: Option<String>,
+    ) {
         self.inner
-            .model_response_completed(turn_id, model_round)
+            .model_response_completed_with_text(turn_id, model_round, response_text)
             .await;
     }
 
@@ -2158,9 +2195,9 @@ mod chronological_sink_tests {
         let sink = sink(Arc::clone(&output));
 
         sink.content_chunk(1, "First response.".into()).await;
-        sink.model_response_completed(1, 1).await;
+        sink.model_response_completed_with_text(1, 1, None).await;
         sink.content_chunk(1, "Second response.".into()).await;
-        sink.model_response_completed(1, 2).await;
+        sink.model_response_completed_with_text(1, 2, None).await;
         let body = sink
             .terminal_body("First response.\n\nSecond response.")
             .await;
@@ -2220,6 +2257,51 @@ mod chronological_sink_tests {
             TurnPipelineEnvelope::V3(envelope)
                 if matches!(&envelope.event, TurnStreamEventV3::Progress { .. })
         )));
+        drop(events);
+        sink.pipeline.cancel();
+    }
+
+    #[tokio::test]
+    async fn completed_response_recovers_prose_that_provider_did_not_stream() {
+        let output = Arc::new(RecordingOutput::default());
+        let sink = sink(Arc::clone(&output));
+
+        sink.model_response_completed_with_text(1, 1, Some("I found a lead.".into()))
+            .await;
+        sink.tool_run_started(
+            "run-1".into(),
+            "search".into(),
+            "query".into(),
+            Vec::new(),
+            1,
+        )
+        .await;
+
+        assert_eq!(sink.aggregate_text(), "I found a lead.");
+        let events = output
+            .events
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert!(matches!(
+            &events[0],
+            TurnPipelineEnvelope::V3(envelope)
+                if matches!(&envelope.event, TurnStreamEventV3::AssistantTextStarted { .. })
+        ));
+        assert!(matches!(
+            &events[1],
+            TurnPipelineEnvelope::V3(envelope)
+                if matches!(&envelope.event, TurnStreamEventV3::ContentAppend { text, .. } if text == "I found a lead.")
+        ));
+        assert!(matches!(
+            &events[2],
+            TurnPipelineEnvelope::V3(envelope)
+                if matches!(&envelope.event, TurnStreamEventV3::AssistantTextCommitted { .. })
+        ));
+        assert!(matches!(
+            &events[3],
+            TurnPipelineEnvelope::V3(envelope)
+                if matches!(&envelope.event, TurnStreamEventV3::ToolStarted { .. })
+        ));
         drop(events);
         sink.pipeline.cancel();
     }

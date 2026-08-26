@@ -58,6 +58,17 @@ pub struct ModelResponseCompleted {
 /// response boundaries from chunks or final aggregate text.
 pub trait ModelResponseEventPort: Send + Sync {
     fn completed(&self, event: ModelResponseCompleted) -> RuntimePortFuture<()>;
+
+    /// Additive text-bearing fence for hosts that need to recover prose a
+    /// provider returned only in its completed payload.
+    fn completed_with_text(
+        &self,
+        event: ModelResponseCompleted,
+        response_text: Option<String>,
+    ) -> RuntimePortFuture<()> {
+        let _ = response_text;
+        self.completed(event)
+    }
 }
 
 /// Foreground-loop presentation events. Runtime state and receipts remain

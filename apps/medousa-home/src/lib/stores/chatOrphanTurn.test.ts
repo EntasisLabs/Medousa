@@ -160,6 +160,47 @@ describe("orphaned interactive turn lease", () => {
     expect(store.hasLiveInteractiveTurn()).toBe(true);
   });
 
+  it("promotes a tool-first V3 turn into the chat timeline", async () => {
+    const { store } = await loadStore();
+    const ticket = {
+      turn_id: "turn-tool-first",
+      session_id: store.sessionId,
+      mode: "interactive" as const,
+      phase: "streaming",
+      accepted_at_utc: new Date().toISOString(),
+      stream_url: "interactive://stream/turn-tool-first",
+      stream_ready: true,
+      workspace_card_id: null,
+    };
+    store.registerTurn(ticket, null);
+
+    store.applyStreamEvent({
+      schema_version: 3,
+      turn_id: ticket.turn_id,
+      seq: 1,
+      emitted_at_utc: new Date().toISOString(),
+      event: {
+        type: "tool_started",
+        tool_run_id: "run-1",
+        tool_name: "search",
+        input_summary: "query",
+        tool_round: 1,
+      },
+    });
+
+    const assistant = store.messages.find(
+      (message) => message.role === "assistant" && message.turnId === ticket.turn_id,
+    );
+    expect(assistant?.segments).toEqual([
+      expect.objectContaining({
+        kind: "tool_group",
+        runs: [expect.objectContaining({ runId: "run-1", status: "running" })],
+      }),
+    ]);
+    expect(store.turns.get(ticket.turn_id)?.messageId).toBe(assistant?.id);
+    expect(store.assistantId).toBe(assistant?.id);
+  });
+
   it("fails and settles the assistant bubble for a non-recoverable stream error", async () => {
     const { store } = await loadStore();
     store.beginTurn("hello", {

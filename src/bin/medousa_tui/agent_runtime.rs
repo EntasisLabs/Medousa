@@ -361,7 +361,16 @@ impl AgentStreamSink for TuiStreamSink {
             .await;
     }
 
-    async fn model_response_completed(&self, turn_id: u64, _model_round: usize) {
+    async fn model_response_completed_with_text(
+        &self,
+        turn_id: u64,
+        _model_round: usize,
+        response_text: Option<String>,
+    ) {
+        let needs_fallback = self.chronology.lock().await.active_segment.is_none();
+        if needs_fallback && let Some(text) = response_text.filter(|text| !text.trim().is_empty()) {
+            self.content_chunk(turn_id, text).await;
+        }
         self.commit_active_segment(turn_id, true).await;
     }
 
@@ -1116,7 +1125,7 @@ mod stream_v3_tests {
         let sink = TuiStreamSink::new(event_tx, 7);
 
         sink.content_chunk(7, "Let me check.".into()).await;
-        sink.model_response_completed(7, 1).await;
+        sink.model_response_completed_with_text(7, 1, None).await;
         sink.tool_run_started("run-1".into(), "search".into(), "query".into(), vec![], 1)
             .await;
         sink.tool_run_finished(

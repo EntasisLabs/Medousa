@@ -360,9 +360,14 @@ impl AgentStreamSink for HostResumeSink {
         self.inner.reasoning_chunk(turn_id, delta).await;
     }
 
-    async fn model_response_completed(&self, turn_id: u64, model_round: usize) {
+    async fn model_response_completed_with_text(
+        &self,
+        turn_id: u64,
+        model_round: usize,
+        response_text: Option<String>,
+    ) {
         self.inner
-            .model_response_completed(turn_id, model_round)
+            .model_response_completed_with_text(turn_id, model_round, response_text)
             .await;
     }
 

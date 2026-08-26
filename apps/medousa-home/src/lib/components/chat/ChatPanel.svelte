@@ -474,7 +474,15 @@
 
   $effect(() => {
     if (!scrollEl) return;
-    void chatMessages.map((message) => message.content).join("\0");
+    void chatMessages
+      .map((message) =>
+        [
+          message.content.length,
+          message.segments?.length ?? -1,
+          message.toolRuns?.map((run) => `${run.runId}:${run.status}`).join(",") ?? "",
+        ].join(":"),
+      )
+      .join("\0");
     void subagentRows.map((row) => row.statusLine).join("\0");
     void chat.hasTurnActivity;
     scrollToLatest(false);

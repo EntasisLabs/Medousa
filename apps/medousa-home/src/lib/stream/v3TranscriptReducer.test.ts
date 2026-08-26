@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyV3EnvelopeToMessage,
   foldV3Envelopes,
+  v3EventPromotesChatMessage,
 } from "$lib/stream/v3TranscriptReducer";
 import type { ChatMessage } from "$lib/types/chat";
 import type {
@@ -85,6 +86,19 @@ function toolFinished(
 }
 
 describe("Turn Stream V3 chronological presentation fold", () => {
+  it("promotes tool-first and text-first reconnect facts into chat", () => {
+    expect(v3EventPromotesChatMessage(toolStarted(1, "run-1", "search", 1).event)).toBe(true);
+    expect(
+      v3EventPromotesChatMessage({
+        type: "assistant_text_started",
+        segment_id: "segment-a",
+        model_round: 1,
+      }),
+    ).toBe(true);
+    expect(v3EventPromotesChatMessage({ type: "model_receipt", provider: "p", model: "m" }))
+      .toBe(false);
+  });
+
   it("keeps response → parallel tools → response → tools → response in occurrence order", () => {
     const events = [
       ...textEvents(1, "segment-a", 1, "Let me check."),

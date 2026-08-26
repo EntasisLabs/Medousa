@@ -319,6 +319,28 @@ export function applyV3EnvelopeToMessage(
   };
 }
 
+/** Facts that need a chat message even when reconnect starts without a shell. */
+export function v3EventPromotesChatMessage(event: TurnStreamEventV3): boolean {
+  switch (event.type) {
+    case "assistant_text_started":
+    case "content_append":
+    case "assistant_text_committed":
+    case "reasoning_append":
+    case "tool_started":
+    case "tool_finished":
+    case "artifact_presented":
+    case "artifact_updated":
+    case "ui_scene":
+    case "worker_ack":
+    case "budget_approval_required":
+      return true;
+    case "turn_completed":
+      return Boolean(event.aggregate_text.trim());
+    default:
+      return false;
+  }
+}
+
 /** Convenience fold for history/reconnect fixtures; callers choose their facts. */
 export function foldV3Envelopes(
   message: ChatMessage,

@@ -443,6 +443,7 @@ impl MedousaToolLoopPipeline {
                                 complete_model_response(
                                     completion_gate.as_deref(),
                                     rounds_executed,
+                                    None,
                                 )
                                 .await;
                                 inject_malformed_tool_json_guidance(
@@ -479,6 +480,7 @@ impl MedousaToolLoopPipeline {
                                 complete_model_response(
                                     completion_gate.as_deref(),
                                     rounds_executed,
+                                    None,
                                 )
                                 .await;
                                 inject_malformed_tool_json_guidance(
@@ -500,11 +502,16 @@ impl MedousaToolLoopPipeline {
                         }
                     }
                 };
-                complete_model_response(completion_gate.as_deref(), rounds_executed).await;
                 let maybe_text = response
                     .first_text()
                     .map(|value| value.trim().to_string())
                     .filter(|value| !value.is_empty());
+                complete_model_response(
+                    completion_gate.as_deref(),
+                    rounds_executed,
+                    maybe_text.clone(),
+                )
+                .await;
                 let reasoning_content = response.reasoning_content.clone();
                 let assistant_content = response.content.clone();
                 let tool_calls = response.into_tool_calls();
@@ -1498,12 +1505,19 @@ async fn start_tool_run(
     )
 }
 
-async fn complete_model_response(gate: Option<&ToolLoopCompletionGate<'_>>, model_round: usize) {
+async fn complete_model_response(
+    gate: Option<&ToolLoopCompletionGate<'_>>,
+    model_round: usize,
+    response_text: Option<String>,
+) {
     let Some(events) = gate.and_then(|gate| gate.runtime_ports.model_response_events()) else {
         return;
     };
     events
-        .completed(crate::ports::ModelResponseCompleted { model_round })
+        .completed_with_text(
+            crate::ports::ModelResponseCompleted { model_round },
+            response_text,
+        )
         .await;
 }
 

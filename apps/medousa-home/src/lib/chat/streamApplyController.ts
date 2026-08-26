@@ -21,7 +21,10 @@ import {
   applyStreamEventToMessage as reduceStreamEventToMessage,
   type StreamMessageFollowUp,
 } from "$lib/stream/transcriptReducer";
-import { applyV3EnvelopeToMessage } from "$lib/stream/v3TranscriptReducer";
+import {
+  applyV3EnvelopeToMessage,
+  v3EventPromotesChatMessage,
+} from "$lib/stream/v3TranscriptReducer";
 import { v3PresentationEvent } from "$lib/stream/v3PresentationAdapter";
 import { stageWhisperAfterFinish } from "$lib/utils/turnInterimDisplay";
 import { chatSettingsPort } from "$lib/runtime/chatSettingsPort";
@@ -86,10 +89,7 @@ export function applyPumpedStreamEvent(host: ChatStoreHost, target: StreamEventT
           applyV3EnvelopeToMessage(host.messages[index], envelope),
         );
       }
-    } else if (
-      event.type === "content_append" ||
-      (event.type === "turn_completed" && event.aggregate_text.trim())
-    ) {
+    } else if (v3EventPromotesChatMessage(event)) {
       attachOrphanV3(host, target);
     }
 
@@ -155,6 +155,8 @@ export function applyPumpedStreamEvent(host: ChatStoreHost, target: StreamEventT
 
 function attachOrphanV3(host: ChatStoreHost, target: StreamEventTarget) {
   const envelope = target.event;
+  const turn = host.turns.get(envelope.turn_id);
+  const background = turn?.mode === "background";
   const id = randomUuid();
   const seed = applyV3EnvelopeToMessage(
     {
@@ -164,6 +166,8 @@ function attachOrphanV3(host: ChatStoreHost, target: StreamEventTarget) {
       segments: [],
       streaming: envelope.event.type !== "turn_completed",
       turnId: envelope.turn_id,
+      lane: background ? "ask" : "chat",
+      askJobId: background ? turn?.workspaceCardId ?? envelope.turn_id : null,
       phase: null,
       statusLine: null,
     },
@@ -171,11 +175,13 @@ function attachOrphanV3(host: ChatStoreHost, target: StreamEventTarget) {
   );
   host.appendMessage(seed);
 
-  const turn = host.turns.get(envelope.turn_id);
   if (turn) {
     const next = new Map(host.turns);
     next.set(envelope.turn_id, { ...turn, messageId: id });
     host.turns = next;
+  }
+  if (turn?.mode === "interactive" && envelope.event.type !== "turn_completed") {
+    host.assistantId = id;
   }
 }
 
