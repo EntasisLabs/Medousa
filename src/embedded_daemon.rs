@@ -106,6 +106,18 @@ use crate::turn_ticket::{
     register_turn,
 };
 
+struct EmbeddedMcpPolicyEvaluator;
+
+#[async_trait::async_trait]
+impl medousa_mcp_gateway::McpPolicyEvaluator for EmbeddedMcpPolicyEvaluator {
+    async fn evaluate(
+        &self,
+        request: &medousa_types::mcp_gateway_api::McpPolicyEvaluateRequest,
+    ) -> anyhow::Result<medousa_types::mcp_gateway_api::McpPolicyEvaluateResponse> {
+        Ok(crate::mcp_policy::evaluate_mcp_policy(request))
+    }
+}
+
 const EMBEDDED_STREAM_SCHEME: &str = "medousa-embedded://turn";
 const EMBEDDED_NODE_LEASE_SECONDS: i64 = 300;
 const DEFAULT_FOREGROUND_TURN_TIMEOUT: Duration = Duration::from_secs(180);
@@ -401,6 +413,23 @@ impl EmbeddedChronologicalTurn {
             embedded_tool_input_summary(&invocation.tool_name, &invocation.tool_input);
         let output_summary = embedded_tool_output_summary(&invocation.tool_output);
         let status = embedded_tool_status(&invocation.tool_output).to_string();
+        let ui_artifact =
+            crate::ui_tool_output::ui_artifact_from_tool_output(&invocation.tool_output);
+        let ui_scene = crate::ui_tool_output::scene_ops_from_tool_output(&invocation.tool_output);
+        let previous_artifact_id = invocation
+            .tool_output
+            .get("previous_artifact_id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let root_artifact_id = invocation
+            .tool_output
+            .get("root_artifact_id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
         if let Ok(mut parts) = self.parts.lock() {
             parts.tool_finished(
                 &event.tool_run_id,
@@ -408,6 +437,44 @@ impl EmbeddedChronologicalTurn {
                 output_summary.clone(),
                 Vec::new(),
             );
+            if let Some(artifact) = ui_artifact.as_ref() {
+                if let Some(previous_artifact_id) = previous_artifact_id.as_deref() {
+                    parts.replace_attachment_ref(
+                        previous_artifact_id,
+                        &artifact.artifact_id,
+                        &artifact.mime,
+                        &artifact.label,
+                        artifact.byte_size,
+                        Some(artifact.presentation.clone()),
+                        artifact.height_px,
+                    );
+                } else {
+                    parts.push_attachment_ref(
+                        &artifact.artifact_id,
+                        &artifact.mime,
+                        &artifact.label,
+                        artifact.byte_size,
+                        Some(artifact.presentation.clone()),
+                        artifact.height_px,
+                    );
+                }
+            }
+        }
+        if let Some(artifact) = ui_artifact {
+            if let Some(previous_artifact_id) = previous_artifact_id {
+                self.publish(TurnStreamEventV3::ArtifactUpdated {
+                    previous_artifact_id,
+                    artifact,
+                    root_artifact_id,
+                })
+                .await?;
+            } else {
+                self.publish(TurnStreamEventV3::ArtifactPresented { artifact })
+                    .await?;
+            }
+        }
+        if let Some(scene) = ui_scene {
+            self.publish(TurnStreamEventV3::UiScene { scene }).await?;
         }
         self.publish(TurnStreamEventV3::ToolFinished {
             tool_run_id: event.tool_run_id,
@@ -629,6 +696,7 @@ pub struct EmbeddedToolRegistryBindings {
     pub memory_reader: Arc<dyn MemoryContextReader>,
     pub memory_writer: Arc<dyn MemoryContextWriter>,
     pub memory_operations: Arc<dyn MemoryOperations>,
+    pub mcp_gateway_client: Arc<crate::mcp_gateway_client::McpGatewayClient>,
 }
 
 /// An unfinished registry assembled by a deployment recipe.
@@ -1041,6 +1109,18 @@ impl EmbeddedDaemon {
             memory_reader.clone(),
         );
         let runtime = Arc::new(runtime);
+        let mcp_config = Arc::new(
+            medousa_mcp_gateway::McpGatewayFullConfig::from_env_and_args(&[]).remote_only(),
+        );
+        let mcp_invokes_enabled = mcp_config.invokes_enabled;
+        let mcp_registry = Arc::new(medousa_mcp_gateway::ServerRegistry::with_policy_evaluator(
+            mcp_config,
+            Arc::new(EmbeddedMcpPolicyEvaluator),
+        ));
+        let mcp_gateway_client = Arc::new(crate::mcp_gateway_client::McpGatewayClient::in_process(
+            mcp_registry,
+            mcp_invokes_enabled,
+        ));
         let tool_assembly = config
             .tool_registry_recipe
             .assemble(EmbeddedToolRegistryBindings {
@@ -1051,6 +1131,7 @@ impl EmbeddedDaemon {
                 memory_reader: memory_reader.clone(),
                 memory_writer: memory_writer.clone(),
                 memory_operations: memory_operations.clone(),
+                mcp_gateway_client,
             })
             .context("assemble deployment tool registry")?;
         let (tool_registry, _tool_catalog) = tool_assembly
@@ -2559,7 +2640,7 @@ impl EmbeddedDaemonClient {
             provider: provider.clone(),
             model: model.clone(),
             response_depth_mode: "standard".to_string(),
-            supports_ui_artifacts: false,
+            supports_ui_artifacts: true,
             supports_liquid_markdown: true,
             supports_browser_host: false,
             channel_surface: channel_surface.or_else(|| Some("mobile".to_string())),
@@ -2571,7 +2652,7 @@ impl EmbeddedDaemonClient {
             self.principal.clone(),
             ProviderRoute::new(provider, model),
             SurfaceCapabilities {
-                ui_artifacts: false,
+                ui_artifacts: true,
                 liquid_markdown: true,
                 browser_host: false,
             },

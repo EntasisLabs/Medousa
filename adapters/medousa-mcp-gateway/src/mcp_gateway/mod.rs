@@ -3,7 +3,7 @@
 mod auth;
 pub mod catalog;
 pub mod config;
-mod policy_client;
+pub mod policy_client;
 pub mod registry;
 mod remote_client;
 pub mod server_config;
@@ -15,6 +15,7 @@ pub use catalog::{discover_from_catalog, mock_catalog_sync_response, mock_tool_c
 pub use config::{
     resolve_mcp_gateway_admin_token, resolve_mcp_gateway_token, resolve_mcp_policy_token,
 };
+pub use policy_client::McpPolicyEvaluator;
 pub use registry::ServerRegistry;
 pub use server_config::{McpGatewayFullConfig, gateway_config_path};
 pub use starter_config::{STARTER_MCP_GATEWAY_TOML, install_starter_gateway_config_if_missing};

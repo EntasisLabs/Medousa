@@ -7889,6 +7889,7 @@ name = "medousa-mcp-gateway"
 version = "0.9.1"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum 0.8.9",
  "chrono",
  "dirs 5.0.1",

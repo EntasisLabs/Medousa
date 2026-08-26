@@ -1,8 +1,11 @@
 //! Daemon-side MCP invoke policy evaluation.
 
+#[cfg(feature = "full-daemon")]
 use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
+#[cfg(feature = "full-daemon")]
 use stasis::ports::outbound::memory::identity_memory_models::AutonomyScope;
 
+#[cfg(feature = "full-daemon")]
 use crate::identity_memory::{policy_identity_context_request, resolve_identity_persona_id};
 use crate::mcp_gateway_api::{
     McpEffectClass, McpPolicyDecision, McpPolicyEvaluateRequest, McpPolicyEvaluateResponse,
@@ -16,6 +19,7 @@ pub fn evaluate_mcp_policy(request: &McpPolicyEvaluateRequest) -> McpPolicyEvalu
     evaluate_lane_policy(request)
 }
 
+#[cfg(feature = "full-daemon")]
 pub async fn evaluate_mcp_policy_with_identity(
     request: &McpPolicyEvaluateRequest,
     identity_service: &IdentityMemoryService,
@@ -107,6 +111,7 @@ fn evaluate_heartbeat(request: &McpPolicyEvaluateRequest) -> McpPolicyEvaluateRe
     }
 }
 
+#[cfg(feature = "full-daemon")]
 fn merge_autonomy_scopes<'a>(scopes: impl Iterator<Item = &'a AutonomyScope>) -> AutonomyScope {
     let mut merged = AutonomyScope {
         allow: Vec::new(),
@@ -169,8 +174,10 @@ fn approval_required(reason: impl Into<String>) -> McpPolicyEvaluateResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "full-daemon")]
     use crate::identity_memory::build_seeded_identity_memory_store;
     use crate::mcp_gateway_api::McpTurnContext;
+    #[cfg(feature = "full-daemon")]
     use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
 
     fn sample_request(lane: McpTurnLane, effect: McpEffectClass) -> McpPolicyEvaluateRequest {
@@ -192,11 +199,11 @@ mod tests {
     }
 
     fn resolve_identity_user_id_for_test() -> String {
-        crate::identity_memory::resolve_identity_user_id(None)
+        "user:test".to_string()
     }
 
     fn resolve_identity_channel_id_for_test() -> String {
-        crate::identity_memory::resolve_identity_channel_id(Some("interactive"))
+        "channel:test".to_string()
     }
 
     #[test]
@@ -248,6 +255,7 @@ mod tests {
         assert_eq!(response.decision, McpPolicyDecision::Deny);
     }
 
+    #[cfg(feature = "full-daemon")]
     #[tokio::test]
     async fn identity_allows_external_read_for_default_user() {
         let store = build_seeded_identity_memory_store().expect("store");

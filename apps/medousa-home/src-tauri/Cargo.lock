@@ -5417,11 +5417,13 @@ dependencies = [
  "locus-core-rs",
  "medousa-browser-lite",
  "medousa-engine",
+ "medousa-mcp-gateway",
  "medousa-runtime",
  "medousa-store",
  "medousa-tool-macros",
  "medousa-types",
  "once_cell",
+ "reqwest 0.12.28",
  "schemars 0.8.22",
  "serde",
  "serde_json",
@@ -5636,6 +5638,25 @@ dependencies = [
  "tokio",
  "uuid",
  "windows 0.61.3",
+]
+
+[[package]]
+name = "medousa-mcp-gateway"
+version = "0.9.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "chrono",
+ "dirs 5.0.1",
+ "futures-util",
+ "medousa-types",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml 0.8.2",
+ "uuid",
 ]
 
 [[package]]

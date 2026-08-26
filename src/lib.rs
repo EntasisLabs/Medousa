@@ -47,6 +47,12 @@ pub mod locus_service;
 #[path = "runtime/locus_surreal_client.rs"]
 pub mod locus_surreal_client;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod mcp_gateway_api;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod mcp_gateway_client;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod mcp_policy;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod mobile_tool_registry;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 #[path = "runtime/persistent_locus.rs"]
@@ -99,6 +105,8 @@ pub mod turn_stream_registry;
 pub mod turn_ticket;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod typed_tools;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod ui_tool_output;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod user_profiles;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]

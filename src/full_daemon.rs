@@ -171,6 +171,7 @@ pub mod stt_handlers;
 pub mod ui_build_tools;
 pub mod ui_present_tools;
 pub mod ui_scene_tools;
+pub mod ui_tool_output;
 pub mod user_profiles;
 pub mod vault;
 pub mod vault_git;

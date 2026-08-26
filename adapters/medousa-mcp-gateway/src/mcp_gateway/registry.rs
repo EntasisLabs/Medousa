@@ -14,7 +14,7 @@ use uuid::Uuid;
 use crate::mcp_gateway::catalog::{
     auto_tag_capabilities, discover_from_entries, mock_tool_catalog,
 };
-use crate::mcp_gateway::policy_client::DaemonPolicyClient;
+use crate::mcp_gateway::policy_client::{DaemonPolicyClient, McpPolicyEvaluator};
 use crate::mcp_gateway::remote_client::{RemoteMcpSession, RemoteTransport};
 use crate::mcp_gateway::server_config::{McpGatewayFullConfig, McpServerConfig};
 use crate::mcp_gateway::stdio_client::StdioMcpSession;
@@ -46,20 +46,27 @@ pub struct CatalogSnapshot {
 #[derive(Clone)]
 pub struct ServerRegistry {
     config: Arc<McpGatewayFullConfig>,
-    policy_client: DaemonPolicyClient,
+    policy: Arc<dyn McpPolicyEvaluator>,
     snapshot: Arc<RwLock<CatalogSnapshot>>,
 }
 
 impl ServerRegistry {
     pub fn new(config: Arc<McpGatewayFullConfig>) -> Self {
-        let policy_client = DaemonPolicyClient::new(
+        let policy = Arc::new(DaemonPolicyClient::new(
             config.daemon_policy_url.clone(),
             config.policy_token.clone(),
-        );
+        ));
 
+        Self::with_policy_evaluator(config, policy)
+    }
+
+    pub fn with_policy_evaluator(
+        config: Arc<McpGatewayFullConfig>,
+        policy: Arc<dyn McpPolicyEvaluator>,
+    ) -> Self {
         Self {
             config,
-            policy_client,
+            policy,
             snapshot: Arc::new(RwLock::new(CatalogSnapshot {
                 tools: mock_tool_catalog(),
                 servers: Vec::new(),
@@ -325,7 +332,7 @@ impl ServerRegistry {
             operator_approval_granted: request.operator_approval_granted,
         };
 
-        match self.policy_client.evaluate(&policy_request).await {
+        match self.policy.evaluate(&policy_request).await {
             Ok(policy) if policy.allowed => {}
             Ok(policy) => {
                 return fail(
