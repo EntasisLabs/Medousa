@@ -1,10 +1,8 @@
-import type { TurnStreamEnvelopeV2 } from "$lib/types/generated/daemon_api";
-
-export { reduceTranscriptEnvelope, transcriptLegacyFromV2 } from "./transcriptReducer";
+import type { TurnStreamEnvelopeV3 } from "$lib/types/generated/daemon_api";
 
 export interface StreamEventTarget {
   sessionId: string;
-  event: TurnStreamEnvelopeV2;
+  event: TurnStreamEnvelopeV3;
 }
 
 type ScheduleFlush = (flush: () => void) => () => void;
@@ -12,6 +10,7 @@ type ScheduleFlush = (flush: () => void) => () => void;
 interface PendingAppend {
   latest: StreamEventTarget;
   type: "content_append" | "reasoning_append";
+  segmentId: string | null;
   chunks: string[];
 }
 
@@ -78,7 +77,11 @@ export class StreamEventPump {
     }
 
     const pending = this.pendingAppends.get(key);
-    if (pending && pending.type === append.type) {
+    if (
+      pending &&
+      pending.type === append.type &&
+      pending.segmentId === append.segmentId
+    ) {
       pending.latest = target;
       pending.chunks.push(append.text);
     } else {
@@ -86,6 +89,7 @@ export class StreamEventPump {
       this.pendingAppends.set(key, {
         latest: target,
         type: append.type,
+        segmentId: append.segmentId,
         chunks: [append.text],
       });
     }
@@ -132,12 +136,24 @@ function streamKey(target: StreamEventTarget): string {
   return `${target.sessionId}\u0000${target.event.turn_id}`;
 }
 
-function appendEvent(event: TurnStreamEnvelopeV2):
-  | { type: "content_append" | "reasoning_append"; text: string }
+function appendEvent(event: TurnStreamEnvelopeV3):
+  | {
+      type: "content_append" | "reasoning_append";
+      segmentId: string | null;
+      text: string;
+    }
   | null {
-  return event.event.type === "content_append" || event.event.type === "reasoning_append"
-    ? event.event
-    : null;
+  if (event.event.type === "content_append") {
+    return {
+      type: event.event.type,
+      segmentId: event.event.segment_id,
+      text: event.event.text,
+    };
+  }
+  if (event.event.type === "reasoning_append") {
+    return { type: event.event.type, segmentId: null, text: event.event.text };
+  }
+  return null;
 }
 
 function materializeAppend(pending: PendingAppend): StreamEventTarget {
@@ -148,7 +164,11 @@ function materializeAppend(pending: PendingAppend): StreamEventTarget {
       ...pending.latest.event,
       event:
         pending.type === "content_append"
-          ? { type: "content_append", text }
+          ? {
+              type: "content_append",
+              segment_id: pending.segmentId ?? "",
+              text,
+            }
           : { type: "reasoning_append", text },
     },
   };

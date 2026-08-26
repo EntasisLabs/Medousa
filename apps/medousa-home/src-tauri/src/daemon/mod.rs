@@ -39,12 +39,12 @@ pub mod workspace_card;
 use crate::daemon::sse::stream_sse_json_workshop;
 use crate::daemon::types::{
     AgentModeId, DaemonHealth, EnvironmentStreamEvent, InteractiveTurnAccepted,
-    InteractiveTurnRequest, InteractiveTurnStreamEvent, StageRoutingMatrix, TurnSurfaceContext,
-    WorkspaceStreamEvent, DEFAULT_DAEMON_URL,
+    InteractiveTurnRequest, StageRoutingMatrix, TurnSurfaceContext, WorkspaceStreamEvent,
+    DEFAULT_DAEMON_URL,
 };
 use crate::embedded_daemon::EmbeddedDaemonState;
 use crate::workshop_transport;
-use medousa_types::turn_stream::{TurnStreamEnvelopeV2, TURN_STREAM_V2_MEDIA_TYPE};
+use medousa_types::turn_stream::{TurnStreamEnvelopeV3, TURN_STREAM_V3_MEDIA_TYPE};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -58,13 +58,6 @@ pub struct DaemonState {
     /// One SSE listener per turn id — Tier 2c multi-stream bridge.
     interactive_streams: Mutex<HashMap<String, watch::Sender<bool>>>,
     pub(crate) contract_streams: Mutex<HashMap<String, watch::Sender<bool>>>,
-}
-
-#[derive(serde::Deserialize, serde::Serialize)]
-#[serde(untagged)]
-enum InteractiveStreamPayload {
-    V2(TurnStreamEnvelopeV2),
-    V1(InteractiveTurnStreamEvent),
 }
 
 impl DaemonState {
@@ -569,7 +562,7 @@ pub async fn interactive_stream_start(
         })?;
         let mut cancel_rx = add_interactive_stream_slot(&state.interactive_streams, &turn_id);
         tokio::spawn(async move {
-            let mut stream = match client.subscribe_turn(&turn_id, 0).await {
+            let mut stream = match client.subscribe_turn_v3(&turn_id, 0).await {
                 Ok(stream) => stream,
                 Err(error) => {
                     let _ = app.emit(
@@ -636,12 +629,12 @@ pub async fn interactive_stream_start(
         match workshop_transport::workshop_get_bytes_stream_with_accept(
             &config,
             &path,
-            Some(TURN_STREAM_V2_MEDIA_TYPE),
+            Some(TURN_STREAM_V3_MEDIA_TYPE),
         )
         .await
         {
             Ok(source) => {
-                stream_sse_json_workshop::<InteractiveStreamPayload>(
+                stream_sse_json_workshop::<TurnStreamEnvelopeV3>(
                     &app,
                     source,
                     "interactive://event",
@@ -693,35 +686,22 @@ pub fn interactive_stream_stop_turn(
 
 #[cfg(test)]
 mod tests {
-    use super::InteractiveStreamPayload;
+    use medousa_types::turn_stream::TurnStreamEnvelopeV3;
 
     #[test]
-    fn interactive_stream_payload_accepts_v2_and_legacy_frames() {
-        let v2 = serde_json::json!({
-            "schema_version": 2,
+    fn interactive_stream_payload_accepts_v3_frames() {
+        let v3 = serde_json::json!({
+            "schema_version": 3,
             "turn_id": "turn-1",
             "seq": 1,
             "emitted_at_utc": "2026-08-15T00:00:00Z",
-            "event": { "type": "content_append", "text": "hello" }
+            "event": {
+                "type": "assistant_text_started",
+                "segment_id": "segment-1",
+                "model_round": 1
+            }
         });
-        assert!(matches!(
-            serde_json::from_value(v2).unwrap(),
-            InteractiveStreamPayload::V2(_)
-        ));
-
-        let legacy = serde_json::json!({
-            "turn_id": "turn-1",
-            "seq": 1,
-            "event_type": "content_delta",
-            "phase": "streaming",
-            "message": "",
-            "content_delta": "hello",
-            "terminal": false,
-            "emitted_at_utc": "2026-08-15T00:00:00Z"
-        });
-        assert!(matches!(
-            serde_json::from_value(legacy).unwrap(),
-            InteractiveStreamPayload::V1(_)
-        ));
+        let envelope: TurnStreamEnvelopeV3 = serde_json::from_value(v3).unwrap();
+        assert_eq!(envelope.schema_version, 3);
     }
 }

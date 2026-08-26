@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type {
-  TurnStreamEnvelopeV2,
-  TurnStreamEventV2,
+  TurnStreamEnvelopeV3,
+  TurnStreamEventV3,
 } from "$lib/types/generated/daemon_api";
 import {
   applyCompanionStreamEvent,
@@ -10,10 +10,10 @@ import {
 } from "./companionState";
 
 function event(
-  payload: TurnStreamEventV2,
-): TurnStreamEnvelopeV2 {
+  payload: TurnStreamEventV3,
+): TurnStreamEnvelopeV3 {
   return {
-    schema_version: 2,
+    schema_version: 3,
     turn_id: "turn-1",
     seq: 1,
     emitted_at_utc: "2026-08-02T00:00:00Z",
@@ -37,7 +37,11 @@ describe("applyCompanionStreamEvent", () => {
 
     const done = applyCompanionStreamEvent(
       working,
-      event({ type: "final", text: "Finished the task" }),
+      event({
+        type: "turn_completed",
+        outcome: "completed",
+        aggregate_text: "Finished the task",
+      }),
     );
     expect(done.activeTurnIds.size).toBe(0);
     expect(done.feedback).toEqual({

@@ -90,8 +90,18 @@ describe("former markdown-liquid-vault SCC stays acyclic", () => {
     expect(source("src/lib/utils/chartExport.ts")).not.toMatch(/vaultExportPrep/);
   });
 
-  it("chat store does not import v2ToLegacy", () => {
-    expect(source("src/lib/stores/chat.svelte.ts")).not.toMatch(/v2ToLegacy/);
+  it("Home's interactive stream path stays V3-only", () => {
+    const streamPath = [
+      "src/lib/stores/chat.svelte.ts",
+      "src/lib/chat/streamApplyController.ts",
+      "src/lib/stream/eventPump.ts",
+      "src/lib/workshopConnection.ts",
+      "src/lib/notifications.ts",
+      "src/lib/companion/companionState.ts",
+      "src/routes/popout/toolbar/+page.svelte",
+    ].map(source).join("\n");
+    expect(streamPath).not.toMatch(/TurnStreamEnvelopeV2|v2ToLegacy|stream\/v2/);
+    expect(streamPath).toMatch(/TurnStreamEnvelopeV3/);
   });
 
   it("transcript reducer does not import Svelte or the chat store", () => {

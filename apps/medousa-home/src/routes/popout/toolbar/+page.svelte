@@ -43,11 +43,7 @@
   import { environmentIcon } from "$lib/utils/environmentIcons";
   import { readLastViewPopoutSurface } from "$lib/utils/viewPopout";
   import { homeChannelSurface } from "$lib/platform";
-  import type {
-    InteractiveTurnStreamEvent,
-    TurnStreamEnvelopeV2,
-  } from "$lib/types/generated/daemon_api";
-  import { turnStreamPayloadToV2 } from "$lib/stream/v2ToLegacy";
+  import type { TurnStreamEnvelopeV3 } from "$lib/types/generated/daemon_api";
   import { isAskJobId } from "$lib/types/askJob";
   import { buildAskJobRequest } from "$lib/utils/askPrompt";
   import {
@@ -175,7 +171,7 @@
         )
       : () => {};
     if (isTauri()) {
-      void onInteractiveEvent<TurnStreamEnvelopeV2 | InteractiveTurnStreamEvent>(
+      void onInteractiveEvent<TurnStreamEnvelopeV3>(
         handleInteractiveEvent,
       ).then(
         (detach) => {
@@ -208,9 +204,9 @@
   });
 
   function handleInteractiveEvent(
-    payload: TurnStreamEnvelopeV2 | InteractiveTurnStreamEvent,
+    payload: TurnStreamEnvelopeV3,
   ) {
-    const result = applyCompanionStreamEvent(activity, turnStreamPayloadToV2(payload));
+    const result = applyCompanionStreamEvent(activity, payload);
     activity = {
       activeTurnIds: result.activeTurnIds,
       feedback: result.feedback,

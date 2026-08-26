@@ -1,8 +1,4 @@
-import type { TurnStreamEnvelopeV2 } from "$lib/types/generated/daemon_api";
-import {
-  isTerminalTurnStreamEventV2,
-  terminalTurnStreamTextV2,
-} from "$lib/stream/v2";
+import type { TurnStreamEnvelopeV3 } from "$lib/types/generated/daemon_api";
 
 export type CompanionFeedbackTone = "success" | "error" | "attention";
 
@@ -35,7 +31,7 @@ function concise(value: string | null | undefined, fallback: string): string {
 
 export function applyCompanionStreamEvent(
   activity: CompanionActivity,
-  envelope: TurnStreamEnvelopeV2,
+  envelope: TurnStreamEnvelopeV3,
 ): CompanionEventResult {
   const activeTurnIds = new Set(activity.activeTurnIds);
   let feedback = activity.feedback;
@@ -58,18 +54,15 @@ export function applyCompanionStreamEvent(
       tone: "attention",
       message: concise(event.message, "An agent needs permission to continue."),
     };
-  } else if (event.type === "error") {
+  } else if (event.type === "turn_completed") {
     activeTurnIds.delete(envelope.turn_id);
-    feedback = {
-      tone: "error",
-      message: concise(event.operator_message, "That turn could not finish."),
-    };
-  } else if (isTerminalTurnStreamEventV2(event)) {
-    activeTurnIds.delete(envelope.turn_id);
-    feedback = {
-      tone: "success",
-      message: concise(terminalTurnStreamTextV2(event), "Done."),
-    };
+    const failed = event.outcome === "failed" || event.outcome === "fuse_exhausted";
+    feedback = failed
+      ? {
+          tone: "error",
+          message: concise(event.operator_message, "That turn could not finish."),
+        }
+      : { tone: "success", message: concise(event.aggregate_text, "Done.") };
   } else {
     activeTurnIds.add(envelope.turn_id);
   }

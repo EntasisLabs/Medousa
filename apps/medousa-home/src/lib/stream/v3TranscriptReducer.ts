@@ -286,6 +286,24 @@ export function applyV3EnvelopeToMessage(
       chrome = { responseProvider: event.provider, responseModel: event.model };
       break;
     case "turn_completed":
+      if (
+        message.segments !== undefined &&
+        event.aggregate_text.trim() &&
+        !segments.some(
+          (segment) => segment.kind === "text" && segment.markdown.trim().length > 0,
+        )
+      ) {
+        segments = [
+          ...segments,
+          {
+            kind: "text",
+            segmentId: `terminal:${envelope.turn_id}`,
+            modelRound: null,
+            markdown: event.aggregate_text,
+            committed: true,
+          },
+        ];
+      }
       chrome = terminalState(message, event);
       break;
     default:
