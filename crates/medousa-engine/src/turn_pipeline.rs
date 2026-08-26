@@ -132,6 +132,9 @@ pub struct TurnPipelineMetrics {
     coalesced_commands: AtomicU64,
     rejected_commands: AtomicU64,
     blocked_send_nanos: AtomicU64,
+    receipt_wait_count: AtomicU64,
+    receipt_wait_nanos: AtomicU64,
+    receipt_wait_max_nanos: AtomicU64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -144,6 +147,12 @@ pub struct TurnPipelineMetricsSnapshot {
     pub coalesced_commands: u64,
     pub rejected_commands: u64,
     pub blocked_send_nanos: u64,
+    /// Semantic emissions that waited for the ordered output receipt.
+    pub receipt_wait_count: u64,
+    /// Cumulative time semantic producers spent waiting for output receipts.
+    pub receipt_wait_nanos: u64,
+    /// Slowest individual semantic output receipt observed by this turn.
+    pub receipt_wait_max_nanos: u64,
 }
 
 impl TurnPipelineMetrics {
@@ -157,7 +166,18 @@ impl TurnPipelineMetrics {
             coalesced_commands: self.coalesced_commands.load(Ordering::Relaxed),
             rejected_commands: self.rejected_commands.load(Ordering::Relaxed),
             blocked_send_nanos: self.blocked_send_nanos.load(Ordering::Relaxed),
+            receipt_wait_count: self.receipt_wait_count.load(Ordering::Relaxed),
+            receipt_wait_nanos: self.receipt_wait_nanos.load(Ordering::Relaxed),
+            receipt_wait_max_nanos: self.receipt_wait_max_nanos.load(Ordering::Relaxed),
         }
+    }
+
+    fn record_receipt_wait(&self, elapsed: std::time::Duration) {
+        let nanos = elapsed.as_nanos().min(u128::from(u64::MAX)) as u64;
+        self.receipt_wait_count.fetch_add(1, Ordering::Relaxed);
+        self.receipt_wait_nanos.fetch_add(nanos, Ordering::Relaxed);
+        self.receipt_wait_max_nanos
+            .fetch_max(nanos, Ordering::Relaxed);
     }
 }
 
@@ -249,11 +269,14 @@ impl TurnPipelineHandle {
         journal_override: Option<TurnEvent>,
     ) -> Result<u64, TurnPipelineError> {
         let receipt = self.send(event, journal_override).await?;
-        tokio::select! {
+        let wait_started = std::time::Instant::now();
+        let result = tokio::select! {
             biased;
             () = self.cancellation.cancelled() => Err(TurnPipelineError::Cancelled),
             result = receipt => result.map_err(|_| TurnPipelineError::Closed)?,
-        }
+        };
+        self.metrics.record_receipt_wait(wait_started.elapsed());
+        result
     }
 
     async fn send(
@@ -731,7 +754,10 @@ mod tests {
                 ..
             }) if text == "hello world"
         ));
-        assert_eq!(pipeline.metrics().coalesced_commands, 1);
+        let metrics = pipeline.metrics();
+        assert_eq!(metrics.coalesced_commands, 1);
+        assert_eq!(metrics.receipt_wait_count, 2);
+        assert!(metrics.receipt_wait_nanos >= metrics.receipt_wait_max_nanos);
     }
 
     #[tokio::test]

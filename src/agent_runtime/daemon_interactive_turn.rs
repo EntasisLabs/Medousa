@@ -195,9 +195,9 @@ impl InteractiveTurnStreamSink {
         .await;
     }
 
-    async fn ensure_response_text(&self, response_text: Option<String>) {
+    async fn ensure_response_text(&self, response_text: Option<String>) -> bool {
         let Some(response_text) = response_text.filter(|text| !text.trim().is_empty()) else {
-            return;
+            return false;
         };
         let needs_fallback = self
             .text
@@ -210,15 +210,16 @@ impl InteractiveTurnStreamSink {
             })
             .unwrap_or(false);
         if !needs_fallback {
-            return;
+            return false;
         }
         let Some((started, append)) = self.prepare_content_delta(response_text) else {
-            return;
+            return false;
         };
         if let Some(started) = started {
             self.publish_tracked(started).await;
         }
         self.publish_tracked(append).await;
+        true
     }
 
     fn aggregate_text(&self) -> String {
@@ -514,11 +515,25 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     async fn model_response_completed_with_text(
         &self,
         _turn_id: u64,
-        _model_round: usize,
+        model_round: usize,
         response_text: Option<String>,
     ) {
-        self.ensure_response_text(response_text).await;
+        let wait_started = Instant::now();
+        let recovered_response_text = self.ensure_response_text(response_text).await;
         self.commit_active_segment(true).await;
+        let pipeline = self.pipeline.metrics();
+        tracing::debug!(
+            target: "medousa::turn_latency",
+            turn_id = %self.turn_id,
+            model_round,
+            response_fence_wait_us = wait_started.elapsed().as_micros() as u64,
+            recovered_response_text,
+            pipeline_receipt_wait_count = pipeline.receipt_wait_count,
+            pipeline_receipt_wait_total_us = pipeline.receipt_wait_nanos / 1_000,
+            pipeline_receipt_wait_max_us = pipeline.receipt_wait_max_nanos / 1_000,
+            pipeline_blocked_send_total_us = pipeline.blocked_send_nanos / 1_000,
+            "model response chronology fence committed"
+        );
     }
 
     async fn agent_worker_ack(
@@ -913,6 +928,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         if self.emit_cancelled_if_needed().await {
             return;
         }
+        let wait_started = Instant::now();
         self.commit_active_segment(false).await;
         if let Ok(mut parts) = self.parts.lock() {
             parts.tool_started(&tool_run_id, &tool_name, &input_summary, tool_round);
@@ -925,6 +941,18 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             tool_round,
         })
         .await;
+        let pipeline = self.pipeline.metrics();
+        tracing::debug!(
+            target: "medousa::turn_latency",
+            turn_id = %self.turn_id,
+            tool_round,
+            tool_start_boundary_wait_us = wait_started.elapsed().as_micros() as u64,
+            pipeline_receipt_wait_count = pipeline.receipt_wait_count,
+            pipeline_receipt_wait_total_us = pipeline.receipt_wait_nanos / 1_000,
+            pipeline_receipt_wait_max_us = pipeline.receipt_wait_max_nanos / 1_000,
+            pipeline_blocked_send_total_us = pipeline.blocked_send_nanos / 1_000,
+            "tool invocation released after chronological start receipt"
+        );
     }
 
     async fn tool_run_finished(
@@ -1921,12 +1949,14 @@ async fn run_agent_turn_inner(
     ))
     .await;
 
-    let system_prompt = super::modes::system_prompt_for_mode(&agent_mode);
-    let (tool_count, tool_schema_chars) =
-        crate::agent_runtime::context_usage::estimate_tool_schema_chars(
-            &assembled.execution.tool_registry,
-        )
-        .await;
+    let compiled_policy = super::modes::compiled_system_policy_for_mode(&agent_mode);
+    let system_prompt = &compiled_policy.rendered;
+    let tool_footprint = crate::agent_runtime::context_usage::measure_tool_schema_footprint(
+        &assembled.execution.tool_registry,
+    )
+    .await;
+    let tool_count = tool_footprint.tool_count;
+    let tool_schema_chars = tool_footprint.total_chars;
     let context_limit_tokens = final_route.as_ref().and_then(|route| {
         crate::model_capability_registry::registry()
             .resolve(&route.provider, &route.model)
@@ -1954,6 +1984,33 @@ async fn run_agent_turn_inner(
         total_tokens = context_report.total_tokens_estimate,
         tool_count = context_report.tool_count,
         "turn context budget"
+    );
+    let policy_slice_chars = compiled_policy
+        .footprint
+        .slices
+        .iter()
+        .map(|slice| (slice.id, slice.chars, slice.tokens_estimate))
+        .collect::<Vec<_>>();
+    let largest_tool_schema_chars = tool_footprint
+        .tools
+        .iter()
+        .take(8)
+        .map(|tool| (tool.name.as_str(), tool.chars, tool.tokens_estimate))
+        .collect::<Vec<_>>();
+    tracing::debug!(
+        target: "medousa::context_usage",
+        turn_id = %turn_id,
+        policy_mode = compiled_policy.mode.as_str(),
+        policy_actor = compiled_policy.actor.as_str(),
+        policy_total_chars = compiled_policy.footprint.total_chars,
+        policy_total_tokens_estimate = compiled_policy.footprint.total_tokens_estimate,
+        policy_envelope_chars = compiled_policy.footprint.envelope_chars,
+        policy_envelope_tokens_estimate = compiled_policy.footprint.envelope_tokens_estimate,
+        estimator = crate::agent_runtime::context_usage::ESTIMATOR_LABEL,
+        policy_slice_chars = ?policy_slice_chars,
+        tool_schema_total_chars = tool_footprint.total_chars,
+        largest_tool_schema_chars = ?largest_tool_schema_chars,
+        "turn prompt footprint constituents"
     );
     if let Some(stream_sink) = context_telemetry {
         if let Some(cache) = &stream_sink.session_hooks.context_usage_by_session {

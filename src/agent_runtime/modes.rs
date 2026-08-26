@@ -3,7 +3,7 @@
 use crate::daemon_api::{AgentModeAvailability, AgentModeId, AgentModeListResponse};
 
 use super::prompt_policy::{
-    SttpPolicyActor, SttpPolicyMode, SttpPolicySelection, compile_sttp_policy,
+    CompiledSttpPolicy, SttpPolicyActor, SttpPolicyMode, SttpPolicySelection, compile_sttp_policy,
 };
 use super::turn_completion_fsm::TurnCompletionProfile;
 
@@ -152,7 +152,7 @@ pub fn list_agent_modes() -> AgentModeListResponse {
 }
 
 /// Compile the exact host policy for this immutable mode snapshot.
-pub fn system_prompt_for_mode(mode: &ResolvedAgentMode) -> String {
+pub fn compiled_system_policy_for_mode(mode: &ResolvedAgentMode) -> CompiledSttpPolicy {
     let policy_mode = match (mode.id, mode.coder_phase) {
         (AgentModeId::General, _) => SttpPolicyMode::General,
         (AgentModeId::Coder, Some(CoderRuntimePhase::Work)) => SttpPolicyMode::CoderWork,
@@ -160,7 +160,10 @@ pub fn system_prompt_for_mode(mode: &ResolvedAgentMode) -> String {
     };
     compile_sttp_policy(SttpPolicySelection::new(policy_mode, SttpPolicyActor::Host))
         .expect("built-in STTP host policy must compile")
-        .rendered
+}
+
+pub fn system_prompt_for_mode(mode: &ResolvedAgentMode) -> String {
+    compiled_system_policy_for_mode(mode).rendered
 }
 
 #[cfg(test)]

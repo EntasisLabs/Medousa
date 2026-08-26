@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use super::context_usage::{ESTIMATOR_LABEL, chars_to_tokens};
 use super::modes::{CoderRuntimePhase, resolve_agent_mode, system_prompt_for_mode};
+use super::prompt_policy::{
+    CompiledSttpPolicy, SttpPolicyActor, SttpPolicyMode, SttpPolicySelection, compile_sttp_policy,
+};
 use super::turn_worker::{
     TurnWorkerIntent, worker_system_prompt, worker_system_prompt_for_parent_mode,
 };
@@ -25,24 +28,89 @@ struct PromptFootprintEntry {
     id: String,
     chars: usize,
     tokens_estimate: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    constituents: Vec<PromptFootprintConstituent>,
 }
 
-fn entry(id: &str, chars: usize) -> PromptFootprintEntry {
+#[derive(Debug, Deserialize, PartialEq, Eq, Serialize)]
+struct PromptFootprintConstituent {
+    id: String,
+    chars: usize,
+    tokens_estimate: u32,
+}
+
+fn compiled_policy_entry(
+    id: &str,
+    total_chars: usize,
+    policy: &CompiledSttpPolicy,
+    trailing_component: Option<&str>,
+) -> PromptFootprintEntry {
+    let mut constituents = Vec::with_capacity(policy.footprint.slices.len() + 2);
+    constituents.push(PromptFootprintConstituent {
+        id: "sttp_envelope".to_string(),
+        chars: policy.footprint.envelope_chars,
+        tokens_estimate: policy.footprint.envelope_tokens_estimate,
+    });
+    constituents.extend(
+        policy
+            .footprint
+            .slices
+            .iter()
+            .map(|slice| PromptFootprintConstituent {
+                id: slice.id.to_string(),
+                chars: slice.chars,
+                tokens_estimate: slice.tokens_estimate,
+            }),
+    );
+    if let Some(component_id) = trailing_component {
+        let trailing_chars = total_chars
+            .checked_sub(policy.footprint.total_chars)
+            .expect("compiled policy cannot exceed the complete prompt");
+        constituents.push(PromptFootprintConstituent {
+            id: component_id.to_string(),
+            chars: trailing_chars,
+            tokens_estimate: chars_to_tokens(trailing_chars),
+        });
+    }
+    assert_eq!(
+        constituents
+            .iter()
+            .map(|constituent| constituent.chars)
+            .sum::<usize>(),
+        total_chars,
+        "constituent footprint must cover {id}"
+    );
     PromptFootprintEntry {
         id: id.to_string(),
-        chars,
-        tokens_estimate: chars_to_tokens(chars),
+        chars: total_chars,
+        tokens_estimate: chars_to_tokens(total_chars),
+        constituents,
     }
 }
 
 fn current_baseline() -> PromptFootprintBaseline {
     let general_mode = resolve_agent_mode(AgentModeId::General).expect("General mode");
     let general_host = system_prompt_for_mode(&general_mode);
+    let general_host_policy = compile_sttp_policy(SttpPolicySelection::new(
+        SttpPolicyMode::General,
+        SttpPolicyActor::Host,
+    ))
+    .expect("General host policy");
     let coder_setup_mode = resolve_agent_mode(AgentModeId::Coder).expect("Coder mode");
     let coder_setup_host = system_prompt_for_mode(&coder_setup_mode);
+    let coder_setup_host_policy = compile_sttp_policy(SttpPolicySelection::new(
+        SttpPolicyMode::CoderSetup,
+        SttpPolicyActor::Host,
+    ))
+    .expect("Coder setup host policy");
     let mut coder_work_mode = coder_setup_mode;
     coder_work_mode.coder_phase = Some(CoderRuntimePhase::Work);
     let coder_work_host = system_prompt_for_mode(&coder_work_mode);
+    let coder_work_host_policy = compile_sttp_policy(SttpPolicySelection::new(
+        SttpPolicyMode::CoderWork,
+        SttpPolicyActor::Host,
+    ))
+    .expect("Coder work host policy");
 
     let worker_runtime = worker_system_prompt(
         "baseline-session",
@@ -59,15 +127,50 @@ fn current_baseline() -> PromptFootprintBaseline {
         false,
         Some("coder"),
     );
+    let general_worker_policy = compile_sttp_policy(SttpPolicySelection::new(
+        SttpPolicyMode::General,
+        SttpPolicyActor::Worker,
+    ))
+    .expect("General worker policy");
+    let coder_worker_policy = compile_sttp_policy(SttpPolicySelection::new(
+        SttpPolicyMode::CoderWork,
+        SttpPolicyActor::Worker,
+    ))
+    .expect("Coder worker policy");
 
     PromptFootprintBaseline {
         estimator: ESTIMATOR_LABEL.to_string(),
         entries: vec![
-            entry("general_host_policy", general_host.chars().count()),
-            entry("coder_setup_host_policy", coder_setup_host.chars().count()),
-            entry("coder_work_host_policy", coder_work_host.chars().count()),
-            entry("general_worker_policy_hud", worker_runtime.chars().count()),
-            entry("coder_worker_policy_hud", coder_worker.chars().count()),
+            compiled_policy_entry(
+                "general_host_policy",
+                general_host.chars().count(),
+                &general_host_policy,
+                None,
+            ),
+            compiled_policy_entry(
+                "coder_setup_host_policy",
+                coder_setup_host.chars().count(),
+                &coder_setup_host_policy,
+                None,
+            ),
+            compiled_policy_entry(
+                "coder_work_host_policy",
+                coder_work_host.chars().count(),
+                &coder_work_host_policy,
+                None,
+            ),
+            compiled_policy_entry(
+                "general_worker_policy_hud",
+                worker_runtime.chars().count(),
+                &general_worker_policy,
+                Some("worker_hud"),
+            ),
+            compiled_policy_entry(
+                "coder_worker_policy_hud",
+                coder_worker.chars().count(),
+                &coder_worker_policy,
+                Some("worker_hud"),
+            ),
         ],
     }
 }

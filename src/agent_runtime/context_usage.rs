@@ -139,19 +139,72 @@ pub fn build_context_usage_report(input: ContextUsageInput<'_>) -> ContextUsageR
 }
 
 pub async fn estimate_tool_schema_chars(registry: &Arc<dyn ToolRegistry>) -> (usize, usize) {
+    let footprint = measure_tool_schema_footprint(registry).await;
+    (footprint.tool_count, footprint.total_chars)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolSchemaFootprint {
+    pub tool_count: usize,
+    /// Sum of the individually serialized tool contracts. Provider-specific
+    /// request-envelope punctuation is deliberately excluded.
+    pub total_chars: usize,
+    /// Largest schemas first, then stable by tool name.
+    pub tools: Vec<ToolSchemaEntryFootprint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolSchemaEntryFootprint {
+    pub name: String,
+    pub chars: usize,
+    pub tokens_estimate: u32,
+}
+
+pub async fn measure_tool_schema_footprint(
+    registry: &Arc<dyn ToolRegistry>,
+) -> ToolSchemaFootprint {
     let tools = match registry.list_tools().await {
         Ok(tools) => tools,
-        Err(_) => return (0, 0),
+        Err(_) => {
+            return ToolSchemaFootprint {
+                tool_count: 0,
+                total_chars: 0,
+                tools: Vec::new(),
+            };
+        }
     };
-    let count = tools.len();
-    let chars: usize = tools.iter().map(estimate_single_tool_chars).sum();
-    (count, chars)
+    tool_schema_footprint(&tools)
+}
+
+fn tool_schema_footprint(tools: &[genai::chat::Tool]) -> ToolSchemaFootprint {
+    let mut entries = tools
+        .iter()
+        .map(|tool| {
+            let chars = estimate_single_tool_chars(tool);
+            ToolSchemaEntryFootprint {
+                name: tool.name.to_string(),
+                chars,
+                tokens_estimate: chars_to_tokens(chars),
+            }
+        })
+        .collect::<Vec<_>>();
+    entries.sort_by(|left, right| {
+        right
+            .chars
+            .cmp(&left.chars)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    ToolSchemaFootprint {
+        tool_count: tools.len(),
+        total_chars: entries.iter().map(|entry| entry.chars).sum(),
+        tools: entries,
+    }
 }
 
 fn estimate_single_tool_chars(tool: &genai::chat::Tool) -> usize {
     serde_json::to_string(tool)
-        .map(|json| json.len())
-        .unwrap_or_else(|_| tool.name.to_string().len() + 64)
+        .map(|json| json.chars().count())
+        .unwrap_or_else(|_| tool.name.to_string().chars().count() + 64)
 }
 
 pub fn operator_summary(report: &ContextUsageReport) -> String {
@@ -285,5 +338,29 @@ mod tests {
         assert!(text.contains("System prompt"));
         assert!(text.contains("Tool definitions"));
         assert!(text.contains('%'));
+    }
+
+    #[test]
+    fn tool_schema_footprint_ranks_the_largest_contracts() {
+        let tools = vec![
+            genai::chat::Tool::new("small"),
+            genai::chat::Tool::new("large").with_schema(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "A deliberately longer contract for footprint ordering"
+                    }
+                }
+            })),
+        ];
+        let footprint = tool_schema_footprint(&tools);
+        assert_eq!(footprint.tool_count, 2);
+        assert_eq!(footprint.tools[0].name, "large");
+        assert_eq!(
+            footprint.total_chars,
+            footprint.tools.iter().map(|tool| tool.chars).sum::<usize>()
+        );
+        assert!(footprint.tools.iter().all(|tool| tool.tokens_estimate > 0));
     }
 }

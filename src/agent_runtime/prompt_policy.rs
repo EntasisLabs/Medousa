@@ -13,6 +13,8 @@ use locus_core_rs::{
 };
 use serde_json::json;
 
+use super::context_usage::chars_to_tokens;
+
 const POLICY_SESSION_ID: &str = "medousa-system-policy-v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +67,25 @@ pub struct CompiledSttpPolicy {
     pub mode: SttpPolicyMode,
     pub actor: SttpPolicyActor,
     pub top_level_fields: Vec<&'static str>,
+    pub footprint: SttpPolicyFootprint,
+}
+
+/// Exact canonical prompt footprint with the non-content STTP layers kept
+/// separate from the selected semantic slices.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SttpPolicyFootprint {
+    pub total_chars: usize,
+    pub total_tokens_estimate: u32,
+    pub envelope_chars: usize,
+    pub envelope_tokens_estimate: u32,
+    pub slices: Vec<SttpPolicySliceFootprint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SttpPolicySliceFootprint {
+    pub id: &'static str,
+    pub chars: usize,
+    pub tokens_estimate: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,6 +93,7 @@ pub enum SttpPolicyCompileError {
     Build(SttpDocumentBuildError),
     StructuralValidation(String),
     StrictTypedIr(String),
+    Footprint(String),
     PsiMismatch,
 }
 
@@ -91,6 +113,7 @@ impl fmt::Display for SttpPolicyCompileError {
                     "STTP policy strict typed-IR parse failed: {error}"
                 )
             }
+            Self::Footprint(error) => write!(formatter, "STTP policy footprint failed: {error}"),
             Self::PsiMismatch => formatter.write_str("STTP policy PSI validation failed"),
         }
     }
@@ -129,12 +152,72 @@ pub fn compile_sttp_policy(
         .build()?;
     let rendered = document.render_canonical();
     validate_strict_policy(&rendered)?;
+    let footprint = measure_policy_footprint(&rendered, &fields)?;
 
     Ok(CompiledSttpPolicy {
         rendered,
         mode: selection.mode,
         actor: selection.actor,
         top_level_fields: fields,
+        footprint,
+    })
+}
+
+fn measure_policy_footprint(
+    rendered: &str,
+    fields: &[&'static str],
+) -> Result<SttpPolicyFootprint, SttpPolicyCompileError> {
+    let content_end = rendered.rfind(" } ⟩\n⍉⟨").ok_or_else(|| {
+        SttpPolicyCompileError::Footprint("canonical content boundary is missing".to_string())
+    })?;
+    let starts = fields
+        .iter()
+        .map(|field| {
+            rendered.find(&format!("{field}(.")).ok_or_else(|| {
+                SttpPolicyCompileError::Footprint(format!("canonical field '{field}' is missing"))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    if !starts.windows(2).all(|pair| pair[0] < pair[1]) {
+        return Err(SttpPolicyCompileError::Footprint(
+            "canonical fields are not in semantic order".to_string(),
+        ));
+    }
+    if starts.last().is_some_and(|start| *start >= content_end) {
+        return Err(SttpPolicyCompileError::Footprint(
+            "canonical content boundary precedes its final field".to_string(),
+        ));
+    }
+
+    let slices = fields
+        .iter()
+        .enumerate()
+        .map(|(index, field)| {
+            let start = starts[index];
+            let end = starts.get(index + 1).copied().unwrap_or(content_end);
+            let chars = rendered[start..end].chars().count();
+            SttpPolicySliceFootprint {
+                id: field,
+                chars,
+                tokens_estimate: chars_to_tokens(chars),
+            }
+        })
+        .collect::<Vec<_>>();
+    let total_chars = rendered.chars().count();
+    let content_chars = slices.iter().map(|slice| slice.chars).sum::<usize>();
+    let envelope_chars = total_chars.checked_sub(content_chars).ok_or_else(|| {
+        SttpPolicyCompileError::Footprint(
+            "canonical slice sizes exceed the compiled policy".to_string(),
+        )
+    })?;
+
+    Ok(SttpPolicyFootprint {
+        total_chars,
+        total_tokens_estimate: chars_to_tokens(total_chars),
+        envelope_chars,
+        envelope_tokens_estimate: chars_to_tokens(envelope_chars),
+        slices,
     })
 }
 
@@ -417,6 +500,44 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
+        }
+    }
+
+    #[test]
+    fn footprint_accounts_for_the_exact_compiled_policy() {
+        for selection in selections() {
+            let compiled = compile_shadow_sttp_policy(selection)
+                .unwrap_or_else(|error| panic!("{selection:?}: {error}"));
+            let slice_chars = compiled
+                .footprint
+                .slices
+                .iter()
+                .map(|slice| slice.chars)
+                .sum::<usize>();
+            assert_eq!(
+                compiled.footprint.envelope_chars + slice_chars,
+                compiled.footprint.total_chars
+            );
+            assert_eq!(
+                compiled.footprint.total_chars,
+                compiled.rendered.chars().count()
+            );
+            assert_eq!(
+                compiled
+                    .footprint
+                    .slices
+                    .iter()
+                    .map(|slice| slice.id)
+                    .collect::<Vec<_>>(),
+                compiled.top_level_fields
+            );
+            assert!(
+                compiled
+                    .footprint
+                    .slices
+                    .iter()
+                    .all(|slice| slice.chars > 0)
+            );
         }
     }
 
