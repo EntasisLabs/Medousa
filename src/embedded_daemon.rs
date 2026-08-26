@@ -7,8 +7,8 @@
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -62,9 +62,7 @@ use stasis::application::orchestration::prompt_pipeline::{
 use stasis::application::orchestration::tool_loop_pipeline::{
     ToolCallMode, ToolLoopExecutionRequest,
 };
-use stasis::application::orchestration::tool_registry::{
-    InMemoryToolRegistry, StasisTool, ToolRegistry,
-};
+use stasis::application::orchestration::tool_registry::{StasisTool, ToolRegistry};
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 use stasis::domain::runtime::cluster_node::{
     ClusterNode, ClusterNodeHeartbeat, ClusterNodeRole, NewClusterNode,
@@ -117,6 +115,27 @@ const STREAM_DELTA_CAPACITY: usize = 128;
 const EMBEDDED_RUNTIME_EVENT_CAPACITY: usize = 64;
 const EMBEDDED_TOOL_PARAM_LIMIT: usize = 6;
 const EMBEDDED_TOOL_VALUE_CHARS: usize = 120;
+
+fn embedded_system_prompt() -> String {
+    static PROMPT: OnceLock<String> = OnceLock::new();
+    PROMPT
+        .get_or_init(|| {
+            let policy = crate::prompt_policy::compile_sttp_policy(
+                crate::prompt_policy::SttpPolicySelection::new(
+                    crate::prompt_policy::SttpPolicyMode::General,
+                    crate::prompt_policy::SttpPolicyActor::Host,
+                ),
+            )
+            .expect("built-in embedded STTP policy must compile")
+            .rendered;
+            format!(
+                "{policy}\n\n[MEDOUSA_HUD]\nsurface=personal_mobile\n\
+                 catalog_tool=cognition_tools_discover\n\
+                 web_tool=cognition_web_search"
+            )
+        })
+        .clone()
+}
 
 fn embedded_sensitive_key(key: &str) -> bool {
     let key = key.to_ascii_lowercase();
@@ -596,58 +615,79 @@ pub struct EmbeddedSuspendReport {
     pub timed_out: bool,
 }
 
-/// Mobile capability layer over the daemon's injected tool registry.
+/// Services made available to a deployment's tool-registry recipe.
 ///
-/// The canonical turn-control and portable daemon tools are always daemon-owned
-/// and cannot be replaced by a host-supplied registry. Additional admitted
-/// tools delegate to the registry selected by the embedded composition.
-struct EmbeddedToolRegistry {
-    delegate: Arc<dyn ToolRegistry>,
-    portable: InMemoryToolRegistry,
-    turn_control: InMemoryToolRegistry,
+/// These are outbound ports and shared runtime services, not a deployment
+/// identity. A mobile, desktop, browser, or test host may select any recipe
+/// compatible with the services it can provide.
+#[derive(Clone)]
+pub struct EmbeddedToolRegistryBindings {
+    pub runtime: Arc<RuntimeComposition>,
+    pub locus: crate::locus_service::LocusService,
+    pub memory_writer: Arc<dyn MemoryContextWriter>,
 }
 
-impl EmbeddedToolRegistry {
-    fn new(delegate: Arc<dyn ToolRegistry>, portable: InMemoryToolRegistry) -> StasisResult<Self> {
-        let turn_control = InMemoryToolRegistry::default();
-        turn_control.register_tool(EmbeddedTurnControlTool)?;
-        Ok(Self {
-            delegate,
-            portable,
-            turn_control,
-        })
-    }
+/// An unfinished registry assembled by a deployment recipe.
+///
+/// The runtime adds its FSM tools before finalizing the one exact catalog.
+pub struct EmbeddedToolRegistryAssembly {
+    registrar: crate::typed_tools::ToolRegistrar,
+    catalog_handles: Vec<crate::typed_tools::ToolCatalogHandle>,
 }
 
-#[async_trait::async_trait]
-impl ToolRegistry for EmbeddedToolRegistry {
-    async fn list_tools(&self) -> StasisResult<Vec<genai::chat::Tool>> {
-        let mut tools = self.portable.list_tools().await?;
-        let mut delegated = self.delegate.list_tools().await?;
-        delegated.retain(|tool| {
-            tool.name.as_str() != medousa_runtime::turn_control::COGNITION_TURN
-                && !crate::portable_daemon_tools::PORTABLE_DAEMON_TOOL_NAMES
-                    .contains(&tool.name.as_str())
-        });
-        tools.extend(delegated);
-        tools.extend(self.turn_control.list_tools().await?);
-        Ok(tools)
-    }
-
-    async fn invoke_tool(
-        &self,
-        tool_name: &str,
-        input: serde_json::Value,
-    ) -> StasisResult<serde_json::Value> {
-        if tool_name.trim() == medousa_runtime::turn_control::COGNITION_TURN {
-            self.turn_control.invoke_tool(tool_name, input).await
-        } else if crate::portable_daemon_tools::PORTABLE_DAEMON_TOOL_NAMES
-            .contains(&tool_name.trim())
-        {
-            self.portable.invoke_tool(tool_name, input).await
-        } else {
-            self.delegate.invoke_tool(tool_name, input).await
+impl EmbeddedToolRegistryAssembly {
+    pub fn new(placements: crate::typed_tools::ToolPlacementIndex) -> Self {
+        Self {
+            registrar: crate::typed_tools::ToolRegistrar::new(placements),
+            catalog_handles: Vec::new(),
         }
+    }
+
+    pub fn registrar(&mut self) -> &mut crate::typed_tools::ToolRegistrar {
+        &mut self.registrar
+    }
+
+    pub fn initialize_handle_after_finish(
+        &mut self,
+        handle: crate::typed_tools::ToolCatalogHandle,
+    ) {
+        self.catalog_handles.push(handle);
+    }
+
+    fn finish(
+        mut self,
+    ) -> StasisResult<(Arc<dyn ToolRegistry>, Arc<crate::typed_tools::ToolCatalog>)> {
+        use crate::typed_tools::ToolRegistration as _;
+
+        self.registrar.register_tool(EmbeddedTurnControlTool)?;
+        let (registry, catalog) = self.registrar.finish();
+        for handle in self.catalog_handles {
+            handle
+                .initialize(catalog.clone())
+                .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+        }
+        Ok((Arc::new(registry), catalog))
+    }
+}
+
+/// Composition port for selecting business tools without forking runtime logic.
+pub trait EmbeddedToolRegistryRecipe: Send + Sync {
+    fn assemble(
+        &self,
+        bindings: EmbeddedToolRegistryBindings,
+    ) -> StasisResult<EmbeddedToolRegistryAssembly>;
+}
+
+struct EmptyEmbeddedToolRegistryRecipe;
+
+impl EmbeddedToolRegistryRecipe for EmptyEmbeddedToolRegistryRecipe {
+    fn assemble(
+        &self,
+        _bindings: EmbeddedToolRegistryBindings,
+    ) -> StasisResult<EmbeddedToolRegistryAssembly> {
+        Ok(EmbeddedToolRegistryAssembly::new(
+            crate::typed_tools::ToolPlacementIndex::default(),
+        ))
     }
 }
 
@@ -722,7 +762,7 @@ pub struct EmbeddedDaemonConfig {
     model: String,
     chat_client: Arc<dyn AiChatClient>,
     credentialed_chat_client: Option<CredentialedAiChatClient>,
-    tool_registry: Arc<dyn ToolRegistry>,
+    tool_registry_recipe: Arc<dyn EmbeddedToolRegistryRecipe>,
     foreground_turn_timeout: Duration,
     max_live_turns: usize,
 }
@@ -766,15 +806,19 @@ impl EmbeddedDaemonConfig {
             model: model.into(),
             chat_client,
             credentialed_chat_client: None,
-            tool_registry: Arc::new(InMemoryToolRegistry::default()),
+            tool_registry_recipe: Arc::new(EmptyEmbeddedToolRegistryRecipe),
             foreground_turn_timeout: DEFAULT_FOREGROUND_TURN_TIMEOUT,
             max_live_turns: 1,
         }
     }
 
-    /// Supply the daemon's already-filtered mobile tool registry.
-    pub fn with_tool_registry(mut self, tool_registry: Arc<dyn ToolRegistry>) -> Self {
-        self.tool_registry = tool_registry;
+    /// Supply the deployment recipe that assembles business tools from the
+    /// runtime's outbound services.
+    pub fn with_tool_registry_recipe(
+        mut self,
+        recipe: Arc<dyn EmbeddedToolRegistryRecipe>,
+    ) -> Self {
+        self.tool_registry_recipe = recipe;
         self
     }
 
@@ -841,7 +885,7 @@ impl std::fmt::Debug for EmbeddedDaemonConfig {
             .field("provider", &self.provider)
             .field("model", &self.model)
             .field("chat_client", &"REDACTED")
-            .field("tool_registry", &"capability-filtered")
+            .field("tool_registry", &"deployment-recipe")
             .field("foreground_turn_timeout", &self.foreground_turn_timeout)
             .field("max_live_turns", &self.max_live_turns)
             .finish()
@@ -993,16 +1037,17 @@ impl EmbeddedDaemon {
             memory_reader.clone(),
         );
         let runtime = Arc::new(runtime);
-        let portable_tools = crate::portable_daemon_tools::build_portable_daemon_tool_registry(
-            runtime.clone(),
-            locus_service.clone(),
-            memory_writer.clone(),
-        )
-        .context("initialize portable daemon tools")?;
-        let tool_registry: Arc<dyn ToolRegistry> = Arc::new(
-            EmbeddedToolRegistry::new(config.tool_registry.clone(), portable_tools)
-                .context("initialize embedded tool capability layer")?,
-        );
+        let tool_assembly = config
+            .tool_registry_recipe
+            .assemble(EmbeddedToolRegistryBindings {
+                runtime: runtime.clone(),
+                locus: locus_service.clone(),
+                memory_writer: memory_writer.clone(),
+            })
+            .context("assemble deployment tool registry")?;
+        let (tool_registry, _tool_catalog) = tool_assembly
+            .finish()
+            .context("finalize runtime tool catalog")?;
         let thread_store = RuntimeFactory::resolve_thread_store(runtime.as_ref(), None);
         let cluster_node_store = RuntimeFactory::resolve_cluster_node_store(runtime.as_ref(), None);
         let workflow_engine = RuntimeFactory::default_workflow_engine();
@@ -1323,7 +1368,7 @@ impl EmbeddedDaemon {
         let tool_loop = MedousaToolLoopPipeline::new(prompt_pipeline, self.tool_registry.clone());
         let request = ToolLoopExecutionRequest {
             user_prompt: inference_prompt,
-            system_prompt: None,
+            system_prompt: Some(embedded_system_prompt()),
             context: PromptExecutionContext {
                 correlation_id: Some(context.correlation_id().to_string()),
                 model_hint: Some(context.route().model().to_string()),
@@ -2974,7 +3019,6 @@ mod tests {
     const INSTALLATION_ID: &str = crate::workshop_authority::TEST_INSTALLATION_ID;
     const SECRET_CANARY: &str = "embedded-secret-must-never-escape";
     const FIRST_REPLY: &str = "The embedded daemon owns this foreground turn.";
-    const SECOND_REPLY: &str = "The mobile shell remains only its privileged local client.";
     const GRAPHEME_REPLY: &str = "The portable Grapheme workflow completed on the phone daemon.";
     const GRAPHEME_SOURCE: &str = r#"import core from "grapheme/core"
 
@@ -2984,6 +3028,17 @@ query MobileProbe {
     }
 }
 "#;
+
+    #[test]
+    fn embedded_prompt_uses_general_sttp_and_tool_hud() {
+        let prompt = embedded_system_prompt();
+        assert!(prompt.contains("p1_core(.99)"));
+        assert!(prompt.contains("p2_mode_general(.99)"));
+        assert!(prompt.contains("p3_actor_host(.99)"));
+        assert!(prompt.contains("[MEDOUSA_HUD]"));
+        assert!(prompt.contains("catalog_tool=cognition_tools_discover"));
+        assert!(prompt.contains("web_tool=cognition_web_search"));
+    }
 
     fn text_response(text: &str) -> ChatResponse {
         let model = ModelIden::from_static(AdapterKind::OpenAI, "embedded-test-model");
@@ -3031,13 +3086,12 @@ query MobileProbe {
         async fn next(&self) -> StasisResult<ChatResponse> {
             match self.calls.fetch_add(1, Ordering::AcqRel) {
                 0 => Ok(text_response(FIRST_REPLY)),
-                1 => Ok(text_response(SECOND_REPLY)),
-                2 => pending::<StasisResult<ChatResponse>>().await,
-                3 => Ok(tool_response(
+                1 => pending::<StasisResult<ChatResponse>>().await,
+                2 => Ok(tool_response(
                     "cognition_grapheme_run",
                     json!({ "source": GRAPHEME_SOURCE }),
                 )),
-                4 => Ok(tool_response(
+                3 => Ok(tool_response(
                     medousa_runtime::turn_control::COGNITION_TURN,
                     json!({ "action": "turn.finish", "message": GRAPHEME_REPLY }),
                 )),
@@ -3180,13 +3234,18 @@ query MobileProbe {
         drop(credentialed_config);
 
         let chat = Arc::new(LifecycleChatClient::default());
-        let daemon = EmbeddedDaemon::boot(EmbeddedDaemonConfig::with_chat_client(
-            sandbox.path(),
-            installation_id.clone(),
-            "openai",
-            "embedded-test-model",
-            chat.clone(),
-        ))
+        let daemon = EmbeddedDaemon::boot(
+            EmbeddedDaemonConfig::with_chat_client(
+                sandbox.path(),
+                installation_id.clone(),
+                "openai",
+                "embedded-test-model",
+                chat.clone(),
+            )
+            .with_tool_registry_recipe(Arc::new(
+                crate::mobile_tool_registry::PersonalMobileToolRegistryRecipe,
+            )),
+        )
         .await
         .expect("boot embedded daemon");
         let delivery_endpoints =
@@ -3357,7 +3416,7 @@ query MobileProbe {
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>();
         assert!(
-            crate::portable_daemon_tools::PORTABLE_DAEMON_TOOL_NAMES
+            crate::mobile_tool_registry::PERSONAL_MOBILE_TOOL_NAMES
                 .iter()
                 .all(|name| tool_names.contains(name))
         );
@@ -3467,7 +3526,7 @@ query MobileProbe {
         assert!(!events.is_empty());
         assert!(events.iter().all(|event| event.turn_id == accepted.turn_id));
         assert!(events.windows(2).all(|pair| pair[0].seq < pair[1].seq));
-        let final_text = format!("{FIRST_REPLY}\n\n{SECOND_REPLY}");
+        let final_text = FIRST_REPLY.to_string();
         assert!(
             matches!(
                 events.last().map(|event| &event.event),
@@ -3504,7 +3563,7 @@ query MobileProbe {
                     _ => None,
                 })
                 .collect::<Vec<_>>(),
-            vec![1, 2]
+            vec![1]
         );
         assert_eq!(
             v3.iter()
@@ -3513,7 +3572,7 @@ query MobileProbe {
                     _ => None,
                 })
                 .collect::<Vec<_>>(),
-            vec![FIRST_REPLY, SECOND_REPLY]
+            vec![FIRST_REPLY]
         );
         assert!(matches!(
             v3.last().map(|event| &event.event),
@@ -3545,7 +3604,7 @@ query MobileProbe {
                     _ => None,
                 })
                 .collect::<Vec<_>>(),
-            vec![1, 2]
+            vec![1]
         );
         let user_execution = transcript[0]
             .caused_by
@@ -3570,7 +3629,7 @@ query MobileProbe {
             .start_turn(&session.session_id, "this turn should be suspended")
             .await
             .expect("start cancellable foreground turn");
-        wait_until(|| chat.calls() >= 3).await;
+        wait_until(|| chat.calls() >= 2).await;
         assert_eq!(daemon.live_turn_count(), 1);
         let suspend_report = daemon.suspend_and_drain(Duration::from_secs(2)).await;
         assert_eq!(suspend_report.cancellation_requested, 1);
@@ -3767,13 +3826,18 @@ query MobileProbe {
         std::fs::write(sandbox.path().join("runtime.surrealkv/LOCK"), b"stale")
             .expect("stale lock fixture");
 
-        let rebooted = EmbeddedDaemon::boot(EmbeddedDaemonConfig::with_chat_client(
-            sandbox.path(),
-            installation_id.clone(),
-            "openai",
-            "embedded-test-model",
-            chat,
-        ))
+        let rebooted = EmbeddedDaemon::boot(
+            EmbeddedDaemonConfig::with_chat_client(
+                sandbox.path(),
+                installation_id.clone(),
+                "openai",
+                "embedded-test-model",
+                chat,
+            )
+            .with_tool_registry_recipe(Arc::new(
+                crate::mobile_tool_registry::PersonalMobileToolRegistryRecipe,
+            )),
+        )
         .await
         .expect("reboot embedded daemon from its sandbox");
         assert_eq!(rebooted.authority_id(), &authority_id);

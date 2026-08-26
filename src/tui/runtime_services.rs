@@ -11,7 +11,7 @@ use stasis::prelude::RuntimeBackend;
 use stasis::prelude_ext::{MemoryContextReader, MemoryContextWriter};
 use tokio::sync::mpsc;
 
-use crate::bridge_tools::CognitionWebSearchTool;
+use crate::bridge_tools::CapabilityWebSearchBackend;
 use crate::capability_catalog::CapabilityRegistry;
 use crate::client_tools::{ClientRegistry, ClientToolRegistry};
 use crate::engine_context::EngineExecutionLane;
@@ -27,6 +27,7 @@ use crate::tools::{
     PolicyAwareToolRegistry, TuiRuntime,
 };
 use crate::typed_tools::{ToolCatalogHandle, ToolRegistrar, ToolRegistration};
+use crate::web_search_tool::CognitionWebSearchTool;
 use crate::workflow;
 use tokio::sync::RwLock;
 
@@ -271,14 +272,16 @@ pub(crate) async fn assemble_tui_runtime(
         turn_scope.clone(),
     )?;
     crate::layout_tools::register_layout_tools(&mut tool_registry)?;
-    tool_registry.register_typed_tool(CognitionWebSearchTool::new(
-        capability_registry.clone(),
-        runtime.clone(),
-        mcp_gateway_client.clone(),
-        session_id.to_string(),
-        turn_scope.clone(),
-        event_tx.clone(),
-    ))?;
+    tool_registry.register_typed_tool(CognitionWebSearchTool::new(Arc::new(
+        CapabilityWebSearchBackend::new(
+            capability_registry.clone(),
+            runtime.clone(),
+            mcp_gateway_client.clone(),
+            session_id.to_string(),
+            turn_scope.clone(),
+            event_tx.clone(),
+        ),
+    )))?;
     crate::browser_fetch_tools::register_browser_fetch_tool(
         &mut tool_registry,
         turn_scope.clone(),

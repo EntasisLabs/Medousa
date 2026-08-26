@@ -25,6 +25,7 @@ use crate::semantic_values::{RequiredContent, TrimmedText};
 use crate::tools::{run_grapheme_via_runtime, validate_grapheme_source_for_schedule};
 use crate::turn_continuation::{ContinuationAwaitMode, continuation_tool_metadata};
 use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
+use crate::web_search_tool::{WebSearchBackend, WebSearchMode, WebSearchRequest};
 use crate::workflow::{
     MedousaWorkflowPayload, WORKFLOW_SEQUENTIAL_JOB_TYPE, WorkflowEnqueueContinuation,
     WorkflowRecord, WorkflowRegistry, WorkflowStatus, WorkflowStepSpec, enqueue_workflow_job,
@@ -34,7 +35,6 @@ use crate::workflow::{
 const COGNITION_CAPABILITY_INVOKE_ID: ToolId = ToolId::new("cognition_capability_invoke");
 const COGNITION_MCP_PROMOTE_TO_JOB_ID: ToolId = ToolId::new("cognition_mcp_promote_to_job");
 const COGNITION_GRAPHEME_TEMPLATE_RUN_ID: ToolId = ToolId::new("cognition_grapheme_template_run");
-const COGNITION_WEB_SEARCH_ID: ToolId = ToolId::new("cognition_web_search");
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(transparent)]
@@ -1168,7 +1168,7 @@ fn web_search_binding_reference(
     None
 }
 
-pub struct CognitionWebSearchTool {
+pub struct CapabilityWebSearchBackend {
     capability_registry: Arc<RwLock<CapabilityRegistry>>,
     runtime: Arc<RuntimeComposition>,
     gateway_client: Arc<McpGatewayClient>,
@@ -1177,7 +1177,7 @@ pub struct CognitionWebSearchTool {
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
-impl CognitionWebSearchTool {
+impl CapabilityWebSearchBackend {
     pub fn new(
         capability_registry: Arc<RwLock<CapabilityRegistry>>,
         runtime: Arc<RuntimeComposition>,
@@ -1197,62 +1197,19 @@ impl CognitionWebSearchTool {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum WebSearchModeInput {
-    #[default]
-    Search,
-    Facade,
-    ResearchMaterials,
-    ResearchReport,
-}
-
-impl WebSearchModeInput {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Search => "search",
-            Self::Facade => "facade",
-            Self::ResearchMaterials => "research_materials",
-            Self::ResearchReport => "research_report",
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct WebSearchInput {
-    /// Search query or research topic
-    #[schemars(required, with = "String")]
-    query: Option<String>,
-    /// search = provider-native web lookup; research_* = websearch facade pipelines
-    #[serde(default)]
-    #[schemars(default)]
-    mode: WebSearchModeInput,
-    /// Optional web provider id (duckduckgo, google, tavily, …). Defaults to capabilities.toml [web_search].preferred_provider or MEDOUSA_WEB_SEARCH_PROVIDER
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
-    provider: Option<String>,
-    /// Try lower-priority bindings when the preferred provider fails
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
-    try_fallbacks: Option<bool>,
-    #[serde(default)]
-    #[schemars(skip)]
-    max_results: Option<u64>,
-}
-
 #[derive(Debug)]
 struct WebSearchCommand {
     query: TrimmedText,
-    mode: WebSearchModeInput,
+    mode: WebSearchMode,
     provider: Option<TrimmedText>,
     try_fallbacks: Option<bool>,
     max_results: Option<u64>,
 }
 
-impl TryFrom<WebSearchInput> for WebSearchCommand {
+impl TryFrom<WebSearchRequest> for WebSearchCommand {
     type Error = stasis::prelude::StasisError;
 
-    fn try_from(input: WebSearchInput) -> Result<Self, Self::Error> {
+    fn try_from(input: WebSearchRequest) -> Result<Self, Self::Error> {
         let query = input.query.ok_or_else(|| {
             StasisError::PortFailure("cognition_web_search: query is required".to_string())
         })?;
@@ -1293,12 +1250,10 @@ pub enum WebSearchOutput {
     Capability(Box<WebSearchCapabilityOutput>),
 }
 
-#[medousa_tool(id = COGNITION_WEB_SEARCH_ID)]
-impl CognitionWebSearchTool {
-    /// Search the public web with one call. Uses configured provider preference and binding fallbacks (web.<provider>, then websearch.search). For deep reports use mode=research_report.
-    pub(crate) async fn invoke_typed(
+impl CapabilityWebSearchBackend {
+    async fn invoke_backend(
         &self,
-        input: WebSearchInput,
+        input: WebSearchRequest,
     ) -> stasis::prelude::Result<WebSearchOutput> {
         let command = WebSearchCommand::try_from(input)?;
         let query = command.query.as_str();
@@ -1315,7 +1270,7 @@ impl CognitionWebSearchTool {
         let _ = self
             .event_tx
             .send(TuiEvent::ToolInvoked {
-                tool_name: COGNITION_WEB_SEARCH_ID.as_str().to_string(),
+                tool_name: "cognition_web_search".to_string(),
                 input_summary: query.to_string(),
             })
             .await;
@@ -1462,6 +1417,16 @@ impl CognitionWebSearchTool {
                 fallback_available: fallback_bindings(&candidate_list[1..]),
             },
         )))
+    }
+}
+
+#[async_trait::async_trait]
+impl WebSearchBackend for CapabilityWebSearchBackend {
+    async fn search(&self, request: WebSearchRequest) -> stasis::prelude::Result<Value> {
+        let output = self.invoke_backend(request).await?;
+        serde_json::to_value(output).map_err(|error| {
+            StasisError::PortFailure(format!("serialize cognition_web_search output: {error}"))
+        })
     }
 }
 
@@ -1650,9 +1615,9 @@ mod tests {
 
     #[test]
     fn web_search_command_normalizes_query_and_provider() {
-        let command = WebSearchCommand::try_from(WebSearchInput {
+        let command = WebSearchCommand::try_from(WebSearchRequest {
             query: Some("  rust async  ".to_string()),
-            mode: WebSearchModeInput::Search,
+            mode: WebSearchMode::Search,
             provider: Some("  duckduckgo  ".to_string()),
             try_fallbacks: Some(true),
             max_results: Some(12),
@@ -1671,9 +1636,9 @@ mod tests {
 
     #[test]
     fn web_search_command_rejects_blank_query() {
-        let error = WebSearchCommand::try_from(WebSearchInput {
+        let error = WebSearchCommand::try_from(WebSearchRequest {
             query: Some(" \n\t".to_string()),
-            mode: WebSearchModeInput::default(),
+            mode: WebSearchMode::default(),
             provider: None,
             try_fallbacks: None,
             max_results: None,

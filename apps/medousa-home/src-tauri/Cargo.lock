@@ -5415,9 +5415,11 @@ dependencies = [
  "grapheme-runtime",
  "grapheme-sdk",
  "locus-core-rs",
+ "medousa-browser-lite",
  "medousa-engine",
  "medousa-runtime",
  "medousa-store",
+ "medousa-tool-macros",
  "medousa-types",
  "once_cell",
  "schemars 0.8.22",
@@ -5713,6 +5715,15 @@ dependencies = [
  "serde",
  "uuid",
  "windows 0.61.3",
+]
+
+[[package]]
+name = "medousa-tool-macros"
+version = "0.9.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]

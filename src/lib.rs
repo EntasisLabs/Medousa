@@ -47,10 +47,13 @@ pub mod locus_service;
 #[path = "runtime/locus_surreal_client.rs"]
 pub mod locus_surreal_client;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod mobile_tool_registry;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 #[path = "runtime/persistent_locus.rs"]
 pub mod persistent_locus;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
-pub mod portable_daemon_tools;
+#[path = "agent_runtime/prompt_policy.rs"]
+pub mod prompt_policy;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod reasoning_effort;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
@@ -79,6 +82,8 @@ pub mod store_root;
 #[path = "runtime/surreal_startup.rs"]
 pub mod surreal_startup;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod tool_error;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod turn_event_channel;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod turn_parts;
@@ -93,9 +98,13 @@ pub mod turn_stream_registry;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod turn_ticket;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod typed_tools;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod user_profiles;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod vault;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod web_search_tool;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod workshop_authority;
 

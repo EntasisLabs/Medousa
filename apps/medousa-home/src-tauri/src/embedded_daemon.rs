@@ -307,7 +307,10 @@ async fn boot_embedded_daemon() -> Result<Arc<EmbeddedDaemon>, String> {
         base_url,
         Arc::new(HomeCredentialProvider),
     )
-    .map_err(|error| format!("configure embedded daemon inference: {error:#}"))?;
+    .map_err(|error| format!("configure embedded daemon inference: {error:#}"))?
+    .with_tool_registry_recipe(Arc::new(
+        medousa::mobile_tool_registry::PersonalMobileToolRegistryRecipe,
+    ));
     EmbeddedDaemon::boot(config)
         .await
         .map_err(|error| format!("boot embedded daemon: {error:#}"))

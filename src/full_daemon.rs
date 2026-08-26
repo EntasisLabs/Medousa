@@ -41,7 +41,6 @@ pub mod media_store;
 pub mod media_text_extract;
 pub mod media_vision;
 pub mod model_capability_registry;
-pub mod portable_daemon_tools;
 pub mod prompt_stash;
 pub mod public_api;
 pub mod recurring_agent_turn;
@@ -76,6 +75,7 @@ pub mod turn_slice;
 pub mod turn_stream_registry;
 pub mod turn_worker_notify;
 pub mod typed_tools;
+pub mod web_search_tool;
 pub mod workshop_authority;
 /// Re-export slim MCP gateway crate (binary lives in adapters/medousa-mcp-gateway).
 pub use medousa_mcp_gateway::mcp_gateway;

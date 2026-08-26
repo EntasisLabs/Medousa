@@ -253,6 +253,8 @@ embedded-daemon = [
     "dep:grapheme-compiler",
     "dep:grapheme-runtime",
     "dep:grapheme-sdk",
+    "dep:medousa-browser-lite",
+    "dep:medousa-tool-macros",
     "dep:schemars",
     "dep:toml",
     "dep:unicode-normalization",

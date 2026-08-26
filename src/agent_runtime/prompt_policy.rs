@@ -13,9 +13,11 @@ use locus_core_rs::{
 };
 use serde_json::json;
 
-use super::context_usage::chars_to_tokens;
-
 const POLICY_SESSION_ID: &str = "medousa-system-policy-v1";
+
+fn chars_to_tokens(chars: usize) -> u32 {
+    u32::try_from(chars.div_ceil(4)).unwrap_or(u32::MAX)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SttpPolicyMode {

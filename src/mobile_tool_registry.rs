@@ -1,43 +1,206 @@
-//! Mobile-safe daemon tools backed by the same Vault, Locus, and Stasis services.
+//! Personal-mobile tool registry recipe.
+//!
+//! This module selects canonical runtime capabilities for one deployment. It
+//! does not own the agent loop or tool FSM.
 
 use std::sync::Arc;
 
 use medousa_types::daemon_api::{LocusTagsQuery, VaultWriteRequest};
 use serde_json::{Value, json};
-use stasis::application::orchestration::tool_registry::{InMemoryToolRegistry, StasisTool};
+use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
 use stasis::ports::outbound::memory::memory_models::MemoryStoreRequest;
 use stasis::prelude::RuntimeComposition;
 
-pub const PORTABLE_DAEMON_TOOL_NAMES: &[&str] = &[
+use crate::embedded_daemon::{
+    EmbeddedToolRegistryAssembly, EmbeddedToolRegistryBindings, EmbeddedToolRegistryRecipe,
+};
+use crate::typed_tools::{
+    ToolCatalogHandle, ToolDomainId, ToolExposureQualifier, ToolExposureRef, ToolId, ToolModeId,
+    ToolPlacementIndex, ToolRegistration, ToolSurfaceId,
+};
+use crate::web_search_tool::{
+    CognitionWebSearchTool, WebSearchBackend, WebSearchMode, WebSearchRequest,
+};
+
+pub const PERSONAL_MOBILE_TOOL_NAMES: &[&str] = &[
+    "cognition_tools_discover",
+    "cognition_web_search",
     "cognition_store_read",
     "cognition_store_write",
     "cognition_memory_query",
     "cognition_memory_mutate",
     "cognition_grapheme_run",
+    medousa_runtime::turn_control::COGNITION_TURN,
 ];
 
-pub fn build_portable_daemon_tool_registry(
-    runtime: Arc<RuntimeComposition>,
-    locus: crate::locus_service::LocusService,
-    memory_writer: Arc<dyn MemoryContextWriter>,
-) -> StasisResult<InMemoryToolRegistry> {
-    let registry = InMemoryToolRegistry::default();
-    registry.register_tool(PortableStoreReadTool)?;
-    registry.register_tool(PortableStoreWriteTool)?;
-    registry.register_tool(PortableMemoryQueryTool {
-        locus: locus.clone(),
-    })?;
-    registry.register_tool(PortableMemoryMutateTool { memory_writer })?;
-    registry.register_tool(PortableGraphemeRunTool { runtime })?;
-    Ok(registry)
+const GENERAL_MODE: ToolModeId = ToolModeId::new("general");
+const DOMAIN_SURFACE: ToolSurfaceId = ToolSurfaceId::new("domain");
+
+#[derive(Debug, Default)]
+pub struct PersonalMobileToolRegistryRecipe;
+
+impl EmbeddedToolRegistryRecipe for PersonalMobileToolRegistryRecipe {
+    fn assemble(
+        &self,
+        bindings: EmbeddedToolRegistryBindings,
+    ) -> StasisResult<EmbeddedToolRegistryAssembly> {
+        let catalog = ToolCatalogHandle::default();
+        let mut assembly = EmbeddedToolRegistryAssembly::new(personal_mobile_placements());
+        let registry = assembly.registrar();
+        registry.register_tool(PersonalMobileToolsDiscoverTool {
+            catalog: catalog.clone(),
+        })?;
+        registry.register_typed_tool(CognitionWebSearchTool::new(Arc::new(
+            BrowserLiteWebSearchBackend,
+        )))?;
+        registry.register_tool(PersonalMobileStoreReadTool)?;
+        registry.register_tool(PersonalMobileStoreWriteTool)?;
+        registry.register_tool(PersonalMobileMemoryQueryTool {
+            locus: bindings.locus.clone(),
+        })?;
+        registry.register_tool(PersonalMobileMemoryMutateTool {
+            memory_writer: bindings.memory_writer,
+        })?;
+        registry.register_tool(PersonalMobileGraphemeRunTool {
+            runtime: bindings.runtime,
+        })?;
+        assembly.initialize_handle_after_finish(catalog);
+        Ok(assembly)
+    }
 }
 
-struct PortableStoreReadTool;
+fn personal_mobile_placements() -> ToolPlacementIndex {
+    let mut placements = ToolPlacementIndex::default();
+    for (domain, names) in [
+        ("web", &["cognition_web_search"][..]),
+        (
+            "vault",
+            &["cognition_store_read", "cognition_store_write"][..],
+        ),
+        (
+            "memory",
+            &["cognition_memory_query", "cognition_memory_mutate"][..],
+        ),
+        (
+            "runtime",
+            &[
+                "cognition_grapheme_run",
+                medousa_runtime::turn_control::COGNITION_TURN,
+                "cognition_tools_discover",
+            ][..],
+        ),
+    ] {
+        for name in names {
+            placements.add_exposure(
+                ToolId::new(name),
+                ToolExposureRef::domain(GENERAL_MODE, DOMAIN_SURFACE, ToolDomainId::new(domain)),
+            );
+        }
+    }
+    placements
+}
+
+struct PersonalMobileToolsDiscoverTool {
+    catalog: ToolCatalogHandle,
+}
 
 #[async_trait::async_trait]
-impl StasisTool for PortableStoreReadTool {
+impl StasisTool for PersonalMobileToolsDiscoverTool {
+    fn name(&self) -> &'static str {
+        "cognition_tools_discover"
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some("List available tools with concise usage summaries.")
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "properties": {
+                "domain": {
+                    "type": "string",
+                    "enum": ["web", "vault", "memory", "runtime"]
+                }
+            },
+            "additionalProperties": false
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+        let domain = optional_string(&input, "domain");
+        let available_domains = ["web", "vault", "memory", "runtime"];
+        if let Some(domain) = domain.as_deref()
+            && !available_domains.contains(&domain)
+        {
+            return Err(StasisError::PortFailure(format!(
+                "unknown tool domain '{domain}'"
+            )));
+        }
+        let catalog = self.catalog.get().ok_or_else(|| {
+            StasisError::PortFailure("tool catalog is not initialized".to_string())
+        })?;
+        let tools = catalog
+            .entries()
+            .filter_map(|entry| {
+                let entry_domain = entry.placement.exposures.iter().find_map(|exposure| {
+                    match exposure.qualifier {
+                        Some(ToolExposureQualifier::Domain(domain)) => Some(domain.as_str()),
+                        _ => None,
+                    }
+                })?;
+                domain
+                    .as_deref()
+                    .is_none_or(|requested| requested == entry_domain)
+                    .then(|| {
+                        json!({
+                            "domain": entry_domain,
+                            "name": entry.id.as_str(),
+                            "summary": catalog.presentation_summary(entry.id),
+                        })
+                    })
+            })
+            .collect::<Vec<_>>();
+        Ok(json!({
+            "ok": true,
+            "domain": domain,
+            "available_domains": available_domains,
+            "tools": tools
+        }))
+    }
+}
+
+struct BrowserLiteWebSearchBackend;
+
+#[async_trait::async_trait]
+impl WebSearchBackend for BrowserLiteWebSearchBackend {
+    async fn search(&self, request: WebSearchRequest) -> StasisResult<Value> {
+        let query = request
+            .query
+            .as_deref()
+            .map(str::trim)
+            .filter(|query| !query.is_empty())
+            .ok_or_else(|| StasisError::PortFailure("query is required".to_string()))?;
+        if request.mode != WebSearchMode::Search {
+            return Err(StasisError::PortFailure(format!(
+                "web search mode '{}' needs a research-provider adapter",
+                request.mode.as_str()
+            )));
+        }
+        let max_results = request.max_results.unwrap_or(5).clamp(1, 10) as usize;
+        let response = medousa_browser_lite::search_ddg_html_cached_async(&query, max_results)
+            .await
+            .map_err(port_failure)?;
+        serde_json::to_value(response).map_err(port_failure)
+    }
+}
+
+struct PersonalMobileStoreReadTool;
+
+#[async_trait::async_trait]
+impl StasisTool for PersonalMobileStoreReadTool {
     fn name(&self) -> &'static str {
         "cognition_store_read"
     }
@@ -75,10 +238,10 @@ impl StasisTool for PortableStoreReadTool {
     }
 }
 
-struct PortableStoreWriteTool;
+struct PersonalMobileStoreWriteTool;
 
 #[async_trait::async_trait]
-impl StasisTool for PortableStoreWriteTool {
+impl StasisTool for PersonalMobileStoreWriteTool {
     fn name(&self) -> &'static str {
         "cognition_store_write"
     }
@@ -114,12 +277,12 @@ impl StasisTool for PortableStoreWriteTool {
     }
 }
 
-struct PortableMemoryQueryTool {
+struct PersonalMobileMemoryQueryTool {
     locus: crate::locus_service::LocusService,
 }
 
 #[async_trait::async_trait]
-impl StasisTool for PortableMemoryQueryTool {
+impl StasisTool for PersonalMobileMemoryQueryTool {
     fn name(&self) -> &'static str {
         "cognition_memory_query"
     }
@@ -180,12 +343,12 @@ impl StasisTool for PortableMemoryQueryTool {
     }
 }
 
-struct PortableMemoryMutateTool {
+struct PersonalMobileMemoryMutateTool {
     memory_writer: Arc<dyn MemoryContextWriter>,
 }
 
 #[async_trait::async_trait]
-impl StasisTool for PortableMemoryMutateTool {
+impl StasisTool for PersonalMobileMemoryMutateTool {
     fn name(&self) -> &'static str {
         "cognition_memory_mutate"
     }
@@ -255,12 +418,12 @@ impl StasisTool for PortableMemoryMutateTool {
     }
 }
 
-struct PortableGraphemeRunTool {
+struct PersonalMobileGraphemeRunTool {
     runtime: Arc<RuntimeComposition>,
 }
 
 #[async_trait::async_trait]
-impl StasisTool for PortableGraphemeRunTool {
+impl StasisTool for PersonalMobileGraphemeRunTool {
     fn name(&self) -> &'static str {
         "cognition_grapheme_run"
     }
@@ -501,4 +664,42 @@ fn unsupported_action(tool: &str, action: &str) -> StasisError {
 
 fn port_failure(error: impl std::fmt::Display) -> StasisError {
     StasisError::PortFailure(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use stasis::application::orchestration::tool_registry::ToolRegistry as _;
+
+    #[tokio::test]
+    async fn personal_mobile_discovery_reads_the_assembled_catalog() {
+        let catalog = ToolCatalogHandle::default();
+        let mut registrar = crate::typed_tools::ToolRegistrar::new(personal_mobile_placements());
+        registrar
+            .register_tool(PersonalMobileToolsDiscoverTool {
+                catalog: catalog.clone(),
+            })
+            .expect("register discovery");
+        registrar
+            .register_typed_tool(CognitionWebSearchTool::new(Arc::new(
+                BrowserLiteWebSearchBackend,
+            )))
+            .expect("register web search");
+        let (registry, assembled) = registrar.finish();
+        catalog.initialize(assembled).expect("initialize catalog");
+        let output = registry
+            .invoke_tool("cognition_tools_discover", json!({}))
+            .await
+            .expect("inspect personal mobile tools");
+        let names = output["tools"]
+            .as_array()
+            .expect("tool summaries")
+            .iter()
+            .filter_map(|tool| tool["name"].as_str())
+            .collect::<Vec<_>>();
+        assert!(names.contains(&"cognition_tools_discover"));
+        assert!(names.contains(&"cognition_web_search"));
+        assert!(PERSONAL_MOBILE_TOOL_NAMES.contains(&"cognition_tools_discover"));
+        assert!(PERSONAL_MOBILE_TOOL_NAMES.contains(&"cognition_web_search"));
+    }
 }
