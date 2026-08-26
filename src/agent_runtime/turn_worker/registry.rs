@@ -13,12 +13,7 @@ use stasis::prelude::Result;
 use super::policy::tool_allowed;
 use crate::browser_tools::BROWSER_COGNITION_TOOLS;
 use crate::client_tools::ClientRegistry;
-use crate::tool_bootstrap::{
-    ToolSurfaceLane, effective_tool_names, ensure_bound_workshop_session_tool_defaults,
-    ensure_browser_domain_for_capable_clients, ensure_environment_domain_for_ui_clients,
-    ensure_host_session_tool_defaults, ensure_worker_browser_domain_for_capable_clients,
-    ensure_worker_environment_domain_for_ui_clients,
-};
+use crate::tool_bootstrap::{ToolSurfaceLane, effective_tool_names};
 
 fn memory_tool_needs_session(tool_name: &str) -> bool {
     let lower = tool_name.to_ascii_lowercase();
@@ -136,9 +131,6 @@ impl SessionBootstrapToolRegistry {
         client_registry: ClientRegistry,
     ) -> Self {
         let session_id = session_id.into();
-        ensure_host_session_tool_defaults(&session_id);
-        ensure_browser_domain_for_capable_clients(&session_id, supports_browser_host);
-        ensure_environment_domain_for_ui_clients(&session_id, supports_ui_artifacts);
         Self {
             inner,
             session_id,
@@ -179,9 +171,6 @@ impl SessionBootstrapToolRegistry {
         client_registry: ClientRegistry,
     ) -> Self {
         let session_id = session_id.into();
-        ensure_bound_workshop_session_tool_defaults(&session_id);
-        ensure_worker_environment_domain_for_ui_clients(&session_id, supports_ui_artifacts);
-        ensure_worker_browser_domain_for_capable_clients(&session_id, supports_browser_host);
         Self {
             inner,
             session_id,
@@ -233,7 +222,7 @@ impl ToolRegistry for SessionBootstrapToolRegistry {
             && !tool_allowed(tool_name, &self.effective_allowlist())
         {
             return Err(StasisError::PortFailure(format!(
-                "tool not on session surface (call cognition_tools_discover to unlock catalog/runtime/…): {tool_name}"
+                "tool is outside this session's immutable lane ceiling: {tool_name}"
             )));
         }
         self.inner.invoke_tool(tool_name, input).await

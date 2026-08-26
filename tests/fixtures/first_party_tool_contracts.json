@@ -962,7 +962,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_coder_tools_discover",
-      "description": "Reveal one already-authorized Coder tool pack for this turn. Packs are monotonic and cannot expand Forge authority.",
+      "description": "Inspect one Coder tool domain already governed by the current Forge authority. This does not change authority or model visibility.",
       "input_schema": {
         "properties": {
           "domain": {
@@ -1565,8 +1565,8 @@
                 "turn.begin_work",
                 "turn.checkpoint",
                 "turn.finish",
-                "turn.prepare_final",
                 "turn.propose_mode",
+                "turn.request_input",
                 "turn.request_more_rounds",
                 "turn.update_user",
                 "vault.delete",
@@ -1816,8 +1816,8 @@
               "turn.begin_work",
               "turn.checkpoint",
               "turn.finish",
-              "turn.prepare_final",
               "turn.propose_mode",
+              "turn.request_input",
               "turn.request_more_rounds",
               "turn.update_user"
             ],
@@ -3412,6 +3412,47 @@
     },
     {
       "registry": "general_runtime",
+      "name": "cognition_grapheme_request_secret",
+      "description": "Ask the user for a credential through Medousa's trusted UI for one native Grapheme run. The value never enters chat, Grapheme source/state, Stasis payloads, or model-visible output. The returned grant must be attached once to `cognition_capability` action `grapheme.invoke` via `secret_grant_ids`.",
+      "input_schema": {
+        "properties": {
+          "allowed_hosts": {
+            "default": [],
+            "description": "Exact HTTPS hosts (or host:port authorities) to which Medousa may attach this credential. Empty permits signing only and denies authenticated HTTP.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "credential_key": {
+            "description": "Uppercase logical credential name, such as `GITHUB_TOKEN`.",
+            "type": "string"
+          },
+          "label": {
+            "description": "Short trusted-UI label describing the credential.",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why the Grapheme run needs the credential.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "credential_key",
+          "label",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:bootstrap",
+        "general:domain:skill"
+      ]
+    },
+    {
+      "registry": "general_runtime",
       "name": "cognition_identity_mutate",
       "description": "Write identity: remember a fact, propose a patch, or commit. action is a typed name (identity.remember, identity.propose, identity.commit). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
@@ -3780,6 +3821,44 @@
     },
     {
       "registry": "general_runtime",
+      "name": "cognition_openshell_request_secret",
+      "description": "Ask the user for a credential through Medousa's trusted secret-entry UI. Never ask the user to paste a key into chat. This tool receives metadata only and returns an opaque one-use grant for `cognition_openshell_sandbox_run.secret_grant_ids`; the credential value is never exposed to the model or transcript.",
+      "input_schema": {
+        "properties": {
+          "credential_key": {
+            "description": "Environment variable expected by that provider, such as `GITHUB_TOKEN`.",
+            "type": "string"
+          },
+          "label": {
+            "description": "Short trusted-UI label describing the credential.",
+            "type": "string"
+          },
+          "provider_type": {
+            "description": "OpenShell provider profile id, such as `github` or `openai`.",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why this turn needs the credential and what it will do with it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "credential_key",
+          "label",
+          "provider_type",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:bootstrap",
+        "general:domain:skill"
+      ]
+    },
+    {
+      "registry": "general_runtime",
       "name": "cognition_openshell_sandbox_run",
       "description": "Enqueue a durable OpenShell sandbox job (create → upload skill assets → exec → destroy). Pass command OR skill_script+manuscript_id for imported skill assets. Requires gateway healthy and manuscript spec.openshell.enabled when manuscript_id is set. Worker lane primary; not available on scheduled lane unless spec.openshell.allow_scheduled=true.",
       "input_schema": {
@@ -3816,6 +3895,14 @@
           "sandbox_from": {
             "description": "OpenShell --from source (default base or manuscript spec)",
             "type": "string"
+          },
+          "secret_grant_ids": {
+            "default": [],
+            "description": "Opaque one-use grants returned by cognition_openshell_request_secret.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "skill_script": {
             "description": "Relative script path in imported skill assets (e.g. scripts/run.sh). Requires manuscript_id.",
@@ -4005,8 +4092,8 @@
                 "turn.begin_work",
                 "turn.checkpoint",
                 "turn.finish",
-                "turn.prepare_final",
                 "turn.propose_mode",
+                "turn.request_input",
                 "turn.request_more_rounds",
                 "turn.update_user",
                 "vault.delete",
@@ -4474,7 +4561,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_tools_discover",
-      "description": "Unlock a tool domain for this session and return its catalog. Host: memory + vault auto-unlock at session start; environment auto-unlocks on UI-capable clients (Home). Other host domains: catalog, runtime, history, identity, skill, overlay, environment. Worker domains: execute, discover, memory, vault, openshell, scripts. Bootstrap tools stay visible without discover.",
+      "description": "Inspect a lane's tool-domain catalog. This call never represents or changes authority or model visibility.",
       "input_schema": {
         "properties": {
           "domain": {
@@ -4491,7 +4578,7 @@
             "type": "string"
           },
           "list_only": {
-            "description": "If true, return catalog without unlocking",
+            "description": "Legacy compatibility flag; discovery is always read-only",
             "type": "boolean"
           },
           "session_id": {
@@ -4527,8 +4614,8 @@
               "turn.begin_work",
               "turn.checkpoint",
               "turn.finish",
-              "turn.prepare_final",
               "turn.propose_mode",
+              "turn.request_input",
               "turn.request_more_rounds",
               "turn.update_user"
             ],

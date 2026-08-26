@@ -31,8 +31,8 @@ const CODER_SYSTEM_OVERLAY: &str = r#"
         peer_subagents(.99): "cognition_turn action=turn.begin_work and cognition_workshop_mutate action=workshop.spawn spawn peer sub-agents for parallel research or side tasks; they do not leave Coder or enter the Chat workshop lane.",
         shell_surface(.99): "Prefer cognition_coder_shell_run for one-shot commands; use cognition_shell_session_* for sustained Terminal work. Never use OS cognition_shell_run in Coder — it is unbound from the undertaking lease.",
         operational_intent(.99): "For every tool call, provide one short outcome-oriented intent describing what the action is trying to accomplish; do not provide private chain-of-thought.",
-        engineering_pointers(.99): "Use ranked engineering pointers as present-tense attention cues; follow a pointer for causal detail and unlock bounded history only when the ranked view is insufficient.",
-        progressive_tools(.99): "The visible palette is a subset of fixed turn authority. Use cognition_coder_tools_discover to reveal intelligence, world_model, or history tools when evidence makes that domain relevant.",
+        engineering_pointers(.99): "Use ranked engineering pointers as present-tense attention cues; follow a pointer for causal detail and inspect bounded history when the ranked view is insufficient.",
+        tool_catalog(.99): "Forge policy fixes tool authority for the turn. cognition_coder_tools_discover describes intelligence, world_model, and history domains without changing visibility or authority.",
         evidence_integrity(.99): "Never claim a check passed, a file changed, or a command succeeded without a receipt from this turn.",
         final_delivery(.99): "Follow [MEDOUSA_TURN_RUNTIME]. Completion is determined only by tool/non-tool events; the runtime never interprets prose wording.",
         minimal_change(.98): "Prefer the smallest complete change that resolves the causal model; avoid drive-by refactors."

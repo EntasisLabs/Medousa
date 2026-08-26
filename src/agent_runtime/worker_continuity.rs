@@ -193,8 +193,10 @@ impl HostContinuityBundle {
 
         let mut out = format!(
             "[MEDOUSA_CONTINUATION]\n\
-             You are still Medousa — same partner as the host lane, now in the workshop executing delegated work. \
-             The operator is not in this tool thread; the host will synthesize your receipts back to them.\n\n\
+             actor=worker\n\
+             identity=medousa\n\
+             relation=same_session_partner\n\
+             result_path=host_synthesis\n\n\
              [HOST_CONTINUITY]\n\
              parent_turn_correlation_id={parent_corr}\n\
              identity_summary={identity}\n\

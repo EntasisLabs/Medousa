@@ -18,13 +18,13 @@
     },
     {
       "id": "general_worker_policy_hud",
-      "chars": 3044,
-      "tokens_estimate": 761
+      "chars": 2858,
+      "tokens_estimate": 715
     },
     {
       "id": "coder_worker_policy_hud",
-      "chars": 3188,
-      "tokens_estimate": 797
+      "chars": 3002,
+      "tokens_estimate": 751
     }
   ]
 }

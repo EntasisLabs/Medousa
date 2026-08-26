@@ -340,14 +340,8 @@ pub fn append_memory_recall_hint(prompt: &str, recall: &CheapRecallProbe) -> Str
             .join("\n")
     };
 
-    let miss_guidance = if status == "miss" {
-        "\nmiss_fallback_policy=Do not stop at status=miss — try cognition_capability action=capability.invoke, or reason explicitly from the current request before saying you lack memory.\n"
-    } else {
-        ""
-    };
-
     format!(
-        "{prompt}\n\n[MEDOUSA_MEMORY_RECALL]\nstatus={status}\nretrieved={}\nretrieval_path={}\nfallback_triggered={}\nfallback_reason={}\nnode_sync_keys={}\nrecall_snippets:\n{}{miss_guidance}",
+        "{prompt}\n\n[MEDOUSA_MEMORY_RECALL]\nstatus={status}\nretrieved={}\nretrieval_path={}\nfallback_triggered={}\nfallback_reason={}\nnode_sync_keys={}\nrecall_snippets:\n{}",
         recall.retrieved,
         recall.retrieval_path.as_deref().unwrap_or("none"),
         recall.fallback_triggered,
@@ -362,9 +356,7 @@ pub fn append_suggested_capabilities_hint(prompt: &str, capability_ids: &[String
         return prompt.to_string();
     }
     let ids = capability_ids.join(", ");
-    format!(
-        "{prompt}\n\n[MEDOUSA_SUGGESTED_CAPABILITIES]\nids={ids}\nPrefer cognition_capability action=capability.find then action=capability.invoke with these capability ids when the task needs them."
-    )
+    format!("{prompt}\n\n[MEDOUSA_SUGGESTED_CAPABILITIES]\nsource=router\nids={ids}")
 }
 
 pub fn append_manuscript_hint(prompt: &str, manuscript: Option<&ManuscriptContext>) -> String {
@@ -433,7 +425,7 @@ pub fn build_prompt_with_context_pack(
 
     if !quality.is_usable {
         let fallback = format!(
-            "{prompt}\n\n[MEDOUSA_CONTEXT_PACK]\nstatus=verification_failed\npack_id={}\nartifact_id={}\ncitation_coverage={:.2}\navg_support={:.2}\nsupported_claim_ratio={:.2}\nconfidence={:.2}\npolicy=Treat context pack claims as non-authoritative. If evidence is needed, call tools or request fresher data.",
+            "{prompt}\n\n[MEDOUSA_CONTEXT_PACK]\nstatus=verification_failed\nauthority=unverified\npack_id={}\nartifact_id={}\ncitation_coverage={:.2}\navg_support={:.2}\nsupported_claim_ratio={:.2}\nconfidence={:.2}",
             pack.pack_id,
             pack.artifact_id,
             quality.citation_coverage,
@@ -839,11 +831,7 @@ mod tests {
                 .contains("[MEDOUSA_CONTEXT_COMPILER]")
         );
         assert!(output.compiled_prompt.contains("lane=interactive"));
-        assert!(
-            output
-                .compiled_prompt
-                .contains("lane_policy_profile=interactive")
-        );
+        assert!(output.compiled_prompt.contains("lane_profile=interactive"));
         assert!(output.allow_no_tools_fallback);
     }
 

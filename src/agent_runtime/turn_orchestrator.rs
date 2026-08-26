@@ -419,7 +419,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
 
     let prompt_for_request = if activation.enforce_no_tools {
         format!(
-            "{}\n\n[MEDOUSA_HUD]\ntool_surface=none_for_this_turn\ninstruction=answer directly from current context",
+            "{}\n\n[MEDOUSA_HUD]\ntool_surface=none",
             params.resolved_prompt
         )
     } else {

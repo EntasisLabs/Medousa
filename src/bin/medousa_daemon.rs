@@ -1104,7 +1104,7 @@ mod tests {
         let compiled = compile_lane_prompt(EngineExecutionLane::Interactive, "Summarize status");
         assert!(compiled.contains("[MEDOUSA_CONTEXT_COMPILER]"));
         assert!(compiled.contains("lane=interactive"));
-        assert!(compiled.contains("lane_policy_profile=interactive"));
+        assert!(compiled.contains("lane_profile=interactive"));
     }
 
     #[test]
@@ -1112,7 +1112,7 @@ mod tests {
         let compiled = compile_lane_prompt(EngineExecutionLane::Scheduled, "Run nightly report");
         assert!(compiled.contains("[MEDOUSA_CONTEXT_COMPILER]"));
         assert!(compiled.contains("lane=scheduled"));
-        assert!(compiled.contains("lane_policy_profile=scheduled"));
+        assert!(compiled.contains("lane_profile=scheduled"));
     }
 
     #[test]

@@ -55,11 +55,6 @@ use super::registry::{
 use super::store::{
     TurnWorkDisposition, TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, turn_worker_store,
 };
-use crate::tool_bootstrap::{
-    ToolSurfaceLane, handoff_implies_resolved_execution, unlock_session_domains,
-    worker_should_unlock_vault,
-};
-
 fn worker_canvas_lane_enabled(is_bound_workshop: bool, record: &TurnWorkRecord) -> bool {
     is_bound_workshop || record.supports_ui_artifacts
 }
@@ -922,17 +917,6 @@ async fn run_worker_turn_inner(
         .map(|manuscript| manuscript.tools_allow.as_slice())
         .unwrap_or(&[] as &[String]);
     let allowlist = super::policy::worker_allowlist_for_intent_and_tools(intent, manuscript_tools);
-    if handoff_implies_resolved_execution(record.handoff_capsule.as_ref()) {
-        let _ = unlock_session_domains(&record.session_id, ToolSurfaceLane::Worker, &["execute"]);
-    }
-    if worker_should_unlock_vault(&record.task_prompt, intent) {
-        let _ = unlock_session_domains(&record.session_id, ToolSurfaceLane::Worker, &["vault"]);
-    }
-    if is_bound_workshop {
-        crate::tool_bootstrap::ensure_bound_workshop_session_tool_defaults(&record.session_id);
-    } else {
-        let _ = unlock_session_domains(&record.session_id, ToolSurfaceLane::Worker, &["memory"]);
-    }
     let session_registry = Arc::new(WorkerSessionToolRegistry::new(
         ctx.tool_registry.clone(),
         record.session_id.clone(),

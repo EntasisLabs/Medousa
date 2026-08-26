@@ -90,9 +90,8 @@ pub fn host_resume_prompt(records: &[TurnWorkRecord]) -> String {
     }
     format!(
         "[MEDOUSA_WORKER_RESULTS]\n\
-         These are receipts from parallel sub-agents you spawned. They are not the user-facing answer.\n\
-         You may call tools if a gap remains. Prose is delivered immediately; after any action, \
-         end explicitly with cognition_turn action=turn.finish in its own response.\n\n\
+         source=parallel_workers\n\
+         audience=host\n\n\
          ORIGINAL_USER_MESSAGE:\n{parent_prompt}\n\n\
          WORKERS:\n{}",
         blocks.join("\n\n")
@@ -626,7 +625,8 @@ mod tests {
         assert!(prompt.contains("Source A says 12."));
         assert!(prompt.contains("work-b"));
         assert!(prompt.contains("fetch timeout"));
-        assert!(prompt.contains("Prose is delivered immediately"));
+        assert!(prompt.contains("source=parallel_workers"));
+        assert!(!prompt.contains("Prose is delivered immediately"));
     }
 
     #[test]

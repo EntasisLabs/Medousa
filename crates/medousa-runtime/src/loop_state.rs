@@ -19,20 +19,10 @@ pub struct AssistantPackHold {
     pub fragments: Vec<String>,
 }
 
-/// Legacy export retained for V2 prompt consumers. Production V3 policy lives
-/// in the compiled STTP document; this block is dynamic runtime HUD only.
-pub const TURN_RUNTIME_BOUNDARY_APPENDIX: &str = r#"[MEDOUSA_HUD]
-turn_state=direct|active_work
-direct=prose_without_action_delivers_and_ends
-active_work=prose_delivers_and_continues_until_typed_terminal
-typed_terminal=turn.finish|turn.request_input|turn.checkpoint
-terminal_batch=one_terminal_without_ordinary_actions
-timeline=responses_and_receipts_persist_in_occurrence_order"#;
-
-pub const TURN_SCRATCH_APPENDIX: &str = r#"[MEDOUSA_SCRATCH_POLICY]
-[MEDOUSA_SCRATCH] is your engine sticky notes — persists across tool rounds and client disconnect.
-The streamed UI draft may reset between rounds; scratch does not.
-Check scratch digests_recent / tools_this_turn / open_gaps before re-calling tools you already ran."#;
+/// Legacy exports retained until V2 prompt consumers are removed. Production
+/// V3 behavior lives only in the compiled STTP policy.
+pub const TURN_RUNTIME_BOUNDARY_APPENDIX: &str = "";
+pub const TURN_SCRATCH_APPENDIX: &str = "";
 
 /// Merge held assistant fragments with the resolution prose into one body.
 pub fn merge_assistant_pack_fragments(fragments: &[String], resolution: &str) -> String {
@@ -78,12 +68,7 @@ pub fn append_tool_loop_policy(prompt: &str, max_tool_rounds: usize) -> String {
     let max_tool_rounds = max_tool_rounds.max(1);
     format!(
         "{prompt}\n\n[MEDOUSA_HUD]\n\
-         turn_state=active_work_after_first_action\n\
-         max_tool_rounds={max_tool_rounds}\n\
-         {TURN_RUNTIME_BOUNDARY_APPENDIX}\n\
-         {TURN_SCRATCH_APPENDIX}\n\
-         Turn start injects [MEDOUSA_TOOL_SLICES], [MEDOUSA_TOOL_HINTS], and matched [MEDOUSA_GRAPHEME_SCRIPTS]. \
-         Call cognition_tools_discover(domain=…) to unlock tool groups for this session; drill history with cognition_tool_history_detail(slice_id=turn:N)."
+         max_tool_rounds={max_tool_rounds}"
     )
 }
 
@@ -362,11 +347,11 @@ mod tests {
     }
 
     #[test]
-    fn hud_carries_the_structural_completion_contract() {
+    fn hud_contains_only_dynamic_round_state() {
         let policy = append_tool_loop_policy("hello", 12);
         assert!(policy.contains("max_tool_rounds=12"));
-        assert!(policy.contains("active_work=prose_delivers_and_continues"));
-        assert!(policy.contains("typed_terminal=turn.finish|turn.request_input|turn.checkpoint"));
-        assert!(policy.contains("[MEDOUSA_SCRATCH_POLICY]"));
+        assert!(!policy.contains("typed_terminal="));
+        assert!(!policy.contains("unlock"));
+        assert!(!policy.contains("[MEDOUSA_SCRATCH_POLICY]"));
     }
 }

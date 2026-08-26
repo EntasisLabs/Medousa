@@ -323,7 +323,7 @@ pub fn compile_context_prompt(input: ContextCompilerInput<'_>) -> ContextCompile
     prompt.push_str("\n\n[MEDOUSA_CONTEXT_COMPILER]\n");
     prompt.push_str("version=v1\n");
     prompt.push_str(&format!("lane={}\n", input.lane.as_str()));
-    prompt.push_str(&format!("lane_policy_profile={}\n", lane_policy_profile));
+    prompt.push_str(&format!("lane_profile={}\n", lane_policy_profile));
     prompt.push_str(&format!(
         "recall_readiness={}\n",
         input.recall_readiness.as_str()
@@ -332,16 +332,13 @@ pub fn compile_context_prompt(input: ContextCompilerInput<'_>) -> ContextCompile
 
     prompt.push_str("\n[MEDOUSA_RESPONSE_DEPTH]\n");
     prompt.push_str(&format!("mode={}\n", input.response_depth_mode.trim()));
-    prompt.push_str(
-        "policy=Use concise mode for short output, standard for balanced output, deep for detailed evidence-forward explanation.\n",
-    );
 
     if let Some(route) = input.stage_route {
         prompt.push_str("\n[MEDOUSA_STAGE_ROUTE]\n");
         prompt.push_str(&format!("role={}\n", route.role));
         prompt.push_str(&format!("provider={}\n", route.provider));
         prompt.push_str(&format!("model={}\n", route.model));
-        prompt.push_str(&format!("policy_profile={}\n", route.policy_profile));
+        prompt.push_str(&format!("route_profile={}\n", route.policy_profile));
         prompt.push_str(&format!(
             "fallback_chain={}\n",
             route.fallback_chain.join(",")
@@ -349,7 +346,7 @@ pub fn compile_context_prompt(input: ContextCompilerInput<'_>) -> ContextCompile
     }
 
     let compiler_summary = format!(
-        "context_compiler=v1 lane={} recall={} no_tools_fallback={} policy={}",
+        "context_compiler=v1 lane={} recall={} no_tools_fallback={} profile={}",
         input.lane.as_str(),
         input.recall_readiness.as_str(),
         fallback_gate,
@@ -403,6 +400,7 @@ mod tests {
         );
         assert!(output.compiled_prompt.contains("lane=interactive"));
         assert!(output.compiled_prompt.contains("[MEDOUSA_RESPONSE_DEPTH]"));
+        assert!(!output.compiled_prompt.contains("policy="));
         assert!(!output.allow_no_tools_fallback);
     }
 
@@ -486,7 +484,7 @@ mod tests {
         let compiled = compile_default_lane_prompt(EngineExecutionLane::Scheduled, "Run report");
         assert!(compiled.contains("[MEDOUSA_CONTEXT_COMPILER]"));
         assert!(compiled.contains("lane=scheduled"));
-        assert!(compiled.contains("lane_policy_profile=scheduled"));
+        assert!(compiled.contains("lane_profile=scheduled"));
         assert!(compiled.contains("recall_readiness=missing"));
     }
 

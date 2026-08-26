@@ -1,4 +1,4 @@
-//! Phase 9 — progressive tool surface: bootstrap ring, session unlocks, turn hints.
+//! Tool catalog introspection, immutable lane ceilings, and turn hints.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
@@ -8,7 +8,8 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
 use crate::agent_runtime::prompt_prep::truncate_text_for_budget;
-use crate::agent_runtime::turn_worker::{host_bus_tool_names, tool_allowed};
+#[cfg(test)]
+use crate::agent_runtime::turn_worker::host_bus_tool_names;
 use crate::session::{self, ConversationTurn};
 use crate::turn_slice::{DEFAULT_TOOL_HISTORY_SUMMARY_TURNS, tool_history_summary_rows};
 
@@ -118,6 +119,8 @@ pub enum ToolSurfaceLane {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SessionToolSurface {
     pub session_id: String,
+    /// Legacy inert metadata retained for persisted-session compatibility.
+    /// Model visibility is derived only from immutable allowlists.
     #[serde(default)]
     pub unlocked_domains: Vec<String>,
     #[serde(default)]
@@ -560,22 +563,19 @@ pub fn discover_session_domain(
     session_id: &str,
     lane: ToolSurfaceLane,
     domain: &str,
-    full_allowlist: &HashSet<String>,
 ) -> Result<(SessionToolSurface, Vec<String>), String> {
     let catalog = domain_catalog(lane)
         .iter()
         .find(|entry| entry.domain == domain.trim().to_ascii_lowercase())
         .ok_or_else(|| format!("unknown domain: {domain}"))?;
 
-    let surface = unlock_session_domains(session_id, lane, &[catalog.domain])?;
     let tools = catalog
         .tools
         .iter()
-        .filter(|name| tool_allowed(name, full_allowlist))
         .map(|name| (*name).to_string())
         .collect::<Vec<_>>();
 
-    let mut surface = surface;
+    let mut surface = load_session_tool_surface(session_id);
     surface.discover_events.push(ToolDiscoverEvent {
         domain: catalog.domain.to_string(),
         lane: match lane {
@@ -592,99 +592,38 @@ pub fn discover_session_domain(
 }
 
 pub fn effective_tool_names(
-    session_id: &str,
-    lane: ToolSurfaceLane,
+    _session_id: &str,
+    _lane: ToolSurfaceLane,
     full_allowlist: &HashSet<String>,
 ) -> HashSet<String> {
-    let mut names = HashSet::new();
-    for tool in bootstrap_tools(lane) {
-        if tool_allowed(tool, full_allowlist) {
-            names.insert((*tool).to_string());
-        }
-    }
-
-    let surface = load_session_tool_surface(session_id);
-    for domain in domain_catalog(lane) {
-        if !surface
-            .unlocked_domains
-            .iter()
-            .any(|unlocked| unlocked == domain.domain)
-        {
-            continue;
-        }
-        for tool in domain.tools {
-            if tool_allowed(tool, full_allowlist) {
-                names.insert((*tool).to_string());
-            }
-        }
-    }
-    names
+    full_allowlist.clone()
 }
 
 pub fn build_tool_hints_block(
-    catalog: &crate::typed_tools::ToolCatalog,
-    session_id: &str,
+    _catalog: &crate::typed_tools::ToolCatalog,
+    _session_id: &str,
     prompt: &str,
     turns: &[ConversationTurn],
     char_budget: usize,
 ) -> String {
-    let full_allow = host_bus_tool_names();
-    let surface = load_session_tool_surface(session_id);
     let mut lines = vec![
-        "Bootstrap tools are always available. Store, memory, identity, and catalog/runtime orchestration are on the public library; Studio/canvas tools still unlock in Workshop after begin_work.".to_string(),
         format!(
-            "Unlocked domains: {}",
-            if surface.unlocked_domains.is_empty() {
-                "(none yet)".to_string()
-            } else {
-                surface.unlocked_domains.join(", ")
-            }
+            "domains={}",
+            host_tool_domain_catalog()
+                .iter()
+                .map(|entry| entry.domain)
+                .collect::<Vec<_>>()
+                .join(",")
         ),
+        format!("catalog_tool={COGNITION_TOOLS_DISCOVER}"),
     ];
-
-    for tool in HOST_BOOTSTRAP_TOOLS {
-        lines.push(format!(
-            "- {tool}: {}",
-            catalog.presentation_summary_for_wire(tool)
-        ));
-    }
 
     let ranked = rank_hint_domains(prompt, turns);
     if !ranked.is_empty() {
         lines.push(format!(
-            "Suggested discover next: {}",
-            ranked
-                .iter()
-                .take(3)
-                .map(|domain| format!("cognition_tools_discover(domain=\"{domain}\")"))
-                .collect::<Vec<_>>()
-                .join(" · ")
+            "relevant_domains={}",
+            ranked.into_iter().take(3).collect::<Vec<_>>().join(",")
         ));
-    }
-
-    if !surface.unlocked_domains.is_empty() {
-        let mut unlocked_lines = Vec::new();
-        for domain_name in &surface.unlocked_domains {
-            if let Some(domain) = host_tool_domain_catalog()
-                .iter()
-                .find(|entry| entry.domain == domain_name)
-            {
-                let preview: Vec<String> = domain
-                    .tools
-                    .iter()
-                    .take(4)
-                    .filter(|name| tool_allowed(name, &full_allow))
-                    .map(|name| name.to_string())
-                    .collect();
-                if !preview.is_empty() {
-                    unlocked_lines.push(format!("- {} → {}", domain.domain, preview.join(", ")));
-                }
-            }
-        }
-        if !unlocked_lines.is_empty() {
-            lines.push("Unlocked tool preview:".to_string());
-            lines.extend(unlocked_lines);
-        }
     }
 
     let body = truncate_text_for_budget(&lines.join("\n"), char_budget);
@@ -943,7 +882,7 @@ mod tests {
         assert!(before.contains("cognition_store_write"));
         assert!(before.contains("cognition_calendar_query"));
         assert!(before.contains("cognition_calendar_mutate"));
-        assert!(!before.contains("cognition_skill_discover"));
+        assert!(before.contains("cognition_skill_discover"));
 
         ensure_host_session_tool_defaults(&session_id);
         let after = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
@@ -958,7 +897,7 @@ mod tests {
     }
 
     #[test]
-    fn session_unlock_expands_effective_tools() {
+    fn discovery_state_does_not_change_effective_tools() {
         let _guard = surface_test_lock();
         let session_id = format!("sess-test-{}", uuid::Uuid::new_v4().simple());
         let allow = host_bus_tool_names();
@@ -969,17 +908,19 @@ mod tests {
         assert!(before.contains("cognition_identity_query"));
         assert!(before.contains("cognition_calendar_query"));
         assert!(before.contains("cognition_calendar_mutate"));
-        assert!(!before.contains("cognition_skill_discover"));
+        assert!(before.contains("cognition_skill_discover"));
 
-        unlock_session_domains(&session_id, ToolSurfaceLane::Host, &["skill"]).expect("unlock");
+        let (_surface, inspected) =
+            discover_session_domain(&session_id, ToolSurfaceLane::Host, "skill").expect("inspect");
+        assert!(inspected.contains(&"cognition_skill_discover".to_string()));
         let after = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
-        assert!(after.contains("cognition_skill_discover"));
+        assert_eq!(before, after);
 
         let _ = delete_session_tool_surface(&session_id);
     }
 
     #[test]
-    fn tool_hints_block_mentions_discover() {
+    fn tool_hints_block_points_to_catalog_without_unlock_policy() {
         let block = build_tool_hints_block(
             &crate::typed_tools::ToolCatalog::default(),
             "sess-hints",
@@ -990,5 +931,6 @@ mod tests {
         assert!(block.contains("[MEDOUSA_TOOL_HINTS]"));
         assert!(block.contains("cognition_tools_discover"));
         assert!(block.contains("memory"));
+        assert!(!block.to_ascii_lowercase().contains("unlock"));
     }
 }
