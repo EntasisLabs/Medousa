@@ -116,7 +116,7 @@ pub struct ToolHistorySummaryOutput {
 
 #[medousa_tool(id = COGNITION_TOOL_HISTORY_SUMMARY_ID)]
 impl CognitionToolHistorySummaryTool {
-    /// High-level tool-history slices for recent session turns. Use after reading [MEDOUSA_TOOL_SLICES] at turn start when you need to verify what already ran. Returns slice_id values (turn:N) for detail drill-down.
+    /// Summarize tool activity for recent session turns. Returns slice_id values for cognition_tool_history_detail.
     async fn invoke_typed(
         &self,
         input: ToolHistorySummaryInput,
@@ -242,7 +242,7 @@ pub struct ToolHistoryDetailOutput {
 
 #[medousa_tool(id = COGNITION_TOOL_HISTORY_DETAIL_ID)]
 impl CognitionToolHistoryDetailTool {
-    /// Full tool-run detail for one session slice (slice_id=turn:N from summary or [MEDOUSA_TOOL_SLICES]). Optional tool_round for a single round's receipts.
+    /// Read tool-run details for one session slice. Optional tool_round selects one round.
     async fn invoke_typed(
         &self,
         input: ToolHistoryDetailInput,

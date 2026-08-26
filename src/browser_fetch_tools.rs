@@ -100,7 +100,7 @@ pub struct BrowserFetchOutput {
 
 #[medousa_tool(id = COGNITION_BROWSER_FETCH_ID)]
 impl CognitionBrowserFetchTool {
-    /// Fetch a public URL via Agent Browser and return a markdown excerpt for synthesis. Requires a browser-capable client (Home desktop/iOS).
+    /// Fetch a public URL via Agent Browser and return a markdown excerpt.
     async fn invoke_typed(
         &self,
         input: BrowserFetchInput,

@@ -849,7 +849,7 @@ struct EnvironmentWikiInput {
 
 #[medousa_tool(id = COGNITION_ENVIRONMENT_WIKI_ID)]
 impl CognitionEnvironmentWikiTool {
-    /// Environment/canvas SDK as STTP temporal nodes — schemas, merge rules, propose/apply, ui_present, ui_scene. Returns response_format=sttp (same family as system prompt). Call topic=recipe or merge_spec BEFORE hand-building environment spec JSON. Topics: scene_vs_html, mental_model, recipe, merge_spec, surface_schema, component_schema, propose_apply, ui_present, ui_scene, presets, layout_schema, layout_zones, media_embed, feed_client, example_trip_poll, common_errors, example_writing_studio, tool_map.
+    /// Load environment and canvas SDK guidance as STTP nodes. Topics include recipes, merge rules, schemas, layouts, media, feeds, examples, and tool mapping.
     async fn invoke_typed(
         &self,
         input: EnvironmentWikiInput,

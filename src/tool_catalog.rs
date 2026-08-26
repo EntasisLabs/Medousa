@@ -159,7 +159,7 @@ fn add_presentation_overrides(index: &mut ToolPlacementIndex) {
 const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
     (
         crate::tool_bootstrap::COGNITION_TOOLS_DISCOVER,
-        "Unlock a tool domain for this session (memory, catalog, runtime, …)",
+        "List tools in a domain with concise usage summaries",
     ),
     (
         "cognition_capability",
@@ -243,7 +243,7 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
     ),
     (
         "cognition_turn",
-        "Turn control: begin work, update the principal, checkpoint, or finish (action=turn.finish / turn.checkpoint / …)",
+        "Record turn progress or set its outcome by typed action (turn.finish / turn.checkpoint / …)",
     ),
     (
         "cognition_ui_build",
@@ -251,7 +251,7 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
     ),
     (
         "cognition_ui_scene",
-        "Legacy freeform scene ops (plan_layout/fill_slot) — prefer markdown embeds or cognition_ui_build for chat",
+        "Compose freeform scene ops (plan_layout/fill_slot); prefer markdown embeds or cognition_ui_build for chat",
     ),
     (
         "cognition_ui_present",
@@ -293,7 +293,7 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
     ),
     (
         "cognition_context_list_pointers",
-        "List ranked context pointers (bootstrap usually sufficient)",
+        "List ranked context pointers for the active session",
     ),
     (
         "cognition_intent_resolve",

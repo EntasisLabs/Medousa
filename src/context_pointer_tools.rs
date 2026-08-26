@@ -121,7 +121,7 @@ struct ContextFollowPointerOutput {
 
 #[medousa_tool(id = COGNITION_CONTEXT_FOLLOW_POINTER_ID)]
 impl CognitionContextFollowPointerTool {
-    /// Pull a focused slice of a context pointer into working memory. Use pointer ids from [MEDOUSA_POINTERS] at turn start. scope examples: last_5_turns.
+    /// Load a focused context slice by pointer id. scope examples: last_5_turns.
     async fn invoke_typed(
         &self,
         input: ContextFollowPointerInput,
@@ -188,7 +188,7 @@ struct ContextListPointersOutput {
 
 #[medousa_tool(id = COGNITION_CONTEXT_LIST_POINTERS_ID)]
 impl CognitionContextListPointersTool {
-    /// List ranked context pointers for the active session (same as turn bootstrap digest).
+    /// List ranked context pointers for the active session.
     async fn invoke_typed(
         &self,
         _input: ContextListPointersInput,

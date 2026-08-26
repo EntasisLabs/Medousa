@@ -116,7 +116,7 @@ struct ProjectListOutput {
 
 #[medousa_tool(id = PROJECT_LIST_ID)]
 impl CognitionProjectListTool {
-    /// List ready Forge projects that this Coder conversation can continue.
+    /// List ready Forge projects.
     async fn invoke_typed(&self, _input: ProjectListInput) -> Result<ProjectListOutput> {
         let items = self
             .state
@@ -204,7 +204,7 @@ struct ProjectBindOutput {
 
 #[medousa_tool(id = PROJECT_BIND_ID)]
 impl CognitionProjectBindTool {
-    /// Bind this conversation to a ready Forge project selected by the user. The full Coder workspace becomes active on the next turn.
+    /// Bind a ready Forge project selected by the user.
     async fn invoke_typed(&self, input: ProjectBindInput) -> Result<ProjectBindOutput> {
         let command = ProjectBindCommand::try_from(input)?;
         let work_id = command.work_id.into_string();
@@ -344,7 +344,7 @@ struct ProjectCreateOutput {
 
 #[medousa_tool(id = PROJECT_CREATE_ID)]
 impl CognitionProjectCreateTool {
-    /// Create, provision, and bind a code project after the user explicitly asks for project creation. Blank projects are initialized under the connected workshop's Medousa projects directory.
+    /// Create, provision, and bind a blank or repository-backed code project.
     async fn invoke_typed(&self, input: ProjectCreateInput) -> Result<ProjectCreateOutput> {
         let command = ProjectCreateCommand::try_from(input)?;
         let request = StartSessionCodeProjectRequest {

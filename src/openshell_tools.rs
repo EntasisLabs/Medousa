@@ -120,7 +120,7 @@ pub enum OpenshellRequestSecretOutput {
 
 #[medousa_tool(id = COGNITION_OPENSHELL_REQUEST_SECRET_ID)]
 impl CognitionOpenshellRequestSecretTool {
-    /// Ask the user for a credential through Medousa's trusted secret-entry UI. Never ask the user to paste a key into chat. This tool receives metadata only and returns an opaque one-use grant for `cognition_openshell_sandbox_run.secret_grant_ids`; the credential value is never exposed to the model or transcript.
+    /// Request a credential through Medousa's secret-entry UI and return a one-use grant for `cognition_openshell_sandbox_run.secret_grant_ids`.
     async fn invoke_typed(
         &self,
         input: OpenshellRequestSecretInput,
@@ -261,7 +261,7 @@ pub struct OpenshellStatusOutput {
 
 #[medousa_tool(id = COGNITION_OPENSHELL_STATUS_ID)]
 impl CognitionOpenshellStatusTool {
-    /// Probe local OpenShell gateway health (TCP, /readyz, CLI binaries, Podman socket, policy templates). Read-only — does not create sandboxes.
+    /// Report local OpenShell gateway health, including TCP, /readyz, CLI binaries, Podman socket, and templates.
     async fn invoke_typed(
         &self,
         _input: OpenshellStatusInput,
@@ -515,7 +515,7 @@ pub enum OpenshellSandboxRunOutput {
 
 #[medousa_tool(id = COGNITION_OPENSHELL_SANDBOX_RUN_ID)]
 impl CognitionOpenshellSandboxRunTool {
-    /// Enqueue a durable OpenShell sandbox job (create → upload skill assets → exec → destroy). Pass command OR skill_script+manuscript_id for imported skill assets. Requires gateway healthy and manuscript spec.openshell.enabled when manuscript_id is set. Worker lane primary; not available on scheduled lane unless spec.openshell.allow_scheduled=true.
+    /// Run a command or imported skill script in a disposable OpenShell sandbox. Pass command or skill_script with manuscript_id.
     async fn invoke_typed(
         &self,
         input: OpenshellSandboxRunInput,

@@ -643,7 +643,7 @@ pub fn tool_definitions() -> Vec<Tool> {
     vec![
         Tool::new(COGNITION_CODER_MEMORY_OVERVIEW)
             .with_description(
-                "Load compact semantic working state for this governed Coder environment plus a bounded fork snapshot and accepted undertaking/repository knowledge. Live sibling state is excluded.",
+                "Load compact engineering working state, a fork snapshot, and accepted project knowledge.",
             )
             .with_schema(json!({
                 "type": "object",
@@ -653,7 +653,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             })),
         Tool::new(COGNITION_CODER_MEMORY_RECALL)
             .with_description(
-                "Recall bounded STTP working-memory nodes from this governed environment, its immutable parent snapshot, and accepted knowledge scopes. The runtime pins every scope, excludes live sibling state, and labels changed-HEAD observations stale.",
+                "Recall bounded STTP working-memory nodes from project and repository knowledge.",
             )
             .with_schema(json!({
                 "type": "object",
@@ -667,7 +667,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             })),
         Tool::new(COGNITION_CODER_MEMORY_COMMIT)
             .with_description(
-                "Commit an explicit engineering working-state summary as canonical STTP in this governed environment. Store decisions and evidence, not private reasoning or raw source/log payloads.",
+                "Commit an engineering working-state summary as STTP.",
             )
             .with_schema(json!({
                 "type": "object",

@@ -475,7 +475,7 @@ pub enum SkillProbeOutput {
 
 #[medousa_tool(id = COGNITION_SKILL_PROBE_ID)]
 impl CognitionSkillProbeTool {
-    /// H6/H7 validation: optionally run grapheme --version in sandbox, then upload and execute an imported skill script when policy grants sandbox level. Host filesystem stays untouched.
+    /// Validate Grapheme availability, then upload and execute an imported skill script in a sandbox.
     async fn invoke_typed(
         &self,
         input: SkillProbeInput,

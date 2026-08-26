@@ -918,19 +918,4 @@ mod tests {
 
         let _ = delete_session_tool_surface(&session_id);
     }
-
-    #[test]
-    fn tool_hints_block_points_to_catalog_without_unlock_policy() {
-        let block = build_tool_hints_block(
-            &crate::typed_tools::ToolCatalog::default(),
-            "sess-hints",
-            "calibrate memory posture",
-            &[],
-            600,
-        );
-        assert!(block.contains("[MEDOUSA_TOOL_HINTS]"));
-        assert!(block.contains("cognition_tools_discover"));
-        assert!(block.contains("memory"));
-        assert!(!block.to_ascii_lowercase().contains("unlock"));
-    }
 }

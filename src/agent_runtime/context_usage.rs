@@ -173,10 +173,12 @@ pub async fn measure_tool_schema_footprint(
             };
         }
     };
-    tool_schema_footprint(&tools)
+    measure_tool_schema_footprint_for_tools(&tools)
 }
 
-fn tool_schema_footprint(tools: &[genai::chat::Tool]) -> ToolSchemaFootprint {
+pub(crate) fn measure_tool_schema_footprint_for_tools(
+    tools: &[genai::chat::Tool],
+) -> ToolSchemaFootprint {
     let mut entries = tools
         .iter()
         .map(|tool| {
@@ -354,7 +356,7 @@ mod tests {
                 }
             })),
         ];
-        let footprint = tool_schema_footprint(&tools);
+        let footprint = measure_tool_schema_footprint_for_tools(&tools);
         assert_eq!(footprint.tool_count, 2);
         assert_eq!(footprint.tools[0].name, "large");
         assert_eq!(

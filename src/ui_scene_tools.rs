@@ -152,7 +152,7 @@ pub enum UiSceneOutput {
 
 #[medousa_tool(id = COGNITION_UI_SCENE_ID)]
 impl CognitionUiSceneTool {
-    /// Author a native, streamable scene (structure-then-fill) when the client advertises supports_ui_artifacts. Preferred over cognition_ui_present for interactive UI — the model composes typed nodes, not HTML. Emit ops in the scene-op JSON shape; go bones-first: send a plan_layout with skeleton slots, then follow up with fill_slot batches (call again in the same turn) so structure paints before content streams in. Keep each call small (plan_layout first, then 1–3 fill_slot ops per follow-up) — ops must be valid JSON. Ops: plan_layout, fill_slot, patch_props, set_binding, set_fill_state, precompute, remove. Each op is an object with a string op field; nodes carry id (stable reconciliation key), type (archetype), and props.
+    /// Build a native streamable scene from scene-op JSON. Start with plan_layout, then fill slots in small batches. Ops: plan_layout, fill_slot, patch_props, set_binding, set_fill_state, precompute, remove.
     async fn invoke_typed(&self, input: UiSceneInput) -> stasis::prelude::Result<UiSceneOutput> {
         if !self.active_surface_supports_ui_artifacts().await {
             return Ok(UiSceneOutput::Unsupported {

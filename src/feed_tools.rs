@@ -211,7 +211,7 @@ enum FeedSubscribeOutput {
 
 #[medousa_tool(id = COGNITION_FEED_SUBSCRIBE_ID)]
 impl CognitionFeedSubscribeTool {
-    /// Bind feed ids on a canvas component so runtime publishers can deliver component_patch updates.
+    /// Bind feed ids on a canvas component for component_patch updates.
     async fn invoke_typed(
         &self,
         input: FeedSubscribeInput,
@@ -448,7 +448,7 @@ struct FeedPublishOutput {
 
 #[medousa_tool(id = COGNITION_FEED_PUBLISH_ID)]
 impl CognitionFeedPublishTool {
-    /// Publish a bounded feed event for subscribed environment components. Prefer internal publishers for workshop pulse.
+    /// Publish a bounded feed event for subscribed environment components.
     async fn invoke_typed(
         &self,
         input: FeedPublishInput,

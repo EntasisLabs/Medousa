@@ -50,9 +50,8 @@ pub struct ToolsDiscoverInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     session_id: Option<String>,
-    /// Legacy compatibility flag; discovery is always read-only
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     list_only: Option<bool>,
 }
 
@@ -158,14 +157,13 @@ pub enum ToolsDiscoverOutput {
         domain: String,
         summary: String,
         tools: Vec<DomainToolSummary>,
-        changes_surface: bool,
         message: String,
     },
 }
 
 #[medousa_tool(id = COGNITION_TOOLS_DISCOVER_ID)]
 impl CognitionToolsDiscoverTool {
-    /// Inspect a lane's tool-domain catalog. This call never represents or changes authority or model visibility.
+    /// List tools in a domain with concise usage summaries.
     async fn invoke_typed(
         &self,
         input: ToolsDiscoverInput,
@@ -211,7 +209,6 @@ impl CognitionToolsDiscoverTool {
             domain: domain.to_ascii_lowercase(),
             summary: entry.summary.to_string(),
             tools,
-            changes_surface: false,
             message: format!(
                 "Inspected domain '{}' — {} catalogued tools",
                 domain.to_ascii_lowercase(),

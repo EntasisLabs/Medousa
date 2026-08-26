@@ -21,7 +21,7 @@ pub const COGNITION_CODER_CAUSAL_QUERY: &str = "cognition_coder_causal_query";
 pub fn tool_definition() -> Tool {
     Tool::new(COGNITION_CODER_CAUSAL_QUERY)
         .with_description(
-            "Query stable Coder traces with why, observation-only replay, regression, or sealed counterfactual workflows. This never exposes hidden reasoning or automatically reruns a tool.",
+            "Query Coder traces for why, observation replay, regression, or counterfactual comparison.",
         )
         .with_schema(json!({
             "type": "object",

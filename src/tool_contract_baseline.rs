@@ -22,6 +22,9 @@ use crate::tool_bootstrap::{
 
 const BASELINE_FORMAT_VERSION: u32 = 1;
 const BASELINE_PATH: &str = "tests/fixtures/first_party_tool_contracts.json";
+const FOOTPRINT_BASELINE_PATH: &str = "tests/fixtures/first_party_tool_footprints.json";
+const FOOTPRINT_BASELINE: &str = include_str!("../tests/fixtures/first_party_tool_footprints.json");
+const LARGEST_TOOL_COUNT: usize = 8;
 
 /// Static policy references that intentionally resolve outside first-party
 /// assembled registries. There are none today; keeping the classification
@@ -63,6 +66,144 @@ struct ContractSnapshot {
     input_schema: Option<Value>,
     output_schema_present: bool,
     placements: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct ToolFootprintBaseline {
+    estimator: String,
+    surfaces: Vec<ToolSurfaceFootprintSnapshot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct ToolSurfaceFootprintSnapshot {
+    id: String,
+    tool_count: usize,
+    total_chars: usize,
+    tokens_estimate: u32,
+    tools_over_1000_chars: usize,
+    largest_tools_share_bps: u32,
+    largest_tools: Vec<ToolFootprintEntrySnapshot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct ToolFootprintEntrySnapshot {
+    name: String,
+    chars: usize,
+    tokens_estimate: u32,
+}
+
+fn snapshot_tool_surface(id: &str, tools: &[Tool]) -> ToolSurfaceFootprintSnapshot {
+    let footprint =
+        crate::agent_runtime::context_usage::measure_tool_schema_footprint_for_tools(tools);
+    let largest_chars = footprint
+        .tools
+        .iter()
+        .take(LARGEST_TOOL_COUNT)
+        .map(|tool| tool.chars)
+        .sum::<usize>();
+    let largest_tools_share_bps = if footprint.total_chars == 0 {
+        0
+    } else {
+        u32::try_from(largest_chars.saturating_mul(10_000) / footprint.total_chars)
+            .unwrap_or(u32::MAX)
+    };
+    ToolSurfaceFootprintSnapshot {
+        id: id.to_string(),
+        tool_count: footprint.tool_count,
+        total_chars: footprint.total_chars,
+        tokens_estimate: crate::agent_runtime::context_usage::chars_to_tokens(
+            footprint.total_chars,
+        ),
+        tools_over_1000_chars: footprint
+            .tools
+            .iter()
+            .filter(|tool| tool.chars >= 1_000)
+            .count(),
+        largest_tools_share_bps,
+        largest_tools: footprint
+            .tools
+            .into_iter()
+            .take(LARGEST_TOOL_COUNT)
+            .map(|tool| ToolFootprintEntrySnapshot {
+                name: tool.name,
+                chars: tool.chars,
+                tokens_estimate: tool.tokens_estimate,
+            })
+            .collect(),
+    }
+}
+
+fn filtered_surface(
+    general_tools: &[Tool],
+    allowlist: &HashSet<String>,
+    supports_ui_artifacts: bool,
+    supports_browser_host: bool,
+) -> Vec<Tool> {
+    general_tools
+        .iter()
+        .filter(|tool| {
+            crate::public_api::is_public_api_tool(tool.name.as_str())
+                || tool_allowed(tool.name.as_str(), allowlist)
+        })
+        .filter(|tool| {
+            supports_ui_artifacts
+                || !matches!(
+                    tool.name.as_str(),
+                    crate::ui_present_tools::COGNITION_UI_PRESENT
+                        | crate::ui_scene_tools::COGNITION_UI_SCENE
+                        | crate::ui_build_tools::COGNITION_UI_BUILD
+                )
+        })
+        .filter(|tool| {
+            supports_browser_host
+                || !crate::browser_tools::BROWSER_COGNITION_TOOLS.contains(&tool.name.as_str())
+        })
+        .cloned()
+        .collect()
+}
+
+fn tool_footprint_baseline(
+    general_tools: &[Tool],
+    coder_setup_tools: &[Tool],
+    coder_work_tools: &[Tool],
+) -> ToolFootprintBaseline {
+    let host_bus = crate::agent_runtime::turn_worker::host_bus_tool_names();
+    let worker_general = allowed_tool_names_for_intent(TurnWorkerIntent::General);
+    let worker_research = allowed_tool_names_for_intent(TurnWorkerIntent::Research);
+    let worker_memory = allowed_tool_names_for_intent(TurnWorkerIntent::MemoryContext);
+
+    ToolFootprintBaseline {
+        estimator: crate::agent_runtime::context_usage::ESTIMATOR_LABEL.to_string(),
+        surfaces: vec![
+            snapshot_tool_surface("general", &general_tools),
+            snapshot_tool_surface(
+                "host_bus_home",
+                &filtered_surface(&general_tools, &host_bus, true, true),
+            ),
+            snapshot_tool_surface(
+                "host_bus_thin",
+                &filtered_surface(&general_tools, &host_bus, false, false),
+            ),
+            snapshot_tool_surface(
+                "workshop_general_bound",
+                &filtered_surface(&general_tools, &worker_general, true, true),
+            ),
+            snapshot_tool_surface(
+                "worker_general",
+                &filtered_surface(&general_tools, &worker_general, false, false),
+            ),
+            snapshot_tool_surface(
+                "worker_research",
+                &filtered_surface(&general_tools, &worker_research, false, false),
+            ),
+            snapshot_tool_surface(
+                "worker_memory",
+                &filtered_surface(&general_tools, &worker_memory, false, false),
+            ),
+            snapshot_tool_surface("coder_setup", &coder_setup_tools),
+            snapshot_tool_surface("coder_work", &coder_work_tools),
+        ],
+    }
 }
 
 fn snapshot_tool(
@@ -149,7 +290,7 @@ fn worker_intents() -> [(TurnWorkerIntent, &'static str); 4] {
     ]
 }
 
-async fn assembled_contract_baseline() -> ContractBaseline {
+async fn assembled_contract_baseline() -> (ContractBaseline, ToolFootprintBaseline) {
     let (event_tx, _event_rx) = tokio::sync::mpsc::channel(8);
     let runtime = crate::tools::build_tui_runtime(
         RuntimeBackend::InMemory,
@@ -176,6 +317,20 @@ async fn assembled_contract_baseline() -> ContractBaseline {
     audit_typed_contract_inventory(&runtime.tool_catalog);
     audit_policy_references(&runtime.tool_catalog, &general_tools);
 
+    let coder_setup_contracts =
+        crate::agent_runtime::coder_setup_tools::contract_tool_definitions();
+    let mut coder_setup_surface = coder_setup_contracts.clone();
+    coder_setup_surface.extend(
+        general_tools
+            .iter()
+            .find(|tool| tool.name.as_str() == crate::public_api::COGNITION_TURN)
+            .cloned(),
+    );
+    let coder_work_tools =
+        crate::agent_runtime::coder_tools::contract_projected_tools(&runtime.tool_catalog);
+    let footprint =
+        tool_footprint_baseline(&general_tools, &coder_setup_surface, &coder_work_tools);
+
     let mut contracts = general_tools
         .iter()
         .cloned()
@@ -193,33 +348,25 @@ async fn assembled_contract_baseline() -> ContractBaseline {
         })
         .collect::<Vec<_>>();
 
-    contracts.extend(
-        crate::agent_runtime::coder_setup_tools::contract_tool_definitions()
-            .into_iter()
-            .map(|tool| {
-                snapshot_tool(
-                    "coder_setup",
-                    tool,
-                    None,
-                    vec!["coder:unbound".to_string()],
-                    true,
-                )
-            }),
-    );
+    contracts.extend(coder_setup_contracts.into_iter().map(|tool| {
+        snapshot_tool(
+            "coder_setup",
+            tool,
+            None,
+            vec!["coder:unbound".to_string()],
+            true,
+        )
+    }));
 
-    contracts.extend(
-        crate::agent_runtime::coder_tools::contract_projected_tools(&runtime.tool_catalog)
-            .into_iter()
-            .map(|tool| {
-                let placements = crate::agent_runtime::coder_tools::contract_placement_labels(
-                    &runtime.tool_catalog,
-                    tool.name.as_str(),
-                );
-                let output_schema_present =
-                    catalog_output_schema_present(&runtime.tool_catalog, tool.name.as_str());
-                snapshot_tool("coder_bound", tool, None, placements, output_schema_present)
-            }),
-    );
+    contracts.extend(coder_work_tools.into_iter().map(|tool| {
+        let placements = crate::agent_runtime::coder_tools::contract_placement_labels(
+            &runtime.tool_catalog,
+            tool.name.as_str(),
+        );
+        let output_schema_present =
+            catalog_output_schema_present(&runtime.tool_catalog, tool.name.as_str());
+        snapshot_tool("coder_bound", tool, None, placements, output_schema_present)
+    }));
 
     contracts.extend(medousa_mcp_server::space_tools().into_iter().map(|spec| {
         let tool = Tool::new(spec.name)
@@ -245,10 +392,13 @@ async fn assembled_contract_baseline() -> ContractBaseline {
             "duplicate tool id in one first-party registry"
         );
     }
-    ContractBaseline {
-        format_version: BASELINE_FORMAT_VERSION,
-        contracts,
-    }
+    (
+        ContractBaseline {
+            format_version: BASELINE_FORMAT_VERSION,
+            contracts,
+        },
+        footprint,
+    )
 }
 
 fn assert_catalog_matches_registered_surface(catalog_tools: &[Tool], registered_tools: &[Tool]) {
@@ -435,17 +585,24 @@ async fn assembled_first_party_contracts_match_baseline() {
         WORKER_BOOTSTRAP_AUTHORIZATION_EXCEPTIONS,
     );
 
-    let baseline = assembled_contract_baseline().await;
+    let (baseline, footprint) = assembled_contract_baseline().await;
     let rendered = format!(
         "{}\n",
         serde_json::to_string_pretty(&baseline).expect("serialize tool contract baseline")
     );
     if std::env::var_os("MEDOUSA_UPDATE_TOOL_CONTRACT_BASELINE").is_some() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        std::fs::write(manifest_dir.join(BASELINE_PATH), rendered)
+            .expect("write updated tool contract baseline");
+        let footprint_rendered = format!(
+            "{}\n",
+            serde_json::to_string_pretty(&footprint).expect("serialize tool footprint baseline")
+        );
         std::fs::write(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(BASELINE_PATH),
-            rendered,
+            manifest_dir.join(FOOTPRINT_BASELINE_PATH),
+            footprint_rendered,
         )
-        .expect("write updated tool contract baseline");
+        .expect("write updated tool footprint baseline");
         return;
     }
 
@@ -472,6 +629,14 @@ async fn assembled_first_party_contracts_match_baseline() {
             rendered.len()
         );
     }
+    let expected: ToolFootprintBaseline =
+        serde_json::from_str(FOOTPRINT_BASELINE).expect("parse tool footprint baseline");
+    assert_eq!(
+        footprint,
+        expected,
+        "tool surface footprint drifted; current baseline:\n{}",
+        serde_json::to_string_pretty(&footprint).expect("serialize tool footprint baseline")
+    );
 }
 
 fn assert_bootstrap_authorized(

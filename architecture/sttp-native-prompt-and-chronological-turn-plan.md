@@ -303,6 +303,35 @@ introspection and dynamic capability lookup, not a hidden unlock ritual.
 - Large schema sizing and selective schema projection are a measured follow-up,
   not a blocker for the chronological/STTP migration.
 
+### Post-cutover footprint baseline
+
+The shipped first-party registries now carry a hermetic serialized-contract
+baseline. Counts below use the runtime's documented `chars_div_4` estimator;
+they are comparable sizing signals, not provider-tokenizer-exact counts.
+Provider request-envelope punctuation is excluded.
+
+| Immutable surface | Tools | Estimated schema tokens |
+| --- | ---: | ---: |
+| General | 78 | 11,949 |
+| Host bus, Home-capable | 34 | 4,731 |
+| Host bus, thin client | 31 | 4,228 |
+| Bound Workshop, General intent | 50 | 7,634 |
+| Worker, General intent | 47 | 6,393 |
+| Worker, Research intent | 52 | 7,234 |
+| Worker, Memory intent | 19 | 2,351 |
+| Coder setup | 4 | 420 |
+| Coder work | 48 | 8,682 |
+
+For comparison, compiled STTP host policies measure about 670–707 estimated
+tokens and worker policy plus HUD measures about 715–751. Schema size—not STTP
+policy—is therefore the dominant static prompt cost. The largest eight General
+tools account for only about 27% of its schema footprint, so shortening a few
+large contracts cannot solve the broad-surface cost by itself.
+
+Any later projection must be selected by immutable mode/surface, preserve the
+typed introspection path, and avoid restoring discovery-as-unlock behavior.
+The baseline records pressure; it does not silently change tool visibility.
+
 ## Foreground turn state machine
 
 ### States
@@ -458,6 +487,16 @@ ambiguous.
    facts differently.
 6. A committed visible segment remains part of history even if the later turn
    outcome is failure, cancellation, checkpoint, or fuse exhaustion.
+
+The shipped tool-start boundary waits for the ordered journal's `written`
+receipt before releasing invocation. On ordinary non-terminal starts this is
+a buffered write plus filesystem flush, not the periodic `sync_data` fence;
+live broadcast follows immediately. This wait preserves an honest
+process-crash prefix: a side effect cannot begin before its `tool_started` fact
+is recoverable. `medousa::turn_latency` records the complete boundary plus
+pipeline admission and receipt wait separately. Do not weaken the boundary to
+memory-only admission unless measured p95 latency justifies a replacement
+acknowledgement that retains the written-prefix guarantee.
 
 `aggregate_text` is the visible prose segments joined with stable paragraph
 separation. It exists for compatibility, search, title generation, and old

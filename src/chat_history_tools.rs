@@ -208,7 +208,7 @@ pub struct CognitionChatHistorySearchTool {
 
 #[medousa_tool(id = COGNITION_CHAT_HISTORY_SEARCH_ID)]
 impl CognitionChatHistorySearchTool {
-    /// Search prior Medousa chats visible to the active profile. Omit query to list recent chats. Searches only user/assistant prose; reasoning traces and raw tool receipts are excluded.
+    /// Search prior Medousa chats. Omit query to list recent chats. Searches user and assistant messages.
     async fn invoke_typed(
         &self,
         input: ChatHistorySearchInput,
@@ -358,7 +358,7 @@ pub struct CognitionChatHistoryReadTool {
 
 #[medousa_tool(id = COGNITION_CHAT_HISTORY_READ_ID)]
 impl CognitionChatHistoryReadTool {
-    /// Read a bounded window from one prior Medousa chat. Returns user/assistant prose and compact tool names only; reasoning traces and raw tool receipts are never returned.
+    /// Read a bounded window from one prior Medousa chat. Returns user and assistant messages plus compact tool names.
     async fn invoke_typed(
         &self,
         input: ChatHistoryReadInput,

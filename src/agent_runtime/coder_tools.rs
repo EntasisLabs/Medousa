@@ -68,7 +68,7 @@ impl<'de> Deserialize<'de> for CoderToolIntent {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct CoderCallMetadata {
-    /// One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).
+    /// Short purpose of this tool call.
     #[schemars(length(max = 320))]
     intent: CoderToolIntent,
 }
@@ -1188,7 +1188,6 @@ impl CoderBoundToolRegistry {
                     "ok": true,
                     "domain": domain,
                     "tools": tools,
-                    "changes_surface": false,
                     "available_domains": CODER_DISCOVERABLE_DOMAINS,
                 }))
             }
@@ -2368,7 +2367,7 @@ fn coder_runtime_tool_definitions() -> Vec<Tool> {
     let mut tools = vec![
         Tool::new(COGNITION_CODER_TOOLS_DISCOVER)
             .with_description(
-                "Inspect one Coder tool domain already governed by the current Forge authority. This does not change authority or model visibility.",
+                "List tools in a Coder domain with concise usage summaries.",
             )
             .with_schema(json!({
                 "type": "object",
@@ -2445,10 +2444,10 @@ fn with_required_coder_intent(
 fn with_coder_tool_advertisement(tool: Tool) -> Tool {
     match tool.name.as_str() {
         crate::public_api::COGNITION_WORKSHOP_MUTATE => tool.with_description(
-            "Spawn, cancel, or steer a peer sub-agent. action=workshop.spawn for parallel research while Coder stays on the Forge lease.",
+            "Spawn, cancel, or steer a peer sub-agent. Use action=workshop.spawn for parallel work.",
         ),
         crate::public_api::COGNITION_WORKSHOP_QUERY => {
-            tool.with_description("Check status of peer sub-agents spawned from this Coder turn.")
+            tool.with_description("Check status of peer sub-agents.")
         }
         _ => tool,
     }
@@ -4232,7 +4231,6 @@ mod tests {
                 .as_array()
                 .is_some_and(|tools| !tools.is_empty())
         );
-        assert_eq!(discovered["changes_surface"], false);
         let after = registry.list_tools().await.expect("tools after discover");
         let after_names = after
             .iter()

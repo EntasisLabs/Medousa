@@ -144,7 +144,7 @@ pub struct DetamuStatusInput {
 
 #[medousa_tool(id = COGNITION_DETAMU_STATUS_ID)]
 impl CognitionDetamuStatusTool {
-    /// Probe Detamu world-model host readiness and optional Forge work binding (baseline/sealed snapshot pointers). Detamu domain only — opt-in.
+    /// Report Detamu readiness and optional Forge baseline and snapshot pointers.
     async fn invoke_typed(
         &self,
         input: DetamuStatusInput,
@@ -207,7 +207,7 @@ pub struct DetamuFilesInput {
 
 #[medousa_tool(id = COGNITION_DETAMU_FILES_ID)]
 impl CognitionDetamuFilesTool {
-    /// List file entities from a Detamu snapshot (inventory). Prefer work_id when a Forge undertaking is bound. Detamu domain only — opt-in.
+    /// List file entities from a Detamu snapshot. Accepts a snapshot id or Forge work_id.
     async fn invoke_typed(&self, input: DetamuFilesInput) -> stasis::prelude::Result<ExternalJson> {
         let work_id = input.work_id.into_option();
         let world = input.world.into_option();
@@ -290,7 +290,7 @@ pub struct DetamuImpactInput {
 
 #[medousa_tool(id = COGNITION_DETAMU_IMPACT_ID)]
 impl CognitionDetamuImpactTool {
-    /// Dependents of one code entity (callers/references/imports/types) from a Detamu snapshot. Prefer work_id when a Forge undertaking is bound. Empty graph returns ok:true with zero dependents. Detamu domain only — opt-in.
+    /// List callers, references, imports, and types that depend on a Detamu code entity.
     async fn invoke_typed(
         &self,
         input: DetamuImpactInput,
@@ -345,7 +345,7 @@ pub struct DetamuCodeAvecInput {
 
 #[medousa_tool(id = COGNITION_DETAMU_CODE_AVEC_ID)]
 impl CognitionDetamuCodeAvecTool {
-    /// Code AVEC gap/score summary for a Detamu snapshot (which entities lack measurements or scores). Response field is `code_avec` — never bare `avec`. Detamu domain only.
+    /// Summarize which Detamu code entities lack AVEC measurements or scores. Returns `code_avec`.
     async fn invoke_typed(
         &self,
         input: DetamuCodeAvecInput,
@@ -423,7 +423,7 @@ pub struct DetamuFindInput {
 
 #[medousa_tool(id = COGNITION_DETAMU_FIND_ID)]
 impl CognitionDetamuFindTool {
-    /// Find Detamu code entities by kind/path/name (symbols, modules, files). Optional path+line resolves the narrowest entity at that location. Detamu domain only.
+    /// Find Detamu code entities by kind, path, or name. Optional path and line resolve the narrowest entity at that location.
     async fn invoke_typed(&self, input: DetamuFindInput) -> stasis::prelude::Result<ExternalJson> {
         let work_id = input.work_id.into_option();
         let world = input.world.into_option();

@@ -91,7 +91,7 @@ pub struct ManuscriptListOutput {
 
 #[medousa_tool(id = COGNITION_MANUSCRIPT_LIST_ID)]
 impl CognitionManuscriptListTool {
-    /// List YAML identity manuscripts (specialty packs) from project and user dirs. Use before spawn, recurring register, or ingest /brief.
+    /// List YAML identity manuscripts from project and user directories.
     async fn invoke_typed(
         &self,
         input: ManuscriptListInput,
@@ -224,7 +224,7 @@ pub struct ManuscriptResolveOutput {
 
 #[medousa_tool(id = COGNITION_MANUSCRIPT_RESOLVE_ID)]
 impl CognitionManuscriptResolveTool {
-    /// Resolve a manuscript id to its merged YAML specialty summary (tools, worker intent, pins). Read-only catalog inspect — does not run a turn.
+    /// Load the merged YAML specialty summary for a manuscript id, including tools, worker intent, and pins.
     async fn invoke_typed(
         &self,
         input: ManuscriptResolveInput,
