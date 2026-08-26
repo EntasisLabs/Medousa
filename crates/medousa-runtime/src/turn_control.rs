@@ -42,6 +42,16 @@ pub fn is_checkpoint_turn_tool_name(tool_name: &str, input: &Value) -> bool {
     turn_action(tool_name, input) == Some("turn.checkpoint")
 }
 
+pub fn is_request_input_turn_tool_name(tool_name: &str, input: &Value) -> bool {
+    turn_action(tool_name, input) == Some("turn.request_input")
+}
+
+pub fn is_terminal_turn_tool_name(tool_name: &str, input: &Value) -> bool {
+    is_finish_turn_tool_name(tool_name, input)
+        || is_checkpoint_turn_tool_name(tool_name, input)
+        || is_request_input_turn_tool_name(tool_name, input)
+}
+
 pub fn is_request_more_rounds_tool_name(tool_name: &str, input: &Value) -> bool {
     turn_action(tool_name, input) == Some("turn.request_more_rounds")
 }
@@ -100,11 +110,26 @@ pub fn begin_work_note_from_invocations(invocations: &[ToolInvocation]) -> Optio
 }
 
 pub fn finish_turn_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
-    terminal_message_from_invocations(invocations, is_finish_turn_tool_name)
+    invocations.iter().rev().find_map(|invocation| {
+        if !is_finish_turn_tool_name(&invocation.tool_name, &invocation.tool_input)
+            || invocation.tool_output.get("ok") == Some(&Value::Bool(false))
+        {
+            return None;
+        }
+        Some(
+            message_from_payload(&invocation.tool_input)
+                .or_else(|| message_from_payload(&invocation.tool_output))
+                .unwrap_or_default(),
+        )
+    })
 }
 
 pub fn checkpoint_turn_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
     terminal_message_from_invocations(invocations, is_checkpoint_turn_tool_name)
+}
+
+pub fn request_input_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
+    terminal_message_from_invocations(invocations, is_request_input_turn_tool_name)
 }
 
 fn terminal_message_from_invocations(
@@ -277,6 +302,12 @@ mod tests {
             Some("done")
         );
 
+        let silent_finish = invocation("turn.finish", json!({}), json!({ "ok": true }));
+        assert_eq!(
+            finish_turn_from_invocations(&[silent_finish]),
+            Some(String::new())
+        );
+
         let checkpoint = invocation(
             "turn.checkpoint",
             json!({}),
@@ -285,6 +316,19 @@ mod tests {
         assert_eq!(
             checkpoint_turn_from_invocations(&[checkpoint]).as_deref(),
             Some("need input")
+        );
+    }
+
+    #[test]
+    fn request_input_is_a_distinct_typed_terminal() {
+        let request = invocation(
+            "turn.request_input",
+            json!({ "message": "Which repository?" }),
+            json!({ "ok": true }),
+        );
+        assert_eq!(
+            request_input_from_invocations(&[request]).as_deref(),
+            Some("Which repository?")
         );
     }
 

@@ -1,23 +1,18 @@
-//! Exact pre-migration prompt footprint.
+//! Exact production prompt footprint after the STTP cutover.
 //!
-//! Phase 0 records the current prompt's coarse constituents before the STTP
-//! compiler replaces concatenation. The snapshot is deliberately exact: later
-//! work can show which policy slice removed or added attention cost instead of
-//! comparing impressions.
+//! The pre-migration fixture remains in testdata as historical evidence. This
+//! snapshot locks the exact host/worker slice selections now used for inference.
 
 use serde::{Deserialize, Serialize};
 
 use super::context_usage::{ESTIMATOR_LABEL, chars_to_tokens};
-use super::modes::{
-    CoderRuntimePhase, ModeExecutionLane, ResolvedAgentMode, resolve_agent_mode,
-    system_prompt_for_mode,
+use super::modes::{CoderRuntimePhase, resolve_agent_mode, system_prompt_for_mode};
+use super::turn_worker::{
+    TurnWorkerIntent, worker_system_prompt, worker_system_prompt_for_parent_mode,
 };
-use super::system_prompt::DEFAULT_SYSTEM_PROMPT;
-use super::turn_completion_fsm::TurnCompletionProfile;
-use super::turn_worker::{TurnWorkerIntent, system_prompt_for_host_profile, worker_system_prompt};
 use crate::daemon_api::AgentModeId;
 
-const BASELINE_FIXTURE: &str = include_str!("testdata/prompt_footprint_pre_sttp.json");
+const BASELINE_FIXTURE: &str = include_str!("testdata/prompt_footprint_sttp_cutover.json");
 
 #[derive(Debug, Deserialize, PartialEq, Eq, Serialize)]
 struct PromptFootprintBaseline {
@@ -40,30 +35,14 @@ fn entry(id: &str, chars: usize) -> PromptFootprintEntry {
     }
 }
 
-fn char_delta(larger: &str, smaller: &str) -> usize {
-    larger
-        .chars()
-        .count()
-        .saturating_sub(smaller.chars().count())
-}
-
 fn current_baseline() -> PromptFootprintBaseline {
-    let general = DEFAULT_SYSTEM_PROMPT;
+    let general_mode = resolve_agent_mode(AgentModeId::General).expect("General mode");
+    let general_host = system_prompt_for_mode(&general_mode);
     let coder_setup_mode = resolve_agent_mode(AgentModeId::Coder).expect("Coder mode");
-    let coder_setup = system_prompt_for_mode(general, &coder_setup_mode);
-    let coder_work_mode = ResolvedAgentMode {
-        id: AgentModeId::Coder,
-        contract_revision: "coder-v3",
-        execution_lane: ModeExecutionLane::ForegroundWorkshop,
-        completion_profile: TurnCompletionProfile::ForegroundPrincipal,
-        coder_phase: Some(CoderRuntimePhase::Work),
-    };
-    let coder_work = system_prompt_for_mode(general, &coder_work_mode);
-
-    let host_runtime = system_prompt_for_host_profile(general, true, false, false, None);
-    let host_liquid = system_prompt_for_host_profile(general, true, false, true, None);
-    let host_full = system_prompt_for_host_profile(general, true, true, true, None);
-    let host_routed = system_prompt_for_host_profile(general, true, false, false, Some("research"));
+    let coder_setup_host = system_prompt_for_mode(&coder_setup_mode);
+    let mut coder_work_mode = coder_setup_mode;
+    coder_work_mode.coder_phase = Some(CoderRuntimePhase::Work);
+    let coder_work_host = system_prompt_for_mode(&coder_work_mode);
 
     let worker_runtime = worker_system_prompt(
         "baseline-session",
@@ -72,64 +51,29 @@ fn current_baseline() -> PromptFootprintBaseline {
         false,
         false,
     );
-    let worker_liquid = worker_system_prompt(
+    let coder_worker = worker_system_prompt_for_parent_mode(
         "baseline-session",
         TurnWorkerIntent::General,
         None,
         false,
-        true,
-    );
-    let worker_full = worker_system_prompt(
-        "baseline-session",
-        TurnWorkerIntent::General,
-        None,
-        true,
-        true,
+        false,
+        Some("coder"),
     );
 
     PromptFootprintBaseline {
         estimator: ESTIMATOR_LABEL.to_string(),
         entries: vec![
-            entry("general_core", general.chars().count()),
-            entry(
-                "coder_setup_overlay",
-                char_delta(coder_setup.as_ref(), general),
-            ),
-            entry(
-                "coder_work_overlay",
-                char_delta(coder_work.as_ref(), general),
-            ),
-            entry(
-                "host_runtime_appendices",
-                char_delta(&host_runtime, general),
-            ),
-            entry(
-                "host_liquid_appendix",
-                char_delta(&host_liquid, &host_runtime),
-            ),
-            entry(
-                "host_ui_artifact_appendix",
-                char_delta(&host_full, &host_liquid),
-            ),
-            entry(
-                "host_route_appendix",
-                char_delta(&host_routed, &host_runtime),
-            ),
-            entry("worker_runtime_prompt", worker_runtime.chars().count()),
-            entry(
-                "worker_liquid_appendix",
-                char_delta(&worker_liquid, &worker_runtime),
-            ),
-            entry(
-                "worker_ui_artifact_appendix",
-                char_delta(&worker_full, &worker_liquid),
-            ),
+            entry("general_host_policy", general_host.chars().count()),
+            entry("coder_setup_host_policy", coder_setup_host.chars().count()),
+            entry("coder_work_host_policy", coder_work_host.chars().count()),
+            entry("general_worker_policy_hud", worker_runtime.chars().count()),
+            entry("coder_worker_policy_hud", coder_worker.chars().count()),
         ],
     }
 }
 
 #[test]
-fn pre_sttp_prompt_footprint_matches_the_recorded_baseline() {
+fn sttp_cutover_prompt_footprint_matches_the_recorded_baseline() {
     let expected: PromptFootprintBaseline =
         serde_json::from_str(BASELINE_FIXTURE).expect("parse prompt footprint baseline");
     let actual = current_baseline();
@@ -145,16 +89,11 @@ fn pre_sttp_prompt_footprint_matches_the_recorded_baseline() {
 fn baseline_covers_the_current_policy_and_presentation_sources() {
     let baseline = current_baseline();
     for required in [
-        "general_core",
-        "coder_setup_overlay",
-        "coder_work_overlay",
-        "host_runtime_appendices",
-        "host_liquid_appendix",
-        "host_ui_artifact_appendix",
-        "host_route_appendix",
-        "worker_runtime_prompt",
-        "worker_liquid_appendix",
-        "worker_ui_artifact_appendix",
+        "general_host_policy",
+        "coder_setup_host_policy",
+        "coder_work_host_policy",
+        "general_worker_policy_hud",
+        "coder_worker_policy_hud",
     ] {
         assert!(
             baseline.entries.iter().any(|entry| entry.id == required),

@@ -1940,16 +1940,7 @@ async fn run_agent_turn_inner(
     ))
     .await;
 
-    let system_prompt = super::turn_worker::system_prompt_for_host_profile(
-        super::DEFAULT_SYSTEM_PROMPT,
-        true,
-        crate::ui_present_tools::surface_supports_ui_artifacts(request.surface.as_ref()),
-        request
-            .surface
-            .as_ref()
-            .is_some_and(|surface| surface.supports_liquid_markdown),
-        None,
-    );
+    let system_prompt = super::modes::system_prompt_for_mode(&agent_mode);
     let (tool_count, tool_schema_chars) =
         crate::agent_runtime::context_usage::estimate_tool_schema_chars(
             &assembled.execution.tool_registry,

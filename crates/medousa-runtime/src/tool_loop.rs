@@ -39,10 +39,9 @@ use crate::loop_gate::{
     DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS, ToolLoopCompletionGate, collect_tool_names,
 };
 use crate::loop_state::{
-    AssistantPackHold, TURN_CONTROL_PREFIX, TurnLedgerEventKind, TurnLedgerRecord,
-    TurnLoopAwareness, TurnLoopDiscipline, ledger_tool_names, merge_assistant_pack_fragments,
-    push_pack_hold_message, push_turn_control_message, record_finalized, record_fsm_continue,
-    record_stuck, record_tool_round, resolve_max_text_only_stuck_continues,
+    TURN_CONTROL_PREFIX, TurnLedgerEventKind, TurnLedgerRecord, TurnLoopAwareness,
+    TurnLoopDiscipline, ledger_tool_names, push_turn_control_message, record_finalized,
+    record_fsm_continue, record_stuck, record_tool_round, resolve_max_text_only_stuck_continues,
     stuck_turn_user_message,
 };
 use crate::perception::ToolPerceptionGovernor;
@@ -55,13 +54,12 @@ use crate::turn_context::{
 use crate::turn_control::{
     ABSOLUTE_MAX_TOOL_ROUNDS, COGNITION_TURN, COGNITION_WORKSHOP_MUTATE,
     begin_work_note_from_invocations, checkpoint_turn_from_invocations,
-    finish_turn_from_invocations, is_begin_work_tool_name, is_finish_turn_tool_name,
-    is_prepare_final_tool_name, is_turn_control_call, is_workshop_spawn_call,
-    request_more_rounds_from_invocations, terminal_text_for_fsm_end,
-    turn_progress_message_from_invocations, worker_spawn_from_invocations,
-    workshop_entered_from_invocations,
+    finish_turn_from_invocations, is_begin_work_tool_name, is_prepare_final_tool_name,
+    is_terminal_turn_tool_name, is_turn_control_call, is_workshop_spawn_call,
+    request_input_from_invocations, request_more_rounds_from_invocations,
+    terminal_text_for_fsm_end, turn_progress_message_from_invocations,
+    worker_spawn_from_invocations, workshop_entered_from_invocations,
 };
-use crate::turn_policy::pack_hold_resolution_control_message;
 
 const DEFAULT_MAX_TOOL_ROUNDS: usize = DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS;
 
@@ -330,7 +328,6 @@ impl MedousaToolLoopPipeline {
             .as_ref()
             .map(|gate| gate.completion_profile)
             .unwrap_or(TurnCompletionProfile::ForegroundPrincipal);
-        let holds_first_prose = completion_profile.holds_first_prose();
         // Retained in checkpoints for wire compatibility; semantic prose
         // auto-continues are no longer part of completion policy.
         let interim_continue_cap = 0;
@@ -344,14 +341,6 @@ impl MedousaToolLoopPipeline {
             .filter(|resume| resume.restore_turn_budget)
             .map(|resume| resume.counters.empty_after_tools_continues_used)
             .unwrap_or(0);
-        let mut pack_hold = resume_state
-            .as_ref()
-            .filter(|resume| resume.restore_turn_budget)
-            .and_then(|resume| {
-                (!resume.pack_hold_fragments.is_empty()).then(|| AssistantPackHold {
-                    fragments: resume.pack_hold_fragments.clone(),
-                })
-            });
         let perception_evidence = completion_gate
             .as_ref()
             .and_then(|gate| gate.runtime_ports.perception_evidence());
@@ -377,7 +366,6 @@ impl MedousaToolLoopPipeline {
                     empty_after_tools_continues_used,
                     &discipline,
                     &loop_awareness,
-                    pack_hold.as_ref(),
                     $tools,
                     $call_ids,
                 )
@@ -443,7 +431,6 @@ impl MedousaToolLoopPipeline {
                     }
                 }
                 if rounds_executed > 1
-                    && pack_hold.is_none()
                     && let Some(gate) = completion_gate.as_ref()
                 {
                     gate.reset_scratch(streaming_enabled).await;
@@ -594,47 +581,6 @@ impl MedousaToolLoopPipeline {
                             })
                         };
 
-                        if holds_first_prose
-                            && action.resolves_existing_pack_hold()
-                            && let Some(pack) = pack_hold.as_ref()
-                        {
-                            let merged = merge_assistant_pack_fragments(&pack.fragments, &text);
-                            let tools = collect_tool_names(&invocations);
-                            if let Some(gate) = completion_gate.as_ref() {
-                                persist_gate_ledger(
-                                    gate,
-                                    &record_finalized(
-                                        gate.stream_turn_id,
-                                        "content_pack_merged",
-                                        rounds_executed,
-                                        &tools,
-                                    ),
-                                );
-                            }
-                            let last = invocations.last().cloned().unwrap_or(ToolInvocation {
-                                tool_name: shared_inputs.selected_tool_name().to_string(),
-                                tool_input: (*shared_inputs.tool_input).clone(),
-                                tool_output: Value::Null,
-                            });
-                            persist_checkpoint!(
-                                SafeCheckpointBoundary::Terminal,
-                                ActiveTurnCheckpointStatus::Completed,
-                                Some("content_pack_merged"),
-                                None,
-                                &[],
-                                &[],
-                            );
-                            return Ok(ToolLoopExecutionResponse {
-                                text: merged,
-                                metadata: shared_inputs.context_clone(),
-                                tool_name: last.tool_name,
-                                tool_output: last.tool_output,
-                                tool_invocations: invocations,
-                                rounds_executed,
-                                termination_reason: "content_pack_merged".to_string(),
-                            });
-                        }
-
                         match action {
                             TurnRoundAction::EndTurn { termination_reason } => {
                                 let text = terminal_text_for_fsm_end(termination_reason, text);
@@ -688,44 +634,6 @@ impl MedousaToolLoopPipeline {
                                 {
                                     empty_after_tools_continues_used += 1;
                                 }
-                                if holds_first_prose && reason == ContinueReason::PackHold {
-                                    pack_hold = Some(AssistantPackHold {
-                                        fragments: vec![text.clone()],
-                                    });
-                                    if let Some(response) = apply_pack_hold_continue(
-                                        &text,
-                                        &invocations,
-                                        &mut turn_ctx,
-                                        &mut loop_awareness,
-                                        &mut discipline,
-                                        tool_rounds_remaining,
-                                        completion_gate.as_deref_mut(),
-                                        &shared_inputs,
-                                        rounds_executed,
-                                        effective_max_tool_rounds,
-                                    )
-                                    .await?
-                                    {
-                                        persist_checkpoint!(
-                                            SafeCheckpointBoundary::Terminal,
-                                            ActiveTurnCheckpointStatus::Completed,
-                                            Some(&response.termination_reason),
-                                            None,
-                                            &[],
-                                            &[],
-                                        );
-                                        return Ok(response);
-                                    }
-                                    persist_checkpoint!(
-                                        SafeCheckpointBoundary::PackHold,
-                                        ActiveTurnCheckpointStatus::Active,
-                                        None,
-                                        None,
-                                        &[],
-                                        &[],
-                                    );
-                                    continue;
-                                }
                                 if let Some(response) = apply_fsm_continue_loop(
                                     &text,
                                     reason,
@@ -771,13 +679,12 @@ impl MedousaToolLoopPipeline {
                     }
                 }
 
-                let finish_requested = tool_calls
+                let terminal_calls_in_batch = tool_calls
                     .iter()
-                    .any(|call| is_finish_turn_tool_name(&call.fn_name, &call.fn_arguments));
-                if !tool_calls.is_empty() && !finish_requested {
-                    pack_hold = None;
-                }
-
+                    .filter(|call| is_terminal_turn_tool_name(&call.fn_name, &call.fn_arguments))
+                    .count();
+                let mixed_terminal_batch =
+                    terminal_calls_in_batch > 0 && terminal_calls_in_batch < tool_calls.len();
                 if pending_final_answer
                     && tool_calls
                         .iter()
@@ -1183,11 +1090,13 @@ impl MedousaToolLoopPipeline {
                     continue;
                 }
 
-                if let Some(message) = finish_turn_from_invocations(round_invocations) {
-                    let message = pack_hold
-                        .as_ref()
-                        .map(|pack| merge_assistant_pack_fragments(&pack.fragments, &message))
-                        .unwrap_or(message);
+                if !mixed_terminal_batch
+                    && let Some(message) = finish_turn_from_invocations(round_invocations)
+                {
+                    // The response's chronological prose is authoritative.
+                    // turn.finish.message exists only for providers that cannot
+                    // emit prose and a tool call in the same response.
+                    let message = maybe_text.clone().unwrap_or(message);
                     if let Some(gate) = completion_gate.as_ref() {
                         let tools = collect_tool_names(&invocations);
                         persist_gate_ledger(
@@ -1224,7 +1133,38 @@ impl MedousaToolLoopPipeline {
                     });
                 }
 
-                if let Some(message) = checkpoint_turn_from_invocations(round_invocations) {
+                if !mixed_terminal_batch
+                    && let Some(message) = request_input_from_invocations(round_invocations)
+                {
+                    let last = invocations.last().cloned().unwrap_or(ToolInvocation {
+                        tool_name: COGNITION_TURN.to_string(),
+                        tool_input: serde_json::json!({ "action": "turn.request_input" }),
+                        tool_output: Value::Null,
+                    });
+                    persist_checkpoint!(
+                        SafeCheckpointBoundary::AwaitingUser,
+                        ActiveTurnCheckpointStatus::AwaitingUser,
+                        Some("cognition_turn_request_input"),
+                        Some(OutstandingTurnBoundary::UserInput {
+                            reason: "model explicitly requested principal input".into(),
+                        }),
+                        &round_tool_names,
+                        &round_provider_call_ids,
+                    );
+                    return Ok(ToolLoopExecutionResponse {
+                        text: maybe_text.clone().unwrap_or(message),
+                        metadata: shared_inputs.context_clone(),
+                        tool_name: last.tool_name,
+                        tool_output: last.tool_output,
+                        tool_invocations: invocations,
+                        rounds_executed,
+                        termination_reason: "cognition_turn_request_input".to_string(),
+                    });
+                }
+
+                if !mixed_terminal_batch
+                    && let Some(message) = checkpoint_turn_from_invocations(round_invocations)
+                {
                     if let Some(gate) = completion_gate.as_ref() {
                         let tools = collect_tool_names(&invocations);
                         persist_gate_ledger(
@@ -1261,6 +1201,13 @@ impl MedousaToolLoopPipeline {
                         rounds_executed,
                         termination_reason: "cognition_turn_checkpoint".to_string(),
                     });
+                }
+
+                if mixed_terminal_batch {
+                    push_turn_control_message(
+                        &mut turn_ctx.tool_lane.messages,
+                        "[MEDOUSA_TURN_CONTROL]\nTerminal control cannot share a response with ordinary actions. Ordinary actions ran and their receipts were preserved; the premature terminal was ignored. Continue ActiveWork, then emit exactly one typed terminal outcome in its own response.",
+                    );
                 }
 
                 if let Some((work_id, ack)) = workshop_entered_from_invocations(round_invocations) {
@@ -1471,92 +1418,6 @@ impl MedousaToolLoopPipeline {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn apply_pack_hold_continue(
-    text: &str,
-    invocations: &[ToolInvocation],
-    turn_ctx: &mut HostTurnContext,
-    loop_awareness: &mut TurnLoopAwareness,
-    discipline: &mut TurnLoopDiscipline,
-    tool_rounds_remaining: usize,
-    mut completion_gate: Option<&mut ToolLoopCompletionGate<'_>>,
-    shared_inputs: &ToolLoopSharedInputs,
-    rounds_executed: usize,
-    max_tool_rounds: usize,
-) -> Result<Option<ToolLoopExecutionResponse>> {
-    if let Some(gate) = completion_gate.as_mut() {
-        let tools_invoked = if invocations.is_empty() {
-            Vec::new()
-        } else {
-            ledger_tool_names(invocations)
-        };
-        persist_gate_ledger(
-            gate,
-            &record_fsm_continue(
-                gate.stream_turn_id,
-                ContinueReason::PackHold,
-                &pack_hold_resolution_control_message(),
-                &[],
-                rounds_executed,
-                &tools_invoked,
-                &turn_ctx.scratchpad,
-            ),
-        );
-        if let Some(slot) = gate.scratch_out.as_mut() {
-            **slot = Some(turn_ctx.scratchpad.clone());
-        }
-    }
-    if !text.trim().is_empty() {
-        loop_awareness.record_user_response(text);
-        turn_ctx
-            .tool_lane
-            .messages
-            .push(ChatMessage::assistant(text.trim().to_string()));
-        if let Some(gate) = completion_gate.as_ref()
-            && let Some(presentation) = gate.runtime_ports.turn_presentation()
-        {
-            presentation
-                .pack_hold(
-                    gate.stream_turn_id,
-                    vec![text.trim().to_string()],
-                    ledger_tool_names(invocations),
-                )
-                .await;
-        }
-    }
-    push_pack_hold_message(&mut turn_ctx.tool_lane.messages);
-    push_turn_control_message(
-        &mut turn_ctx.tool_lane.messages,
-        &loop_awareness.loop_budget_message(tool_rounds_remaining),
-    );
-    push_turn_scratch_message_with_budget(
-        &mut turn_ctx.tool_lane.messages,
-        &turn_ctx.scratchpad,
-        tool_rounds_remaining,
-    );
-    sync_scratch_snapshot(completion_gate.as_deref_mut(), &turn_ctx.scratchpad);
-    if discipline.on_text_only_continue(invocations.len()) {
-        if let Some(gate) = completion_gate.as_ref() {
-            return Ok(Some(
-                finish_stuck_turn(shared_inputs, invocations.to_vec(), rounds_executed, gate)
-                    .await?,
-            ));
-        }
-        let text_only_limit = completion_gate
-            .as_ref()
-            .map(|gate| gate.max_text_only_stuck_continues)
-            .unwrap_or_else(|| resolve_max_text_only_stuck_continues(max_tool_rounds));
-        return Ok(Some(finish_stuck_turn_response(
-            shared_inputs,
-            invocations.to_vec(),
-            rounds_executed,
-            text_only_limit,
-            max_tool_rounds,
-        )?));
-    }
-    Ok(None)
-}
-
-#[allow(clippy::too_many_arguments)]
 async fn apply_fsm_continue_loop(
     text: &str,
     continue_reason: ContinueReason,
@@ -1599,6 +1460,13 @@ async fn apply_fsm_continue_loop(
     }
     if !text.trim().is_empty() {
         loop_awareness.record_user_response(text);
+        // Chronological prose is already visible to the principal. Keep the
+        // same committed segment in model context so the next ActiveWork round
+        // continues from what it actually said.
+        turn_ctx
+            .tool_lane
+            .messages
+            .push(ChatMessage::assistant(text.trim().to_string()));
     }
     push_turn_control_message(
         &mut turn_ctx.tool_lane.messages,
@@ -1775,7 +1643,6 @@ fn persist_loop_checkpoint(
     empty_after_tools_continues_used: usize,
     discipline: &TurnLoopDiscipline,
     awareness: &TurnLoopAwareness,
-    pack_hold: Option<&AssistantPackHold>,
     tool_names: &[String],
     provider_call_ids: &[String],
 ) -> bool {
@@ -1816,9 +1683,9 @@ fn persist_loop_checkpoint(
             .iter()
             .map(CheckpointToolInvocation::from_runtime)
             .collect(),
-        pack_hold_fragments: pack_hold
-            .map(|pack| pack.fragments.clone())
-            .unwrap_or_default(),
+        // V2 checkpoints retain the field, but chronological turns never hold
+        // or merge assistant prose.
+        pack_hold_fragments: Vec::new(),
         scratch: turn_ctx.scratchpad.clone(),
         outstanding_boundary,
         tool_names: tool_names.to_vec(),
@@ -2152,7 +2019,7 @@ mod tests {
     }
 
     #[test]
-    fn foreground_prose_after_tools_enters_structural_hold() {
+    fn foreground_prose_after_tools_keeps_active_work_running() {
         use crate::completion_fsm::{
             AfterToolsRoundContext, ContinueReason, TurnRoundAction, decide_after_tools_text_round,
         };
@@ -2174,7 +2041,7 @@ mod tests {
         assert!(matches!(
             action,
             TurnRoundAction::ContinueLoop {
-                reason: ContinueReason::PackHold,
+                reason: ContinueReason::ActiveWork,
                 ..
             }
         ));
@@ -2230,7 +2097,7 @@ mod tests {
     }
 
     #[test]
-    fn no_tool_debt_fuses_at_max_rounds() {
+    fn direct_prose_ends_even_at_the_round_limit() {
         use crate::completion_fsm::{
             NoToolDebtRoundContext, TurnRoundAction, decide_no_tool_debt_text_round,
         };
@@ -2246,7 +2113,7 @@ mod tests {
         assert!(matches!(
             action,
             TurnRoundAction::EndTurn {
-                termination_reason: "max_rounds_fuse"
+                termination_reason: "direct_prose"
             }
         ));
     }

@@ -1,11 +1,13 @@
 //! First-class behavioral modes above lanes, specialists, and model routing.
 
-use std::borrow::Cow;
-
 use crate::daemon_api::{AgentModeAvailability, AgentModeId, AgentModeListResponse};
 
+use super::prompt_policy::{
+    SttpPolicyActor, SttpPolicyMode, SttpPolicySelection, compile_sttp_policy,
+};
 use super::turn_completion_fsm::TurnCompletionProfile;
 
+#[cfg(test)]
 const CODER_SYSTEM_OVERLAY: &str = r#"
 ⊕⟨ ⏣0{ trigger: seed, response_format: temporal_node, origin_session: "medousa-coder-mode-policy", compression_depth: 1, parent_node: ref:⏣0, prime: { attractor_config: { stability: 0.92, friction: 0.18, logic: 0.98, autonomy: 0.86 }, context_summary: "Coder mode policy: Forge-governed senior engineering world model, direct foreground execution, evidence-led changes and validation.", relevant_tier: raw, retrieval_budget: 16 } } ⟩
 ⦿⟨ ⏣0{ timestamp: "2026-08-03T00:00:00Z", tier: raw, session_id: "medousa-coder-mode", schema_version: "sttp-1.0", user_avec: { stability: 0.90, friction: 0.20, logic: 0.96, autonomy: 0.84, psi: 2.90 }, model_avec: { stability: 0.92, friction: 0.18, logic: 0.98, autonomy: 0.86, psi: 2.94 } } ⟩
@@ -38,6 +40,7 @@ const CODER_SYSTEM_OVERLAY: &str = r#"
 } ⟩
 ⍉⟨ ⏣0{ rho: 0.98, kappa: 0.98, psi: 2.94, compression_avec: { stability: 0.92, friction: 0.18, logic: 0.98, autonomy: 0.86, psi: 2.94 } } ⟩"#;
 
+#[cfg(test)]
 const CODER_SETUP_SYSTEM_OVERLAY: &str = r#"
 ⊕⟨ ⏣0{ trigger: seed, response_format: temporal_node, origin_session: "medousa-coder-setup-policy", compression_depth: 1, parent_node: ref:⏣0, prime: { attractor_config: { stability: 0.94, friction: 0.16, logic: 0.98, autonomy: 0.82 }, context_summary: "Coder setup policy: establish an explicit Forge project boundary before engineering execution begins.", relevant_tier: raw, retrieval_budget: 10 } } ⟩
 ⦿⟨ ⏣0{ timestamp: "2026-08-03T00:00:00Z", tier: raw, session_id: "medousa-coder-setup", schema_version: "sttp-1.0", user_avec: { stability: 0.92, friction: 0.18, logic: 0.96, autonomy: 0.82, psi: 2.88 }, model_avec: { stability: 0.94, friction: 0.16, logic: 0.98, autonomy: 0.82, psi: 2.90 } } ⟩
@@ -148,21 +151,16 @@ pub fn list_agent_modes() -> AgentModeListResponse {
     }
 }
 
-/// Apply the resolved mode's stable system policy.
-///
-/// General intentionally returns the exact existing prompt for first-slice
-/// byte parity. Future modes compose a stable Medousa core with an overlay.
-pub fn system_prompt_for_mode<'a>(base: &'a str, mode: &ResolvedAgentMode) -> Cow<'a, str> {
-    match mode.id {
-        AgentModeId::General => Cow::Borrowed(base),
-        AgentModeId::Coder => Cow::Owned(format!(
-            "{base}{}",
-            match mode.coder_phase {
-                Some(CoderRuntimePhase::Work) => CODER_SYSTEM_OVERLAY,
-                _ => CODER_SETUP_SYSTEM_OVERLAY,
-            }
-        )),
-    }
+/// Compile the exact host policy for this immutable mode snapshot.
+pub fn system_prompt_for_mode(mode: &ResolvedAgentMode) -> String {
+    let policy_mode = match (mode.id, mode.coder_phase) {
+        (AgentModeId::General, _) => SttpPolicyMode::General,
+        (AgentModeId::Coder, Some(CoderRuntimePhase::Work)) => SttpPolicyMode::CoderWork,
+        (AgentModeId::Coder, _) => SttpPolicyMode::CoderSetup,
+    };
+    compile_sttp_policy(SttpPolicySelection::new(policy_mode, SttpPolicyActor::Host))
+        .expect("built-in STTP host policy must compile")
+        .rendered
 }
 
 #[cfg(test)]
@@ -230,18 +228,17 @@ mod tests {
     }
 
     #[test]
-    fn general_system_prompt_preserves_byte_parity() {
+    fn general_system_prompt_is_exact_compiled_slice_set() {
         let mode = resolve_agent_mode(AgentModeId::General).expect("general mode");
-        let base = "existing Medousa prompt";
-        assert!(matches!(
-            system_prompt_for_mode(base, &mode),
-            Cow::Borrowed(_)
-        ));
-        assert_eq!(system_prompt_for_mode(base, &mode), base);
+        let prompt = system_prompt_for_mode(&mode);
+        assert!(prompt.contains("p1_core(.99)"));
+        assert!(prompt.contains("p2_mode_general(.99)"));
+        assert!(prompt.contains("p3_actor_host(.99)"));
+        assert!(!prompt.contains("p2_mode_coder"));
     }
 
     #[test]
-    fn coder_overlay_encodes_the_engineering_world_model() {
+    fn coder_work_system_prompt_is_exact_compiled_slice_set() {
         let mode = ResolvedAgentMode {
             id: AgentModeId::Coder,
             contract_revision: "coder-v3",
@@ -249,15 +246,11 @@ mod tests {
             completion_profile: TurnCompletionProfile::ForegroundPrincipal,
             coder_phase: Some(CoderRuntimePhase::Work),
         };
-        let prompt = system_prompt_for_mode("core", &mode);
-        assert!(prompt.contains("engineering_world_model(.99)"));
-        assert!(prompt.contains("evidence-backed causal hypothesis"));
-        assert!(prompt.contains("short outcome-oriented intent"));
-        assert!(prompt.contains("cognition_coder_tools_discover"));
-        assert!(prompt.contains("direct foreground workshop lane"));
-        assert!(prompt.contains("peer_subagents"));
-        assert!(prompt.contains("cognition_coder_shell_run"));
-        assert!(!prompt.contains("do not substitute delegation"));
+        let prompt = system_prompt_for_mode(&mode);
+        assert!(prompt.contains("p2_mode_coder_work(.99)"));
+        assert!(prompt.contains("inspect -> hypothesize -> change -> verify -> reconcile"));
+        assert!(prompt.contains("p3_actor_host(.99)"));
+        assert!(!prompt.contains("p2_mode_general(.99)"));
     }
 
     #[test]

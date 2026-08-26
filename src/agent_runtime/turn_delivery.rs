@@ -1,4 +1,4 @@
-//! Classify and deliver terminal agent turn text (final answer vs needs operator input).
+//! Deliver typed terminal agent outcomes.
 
 use super::stream_sink::SharedAgentStreamSink;
 
@@ -11,36 +11,22 @@ pub enum AgentTurnDeliveryKind {
 
 #[derive(Debug, Clone, Copy)]
 pub struct AgentTurnDeliveryHint<'a> {
+    /// Retained for caller compatibility; wording/classifier hints do not own
+    /// terminal state.
     pub activation_reason: &'a str,
+    pub termination_reason: Option<&'a str>,
 }
 
 pub fn classify_agent_turn_delivery(
-    text: &str,
-    tool_names: &[String],
+    _text: &str,
+    _tool_names: &[String],
     hint: AgentTurnDeliveryHint<'_>,
 ) -> AgentTurnDeliveryKind {
-    if hint.activation_reason == "classifier_clarify" || hint.activation_reason.contains("clarify")
-    {
+    let _ = hint.activation_reason;
+    if hint.termination_reason == Some("cognition_turn_request_input") {
         return AgentTurnDeliveryKind::NeedsInput;
     }
-
-    if crate::turn_text_heuristics::looks_like_clarifying_question(text)
-        && !tool_names.iter().any(|name| is_heavy_tool_name(name))
-    {
-        return AgentTurnDeliveryKind::NeedsInput;
-    }
-
     AgentTurnDeliveryKind::Final
-}
-
-fn is_heavy_tool_name(name: &str) -> bool {
-    let lower = name.to_ascii_lowercase();
-    lower.starts_with("cognition_grapheme")
-        || lower.starts_with("cognition_mcp")
-        || lower.starts_with("cognition_capability")
-        || lower.starts_with("cognition_workshop_mutate")
-        || lower.starts_with("cognition_runtime_mutate")
-        || lower.starts_with("cognition_runtime_workflow")
 }
 
 pub async fn deliver_agent_turn_outcome(
@@ -77,27 +63,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn classifier_clarify_routes_to_needs_input() {
+    fn explicit_request_input_routes_to_needs_input() {
         let kind = classify_agent_turn_delivery(
             "Which repo should I search?",
             &[],
             AgentTurnDeliveryHint {
                 activation_reason: "classifier_clarify",
+                termination_reason: Some("cognition_turn_request_input"),
             },
         );
         assert_eq!(kind, AgentTurnDeliveryKind::NeedsInput);
     }
 
     #[test]
-    fn short_question_without_heavy_tools_is_needs_input() {
+    fn prose_question_without_typed_outcome_is_final() {
         let kind = classify_agent_turn_delivery(
             "Do you want the backup database or production?",
             &["llm.chat".to_string()],
             AgentTurnDeliveryHint {
                 activation_reason: "configured_default",
+                termination_reason: None,
             },
         );
-        assert_eq!(kind, AgentTurnDeliveryKind::NeedsInput);
+        assert_eq!(kind, AgentTurnDeliveryKind::Final);
     }
 
     #[test]
@@ -107,6 +95,7 @@ mod tests {
             &["cognition_capability".to_string()],
             AgentTurnDeliveryHint {
                 activation_reason: "tool_intent_detected",
+                termination_reason: None,
             },
         );
         assert_eq!(kind, AgentTurnDeliveryKind::Final);

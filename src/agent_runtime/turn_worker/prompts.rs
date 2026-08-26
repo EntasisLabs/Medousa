@@ -1,6 +1,6 @@
 //! Host / worker / synthesis system prompts (Phase 1).
 
-use crate::agent_runtime::system_prompt::{MEDOUSA_COLLABORATOR_VOICE, WORKER_STTP_POLICY};
+use crate::agent_runtime::system_prompt::MEDOUSA_COLLABORATOR_VOICE;
 use crate::agent_runtime::turn_ledger::{TURN_RUNTIME_BOUNDARY_APPENDIX, TURN_SCRATCH_APPENDIX};
 
 use super::policy::TurnWorkerIntent;
@@ -102,6 +102,7 @@ This client supports HTML/canvas UI artifacts (supports_ui_artifacts).
 - Durable widget on a custom surface → Workshop/Studio.
 - Full decision guide: cognition_environment_wiki(topic=scene_vs_html)."#;
 
+#[allow(dead_code)] // legacy V2 prompt projection; removed with prompt cleanup
 pub const WORKER_CANVAS_APPENDIX: &str = r#"
 [MEDOUSA_WORKER_CANVAS]
 Bound Workshop / Studio lane — publish HTML and wire custom surfaces here (Chat host cannot).
@@ -136,6 +137,7 @@ pub fn host_route_appendix(intent: Option<&str>) -> String {
     )
 }
 
+#[allow(dead_code)] // legacy V2 prompt projection; removed with prompt cleanup
 pub const WORKER_DISCIPLINE_APPENDIX: &str = r#"
 [MEDOUSA_WORKER_DISCIPLINE]
 Scope:
@@ -163,6 +165,7 @@ pub const WORKER_SYSTEM_APPENDIX: &str = r#"Rules:
 - On every cognition_memory_query / cognition_memory_mutate call, pass session_id as a non-empty string (see WORKER_CONTEXT). Never pass null."#;
 
 /// Grapheme scripting playbook (condensed from the main Medousa system prompt).
+#[allow(dead_code)] // legacy V2 prompt projection; removed with prompt cleanup
 pub const WORKER_GRAPHEME_APPENDIX: &str = r#"
 [MEDOUSA_WORKER_GRAPHEME]
 Grapheme is GraphQL-style query syntax with Elixir-like piping. Scripts fail when you invent syntax — always copy from discovered examples first.
@@ -194,6 +197,7 @@ Few-shot attempt pattern:
 
 Never treat cognition_capability find output as final evidence for real-world facts. Never write a long script before any discovery tool call."#;
 
+#[allow(dead_code)] // legacy V2 prompt projection; removed with prompt cleanup
 pub const WORKER_MEMORY_APPENDIX: &str = r#"
 [MEDOUSA_WORKER_MEMORY]
 Locus memory ritual (follow in order when calibrating or loading context):
@@ -205,12 +209,14 @@ Locus memory ritual (follow in order when calibrating or loading context):
 
 Pass session_id on every memory tool call. Summarize tool JSON receipts in your final worker message — do not invent AVEC numbers."#;
 
+#[allow(dead_code)] // legacy V2 prompt projection; removed with prompt cleanup
 pub const WORKER_CAPABILITY_APPENDIX: &str = r#"
 [MEDOUSA_WORKER_CAPABILITY]
 For single-shot external actions, prefer cognition_capability action=capability.invoke (capability id + input) before hand-authoring Grapheme.
 Use cognition_capability action=capability.find only to inspect bindings.
 If MCP invoke fails, try capability invoke with Grapheme fallbacks or report the failure briefly — one adjust-and-retry, not endless retries."#;
 
+#[allow(dead_code)] // legacy V2 prompt projection; removed with prompt cleanup
 pub const WORKER_OPENSHELL_SKILL_APPENDIX: &str = r#"
 [MEDOUSA_WORKER_OPENSHELL_SKILL]
 When WORKER_TASK involves imported skills, SKILL.md specialties, or runnable scripts:
@@ -224,6 +230,7 @@ When WORKER_TASK involves imported skills, SKILL.md specialties, or runnable scr
 Security ladder: observe → propose → sandbox. Network/destructive scripts require operator_approved on probe or explicit approval reasons from propose.
 Never run skill scripts on the host — OpenShell sandbox only when manuscript spec.openshell.enabled=true. The sandbox receives a placeholder credential; OpenShell's proxy resolves it only for provider-bound endpoints, and the sandbox network policy must also allow the destination."#;
 
+#[allow(dead_code)] // legacy V2 prompt projection; removed with prompt cleanup
 fn worker_intent_appendix(intent: TurnWorkerIntent) -> String {
     match intent {
         TurnWorkerIntent::MemoryAvecCalibrate | TurnWorkerIntent::MemoryContext => {
@@ -244,32 +251,73 @@ pub fn worker_system_prompt(
     supports_ui_artifacts: bool,
     supports_liquid_markdown: bool,
 ) -> String {
+    worker_system_prompt_for_parent_mode(
+        session_id,
+        intent,
+        manuscript,
+        supports_ui_artifacts,
+        supports_liquid_markdown,
+        None,
+    )
+}
+
+pub fn worker_system_prompt_for_parent_mode(
+    session_id: &str,
+    intent: TurnWorkerIntent,
+    manuscript: Option<&crate::identity_manuscript::WorkerManuscriptHandoff>,
+    supports_ui_artifacts: bool,
+    supports_liquid_markdown: bool,
+    parent_agent_mode: Option<&str>,
+) -> String {
+    let policy_mode = if parent_agent_mode == Some("coder") {
+        crate::agent_runtime::prompt_policy::SttpPolicyMode::CoderWork
+    } else {
+        crate::agent_runtime::prompt_policy::SttpPolicyMode::General
+    };
+    let policy = crate::agent_runtime::prompt_policy::compile_sttp_policy(
+        crate::agent_runtime::prompt_policy::SttpPolicySelection::new(
+            policy_mode,
+            crate::agent_runtime::prompt_policy::SttpPolicyActor::Worker,
+        ),
+    )
+    .expect("built-in STTP worker policy must compile")
+    .rendered;
     let manuscript_block = manuscript
         .map(crate::identity_manuscript::format_worker_manuscript_block)
         .map(|block| format!("\n{block}\n"))
         .unwrap_or_default();
-    let mut presentation_block = String::new();
-    if supports_liquid_markdown {
-        presentation_block.push_str("\n\n");
-        presentation_block.push_str(LIQUID_MARKDOWN_APPENDIX);
-    }
-    if supports_ui_artifacts {
-        presentation_block.push_str("\n\n");
-        presentation_block.push_str(UI_ARTIFACT_APPENDIX);
-    }
     format!(
-        "{WORKER_STTP_POLICY}{manuscript_block}\n\n\
-         [MEDOUSA_COLLABORATOR_VOICE]\n{MEDOUSA_COLLABORATOR_VOICE}\n\n\
-         {WORKER_SYSTEM_APPENDIX}\n\n{WORKER_DISCIPLINE_APPENDIX}\n\n{}{presentation_block}\n\n{TURN_RUNTIME_BOUNDARY_APPENDIX}\n\n[MEDOUSA_WORKER_CONTEXT]\n\
+        "{policy}{manuscript_block}\n\n[MEDOUSA_HUD]\n\
          session_id={session_id}\n\
          worker_intent={}\n\
+         ui_artifacts={}\n\
+         liquid_markdown={}\n\
+         parent_agent_mode={}\n\
          Read [MEDOUSA_CONTINUATION] and [HOST_CONTINUITY] in the user prompt when present.\n\
          Always include \"session_id\": \"{session_id}\" on cognition_memory_query and \
          cognition_memory_mutate.",
-        worker_intent_appendix(intent),
         intent.as_str(),
+        supports_ui_artifacts,
+        supports_liquid_markdown,
+        parent_agent_mode.unwrap_or("general"),
         session_id = session_id,
     )
+}
+
+pub fn host_system_prompt_for_parent_mode(parent_agent_mode: Option<&str>) -> String {
+    let policy_mode = if parent_agent_mode == Some("coder") {
+        crate::agent_runtime::prompt_policy::SttpPolicyMode::CoderWork
+    } else {
+        crate::agent_runtime::prompt_policy::SttpPolicyMode::General
+    };
+    crate::agent_runtime::prompt_policy::compile_sttp_policy(
+        crate::agent_runtime::prompt_policy::SttpPolicySelection::new(
+            policy_mode,
+            crate::agent_runtime::prompt_policy::SttpPolicyActor::Host,
+        ),
+    )
+    .expect("built-in STTP host policy must compile")
+    .rendered
 }
 
 pub fn worker_failure_user_prompt(
@@ -393,16 +441,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn research_worker_prompt_includes_grapheme_discovery() {
+    fn worker_prompt_uses_exact_worker_policy_and_plain_hud() {
         let prompt = worker_system_prompt("sess-1", TurnWorkerIntent::Research, None, false, false);
-        assert!(prompt.contains("MEDOUSA_WORKER_DISCIPLINE"));
-        assert!(prompt.contains("HOST_TOOL_DIGESTS"));
-        assert!(prompt.contains("cognition_capability"));
-        assert!(prompt.contains("minimum tools"));
+        assert!(prompt.contains("p1_core(.99)"));
+        assert!(prompt.contains("p2_mode_general(.99)"));
+        assert!(prompt.contains("p3_actor_worker(.99)"));
+        assert!(!prompt.contains("p3_actor_host(.99)"));
+        assert!(prompt.contains("[MEDOUSA_HUD]"));
+        assert!(prompt.contains("worker_intent=research"));
     }
 
     #[test]
-    fn memory_worker_prompt_includes_calibrate_ritual() {
+    fn worker_intent_does_not_swap_the_policy_slice() {
         let prompt = worker_system_prompt(
             "sess-1",
             TurnWorkerIntent::MemoryAvecCalibrate,
@@ -410,21 +460,42 @@ mod tests {
             false,
             false,
         );
-        assert!(prompt.contains("cognition_memory_mutate action=memory.calibrate"));
-        assert!(!prompt.contains("[MEDOUSA_WORKER_GRAPHEME]"));
+        assert!(prompt.contains("worker_intent=memory.avec_calibrate"));
+        assert!(prompt.contains("p2_mode_general(.99)"));
+        assert!(!prompt.contains("MEDOUSA_WORKER_GRAPHEME"));
     }
 
     #[test]
-    fn host_and_worker_prompts_share_collaborator_voice() {
+    fn production_worker_prompt_does_not_mix_legacy_policy() {
         let worker = worker_system_prompt("sess-1", TurnWorkerIntent::General, None, false, false);
-        assert!(worker.contains("[MEDOUSA_COLLABORATOR_VOICE]"));
-        assert!(worker.contains("cognition_turn action=turn.finish"));
-        assert!(!worker.contains("background specialist"));
+        assert!(!worker.contains("[MEDOUSA_COLLABORATOR_VOICE]"));
+        assert!(!worker.contains("[MEDOUSA_TURN_RUNTIME]"));
+        assert!(worker.contains("typed outcome only"));
 
         let host = system_prompt_for_host_profile("base-sttp", true, false, false, None);
         assert!(host.contains("[MEDOUSA_COLLABORATOR_VOICE]"));
         assert!(host.contains("[MEDOUSA_HOST_BUS]"));
         assert!(host.contains("Chat (host)"));
+    }
+
+    #[test]
+    fn coder_parent_selects_coder_work_with_the_exact_actor() {
+        let worker = worker_system_prompt_for_parent_mode(
+            "sess-1",
+            TurnWorkerIntent::General,
+            None,
+            false,
+            false,
+            Some("coder"),
+        );
+        assert!(worker.contains("p2_mode_coder_work(.99)"));
+        assert!(worker.contains("p3_actor_worker(.99)"));
+        assert!(!worker.contains("p3_actor_host(.99)"));
+
+        let host = host_system_prompt_for_parent_mode(Some("coder"));
+        assert!(host.contains("p2_mode_coder_work(.99)"));
+        assert!(host.contains("p3_actor_host(.99)"));
+        assert!(!host.contains("p3_actor_worker(.99)"));
     }
 
     #[test]
@@ -470,14 +541,15 @@ mod tests {
         let bare = system_prompt_for_host_profile("base-sttp", false, true, true, None);
         assert_eq!(bare, "base-sttp");
 
-        // Worker lane mirrors the gate.
+        // Worker capabilities are HUD facts; presentation policy remains in
+        // the compiled STTP slice.
         let worker_liquid =
             worker_system_prompt("sess-1", TurnWorkerIntent::General, None, false, true);
-        assert!(worker_liquid.contains("[MEDOUSA_PRESENTATION]"));
-        assert!(!worker_liquid.contains("[MEDOUSA_UI_ARTIFACTS]"));
+        assert!(worker_liquid.contains("liquid_markdown=true"));
+        assert!(worker_liquid.contains("ui_artifacts=false"));
         let worker_ui =
             worker_system_prompt("sess-1", TurnWorkerIntent::General, None, true, false);
-        assert!(worker_ui.contains("[MEDOUSA_UI_ARTIFACTS]"));
-        assert!(!worker_ui.contains("[MEDOUSA_PRESENTATION]"));
+        assert!(worker_ui.contains("ui_artifacts=true"));
+        assert!(worker_ui.contains("liquid_markdown=false"));
     }
 }

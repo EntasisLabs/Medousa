@@ -19,15 +19,15 @@ pub struct AssistantPackHold {
     pub fragments: Vec<String>,
 }
 
-/// Injected on host/worker tool turns and echoed in STTP.
-pub const TURN_RUNTIME_BOUNDARY_APPENDIX: &str = r#"[MEDOUSA_TURN_RUNTIME]
-Runtime boundary (enforced by the daemon):
-- Chat (host): memory, identity, runtime, vault read, quick cognition_web_search/cognition_browser_fetch, cognition_turn action=turn.begin_work (message, goal) for multi-tool execution, cognition_workshop_mutate action=workshop.spawn for parallel research.
-- cognition_turn action=turn.begin_work enters the bound Workshop (one per session) — Chat ends with ack; synthesis delivers on the same thread.
-- Completion is event-driven: tools continue/reset the prose count; two consecutive non-tool responses end the turn and both are preserved. cognition_turn action=turn.finish ends immediately and appends its message to one held response. Prose wording is never classified.
-- Continuing work requires a tool call in the current model response. If you say you will inspect, run, or fix something next, call that tool now. Use cognition_turn action=turn.update_user in a tool round for visible interim status that does not end execution.
-- Mid-task handoff: cognition_turn action=turn.checkpoint. Parallel delegate: cognition_workshop_mutate action=workshop.spawn in a tool round. Worker results return to the host so it can answer.
-- UI stream draft may reset between rounds; [MEDOUSA_SCRATCH] engine notes persist across rounds and client disconnect."#;
+/// Legacy export retained for V2 prompt consumers. Production V3 policy lives
+/// in the compiled STTP document; this block is dynamic runtime HUD only.
+pub const TURN_RUNTIME_BOUNDARY_APPENDIX: &str = r#"[MEDOUSA_HUD]
+turn_state=direct|active_work
+direct=prose_without_action_delivers_and_ends
+active_work=prose_delivers_and_continues_until_typed_terminal
+typed_terminal=turn.finish|turn.request_input|turn.checkpoint
+terminal_batch=one_terminal_without_ordinary_actions
+timeline=responses_and_receipts_persist_in_occurrence_order"#;
 
 pub const TURN_SCRATCH_APPENDIX: &str = r#"[MEDOUSA_SCRATCH_POLICY]
 [MEDOUSA_SCRATCH] is your engine sticky notes — persists across tool rounds and client disconnect.
@@ -73,12 +73,12 @@ pub fn ledger_tool_names(invocations: &[ToolInvocation]) -> Vec<String> {
         .collect()
 }
 
-/// `[MEDOUSA_TOOL_POLICY]` block appended to interactive tool-loop prompts.
+/// Dynamic loop HUD appended to interactive tool-loop prompts.
 pub fn append_tool_loop_policy(prompt: &str, max_tool_rounds: usize) -> String {
     let max_tool_rounds = max_tool_rounds.max(1);
     format!(
-        "{prompt}\n\n[MEDOUSA_TOOL_POLICY]\n\
-         mode=tool_loop\n\
+        "{prompt}\n\n[MEDOUSA_HUD]\n\
+         turn_state=active_work_after_first_action\n\
          max_tool_rounds={max_tool_rounds}\n\
          {TURN_RUNTIME_BOUNDARY_APPENDIX}\n\
          {TURN_SCRATCH_APPENDIX}\n\
@@ -362,11 +362,11 @@ mod tests {
     }
 
     #[test]
-    fn policy_carries_the_structural_completion_contract() {
+    fn hud_carries_the_structural_completion_contract() {
         let policy = append_tool_loop_policy("hello", 12);
         assert!(policy.contains("max_tool_rounds=12"));
-        assert!(policy.contains("two consecutive non-tool responses"));
-        assert!(policy.contains("cognition_turn action=turn.finish"));
+        assert!(policy.contains("active_work=prose_delivers_and_continues"));
+        assert!(policy.contains("typed_terminal=turn.finish|turn.request_input|turn.checkpoint"));
         assert!(policy.contains("[MEDOUSA_SCRATCH_POLICY]"));
     }
 }

@@ -1,9 +1,8 @@
-//! Shadow compiler for the STTP-native Medousa policy.
+//! Compiler for the STTP-native Medousa policy.
 //!
-//! This module owns the target policy slices and strict compilation contract.
-//! Production turns continue to use `system_prompt_for_mode` until the
-//! chronological runtime cutover; callers must not silently mix this document
-//! with the legacy prompt.
+//! This module owns the production policy slices and strict compilation
+//! contract. Dynamic context is deliberately composed outside this document as
+//! a plain HUD so evidence cannot silently become policy.
 
 use std::fmt;
 
@@ -105,10 +104,10 @@ impl From<SttpDocumentBuildError> for SttpPolicyCompileError {
     }
 }
 
-/// Compile the selected target policy without activating it for production
-/// inference. Slice names carry stable order anchors because canonical JSON-map
-/// iteration is lexicographic under the current dependency feature set.
-pub fn compile_shadow_sttp_policy(
+/// Compile the selected production policy. Slice names carry stable order
+/// anchors because canonical JSON-map iteration is lexicographic under the
+/// current dependency feature set.
+pub fn compile_sttp_policy(
     selection: SttpPolicySelection,
 ) -> Result<CompiledSttpPolicy, SttpPolicyCompileError> {
     let mode_field = mode_field(selection.mode);
@@ -137,6 +136,15 @@ pub fn compile_shadow_sttp_policy(
         actor: selection.actor,
         top_level_fields: fields,
     })
+}
+
+/// Compatibility name retained for architecture fixtures written before the
+/// production cutover.
+#[cfg(test)]
+pub fn compile_shadow_sttp_policy(
+    selection: SttpPolicySelection,
+) -> Result<CompiledSttpPolicy, SttpPolicyCompileError> {
+    compile_sttp_policy(selection)
 }
 
 fn policy_metadata(selection: SttpPolicySelection) -> SttpDocumentMetadata {

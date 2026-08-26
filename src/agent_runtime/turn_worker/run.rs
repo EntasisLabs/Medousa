@@ -14,7 +14,6 @@ use tokio::sync::RwLock;
 
 use crate::agent_runtime::provider_stream::{ProviderStreamBridge, fail_on_stream_overflow};
 use crate::agent_runtime::stream_sink::SharedAgentStreamSink;
-use crate::agent_runtime::system_prompt::DEFAULT_SYSTEM_PROMPT;
 use crate::agent_runtime::turn_completion::ToolLoopCompletionGate;
 use crate::agent_runtime::turn_ledger::append_tool_loop_policy;
 use crate::agent_runtime::turn_ledger::{
@@ -49,7 +48,6 @@ use crate::agent_runtime::worker_continuity::{
 
 use super::prompts::{
     synthesis_user_prompt, synthesis_user_prompt_with_handoff, worker_failure_user_prompt,
-    worker_system_prompt,
 };
 use super::registry::{
     AllowlistToolRegistry, SessionBootstrapToolRegistry, WorkerSessionToolRegistry,
@@ -1002,7 +1000,7 @@ async fn run_worker_turn_inner(
 
     let request = ToolLoopExecutionRequest {
         user_prompt,
-        system_prompt: Some(worker_system_prompt(
+        system_prompt: Some(super::prompts::worker_system_prompt_for_parent_mode(
             &record.session_id,
             TurnWorkerIntent::parse(&record.intent).unwrap_or(TurnWorkerIntent::General),
             record
@@ -1011,6 +1009,7 @@ async fn run_worker_turn_inner(
                 .and_then(|capsule| capsule.manuscript.as_ref()),
             record.supports_ui_artifacts,
             record.supports_liquid_markdown,
+            record.parent_agent_mode.as_deref(),
         )),
         context: PromptExecutionContext::default(),
         tool_name: String::new(),
@@ -1380,7 +1379,9 @@ async fn run_worker_failure_notify(
         MAX_REQUEST_PROMPT_CHARS,
     ))
     .with_context(PromptExecutionContext::default())
-    .with_system_prompt(DEFAULT_SYSTEM_PROMPT.to_string());
+    .with_system_prompt(super::prompts::host_system_prompt_for_parent_mode(
+        record.parent_agent_mode.as_deref(),
+    ));
 
     let text = match pipeline.execute(request).await {
         Ok(response) => response.text,
@@ -1492,7 +1493,9 @@ async fn run_synthesis_turn(
         MAX_REQUEST_PROMPT_CHARS,
     ))
     .with_context(PromptExecutionContext::default());
-    request = request.with_system_prompt(DEFAULT_SYSTEM_PROMPT.to_string());
+    request = request.with_system_prompt(super::prompts::host_system_prompt_for_parent_mode(
+        record.parent_agent_mode.as_deref(),
+    ));
     let response = match pipeline.execute(request).await {
         Ok(response) => response,
         Err(err) => {

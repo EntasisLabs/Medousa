@@ -494,8 +494,9 @@ pub struct CognitionTurnFinishTool;
 
 #[derive(Debug, JsonSchema)]
 pub struct TurnFinishInput {
-    /// Complete principal-facing final answer for this turn
-    #[schemars(required, with = "String")]
+    /// Fallback final answer when this response has no assistant prose
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     pub(crate) message: Option<String>,
     /// Optional short note for logs (not shown to the user)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -542,24 +543,19 @@ pub enum TurnFinishOutput {
 
 #[medousa_tool(id = COGNITION_TURN_FINISH_ID)]
 impl CognitionTurnFinishTool {
-    /// Deliver the complete principal-facing final answer now and end this turn immediately. Use it as an explicit hard stop after tool work; synthesis-bound workers require it for direct pass-through, while principal-facing turns may also commit after two consecutive non-tool responses. Mid-task handoffs use cognition_turn_checkpoint.
+    /// End ActiveWork. Prefer assistant prose plus turn.finish with no message; message is a fallback only when the response contains no prose. Mid-task handoffs use turn.checkpoint.
     pub(crate) async fn invoke_typed(
         &self,
         input: TurnFinishInput,
     ) -> stasis::prelude::Result<TurnFinishOutput> {
         let command = TurnFinishCommand::from(input);
-        let Some(message) = command.message else {
-            return Ok(TurnFinishOutput::Failure {
-                ok: false,
-                finish_turn: false,
-                error: "message is required and must be non-empty".to_string(),
-            });
-        };
-
         Ok(TurnFinishOutput::Success {
             ok: true,
             finish_turn: true,
-            message: message.into_string(),
+            message: command
+                .message
+                .map(TrimmedText::into_string)
+                .unwrap_or_default(),
             reason: command.reason.map(TrimmedText::into_string),
         })
     }
@@ -935,10 +931,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn finish_turn_tool_requires_message() {
+    async fn finish_turn_tool_allows_silent_terminal() {
         let tool = CognitionTurnFinishTool;
         let out = tool.invoke(json!({})).await.expect("invoke");
-        assert_eq!(out["ok"], false);
+        assert_eq!(out["ok"], true);
+        assert_eq!(out["finish_turn"], true);
+        assert_eq!(out["message"], "");
     }
 
     #[tokio::test]
@@ -948,12 +946,8 @@ mod tests {
             .invoke(json!({ "message": 42, "reason": false }))
             .await
             .expect("wrong-typed optionals stay handler-visible");
-        assert_eq!(out["ok"], false);
-        assert!(
-            out["error"]
-                .as_str()
-                .is_some_and(|value| value.contains("message is required"))
-        );
+        assert_eq!(out["ok"], true);
+        assert_eq!(out["message"], "");
     }
 
     #[tokio::test]

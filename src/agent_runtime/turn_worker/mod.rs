@@ -22,8 +22,8 @@ pub use policy::{
     host_bus_tool_names, max_worker_tool_rounds, mobile_foreground_tool_ceiling, tool_allowed,
 };
 pub use prompts::{
-    HOST_BUS_TURN_APPENDIX, WORKER_SYSTEM_APPENDIX, system_prompt_for_host_profile,
-    worker_system_prompt,
+    HOST_BUS_TURN_APPENDIX, WORKER_SYSTEM_APPENDIX, host_system_prompt_for_parent_mode,
+    system_prompt_for_host_profile, worker_system_prompt, worker_system_prompt_for_parent_mode,
 };
 pub use registry::{
     AllowlistToolRegistry, SessionBootstrapToolRegistry, WorkerSessionToolRegistry,

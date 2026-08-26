@@ -37,6 +37,8 @@ pub enum TurnAction {
     UpdateUser(TurnUpdateUser),
     #[serde(rename = "turn.checkpoint")]
     Checkpoint(TurnCheckpoint),
+    #[serde(rename = "turn.request_input")]
+    RequestInput(TurnRequestInput),
     #[serde(rename = "turn.finish")]
     Finish(TurnFinish),
     #[serde(rename = "turn.prepare_final")]
@@ -77,9 +79,19 @@ pub struct TurnCheckpoint {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct TurnFinish {
-    /// Complete principal-facing final answer
+pub struct TurnRequestInput {
+    /// The concrete question or choice the principal must answer
     message: String,
+    /// Optional short note for logs
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TurnFinish {
+    /// Fallback final answer when this response has no assistant prose
+    #[serde(default)]
+    message: Option<String>,
     /// Optional short note for logs
     #[serde(default)]
     reason: Option<String>,
@@ -126,8 +138,8 @@ impl JsonSchema for TurnAction {
                 "turn.begin_work",
                 "turn.update_user",
                 "turn.checkpoint",
+                "turn.request_input",
                 "turn.finish",
-                "turn.prepare_final",
                 "turn.request_more_rounds",
                 "turn.propose_mode",
             ]),
@@ -153,15 +165,15 @@ pub fn turn_type_schemas() -> Vec<TypedActionSchema> {
             "turn.checkpoint",
             "Mid-task handoff; wait for the principal",
         ),
+        typed_action_schema::<TurnRequestInput>(
+            TURN_ID,
+            "turn.request_input",
+            "Ask the principal for required input and end this turn",
+        ),
         typed_action_schema::<TurnFinish>(
             TURN_ID,
             "turn.finish",
             "Deliver the final answer and end the turn",
-        ),
-        typed_action_schema::<TurnPrepareFinal>(
-            TURN_ID,
-            "turn.prepare_final",
-            "Deprecated — prefer turn.finish",
         ),
         typed_action_schema::<TurnRequestMoreRounds>(
             TURN_ID,
@@ -223,6 +235,7 @@ async fn dispatch(tool: &CognitionTurnTool, action: TurnAction) -> stasis::prelu
         TurnAction::BeginWork(params) => params.execute(tool).await,
         TurnAction::UpdateUser(params) => params.execute().await,
         TurnAction::Checkpoint(params) => params.execute().await,
+        TurnAction::RequestInput(params) => params.execute().await,
         TurnAction::Finish(params) => params.execute().await,
         TurnAction::PrepareFinal(params) => params.execute().await,
         TurnAction::RequestMoreRounds(params) => params.execute().await,
@@ -267,11 +280,24 @@ impl TurnCheckpoint {
     }
 }
 
+impl TurnRequestInput {
+    async fn execute(self) -> stasis::prelude::Result<Value> {
+        let output = CognitionTurnCheckpointTool
+            .invoke_typed(TurnCheckpointInput {
+                message: Some(self.message.clone()),
+                awaiting: Some(self.message),
+                reason: self.reason,
+            })
+            .await?;
+        serialize_output(CognitionTurnCheckpointTool::tool_id(), output)
+    }
+}
+
 impl TurnFinish {
     async fn execute(self) -> stasis::prelude::Result<Value> {
         let output = CognitionTurnFinishTool
             .invoke_typed(TurnFinishInput {
-                message: Some(self.message),
+                message: self.message,
                 reason: self.reason,
             })
             .await?;
@@ -334,7 +360,7 @@ mod tests {
         .expect("finish");
         match finish {
             TurnAction::Finish(TurnFinish { message, reason }) => {
-                assert_eq!(message, "Done.");
+                assert_eq!(message.as_deref(), Some("Done."));
                 assert!(reason.is_none());
             }
             other => panic!("expected finish, got {other:?}"),
@@ -348,5 +374,27 @@ mod tests {
         assert_eq!(props.len(), 1);
         assert!(props.contains_key("action"));
         assert_eq!(schema["additionalProperties"], true);
+        let actions = schema["properties"]["action"]["enum"]
+            .as_array()
+            .expect("action enum");
+        assert!(actions.iter().any(|value| value == "turn.request_input"));
+        assert!(!actions.iter().any(|value| value == "turn.prepare_final"));
+    }
+
+    #[test]
+    fn finish_message_is_optional_and_request_input_is_explicit() {
+        let finish: TurnAction =
+            serde_json::from_value(json!({ "action": "turn.finish" })).expect("silent finish");
+        assert!(matches!(
+            finish,
+            TurnAction::Finish(TurnFinish { message: None, .. })
+        ));
+
+        let request: TurnAction = serde_json::from_value(json!({
+            "action": "turn.request_input",
+            "message": "Which repository?"
+        }))
+        .expect("request input");
+        assert!(matches!(request, TurnAction::RequestInput(_)));
     }
 }

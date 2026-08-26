@@ -37,7 +37,6 @@ use super::prompt_prep::{
     verifier_policy_from_settings_and_route,
 };
 use super::stream_sink::SharedAgentStreamSink;
-use super::system_prompt::DEFAULT_SYSTEM_PROMPT;
 use super::turn_budget::{
     TurnOrchestrationState, emit_orchestration_summary, try_consume_classifier_budget,
     try_consume_continuation_budget, try_consume_prompt_only_budget, try_consume_retry_budget,
@@ -55,7 +54,6 @@ use super::turn_services::{
 use super::turn_worker::{
     ActiveWorkerBusSession, WorkerRuntimeContext, apply_host_profile_to_activation,
     host_route_notice, pipeline_for_turn_profile, resolve_host_turn_profile,
-    system_prompt_for_host_profile,
 };
 use crate::turn_continuation::StoredDeliveryTarget;
 use crate::turn_slice::session_scratch_seed_from_history;
@@ -421,7 +419,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
 
     let prompt_for_request = if activation.enforce_no_tools {
         format!(
-            "{}\n\n[MEDOUSA_TOOL_POLICY]\nmode=no_tools\ninstruction=Do not call tools for this turn unless the user explicitly requests external lookup, execution, or fresh evidence. Answer directly from current context.",
+            "{}\n\n[MEDOUSA_HUD]\ntool_surface=none_for_this_turn\ninstruction=answer directly from current context",
             params.resolved_prompt
         )
     } else {
@@ -894,10 +892,6 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
         host_profile.host_bus_active
     };
     let completion_profile = agent_mode.completion_profile;
-    let suggested_intent = host_profile
-        .route
-        .suggested_worker_intent()
-        .map(|i| i.as_str());
     sink.notice(host_route_notice(&host_profile)).await;
 
     let scope_snapshot = super::execution_context::turn_continuation_scope(&turn_scope).await;
@@ -1040,12 +1034,8 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
 
     if activation.enforce_no_tools {
         let mut messages = Vec::with_capacity(prior_messages.len() + 2);
-        messages.push(ChatMessage::system(system_prompt_for_host_profile(
-            &super::modes::system_prompt_for_mode(DEFAULT_SYSTEM_PROMPT, &agent_mode),
-            host_bus,
-            supports_ui_artifacts,
-            supports_liquid_markdown,
-            suggested_intent,
+        messages.push(ChatMessage::system(super::modes::system_prompt_for_mode(
+            &agent_mode,
         )));
         messages.extend(prior_messages);
         messages.push(current_turn_user_message.clone());
@@ -1118,6 +1108,7 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
                     Vec::new(),
                     super::turn_delivery::AgentTurnDeliveryHint {
                         activation_reason: activation.reason,
+                        termination_reason: None,
                     },
                 )
                 .await;
@@ -1140,13 +1131,7 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
 
     let request = ToolLoopExecutionRequest {
         user_prompt: prompt_for_request,
-        system_prompt: Some(system_prompt_for_host_profile(
-            &super::modes::system_prompt_for_mode(DEFAULT_SYSTEM_PROMPT, &agent_mode),
-            host_bus,
-            supports_ui_artifacts,
-            supports_liquid_markdown,
-            suggested_intent,
-        )),
+        system_prompt: Some(super::modes::system_prompt_for_mode(&agent_mode)),
         context: prompt_ctx.clone(),
         tool_name: String::new(),
         tool_input: Value::Null,
@@ -1473,6 +1458,42 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
                 emit_orchestration_summary(&sink, &orchestration_state).await;
                 return;
             }
+            if response.termination_reason == "cognition_turn_request_input" {
+                let tool_names = collect_tool_names(&combined_invocations);
+                stream_bridge.drain().await;
+                stage_scratch_for_persist(&sink, &last_tool_scratch).await;
+                super::turn_delivery::deliver_agent_turn_outcome(
+                    &sink,
+                    turn_id,
+                    final_text,
+                    tool_names,
+                    super::turn_delivery::AgentTurnDeliveryHint {
+                        activation_reason: activation.reason,
+                        termination_reason: Some("cognition_turn_request_input"),
+                    },
+                )
+                .await;
+                emit_orchestration_summary(&sink, &orchestration_state).await;
+                return;
+            }
+            if matches!(
+                response.termination_reason.as_str(),
+                "max_rounds_fuse"
+                    | "stuck_text_only_continue"
+                    | super::coder_turn_checkpoint::TOOL_ROUND_BUDGET_EXHAUSTED_REASON
+                    | "workshop_cancelled"
+            ) {
+                stream_bridge.drain().await;
+                stage_scratch_for_persist(&sink, &last_tool_scratch).await;
+                let failure = if final_text.trim().is_empty() {
+                    format!("Turn stopped: {}", response.termination_reason)
+                } else {
+                    final_text
+                };
+                sink.agent_error(turn_id, failure).await;
+                emit_orchestration_summary(&sink, &orchestration_state).await;
+                return;
+            }
             let tool_budget_exhausted = response.termination_reason
                 == super::coder_turn_checkpoint::TOOL_ROUND_BUDGET_EXHAUSTED_REASON;
             if !is_coder_turn
@@ -1512,7 +1533,7 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
 
                 let continuation_request = ToolLoopExecutionRequest {
                     user_prompt: continuation_compiled_prompt,
-                    system_prompt: Some(DEFAULT_SYSTEM_PROMPT.to_string()),
+                    system_prompt: Some(super::modes::system_prompt_for_mode(&agent_mode)),
                     context: prompt_ctx.clone(),
                     tool_name: String::new(),
                     tool_input: Value::Null,
@@ -1606,6 +1627,7 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
                 tool_names,
                 super::turn_delivery::AgentTurnDeliveryHint {
                     activation_reason: activation.reason,
+                    termination_reason: None,
                 },
             )
             .await;
@@ -1696,6 +1718,7 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
                                 tool_names,
                                 super::turn_delivery::AgentTurnDeliveryHint {
                                     activation_reason: activation.reason,
+                                    termination_reason: None,
                                 },
                             )
                             .await;
