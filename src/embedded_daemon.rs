@@ -624,7 +624,11 @@ pub struct EmbeddedSuspendReport {
 pub struct EmbeddedToolRegistryBindings {
     pub runtime: Arc<RuntimeComposition>,
     pub locus: crate::locus_service::LocusService,
+    pub locus_store: Arc<dyn locus_core_rs::NodeStore>,
+    pub semantic_index: Arc<dyn locus_core_rs::SemanticIndexStore>,
+    pub memory_reader: Arc<dyn MemoryContextReader>,
     pub memory_writer: Arc<dyn MemoryContextWriter>,
+    pub memory_operations: Arc<dyn MemoryOperations>,
 }
 
 /// An unfinished registry assembled by a deployment recipe.
@@ -1042,7 +1046,11 @@ impl EmbeddedDaemon {
             .assemble(EmbeddedToolRegistryBindings {
                 runtime: runtime.clone(),
                 locus: locus_service.clone(),
+                locus_store: locus_memory.node_store.clone(),
+                semantic_index: locus_memory.semantic_index.clone(),
+                memory_reader: memory_reader.clone(),
                 memory_writer: memory_writer.clone(),
+                memory_operations: memory_operations.clone(),
             })
             .context("assemble deployment tool registry")?;
         let (tool_registry, _tool_catalog) = tool_assembly

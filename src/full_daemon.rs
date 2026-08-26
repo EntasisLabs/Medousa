@@ -60,6 +60,7 @@ pub mod tool_error;
 pub mod tool_history_handlers;
 pub mod tool_history_index;
 pub mod tool_history_tools;
+pub mod tool_registration_groups;
 pub mod turn_api;
 pub mod turn_budget_handlers;
 pub mod turn_budget_notify;
