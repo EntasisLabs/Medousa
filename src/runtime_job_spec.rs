@@ -3,6 +3,22 @@
 use chrono::{DateTime, Utc};
 use stasis::domain::runtime::job::{BackoffPolicy, NewJob};
 
+pub fn manuscript_id_from_recurring_payload(
+    job_type: &str,
+    payload_template_ref: &str,
+) -> Option<String> {
+    if job_type != "workflow.medousa.recurring_agent_turn" {
+        return None;
+    }
+    serde_json::from_str::<serde_json::Value>(payload_template_ref)
+        .ok()?
+        .get("manuscript_id")?
+        .as_str()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
 /// Construction spec for a first-party job.
 ///
 /// The defaults mirror the existing tool-created jobs. Continuation wiring and

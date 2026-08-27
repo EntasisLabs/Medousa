@@ -3,15 +3,18 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use medousa_engine::{ToolSinkEvent, ToolSinkPort, TurnTicketPort};
+use medousa_engine::{ToolSinkEvent, ToolSinkPort};
 
+#[cfg(feature = "full-daemon")]
 use crate::daemon::turn_stream_registry::{TurnStreamRegistry, TurnStreamRegistryPortAdapter};
 
 /// Local newtype so the engine port can be implemented without orphan-rule issues.
+#[cfg(feature = "full-daemon")]
 pub struct TurnTicketPortAdapter(pub crate::turn_ticket::TurnTicketRegistry);
 
+#[cfg(feature = "full-daemon")]
 #[async_trait]
-impl TurnTicketPort for TurnTicketPortAdapter {
+impl medousa_engine::TurnTicketPort for TurnTicketPortAdapter {
     async fn register(
         &self,
         ticket: medousa_types::turn_ticket::TurnTicket,
@@ -36,6 +39,7 @@ impl TurnTicketPort for TurnTicketPortAdapter {
     }
 }
 
+#[cfg(feature = "full-daemon")]
 pub fn turn_stream_registry_adapter(registry: TurnStreamRegistry) -> TurnStreamRegistryPortAdapter {
     TurnStreamRegistryPortAdapter::new(registry)
 }
@@ -126,7 +130,7 @@ pub async fn active_tool_sink() -> Option<Arc<dyn ToolSinkPort + Send + Sync>> {
     ACTIVE_TOOL_SINK.try_with(Arc::clone).ok()
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 mod tests {
     use super::*;
     use chrono::Utc;

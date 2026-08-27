@@ -363,7 +363,7 @@ impl CognitionUiPresentTool {
             persisted = Some(true);
             persisted_component_id = Some(component_id.to_string());
             environment_revision = Some(updated.revision);
-            let visible = crate::custom_view_status::surface_nav_visible(&updated.spec, surface_id);
+            let visible = crate::environment_navigation::surface_nav_visible(&updated.spec, surface_id);
             live = Some(true);
             nav_visible = Some(visible);
             if !visible {

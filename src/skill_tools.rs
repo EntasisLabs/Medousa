@@ -1,27 +1,42 @@
 //! Cognition tools for skill discovery, policy-gated proposals, and sandbox probes (H6–H7).
 
+#[cfg(feature = "full-daemon")]
 use std::sync::Arc;
 
+#[cfg(feature = "full-daemon")]
 use chrono::Utc;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
+use stasis::prelude::StasisError;
+#[cfg(feature = "full-daemon")]
+use stasis::prelude::Result as StasisResult;
+#[cfg(feature = "full-daemon")]
+use stasis::prelude::RuntimeComposition;
+#[cfg(feature = "full-daemon")]
 use tokio::sync::mpsc;
+#[cfg(feature = "full-daemon")]
 use uuid::Uuid;
 
+#[cfg(feature = "full-daemon")]
 use crate::events::TuiEvent;
 use crate::identity_manuscript::build_manuscript_context;
+#[cfg(feature = "full-daemon")]
 use crate::openshell_handoff::collect_openshell_doctor_report;
+#[cfg(feature = "full-daemon")]
 use crate::openshell_sandbox_run::{OPENSHELL_SANDBOX_RUN_JOB_TYPE, OpenshellSandboxRunPayload};
+#[cfg(feature = "full-daemon")]
 use crate::runtime_composition_ext::RuntimeCompositionExt;
+#[cfg(feature = "full-daemon")]
 use crate::runtime_job_spec::ToolJobSpec;
 use crate::semantic_values::TrimmedText;
 use crate::skill_execution::{
     SkillAdoptionProposal, SkillScriptEntry, SkillScriptRiskClass, SkillSecurityLevel,
-    build_sandbox_payload_for_skill, discover_skill_for_manuscript, evaluate_skill_adoption,
-    resolve_skill_assets_dir,
+    discover_skill_for_manuscript, evaluate_skill_adoption,
 };
+#[cfg(feature = "full-daemon")]
+use crate::skill_execution::{build_sandbox_payload_for_skill, resolve_skill_assets_dir};
 use crate::skill_import::resolve_skill_source;
+#[cfg(feature = "full-daemon")]
 use crate::turn_continuation::{ContinuationAwaitMode, wire_turn_child_job};
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
@@ -40,17 +55,24 @@ pub const SKILL_COGNITION_TOOLS: &[&str] = &[
 ];
 
 pub fn is_skill_cognition_tool(name: &str) -> bool {
-    name.starts_with("cognition_skill_")
+    crate::tool_names::is_skill_cognition_tool(name)
 }
 
-pub fn register_skill_tools(
+pub fn register_portable_skill_tools(
+    registry: &mut impl crate::typed_tools::ToolRegistration,
+) -> stasis::prelude::Result<()> {
+    registry.register_typed_tool(CognitionSkillDiscoverTool)?;
+    registry.register_typed_tool(CognitionSkillProposeTool)?;
+    Ok(())
+}
+
+#[cfg(feature = "full-daemon")]
+pub fn register_skill_probe_tool(
     registry: &mut impl crate::typed_tools::ToolRegistration,
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
     turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 ) -> stasis::prelude::Result<()> {
-    registry.register_typed_tool(CognitionSkillDiscoverTool)?;
-    registry.register_typed_tool(CognitionSkillProposeTool)?;
     registry.register_typed_tool(CognitionSkillProbeTool::new(runtime, event_tx, turn_scope))?;
     Ok(())
 }
@@ -319,12 +341,14 @@ impl CognitionSkillProposeTool {
     }
 }
 
+#[cfg(feature = "full-daemon")]
 pub struct CognitionSkillProbeTool {
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
     turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
+#[cfg(feature = "full-daemon")]
 impl CognitionSkillProbeTool {
     pub fn new(
         runtime: Arc<RuntimeComposition>,
@@ -473,6 +497,7 @@ pub enum SkillProbeOutput {
     },
 }
 
+#[cfg(feature = "full-daemon")]
 #[medousa_tool(id = COGNITION_SKILL_PROBE_ID)]
 impl CognitionSkillProbeTool {
     /// Validate Grapheme availability, then upload and execute an imported skill script in a sandbox.
@@ -608,6 +633,7 @@ impl CognitionSkillProbeTool {
     }
 }
 
+#[cfg(feature = "full-daemon")]
 async fn enqueue_openshell_job(
     runtime: &Arc<RuntimeComposition>,
     event_tx: &mpsc::Sender<TuiEvent>,

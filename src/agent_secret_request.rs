@@ -290,6 +290,14 @@ impl AgentSecretRequestStore {
             );
         }
 
+        #[cfg(not(feature = "full-daemon"))]
+        {
+            self.reopen_after_failed_fulfillment(request_id);
+            return Err("OpenShell credentials require the desktop sidecar".to_string());
+        }
+
+        #[cfg(feature = "full-daemon")]
+        {
         let provider_name = reservation
             .provider_name
             .ok_or_else(|| "OpenShell fulfillment is missing a provider name".to_string())?;
@@ -341,6 +349,7 @@ impl AgentSecretRequestStore {
                     )),
                 }
             }
+        }
         }
     }
 

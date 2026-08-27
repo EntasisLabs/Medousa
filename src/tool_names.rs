@@ -99,7 +99,7 @@ pub fn registered_cognition_tools() -> impl Iterator<Item = &'static str> {
 pub const WORKER_GRAPHEME_EXECUTION_TOOLS: &[&str] =
     &["cognition_web_search", "cognition_capability"];
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 mod tests {
     use std::collections::HashSet;
 
@@ -180,4 +180,17 @@ mod tests {
         let set: HashSet<_> = names.iter().copied().collect();
         assert_eq!(set.len(), names.len());
     }
+}
+pub const SHELL_COGNITION_TOOLS: &[&str] = &["cognition_shell_status", "cognition_shell_run"];
+
+pub fn is_shell_cognition_tool(name: &str) -> bool {
+    name.starts_with("cognition_shell_")
+}
+
+pub fn is_openshell_cognition_tool(name: &str) -> bool {
+    name.starts_with("cognition_openshell_")
+}
+
+pub fn is_skill_cognition_tool(name: &str) -> bool {
+    name.starts_with("cognition_skill_")
 }

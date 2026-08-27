@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 
 use crate::semantic_values::TrimmedText;
-use crate::session::load_history;
+use crate::session_history::load_history;
 use crate::turn_slice::{
     DEFAULT_TOOL_HISTORY_DETAIL_CHARS, DEFAULT_TOOL_HISTORY_SUMMARY_TURNS, ToolHistorySliceRow,
     tool_history_detail_markdown, tool_history_summary_rows,
@@ -275,7 +275,7 @@ impl CognitionToolHistoryDetailTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::ConversationTurn;
+    use crate::session_history::ConversationTurn;
     use crate::turn_parts::TurnPart;
     use chrono::Utc;
 

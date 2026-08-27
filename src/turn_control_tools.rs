@@ -2,11 +2,11 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 use serde_json::Value;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 use stasis::application::orchestration::tool_registry::StasisTool;
 
 use crate::semantic_values::TrimmedText;
@@ -54,6 +54,7 @@ fn optional_trimmed(value: Option<String>) -> Option<TrimmedText> {
     value.and_then(|value| TrimmedText::new(value).ok())
 }
 
+#[cfg(feature = "full-daemon")]
 #[derive(Debug)]
 struct TurnBeginWorkCommand {
     message: Option<TrimmedText>,
@@ -61,6 +62,7 @@ struct TurnBeginWorkCommand {
     intent: crate::agent_runtime::turn_worker::TurnWorkerIntent,
 }
 
+#[cfg(feature = "full-daemon")]
 impl From<TurnBeginWorkInput> for TurnBeginWorkCommand {
     fn from(input: TurnBeginWorkInput) -> Self {
         let intent = input
@@ -153,7 +155,7 @@ impl From<TurnRequestMoreRoundsInput> for TurnRequestMoreRoundsCommand {
             requested_rounds: input
                 .requested_rounds
                 .unwrap_or(0)
-                .clamp(1, crate::turn_budget_request::MAX_REQUESTED_ROUNDS_PER_ASK),
+                .clamp(1, medousa_runtime::turn_control::MAX_REQUESTED_ROUNDS_PER_ASK),
             reason: optional_trimmed(input.reason),
             progress_summary: optional_trimmed(input.progress_summary),
         }
@@ -161,10 +163,12 @@ impl From<TurnRequestMoreRoundsInput> for TurnRequestMoreRoundsCommand {
 }
 
 /// Signal tool-loop entry with a principal-facing progress line (loop continues).
+#[cfg(feature = "full-daemon")]
 pub struct CognitionTurnBeginWorkTool {
     scheduler: std::sync::Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
 }
 
+#[cfg(feature = "full-daemon")]
 impl CognitionTurnBeginWorkTool {
     pub fn new(
         scheduler: std::sync::Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
@@ -211,6 +215,7 @@ impl<'de> Deserialize<'de> for TurnBeginWorkInput {
     }
 }
 
+#[cfg(feature = "full-daemon")]
 #[medousa_tool(id = COGNITION_TURN_BEGIN_WORK_ID)]
 impl CognitionTurnBeginWorkTool {
     /// Enter the bound workshop for multi-tool execution (environment/canvas, components, vault writes). Provide a short principal-facing message and a concrete goal for the workshop executor. Host turn ends with the ack; synthesis delivers on the same thread when the workshop finishes.
@@ -311,11 +316,13 @@ impl CognitionTurnUpdateUserTool {
     }
 }
 
+#[cfg(feature = "full-daemon")]
 pub struct CognitionTurnProposeModeTool {
     bootstrap_session_id: String,
     turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
 }
 
+#[cfg(feature = "full-daemon")]
 impl CognitionTurnProposeModeTool {
     pub fn new(
         bootstrap_session_id: String,
@@ -389,6 +396,7 @@ pub enum TurnProposeModeOutput {
     },
 }
 
+#[cfg(feature = "full-daemon")]
 #[medousa_tool(id = COGNITION_TURN_PROPOSE_MODE_ID)]
 impl CognitionTurnProposeModeTool {
     /// Propose switching Medousa's mode for the current chat. Use Coder only when repository inspection, edits, commands, or tests would materially help; programming explanations stay in General. The runtime applies the user's auto-accept/expiry policy and never expands authority from this tool alone.
@@ -599,7 +607,7 @@ pub struct TurnRequestMoreRoundsInput {
         with = "i64",
         range(
             min = 1,
-            max = "crate::turn_budget_request::MAX_REQUESTED_ROUNDS_PER_ASK"
+            max = "medousa_runtime::turn_control::MAX_REQUESTED_ROUNDS_PER_ASK"
         )
     )]
     pub(crate) requested_rounds: Option<usize>,
@@ -682,7 +690,7 @@ impl CognitionTurnRequestMoreRoundsTool {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 mod tests {
     use super::*;
     use serde_json::json;

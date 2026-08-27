@@ -4,8 +4,8 @@
 //! as `[MEDOUSA_TOOL_SLICES]` and used to seed the next turn's scratchpad.
 
 use crate::agent_runtime::prompt_prep::truncate_text_for_budget;
-use crate::agent_runtime::turn_context::{TurnScratchPhase, TurnScratchpad};
-use crate::session::ConversationTurn;
+use medousa_engine::{TurnScratchPhase, TurnScratchpad};
+use crate::session_history::ConversationTurn;
 use crate::turn_parts::{TurnPart, compose_turn_markdown};
 pub use medousa_types::turn::TurnSliceSummary;
 use serde::{Deserialize, Serialize};
@@ -500,6 +500,7 @@ fn detail_for_tool_round(turn: &ConversationTurn, tool_round: usize) -> Result<S
 }
 
 /// Attach compact slice index to worker handoff (Phase 8C).
+#[cfg(feature = "full-daemon")]
 pub fn enrich_handoff_tool_history(
     capsule: &mut crate::agent_runtime::turn_context::WorkerHandoffCapsule,
     turns: &[ConversationTurn],
@@ -535,10 +536,17 @@ pub fn enrich_handoff_tool_history(
 
 pub fn prior_turn_content(turn: &ConversationTurn, max_chars: usize) -> String {
     let raw = if turn.role == "user" {
+        #[cfg(feature = "full-daemon")]
+        {
         crate::agent_runtime::host_context::append_host_context(
             &turn.content,
             crate::agent_runtime::host_context::host_context_from_turn(turn),
         )
+        }
+        #[cfg(not(feature = "full-daemon"))]
+        {
+            turn.content.clone()
+        }
     } else if turn.parts.as_ref().is_some_and(|parts| !parts.is_empty()) {
         compose_turn_markdown(turn)
     } else {

@@ -405,7 +405,10 @@ impl WorkflowExecutor {
         prompt_pipeline: PromptExecutionPipeline,
     ) -> Self {
         Self::new(
+            #[cfg(feature = "full-daemon")]
             crate::grapheme_medousa_bridge::medousa_workflow_engine(),
+            #[cfg(not(feature = "full-daemon"))]
+            stasis::prelude::RuntimeFactory::default_workflow_engine(),
             prompt_pipeline,
             Arc::new(McpGatewayClient::from_env()),
             registry,

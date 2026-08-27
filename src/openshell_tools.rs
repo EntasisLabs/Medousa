@@ -39,7 +39,7 @@ pub const OPENSHELL_COGNITION_TOOLS: &[&str] = &[
 ];
 
 pub fn is_openshell_cognition_tool(name: &str) -> bool {
-    name.starts_with("cognition_openshell_")
+    crate::tool_names::is_openshell_cognition_tool(name)
 }
 
 pub fn register_openshell_tools(

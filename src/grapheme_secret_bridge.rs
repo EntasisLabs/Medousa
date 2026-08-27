@@ -493,7 +493,7 @@ pub fn secure_payload_ref(source: &str, run_token: &str) -> String {
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 mod tests {
     use super::*;
     use stasis::ports::outbound::runtime::workflow_engine::WorkflowEngine;

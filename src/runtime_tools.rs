@@ -180,7 +180,7 @@ fn recurring_summary(
         max_attempts: definition.max_attempts,
         next_run_at_utc: definition.next_run_at.to_rfc3339(),
         last_run_at_utc: definition.last_run_at.map(|time| time.to_rfc3339()),
-        manuscript_id: crate::recurring_agent_turn::manuscript_id_from_recurring_payload(
+        manuscript_id: crate::runtime_job_spec::manuscript_id_from_recurring_payload(
             &definition.job_type,
             &definition.payload_template_ref,
         ),
@@ -673,7 +673,7 @@ impl CognitionRuntimeRecurringDoctorTool {
                 max_attempts: definition.max_attempts,
                 next_run_at_utc: definition.next_run_at.to_rfc3339(),
                 last_run_at_utc: definition.last_run_at.map(|time| time.to_rfc3339()),
-                manuscript_id: crate::recurring_agent_turn::manuscript_id_from_recurring_payload(
+                manuscript_id: crate::runtime_job_spec::manuscript_id_from_recurring_payload(
                     &definition.job_type,
                     &definition.payload_template_ref,
                 ),

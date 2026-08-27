@@ -1,17 +1,20 @@
 //! Tool catalog introspection, immutable lane ceilings, and turn hints.
 
-use std::collections::{HashMap, HashSet};
+#[cfg(feature = "full-daemon")]
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::OnceLock;
 
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "full-daemon")]
 use crate::agent_runtime::prompt_prep::truncate_text_for_budget;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 use crate::agent_runtime::turn_worker::host_bus_tool_names;
-use crate::session::{self, ConversationTurn};
-use crate::turn_slice::{DEFAULT_TOOL_HISTORY_SUMMARY_TURNS, tool_history_summary_rows};
+#[cfg(feature = "full-daemon")]
+use crate::session::ConversationTurn;
 
 pub const COGNITION_TOOLS_DISCOVER: &str = "cognition_tools_discover";
 
@@ -19,7 +22,7 @@ pub const DEFAULT_TOOL_HINTS_BLOCK_CHARS: usize = 700;
 
 static SESSION_SURFACE_FILES: Lazy<crate::session_storage::SessionFileStore> = Lazy::new(|| {
     crate::session_storage::SessionFileStore::new(
-        session::medousa_data_dir().join("session_surfaces"),
+        crate::paths::medousa_data_dir().join("session_surfaces"),
         "json",
     )
 });
@@ -268,11 +271,13 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
     static WORKER: OnceLock<Vec<ToolDomainCatalogEntry>> = OnceLock::new();
     WORKER.get_or_init(|| {
         vec![
+            #[cfg(feature = "full-daemon")]
             ToolDomainCatalogEntry {
                 domain: "detamu",
                 summary: "Detamu world-model — repo snapshots at commit OIDs (status/files/impact/Code AVEC)",
                 tools: crate::detamu_tools::DETAMU_COGNITION_TOOLS,
             },
+            #[cfg(feature = "full-daemon")]
             ToolDomainCatalogEntry {
                 domain: "coding",
                 summary: "Workshop shared shell sessions (opt-in). Read/patch files with cognition_store_read/write action=code.read|code.write.",
@@ -599,6 +604,7 @@ pub fn effective_tool_names(
     full_allowlist.clone()
 }
 
+#[cfg(feature = "full-daemon")]
 pub fn build_tool_hints_block(
     _catalog: &crate::typed_tools::ToolCatalog,
     _session_id: &str,
@@ -633,6 +639,7 @@ pub fn build_tool_hints_block(
     format!("[MEDOUSA_TOOL_HINTS]\n{body}")
 }
 
+#[cfg(feature = "full-daemon")]
 fn rank_hint_domains(prompt: &str, turns: &[ConversationTurn]) -> Vec<String> {
     let prompt_lower = prompt.to_ascii_lowercase();
     let mut scores: HashMap<&'static str, i32> = HashMap::new();
@@ -718,9 +725,17 @@ fn rank_hint_domains(prompt: &str, turns: &[ConversationTurn]) -> Vec<String> {
         bump(&mut scores, ENVIRONMENT_HOST_AUTO_UNLOCK_DOMAIN, 4);
     }
 
-    let rows = tool_history_summary_rows(turns, DEFAULT_TOOL_HISTORY_SUMMARY_TURNS, None, None);
-    if !rows.is_empty() {
-        bump(&mut scores, "history", 2);
+    #[cfg(feature = "full-daemon")]
+    {
+        let rows = crate::turn_slice::tool_history_summary_rows(
+            turns,
+            crate::turn_slice::DEFAULT_TOOL_HISTORY_SUMMARY_TURNS,
+            None,
+            None,
+        );
+        if !rows.is_empty() {
+            bump(&mut scores, "history", 2);
+        }
     }
 
     let mut ordered: Vec<_> = scores.into_iter().collect();
@@ -731,10 +746,12 @@ fn rank_hint_domains(prompt: &str, turns: &[ConversationTurn]) -> Vec<String> {
         .collect()
 }
 
+#[cfg(feature = "full-daemon")]
 fn contains_any(haystack: &str, needles: &[&str]) -> bool {
     needles.iter().any(|needle| haystack.contains(needle))
 }
 
+#[cfg(feature = "full-daemon")]
 pub fn handoff_implies_resolved_execution(
     capsule: Option<&crate::agent_runtime::turn_context::WorkerHandoffCapsule>,
 ) -> bool {
@@ -744,6 +761,7 @@ pub fn handoff_implies_resolved_execution(
 }
 
 /// Workers that may write journal/vault notes should start with the vault domain unlocked.
+#[cfg(feature = "full-daemon")]
 pub fn worker_should_unlock_vault(
     task_prompt: &str,
     intent: crate::agent_runtime::turn_worker::TurnWorkerIntent,
@@ -770,7 +788,7 @@ pub fn worker_should_unlock_vault(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 mod tests {
     use super::*;
     use std::collections::HashSet;

@@ -287,7 +287,7 @@ impl CognitionFeedSubscribeTool {
             .await
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
         let nav_visible =
-            crate::custom_view_status::surface_nav_visible(&updated.spec, &surface_id);
+            crate::environment_navigation::surface_nav_visible(&updated.spec, &surface_id);
         Ok(FeedSubscribeOutput::Success {
             ok: true,
             revision: updated.revision,

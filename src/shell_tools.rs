@@ -18,10 +18,10 @@ pub const COGNITION_SHELL_RUN: &str = "cognition_shell_run";
 const COGNITION_SHELL_STATUS_ID: ToolId = ToolId::new(COGNITION_SHELL_STATUS);
 const COGNITION_SHELL_RUN_ID: ToolId = ToolId::new(COGNITION_SHELL_RUN);
 
-pub const SHELL_COGNITION_TOOLS: &[&str] = &[COGNITION_SHELL_STATUS, COGNITION_SHELL_RUN];
+pub use crate::tool_names::SHELL_COGNITION_TOOLS;
 
 pub fn is_shell_cognition_tool(name: &str) -> bool {
-    name.starts_with("cognition_shell_")
+    crate::tool_names::is_shell_cognition_tool(name)
 }
 
 fn ensure_shell_agent_tools_enabled() -> StasisResult<()> {

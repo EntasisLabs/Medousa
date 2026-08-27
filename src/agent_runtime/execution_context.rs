@@ -513,7 +513,7 @@ pub struct TurnScopeAccess {
     test_scope: Option<Arc<TurnContinuationScope>>,
 }
 
-#[cfg(all(test, feature = "full-daemon"))]
+#[cfg(test)]
 impl TurnScopeAccess {
     pub(crate) fn for_test(scope: TurnContinuationScope) -> Self {
         Self {

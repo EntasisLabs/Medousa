@@ -68,11 +68,12 @@ Preserve lineage, temporal context, active work state, confidence, AVEC signal, 
 
 const COMPOSER_SYSTEM_PROMPT: &str = STTP_SCHEMA_INSTRUCTIONS;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GraphemeCompactionModelTarget {
     pub provider: String,
     pub model: String,
     pub base_url: Option<String>,
+    pub chat_client: Option<Arc<dyn AiChatClient>>,
 }
 
 #[derive(Debug, Clone)]
@@ -195,7 +196,7 @@ pub async fn maybe_compact_output_to_sttp(
         config.max_chunks,
     );
 
-    let pipeline = build_prompt_pipeline(model_target);
+    let pipeline = build_prompt_pipeline(model_target)?;
     let mut summaries = Vec::new();
     let mut failure_count = 0usize;
 
@@ -279,13 +280,25 @@ pub async fn maybe_compact_output_to_sttp(
     }))
 }
 
-fn build_prompt_pipeline(model_target: &GraphemeCompactionModelTarget) -> PromptExecutionPipeline {
-    let chat_client: Arc<dyn AiChatClient> = Arc::new(crate::build_genai_chat_client(
-        &model_target.provider,
-        &model_target.model,
-        model_target.base_url.as_deref(),
-    ));
-    PromptExecutionPipeline::new(chat_client)
+fn build_prompt_pipeline(
+    model_target: &GraphemeCompactionModelTarget,
+) -> stasis::prelude::Result<PromptExecutionPipeline> {
+    if let Some(chat_client) = model_target.chat_client.clone() {
+        return Ok(PromptExecutionPipeline::new(chat_client));
+    }
+    #[cfg(feature = "full-daemon")]
+    {
+        let chat_client: Arc<dyn AiChatClient> = Arc::new(crate::build_genai_chat_client(
+            &model_target.provider,
+            &model_target.model,
+            model_target.base_url.as_deref(),
+        ));
+        return Ok(PromptExecutionPipeline::new(chat_client));
+    }
+    #[cfg(not(feature = "full-daemon"))]
+    Err(StasisError::PortFailure(
+        "STTP compaction requires the deployment chat adapter".to_string(),
+    ))
 }
 
 async fn compose_sttp_node(

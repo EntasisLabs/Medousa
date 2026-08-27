@@ -59,7 +59,6 @@ pub fn identity_bridge_locus_session() -> String {
 }
 
 /// Resolve Locus session for memory tools: explicit arg → turn scope chat id → fallback.
-#[cfg(feature = "full-daemon")]
 pub async fn resolve_memory_tool_session_id(
     input: &Value,
     turn_scope: &crate::agent_runtime::execution_context::TurnScopeAccess,
@@ -76,7 +75,6 @@ pub async fn resolve_memory_tool_session_id(
     .await
 }
 
-#[cfg(feature = "full-daemon")]
 pub async fn resolve_memory_tool_session_id_typed(
     explicit_session_id: Option<&str>,
     turn_scope: &crate::agent_runtime::execution_context::TurnScopeAccess,

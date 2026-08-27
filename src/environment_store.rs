@@ -16,7 +16,6 @@ use tokio::sync::{RwLock as AsyncRwLock, broadcast};
 
 use crate::store_root::{StorePath, StoreRoot};
 
-#[cfg(feature = "full-daemon")]
 const STORE_DIR: &str = "environment";
 const MAX_ENVIRONMENT_SPEC_BYTES: u64 = 4 * 1024 * 1024;
 
@@ -53,7 +52,6 @@ pub struct EnvironmentHub {
     tx: broadcast::Sender<EnvironmentStreamEvent>,
 }
 
-#[cfg(feature = "full-daemon")]
 impl Default for EnvironmentHub {
     fn default() -> Self {
         Self::new()
@@ -61,7 +59,6 @@ impl Default for EnvironmentHub {
 }
 
 impl EnvironmentHub {
-    #[cfg(feature = "full-daemon")]
     pub fn new() -> Self {
         Self::new_at(Self::default_store_root())
     }
@@ -93,7 +90,6 @@ impl EnvironmentHub {
         self.tx.subscribe()
     }
 
-    #[cfg(feature = "full-daemon")]
     fn default_store_root() -> PathBuf {
         crate::paths::medousa_data_dir().join(STORE_DIR)
     }
@@ -111,7 +107,6 @@ impl EnvironmentHub {
         StorePath::parse(&format!("{}.json", profile_id.as_str())).ok()
     }
 
-    #[cfg(feature = "full-daemon")]
     pub async fn load_or_default(profile_id: &str) -> Result<EnvironmentRecord> {
         let store = Self::store_at(&Self::default_store_root())?;
         Self::load_or_default_from(&store, profile_id)
@@ -254,12 +249,14 @@ impl EnvironmentHub {
     }
 }
 
-#[cfg(feature = "full-daemon")]
 static ENVIRONMENT_HUB: std::sync::OnceLock<EnvironmentHub> = std::sync::OnceLock::new();
 
-#[cfg(feature = "full-daemon")]
 pub fn environment_hub() -> &'static EnvironmentHub {
     ENVIRONMENT_HUB.get_or_init(EnvironmentHub::new)
+}
+
+pub fn install_environment_hub(hub: EnvironmentHub) -> EnvironmentHub {
+    ENVIRONMENT_HUB.get_or_init(|| hub).clone()
 }
 
 pub fn resolve_profile_id(profile_id: Option<&str>) -> String {
@@ -270,7 +267,6 @@ pub fn resolve_profile_id(profile_id: Option<&str>) -> String {
         .unwrap_or_else(|| DEFAULT_PROFILE_ID.to_string())
 }
 
-#[cfg(feature = "full-daemon")]
 pub fn ensure_store_dir() -> Result<()> {
     EnvironmentHub::store_at(&EnvironmentHub::default_store_root())?;
     Ok(())

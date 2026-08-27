@@ -664,7 +664,7 @@ impl CognitionComponentCreateTool {
             component: updated.spec.components.last().cloned().map(Box::new),
             live: true,
             nav_visible,
-            hint: crate::custom_view_status::nav_visibility_hint(
+            hint: crate::environment_navigation::nav_visibility_hint(
                 &component.surface_id,
                 nav_visible,
             ),
@@ -1074,7 +1074,7 @@ fn apply_component_patch(component: &mut ComponentDef, patch: ComponentPatchInpu
 }
 
 pub fn surface_nav_visible_for_spec(spec: &EnvironmentSpec, surface_id: &str) -> bool {
-    crate::custom_view_status::surface_nav_visible(spec, surface_id)
+    crate::environment_navigation::surface_nav_visible(spec, surface_id)
 }
 
 /// Helper for agent-driven custom surface creation.

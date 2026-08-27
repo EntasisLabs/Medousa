@@ -8,6 +8,14 @@
 include!("full_daemon.rs");
 
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+#[path = "embedded_agent_runtime.rs"]
+pub mod agent_runtime;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub use agent_runtime::execution_context;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub(crate) use agent_runtime::prompt_policy;
+
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod capability_catalog;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod daemon_api;
@@ -19,9 +27,6 @@ pub mod daemon_runtime_handlers;
 pub mod embedded_daemon;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod environment_store;
-#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
-#[path = "agent_runtime/execution_context.rs"]
-pub mod execution_context;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod grapheme_api;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
@@ -57,9 +62,6 @@ pub mod mobile_tool_registry;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 #[path = "runtime/persistent_locus.rs"]
 pub mod persistent_locus;
-#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
-#[path = "agent_runtime/prompt_policy.rs"]
-pub mod prompt_policy;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod reasoning_effort;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
@@ -115,6 +117,12 @@ pub mod vault;
 pub mod web_search_tool;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod workshop_authority;
+
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+include!("embedded_tool_modules.rs");
+
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub use product_config::load_product_config;
 
 #[cfg(not(any(feature = "full-daemon", feature = "embedded-daemon")))]
 compile_error!("enable either the `full-daemon` or `embedded-daemon` feature");

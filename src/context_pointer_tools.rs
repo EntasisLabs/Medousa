@@ -9,7 +9,7 @@ use stasis::prelude::{Result as StasisResult, StasisError};
 use crate::context_pointer_index::resolve_pointer_slice;
 use crate::environment_store::{environment_hub, resolve_profile_id};
 use crate::semantic_values::TrimmedText;
-use crate::session::load_history;
+use crate::session_history::load_history;
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_CONTEXT_FOLLOW_POINTER: &str = "cognition_context_follow_pointer";
@@ -137,7 +137,7 @@ impl CognitionContextFollowPointerTool {
         )
         .await?;
 
-        let sessions = crate::session_catalog::list_sessions(20);
+        let sessions = crate::session_history::list_sessions(20);
         let env = environment_hub().get(&resolve_profile_id(None)).await.ok();
         let digest = crate::context_pointer_index::build_pointer_digest(
             &active_session,
@@ -199,7 +199,7 @@ impl CognitionContextListPointersTool {
             COGNITION_CONTEXT_LIST_POINTERS,
         )
         .await?;
-        let sessions = crate::session_catalog::list_sessions(20);
+        let sessions = crate::session_history::list_sessions(20);
         let env = environment_hub().get(&resolve_profile_id(None)).await.ok();
         let digest = crate::context_pointer_index::build_pointer_digest(
             &active_session,

@@ -1430,7 +1430,7 @@ impl WebSearchBackend for CapabilityWebSearchBackend {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 mod tests {
     use super::*;
 

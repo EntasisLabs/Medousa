@@ -129,6 +129,7 @@ pub(crate) async fn assemble_tui_runtime(
         provider: resolved_provider.clone(),
         model: resolved_model.clone(),
         base_url: resolved_base_url.clone(),
+        chat_client: None,
     };
     let identity_service = Arc::new(IdentityMemoryService::new(identity_memory_store.clone()
         as Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>));
@@ -157,7 +158,7 @@ pub(crate) async fn assemble_tui_runtime(
         capability_registry: capability_registry.clone(),
         mcp_gateway_client: mcp_gateway_client.clone(),
     };
-    crate::tool_registration_groups::register_shared_foundation_tools(
+    crate::tool_registration_groups::register_portable_foundation_tools(
         &mut tool_registry,
         &shared_tools,
     )?;

@@ -2,14 +2,17 @@
 
 use genai::chat::Tool;
 
+#[cfg(feature = "full-daemon")]
 use crate::agent_runtime::turn_worker::{
     TurnWorkerIntent, allowed_tool_names_for_intent, host_bus_tool_names, tool_allowed,
 };
 use crate::typed_tools::{
     EmptyCallMetadata, ModeToolAdapter, ModeToolAdapterError, RegisteredToolKind, ToolCapabilityId,
     ToolCatalog, ToolDomainId, ToolEffect, ToolExposureRef, ToolId, ToolModeId, ToolPlacementIndex,
-    ToolPolicyId, ToolSurfaceId,
+    ToolSurfaceId,
 };
+#[cfg(feature = "full-daemon")]
+use crate::typed_tools::ToolPolicyId;
 
 pub(crate) const GENERAL_MODE_ID: ToolModeId = ToolModeId::new("general");
 pub(crate) const WORKSHOP_MODE_ID: ToolModeId = ToolModeId::new("workshop");
@@ -24,6 +27,7 @@ pub(crate) const EDITOR_CONTEXT_SURFACE_ID: ToolSurfaceId = ToolSurfaceId::new("
 pub(crate) fn first_party_placement_index() -> ToolPlacementIndex {
     let mut index = ToolPlacementIndex::default();
 
+    #[cfg(feature = "full-daemon")]
     add_ids(
         &mut index,
         crate::tool_bootstrap::HOST_BOOTSTRAP_TOOLS,
@@ -35,7 +39,9 @@ pub(crate) fn first_party_placement_index() -> ToolPlacementIndex {
         ToolExposureRef::new(WORKSHOP_MODE_ID, BOOTSTRAP_SURFACE_ID),
     );
 
+    #[cfg(feature = "full-daemon")]
     let host = host_bus_tool_names();
+    #[cfg(feature = "full-daemon")]
     for name in crate::tool_names::registered_cognition_tools() {
         if tool_allowed(name, &host) {
             index.add_exposure(
@@ -44,6 +50,7 @@ pub(crate) fn first_party_placement_index() -> ToolPlacementIndex {
             );
         }
     }
+    #[cfg(feature = "full-daemon")]
     for (intent, policy) in worker_policies() {
         let allowed = allowed_tool_names_for_intent(intent);
         for name in crate::tool_names::registered_cognition_tools() {
@@ -67,6 +74,7 @@ pub(crate) fn first_party_placement_index() -> ToolPlacementIndex {
             ),
         );
     }
+    #[cfg(feature = "full-daemon")]
     for entry in crate::tool_bootstrap::worker_tool_domain_catalog() {
         add_ids(
             &mut index,
@@ -79,6 +87,7 @@ pub(crate) fn first_party_placement_index() -> ToolPlacementIndex {
         );
     }
 
+    #[cfg(feature = "full-daemon")]
     crate::agent_runtime::coder_tools::register_catalog_placements(&mut index);
     add_effects_and_capabilities(&mut index);
     add_presentation_overrides(&mut index);
@@ -99,6 +108,7 @@ fn add_ids(index: &mut ToolPlacementIndex, names: &[&'static str], exposure: Too
     }
 }
 
+#[cfg(feature = "full-daemon")]
 fn worker_policies() -> [(TurnWorkerIntent, ToolPolicyId); 4] {
     [
         (TurnWorkerIntent::General, ToolPolicyId::new("general")),
@@ -120,6 +130,7 @@ fn add_effects_and_capabilities(index: &mut ToolPlacementIndex) {
         "cognition_utility_time_now",
         "cognition_utility_uuid",
         crate::public_api::COGNITION_STORE_READ,
+        #[cfg(feature = "full-daemon")]
         crate::agent_runtime::coder_tools::COGNITION_ENGINEERING_POINTERS,
         crate::public_api::COGNITION_RUNTIME_QUERY,
         crate::public_api::COGNITION_SCHEMA,
@@ -127,6 +138,7 @@ fn add_effects_and_capabilities(index: &mut ToolPlacementIndex) {
     ] {
         index.set_effect(ToolId::new(name), ToolEffect::Observe);
     }
+    #[cfg(feature = "full-daemon")]
     index.set_effect(
         ToolId::new(crate::agent_runtime::coder_tools::COGNITION_CODER_TOOLS_DISCOVER),
         ToolEffect::Coordinate,

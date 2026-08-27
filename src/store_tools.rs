@@ -14,6 +14,7 @@ use crate::artifact_tools::{
     ArtifactWriteInput, CognitionArtifactDeleteTool, CognitionArtifactGrepTool,
     CognitionArtifactListTool, CognitionArtifactReadTool, CognitionArtifactWriteTool,
 };
+#[cfg(feature = "full-daemon")]
 use crate::coding_tools::{
     CodeApplyPatchInput, CodeReadInput, CodeSearchInput, invoke_code_apply_patch, invoke_code_read,
     invoke_code_search,
@@ -657,6 +658,11 @@ impl ArtifactsSearch {
 
 impl CodeRead {
     async fn execute(self) -> stasis::prelude::Result<Value> {
+        #[cfg(not(feature = "full-daemon"))]
+        return Err(stasis::prelude::StasisError::PortFailure(
+            "code.read requires a desktop worktree adapter".to_string(),
+        ));
+        #[cfg(feature = "full-daemon")]
         invoke_code_read(CodeReadInput {
             path: self.path,
             root: CompatOption::from(self.root),
@@ -671,6 +677,11 @@ impl CodeRead {
 
 impl CodeSearch {
     async fn execute(self) -> stasis::prelude::Result<Value> {
+        #[cfg(not(feature = "full-daemon"))]
+        return Err(stasis::prelude::StasisError::PortFailure(
+            "code.search requires a desktop worktree adapter".to_string(),
+        ));
+        #[cfg(feature = "full-daemon")]
         invoke_code_search(CodeSearchInput {
             query: self.query,
             root: CompatOption::from(self.root),
@@ -793,6 +804,11 @@ impl ArtifactsDelete {
 
 impl CodeWrite {
     async fn execute(self) -> stasis::prelude::Result<Value> {
+        #[cfg(not(feature = "full-daemon"))]
+        return Err(stasis::prelude::StasisError::PortFailure(
+            "code.write requires a desktop worktree adapter".to_string(),
+        ));
+        #[cfg(feature = "full-daemon")]
         invoke_code_apply_patch(CodeApplyPatchInput {
             path: self.path,
             root: CompatOption::from(self.root),

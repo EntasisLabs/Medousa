@@ -146,6 +146,7 @@ pub fn append_ambient_context(prompt: &str, input: AmbientContextInput<'_>) -> S
 }
 
 /// Pointer digest + canvas summary for turn bootstrap.
+#[cfg(feature = "full-daemon")]
 pub async fn build_environment_ambient_extras(session_id: &str) -> String {
     let sessions = crate::session_catalog::list_sessions(20);
     let env = crate::environment_store::environment_hub()

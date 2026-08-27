@@ -3,6 +3,7 @@
 //! The model-facing entry is a tagged action enum. Parameter schemas live on
 //! each variant type — `cognition_schema` reads those types, not a parallel catalog.
 
+#[cfg(feature = "full-daemon")]
 use std::sync::Arc;
 
 use schemars::JsonSchema;
@@ -10,17 +11,20 @@ use schemars::schema::Schema;
 use serde::Deserialize;
 use serde_json::Value;
 
+#[cfg(feature = "full-daemon")]
 use crate::agent_runtime::turn_worker::TurnWorkerScheduler;
 use crate::public_api::COGNITION_TURN;
 use crate::schema_api::{
     TypedActionSchema, advertised_object_schema, string_enum_schema, typed_action_schema,
 };
 use crate::turn_control_tools::{
-    CognitionTurnBeginWorkTool, CognitionTurnCheckpointTool, CognitionTurnFinishTool,
-    CognitionTurnProposeModeTool, CognitionTurnRequestMoreRoundsTool, CognitionTurnUpdateUserTool,
+    CognitionTurnCheckpointTool, CognitionTurnFinishTool, CognitionTurnRequestMoreRoundsTool,
+    CognitionTurnUpdateUserTool,
     TurnBeginWorkInput, TurnCheckpointInput, TurnFinishInput, TurnModeInput, TurnModeScopeInput,
     TurnProposeModeInput, TurnRequestMoreRoundsInput, TurnUpdateUserInput,
 };
+#[cfg(feature = "full-daemon")]
+use crate::turn_control_tools::{CognitionTurnBeginWorkTool, CognitionTurnProposeModeTool};
 use crate::typed_tools::{ExternalJson, ToolId, TypedTool, medousa_tool, serialize_output};
 
 const TURN_ID: ToolId = ToolId::new(COGNITION_TURN);
@@ -177,6 +181,7 @@ pub fn turn_type_schemas() -> Vec<TypedActionSchema> {
 }
 
 pub struct CognitionTurnTool {
+    #[cfg(feature = "full-daemon")]
     scheduler: Arc<TurnWorkerScheduler>,
     bootstrap_session_id: String,
     turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
@@ -184,11 +189,13 @@ pub struct CognitionTurnTool {
 
 impl CognitionTurnTool {
     pub fn new(
+        #[cfg(feature = "full-daemon")]
         scheduler: Arc<TurnWorkerScheduler>,
         bootstrap_session_id: String,
         turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
+            #[cfg(feature = "full-daemon")]
             scheduler,
             bootstrap_session_id,
             turn_scope,
@@ -196,6 +203,7 @@ impl CognitionTurnTool {
     }
 }
 
+#[cfg(feature = "full-daemon")]
 pub fn register_turn_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
     scheduler: Arc<TurnWorkerScheduler>,
@@ -207,6 +215,16 @@ pub fn register_turn_tools(
         bootstrap_session_id,
         turn_scope,
     ))?;
+    Ok(())
+}
+
+#[cfg(not(feature = "full-daemon"))]
+pub fn register_turn_tools(
+    registry: &mut impl crate::typed_tools::ToolRegistration,
+    bootstrap_session_id: String,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
+) -> stasis::prelude::Result<()> {
+    registry.register_typed_tool(CognitionTurnTool::new(bootstrap_session_id, turn_scope))?;
     Ok(())
 }
 
@@ -232,6 +250,8 @@ async fn dispatch(tool: &CognitionTurnTool, action: TurnAction) -> stasis::prelu
 
 impl TurnBeginWork {
     async fn execute(self, tool: &CognitionTurnTool) -> stasis::prelude::Result<Value> {
+        #[cfg(feature = "full-daemon")]
+        {
         let output = CognitionTurnBeginWorkTool::new(tool.scheduler.clone())
             .invoke_typed(TurnBeginWorkInput {
                 message: Some(self.message),
@@ -240,6 +260,19 @@ impl TurnBeginWork {
             })
             .await?;
         serialize_output(CognitionTurnBeginWorkTool::tool_id(), output)
+        }
+        #[cfg(not(feature = "full-daemon"))]
+        {
+            let _ = tool;
+            Ok(serde_json::json!({
+                "ok": false,
+                "workshop_entered": false,
+                "error": "turn.begin_work requires a background workshop worker adapter on this host",
+                "message": self.message,
+                "goal": self.goal,
+                "intent": self.intent,
+            }))
+        }
     }
 }
 
@@ -307,6 +340,8 @@ impl TurnRequestMoreRounds {
 
 impl TurnProposeMode {
     async fn execute(self, tool: &CognitionTurnTool) -> stasis::prelude::Result<Value> {
+        #[cfg(feature = "full-daemon")]
+        {
         let output = CognitionTurnProposeModeTool::new(
             tool.bootstrap_session_id.clone(),
             tool.turn_scope.clone(),
@@ -319,6 +354,19 @@ impl TurnProposeMode {
         })
         .await?;
         serialize_output(CognitionTurnProposeModeTool::tool_id(), output)
+        }
+        #[cfg(not(feature = "full-daemon"))]
+        {
+            let _ = tool;
+            Ok(serde_json::json!({
+                "ok": false,
+                "error": "turn.propose_mode is unavailable because this host does not install Coder mode",
+                "mode": format!("{:?}", self.mode).to_ascii_lowercase(),
+                "scope": format!("{:?}", self.scope).to_ascii_lowercase(),
+                "task_id": self.task_id,
+                "reason": self.reason,
+            }))
+        }
     }
 }
 

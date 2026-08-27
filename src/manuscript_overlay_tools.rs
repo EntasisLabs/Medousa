@@ -9,7 +9,6 @@ use stasis::domain::errors::{Result as StasisResult, StasisError};
 
 use medousa_types::authority_id::{ManuscriptId, ManuscriptOverlayProposalId};
 
-use crate::session;
 use crate::store_root::{StoreEntryKind, StorePath, StoreRoot};
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
@@ -42,7 +41,7 @@ pub fn register_manuscript_overlay_tools(
 }
 
 fn overlay_root() -> PathBuf {
-    session::medousa_data_dir().join("manuscript-overlays")
+    crate::paths::medousa_data_dir().join("manuscript-overlays")
 }
 
 fn pending_dir() -> PathBuf {

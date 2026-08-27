@@ -9,12 +9,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent_runtime::turn_worker::TurnWorkerIntent;
 use crate::cognitive_identity::DigestCompileOptions;
+#[cfg(feature = "full-daemon")]
 use crate::openshell_sandbox_run::resolve_policy_template_path;
-use crate::openshell_tools::is_openshell_cognition_tool;
-use crate::shell_tools::is_shell_cognition_tool;
-use crate::skill_tools::is_skill_cognition_tool;
 use crate::stage_routing::{StageRoutingMatrix, normalize_role};
 use crate::store_root::{StoreEntryKind, StorePath, StoreRoot};
+use crate::tool_names::{
+    is_openshell_cognition_tool, is_shell_cognition_tool, is_skill_cognition_tool,
+};
 
 pub const MANUSCRIPT_API_VERSION: &str = "medousa.dev/v1";
 pub const MANUSCRIPT_KIND: &str = "IdentityManuscript";
@@ -752,7 +753,7 @@ fn validate_openshell_spec(
         .collect();
 
     if openshell.enabled {
-        let template = openshell
+        let _template = openshell
             .policy_template
             .as_deref()
             .map(str::trim)
@@ -762,9 +763,10 @@ fn validate_openshell_spec(
                     "spec.openshell.policy_template is required when spec.openshell.enabled=true",
                 )
             })?;
-        if resolve_policy_template_path(template).is_none() {
+        #[cfg(feature = "full-daemon")]
+        if resolve_policy_template_path(_template).is_none() {
             bail!(
-                "spec.openshell.policy_template '{template}' not found under ~/.config/medousa/openshell-policies/"
+                "spec.openshell.policy_template '{_template}' not found under ~/.config/medousa/openshell-policies/"
             );
         }
         if openshell_tools.is_empty() {
@@ -1111,7 +1113,7 @@ pub fn scheduled_tool_preview(
 }
 
 pub fn palette_tools_for_editor() -> Vec<String> {
-    use crate::shell_tools::SHELL_COGNITION_TOOLS;
+    use crate::tool_names::SHELL_COGNITION_TOOLS;
 
     let mut tools = scheduled_lane_tool_universe()
         .into_iter()

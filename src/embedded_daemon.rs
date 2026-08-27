@@ -62,12 +62,11 @@ use stasis::application::orchestration::prompt_pipeline::{
 use stasis::application::orchestration::tool_loop_pipeline::{
     ToolCallMode, ToolLoopExecutionRequest,
 };
-use stasis::application::orchestration::tool_registry::{StasisTool, ToolRegistry};
+use stasis::application::orchestration::tool_registry::ToolRegistry;
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 use stasis::domain::runtime::cluster_node::{
     ClusterNode, ClusterNodeHeartbeat, ClusterNodeRole, NewClusterNode,
 };
-use stasis::infrastructure::memory::locus_memory_operations::LocusMemoryOperations;
 use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta};
 use stasis::ports::outbound::memory::memory_context_reader::MemoryContextReader;
 use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
@@ -84,7 +83,6 @@ use crate::execution_context::{
     ProviderRoute, SurfaceCapabilities, TurnExecutionContext, TurnExecutionRegistry,
     with_turn_execution_context,
 };
-use crate::persistent_locus::build_persistent_locus_memory;
 use crate::request_principal::{Capability, RequestPrincipal, TransportClass};
 use crate::runtime_composition_ext::{
     RuntimeCompositionExt, RuntimeRecoveryReport, reconcile_after_unavailability,
@@ -690,13 +688,16 @@ pub struct EmbeddedSuspendReport {
 #[derive(Clone)]
 pub struct EmbeddedToolRegistryBindings {
     pub runtime: Arc<RuntimeComposition>,
-    pub locus: crate::locus_service::LocusService,
     pub locus_store: Arc<dyn locus_core_rs::NodeStore>,
     pub semantic_index: Arc<dyn locus_core_rs::SemanticIndexStore>,
     pub memory_reader: Arc<dyn MemoryContextReader>,
     pub memory_writer: Arc<dyn MemoryContextWriter>,
     pub memory_operations: Arc<dyn MemoryOperations>,
+    pub identity_store: Arc<crate::identity_store_ext::MedousaIdentityMemoryStore>,
     pub mcp_gateway_client: Arc<crate::mcp_gateway_client::McpGatewayClient>,
+    pub provider: String,
+    pub model: String,
+    pub chat_client: Arc<dyn AiChatClient>,
 }
 
 /// An unfinished registry assembled by a deployment recipe.
@@ -726,12 +727,7 @@ impl EmbeddedToolRegistryAssembly {
         self.catalog_handles.push(handle);
     }
 
-    fn finish(
-        mut self,
-    ) -> StasisResult<(Arc<dyn ToolRegistry>, Arc<crate::typed_tools::ToolCatalog>)> {
-        use crate::typed_tools::ToolRegistration as _;
-
-        self.registrar.register_tool(EmbeddedTurnControlTool)?;
+    fn finish(self) -> StasisResult<(Arc<dyn ToolRegistry>, Arc<crate::typed_tools::ToolCatalog>)> {
         let (registry, catalog) = self.registrar.finish();
         for handle in self.catalog_handles {
             handle
@@ -760,66 +756,6 @@ impl EmbeddedToolRegistryRecipe for EmptyEmbeddedToolRegistryRecipe {
         Ok(EmbeddedToolRegistryAssembly::new(
             crate::typed_tools::ToolPlacementIndex::default(),
         ))
-    }
-}
-
-struct EmbeddedTurnControlTool;
-
-#[async_trait::async_trait]
-impl StasisTool for EmbeddedTurnControlTool {
-    fn name(&self) -> &'static str {
-        medousa_runtime::turn_control::COGNITION_TURN
-    }
-
-    fn description(&self) -> Option<&'static str> {
-        Some("Control this foreground turn: update the user, request input, checkpoint, or finish.")
-    }
-
-    fn input_schema(&self) -> Option<serde_json::Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["action"],
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": [
-                        "turn.update_user",
-                        "turn.request_input",
-                        "turn.checkpoint",
-                        "turn.finish"
-                    ]
-                },
-                "message": { "type": "string" },
-                "awaiting": { "type": "string" },
-                "reason": { "type": "string" }
-            },
-            "additionalProperties": false
-        }))
-    }
-
-    async fn invoke(&self, input: serde_json::Value) -> StasisResult<serde_json::Value> {
-        let action = input
-            .get("action")
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim);
-        match action {
-            Some("turn.finish") => Ok(json!({ "ok": true })),
-            Some("turn.update_user" | "turn.request_input" | "turn.checkpoint")
-                if input
-                    .get("message")
-                    .and_then(serde_json::Value::as_str)
-                    .is_some_and(|message| !message.trim().is_empty()) =>
-            {
-                Ok(json!({ "ok": true }))
-            }
-            Some("turn.update_user" | "turn.request_input" | "turn.checkpoint") => Err(
-                StasisError::PortFailure("turn-control message must be non-empty".to_string()),
-            ),
-            _ => Err(StasisError::PortFailure(
-                "turn-control action is outside the embedded foreground capability ceiling"
-                    .to_string(),
-            )),
-        }
     }
 }
 
@@ -1013,6 +949,7 @@ impl EmbeddedDaemon {
         );
         let environment_hub =
             crate::environment_store::EnvironmentHub::new_with_store(environment_files);
+        let environment_hub = crate::environment_store::install_environment_hub(environment_hub);
         let vault_path =
             crate::store_root::StorePath::parse("vault").context("validate embedded vault path")?;
         let vault_files = Arc::new(
@@ -1063,20 +1000,17 @@ impl EmbeddedDaemon {
             .await
             .context("initialize embedded session schema")?;
 
-        let (session_store, locus_memory): (
-            Arc<dyn SessionStore>,
-            Arc<stasis::infrastructure::memory::locus_node_store_factory::LocusMemoryStore>,
-        ) = match &runtime {
-            RuntimeComposition::Surreal(runtime) => {
-                let locus_memory = build_persistent_locus_memory(runtime.job_store.db())
-                    .await
-                    .context("initialize embedded Locus memory")?;
-                (get_session_store(), locus_memory)
-            }
+        let session_store: Arc<dyn SessionStore> = match &runtime {
+            RuntimeComposition::Surreal(_) => get_session_store(),
             RuntimeComposition::InMemory(_) => {
                 bail!("embedded daemon requires its SurrealKV persistence backend")
             }
         };
+        let memory =
+            crate::runtime::memory_bundle::MemoryAdapterBundle::from_runtime_shell(&runtime)
+                .await
+                .context("initialize embedded memory adapters")?;
+        let locus_memory = memory.locus_memory.clone();
         let turn_store = crate::turn_recovery::SessionStoreTurnStore::new(session_store.clone());
         for item in medousa_engine::recover_uncommitted(&turn_log_root) {
             let report =
@@ -1091,18 +1025,9 @@ impl EmbeddedDaemon {
                 "reconciled interrupted embedded turn journal"
             );
         }
-        let memory_reader: Arc<dyn MemoryContextReader> = Arc::new(
-            stasis::infrastructure::memory::locus_context_reader::LocusContextReader::new(
-                locus_memory.clone(),
-            ),
-        );
-        let memory_writer: Arc<dyn MemoryContextWriter> =
-            Arc::new(crate::locus_memory::MedousaLocusContextWriter::new(
-                locus_memory.node_store.clone(),
-                crate::locus_memory::resolve_locus_ingest_profile(),
-            ));
-        let memory_operations: Arc<dyn MemoryOperations> =
-            Arc::new(LocusMemoryOperations::new(locus_memory.clone(), None));
+        let memory_reader = memory.memory_reader.clone();
+        let memory_writer = memory.memory_writer.clone();
+        let memory_operations = memory.memory_operations.clone();
         let locus_service = crate::locus_service::LocusService::new(
             locus_memory.node_store.clone(),
             locus_memory.semantic_index.clone(),
@@ -1125,13 +1050,16 @@ impl EmbeddedDaemon {
             .tool_registry_recipe
             .assemble(EmbeddedToolRegistryBindings {
                 runtime: runtime.clone(),
-                locus: locus_service.clone(),
                 locus_store: locus_memory.node_store.clone(),
                 semantic_index: locus_memory.semantic_index.clone(),
                 memory_reader: memory_reader.clone(),
                 memory_writer: memory_writer.clone(),
                 memory_operations: memory_operations.clone(),
+                identity_store: memory.identity_store.clone(),
                 mcp_gateway_client,
+                provider: config.provider.clone(),
+                model: config.model.clone(),
+                chat_client: config.chat_client.clone(),
             })
             .context("assemble deployment tool registry")?;
         let (tool_registry, _tool_catalog) = tool_assembly
@@ -1143,7 +1071,7 @@ impl EmbeddedDaemon {
         let memory_reader = Some(memory_reader);
         let memory_writer_for_runtime = Some(memory_writer.clone());
         let memory_operations = Some(memory_operations);
-        let identity_store = None;
+        let identity_store = Some(memory.identity_store_dyn());
         match runtime.as_ref() {
             RuntimeComposition::InMemory(runtime) => {
                 crate::daemon_runtime_handlers::register_daemon_runtime_handlers(
@@ -3177,8 +3105,8 @@ query MobileProbe {
                 0 => Ok(text_response(FIRST_REPLY)),
                 1 => pending::<StasisResult<ChatResponse>>().await,
                 2 => Ok(tool_response(
-                    "cognition_grapheme_run",
-                    json!({ "source": GRAPHEME_SOURCE }),
+                    "cognition_capability",
+                    json!({ "action": "grapheme.invoke", "script": GRAPHEME_SOURCE }),
                 )),
                 3 => Ok(tool_response(
                     medousa_runtime::turn_control::COGNITION_TURN,
@@ -3507,7 +3435,12 @@ query MobileProbe {
         assert!(
             crate::mobile_tool_registry::PERSONAL_MOBILE_TOOL_NAMES
                 .iter()
-                .all(|name| tool_names.contains(name))
+                .all(|name| tool_names.contains(name)),
+            "missing expected mobile tools: {:?}",
+            crate::mobile_tool_registry::PERSONAL_MOBILE_TOOL_NAMES
+                .iter()
+                .filter(|name| !tool_names.contains(name))
+                .collect::<Vec<_>>()
         );
         assert!(tool_names.iter().all(|name| {
             !["pty", "forge", "coder", "detamu"]
@@ -3799,7 +3732,7 @@ query MobileProbe {
             grapheme_events.last().map(|event| &event.event),
             Some(TurnStreamEventV2::Final { text, tool_names })
                 if text == GRAPHEME_REPLY
-                    && tool_names.iter().any(|name| name == "cognition_grapheme_run")
+                    && tool_names.iter().any(|name| name == "cognition_capability")
         ));
 
         let schedule = client
