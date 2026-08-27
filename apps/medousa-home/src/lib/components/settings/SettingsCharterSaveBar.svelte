@@ -1,10 +1,7 @@
 <script lang="ts">
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
-  import { isTauriMobilePlatform } from "$lib/platform";
-  import { workshopConfigOnHostHint } from "$lib/platformCopy";
 
   interface Props {
-    mobile?: boolean;
     /**
      * Runs immediately before `workshopDefaults.save()` (e.g. flush textarea → draft).
      * Return `false` to abort save (e.g. user declined a confirm).
@@ -13,19 +10,12 @@
     onSaved?: () => void | Promise<void>;
   }
 
-  let { mobile = false, beforeSave, onSaved }: Props = $props();
-
-  const mobileReadOnly = $derived(mobile && isTauriMobilePlatform());
+  let { beforeSave, onSaved }: Props = $props();
   const dirty = $derived(workshopDefaults.dirty);
 </script>
 
 {#if workshopDefaults.loading}
   <p class="workshop-faint text-sm">Loading settings…</p>
-{:else if mobileReadOnly}
-  <p class="workshop-faint rounded-container-token border border-surface-500/35 bg-surface-900/40 px-3 py-2 text-xs leading-relaxed">
-    {workshopConfigOnHostHint()} See
-    <span class="font-mono text-content-tertiary">tui_defaults.json</span> in Workshop → Files & diagnostics.
-  </p>
 {:else}
   <div class="settings-save-bar">
     <button

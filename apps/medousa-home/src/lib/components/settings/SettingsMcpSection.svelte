@@ -10,14 +10,8 @@
     type HomePackageRow,
     type PackageProgressEvent,
   } from "$lib/utils/packagesApi";
-  import { isTauri } from "$lib/window";
+  import { isTauriDesktop } from "$lib/platform";
   import { onThisHostPhrase } from "$lib/platformCopy";
-
-  interface Props {
-    mobile?: boolean;
-  }
-
-  let { mobile = false }: Props = $props();
 
   let gatewayPackage = $state<HomePackageRow | null>(null);
   let loadingPackage = $state(true);
@@ -26,7 +20,7 @@
   let progress = $state<PackageProgressEvent | null>(null);
   let unlisten: (() => void) | null = null;
 
-  const desktop = $derived(isTauri() && !mobile);
+  const desktop = $derived(isTauriDesktop());
 
   async function refreshGatewayPackage() {
     if (!desktop) {

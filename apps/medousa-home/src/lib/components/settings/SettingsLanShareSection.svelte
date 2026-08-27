@@ -35,16 +35,18 @@
     isMissingCapabilityError,
   } from "$lib/utils/normieErrors";
   import { reconnectWorkshop } from "$lib/workshopConnection";
+  import { isTauriDesktop } from "$lib/platform";
   import { isTauri } from "$lib/window";
   import { ChevronDown, Share2, Upload } from "@lucide/svelte";
 
   interface Props {
     mobile?: boolean;
+    nativeWorkloads?: boolean;
     /** Omit page chrome when nested under Sharing. */
     embedded?: boolean;
   }
 
-  let { mobile = false, embedded = false }: Props = $props();
+  let { mobile = false, nativeWorkloads = true, embedded = false }: Props = $props();
 
   let backupOpen = $state(false);
 
@@ -95,7 +97,7 @@
   }
 
   async function refreshLanPairing() {
-    if (!isTauri()) return;
+    if (!isTauriDesktop()) return;
     try {
       lanPairing = await getLanPairingStatus();
     } catch (err) {
@@ -107,7 +109,7 @@
   }
 
   async function refreshConnectionPrefs() {
-    if (!isTauri() || mobile) return;
+    if (!isTauriDesktop()) return;
     try {
       connectionPrefs = await loadConnectionPrefs();
     } catch {
@@ -164,7 +166,7 @@
   }
 
   async function togglePublicBind(enabled: boolean) {
-    if (!isTauri() || mobile) return;
+    if (!isTauriDesktop()) return;
     reachBusy = true;
     error = null;
     success = null;
@@ -185,6 +187,7 @@
   }
 
   async function toggleLanPairing(enabled: boolean) {
+    if (!isTauriDesktop()) return;
     lanBusy = true;
     error = null;
     success = null;
@@ -330,7 +333,7 @@
   {/if}
 
   <div class="nearby-stack">
-    {#if isTauri() && !mobile}
+    {#if isTauriDesktop()}
       <label class="nearby-tile">
         <span class="nearby-tile-copy">
           <span class="nearby-tile-title">Always reachable on Wi‑Fi</span>
@@ -353,7 +356,8 @@
       </label>
     {/if}
 
-    <label class="nearby-tile">
+    {#if isTauriDesktop()}
+      <label class="nearby-tile">
       <span class="nearby-tile-copy">
         <span class="nearby-tile-title">Open pairing window</span>
         <span class="nearby-tile-meta">
@@ -374,7 +378,8 @@
         onchange={(event) =>
           void toggleLanPairing((event.currentTarget as HTMLInputElement).checked)}
       />
-    </label>
+      </label>
+    {/if}
 
     <button type="button" class="nearby-tile nearby-tile-action" onclick={openPeers}>
       <span class="nearby-tile-copy">
@@ -463,7 +468,8 @@
       </details>
     {/if}
 
-    <details class="nearby-more" bind:open={backupOpen}>
+    {#if nativeWorkloads}
+      <details class="nearby-more" bind:open={backupOpen}>
       <summary class="nearby-more-summary">
         <span class="nearby-more-summary-copy">
           <span>Canvas backup & send</span>
@@ -567,7 +573,8 @@
           </div>
         {/if}
       </div>
-    </details>
+      </details>
+    {/if}
 
     {#if error}
       <p class="nearby-feedback nearby-feedback-error">{error}</p>

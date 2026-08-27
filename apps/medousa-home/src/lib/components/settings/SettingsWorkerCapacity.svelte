@@ -1,14 +1,7 @@
 <script lang="ts">
   import { getRuntimeWorkerConfig, putRuntimeWorkerConfig } from "$lib/daemon";
-  import { isTauriMobilePlatform } from "$lib/platform";
   import { workshops } from "$lib/stores/workshops.svelte";
   import type { RuntimeWorkerConfig } from "$lib/types/runtime";
-
-  interface Props {
-    mobile?: boolean;
-  }
-
-  let { mobile = false }: Props = $props();
 
   type ShareKey = "agents" | "scheduled" | "delivery" | "maintenance";
 
@@ -36,7 +29,6 @@
   let message = $state<string | null>(null);
   let error = $state<string | null>(null);
 
-  const readOnly = $derived(mobile && isTauriMobilePlatform());
   const reserved = $derived(
     draft.agents + draft.scheduled + draft.delivery + draft.maintenance,
   );
@@ -91,7 +83,7 @@
   }
 
   async function save() {
-    if (validationError || readOnly) return;
+    if (validationError) return;
     saving = true;
     error = null;
     message = null;
@@ -134,7 +126,7 @@
           step="1"
           inputmode="numeric"
           value={draft.maxInFlight}
-          disabled={readOnly || saving}
+          disabled={saving}
           aria-label="Global worker capacity"
           oninput={(event) => setNumber("maxInFlight", event)}
         />
@@ -152,7 +144,7 @@
             step="1"
             inputmode="numeric"
             value={draft[field.key]}
-            disabled={readOnly || saving}
+            disabled={saving}
             aria-label="{field.label} preferred worker share"
             oninput={(event) => setNumber(field.key, event)}
           />
@@ -166,8 +158,7 @@
         <span aria-hidden="true">·</span>
         <span>Changes apply after an engine restart</span>
       </div>
-      {#if !readOnly}
-        <div class="capacity-actions">
+      <div class="capacity-actions">
           <button
             type="button"
             class="btn btn-sm variant-ghost-surface"
@@ -187,8 +178,7 @@
           >
             {saving ? "Saving…" : "Save capacity"}
           </button>
-        </div>
-      {/if}
+      </div>
     </div>
 
     {#if validationError}

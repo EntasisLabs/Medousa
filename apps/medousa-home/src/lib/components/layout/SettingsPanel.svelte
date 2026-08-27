@@ -13,6 +13,7 @@
   import { peerUnreadCount } from "$lib/utils/lanShareApi";
   import { appUpdate } from "$lib/stores/appUpdate.svelte";
   import { isTauri } from "$lib/window";
+  import { isTauriDesktop } from "$lib/platform";
   import type { SettingsSectionId } from "$lib/types/settings";
   import {
     loadSettingsAgentSection,
@@ -47,6 +48,10 @@
   let unreadTimer: ReturnType<typeof setInterval> | null = null;
   const activeSection = $derived(settingsNav.activeSection);
   const shellNav = $derived(!mobile && !embedded);
+  const nativeWorkloads = $derived(
+    health?.runtime?.advertised_capabilities.includes("deployment.native-workloads") ??
+      isTauriDesktop(),
+  );
 
   async function refreshNearbyUnread() {
     if (!isTauri()) return;
@@ -133,19 +138,25 @@
 
     <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4">
       {#if activeSection === "preferences"}
-        <LazyFeatureView loader={loadSettingsPreferencesSection} {mobile} />
+        <LazyFeatureView loader={loadSettingsPreferencesSection} />
       {:else if activeSection === "agent"}
-        <LazyFeatureView loader={loadSettingsAgentSection} {mobile} />
+        <LazyFeatureView loader={loadSettingsAgentSection} {nativeWorkloads} />
       {:else if activeSection === "runtime"}
-        <LazyFeatureView loader={loadSettingsRuntimeSection} {mobile} />
+        <LazyFeatureView loader={loadSettingsRuntimeSection} {nativeWorkloads} />
       {:else if activeSection === "network"}
-        <LazyFeatureView loader={loadSettingsNetworkSection} {mobile} {visible} {health} />
+        <LazyFeatureView
+          loader={loadSettingsNetworkSection}
+          {mobile}
+          {visible}
+          {health}
+          {nativeWorkloads}
+        />
       {:else if activeSection === "connections"}
-        <LazyFeatureView loader={loadSettingsConnectionsSection} />
+        <LazyFeatureView loader={loadSettingsConnectionsSection} {nativeWorkloads} />
       {:else if activeSection === "packages"}
-        <LazyFeatureView loader={loadSettingsPackagesSection} {mobile} />
+        <LazyFeatureView loader={loadSettingsPackagesSection} />
       {:else if activeSection === "mcp"}
-        <LazyFeatureView loader={loadSettingsMcpSection} {mobile} />
+        <LazyFeatureView loader={loadSettingsMcpSection} />
       {:else}
         <LazyFeatureView
           loader={loadSettingsBasementSection}

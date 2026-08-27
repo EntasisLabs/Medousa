@@ -4,7 +4,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import { isTauri } from "$lib/window";
+import { isTauriDesktop } from "$lib/platform";
 
 export type AccountAuthStatus = "signed_in" | "signed_out" | "unknown";
 
@@ -30,7 +30,7 @@ export interface DeviceAuthStart {
 }
 
 export function accountConnectionsSupported(): boolean {
-  return isTauri();
+  return isTauriDesktop();
 }
 
 export async function probeAccountConnections(): Promise<AccountConnections> {

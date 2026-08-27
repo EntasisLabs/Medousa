@@ -65,14 +65,6 @@ export function workshopHostBadge(): string {
   return "Workshop";
 }
 
-export function workshopConfigOnHostHint(): string {
-  return `Configured on ${workshopHostPhrase()}. Change Models and Voice in Settings on the host, or edit tui_defaults.json.`;
-}
-
-export function workshopCharterOnHostHint(): string {
-  return `Workshop charter lives on the host daemon. Change Memory and Voice in Settings on the host, or edit tui_defaults.json.`;
-}
-
 export function workshopModelOnHostHint(): string {
   return `Model is set on ${workshopHostPhrase()}`;
 }
@@ -107,14 +99,6 @@ export function workshopPairingStepsHint(): string {
 
 export function workshopPairingManagedHint(): string {
   return `Pairing is managed on ${workshopHostPhrase()}. Open Medousa → Settings → Sharing to show the QR code.`;
-}
-
-export function workshopRetentionReadHint(): string {
-  return "Managed on the workshop host — open Settings → Rhythm there to change.";
-}
-
-export function workshopRetentionLocalHint(): string {
-  return "Saved with workshop defaults on the host.";
 }
 
 export function workshopRuntimeReadHint(): string {
