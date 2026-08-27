@@ -80,10 +80,10 @@ fn worker_turn_scope(record: &TurnWorkRecord) -> TurnContinuationScope {
         supports_ui_artifacts: canvas_lane,
         supports_liquid_markdown: record.supports_liquid_markdown,
         supports_browser_host: record.supports_browser_host,
-        channel_surface: Some(if record.disposition == TurnWorkDisposition::Bound {
-            "workshop-canvas".to_string()
-        } else {
-            "worker".to_string()
+        channel_surface: Some(match record.disposition {
+            TurnWorkDisposition::Bound => "workshop-canvas".to_string(),
+            TurnWorkDisposition::Delegated => "delegated-worker".to_string(),
+            TurnWorkDisposition::Parallel => "worker".to_string(),
         }),
     }
 }
@@ -905,6 +905,7 @@ async fn run_worker_turn_inner(
         .await;
 
     let is_bound_workshop = record.disposition == TurnWorkDisposition::Bound;
+    let is_delegated = record.disposition == TurnWorkDisposition::Delegated;
     if is_bound_workshop && let Some(started) = store.get(&work_id) {
         crate::feed_adapters::publish_workshop_started(&started).await;
     }
@@ -916,13 +917,22 @@ async fn run_worker_turn_inner(
         .and_then(|capsule| capsule.manuscript.as_ref())
         .map(|manuscript| manuscript.tools_allow.as_slice())
         .unwrap_or(&[] as &[String]);
-    let allowlist = super::policy::worker_allowlist_for_intent_and_tools(intent, manuscript_tools);
+    let allowlist = if is_delegated {
+        super::policy::remote_delegated_tool_ceiling()
+    } else {
+        super::policy::worker_allowlist_for_intent_and_tools(intent, manuscript_tools)
+    };
     let session_registry = Arc::new(WorkerSessionToolRegistry::new(
         ctx.tool_registry.clone(),
         record.session_id.clone(),
     ));
     let canvas_lane = worker_canvas_lane_enabled(is_bound_workshop, &record);
-    let filtered_registry: Arc<dyn ToolRegistry> = if canvas_lane {
+    let filtered_registry: Arc<dyn ToolRegistry> = if is_delegated {
+        Arc::new(AllowlistToolRegistry::delegated(
+            session_registry,
+            allowlist,
+        ))
+    } else if canvas_lane {
         Arc::new(SessionBootstrapToolRegistry::bound_workshop(
             session_registry,
             record.session_id.clone(),
@@ -1221,6 +1231,9 @@ async fn deliver_worker_parent_outcome(
     stream_turn_id: u64,
     is_bound_workshop: bool,
 ) {
+    if record.disposition == TurnWorkDisposition::Delegated {
+        return;
+    }
     if is_bound_workshop {
         match record.status {
             TurnWorkStatus::Completed => {
@@ -1254,6 +1267,9 @@ pub async fn resume_synthesis_if_needed(
     sink: SharedAgentStreamSink,
     agent: Option<&TuiRuntime>,
 ) {
+    if record.disposition == TurnWorkDisposition::Delegated {
+        return;
+    }
     if parallel_worker_uses_host_resume(record.disposition) {
         let Some(agent) = agent else {
             tracing::warn!(

@@ -4,6 +4,10 @@
 use std::sync::Arc;
 
 #[cfg(target_os = "ios")]
+use medousa::delegated_task::{
+    DelegatedTaskError, DelegatedTaskRequest, DelegatedTaskResult, DelegatedTaskTransport,
+};
+#[cfg(target_os = "ios")]
 use medousa::embedded_daemon::{
     CredentialProvider, EmbeddedDaemon, EmbeddedDaemonClient, EmbeddedDaemonConfig,
     ProviderCredential, ProviderCredentialError,
@@ -135,6 +139,56 @@ impl Default for EmbeddedDaemonState {
 }
 
 #[cfg(target_os = "ios")]
+#[tauri::command]
+pub async fn embedded_delegation_binding(
+    state: tauri::State<'_, EmbeddedDaemonState>,
+) -> Result<Option<medousa::delegation::DelegationBinding>, String> {
+    let client = state
+        .client_if_active()
+        .await?
+        .ok_or_else(|| "Select Personal to manage its delegation binding".to_string())?;
+    client
+        .delegation_binding()
+        .await
+        .map_err(|error| format!("load delegation binding: {error:#}"))
+}
+
+#[cfg(target_os = "ios")]
+#[tauri::command]
+pub async fn embedded_set_delegation_binding(
+    state: tauri::State<'_, EmbeddedDaemonState>,
+    workshop_id: String,
+) -> Result<medousa::delegation::DelegationBinding, String> {
+    let workshop_id = workshop_id.trim().to_string();
+    let target = tokio::task::spawn_blocking(move || delegation_target_for(&workshop_id))
+        .await
+        .map_err(|_| "delegation binding lookup failed".to_string())??;
+    let client = state
+        .client_if_active()
+        .await?
+        .ok_or_else(|| "Select Personal to manage its delegation binding".to_string())?;
+    client
+        .set_delegation_binding(target)
+        .await
+        .map_err(|error| format!("set delegation binding: {error:#}"))
+}
+
+#[cfg(target_os = "ios")]
+#[tauri::command]
+pub async fn embedded_clear_delegation_binding(
+    state: tauri::State<'_, EmbeddedDaemonState>,
+) -> Result<bool, String> {
+    let client = state
+        .client_if_active()
+        .await?
+        .ok_or_else(|| "Select Personal to manage its delegation binding".to_string())?;
+    client
+        .clear_delegation_binding()
+        .await
+        .map_err(|error| format!("clear delegation binding: {error:#}"))
+}
+
+#[cfg(target_os = "ios")]
 async fn embedded_workshop_selected() -> Result<bool, String> {
     tokio::task::spawn_blocking(|| {
         Ok(matches!(
@@ -218,10 +272,141 @@ async fn boot_embedded_daemon() -> Result<Arc<EmbeddedDaemon>, String> {
     .map_err(|error| format!("configure embedded daemon inference: {error:#}"))?
     .with_tool_registry_recipe(Arc::new(
         medousa::mobile_tool_registry::PersonalMobileToolRegistryRecipe,
-    ));
+    ))
+    .with_delegated_task_transport(Arc::new(HomeDelegatedTaskTransport));
     EmbeddedDaemon::boot(config)
         .await
         .map_err(|error| format!("boot embedded daemon: {error:#}"))
+}
+
+/// Native adapter for the daemon's transport port. The runtime supplies the
+/// exact persisted binding; Home only resolves that route and authenticates it.
+#[cfg(target_os = "ios")]
+#[derive(Debug)]
+struct HomeDelegatedTaskTransport;
+
+#[cfg(target_os = "ios")]
+#[async_trait::async_trait]
+impl DelegatedTaskTransport for HomeDelegatedTaskTransport {
+    async fn dispatch(
+        &self,
+        target: &medousa::delegation::DelegationTarget,
+        request: DelegatedTaskRequest,
+    ) -> Result<DelegatedTaskResult, DelegatedTaskError> {
+        let target = target.clone();
+        let config = tokio::task::spawn_blocking(move || delegation_transport_for(&target))
+            .await
+            .map_err(|_| DelegatedTaskError::transport("paired transport lookup failed"))?
+            .map_err(DelegatedTaskError::transport)?;
+        let wrapped = crate::mesh_envelope::wrap_payload_for_workshop(
+            &config,
+            crate::mesh_envelope::CAP_TASK_REQUEST,
+            request,
+        )
+        .map_err(DelegatedTaskError::transport)?;
+        let response: crate::mesh_envelope::MeshEnvelopedRequest<DelegatedTaskResult> =
+            crate::workshop_transport::workshop_post_json(
+                &config,
+                "/v1/mesh/tasks",
+                &wrapped,
+            )
+            .await
+            .map_err(DelegatedTaskError::transport)?;
+        crate::mesh_envelope::verify_payload_from_workshop(
+            &config,
+            &response,
+            crate::mesh_envelope::CAP_TASK_RESULT,
+        )
+        .map_err(DelegatedTaskError::transport)?;
+        if response.payload.terminal.participant_id.as_deref().map(str::trim)
+            != Some(config.workshop_device_id.trim())
+        {
+            return Err(DelegatedTaskError::transport(
+                "delegated terminal participant does not match the authenticated workshop",
+            ));
+        }
+        Ok(response.payload)
+    }
+}
+
+#[cfg(target_os = "ios")]
+fn delegation_transport_for(
+    target: &medousa::delegation::DelegationTarget,
+) -> Result<crate::pairing_client::WorkshopTransportConfig, String> {
+    let registry = crate::workshop_registry::ensure_migrated()?;
+    let workshop = registry
+        .workshops
+        .iter()
+        .find(|workshop| workshop.id == target.route_ref)
+        .ok_or_else(|| "Bound delegation workshop no longer exists".to_string())?;
+    if !crate::workshop_registry::is_portal_kind(&workshop.kind) {
+        return Err("Bound delegation route is not a portal workshop".to_string());
+    }
+    let pairing = workshop
+        .pairing
+        .as_ref()
+        .ok_or_else(|| "Bound delegation workshop is no longer paired".to_string())?;
+    if pairing.workshop_device_id.trim() != target.peer_device_id.trim() {
+        return Err("Bound delegation identity no longer matches the paired workshop".to_string());
+    }
+    let config = crate::pairing_client::load_workshop_transport_config_for_id(
+        &workshop.id,
+        &workshop.url,
+    )
+    .ok_or_else(|| "Bound workshop transport credentials are unavailable".to_string())?;
+    if config.workshop_device_id.trim() != target.peer_device_id.trim() {
+        return Err("Stored transport identity does not match the delegation binding".to_string());
+    }
+    if config.session_token.is_none() {
+        return Err("Bound workshop bearer credential is unavailable".to_string());
+    }
+    if config.daemon_public_key.is_none() {
+        return Err(
+            "Bound workshop identity is not pinned; pair it again before delegating work"
+                .to_string(),
+        );
+    }
+    Ok(config)
+}
+
+#[cfg(target_os = "ios")]
+fn delegation_target_for(
+    workshop_id: &str,
+) -> Result<medousa::delegation::DelegationTarget, String> {
+    let registry = crate::workshop_registry::ensure_migrated()?;
+    let workshop = registry
+        .workshops
+        .iter()
+        .find(|workshop| workshop.id == workshop_id)
+        .ok_or_else(|| format!("Unknown workshop '{workshop_id}'"))?;
+    if workshop.id == crate::workshop_registry::PERSONAL_WORKSHOP_ID
+        || !crate::workshop_registry::is_portal_kind(&workshop.kind)
+    {
+        return Err("Delegation requires a paired portal workshop".to_string());
+    }
+    let pairing = workshop
+        .pairing
+        .as_ref()
+        .ok_or_else(|| "Delegation workshop is not paired".to_string())?;
+    let config = crate::pairing_client::load_workshop_transport_config_for_id(
+        &workshop.id,
+        &workshop.url,
+    )
+    .ok_or_else(|| "Delegation workshop credentials are unavailable".to_string())?;
+    if config.session_token.is_none() || config.daemon_public_key.is_none() {
+        return Err(
+            "Reconnect this workshop before delegation so its bearer and identity are pinned"
+                .to_string(),
+        );
+    }
+    if config.workshop_device_id.trim() != pairing.workshop_device_id.trim() {
+        return Err("Workshop registry and pairing identity disagree".to_string());
+    }
+    Ok(medousa::delegation::DelegationTarget {
+        route_ref: workshop.id.clone(),
+        peer_device_id: pairing.workshop_device_id.clone(),
+        label: Some(workshop.label.clone()),
+    })
 }
 
 #[cfg(target_os = "ios")]

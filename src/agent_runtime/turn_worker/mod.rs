@@ -18,8 +18,9 @@ pub use model_routing::{
     default_stage_role_for_intent, resolve_worker_llm_target, resolve_worker_llm_target_with_matrix,
 };
 pub use policy::{
-    MOBILE_FOREGROUND_TOOL_CEILING, TurnWorkerIntent, allowed_tool_names_for_intent,
-    host_bus_tool_names, max_worker_tool_rounds, mobile_foreground_tool_ceiling, tool_allowed,
+    MOBILE_FOREGROUND_TOOL_CEILING, REMOTE_DELEGATED_TOOL_CEILING, TurnWorkerIntent,
+    allowed_tool_names_for_intent, host_bus_tool_names, max_worker_tool_rounds,
+    mobile_foreground_tool_ceiling, remote_delegated_tool_ceiling, tool_allowed,
 };
 pub use prompts::{
     host_system_prompt_for_parent_mode, system_prompt_for_host_profile, worker_system_prompt,
@@ -42,7 +43,7 @@ pub use run::{
 };
 pub use status::{append_active_workers_hint, format_active_workers_block};
 pub use store::{
-    BoundWorkshopAdmissionError, BoundWorkshopMutationError, TurnWorkDisposition, TurnWorkRecord,
-    TurnWorkStatus, TurnWorkerMutationError, TurnWorkerStore, WorkerExecutionLease,
-    WorkerExecutionRegistrationError, WorkerToolActivity, turn_worker_store,
+    BoundWorkshopAdmissionError, BoundWorkshopMutationError, DelegatedWorkAdmissionError,
+    TurnWorkDisposition, TurnWorkRecord, TurnWorkStatus, TurnWorkerMutationError, TurnWorkerStore,
+    WorkerExecutionLease, WorkerExecutionRegistrationError, WorkerToolActivity, turn_worker_store,
 };

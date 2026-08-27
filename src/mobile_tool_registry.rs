@@ -21,6 +21,7 @@ use crate::typed_tools::ToolCatalogHandle;
 pub const PERSONAL_MOBILE_TOOL_NAMES: &[&str] = &[
     "cognition_tools_discover",
     "cognition_web_search",
+    "cognition_delegate",
     "cognition_capability",
     "cognition_schema",
     "cognition_runtime_query",
@@ -109,6 +110,7 @@ impl EmbeddedToolRegistryRecipe for PersonalMobileToolRegistryRecipe {
             catalog_handle: catalog_handle.clone(),
             capability_registry: Arc::new(RwLock::new(CapabilityRegistry::with_loaded_manifest())),
             mcp_gateway_client: bindings.mcp_gateway_client,
+            delegation_service: bindings.delegation_service,
         };
         crate::tool_registration_groups::register_portable_foundation_tools(
             assembly.registrar(),

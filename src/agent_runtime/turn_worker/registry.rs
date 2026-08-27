@@ -77,6 +77,7 @@ pub struct AllowlistToolRegistry {
     inner: Arc<dyn ToolRegistry>,
     allowlist: HashSet<String>,
     include_public_api: bool,
+    delegated_finish_only: bool,
 }
 
 impl AllowlistToolRegistry {
@@ -85,6 +86,7 @@ impl AllowlistToolRegistry {
             inner,
             allowlist,
             include_public_api: true,
+            delegated_finish_only: false,
         }
     }
 
@@ -99,6 +101,16 @@ impl AllowlistToolRegistry {
             inner,
             allowlist,
             include_public_api: false,
+            delegated_finish_only: false,
+        }
+    }
+
+    pub fn delegated(inner: Arc<dyn ToolRegistry>, allowlist: HashSet<String>) -> Self {
+        Self {
+            inner,
+            allowlist,
+            include_public_api: false,
+            delegated_finish_only: true,
         }
     }
 
@@ -235,7 +247,31 @@ impl ToolRegistry for AllowlistToolRegistry {
         let tools = self.inner.list_tools().await?;
         Ok(tools
             .into_iter()
-            .filter(|tool| self.allows(tool.name.as_str()))
+            .filter_map(|mut tool| {
+                if !self.allows(tool.name.as_str()) {
+                    return None;
+                }
+                if self.delegated_finish_only
+                    && tool.name.as_str() == crate::public_api::COGNITION_TURN
+                {
+                    tool.description = Some(
+                        "Finish authenticated delegated work and return its final result."
+                            .to_string(),
+                    );
+                    tool.schema = Some(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "action": { "type": "string", "enum": ["turn.finish"] },
+                            "message": { "type": "string", "minLength": 1 },
+                            "reason": { "type": "string" }
+                        },
+                        "required": ["action", "message"],
+                        "additionalProperties": false
+                    }));
+                    tool.strict = Some(true);
+                }
+                Some(tool)
+            })
             .collect())
     }
 
@@ -244,6 +280,14 @@ impl ToolRegistry for AllowlistToolRegistry {
             return Err(StasisError::PortFailure(format!(
                 "tool not allowed in this turn profile: {tool_name}"
             )));
+        }
+        if self.delegated_finish_only
+            && tool_name == crate::public_api::COGNITION_TURN
+            && input.get("action").and_then(Value::as_str) != Some("turn.finish")
+        {
+            return Err(StasisError::PortFailure(
+                "delegated workers may only use cognition_turn action=turn.finish".to_string(),
+            ));
         }
         self.inner.invoke_tool(tool_name, input).await
     }

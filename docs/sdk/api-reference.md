@@ -44,6 +44,11 @@ this generic HTTP client rather than a dedicated typed SDK accessor. See the
 [Forge engine guide](../engine/forge.md) and the
 [HTTP route index](../engine/http-api.md#forge-undertakings).
 
+Daemon delegation uses the generated native-only operation
+`mesh.tasks.post`. Application clients should not construct it directly: the
+daemon owns Stasis turn identity, bounded context, retries, and provenance,
+while the native host supplies the paired signed transport.
+
 ---
 
 ## `ingest()`

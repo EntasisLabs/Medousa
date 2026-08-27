@@ -26,6 +26,7 @@
   import {
     meshListLocalPeers,
     meshSetPeerRendezvous,
+    meshSetPeerTaskRequest,
     type MeshPeerGrantRow,
   } from "$lib/utils/meshIntroApi";
   import { workshopBasementRestartHint } from "$lib/platformCopy";
@@ -136,6 +137,25 @@
       success = enabled
         ? `Rendezvous on for ${updated.displayName}.`
         : `Rendezvous off for ${updated.displayName}.`;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      meshBusy = false;
+    }
+  }
+
+  async function toggleTaskRequest(peer: MeshPeerGrantRow, enabled: boolean) {
+    meshBusy = true;
+    error = null;
+    success = null;
+    try {
+      const updated = await meshSetPeerTaskRequest(peer.deviceId, enabled);
+      meshPeers = meshPeers.map((entry) =>
+        entry.deviceId === updated.deviceId ? updated : entry,
+      );
+      success = enabled
+        ? `Delegated work on for ${updated.displayName}.`
+        : `Delegated work off for ${updated.displayName}.`;
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -400,24 +420,44 @@
             Let paired clients introduce each other. Addresses stay private until both consent.
           </p>
           {#each meshPeers as peer (peer.deviceId)}
-            <label class="nearby-tile">
-              <span class="nearby-tile-copy">
-                <span class="nearby-tile-title">{peer.displayName}</span>
-                <span class="nearby-tile-meta">{peer.role}</span>
-              </span>
-              <input
-                type="checkbox"
-                class="nearby-switch"
-                checked={peer.rendezvous}
-                disabled={meshBusy}
-                aria-label="Rendezvous for {peer.displayName}"
-                onchange={(event) =>
-                  void toggleRendezvous(
-                    peer,
-                    (event.currentTarget as HTMLInputElement).checked,
-                  )}
-              />
-            </label>
+            <div class="nearby-stack">
+              <label class="nearby-tile">
+                <span class="nearby-tile-copy">
+                  <span class="nearby-tile-title">{peer.displayName}</span>
+                  <span class="nearby-tile-meta">Let this client introduce peers</span>
+                </span>
+                <input
+                  type="checkbox"
+                  class="nearby-switch"
+                  checked={peer.rendezvous}
+                  disabled={meshBusy}
+                  aria-label="Rendezvous for {peer.displayName}"
+                  onchange={(event) =>
+                    void toggleRendezvous(
+                      peer,
+                      (event.currentTarget as HTMLInputElement).checked,
+                    )}
+                />
+              </label>
+              <label class="nearby-tile">
+                <span class="nearby-tile-copy">
+                  <span class="nearby-tile-title">Run delegated work</span>
+                  <span class="nearby-tile-meta">Allow {peer.displayName} to send bounded tasks</span>
+                </span>
+                <input
+                  type="checkbox"
+                  class="nearby-switch"
+                  checked={peer.taskRequest}
+                  disabled={meshBusy}
+                  aria-label="Delegated work for {peer.displayName}"
+                  onchange={(event) =>
+                    void toggleTaskRequest(
+                      peer,
+                      (event.currentTarget as HTMLInputElement).checked,
+                    )}
+                />
+              </label>
+            </div>
           {/each}
         </div>
       </details>

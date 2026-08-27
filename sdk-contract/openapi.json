@@ -22831,6 +22831,57 @@
         }
       }
     },
+    "/v1/mesh/tasks": {
+      "post": {
+        "operationId": "mesh.tasks.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "MESH_TASKS_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "mesh.tasks.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mesh.tasks.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mesh.tasks.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1048576,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "peer.exchange"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "peer_exchange",
+          "trust_group": "peer_exchange"
+        }
+      }
+    },
     "/v1/models/capabilities": {
       "get": {
         "operationId": "models.capabilities.get",

@@ -708,6 +708,20 @@ operator-issued, unexpired, single-use invite can enter the ceremony.
 
 Cookbook: [mobile-and-lan.md](../cookbook/mobile-and-lan.md)
 
+## Explicit daemon delegation
+
+`POST /v1/mesh/tasks` is a native-only daemon-to-daemon route. It requires all
+of the following: an authenticated pairing bearer, an explicit `task.request`
+grant on that pairing, and a signed mesh envelope whose sender and recipient
+exactly match the paired identities. The body carries a bounded Stasis
+`TurnGranted` request; the response is a signed `task.result` envelope with the
+remote execution and session-derivation provenance.
+
+Pairing does not enable this route. The source daemon also needs a separate,
+revocable delegation binding created by an explicit user action. Binding sends
+no traffic, does not select a portal, and does not merge either workshop's
+session catalog.
+
 ## Local credential operations
 
 These native-only administration routes require `admin.identity`. They never

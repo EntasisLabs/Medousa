@@ -157,6 +157,7 @@ pub(crate) async fn assemble_tui_runtime(
         worker_scheduler: worker_scheduler.clone(),
         capability_registry: capability_registry.clone(),
         mcp_gateway_client: mcp_gateway_client.clone(),
+        delegation_service: None,
     };
     crate::tool_registration_groups::register_portable_foundation_tools(
         &mut tool_registry,

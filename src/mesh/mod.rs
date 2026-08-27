@@ -17,6 +17,7 @@ pub mod outbox;
 pub mod receipts;
 pub mod registry;
 mod store_io;
+pub mod task;
 
 pub use envelope::{
     DEFAULT_ENVELOPE_TTL_SECS, MeshCapability, MeshEnvelope, MeshEnvelopeError,
@@ -25,9 +26,11 @@ pub use envelope::{
 };
 pub use grants::{
     CAP_CLIENT_RELAY, CAP_CLIENT_RENDEZVOUS, CAP_MESH_BUNDLE_PUSH, CAP_MESH_MESSAGE,
-    CAP_TASK_REQUEST, default_mesh_grants_for_role, effective_mesh_grants, record_has_capability,
+    CAP_TASK_REQUEST, CAP_TASK_RESULT, default_mesh_grants_for_role, effective_mesh_grants,
+    record_has_capability,
 };
 pub use handlers::{MeshApiState, mesh_router};
 pub use intros::{MeshIntroCandidate, MeshIntroRecord, MeshIntroStatus};
 pub use receipts::{CAP_MESH_RECEIPT, MeshReceipt, MeshReceiptStatus};
 pub use registry::{MeshPeerEndpoints, MeshPeerRecord};
+pub use task::{DaemonDelegatedTaskExecutor, DelegatedTaskExecutor};

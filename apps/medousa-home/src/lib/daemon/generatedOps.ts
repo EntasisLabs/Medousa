@@ -271,6 +271,7 @@ export const OPERATIONS = {
   "mesh.peers.get": { id: "mesh.peers.get", method: "GET", path: "/v1/mesh/peers", streaming: false },
   "mesh.receipts.get": { id: "mesh.receipts.get", method: "GET", path: "/v1/mesh/receipts", streaming: false },
   "mesh.receipts.post": { id: "mesh.receipts.post", method: "POST", path: "/v1/mesh/receipts", streaming: false },
+  "mesh.tasks.post": { id: "mesh.tasks.post", method: "POST", path: "/v1/mesh/tasks", streaming: false },
   "models.capabilities.get": { id: "models.capabilities.get", method: "GET", path: "/v1/models/capabilities", streaming: false },
   "models.catalog.get": { id: "models.catalog.get", method: "GET", path: "/v1/models/catalog", streaming: false },
   "models.catalog.refresh.post": { id: "models.catalog.refresh.post", method: "POST", path: "/v1/models/catalog/refresh", streaming: false },

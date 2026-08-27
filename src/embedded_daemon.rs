@@ -690,6 +690,7 @@ pub struct EmbeddedToolRegistryBindings {
     pub provider: String,
     pub model: String,
     pub chat_client: Arc<dyn AiChatClient>,
+    pub delegation_service: Option<Arc<crate::delegation::DelegationService>>,
 }
 
 /// An unfinished registry assembled by a deployment recipe.
@@ -765,6 +766,7 @@ pub struct EmbeddedDaemonConfig {
     tool_registry_recipe: Arc<dyn EmbeddedToolRegistryRecipe>,
     foreground_turn_timeout: Duration,
     max_live_turns: usize,
+    delegated_task_transport: Option<Arc<dyn crate::delegated_task::DelegatedTaskTransport>>,
 }
 
 impl EmbeddedDaemonConfig {
@@ -809,6 +811,7 @@ impl EmbeddedDaemonConfig {
             tool_registry_recipe: Arc::new(EmptyEmbeddedToolRegistryRecipe),
             foreground_turn_timeout: DEFAULT_FOREGROUND_TURN_TIMEOUT,
             max_live_turns: 1,
+            delegated_task_transport: None,
         }
     }
 
@@ -829,6 +832,16 @@ impl EmbeddedDaemonConfig {
 
     pub fn with_max_live_turns(mut self, max_live_turns: usize) -> Self {
         self.max_live_turns = max_live_turns.max(1);
+        self
+    }
+
+    /// Supply host routing and authenticated transport for explicit
+    /// daemon-to-daemon delegation. This does not create a binding.
+    pub fn with_delegated_task_transport(
+        mut self,
+        transport: Arc<dyn crate::delegated_task::DelegatedTaskTransport>,
+    ) -> Self {
+        self.delegated_task_transport = Some(transport);
         self
     }
 }
@@ -888,6 +901,10 @@ impl std::fmt::Debug for EmbeddedDaemonConfig {
             .field("tool_registry", &"deployment-recipe")
             .field("foreground_turn_timeout", &self.foreground_turn_timeout)
             .field("max_live_turns", &self.max_live_turns)
+            .field(
+                "delegated_task_transport",
+                &self.delegated_task_transport.is_some(),
+            )
             .finish()
     }
 }
@@ -917,6 +934,7 @@ pub struct EmbeddedDaemon {
     backgrounded: AtomicBool,
     lifecycle_epoch: AtomicU64,
     recovery_lock: AsyncMutex<()>,
+    delegation_service: Option<Arc<crate::delegation::DelegationService>>,
 }
 
 impl EmbeddedDaemon {
@@ -1026,6 +1044,19 @@ impl EmbeddedDaemon {
             memory_reader.clone(),
         );
         let runtime = Arc::new(runtime);
+        let delegation_service = config
+            .delegated_task_transport
+            .clone()
+            .map(|transport| {
+                crate::delegation::install_delegation_runtime(
+                    runtime.clone(),
+                    authority_id.clone(),
+                    session_store.clone(),
+                    transport,
+                )
+            })
+            .transpose()
+            .context("install embedded delegation runtime")?;
         let mcp_config = Arc::new(
             medousa_mcp_gateway::McpGatewayFullConfig::from_env_and_args(&[]).remote_only(),
         );
@@ -1052,6 +1083,7 @@ impl EmbeddedDaemon {
                 provider: config.provider.clone(),
                 model: config.model.clone(),
                 chat_client: config.chat_client.clone(),
+                delegation_service: delegation_service.clone(),
             })
             .context("assemble deployment tool registry")?;
         let (tool_registry, _tool_catalog) = tool_assembly
@@ -1154,6 +1186,7 @@ impl EmbeddedDaemon {
             backgrounded: AtomicBool::new(false),
             lifecycle_epoch: AtomicU64::new(0),
             recovery_lock: AsyncMutex::new(()),
+            delegation_service,
         }))
     }
 
@@ -1652,6 +1685,39 @@ impl EmbeddedDaemonClient {
     ) -> Result<()> {
         self.require(Capability::AdminRuntime)?;
         self.daemon.inference.reconfigure(provider, model, base_url)
+    }
+
+    pub async fn delegation_binding(&self) -> Result<Option<crate::delegation::DelegationBinding>> {
+        self.require(Capability::AdminRuntime)?;
+        let service = self
+            .daemon
+            .delegation_service
+            .as_ref()
+            .ok_or_else(|| anyhow!("delegation transport is not configured"))?;
+        service.binding().await
+    }
+
+    pub async fn set_delegation_binding(
+        &self,
+        target: crate::delegation::DelegationTarget,
+    ) -> Result<crate::delegation::DelegationBinding> {
+        self.require(Capability::AdminRuntime)?;
+        let service = self
+            .daemon
+            .delegation_service
+            .as_ref()
+            .ok_or_else(|| anyhow!("delegation transport is not configured"))?;
+        service.bind(target).await
+    }
+
+    pub async fn clear_delegation_binding(&self) -> Result<bool> {
+        self.require(Capability::AdminRuntime)?;
+        let service = self
+            .daemon
+            .delegation_service
+            .as_ref()
+            .ok_or_else(|| anyhow!("delegation transport is not configured"))?;
+        service.clear().await
     }
 
     pub async fn environment_spec(

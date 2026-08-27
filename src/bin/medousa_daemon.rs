@@ -798,6 +798,16 @@ async fn main() -> Result<()> {
     let mesh_api_state = medousa::mesh::MeshApiState {
         pairing: peer_message_state.pairing.clone(),
         local_device_id: peer_message_state.local_device_id.clone(),
+        delegated_task_executor: Some(std::sync::Arc::new(
+            medousa::mesh::DaemonDelegatedTaskExecutor::new(
+                std::sync::Arc::new(state.composition().clone()),
+                peer_message_state.local_device_id.clone(),
+                state.default_runtime_config.draft_provider.clone(),
+                state.default_runtime_config.draft_model.clone(),
+                state.default_runtime_config.response_depth_mode.clone(),
+                10,
+            ),
+        )),
     };
     declared = declared
         .merge(medousa::workspace_handlers::workspace_surface().with_state(

@@ -18,6 +18,7 @@ pub enum MeshCapability {
     Message,
     BundlePush,
     TaskRequest,
+    TaskResult,
 }
 
 impl MeshCapability {
@@ -26,6 +27,7 @@ impl MeshCapability {
             Self::Message => super::grants::CAP_MESH_MESSAGE,
             Self::BundlePush => super::grants::CAP_MESH_BUNDLE_PUSH,
             Self::TaskRequest => super::grants::CAP_TASK_REQUEST,
+            Self::TaskResult => super::grants::CAP_TASK_RESULT,
         }
     }
 
@@ -34,6 +36,7 @@ impl MeshCapability {
             super::grants::CAP_MESH_MESSAGE => Some(Self::Message),
             super::grants::CAP_MESH_BUNDLE_PUSH => Some(Self::BundlePush),
             super::grants::CAP_TASK_REQUEST => Some(Self::TaskRequest),
+            super::grants::CAP_TASK_RESULT => Some(Self::TaskResult),
             _ => None,
         }
     }

@@ -24,6 +24,12 @@ pub mod daemon_runtime;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod daemon_runtime_handlers;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod delegated_task;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod delegation;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod delegation_tools;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod embedded_daemon;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod environment_store;

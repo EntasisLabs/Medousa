@@ -46,6 +46,7 @@ pub struct SharedToolRegistrationBindings {
     pub worker_scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
     pub capability_registry: Arc<RwLock<CapabilityRegistry>>,
     pub mcp_gateway_client: Arc<McpGatewayClient>,
+    pub delegation_service: Option<Arc<crate::delegation::DelegationService>>,
 }
 
 /// Register portable foundation tools from one canonical implementation list.
@@ -112,6 +113,9 @@ pub fn register_portable_interactive_tools(
     registry: &mut impl ToolRegistration,
     bindings: &SharedToolRegistrationBindings,
 ) -> stasis::prelude::Result<()> {
+    if let Some(service) = &bindings.delegation_service {
+        crate::delegation_tools::register_delegation_tools(registry, service.clone())?;
+    }
     crate::ui_present_tools::register_ui_present_tools(registry, bindings.turn_scope.clone())?;
     crate::skill_tools::register_portable_skill_tools(registry)?;
     crate::environment_tools::register_environment_tools(registry, bindings.turn_scope.clone())?;
