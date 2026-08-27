@@ -109,17 +109,18 @@ impl McpGatewayFullConfig {
     /// Keep transports that can run without a child process or sidecar.
     pub fn remote_only(mut self) -> Self {
         self.servers.retain(|server| {
-            matches!(
-                server.transport.trim().to_ascii_lowercase().as_str(),
-                "http"
-                    | "https"
-                    | "streamable"
-                    | "streamable-http"
-                    | "streamable_http"
-                    | "sse"
-                    | "http-sse"
-                    | "http_sse"
-            )
+            server.use_mock
+                || matches!(
+                    server.transport.trim().to_ascii_lowercase().as_str(),
+                    "http"
+                        | "https"
+                        | "streamable"
+                        | "streamable-http"
+                        | "streamable_http"
+                        | "sse"
+                        | "http-sse"
+                        | "http_sse"
+                )
         });
         self
     }

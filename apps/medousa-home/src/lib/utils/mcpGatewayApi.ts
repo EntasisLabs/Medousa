@@ -11,6 +11,33 @@ import type {
 
 export type { McpServerUpsertRequest };
 
+interface McpGatewayConfigWire {
+  path: string;
+  fileExists: boolean;
+  config: {
+    gateway: {
+      bind: string;
+      daemon_policy_url: string;
+      max_invoke_duration_ms: number;
+      catalog_refresh_interval_secs: number;
+      use_mock_fallback: boolean;
+    };
+    servers: Array<{
+      id: string;
+      title: string;
+      enabled: boolean;
+      transport: string;
+      command?: string | null;
+      args?: string[];
+      url?: string | null;
+      bearer_token?: string | null;
+      allowed_lanes?: string[];
+      allowed_effect_classes?: string[];
+      use_mock?: boolean;
+    }>;
+  };
+}
+
 export async function loadMcpGatewayConfig(): Promise<McpGatewayConfigLoadResult> {
   if (!isTauri()) {
     return {
@@ -19,7 +46,33 @@ export async function loadMcpGatewayConfig(): Promise<McpGatewayConfigLoadResult
       config: { gateway: { bind: "127.0.0.1:7420", daemonPolicyUrl: "", maxInvokeDurationMs: 30000, catalogRefreshIntervalSecs: 300, useMockFallback: true }, servers: [] },
     };
   }
-  return invoke<McpGatewayConfigLoadResult>("mcp_gateway_load_config");
+  const loaded = await invoke<McpGatewayConfigWire>("mcp_gateway_load_config");
+  return {
+    path: loaded.path,
+    fileExists: loaded.fileExists,
+    config: {
+      gateway: {
+        bind: loaded.config.gateway.bind,
+        daemonPolicyUrl: loaded.config.gateway.daemon_policy_url,
+        maxInvokeDurationMs: loaded.config.gateway.max_invoke_duration_ms,
+        catalogRefreshIntervalSecs: loaded.config.gateway.catalog_refresh_interval_secs,
+        useMockFallback: loaded.config.gateway.use_mock_fallback,
+      },
+      servers: loaded.config.servers.map((server) => ({
+        id: server.id,
+        title: server.title,
+        enabled: server.enabled,
+        transport: server.transport,
+        command: server.command,
+        args: server.args ?? [],
+        url: server.url,
+        bearerToken: server.bearer_token,
+        allowedLanes: server.allowed_lanes ?? [],
+        allowedEffectClasses: server.allowed_effect_classes ?? [],
+        useMock: server.use_mock ?? false,
+      })),
+    },
+  };
 }
 
 export async function fetchMcpGatewayStatus(): Promise<McpGatewayStatusResult> {

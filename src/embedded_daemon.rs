@@ -917,6 +917,7 @@ pub struct EmbeddedDaemon {
     local_credential_id: Arc<str>,
     inference: EmbeddedInferenceBinding,
     chat_client: Arc<dyn AiChatClient>,
+    mcp_gateway_client: Arc<crate::mcp_gateway_client::McpGatewayClient>,
     tool_registry: Arc<dyn ToolRegistry>,
     session_store: Arc<dyn SessionStore>,
     profile_registry: Arc<std::sync::RwLock<crate::user_profiles::UserProfileRegistry>>,
@@ -1079,7 +1080,7 @@ impl EmbeddedDaemon {
                 memory_writer: memory_writer.clone(),
                 memory_operations: memory_operations.clone(),
                 identity_store: memory.identity_store.clone(),
-                mcp_gateway_client,
+                mcp_gateway_client: mcp_gateway_client.clone(),
                 provider: config.provider.clone(),
                 model: config.model.clone(),
                 chat_client: config.chat_client.clone(),
@@ -1169,6 +1170,7 @@ impl EmbeddedDaemon {
             local_credential_id,
             inference,
             chat_client: config.chat_client,
+            mcp_gateway_client,
             tool_registry,
             session_store,
             profile_registry,
@@ -1687,6 +1689,35 @@ impl EmbeddedDaemonClient {
         self.daemon.inference.reconfigure(provider, model, base_url)
     }
 
+    pub async fn mcp_gateway_status(
+        &self,
+    ) -> Result<(
+        medousa_types::mcp_gateway_api::McpGatewayHealthResponse,
+        medousa_types::mcp_gateway_api::McpServersResponse,
+    )> {
+        self.require(Capability::WorkshopRead)?;
+        let health = self.daemon.mcp_gateway_client.health().await?;
+        let servers = self.daemon.mcp_gateway_client.list_servers().await?;
+        Ok((health, servers))
+    }
+
+    pub async fn reconfigure_mcp_gateway(
+        &self,
+        config: medousa_mcp_gateway::McpGatewayFullConfig,
+    ) -> Result<()> {
+        self.require(Capability::AdminRuntime)?;
+        let config = Arc::new(config.remote_only());
+        let invokes_enabled = config.invokes_enabled;
+        let registry = Arc::new(medousa_mcp_gateway::ServerRegistry::with_policy_evaluator(
+            config,
+            Arc::new(EmbeddedMcpPolicyEvaluator),
+        ));
+        self.daemon
+            .mcp_gateway_client
+            .replace_in_process(registry, invokes_enabled)
+            .await
+    }
+
     pub async fn delegation_binding(&self) -> Result<Option<crate::delegation::DelegationBinding>> {
         self.require(Capability::AdminRuntime)?;
         let service = self
@@ -1888,7 +1919,7 @@ impl EmbeddedDaemonClient {
             .capability_tags
             .iter()
             .cloned()
-            .chain(std::iter::once("transport.in-process".to_string()));
+            .chain(["transport.in-process", "mcp.remote-config"].map(str::to_string));
         let (active_profile_id, active_profile_display_name) = {
             let registry = self
                 .daemon

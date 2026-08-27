@@ -25,6 +25,13 @@
   import { isTauri } from "$lib/window";
   import { onThisHostPhrase } from "$lib/platformCopy";
 
+  interface Props {
+    embedded?: boolean;
+    readOnly?: boolean;
+  }
+
+  let { embedded = false, readOnly = false }: Props = $props();
+
   type FormTransport = "stdio" | "http" | "sse" | "mock";
 
   const TRANSPORTS: { id: FormTransport; label: string; hint: string }[] = [
@@ -33,6 +40,9 @@
     { id: "sse", label: "Remote SSE", hint: "Legacy SSE gateways" },
     { id: "mock", label: "Mock", hint: "Synthetic tools only" },
   ];
+  const availableTransports = $derived(
+    embedded ? TRANSPORTS.filter((transport) => transport.id !== "stdio") : TRANSPORTS,
+  );
 
   let loading = $state(true);
   let busy = $state(false);
@@ -58,6 +68,10 @@
     (s) => s.serverId.toLowerCase() === formId.trim().toLowerCase(),
   ));
 
+  function defaultTransport(): FormTransport {
+    return embedded ? "http" : "stdio";
+  }
+
   onMount(() => {
     void refresh();
   });
@@ -82,7 +96,7 @@
   function resetForm() {
     formId = "";
     formTitle = "";
-    formTransport = "stdio";
+    formTransport = defaultTransport();
     formCommand = "";
     formArgs = "";
     formUrl = "";
@@ -91,9 +105,10 @@
   }
 
   function startAdd() {
+    if (readOnly) return;
     formId = "";
     formTitle = "";
-    formTransport = "stdio";
+    formTransport = defaultTransport();
     formCommand = "";
     formArgs = "";
     formUrl = "";
@@ -119,6 +134,7 @@
   }
 
   async function editServer(server: McpServerRuntime) {
+    if (readOnly) return;
     formId = server.serverId;
     formTitle = server.title;
     formCommand = "";
@@ -184,6 +200,7 @@
   }
 
   async function saveServer(restart: boolean) {
+    if (readOnly) return;
     busy = true;
     error = null;
     statusMessage = null;
@@ -207,6 +224,7 @@
   }
 
   async function toggleEnabled(server: McpServerRuntime) {
+    if (readOnly) return;
     busy = true;
     error = null;
     try {
@@ -221,6 +239,7 @@
   }
 
   async function deleteServer(server: McpServerRuntime) {
+    if (readOnly) return;
     busy = true;
     error = null;
     try {
@@ -235,6 +254,7 @@
   }
 
   async function restartGateway() {
+    if (readOnly) return;
     busy = true;
     error = null;
     try {
@@ -319,7 +339,7 @@
       <div>
         <p class="workshop-label mb-2">How it connects</p>
         <div class="grid gap-2 sm:grid-cols-2">
-          {#each TRANSPORTS as option (option.id)}
+          {#each availableTransports as option (option.id)}
             <button
               type="button"
               class="settings-depth-card {formTransport === option.id
@@ -426,7 +446,13 @@
         </span>
         <div class="min-w-0 flex-1">
           <p class="text-sm font-semibold text-surface-50">
-            {gatewayReachable ? "Gateway running" : "Gateway offline"}
+            {gatewayReachable
+              ? embedded
+                ? "Adapter running"
+                : "Gateway running"
+              : embedded
+                ? "Adapter offline"
+                : "Gateway offline"}
           </p>
           <p class="workshop-faint mt-0.5 text-xs">
             {#if servers.length === 0}
@@ -447,14 +473,16 @@
           >
             <RefreshCw class="h-3.5 w-3.5 {busy ? 'animate-spin' : ''}" aria-hidden="true" />
           </button>
-          <button
-            type="button"
-            class="btn btn-sm variant-soft-surface"
-            disabled={busy}
-            onclick={() => void restartGateway()}
-          >
-            Restart
-          </button>
+          {#if !readOnly}
+            <button
+              type="button"
+              class="btn btn-sm variant-soft-surface"
+              disabled={busy}
+              onclick={() => void restartGateway()}
+            >
+              {embedded ? "Reload" : "Restart"}
+            </button>
+          {/if}
         </div>
       </div>
     </div>
@@ -467,33 +495,38 @@
             Tools from these MCP servers show up for specialists and chat.
           </p>
         </div>
-        <button
-          type="button"
-          class="btn btn-sm variant-filled-primary shrink-0"
-          disabled={busy}
-          onclick={startAdd}
-        >
-          <Plus class="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-          Add server
-        </button>
+        {#if !readOnly}
+          <button
+            type="button"
+            class="btn btn-sm variant-filled-primary shrink-0"
+            disabled={busy}
+            onclick={startAdd}
+          >
+            <Plus class="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+            Add server
+          </button>
+        {/if}
       </div>
 
       {#if servers.length === 0}
         <div class="mt-4 rounded-container-token border border-dashed border-surface-500/40 px-4 py-8 text-center">
           <p class="text-sm font-medium text-surface-100">Nothing connected yet</p>
           <p class="workshop-faint mx-auto mt-1 max-w-sm text-xs leading-relaxed">
-            Add Notion, search, filesystem, or any MCP server — Medousa pulls their tools into the
-            gateway.
+            {readOnly
+              ? "This workshop owns its MCP configuration. Add servers on the workshop host."
+              : "Add Notion, search, filesystem, or any MCP server — Medousa pulls their tools into the gateway."}
           </p>
-          <button
-            type="button"
-            class="btn btn-sm variant-soft-primary mt-4"
-            disabled={busy}
-            onclick={startAdd}
-          >
-            <Plus class="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-            Add your first server
-          </button>
+          {#if !readOnly}
+            <button
+              type="button"
+              class="btn btn-sm variant-soft-primary mt-4"
+              disabled={busy}
+              onclick={startAdd}
+            >
+              <Plus class="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+              Add your first server
+            </button>
+          {/if}
         </div>
       {:else}
         <div class="settings-toggle-list mt-4">
@@ -518,28 +551,30 @@
                     type="checkbox"
                     class="checkbox"
                     checked={server.enabled}
-                    disabled={busy}
+                    disabled={busy || readOnly}
                     onchange={() => void toggleEnabled(server)}
                   />
                   On
                 </label>
-                <button
-                  type="button"
-                  class="workshop-text-action text-xs"
-                  disabled={busy}
-                  onclick={() => void editServer(server)}
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  class="workshop-text-action text-xs text-content-error"
-                  disabled={busy}
-                  aria-label="Remove {server.title}"
-                  onclick={() => void deleteServer(server)}
-                >
-                  <Trash2 class="h-3.5 w-3.5" aria-hidden="true" />
-                </button>
+                {#if !readOnly}
+                  <button
+                    type="button"
+                    class="workshop-text-action text-xs"
+                    disabled={busy}
+                    onclick={() => void editServer(server)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    class="workshop-text-action text-xs text-content-error"
+                    disabled={busy}
+                    aria-label="Remove {server.title}"
+                    onclick={() => void deleteServer(server)}
+                  >
+                    <Trash2 class="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                {/if}
               </div>
             </div>
           {/each}

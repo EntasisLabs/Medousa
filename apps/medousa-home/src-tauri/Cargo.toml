@@ -46,6 +46,7 @@ medousa-sdk = { path = "../../../crates/medousa-sdk", default-features = false, 
 medousa-sdk-iroh = { path = "../../../crates/medousa-sdk-iroh", default-features = false, features = ["async", "sse"] }
 medousa-iroh-http = { path = "../../../crates/medousa-iroh-http" }
 medousa-browser-lite = { path = "../../../crates/medousa-browser-lite" }
+medousa-mcp-gateway = { path = "../../../adapters/medousa-mcp-gateway" }
 medousa-install-support = { path = "../../../crates/medousa-install-support" }
 medousa-local-credential = { path = "../../../crates/medousa-local-credential" }
 tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }

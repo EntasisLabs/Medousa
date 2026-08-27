@@ -26,8 +26,8 @@ export const SETTINGS_MOBILE_SECTIONS: SettingsSectionId[] = [
   "basement",
 ];
 
-/** Sections backed by executable sidecars on this app host. */
-const LOCAL_NATIVE_WORKLOAD_SECTIONS: SettingsSectionId[] = ["packages", "mcp"];
+/** Sections backed only by executable sidecars on this app host. */
+const LOCAL_NATIVE_WORKLOAD_SECTIONS: SettingsSectionId[] = ["packages"];
 
 /** Mobile pager order for the current shell. */
 export function settingsMobileSections(): SettingsSectionId[] {

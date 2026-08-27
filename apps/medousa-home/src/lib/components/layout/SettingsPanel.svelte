@@ -6,6 +6,7 @@
   import SettingsNav from "$lib/components/settings/SettingsNav.svelte";
   import type { DaemonHealth } from "$lib/daemon";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
+  import { workshops } from "$lib/stores/workshops.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { depthModeLabel } from "$lib/utils/chatModelPicker";
@@ -51,6 +52,12 @@
   const nativeWorkloads = $derived(
     health?.runtime?.advertised_capabilities.includes("deployment.native-workloads") ??
       isTauriDesktop(),
+  );
+  const embeddedMcp = $derived(
+    health?.runtime?.advertised_capabilities.includes("mcp.remote-config") ?? false,
+  );
+  const canManageMcp = $derived(
+    embeddedMcp || (isTauriDesktop() && workshops.activeWorkshop?.kind === "local"),
   );
 
   async function refreshNearbyUnread() {
@@ -156,7 +163,7 @@
       {:else if activeSection === "packages"}
         <LazyFeatureView loader={loadSettingsPackagesSection} />
       {:else if activeSection === "mcp"}
-        <LazyFeatureView loader={loadSettingsMcpSection} />
+        <LazyFeatureView loader={loadSettingsMcpSection} {embeddedMcp} {canManageMcp} />
       {:else}
         <LazyFeatureView
           loader={loadSettingsBasementSection}

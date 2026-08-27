@@ -24,10 +24,32 @@ enum McpGatewayBackend {
         client: Client,
     },
     InProcess {
-        registry: Arc<medousa_mcp_gateway::ServerRegistry>,
-        invokes_enabled: bool,
-        initialized: Arc<tokio::sync::OnceCell<()>>,
+        active: Arc<tokio::sync::RwLock<Arc<InProcessMcpGateway>>>,
     },
+}
+
+struct InProcessMcpGateway {
+    registry: Arc<medousa_mcp_gateway::ServerRegistry>,
+    invokes_enabled: bool,
+    initialized: tokio::sync::OnceCell<()>,
+}
+
+impl InProcessMcpGateway {
+    fn new(registry: Arc<medousa_mcp_gateway::ServerRegistry>, invokes_enabled: bool) -> Self {
+        Self {
+            registry,
+            invokes_enabled,
+            initialized: tokio::sync::OnceCell::new(),
+        }
+    }
+
+    async fn initialize(&self) {
+        self.initialized
+            .get_or_init(|| async {
+                self.registry.bootstrap().await;
+            })
+            .await;
+    }
 }
 
 impl McpGatewayClient {
@@ -63,22 +85,32 @@ impl McpGatewayClient {
     ) -> Self {
         Self {
             backend: McpGatewayBackend::InProcess {
-                registry,
-                invokes_enabled,
-                initialized: Arc::new(tokio::sync::OnceCell::new()),
+                active: Arc::new(tokio::sync::RwLock::new(Arc::new(
+                    InProcessMcpGateway::new(registry, invokes_enabled),
+                ))),
             },
         }
     }
 
-    async fn initialize_in_process(
-        registry: &Arc<medousa_mcp_gateway::ServerRegistry>,
-        initialized: &tokio::sync::OnceCell<()>,
-    ) {
-        initialized
-            .get_or_init(|| async {
-                registry.bootstrap().await;
-            })
-            .await;
+    async fn active_in_process(
+        active: &tokio::sync::RwLock<Arc<InProcessMcpGateway>>,
+    ) -> Arc<InProcessMcpGateway> {
+        active.read().await.clone()
+    }
+
+    /// Replace the in-process adapter without rebuilding the daemon or its tool registry.
+    pub async fn replace_in_process(
+        &self,
+        registry: Arc<medousa_mcp_gateway::ServerRegistry>,
+        invokes_enabled: bool,
+    ) -> Result<()> {
+        let McpGatewayBackend::InProcess { active } = &self.backend else {
+            anyhow::bail!("MCP gateway backend is not in-process");
+        };
+        let next = Arc::new(InProcessMcpGateway::new(registry, invokes_enabled));
+        next.initialize().await;
+        *active.write().await = next;
+        Ok(())
     }
 
     fn apply_auth(
@@ -106,16 +138,14 @@ impl McpGatewayClient {
                     .context("MCP gateway health endpoint returned error")?;
                 Ok(response.json().await?)
             }
-            McpGatewayBackend::InProcess {
-                registry,
-                invokes_enabled,
-                ..
-            } => {
+            McpGatewayBackend::InProcess { active } => {
+                let active = Self::active_in_process(active).await;
+                active.initialize().await;
                 let (registered_servers, connected_servers, catalog_entries) =
-                    registry.health_stats().await;
+                    active.registry.health_stats().await;
                 Ok(McpGatewayHealthResponse {
                     status: "ok".to_string(),
-                    invokes_enabled: *invokes_enabled,
+                    invokes_enabled: active.invokes_enabled,
                     registered_servers,
                     connected_servers,
                     catalog_entries,
@@ -143,13 +173,10 @@ impl McpGatewayClient {
                 .context("MCP gateway catalog endpoint returned error")?;
                 Ok(response.json().await?)
             }
-            McpGatewayBackend::InProcess {
-                registry,
-                initialized,
-                ..
-            } => {
-                Self::initialize_in_process(registry, initialized).await;
-                Ok(registry.catalog_sync().await)
+            McpGatewayBackend::InProcess { active } => {
+                let active = Self::active_in_process(active).await;
+                active.initialize().await;
+                Ok(active.registry.catalog_sync().await)
             }
         }
     }
@@ -182,14 +209,12 @@ impl McpGatewayClient {
                     gateway_unreachable: Some(true),
                 })
             }
-            McpGatewayBackend::InProcess {
-                registry,
-                initialized,
-                ..
-            } => {
-                Self::initialize_in_process(registry, initialized).await;
+            McpGatewayBackend::InProcess { active } => {
+                let active = Self::active_in_process(active).await;
+                active.initialize().await;
                 let limit = request.limit.clamp(1, 100);
-                let matches = registry
+                let matches = active
+                    .registry
                     .discover(&request.query, request.server_id.as_deref(), limit)
                     .await;
                 Ok(McpDiscoverResponse {
@@ -222,13 +247,13 @@ impl McpGatewayClient {
                 .context("MCP gateway invoke endpoint returned error")?;
                 Ok(response.json().await?)
             }
-            McpGatewayBackend::InProcess {
-                registry,
-                invokes_enabled,
-                initialized,
-            } => {
-                Self::initialize_in_process(registry, initialized).await;
-                Ok(registry.invoke(request.clone(), *invokes_enabled).await)
+            McpGatewayBackend::InProcess { active } => {
+                let active = Self::active_in_process(active).await;
+                active.initialize().await;
+                Ok(active
+                    .registry
+                    .invoke(request.clone(), active.invokes_enabled)
+                    .await)
             }
         }
     }
@@ -251,13 +276,10 @@ impl McpGatewayClient {
                 .context("MCP gateway servers endpoint returned error")?;
                 Ok(response.json().await?)
             }
-            McpGatewayBackend::InProcess {
-                registry,
-                initialized,
-                ..
-            } => {
-                Self::initialize_in_process(registry, initialized).await;
-                Ok(registry.list_servers().await)
+            McpGatewayBackend::InProcess { active } => {
+                let active = Self::active_in_process(active).await;
+                active.initialize().await;
+                Ok(active.registry.list_servers().await)
             }
         }
     }

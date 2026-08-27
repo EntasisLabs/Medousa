@@ -13,6 +13,13 @@
   import { isTauriDesktop } from "$lib/platform";
   import { onThisHostPhrase } from "$lib/platformCopy";
 
+  interface Props {
+    embeddedMcp?: boolean;
+    canManageMcp?: boolean;
+  }
+
+  let { embeddedMcp = false, canManageMcp = false }: Props = $props();
+
   let gatewayPackage = $state<HomePackageRow | null>(null);
   let loadingPackage = $state(true);
   let packageError = $state<string | null>(null);
@@ -23,7 +30,7 @@
   const desktop = $derived(isTauriDesktop());
 
   async function refreshGatewayPackage() {
-    if (!desktop) {
+    if (!desktop || !canManageMcp) {
       loadingPackage = false;
       return;
     }
@@ -40,13 +47,16 @@
   }
 
   onMount(() => {
-    void refreshGatewayPackage();
     if (!desktop) return;
     void listenPackageProgress((event) => {
       if (event.packageId === "mcp-gateway") progress = event;
     }).then((fn) => {
       unlisten = fn;
     });
+  });
+
+  $effect(() => {
+    if (desktop && canManageMcp) void refreshGatewayPackage();
   });
 
   onDestroy(() => {
@@ -106,12 +116,7 @@
     </p>
   </header>
 
-  {#if !desktop}
-    <p class="workshop-faint mt-4 text-sm">
-      Connect MCP servers from the Medousa desktop app.
-    </p>
-  {:else}
-    {#if gatewayPackage}
+  {#if desktop && canManageMcp && gatewayPackage}
       <div class="prefs-band">
         <div class="prefs-band-head">
           <h3 class="settings-subsection-heading">Gateway</h3>
@@ -165,18 +170,17 @@
           </div>
         </div>
       </div>
-    {:else if loadingPackage}
-      <p class="workshop-faint mt-4 text-xs">Loading gateway package…</p>
-    {/if}
-
-    {#if packageError}
-      <p class="mt-2 text-xs text-content-warning">{packageError}</p>
-    {/if}
-
-    <div class="prefs-band">
-      <McpServersPanel />
-    </div>
+  {:else if desktop && canManageMcp && loadingPackage}
+    <p class="workshop-faint mt-4 text-xs">Loading gateway package…</p>
   {/if}
+
+  {#if packageError}
+    <p class="mt-2 text-xs text-content-warning">{packageError}</p>
+  {/if}
+
+  <div class="prefs-band">
+    <McpServersPanel embedded={embeddedMcp} readOnly={!canManageMcp} />
+  </div>
 </section>
 
 <style>
