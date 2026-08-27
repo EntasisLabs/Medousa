@@ -1,4 +1,4 @@
-/** Parse `medousa://work/{cardId}` and `medousa://vault/{notePath}` deeplinks. */
+/** Parse app-owned `medousa://` navigation and callback links. */
 
 export type WorkDeepLink = {
   kind: "work";
@@ -18,7 +18,16 @@ export type UndertakingLocationDeepLink = {
   entityId: string | null;
 };
 
-export type DeepLink = WorkDeepLink | VaultDeepLink | UndertakingLocationDeepLink;
+export type McpOAuthCallbackDeepLink = {
+  kind: "mcp_oauth_callback";
+  callbackUrl: string;
+};
+
+export type DeepLink =
+  | WorkDeepLink
+  | VaultDeepLink
+  | UndertakingLocationDeepLink
+  | McpOAuthCallbackDeepLink;
 
 const WORK_PATH = /^\/work\/([^/?#]+)\/?$/i;
 
@@ -88,6 +97,9 @@ export function parseDeepLink(raw: string): DeepLink | null {
           line: Number.isInteger(rawLine) && rawLine > 0 ? rawLine : null,
           entityId: url.searchParams.get("entity")?.trim() || null,
         };
+      }
+      if (host === "mcp" && url.pathname.replace(/^\/+/, "") === "oauth/callback") {
+        return { kind: "mcp_oauth_callback", callbackUrl: trimmed };
       }
       const match = WORK_PATH.exec(url.pathname);
       if (match?.[1]) {

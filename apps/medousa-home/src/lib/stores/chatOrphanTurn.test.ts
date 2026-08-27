@@ -166,7 +166,7 @@ describe("orphaned interactive turn lease", () => {
       turn_id: "turn-tool-first",
       session_id: store.sessionId,
       mode: "interactive" as const,
-      phase: "streaming",
+      phase: "streaming" as const,
       accepted_at_utc: new Date().toISOString(),
       stream_url: "interactive://stream/turn-tool-first",
       stream_ready: true,

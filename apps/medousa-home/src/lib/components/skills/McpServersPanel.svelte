@@ -12,16 +12,22 @@
     McpServerConfig,
     McpServerRuntime,
     McpServerUpsertRequest,
+    McpOAuthStatus,
   } from "$lib/types/mcpGateway";
   import {
+    MCP_OAUTH_CHANGED_EVENT,
     applyMcpServer,
+    beginMcpOAuth,
+    disconnectMcpOAuth,
     fetchMcpGatewayStatus,
+    fetchMcpOAuthStatus,
     loadMcpGatewayConfig,
     removeMcpServer,
     restartMcpGateway,
     setMcpServerEnabled,
     upsertMcpServer,
   } from "$lib/utils/mcpGatewayApi";
+  import { openUrlInDefaultBrowser } from "$lib/utils/browserActions";
   import { isTauri } from "$lib/window";
   import { onThisHostPhrase } from "$lib/platformCopy";
 
@@ -52,6 +58,7 @@
   let gatewayReachable = $state(false);
   let configPath = $state("");
   let servers = $state<McpServerRuntime[]>([]);
+  let oauthStatuses = $state<Record<string, McpOAuthStatus>>({});
   let showForm = $state(false);
   let advancedOpen = $state(false);
 
@@ -73,8 +80,22 @@
   }
 
   onMount(() => {
+    const onOAuthChanged = () => void refresh();
+    window.addEventListener(MCP_OAUTH_CHANGED_EVENT, onOAuthChanged);
     void refresh();
+    return () => window.removeEventListener(MCP_OAUTH_CHANGED_EVENT, onOAuthChanged);
   });
+
+  async function refreshOAuthStatuses(nextServers: McpServerRuntime[]) {
+    const entries = await Promise.all(nextServers.map(async (server) => {
+      try {
+        return [server.serverId, await fetchMcpOAuthStatus(server.serverId)] as const;
+      } catch {
+        return null;
+      }
+    }));
+    oauthStatuses = Object.fromEntries(entries.filter((entry) => entry !== null));
+  }
 
   async function refresh() {
     loading = true;
@@ -86,6 +107,7 @@
       configPath = status.configPath;
       servers = status.servers;
       statusMessage = status.message;
+      await refreshOAuthStatuses(status.servers);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -261,6 +283,36 @@
       const result = await restartMcpGateway();
       statusMessage = result.message;
       await refresh();
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function connectOAuth(server: McpServerRuntime) {
+    busy = true;
+    error = null;
+    statusMessage = null;
+    try {
+      const login = await beginMcpOAuth(server.serverId);
+      const opened = await openUrlInDefaultBrowser(login.authorizationUrl);
+      if (!opened) throw new Error("Could not open the MCP sign-in page");
+      statusMessage = `Finish signing in to ${server.title} in your browser.`;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function disconnectOAuth(server: McpServerRuntime) {
+    busy = true;
+    error = null;
+    try {
+      await disconnectMcpOAuth(server.serverId);
+      await refresh();
+      statusMessage = `${server.title} signed out.`;
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -532,7 +584,8 @@
         <div class="settings-toggle-list mt-4">
           {#each servers as server (server.serverId)}
             {@const status = statusLabel(server)}
-            <div class="settings-toggle-row settings-metric-row">
+            {@const oauth = oauthStatuses[server.serverId]}
+            <div class="settings-toggle-row settings-metric-row flex-wrap">
               <span class="min-w-0 flex-1">
                 <span class="flex flex-wrap items-center gap-2">
                   <span class="text-sm font-medium text-surface-100">{server.title}</span>
@@ -546,6 +599,28 @@
                 </span>
               </span>
               <div class="flex shrink-0 items-center gap-2">
+                {#if oauth?.connected}
+                  <span class="text-[10px] font-medium uppercase tracking-wide text-content-success">
+                    Signed in
+                  </span>
+                  <button
+                    type="button"
+                    class="workshop-text-action text-xs"
+                    disabled={busy}
+                    onclick={() => void disconnectOAuth(server)}
+                  >
+                    Sign out
+                  </button>
+                {:else if oauth}
+                  <button
+                    type="button"
+                    class="workshop-text-action text-xs"
+                    disabled={busy}
+                    onclick={() => void connectOAuth(server)}
+                  >
+                    Sign in
+                  </button>
+                {/if}
                 <label class="inline-flex items-center gap-2 text-xs text-content-secondary">
                   <input
                     type="checkbox"

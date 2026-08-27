@@ -86,3 +86,21 @@ export interface McpGatewayTestResult {
   connected: boolean;
   toolCount: number;
 }
+
+export interface McpOAuthStatus {
+  serverId: string;
+  status: string;
+  connected: boolean;
+  issuer: string | null;
+  scopes: string[];
+}
+
+export interface BeginMcpOAuthResult {
+  serverId: string;
+  loginId: string;
+  authorizationUrl: string;
+}
+
+export interface CompleteMcpOAuthResult {
+  connection: McpOAuthStatus;
+}
