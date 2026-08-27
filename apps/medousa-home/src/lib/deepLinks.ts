@@ -18,16 +18,10 @@ export type UndertakingLocationDeepLink = {
   entityId: string | null;
 };
 
-export type McpOAuthCallbackDeepLink = {
-  kind: "mcp_oauth_callback";
-  callbackUrl: string;
-};
-
 export type DeepLink =
   | WorkDeepLink
   | VaultDeepLink
-  | UndertakingLocationDeepLink
-  | McpOAuthCallbackDeepLink;
+  | UndertakingLocationDeepLink;
 
 const WORK_PATH = /^\/work\/([^/?#]+)\/?$/i;
 
@@ -97,9 +91,6 @@ export function parseDeepLink(raw: string): DeepLink | null {
           line: Number.isInteger(rawLine) && rawLine > 0 ? rawLine : null,
           entityId: url.searchParams.get("entity")?.trim() || null,
         };
-      }
-      if (host === "mcp" && url.pathname.replace(/^\/+/, "") === "oauth/callback") {
-        return { kind: "mcp_oauth_callback", callbackUrl: trimmed };
       }
       const match = WORK_PATH.exec(url.pathname);
       if (match?.[1]) {

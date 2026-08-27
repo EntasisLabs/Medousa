@@ -95,12 +95,6 @@ export interface McpOAuthStatus {
   scopes: string[];
 }
 
-export interface BeginMcpOAuthResult {
-  serverId: string;
-  loginId: string;
-  authorizationUrl: string;
-}
-
 export interface CompleteMcpOAuthResult {
   connection: McpOAuthStatus;
 }

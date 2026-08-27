@@ -50,12 +50,4 @@ describe("deepLinks", () => {
     expect(parseDeepLink("medousa://undertaking/work-1/location?path=%2Fetc%2Fpasswd"))
       .toBe(null);
   });
-
-  it("recognizes MCP OAuth callbacks", () => {
-    const callback = "medousa://mcp/oauth/callback?code=abc&state=xyz";
-    expect(parseDeepLink(callback)).toEqual({
-      kind: "mcp_oauth_callback",
-      callbackUrl: callback,
-    });
-  });
 });

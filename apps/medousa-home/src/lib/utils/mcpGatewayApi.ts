@@ -1,7 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "$lib/window";
 import type {
-  BeginMcpOAuthResult,
   CompleteMcpOAuthResult,
   McpGatewayConfigLoadResult,
   McpGatewayRestartResult,
@@ -12,10 +11,6 @@ import type {
   McpServerUpsertRequest,
 } from "$lib/types/mcpGateway";
 
-const MCP_OAUTH_REDIRECT_URI = "medousa://mcp/oauth/callback";
-const MCP_OAUTH_PENDING_KEY = "medousa-mcp-oauth-pending-v1";
-export const MCP_OAUTH_CHANGED_EVENT = "medousa-mcp-oauth-changed";
-
 interface McpOAuthStatusWire {
   server_id: string;
   status: string;
@@ -24,20 +19,8 @@ interface McpOAuthStatusWire {
   scopes?: string[];
 }
 
-interface BeginMcpOAuthWire {
-  server_id: string;
-  login_id: string;
-  authorization_url: string;
-}
-
 interface CompleteMcpOAuthWire {
   connection: McpOAuthStatusWire;
-}
-
-interface PendingMcpOAuthLogin {
-  loginId: string;
-  serverId: string;
-  createdAt: number;
 }
 
 function normalizeMcpOAuthStatus(status: McpOAuthStatusWire): McpOAuthStatus {
@@ -48,29 +31,6 @@ function normalizeMcpOAuthStatus(status: McpOAuthStatusWire): McpOAuthStatus {
     issuer: status.issuer ?? null,
     scopes: status.scopes ?? [],
   };
-}
-
-function readPendingMcpOAuthLogins(): Record<string, PendingMcpOAuthLogin> {
-  if (typeof localStorage === "undefined") return {};
-  try {
-    const value = JSON.parse(localStorage.getItem(MCP_OAUTH_PENDING_KEY) ?? "{}");
-    return value && typeof value === "object"
-      ? value as Record<string, PendingMcpOAuthLogin>
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function writePendingMcpOAuthLogins(logins: Record<string, PendingMcpOAuthLogin>) {
-  if (typeof localStorage === "undefined") return;
-  localStorage.setItem(MCP_OAUTH_PENDING_KEY, JSON.stringify(logins));
-}
-
-function authorizationState(authorizationUrl: string): string {
-  const state = new URL(authorizationUrl).searchParams.get("state")?.trim();
-  if (!state) throw new Error("MCP authorization did not provide a callback state");
-  return state;
 }
 
 export type { McpServerUpsertRequest };
@@ -213,54 +173,9 @@ export async function fetchMcpOAuthStatus(serverId: string): Promise<McpOAuthSta
   return normalizeMcpOAuthStatus(status);
 }
 
-export async function beginMcpOAuth(serverId: string): Promise<BeginMcpOAuthResult> {
-  const result = await invoke<BeginMcpOAuthWire>("mcp_oauth_begin", {
-    request: {
-      server_id: serverId,
-      redirect_uri: MCP_OAUTH_REDIRECT_URI,
-      scopes: [],
-    },
-  });
-  const state = authorizationState(result.authorization_url);
-  const pending = readPendingMcpOAuthLogins();
-  for (const [pendingState, login] of Object.entries(pending)) {
-    if (login.serverId === result.server_id || Date.now() - login.createdAt > 60 * 60 * 1000) {
-      delete pending[pendingState];
-    }
-  }
-  pending[state] = {
-    loginId: result.login_id,
-    serverId: result.server_id,
-    createdAt: Date.now(),
-  };
-  writePendingMcpOAuthLogins(pending);
-  return {
-    serverId: result.server_id,
-    loginId: result.login_id,
-    authorizationUrl: result.authorization_url,
-  };
-}
-
-export async function completeMcpOAuthCallback(
-  callbackUrl: string,
-): Promise<CompleteMcpOAuthResult> {
-  const state = new URL(callbackUrl).searchParams.get("state")?.trim();
-  const pending = readPendingMcpOAuthLogins();
-  const login = state ? pending[state] : null;
-  if (!state || !login) {
-    throw new Error("This MCP sign-in is no longer pending; start it again from Settings → MCP");
-  }
-  const result = await invoke<CompleteMcpOAuthWire>("mcp_oauth_complete", {
-    request: {
-      login_id: login.loginId,
-      callback_url: callbackUrl,
-    },
-  });
-  delete pending[state];
-  writePendingMcpOAuthLogins(pending);
-  const normalized = { connection: normalizeMcpOAuthStatus(result.connection) };
-  window.dispatchEvent(new CustomEvent(MCP_OAUTH_CHANGED_EVENT, { detail: normalized }));
-  return normalized;
+export async function authorizeMcpOAuth(serverId: string): Promise<CompleteMcpOAuthResult> {
+  const result = await invoke<CompleteMcpOAuthWire>("mcp_oauth_authorize", { serverId });
+  return { connection: normalizeMcpOAuthStatus(result.connection) };
 }
 
 export async function disconnectMcpOAuth(serverId: string): Promise<void> {

@@ -43,7 +43,6 @@ import {
 import { bindAllFeaturePorts, unbindAllFeaturePorts } from "./bindFeaturePorts";
 import { disposeFeature } from "./features/loader";
 import { disposeDestinationFeatures } from "./features/disposeDestinations";
-import { completeMcpOAuthCallback } from "$lib/utils/mcpGatewayApi";
 
 /** Named shell owner for AppShell onMount pollers/listeners. */
 export function startShellRootResources(): () => void {
@@ -153,16 +152,6 @@ export function startShellRootResources(): () => void {
               durationMs: 4500,
             });
           });
-      },
-      onMcpOAuthCallback: async (callbackUrl) => {
-        try {
-          const result = await completeMcpOAuthCallback(callbackUrl);
-          toast.show(`${result.connection.serverId} connected`);
-        } catch (err) {
-          toast.show(err instanceof Error ? err.message : String(err), {
-            durationMs: 4500,
-          });
-        }
       },
       onOpenPeer: openPeerThread,
       onOpenCalendar: openCalendarEvent,

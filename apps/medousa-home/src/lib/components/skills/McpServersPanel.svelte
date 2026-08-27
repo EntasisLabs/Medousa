@@ -15,9 +15,8 @@
     McpOAuthStatus,
   } from "$lib/types/mcpGateway";
   import {
-    MCP_OAUTH_CHANGED_EVENT,
     applyMcpServer,
-    beginMcpOAuth,
+    authorizeMcpOAuth,
     disconnectMcpOAuth,
     fetchMcpGatewayStatus,
     fetchMcpOAuthStatus,
@@ -25,9 +24,7 @@
     removeMcpServer,
     restartMcpGateway,
     setMcpServerEnabled,
-    upsertMcpServer,
   } from "$lib/utils/mcpGatewayApi";
-  import { openUrlInDefaultBrowser } from "$lib/utils/browserActions";
   import { isTauri } from "$lib/window";
   import { onThisHostPhrase } from "$lib/platformCopy";
 
@@ -61,6 +58,7 @@
   let oauthStatuses = $state<Record<string, McpOAuthStatus>>({});
   let showForm = $state(false);
   let advancedOpen = $state(false);
+  let setupAction = $state<"connect" | "sign_in" | null>(null);
 
   let formId = $state("");
   let formTitle = $state("");
@@ -74,16 +72,16 @@
   const editingExisting = $derived(Boolean(formId.trim()) && servers.some(
     (s) => s.serverId.toLowerCase() === formId.trim().toLowerCase(),
   ));
+  const canSignIn = $derived(
+    (formTransport === "http" || formTransport === "sse") && !formBearerToken.trim(),
+  );
 
   function defaultTransport(): FormTransport {
     return embedded ? "http" : "stdio";
   }
 
   onMount(() => {
-    const onOAuthChanged = () => void refresh();
-    window.addEventListener(MCP_OAUTH_CHANGED_EVENT, onOAuthChanged);
     void refresh();
-    return () => window.removeEventListener(MCP_OAUTH_CHANGED_EVENT, onOAuthChanged);
   });
 
   async function refreshOAuthStatuses(nextServers: McpServerRuntime[]) {
@@ -221,27 +219,30 @@
     };
   }
 
-  async function saveServer(restart: boolean) {
+  async function saveServer(signIn: boolean) {
     if (readOnly) return;
+    setupAction = signIn ? "sign_in" : "connect";
     busy = true;
     error = null;
     statusMessage = null;
     try {
       const request = buildRequest();
-      if (restart) {
-        const result = await applyMcpServer(request);
+      const result = await applyMcpServer(request);
+      resetForm();
+      if (signIn) {
+        await authorizeMcpOAuth(request.id);
+        await refresh();
+        statusMessage = `${request.title} connected and signed in.`;
+      } else {
+        await refresh();
         statusMessage = result.message;
         if (!result.ok) error = result.message;
-      } else {
-        const result = await upsertMcpServer(request);
-        statusMessage = result.message;
       }
-      resetForm();
-      await refresh();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
       busy = false;
+      setupAction = null;
     }
   }
 
@@ -295,10 +296,9 @@
     error = null;
     statusMessage = null;
     try {
-      const login = await beginMcpOAuth(server.serverId);
-      const opened = await openUrlInDefaultBrowser(login.authorizationUrl);
-      if (!opened) throw new Error("Could not open the MCP sign-in page");
-      statusMessage = `Finish signing in to ${server.title} in your browser.`;
+      await authorizeMcpOAuth(server.serverId);
+      await refresh();
+      statusMessage = `${server.title} connected.`;
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -455,20 +455,26 @@
           type="button"
           class="btn btn-sm variant-filled-primary"
           disabled={busy || !formId.trim()}
-          onclick={() => void saveServer(true)}
+          onclick={() => void saveServer(false)}
         >
-          {#if busy}
+          {#if setupAction === "connect"}
             <LoaderCircle class="mr-1.5 h-3.5 w-3.5 animate-spin" aria-hidden="true" />
           {/if}
-          Save &amp; connect
+          Connect
         </button>
         <button
           type="button"
-          class="btn btn-sm variant-soft-surface"
-          disabled={busy || !formId.trim()}
-          onclick={() => void saveServer(false)}
+          class="btn btn-sm variant-soft-primary"
+          disabled={busy || !formId.trim() || !canSignIn}
+          title={canSignIn
+            ? "Save, connect, and sign in"
+            : "Sign in is available for remote servers without a bearer token"}
+          onclick={() => void saveServer(true)}
         >
-          Save only
+          {#if setupAction === "sign_in"}
+            <LoaderCircle class="mr-1.5 h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+          {/if}
+          Sign in
         </button>
         <button
           type="button"
@@ -479,6 +485,15 @@
           Cancel
         </button>
       </div>
+      {#if !canSignIn}
+        <p class="workshop-faint text-xs">
+          {#if (formTransport === "http" || formTransport === "sse") && formBearerToken.trim()}
+            Remove the bearer token to sign in with OAuth.
+          {:else}
+            Sign in is available for hosted HTTP and SSE servers.
+          {/if}
+        </p>
+      {/if}
     </div>
   {:else}
     <!-- Browse chapter: gateway → servers → advanced -->

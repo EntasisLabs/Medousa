@@ -691,6 +691,45 @@ pub async fn mcp_oauth_status(
         .await
 }
 
+/// Run the host browser ceremony while the selected runtime remains the sole
+/// owner of OAuth discovery, state validation, token exchange, and storage.
+#[tauri::command]
+pub async fn mcp_oauth_authorize(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::daemon::DaemonState>,
+    embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
+    server_id: String,
+) -> Result<medousa_types::CompleteMcpOAuthResponse, String> {
+    let browser = crate::oauth_browser::OAuthBrowserSession::bind().await?;
+    let login = mcp_oauth_begin(
+        state.clone(),
+        embedded_state.clone(),
+        medousa_types::BeginMcpOAuthRequest {
+            server_id,
+            redirect_uri: browser.redirect_uri().to_string(),
+            scopes: Vec::new(),
+            client_metadata_url: None,
+            client_id: None,
+            client_secret: None,
+            challenge: None,
+        },
+    )
+    .await?;
+
+    let callback = browser.authorize(&app, &login.authorization_url).await?;
+    let result = mcp_oauth_complete(
+        state,
+        embedded_state,
+        medousa_types::CompleteMcpOAuthRequest {
+            login_id: login.login_id,
+            callback_url: callback.url().to_string(),
+        },
+    )
+    .await;
+    callback.finish(&app, result.is_ok()).await;
+    result
+}
+
 #[tauri::command]
 pub async fn mcp_oauth_begin(
     state: tauri::State<'_, crate::daemon::DaemonState>,

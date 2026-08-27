@@ -9,7 +9,6 @@ import { isTauri } from "$lib/window";
 export type OpenWorkHandler = (cardId: string) => void | Promise<void>;
 export type OpenVaultNoteHandler = (notePath: string) => void | Promise<void>;
 export type OpenPairHandler = (pairUrl: string) => void;
-export type McpOAuthCallbackHandler = (callbackUrl: string) => void | Promise<void>;
 
 let workHandler: OpenWorkHandler | null = null;
 let vaultHandler: OpenVaultNoteHandler | null = null;
@@ -17,7 +16,6 @@ let vaultHandler: OpenVaultNoteHandler | null = null;
 let pairHandler: OpenPairHandler | null = null;
 /** App-wide handler for medousa://pair/… after onboarding. */
 let defaultPairHandler: OpenPairHandler | null = null;
-let mcpOAuthCallbackHandler: McpOAuthCallbackHandler | null = null;
 
 async function dispatchWorkLink(link: WorkDeepLink) {
   if (!workHandler) return;
@@ -55,10 +53,6 @@ function handleUrls(urls: string[]) {
       );
       return;
     }
-    if (link?.kind === "mcp_oauth_callback") {
-      void mcpOAuthCallbackHandler?.(link.callbackUrl);
-      return;
-    }
   }
 }
 
@@ -80,7 +74,6 @@ export function initMobileNative(
   vaultNoteHandler?: OpenVaultNoteHandler,
   options?: {
     onPairLink?: OpenPairHandler;
-    onMcpOAuthCallback?: McpOAuthCallbackHandler;
     onOpenPeer?: import("$lib/notifications").OpenPeerHandler;
     onOpenCalendar?: import("$lib/notifications").OpenCalendarHandler;
   },
@@ -89,7 +82,6 @@ export function initMobileNative(
   setVaultDeepLinkHandler(vaultNoteHandler ?? null);
   // Install default pair handler synchronously so cold-start deep links are not dropped.
   defaultPairHandler = options?.onPairLink ?? null;
-  mcpOAuthCallbackHandler = options?.onMcpOAuthCallback ?? null;
 
   const cleanups: Array<() => void> = [];
 
@@ -140,7 +132,6 @@ export function initMobileNative(
     setVaultDeepLinkHandler(null);
     setPairDeepLinkHandler(null);
     defaultPairHandler = null;
-    mcpOAuthCallbackHandler = null;
     for (const cleanup of cleanups) cleanup();
   };
 }
