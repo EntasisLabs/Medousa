@@ -119,7 +119,6 @@ impl medousa_mcp_gateway::McpPolicyEvaluator for EmbeddedMcpPolicyEvaluator {
 const EMBEDDED_STREAM_SCHEME: &str = "medousa-embedded://turn";
 const EMBEDDED_NODE_LEASE_SECONDS: i64 = 300;
 const DEFAULT_FOREGROUND_TURN_TIMEOUT: Duration = Duration::from_secs(180);
-const EMBEDDED_SUSPEND_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 const EMBEDDED_RECOVERY_MAX_JOBS: usize = 32;
 const STREAM_DELTA_CAPACITY: usize = 128;
 const EMBEDDED_RUNTIME_EVENT_CAPACITY: usize = 64;
@@ -673,13 +672,6 @@ impl TurnPresentationPort for EmbeddedTurnPresentation {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EmbeddedSuspendReport {
-    pub cancellation_requested: usize,
-    pub remaining_turns: usize,
-    pub timed_out: bool,
-}
-
 /// Services made available to a deployment's tool-registry recipe.
 ///
 /// These are outbound ports and shared runtime services, not a deployment
@@ -922,7 +914,7 @@ pub struct EmbeddedDaemon {
     turn_tickets: TurnTicketRegistry,
     executions: TurnExecutionRegistry,
     foreground_turn_timeout: Duration,
-    suspended: AtomicBool,
+    backgrounded: AtomicBool,
     lifecycle_epoch: AtomicU64,
     recovery_lock: AsyncMutex<()>,
 }
@@ -1159,7 +1151,7 @@ impl EmbeddedDaemon {
             turn_tickets: new_registry(),
             executions: TurnExecutionRegistry::new(config.max_live_turns),
             foreground_turn_timeout: config.foreground_turn_timeout,
-            suspended: AtomicBool::new(false),
+            backgrounded: AtomicBool::new(false),
             lifecycle_epoch: AtomicU64::new(0),
             recovery_lock: AsyncMutex::new(()),
         }))
@@ -1188,49 +1180,25 @@ impl EmbeddedDaemon {
         }
     }
 
-    /// Cancel foreground work before iOS suspends the process.
-    pub fn suspend(&self) -> usize {
-        self.suspended.store(true, Ordering::Release);
+    /// Close foreground admission while the mobile host is backgrounded.
+    ///
+    /// Existing executions remain owned by the runtime. The OS may continue,
+    /// suspend, or terminate the process; app lifecycle never fabricates a
+    /// turn cancellation.
+    pub fn enter_background(&self) -> usize {
+        self.backgrounded.store(true, Ordering::Release);
         self.lifecycle_epoch.fetch_add(1, Ordering::AcqRel);
-        self.executions.cancel_all()
-    }
-
-    /// Let cancelled foreground owners publish their terminal event and release
-    /// their exact execution leases, without exceeding the host deadline.
-    pub async fn drain_suspended(
-        &self,
-        cancellation_requested: usize,
-        timeout: Duration,
-    ) -> EmbeddedSuspendReport {
-        let idle = self.executions.wait_for_idle(timeout).await;
-        let remaining_turns = self.executions.live_count();
-        EmbeddedSuspendReport {
-            cancellation_requested,
-            remaining_turns,
-            timed_out: !idle,
-        }
-    }
-
-    pub async fn suspend_and_drain(&self, timeout: Duration) -> EmbeddedSuspendReport {
-        let cancellation_requested = self.suspend();
-        self.drain_suspended(cancellation_requested, timeout).await
+        self.executions.live_count()
     }
 
     /// Re-advertise the same Stasis node and run its canonical durable-work
     /// reconciliation before foreground admission reopens.
     pub async fn resume(&self) -> Result<RuntimeRecoveryReport> {
         let _recovery = self.recovery_lock.lock().await;
-        if !self.suspended.load(Ordering::Acquire) {
+        if !self.backgrounded.load(Ordering::Acquire) {
             return Ok(RuntimeRecoveryReport::default());
         }
         let lifecycle_epoch = self.lifecycle_epoch.load(Ordering::Acquire);
-        if !self
-            .executions
-            .wait_for_idle(EMBEDDED_SUSPEND_DRAIN_TIMEOUT)
-            .await
-        {
-            bail!("embedded foreground turns did not drain before resume");
-        }
         if lifecycle_epoch != self.lifecycle_epoch.load(Ordering::Acquire) {
             return Ok(RuntimeRecoveryReport::default());
         }
@@ -1257,7 +1225,7 @@ impl EmbeddedDaemon {
         .await
         .context("reconcile embedded Stasis work after wake")?;
         if lifecycle_epoch == self.lifecycle_epoch.load(Ordering::Acquire) {
-            self.suspended.store(false, Ordering::Release);
+            self.backgrounded.store(false, Ordering::Release);
         }
         Ok(report)
     }
@@ -2479,8 +2447,8 @@ impl EmbeddedDaemonClient {
         voice_appendix: Option<String>,
     ) -> Result<InteractiveTurnResponse> {
         self.require(Capability::WorkshopInteract)?;
-        if self.daemon.suspended.load(Ordering::Acquire) {
-            bail!("embedded daemon is suspended");
+        if self.daemon.backgrounded.load(Ordering::Acquire) {
+            bail!("embedded daemon is backgrounded");
         }
         let session_id = SessionId::parse(session_id).map_err(|error| anyhow!(error))?;
         let prompt = prompt.into();
@@ -3036,6 +3004,7 @@ mod tests {
     const INSTALLATION_ID: &str = crate::workshop_authority::TEST_INSTALLATION_ID;
     const SECRET_CANARY: &str = "embedded-secret-must-never-escape";
     const FIRST_REPLY: &str = "The embedded daemon owns this foreground turn.";
+    const BACKGROUND_REPLY: &str = "The turn survived the app lifecycle transition.";
     const GRAPHEME_REPLY: &str = "The portable Grapheme workflow completed on the phone daemon.";
     const GRAPHEME_SOURCE: &str = r#"import core from "grapheme/core"
 
@@ -3093,6 +3062,7 @@ query MobileProbe {
     #[derive(Default)]
     struct LifecycleChatClient {
         calls: AtomicUsize,
+        background_reply: tokio::sync::Notify,
     }
 
     impl LifecycleChatClient {
@@ -3100,10 +3070,17 @@ query MobileProbe {
             self.calls.load(Ordering::Acquire)
         }
 
+        fn release_background_turn(&self) {
+            self.background_reply.notify_one();
+        }
+
         async fn next(&self) -> StasisResult<ChatResponse> {
             match self.calls.fetch_add(1, Ordering::AcqRel) {
                 0 => Ok(text_response(FIRST_REPLY)),
-                1 => pending::<StasisResult<ChatResponse>>().await,
+                1 => {
+                    self.background_reply.notified().await;
+                    Ok(text_response(BACKGROUND_REPLY))
+                }
                 2 => Ok(tool_response(
                     "cognition_capability",
                     json!({ "action": "grapheme.invoke", "script": GRAPHEME_SOURCE }),
@@ -3647,75 +3624,70 @@ query MobileProbe {
                 .any(|summary| summary.session_id == session.session_id && summary.turns == 2)
         );
 
-        let cancelled = client
-            .start_turn(&session.session_id, "this turn should be suspended")
+        let background_turn = client
+            .start_turn(
+                &session.session_id,
+                "this turn should survive backgrounding",
+            )
             .await
-            .expect("start cancellable foreground turn");
+            .expect("start foreground turn before backgrounding");
         wait_until(|| chat.calls() >= 2).await;
         assert_eq!(daemon.live_turn_count(), 1);
-        let suspend_report = daemon.suspend_and_drain(Duration::from_secs(2)).await;
-        assert_eq!(suspend_report.cancellation_requested, 1);
-        assert_eq!(suspend_report.remaining_turns, 0);
-        assert!(!suspend_report.timed_out);
+        assert_eq!(daemon.enter_background(), 1);
+        assert_eq!(daemon.live_turn_count(), 1);
         assert!(
             client
-                .start_turn(&session.session_id, "suspended work must fail closed")
+                .start_turn(&session.session_id, "background admission must fail closed")
                 .await
-                .expect_err("suspended daemon accepted work")
+                .expect_err("backgrounded daemon accepted work")
                 .to_string()
-                .contains("suspended")
+                .contains("backgrounded")
         );
-        let cancelled_events = collect_to_eof(
+        let wake = daemon.resume().await.expect("resume embedded daemon");
+        assert_eq!(wake.materialized, 0);
+        assert_eq!(daemon.live_turn_count(), 1);
+        chat.release_background_turn();
+        let background_events = collect_to_eof(
             client
-                .subscribe_turn(&cancelled.turn_id, 0)
+                .subscribe_turn(&background_turn.turn_id, 0)
                 .await
-                .expect("subscribe cancelled turn"),
+                .expect("reattach backgrounded turn"),
         )
         .await;
         assert!(matches!(
-            cancelled_events.last().map(|event| &event.event),
-            Some(TurnStreamEventV2::Error {
-                operator_message,
-                debug_message: None,
-            }) if operator_message == "foreground turn cancelled"
+            background_events.last().map(|event| &event.event),
+            Some(TurnStreamEventV2::Final { text, tool_names })
+                if text == BACKGROUND_REPLY && tool_names.is_empty()
         ));
         assert_eq!(
-            cancelled_events
+            background_events
                 .iter()
                 .filter(|event| event.event.is_terminal())
                 .count(),
             1
         );
-        let transcript_after_cancel = client
+        let transcript_after_background = client
             .load_transcript_entries(&session.session_id)
-            .expect("load transcript after cancellation");
-        assert_eq!(transcript_after_cancel.len(), 3);
-        assert_eq!(transcript_after_cancel[2].turn.role, "user");
+            .expect("load transcript after background resume");
+        assert_eq!(transcript_after_background.len(), 4);
+        assert_eq!(transcript_after_background[2].turn.role, "user");
+        assert_eq!(transcript_after_background[3].turn.role, "assistant");
         assert_eq!(
-            transcript_after_cancel[2]
+            transcript_after_background[3]
                 .caused_by
                 .as_ref()
-                .expect("cancelled user execution")
+                .expect("resumed assistant execution")
                 .execution_id
                 .as_str(),
-            cancelled.turn_id
+            background_turn.turn_id
         );
-        assert!(transcript_after_cancel.iter().all(|entry| {
-            entry.turn.role == "user"
-                || entry
-                    .caused_by
-                    .as_ref()
-                    .is_none_or(|execution| execution.execution_id.as_str() != cancelled.turn_id)
-        }));
         assert!(
             !client
                 .active_turn(&session.session_id)
                 .await
-                .expect("read cancelled turn state")
+                .expect("read resumed turn state")
                 .active
         );
-        let wake = daemon.resume().await.expect("resume embedded daemon");
-        assert_eq!(wake.materialized, 0);
 
         let grapheme_turn = client
             .start_turn(&session.session_id, "run the portable Grapheme probe")
@@ -3757,16 +3729,17 @@ query MobileProbe {
             .into_iter()
             .find(|definition| definition.id == schedule.recurring_id)
             .expect("registered embedded recurring definition");
-        due_definition.next_run_at = Utc::now() - chrono::Duration::seconds(1);
+        // Several missed ticks still materialize one catch-up job. Stasis
+        // advances the definition from wake time instead of replaying every
+        // interval the mobile process could not execute.
+        due_definition.next_run_at = Utc::now() - chrono::Duration::days(3);
         daemon
             .runtime
             .save_recurring(due_definition)
             .await
             .expect("make embedded schedule due");
 
-        let idle_suspend = daemon.suspend_and_drain(Duration::from_secs(2)).await;
-        assert_eq!(idle_suspend.cancellation_requested, 0);
-        assert!(!idle_suspend.timed_out);
+        assert_eq!(daemon.enter_background(), 0);
         let schedule_wake = daemon
             .resume()
             .await
@@ -3793,8 +3766,7 @@ query MobileProbe {
             .count();
         assert_eq!(succeeded_after_wake, 1);
 
-        let second_idle_suspend = daemon.suspend_and_drain(Duration::from_secs(2)).await;
-        assert!(!second_idle_suspend.timed_out);
+        assert_eq!(daemon.enter_background(), 0);
         let second_wake = daemon.resume().await.expect("repeat wake reconciliation");
         assert_eq!(second_wake.materialized, 0);
         assert!(second_wake.processed_job_ids.is_empty());
@@ -3927,15 +3899,17 @@ query MobileProbe {
         let rebooted_transcript = rebooted_client
             .load_transcript_entries(&session.session_id)
             .expect("reload transcript after reboot");
-        assert_eq!(rebooted_transcript.len(), 6);
+        assert_eq!(rebooted_transcript.len(), 7);
         assert_eq!(rebooted_transcript[2].turn.role, "user");
-        assert_eq!(rebooted_transcript[3].turn.role, "user");
-        assert_eq!(rebooted_transcript[4].turn.role, "assistant");
-        assert_eq!(rebooted_transcript[4].turn.content, GRAPHEME_REPLY);
+        assert_eq!(rebooted_transcript[3].turn.role, "assistant");
+        assert_eq!(rebooted_transcript[3].turn.content, BACKGROUND_REPLY);
+        assert_eq!(rebooted_transcript[4].turn.role, "user");
         assert_eq!(rebooted_transcript[5].turn.role, "assistant");
-        assert_eq!(rebooted_transcript[5].turn.content, RECOVERED_REPLY);
+        assert_eq!(rebooted_transcript[5].turn.content, GRAPHEME_REPLY);
+        assert_eq!(rebooted_transcript[6].turn.role, "assistant");
+        assert_eq!(rebooted_transcript[6].turn.content, RECOVERED_REPLY);
         assert_eq!(
-            rebooted_transcript[5]
+            rebooted_transcript[6]
                 .caused_by
                 .as_ref()
                 .expect("recovered execution identity")
@@ -3955,12 +3929,12 @@ query MobileProbe {
             serde_json::to_value(rebooted_replay).expect("serialize reboot replay"),
             serde_json::to_value(events).expect("serialize original events")
         );
-        let rebooted_cancelled_replay = rebooted_client
-            .replay_turn(&cancelled.turn_id, 0)
+        let rebooted_background_replay = rebooted_client
+            .replay_turn(&background_turn.turn_id, 0)
             .await
-            .expect("reload cancelled journal after reboot");
+            .expect("reload background-surviving journal after reboot");
         assert_eq!(
-            rebooted_cancelled_replay
+            rebooted_background_replay
                 .iter()
                 .filter(|event| event.event.is_terminal())
                 .count(),
@@ -3992,7 +3966,7 @@ query MobileProbe {
                 .load_transcript_entries(&session.session_id)
                 .expect("transcript before credential probe")
                 .len(),
-            6,
+            7,
             "journal recovery must remain idempotent across another boot"
         );
         let credential_probe = credentialed_client

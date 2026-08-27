@@ -134,7 +134,7 @@ pub async fn active_tool_sink() -> Option<Arc<dyn ToolSinkPort + Send + Sync>> {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use medousa_engine::TurnStreamRegistryPort;
+    use medousa_engine::{TurnStreamRegistryPort, TurnTicketPort};
     use medousa_types::turn_ticket::{TurnTicket, TurnTicketMode, TurnTicketPhase};
 
     struct CanaryToolSink;

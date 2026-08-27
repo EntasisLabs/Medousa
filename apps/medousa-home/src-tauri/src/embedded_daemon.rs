@@ -2,27 +2,12 @@
 
 #[cfg(target_os = "ios")]
 use std::sync::Arc;
-#[cfg(target_os = "ios")]
-use std::time::Duration;
 
 #[cfg(target_os = "ios")]
 use medousa::embedded_daemon::{
     CredentialProvider, EmbeddedDaemon, EmbeddedDaemonClient, EmbeddedDaemonConfig,
     ProviderCredential, ProviderCredentialError,
 };
-
-#[cfg(target_os = "ios")]
-const IOS_SUSPEND_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
-
-#[cfg(target_os = "ios")]
-enum IosBackgroundTaskState {
-    Starting,
-    Active(objc2_ui_kit::UIBackgroundTaskIdentifier),
-    Finished,
-}
-
-#[cfg(target_os = "ios")]
-type IosBackgroundTask = Arc<std::sync::Mutex<IosBackgroundTaskState>>;
 
 #[derive(Clone)]
 pub struct EmbeddedDaemonState {
@@ -113,28 +98,11 @@ impl EmbeddedDaemonState {
     }
 
     #[cfg(target_os = "ios")]
-    fn suspend_if_booted(&self, app: &tauri::AppHandle) -> usize {
+    fn background_if_booted(&self) -> usize {
         let Some(daemon) = self.daemon.get().cloned() else {
             return 0;
         };
-        let cancellation_requested = daemon.suspend();
-        let background_task = begin_ios_background_task();
-        let app = app.clone();
-        tauri::async_runtime::spawn(async move {
-            let report = daemon
-                .drain_suspended(cancellation_requested, IOS_SUSPEND_DRAIN_TIMEOUT)
-                .await;
-            if report.timed_out {
-                eprintln!(
-                    "[medousa-home] embedded daemon suspension deadline expired with {} turn(s) still live",
-                    report.remaining_turns
-                );
-            }
-            if let Some(background_task) = background_task {
-                finish_ios_background_task(&app, background_task);
-            }
-        });
-        cancellation_requested
+        daemon.enter_background()
     }
 
     #[cfg(target_os = "ios")]
@@ -157,66 +125,6 @@ impl EmbeddedDaemonState {
                 }
             }
         });
-    }
-}
-
-#[cfg(target_os = "ios")]
-fn begin_ios_background_task() -> Option<IosBackgroundTask> {
-    use block2::RcBlock;
-    use objc2::MainThreadMarker;
-    use objc2_ui_kit::{UIApplication, UIBackgroundTaskInvalid};
-
-    let mtm = MainThreadMarker::new()?;
-    let state = Arc::new(std::sync::Mutex::new(IosBackgroundTaskState::Starting));
-    let expiration_state = state.clone();
-    let expiration = RcBlock::new(move || {
-        finish_ios_background_task_on_main(expiration_state.clone());
-    });
-    let application = UIApplication::sharedApplication(mtm);
-    let identifier = application.beginBackgroundTaskWithExpirationHandler(Some(&expiration));
-    if identifier == unsafe { UIBackgroundTaskInvalid } {
-        return None;
-    }
-    let end_immediately = {
-        let mut guard = state.lock().expect("iOS background task state");
-        match *guard {
-            IosBackgroundTaskState::Starting => {
-                *guard = IosBackgroundTaskState::Active(identifier);
-                false
-            }
-            IosBackgroundTaskState::Finished => true,
-            IosBackgroundTaskState::Active(_) => false,
-        }
-    };
-    if end_immediately {
-        application.endBackgroundTask(identifier);
-    }
-    Some(state)
-}
-
-#[cfg(target_os = "ios")]
-fn finish_ios_background_task(app: &tauri::AppHandle, state: IosBackgroundTask) {
-    if let Err(error) = app.run_on_main_thread(move || {
-        finish_ios_background_task_on_main(state);
-    }) {
-        eprintln!("[medousa-home] could not release iOS background task: {error}");
-    }
-}
-
-#[cfg(target_os = "ios")]
-fn finish_ios_background_task_on_main(state: IosBackgroundTask) {
-    use objc2::MainThreadMarker;
-    use objc2_ui_kit::UIApplication;
-
-    let identifier = {
-        let mut guard = state.lock().expect("iOS background task state");
-        match std::mem::replace(&mut *guard, IosBackgroundTaskState::Finished) {
-            IosBackgroundTaskState::Active(identifier) => Some(identifier),
-            IosBackgroundTaskState::Starting | IosBackgroundTaskState::Finished => None,
-        }
-    };
-    if let (Some(identifier), Some(mtm)) = (identifier, MainThreadMarker::new()) {
-        UIApplication::sharedApplication(mtm).endBackgroundTask(identifier);
     }
 }
 
@@ -372,12 +280,12 @@ pub fn install_lifecycle(app: &tauri::AppHandle) {
     if let Err(error) = app.run_on_main_thread(move || {
         let center = NSNotificationCenter::defaultCenter();
         let background = RcBlock::new(move |_notification: NonNull<NSNotification>| {
-            let cancelled = background_app
+            let live_turns = background_app
                 .state::<EmbeddedDaemonState>()
-                .suspend_if_booted(&background_app);
-            if cancelled > 0 {
+                .background_if_booted();
+            if live_turns > 0 {
                 eprintln!(
-                    "[medousa-home] suspended embedded daemon; cancellation requested for {cancelled} turn(s)"
+                    "[medousa-home] embedded daemon backgrounded with {live_turns} live turn(s); execution remains OS-managed"
                 );
             }
         });
