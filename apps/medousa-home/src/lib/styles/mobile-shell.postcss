@@ -21,6 +21,19 @@
     overflow: hidden;
   }
 
+  html[data-mobile-script-editor-active="true"] .mobile-shell {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: calc(
+      var(--mobile-layout-height, 100dvh) - var(--mobile-keyboard-inset, 0px)
+    );
+    max-height: calc(
+      var(--mobile-layout-height, 100dvh) - var(--mobile-keyboard-inset, 0px)
+    );
+    overflow: hidden;
+  }
+
   .mobile-shell > main {
     padding-bottom: var(--mobile-bottom-chrome-height, 5.5rem);
   }
@@ -634,6 +647,23 @@
     -webkit-overflow-scrolling: touch;
   }
 
+  /* Settings + Automations sheets share one mobile rhythm. */
+  :is(.settings-nav-picker, .settings-sheet, .automations-sheet) {
+    --mobile-sheet-gutter: 1.25rem;
+    --mobile-sheet-row-inset: 1.25rem;
+    --mobile-sheet-row-min-height: 3.85rem;
+  }
+
+  :is(.settings-nav-picker, .settings-sheet, .automations-sheet)
+    :is(.mobile-sheet-stack-header, .mobile-turn-sheet-header) {
+    padding-inline: var(--mobile-sheet-gutter);
+  }
+
+  :is(.settings-nav-picker, .settings-sheet, .automations-sheet)
+    :is(.mobile-sheet-scroll, .mobile-turn-sheet-body, .automation-sheet-search) {
+    padding-inline: var(--mobile-sheet-gutter);
+  }
+
   .workshop-switcher-mobile-sheet {
     @apply overflow-hidden rounded-t-3xl;
     max-height: min(82dvh, 42rem);
@@ -997,6 +1027,19 @@
 
   .mobile-turn-sheet-link-row {
     @apply flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition active:bg-surface-700/35;
+  }
+
+  .mobile-turn-sheet-link-row:disabled {
+    @apply pointer-events-none opacity-35;
+  }
+
+  /* Keep the shared sheet inset after the row utility shorthands so the
+     group edge and the row content always have separate breathing room. */
+  :is(.settings-nav-picker, .settings-sheet, .automations-sheet)
+    :is(.mobile-turn-sheet-row, .mobile-turn-sheet-link-row) {
+    min-height: var(--mobile-sheet-row-min-height);
+    padding-block: 0.7rem;
+    padding-inline: var(--mobile-sheet-row-inset);
   }
 
   .mobile-turn-sheet-link-label {

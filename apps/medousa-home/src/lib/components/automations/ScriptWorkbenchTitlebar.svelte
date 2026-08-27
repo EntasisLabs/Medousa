@@ -160,17 +160,20 @@
     const onSave = () => void saveActive();
     const onRun = () => void runActive();
     const onCompile = () => void compileActive("check");
+    const onOptimize = () => void compileActive("aot");
     const onFlow = () => addActiveScriptToFlow();
     const onOutput = () => onToggleConsole();
     window.addEventListener("medousa-mobile-script-save", onSave);
     window.addEventListener("medousa-mobile-script-run", onRun);
     window.addEventListener("medousa-mobile-script-compile", onCompile);
+    window.addEventListener("medousa-mobile-script-optimize", onOptimize);
     window.addEventListener("medousa-mobile-script-add-flow", onFlow);
     window.addEventListener("medousa-mobile-script-output", onOutput);
     return () => {
       window.removeEventListener("medousa-mobile-script-save", onSave);
       window.removeEventListener("medousa-mobile-script-run", onRun);
       window.removeEventListener("medousa-mobile-script-compile", onCompile);
+      window.removeEventListener("medousa-mobile-script-optimize", onOptimize);
       window.removeEventListener("medousa-mobile-script-add-flow", onFlow);
       window.removeEventListener("medousa-mobile-script-output", onOutput);
     };

@@ -254,6 +254,28 @@
   justify-self: center;
 }
 
+.mobile-top-chrome[data-automations-mode="script-editor"] {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr) auto;
+}
+
+.mobile-script-title {
+  @apply flex min-w-0 items-center justify-center gap-1.5 rounded-full px-2 py-2 text-sm font-medium text-surface-100 transition active:bg-surface-800/70;
+}
+
+.mobile-script-dirty {
+  @apply h-1.5 w-1.5 shrink-0 rounded-full bg-primary-400;
+}
+
+.mobile-script-actions {
+  @apply max-w-none shrink-0 gap-1 overflow-visible;
+}
+
+.mobile-script-run {
+  @apply inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-full bg-surface-100 px-3 text-xs font-semibold transition active:bg-surface-300 disabled:pointer-events-none disabled:opacity-35;
+  color: rgb(var(--color-surface-950));
+}
+
 /*
  * Chat: one continuous room — title + thread + composer share the shell canvas.
  * Do not restyle message content; only dissolve chrome banding.
@@ -282,9 +304,12 @@
   @apply h-11 w-11 shrink-0;
 }
 
-.mobile-top-chrome[data-automations-mode="flow-editor"] .mobile-chrome-icon,
-.mobile-top-chrome[data-automations-mode="script-editor"] .mobile-chrome-icon {
+.mobile-top-chrome[data-automations-mode="flow-editor"] .mobile-chrome-icon {
   @apply h-11 w-11;
+}
+
+.mobile-top-chrome[data-automations-mode="script-editor"] .mobile-chrome-icon {
+  @apply h-10 w-10;
 }
 
 .mobile-chrome-workshop {

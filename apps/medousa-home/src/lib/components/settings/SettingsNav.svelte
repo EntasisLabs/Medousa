@@ -257,11 +257,6 @@
     max-height: min(78dvh, 42rem);
   }
 
-  .settings-nav-picker-row {
-    min-height: 3.85rem;
-    padding: 0.7rem 1rem;
-  }
-
   .settings-nav-picker-done {
     display: inline-flex;
     min-height: 2.75rem;

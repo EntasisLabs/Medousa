@@ -37,3 +37,13 @@ describe("mobile Code chrome", () => {
     ]);
   });
 });
+
+describe("mobile Scripts chrome", () => {
+  it("keeps only document actions in the editor chrome", () => {
+    expect(mobileChromeTrailing("automations", "scripts", "script-editor")).toEqual([
+      "scriptSave",
+      "scriptRun",
+      "scriptMore",
+    ]);
+  });
+});

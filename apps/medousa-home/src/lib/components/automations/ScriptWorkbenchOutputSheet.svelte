@@ -46,7 +46,7 @@
   >
     <div
       bind:this={sheetEl}
-      class="mobile-sheet mobile-sheet-tall scripts-workbench-output-sheet"
+      class="mobile-sheet mobile-sheet-tall automations-sheet scripts-workbench-output-sheet"
       role="dialog"
       aria-label="Script output"
     >

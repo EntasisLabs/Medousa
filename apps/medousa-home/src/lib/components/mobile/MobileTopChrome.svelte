@@ -4,9 +4,9 @@
     ArrowLeft,
     ArrowRight,
     CalendarClock,
+    ChevronDown,
     ChevronLeft,
     Eye,
-    Hammer,
     History,
     Layers,
     ListFilter,
@@ -113,7 +113,7 @@
     scriptTools: Wrench,
     scriptSave: Save,
     scriptRun: Play,
-    scriptCompile: Hammer,
+    scriptMore: MoreHorizontal,
     flowAddStep: Plus,
     flowPlan: Sparkles,
     flowRun: Play,
@@ -230,8 +230,8 @@
       case "scriptRun":
         window.dispatchEvent(new CustomEvent("medousa-mobile-script-run"));
         return;
-      case "scriptCompile":
-        window.dispatchEvent(new CustomEvent("medousa-mobile-script-compile"));
+      case "scriptMore":
+        window.dispatchEvent(new CustomEvent("medousa-mobile-script-more"));
         return;
       case "flowAddStep":
         window.dispatchEvent(new CustomEvent("medousa-mobile-flow-add"));
@@ -339,8 +339,8 @@
         return "Save script";
       case "scriptRun":
         return "Run script";
-      case "scriptCompile":
-        return "Compile script";
+      case "scriptMore":
+        return "More script actions";
       case "flowAddStep":
         return "Add step";
       case "flowPlan":
@@ -386,7 +386,11 @@
       case "browserForward":
         return !humanBrowser.canGoForward;
       case "scriptSave":
-        return graphemeScriptEditor.saveBusy || !graphemeScriptEditor.activeTab;
+        return (
+          graphemeScriptEditor.saveBusy ||
+          !graphemeScriptEditor.activeTab ||
+          !graphemeScriptEditor.activeTab.dirty
+        );
       case "codeSave": {
         const workId = mobileCodeWorkspaceState.selectedWorkId;
         const tab = workId ? codeWorkspace.activeFor(workId) : null;
@@ -396,11 +400,6 @@
         return !mobileCodeWorkspaceState.selectedWorkId;
       case "scriptRun":
         return workshop.runBusy || !graphemeScriptEditor.activeTab?.body.trim();
-      case "scriptCompile":
-        return (
-          graphemeScriptEditor.compileBusy ||
-          !graphemeScriptEditor.activeTab?.body.trim()
-        );
       case "flowRun":
         return flows.running || flows.composerDraft.steps.length === 0;
       default:
@@ -454,6 +453,42 @@
       onSelect={(section) => settingsNav.setActiveSection(section)}
     />
     <span class="mobile-chrome-leading-spacer" aria-hidden="true"></span>
+  {:else if automationsMode === "script-editor"}
+    <button
+      type="button"
+      class="mobile-script-title"
+      aria-label="Switch script"
+      onclick={() => {
+        haptic("light");
+        window.dispatchEvent(new CustomEvent("medousa-mobile-script-title"));
+      }}
+    >
+      <span class="truncate">{graphemeScriptEditor.activeTab?.name ?? "Scripts"}</span>
+      {#if graphemeScriptEditor.activeTab?.dirty}
+        <span class="mobile-script-dirty" aria-label="Unsaved changes"></span>
+      {/if}
+      <ChevronDown size={13} strokeWidth={2} class="shrink-0 text-content-quiet" />
+    </button>
+    <div class="mobile-chrome-actions mobile-script-actions">
+      {#each trailing as action (action)}
+        {@const Icon = icons[action]}
+        <button
+          type="button"
+          class:mobile-script-run={action === "scriptRun"}
+          class:mobile-chrome-icon={action !== "scriptRun"}
+          aria-label={labelFor(action)}
+          disabled={isDisabled(action)}
+          onclick={(event) => void run(action, event.currentTarget)}
+        >
+          {#if Icon}
+            <Icon size={17} strokeWidth={1.85} />
+          {/if}
+          {#if action === "scriptRun"}
+            <span>Run</span>
+          {/if}
+        </button>
+      {/each}
+    </div>
   {:else}
     <div class="mobile-chrome-actions">
       {#each trailing as action (action)}

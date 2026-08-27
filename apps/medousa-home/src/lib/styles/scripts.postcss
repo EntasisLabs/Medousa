@@ -694,6 +694,22 @@
   .scripts-workbench-center-mobile {
     @apply relative;
     --scripts-workbench-status-height: 2rem;
+    /* iOS zooms focused editable text below 16px. Keep the editor readable
+       without disabling user-controlled page zoom. */
+    --code-editor-font-size: max(16px, calc(13px * var(--content-zoom, 1)));
+  }
+
+  .scripts-workbench-actions-sheet {
+    height: auto;
+    max-height: min(80dvh, 42rem);
+  }
+
+  .scripts-workbench-actions-sheet .mobile-sheet-scroll {
+    flex: 0 1 auto;
+  }
+
+  .scripts-workbench-tools-sheet :is(input, textarea, select) {
+    font-size: max(16px, 1em);
   }
 
   .scripts-workbench-mobile-empty {

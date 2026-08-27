@@ -593,7 +593,7 @@
   >
     <div
       bind:this={mobileSheetEl}
-      class="mobile-sheet mobile-turn-sheet mobile-sheet-medium"
+      class="mobile-sheet mobile-turn-sheet mobile-sheet-medium settings-sheet"
       role="dialog"
       aria-label="Add workshop"
     >
@@ -642,7 +642,7 @@
   >
     <div
       bind:this={mobileSheetEl}
-      class="mobile-sheet mobile-turn-sheet mobile-sheet-medium"
+      class="mobile-sheet mobile-turn-sheet mobile-sheet-medium settings-sheet"
       role="dialog"
       aria-label="Manage {mobileManageWorkshop.label}"
     >
