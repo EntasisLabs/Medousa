@@ -2,8 +2,8 @@
   import {
     Blocks,
     Bot,
-    ChevronLeft,
-    ChevronRight,
+    Check,
+    ChevronDown,
     Gauge,
     Link2,
     Package,
@@ -11,6 +11,9 @@
     Share2,
     SlidersHorizontal,
   } from "@lucide/svelte";
+  import { haptic } from "$lib/haptics";
+  import { registerMobileBackHandler } from "$lib/mobileNavigation";
+  import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
   import type { SettingsSectionId } from "$lib/types/settings";
   import {
     settingsMobileSections,
@@ -34,6 +37,10 @@
     onSelect,
   }: Props = $props();
 
+  let pickerOpen = $state(false);
+  let sheetEl = $state<HTMLDivElement | null>(null);
+  let headerEl = $state<HTMLElement | null>(null);
+
   const entries = $derived(settingsNavEntries());
   const activeGroup = $derived(settingsSectionById(active)?.group ?? null);
   const activeLabel = $derived(settingsSectionById(active)?.label ?? "Settings");
@@ -52,59 +59,103 @@
   } as const;
 
   const pagerSections = $derived(settingsMobileSections());
-  const sectionIndex = $derived.by(() => {
-    const idx = pagerSections.indexOf(active);
-    return idx >= 0 ? idx : 0;
+  function openPicker() {
+    haptic("light");
+    pickerOpen = true;
+  }
+
+  function closePicker() {
+    pickerOpen = false;
+  }
+
+  function selectSection(section: SettingsSectionId) {
+    haptic("light");
+    onSelect(section);
+    closePicker();
+  }
+
+  $effect(() => {
+    if (!pickerOpen) return;
+    return registerMobileBackHandler(() => {
+      closePicker();
+      return true;
+    });
   });
 
-  function stepSection(delta: number) {
-    const len = pagerSections.length;
-    const next = pagerSections[(sectionIndex + delta + len) % len]!;
-    onSelect(next);
-  }
+  $effect(() => {
+    if (!pickerOpen || !sheetEl) return;
+    return attachMobileSheetGestures(sheetEl, headerEl, {
+      onDismiss: closePicker,
+      swipeBack: false,
+    });
+  });
 </script>
 
 {#if mobile}
-  <div
-    class="settings-nav-mobile-pager"
-    role="navigation"
-    aria-label="Settings sections"
+  <button
+    type="button"
+    class="settings-nav-title-trigger"
+    aria-label="Choose settings view"
+    aria-haspopup="dialog"
+    aria-expanded={pickerOpen}
+    onclick={openPicker}
   >
-    <button
-      type="button"
-      class="settings-nav-pager-btn"
-      title="Previous section"
-      aria-label="Previous settings section"
-      onclick={() => stepSection(-1)}
+    <span class="truncate">{activeLabel}</span>
+    {#if activeBadge > 0}
+      <span class="settings-nav-badge">{activeBadge}</span>
+    {/if}
+    <span class="settings-nav-title-chevron" aria-hidden="true">
+      <ChevronDown size={15} strokeWidth={2} />
+    </span>
+  </button>
+
+  {#if pickerOpen}
+    <div
+      class="mobile-sheet-backdrop mobile-turn-sheet-backdrop"
+      role="presentation"
+      onclick={(event) => {
+        if (event.target === event.currentTarget) closePicker();
+      }}
     >
-      <ChevronLeft size={18} strokeWidth={2} />
-    </button>
-    <div class="settings-nav-pager-label" aria-live="polite">
-      <span class="settings-nav-pager-title">
-        {activeLabel}
-        {#if activeBadge > 0}
-          <span class="settings-nav-badge">{activeBadge}</span>
-        {/if}
-      </span>
-      <span class="settings-nav-pager-dots" aria-hidden="true">
-        {#each pagerSections as sectionId, i (sectionId)}
-          <span
-            class="settings-nav-pager-dot"
-            class:settings-nav-pager-dot--active={i === sectionIndex}
-          ></span>
-        {/each}
-      </span>
+      <div
+        bind:this={sheetEl}
+        class="mobile-sheet mobile-turn-sheet settings-nav-picker"
+        role="dialog"
+        aria-label="Choose settings view"
+      >
+        <header bind:this={headerEl} class="settings-nav-picker-header">
+          <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
+          <h2>Settings</h2>
+        </header>
+        <div class="mobile-turn-sheet-body">
+          <div class="mobile-turn-sheet-group">
+            {#each pagerSections as sectionId, index (sectionId)}
+              {@const section = settingsSectionById(sectionId)}
+              {#if section}
+                <button
+                  type="button"
+                  class="mobile-turn-sheet-row {index > 0 ? 'mobile-turn-sheet-row-divider' : ''}"
+                  aria-current={sectionId === active ? "page" : undefined}
+                  onclick={() => selectSection(sectionId)}
+                >
+                  <span class="mobile-turn-sheet-row-copy">
+                    <span class="mobile-turn-sheet-row-title">{section.label}</span>
+                    <span class="mobile-turn-sheet-row-subtitle">{section.hint}</span>
+                  </span>
+                  {#if (badges[sectionId] ?? 0) > 0}
+                    <span class="settings-nav-badge">{badges[sectionId]}</span>
+                  {/if}
+                  {#if sectionId === active}
+                    <Check size={18} strokeWidth={2.2} class="mobile-turn-sheet-row-check" />
+                  {/if}
+                </button>
+              {/if}
+            {/each}
+          </div>
+        </div>
+      </div>
     </div>
-    <button
-      type="button"
-      class="settings-nav-pager-btn"
-      title="Next section"
-      aria-label="Next settings section"
-      onclick={() => stepSection(1)}
-    >
-      <ChevronRight size={18} strokeWidth={2} />
-    </button>
-  </div>
+  {/if}
 {:else}
   <nav
     class="settings-nav"
@@ -168,66 +219,50 @@
     background: color-mix(in srgb, var(--color-primary-500) 40%, transparent);
   }
 
-  .settings-nav-mobile-pager {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-
-  .settings-nav-pager-btn {
+  .settings-nav-title-trigger {
     display: inline-flex;
-    height: 2.25rem;
-    width: 2.25rem;
-    flex-shrink: 0;
+    min-width: 0;
+    max-width: 13rem;
     align-items: center;
     justify-content: center;
-    border-radius: 0.5rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-500) 40%, transparent);
-    color: rgb(var(--color-surface-200));
-    background: transparent;
-  }
-
-  .settings-nav-pager-btn:active {
-    background: color-mix(in srgb, var(--color-surface-500) 18%, transparent);
-  }
-
-  .settings-nav-pager-label {
-    display: flex;
-    min-width: 0;
-    flex: 1;
-    flex-direction: column;
-    align-items: center;
     gap: 0.3rem;
-    padding: 0.15rem 0.35rem;
+    border: 0;
+    background: transparent;
+    padding: 0.55rem 0.7rem;
+    color: rgb(var(--color-surface-50));
+    font-size: 0.95rem;
+    font-weight: 650;
+    line-height: 1.2;
+  }
+
+  .settings-nav-title-trigger:active {
+    opacity: 0.7;
+  }
+
+  .settings-nav-title-chevron {
+    flex-shrink: 0;
+    color: rgb(var(--theme-text-quiet));
+    transition: transform 160ms ease;
+  }
+
+  .settings-nav-title-trigger[aria-expanded="true"] .settings-nav-title-chevron {
+    transform: rotate(180deg);
+  }
+
+  .settings-nav-picker {
+    max-height: min(82dvh, 42rem);
+  }
+
+  .settings-nav-picker-header {
+    flex-shrink: 0;
+    padding: 0 1rem 0.65rem;
     text-align: center;
   }
 
-  .settings-nav-pager-title {
-    display: inline-flex;
-    max-width: 100%;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    line-height: 1.2;
+  .settings-nav-picker-header h2 {
+    margin: 0.55rem 0 0;
     color: rgb(var(--color-surface-50));
-  }
-
-  .settings-nav-pager-dots {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-  }
-
-  .settings-nav-pager-dot {
-    height: 0.28rem;
-    width: 0.28rem;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--color-surface-500) 55%, transparent);
-  }
-
-  .settings-nav-pager-dot--active {
-    width: 0.75rem;
-    background: color-mix(in srgb, var(--color-primary-500) 75%, transparent);
+    font-size: 0.95rem;
+    font-weight: 650;
   }
 </style>

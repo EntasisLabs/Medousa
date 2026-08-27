@@ -31,9 +31,10 @@
   interface Props {
     embedded?: boolean;
     readOnly?: boolean;
+    mobile?: boolean;
   }
 
-  let { embedded = false, readOnly = false }: Props = $props();
+  let { embedded = false, readOnly = false, mobile = false }: Props = $props();
 
   type FormTransport = "stdio" | "http" | "sse" | "mock";
 
@@ -497,8 +498,8 @@
     </div>
   {:else}
     <!-- Browse chapter: gateway → servers → advanced -->
-    <div class="settings-connection-card mcp-full-card">
-      <div class="flex items-start gap-3">
+    <div class="settings-connection-card mcp-full-card mcp-gateway-card" class:mcp-mobile={mobile}>
+      <div class="mcp-gateway-summary flex items-start gap-3">
         <span
           class="settings-connection-icon {gatewayReachable
             ? 'settings-connection-icon-ok'
@@ -530,7 +531,7 @@
           </p>
           <p class="workshop-faint mt-1 font-mono text-[11px]">{gatewayUrl}</p>
         </div>
-        <div class="flex shrink-0 flex-wrap justify-end gap-2">
+        <div class="mcp-gateway-actions flex shrink-0 flex-wrap justify-end gap-2">
           <button
             type="button"
             class="btn btn-sm variant-soft-surface"
@@ -555,7 +556,7 @@
     </div>
 
     <div class="mt-8">
-      <div class="flex flex-wrap items-end justify-between gap-3">
+      <div class="mcp-server-list-heading flex flex-wrap items-end justify-between gap-3" class:mcp-mobile={mobile}>
         <div>
           <h3 class="settings-subsection-heading">Your servers</h3>
           <p class="settings-subsection-lead mb-0">
@@ -596,73 +597,89 @@
           {/if}
         </div>
       {:else}
-        <div class="settings-toggle-list mt-4">
+        <div class="settings-toggle-list mcp-server-list mt-4" class:mcp-mobile={mobile}>
           {#each servers as server (server.serverId)}
             {@const status = statusLabel(server)}
             {@const oauth = oauthStatuses[server.serverId]}
-            <div class="settings-toggle-row settings-metric-row flex-wrap">
-              <span class="min-w-0 flex-1">
-                <span class="flex flex-wrap items-center gap-2">
-                  <span class="text-sm font-medium text-surface-100">{server.title}</span>
-                  <span class="font-mono text-[11px] text-content-quiet">{server.serverId}</span>
-                  <span class="text-[10px] font-medium uppercase tracking-wide {status.className}">
-                    {status.text}
+            <div
+              class="settings-toggle-row settings-metric-row mcp-server-row"
+              class:mcp-mobile={mobile}
+            >
+              <div class="mcp-server-main">
+                <span class="min-w-0 flex-1">
+                  <span class="flex flex-wrap items-center gap-2">
+                    <span class="text-sm font-medium text-surface-100">{server.title}</span>
+                    <span class="font-mono text-[11px] text-content-quiet">{server.serverId}</span>
+                  </span>
+                  <span class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span class="text-[10px] font-medium uppercase tracking-wide {status.className}">
+                      {status.text}
+                    </span>
+                    <span class="workshop-faint text-xs">
+                      {server.toolCount} tool{server.toolCount === 1 ? "" : "s"}
+                    </span>
                   </span>
                 </span>
-                <span class="workshop-faint mt-0.5 block text-xs">
-                  {server.toolCount} tool{server.toolCount === 1 ? "" : "s"}
-                </span>
-              </span>
-              <div class="flex shrink-0 items-center gap-2">
-                {#if oauth?.connected}
-                  <span class="text-[10px] font-medium uppercase tracking-wide text-content-success">
-                    Signed in
-                  </span>
-                  <button
-                    type="button"
-                    class="workshop-text-action text-xs"
-                    disabled={busy}
-                    onclick={() => void disconnectOAuth(server)}
-                  >
-                    Sign out
-                  </button>
-                {:else if oauth}
-                  <button
-                    type="button"
-                    class="workshop-text-action text-xs"
-                    disabled={busy}
-                    onclick={() => void connectOAuth(server)}
-                  >
-                    Sign in
-                  </button>
-                {/if}
-                <label class="inline-flex items-center gap-2 text-xs text-content-secondary">
+                <label class="mcp-server-switch" title={server.enabled ? "Disable server" : "Enable server"}>
+                  <span class="sr-only">{server.enabled ? "Disable" : "Enable"} {server.title}</span>
                   <input
                     type="checkbox"
-                    class="checkbox"
+                    class="mcp-server-switch-input"
+                    role="switch"
                     checked={server.enabled}
                     disabled={busy || readOnly}
                     onchange={() => void toggleEnabled(server)}
                   />
-                  On
+                  <span class="mcp-server-switch-track" aria-hidden="true">
+                    <span class="mcp-server-switch-thumb"></span>
+                  </span>
                 </label>
+              </div>
+              <div class="mcp-server-actions">
+                <div class="mcp-server-session-actions">
+                  {#if oauth?.connected}
+                    <span class="text-[10px] font-medium uppercase tracking-wide text-content-success">
+                      Signed in
+                    </span>
+                    <button
+                      type="button"
+                      class="mcp-server-action"
+                      disabled={busy}
+                      onclick={() => void disconnectOAuth(server)}
+                    >
+                      Sign out
+                    </button>
+                  {:else if oauth}
+                    <button
+                      type="button"
+                      class="mcp-server-action"
+                      disabled={busy}
+                      onclick={() => void connectOAuth(server)}
+                    >
+                      Sign in
+                    </button>
+                  {/if}
+                  {#if !readOnly}
+                    <button
+                      type="button"
+                      class="mcp-server-action"
+                      disabled={busy}
+                      onclick={() => void editServer(server)}
+                    >
+                      Edit
+                    </button>
+                  {/if}
+                </div>
                 {#if !readOnly}
                   <button
                     type="button"
-                    class="workshop-text-action text-xs"
-                    disabled={busy}
-                    onclick={() => void editServer(server)}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    class="workshop-text-action text-xs text-content-error"
+                    class="mcp-server-delete"
                     disabled={busy}
                     aria-label="Remove {server.title}"
+                    title="Remove server"
                     onclick={() => void deleteServer(server)}
                   >
-                    <Trash2 class="h-3.5 w-3.5" aria-hidden="true" />
+                    <Trash2 class="h-4 w-4" aria-hidden="true" />
                   </button>
                 {/if}
               </div>
@@ -704,5 +721,186 @@
 <style>
   :global(.mcp-servers-panel .mcp-full-card) {
     max-width: none;
+  }
+
+  .mcp-server-row {
+    display: flex;
+    align-items: stretch;
+    gap: 1rem;
+  }
+
+  .mcp-server-main {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .mcp-server-switch {
+    position: relative;
+    display: inline-flex;
+    height: 2.75rem;
+    width: 3.25rem;
+    flex-shrink: 0;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mcp-server-switch-input {
+    position: absolute;
+    height: 1px;
+    width: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .mcp-server-switch-track {
+    position: relative;
+    display: block;
+    height: 1.5rem;
+    width: 2.55rem;
+    border-radius: 999px;
+    border: 1px solid rgb(var(--color-surface-500) / 0.52);
+    background: rgb(var(--color-surface-700) / 0.72);
+    transition: border-color 150ms ease, background-color 150ms ease;
+  }
+
+  .mcp-server-switch-thumb {
+    position: absolute;
+    left: 0.15rem;
+    top: 0.15rem;
+    height: 1.075rem;
+    width: 1.075rem;
+    border-radius: 999px;
+    background: rgb(var(--color-surface-200));
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+    transition: transform 150ms ease, background-color 150ms ease;
+  }
+
+  .mcp-server-switch-input:checked + .mcp-server-switch-track {
+    border-color: rgb(var(--color-primary-500) / 0.72);
+    background: rgb(var(--color-primary-500) / 0.72);
+  }
+
+  .mcp-server-switch-input:checked + .mcp-server-switch-track .mcp-server-switch-thumb {
+    transform: translateX(1.05rem);
+    background: rgb(var(--color-surface-50));
+  }
+
+  .mcp-server-switch-input:focus-visible + .mcp-server-switch-track {
+    outline: 2px solid rgb(var(--color-primary-400) / 0.85);
+    outline-offset: 2px;
+  }
+
+  .mcp-server-switch-input:disabled + .mcp-server-switch-track {
+    opacity: 0.45;
+  }
+
+  .mcp-server-actions {
+    display: flex;
+    min-width: 0;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .mcp-server-session-actions {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .mcp-server-action,
+  .mcp-server-delete {
+    display: inline-flex;
+    min-height: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 0.65rem;
+    background: transparent;
+    transition: color 140ms ease, background-color 140ms ease, opacity 140ms ease;
+  }
+
+  .mcp-server-action {
+    padding: 0 0.65rem;
+    color: rgb(var(--theme-text-tertiary));
+    font-size: 0.75rem;
+    font-weight: 550;
+  }
+
+  .mcp-server-delete {
+    width: 2.75rem;
+    color: rgb(var(--theme-text-faint));
+  }
+
+  .mcp-server-action:active:not(:disabled),
+  .mcp-server-delete:active:not(:disabled) {
+    background: rgb(var(--color-surface-700) / 0.45);
+  }
+
+  .mcp-server-delete:hover:not(:disabled),
+  .mcp-server-delete:focus-visible {
+    color: rgb(var(--color-error-400));
+  }
+
+  .mcp-server-action:disabled,
+  .mcp-server-delete:disabled {
+    opacity: 0.4;
+  }
+
+  .mcp-server-list.mcp-mobile {
+    overflow: hidden;
+    border-radius: 1rem;
+  }
+
+  .mcp-server-row.mcp-mobile {
+    flex-direction: column;
+    gap: 0;
+    padding: 0.9rem 1rem 0.35rem;
+  }
+
+  .mcp-server-row.mcp-mobile .mcp-server-main {
+    align-items: flex-start;
+  }
+
+  .mcp-server-row.mcp-mobile .mcp-server-actions {
+    min-height: 3rem;
+    margin-top: 0.45rem;
+    border-top: 1px solid rgb(var(--color-surface-600) / 0.22);
+  }
+
+  .mcp-server-row.mcp-mobile .mcp-server-session-actions {
+    flex: 1 1 auto;
+  }
+
+  .mcp-server-row.mcp-mobile .mcp-server-delete {
+    margin-left: auto;
+  }
+
+  .mcp-server-list-heading.mcp-mobile {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .mcp-gateway-card.mcp-mobile {
+    padding: 1rem;
+  }
+
+  .mcp-gateway-card.mcp-mobile .mcp-gateway-summary {
+    align-items: center;
+  }
+
+  .mcp-gateway-card.mcp-mobile .mcp-gateway-actions {
+    gap: 0.4rem;
+  }
+
+  .mcp-gateway-card.mcp-mobile .mcp-gateway-actions :global(.btn) {
+    min-height: 2.75rem;
   }
 </style>

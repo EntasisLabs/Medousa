@@ -244,6 +244,16 @@
   background-color: rgb(var(--color-surface-950));
 }
 
+.mobile-top-chrome[data-settings-title="true"] {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+}
+
+.mobile-top-chrome[data-settings-title="true"] > :nth-child(2) {
+  min-width: 0;
+  justify-self: center;
+}
+
 /*
  * Chat: one continuous room — title + thread + composer share the shell canvas.
  * Do not restyle message content; only dissolve chrome banding.

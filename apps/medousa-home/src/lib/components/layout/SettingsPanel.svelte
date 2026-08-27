@@ -136,7 +136,7 @@
   {/if}
 
   <div class="settings-shell min-h-0 flex-1 {mobile ? 'flex flex-col' : 'flex'}">
-    {#if !shellNav}
+    {#if !shellNav && !mobile}
       <aside class="settings-shell-nav mobile-you-scroll min-h-0 shrink-0 overflow-y-auto {mobile ? 'px-4 pt-3' : 'border-r border-surface-500/35 p-3'}">
         <SettingsNav
           active={activeSection}
@@ -167,7 +167,7 @@
       {:else if activeSection === "packages"}
         <LazyFeatureView loader={loadSettingsPackagesSection} />
       {:else if activeSection === "mcp"}
-        <LazyFeatureView loader={loadSettingsMcpSection} {embeddedMcp} {canManageMcp} />
+        <LazyFeatureView loader={loadSettingsMcpSection} {embeddedMcp} {canManageMcp} {mobile} />
       {:else}
         <LazyFeatureView
           loader={loadSettingsBasementSection}

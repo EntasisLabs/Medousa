@@ -16,9 +16,10 @@
   interface Props {
     embeddedMcp?: boolean;
     canManageMcp?: boolean;
+    mobile?: boolean;
   }
 
-  let { embeddedMcp = false, canManageMcp = false }: Props = $props();
+  let { embeddedMcp = false, canManageMcp = false, mobile = false }: Props = $props();
 
   let gatewayPackage = $state<HomePackageRow | null>(null);
   let loadingPackage = $state(true);
@@ -179,7 +180,7 @@
   {/if}
 
   <div class="prefs-band">
-    <McpServersPanel embedded={embeddedMcp} readOnly={!canManageMcp} />
+    <McpServersPanel embedded={embeddedMcp} readOnly={!canManageMcp} {mobile} />
   </div>
 </section>
 

@@ -42,7 +42,6 @@
   /** Destinations without their own embedded page title. */
   const showDestTitle = $derived(
     layout.moreDestination === "map" ||
-      layout.moreDestination === "settings" ||
       layout.moreDestination === "profiles" ||
       layout.moreDestination === "messaging",
   );

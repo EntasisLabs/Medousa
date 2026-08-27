@@ -29,6 +29,7 @@
   } from "@lucide/svelte";
   import type { Component } from "svelte";
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
+  import SettingsNav from "$lib/components/settings/SettingsNav.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { vault } from "$lib/stores/vault.svelte";
@@ -40,6 +41,7 @@
   import { workshop } from "$lib/stores/workshop.svelte";
   import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
   import { mobileCodeWorkspaceState } from "$lib/stores/mobileCodeWorkspaceState.svelte";
+  import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { haptic } from "$lib/haptics";
   import { prepareTalkAboutNote } from "$lib/utils/vaultNoteBridge";
   import { openMobileCodeThread } from "$lib/utils/mobileCodeOpen";
@@ -90,6 +92,9 @@
   const brandStyle = $derived(workshopBrandCssVars(workshops.activeWorkshop?.brandColor));
   const notesFilterActive = $derived(
     vault.activeSpaceFilter !== null || vault.libraryBrowseMode !== "folders",
+  );
+  const settingsTitle = $derived(
+    surface === "more-nested" && layout.moreDestination === "settings",
   );
 
   const icons: Partial<Record<MobileChromeActionId, Component>> = {
@@ -419,7 +424,12 @@
   }
 </script>
 
-<header class="mobile-top-chrome" data-chrome-surface={surface} data-automations-mode={automationsMode}>
+<header
+  class="mobile-top-chrome"
+  data-chrome-surface={surface}
+  data-automations-mode={automationsMode}
+  data-settings-title={settingsTitle || undefined}
+>
   {#if leading}
     <button
       type="button"
@@ -437,90 +447,99 @@
     <span class="mobile-chrome-leading-spacer" aria-hidden="true"></span>
   {/if}
 
-  <div class="mobile-chrome-actions">
-    {#each trailing as action (action)}
-      {#if action === "sessions"}
-        <OverflowMenu
-          bind:open={sessionsMenuOpen}
-          align="right"
-          label="Sessions"
-          title="Sessions"
-          panelWidth={12.5 * 16}
-          panelClass="w-[12.5rem] rounded-xl border border-surface-500/40 bg-surface-900/95 p-1 shadow-xl backdrop-blur"
-          onOpenChange={(open) => {
-            if (open) haptic("light");
-          }}
-        >
-          {#snippet trigger({ open, toggle })}
+  {#if settingsTitle}
+    <SettingsNav
+      active={settingsNav.activeSection}
+      mobile={true}
+      onSelect={(section) => settingsNav.setActiveSection(section)}
+    />
+    <span class="mobile-chrome-leading-spacer" aria-hidden="true"></span>
+  {:else}
+    <div class="mobile-chrome-actions">
+      {#each trailing as action (action)}
+        {#if action === "sessions"}
+          <OverflowMenu
+            bind:open={sessionsMenuOpen}
+            align="right"
+            label="Sessions"
+            title="Sessions"
+            panelWidth={12.5 * 16}
+            panelClass="w-[12.5rem] rounded-xl border border-surface-500/40 bg-surface-900/95 p-1 shadow-xl backdrop-blur"
+            onOpenChange={(open) => {
+              if (open) haptic("light");
+            }}
+          >
+            {#snippet trigger({ open, toggle })}
+              <button
+                type="button"
+                class="mobile-chrome-icon"
+                class:mobile-chrome-icon-active={open}
+                aria-label="Sessions"
+                title="Sessions"
+                aria-expanded={open}
+                aria-haspopup="menu"
+                onclick={toggle}
+              >
+                <MessagesSquare size={18} strokeWidth={1.75} />
+              </button>
+            {/snippet}
             <button
               type="button"
-              class="mobile-chrome-icon"
-              class:mobile-chrome-icon-active={open}
-              aria-label="Sessions"
-              title="Sessions"
-              aria-expanded={open}
-              aria-haspopup="menu"
-              onclick={toggle}
+              role="menuitem"
+              class="vault-menu-item rounded-lg"
+              onclick={() => void createNewChat()}
             >
-              <MessagesSquare size={18} strokeWidth={1.75} />
+              <Plus size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
+              New chat
             </button>
-          {/snippet}
+            <button
+              type="button"
+              role="menuitem"
+              class="vault-menu-item rounded-lg"
+              onclick={openPreviousSessions}
+            >
+              <History size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
+              Previous sessions
+            </button>
+          </OverflowMenu>
+        {:else if action === "workshop"}
           <button
             type="button"
-            role="menuitem"
-            class="vault-menu-item rounded-lg"
-            onclick={() => void createNewChat()}
+            class="mobile-chrome-icon mobile-chrome-workshop"
+            style={brandStyle}
+            aria-label={labelFor(action)}
+            onclick={() => void run(action)}
           >
-            <Plus size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
-            New chat
+            <span class="mobile-chrome-workshop-mono">{workshops.activeMonogram}</span>
           </button>
+        {:else}
+          {@const Icon =
+            action === "browserReload" && humanBrowser.loading
+              ? Square
+              : action === "noteEdit" && vault.editorMode === "edit"
+                ? Eye
+                : icons[action]}
           <button
             type="button"
-            role="menuitem"
-            class="vault-menu-item rounded-lg"
-            onclick={openPreviousSessions}
+            class="mobile-chrome-icon"
+            class:text-content-link={action === "noteChat" ||
+              (action === "noteEdit" && vault.editorMode === "edit") ||
+              (action === "notesFilter" && notesFilterActive)}
+            aria-label={labelFor(action)}
+            aria-pressed={action === "noteEdit" ? vault.editorMode === "edit" : undefined}
+            disabled={isDisabled(action)}
+            data-browser-popover-trigger={action === "browserTabs" ? "" : undefined}
+            onclick={(event) => void run(action, event.currentTarget)}
           >
-            <History size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
-            Previous sessions
+            {#if Icon}
+              <Icon
+                size={action === "browserReload" && humanBrowser.loading ? 12 : 18}
+                strokeWidth={action === "browserReload" && humanBrowser.loading ? 2.25 : 1.75}
+              />
+            {/if}
           </button>
-        </OverflowMenu>
-      {:else if action === "workshop"}
-        <button
-          type="button"
-          class="mobile-chrome-icon mobile-chrome-workshop"
-          style={brandStyle}
-          aria-label={labelFor(action)}
-          onclick={() => void run(action)}
-        >
-          <span class="mobile-chrome-workshop-mono">{workshops.activeMonogram}</span>
-        </button>
-      {:else}
-        {@const Icon =
-          action === "browserReload" && humanBrowser.loading
-            ? Square
-            : action === "noteEdit" && vault.editorMode === "edit"
-              ? Eye
-              : icons[action]}
-        <button
-          type="button"
-          class="mobile-chrome-icon"
-          class:text-content-link={action === "noteChat" ||
-            (action === "noteEdit" && vault.editorMode === "edit") ||
-            (action === "notesFilter" && notesFilterActive)}
-          aria-label={labelFor(action)}
-          aria-pressed={action === "noteEdit" ? vault.editorMode === "edit" : undefined}
-          disabled={isDisabled(action)}
-          data-browser-popover-trigger={action === "browserTabs" ? "" : undefined}
-          onclick={(event) => void run(action, event.currentTarget)}
-        >
-          {#if Icon}
-            <Icon
-              size={action === "browserReload" && humanBrowser.loading ? 12 : 18}
-              strokeWidth={action === "browserReload" && humanBrowser.loading ? 2.25 : 1.75}
-            />
-          {/if}
-        </button>
-      {/if}
-    {/each}
-  </div>
+        {/if}
+      {/each}
+    </div>
+  {/if}
 </header>
