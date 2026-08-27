@@ -16150,6 +16150,26 @@
           }
         }
       },
+      "ToolInputParam": {
+        "description": "One redacted key/value from a tool's arguments, for chat-adjacent tool evidence. Values are truncated at the emit site; `truncated` tells the UI to say so.",
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
       "TurnArtifactRef": {
         "type": "object",
         "required": [
@@ -16304,6 +16324,12 @@
                   "null"
                 ],
                 "format": "date-time"
+              },
+              "input_params": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/ToolInputParam"
+                }
               },
               "input_summary": {
                 "type": "string"
@@ -17263,6 +17289,26 @@
           }
         }
       },
+      "ToolInputParam": {
+        "description": "One redacted key/value from a tool's arguments, for chat-adjacent tool evidence. Values are truncated at the emit site; `truncated` tells the UI to say so.",
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
       "TranscriptEntry": {
         "description": "One immutable transcript payload at an ordered position in a session. Session authority and session id are carried by the enclosing history response; callers can combine them with these coordinates into a `TranscriptEntryRef`.",
         "type": "object",
@@ -17535,6 +17581,12 @@
                   "null"
                 ],
                 "format": "date-time"
+              },
+              "input_params": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/ToolInputParam"
+                }
               },
               "input_summary": {
                 "type": "string"
@@ -18681,6 +18733,26 @@
           }
         }
       },
+      "ToolInputParam": {
+        "description": "One redacted key/value from a tool's arguments, for chat-adjacent tool evidence. Values are truncated at the emit site; `truncated` tells the UI to say so.",
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "type": "boolean"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
       "TranscriptEntryId": {
         "type": "string"
       },
@@ -18859,6 +18931,12 @@
                   "null"
                 ],
                 "format": "date-time"
+              },
+              "input_params": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/ToolInputParam"
+                }
               },
               "input_summary": {
                 "type": "string"

@@ -292,6 +292,7 @@ mod tests {
                 tool_name: "cognition_manuscript_list".to_string(),
                 status: "succeeded".to_string(),
                 input_summary: "list".to_string(),
+                input_params: vec![],
                 output_summary: Some("base-researcher".to_string()),
                 artifact_refs: vec![],
                 tool_round: Some(1),

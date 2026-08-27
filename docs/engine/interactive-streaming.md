@@ -64,7 +64,7 @@ late detached deltas from outliving the cancelled turn.
 | `content_delta`, `reasoning_delta` | Streaming text |
 | `final_text` | Completed assistant message |
 | `tool_names`, `tool_run_id`, `tool_name`, `tool_status` | Tool bus |
-| `tool_input_summary`, `tool_output_summary` | Tool summaries |
+| `tool_input_summary`, `tool_input_params`, `tool_output_summary` | Redacted input preview and tool summaries |
 | `ui_artifact` | New inline/panel/fullscreen HTML artifact |
 | `previous_artifact_id`, `root_artifact_id` | Artifact revision (`artifact_updated` semantics) |
 | `budget_request_id`, `requested_rounds` | Turn budget pause |

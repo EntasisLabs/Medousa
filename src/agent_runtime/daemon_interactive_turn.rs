@@ -931,7 +931,13 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         let wait_started = Instant::now();
         self.commit_active_segment(false).await;
         if let Ok(mut parts) = self.parts.lock() {
-            parts.tool_started(&tool_run_id, &tool_name, &input_summary, tool_round);
+            parts.tool_started_with_params(
+                &tool_run_id,
+                &tool_name,
+                &input_summary,
+                input_params.clone(),
+                tool_round,
+            );
         }
         self.publish_tracked(TurnStreamEventV3::ToolStarted {
             tool_run_id,

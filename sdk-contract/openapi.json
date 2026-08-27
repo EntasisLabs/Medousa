@@ -5621,6 +5621,12 @@
                   "null"
                 ]
               },
+              "input_params": {
+                "items": {
+                  "$ref": "#/components/schemas/ToolInputParam"
+                },
+                "type": "array"
+              },
               "input_summary": {
                 "type": "string"
               },

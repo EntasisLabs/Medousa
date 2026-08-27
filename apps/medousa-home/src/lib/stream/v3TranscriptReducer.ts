@@ -156,7 +156,7 @@ function applyToolEvent(
 
   const run = runFromToolEvent(event);
   const last = segments.at(-1);
-  if (last?.kind === "tool_group" && last.toolRound === event.tool_round) {
+  if (last?.kind === "tool_group") {
     return replaceSegment(segments, segments.length - 1, {
       ...last,
       runs: [...last.runs, run],

@@ -385,11 +385,13 @@ impl EmbeddedChronologicalTurn {
     ) -> Result<(), medousa_engine::TurnPipelineError> {
         self.commit_active(false).await?;
         let input_summary = embedded_tool_input_summary(&event.tool_name, &event.tool_input);
+        let input_params = embedded_tool_input_params(&event.tool_input);
         if let Ok(mut parts) = self.parts.lock() {
-            parts.tool_started(
+            parts.tool_started_with_params(
                 &tool_run_id,
                 &event.tool_name,
                 &input_summary,
+                input_params.clone(),
                 event.tool_round,
             );
         }
@@ -397,7 +399,7 @@ impl EmbeddedChronologicalTurn {
             tool_run_id,
             tool_name: event.tool_name,
             input_summary,
-            input_params: embedded_tool_input_params(&event.tool_input),
+            input_params,
             tool_round: event.tool_round,
         })
         .await

@@ -461,6 +461,7 @@ mod tests {
                     tool_name: "secret_tool".to_string(),
                     status: "succeeded".to_string(),
                     input_summary: "private input".to_string(),
+                    input_params: Vec::new(),
                     output_summary: Some("private output".to_string()),
                     artifact_refs: Vec::new(),
                     tool_round: Some(1),

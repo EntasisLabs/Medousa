@@ -54,6 +54,7 @@ describe("turnParts", () => {
         tool_name: "vault.read",
         status: "succeeded",
         input_summary: "read note",
+        input_params: [{ key: "path", value: "notes/plan.md", truncated: false }],
         tool_round: 1,
       },
       {
@@ -62,7 +63,7 @@ describe("turnParts", () => {
         tool_name: "web.search",
         status: "succeeded",
         input_summary: "search topic",
-        tool_round: 1,
+        tool_round: 2,
       },
       {
         kind: "text",
@@ -82,7 +83,10 @@ describe("turnParts", () => {
       expect.objectContaining({
         kind: "tool_group",
         runs: [
-          expect.objectContaining({ runId: "run-1" }),
+          expect.objectContaining({
+            runId: "run-1",
+            inputParams: [{ key: "path", value: "notes/plan.md", truncated: false }],
+          }),
           expect.objectContaining({ runId: "run-2" }),
         ],
       }),

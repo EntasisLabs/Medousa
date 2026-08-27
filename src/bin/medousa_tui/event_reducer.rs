@@ -695,13 +695,17 @@ async fn handle_turn_stream_v3(
             tool_run_id,
             tool_name,
             input_summary,
+            input_params,
             tool_round,
-            ..
         } => {
             ensure_chronological_turn(state);
-            state
-                .turn_parts
-                .tool_started(&tool_run_id, &tool_name, &input_summary, tool_round);
+            state.turn_parts.tool_started_with_params(
+                &tool_run_id,
+                &tool_name,
+                &input_summary,
+                input_params,
+                tool_round,
+            );
             sync_chronological_turn(state, Some(vec![tool_name.clone()]), Some("tool_loop"));
             let label = super::tui_presentation::format_tool_name(&tool_name);
             super::push_obs(state, format!("◆ {label}  {input_summary}"));
@@ -711,10 +715,10 @@ async fn handle_turn_stream_v3(
             tool_name,
             status,
             input_summary,
+            input_params,
             output_summary,
             tool_round,
             artifact_refs,
-            ..
         } => {
             ensure_chronological_turn(state);
             let artifact_refs = artifact_refs
@@ -732,6 +736,7 @@ async fn handle_turn_stream_v3(
                 &tool_run_id,
                 &tool_name,
                 &input_summary,
+                input_params,
                 tool_round,
                 &status,
                 output_summary.clone(),

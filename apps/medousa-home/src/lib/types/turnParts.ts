@@ -27,6 +27,7 @@ export type TurnPart =
       tool_name: string;
       status: string;
       input_summary: string;
+      input_params?: import("$lib/types/card").ToolInputParam[];
       output_summary?: string | null;
       artifact_refs?: TurnArtifactRef[];
       tool_round?: number | null;
@@ -84,6 +85,7 @@ export function toolRunsFromParts(parts?: TurnPart[] | null): ToolRunState[] | u
       status: part.status === "failed" ? "failed" : part.status === "running" ? "running" : "succeeded",
       round: part.tool_round ?? 1,
       inputSummary: part.input_summary ?? null,
+      inputParams: part.input_params,
       outputSummary: part.output_summary ?? null,
       artifactRefs: part.artifact_refs?.map(
         (ref): ToolArtifactRef => ({
@@ -143,6 +145,7 @@ export function chatSegmentsFromParts(parts?: TurnPart[] | null): ChatSegment[] 
                 : "succeeded",
           round: part.tool_round ?? 1,
           inputSummary: part.input_summary ?? null,
+          inputParams: part.input_params,
           outputSummary: part.output_summary ?? null,
           artifactRefs: part.artifact_refs?.map((ref) => ({
             role: ref.role,
@@ -154,7 +157,7 @@ export function chatSegmentsFromParts(parts?: TurnPart[] | null): ChatSegment[] 
           })),
         };
         const previous = segments.at(-1);
-        if (previous?.kind === "tool_group" && previous.toolRound === run.round) {
+        if (previous?.kind === "tool_group") {
           previous.runs.push(run);
         } else {
           segments.push({

@@ -44,6 +44,7 @@ export type ChatSegment =
   | {
       kind: "tool_group";
       groupId: string;
+      /** First round in this uninterrupted tool streak; each run retains its exact round. */
       toolRound: number;
       runs: ToolRunState[];
     }

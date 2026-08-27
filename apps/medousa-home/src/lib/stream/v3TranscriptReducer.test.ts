@@ -175,6 +175,42 @@ describe("Turn Stream V3 chronological presentation fold", () => {
     expect(result.toolRuns?.map((run) => run.status)).toEqual(["failed", "succeeded"]);
   });
 
+  it("coalesces consecutive tool rounds until visible assistant prose splits them", () => {
+    const result = foldV3Envelopes(assistant(), [
+      toolStarted(1, "run-1", "mcp.list_tools", 1),
+      toolFinished(2, "run-1", "mcp.list_tools", 1),
+      toolStarted(3, "run-2", "mcp.inspect", 2),
+      toolFinished(4, "run-2", "mcp.inspect", 2),
+      toolStarted(5, "run-3", "mcp.read", 3),
+      toolFinished(6, "run-3", "mcp.read", 3),
+      ...textEvents(7, "segment-a", 4, "I found what I needed."),
+      toolStarted(10, "run-4", "mcp.verify", 4),
+      toolFinished(11, "run-4", "mcp.verify", 4),
+    ]);
+
+    expect(result.segments?.map((segment) => segment.kind)).toEqual([
+      "tool_group",
+      "text",
+      "tool_group",
+    ]);
+    expect(result.segments?.[0]).toEqual(
+      expect.objectContaining({
+        kind: "tool_group",
+        runs: [
+          expect.objectContaining({ runId: "run-1", round: 1 }),
+          expect.objectContaining({ runId: "run-2", round: 2 }),
+          expect.objectContaining({ runId: "run-3", round: 3 }),
+        ],
+      }),
+    );
+    expect(result.segments?.[2]).toEqual(
+      expect.objectContaining({
+        kind: "tool_group",
+        runs: [expect.objectContaining({ runId: "run-4", round: 4 })],
+      }),
+    );
+  });
+
   it("preserves partial prose when the terminal outcome is a failure", () => {
     const partial = foldV3Envelopes(
       assistant(),
