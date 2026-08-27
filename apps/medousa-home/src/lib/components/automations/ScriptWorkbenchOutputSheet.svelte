@@ -50,14 +50,16 @@
       role="dialog"
       aria-label="Script output"
     >
-      <header bind:this={headerEl} class="mobile-sheet-header scripts-workbench-sheet-header">
+      <header bind:this={headerEl} class="mobile-sheet-stack-header">
         <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
-        <h2 class="text-sm font-medium text-surface-100">Output</h2>
-        <button type="button" class="workshop-text-action text-xs" onclick={dismiss}>
-          Done
-        </button>
+        <div class="mobile-sheet-header-row">
+          <h2 class="text-sm font-medium text-surface-100">Output</h2>
+          <button type="button" class="workshop-text-action text-xs" onclick={dismiss}>
+            Done
+          </button>
+        </div>
       </header>
-      <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-2">
+      <div class="mobile-sheet-scroll">
         {#if workshop.runBusy}
           <p class="mb-3 text-xs text-content-tertiary">Running…</p>
         {:else if graphemeScriptEditor.compileBusy}

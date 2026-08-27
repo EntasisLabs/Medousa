@@ -555,15 +555,24 @@
   .mobile-sheet-backdrop {
     @apply fixed inset-0 z-50 flex items-end justify-center p-0;
     background-color: rgb(var(--color-surface-950) / 0.7);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
   .mobile-sheet {
-    @apply flex w-full max-h-[85vh] flex-col rounded-t-2xl border border-surface-500/40 bg-surface-900 shadow-xl;
+    @apply flex w-full flex-col overflow-hidden rounded-t-2xl border border-surface-500/40 bg-surface-900 shadow-xl;
+    max-height: calc(100dvh - max(1rem, env(safe-area-inset-top, 0px)));
+    border-bottom-width: 0;
+  }
+
+  .mobile-sheet-medium {
+    height: min(64dvh, 36rem);
+  }
+
+  .mobile-sheet-picker {
+    height: min(72dvh, 42rem);
   }
 
   .mobile-sheet-tall {
-    @apply max-h-[92vh];
+    height: min(88dvh, 52rem);
   }
 
   .mobile-browser-workshop-sheet {
@@ -609,6 +618,20 @@
 
   .mobile-sheet-header {
     @apply flex shrink-0 items-center justify-between border-b border-surface-500/40 px-4 py-3;
+  }
+
+  .mobile-sheet-stack-header {
+    @apply flex shrink-0 flex-col items-stretch gap-2 border-b border-surface-500/35 px-4 pb-3 pt-0;
+  }
+
+  .mobile-sheet-header-row {
+    @apply flex min-h-11 w-full items-center justify-between gap-3;
+  }
+
+  .mobile-sheet-scroll {
+    @apply min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 pb-6 pt-3;
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+    -webkit-overflow-scrolling: touch;
   }
 
   .workshop-switcher-mobile-sheet {
@@ -865,7 +888,8 @@
   }
 
   .mobile-turn-sheet {
-    @apply max-h-[min(78vh,640px)] will-change-transform;
+    @apply will-change-transform;
+    max-height: min(78dvh, 40rem);
     border-radius: 1.25rem 1.25rem 0 0;
     background: rgb(var(--color-surface-900) / 0.98);
     backdrop-filter: blur(24px);
@@ -875,7 +899,8 @@
     .mobile-turn-sheet {
       transition: none !important;
       animation: none !important;
-    }  }
+    }
+  }
 
 
   .mobile-turn-sheet-grabber {

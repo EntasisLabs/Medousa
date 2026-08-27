@@ -2,10 +2,13 @@
   import { onMount } from "svelte";
   import {
     Building2,
+    Check,
+    Ellipsis,
     FolderOpen,
     HardDrive,
     Home,
     Link2,
+    Plus,
     Pencil,
   } from "@lucide/svelte";
   import WorkshopJoinSheet from "$lib/components/workshops/WorkshopJoinSheet.svelte";
@@ -24,8 +27,11 @@
     type DelegationBinding,
   } from "$lib/utils/delegationApi";
   import { openGuide } from "$lib/guide/openGuide";
+  import { haptic } from "$lib/haptics";
+  import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { isTauri } from "$lib/window";
   import { onThisHostPhrase } from "$lib/platformCopy";
+  import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
 
   const ICON_OPTIONS: { id: WorkshopIcon; label: string }[] = [
     { id: "home", label: "Home" },
@@ -37,9 +43,10 @@
     onDaemonHealth?: () => void | Promise<void>;
     /** When true, this is the lead story on Connection — no top rule. */
     lead?: boolean;
+    mobile?: boolean;
   }
 
-  let { onDaemonHealth, lead = false }: Props = $props();
+  let { onDaemonHealth, lead = false, mobile = false }: Props = $props();
 
   let renamingId = $state<string | null>(null);
   let renameDraft = $state("");
@@ -59,6 +66,18 @@
   let delegationBinding = $state<DelegationBinding | null>(null);
   let delegationBusy = $state(false);
   let delegationError = $state<string | null>(null);
+  let addMenuOpen = $state(false);
+  let mobileManageId = $state<string | null>(null);
+  let mobileManageMode = $state<"actions" | "rename" | "brand">("actions");
+  let mobileSheetEl = $state<HTMLDivElement | null>(null);
+  let mobileSheetHeaderEl = $state<HTMLElement | null>(null);
+
+  const mobileManageWorkshop = $derived(
+    workshops.workshops.find((workshop) => workshop.id === mobileManageId) ?? null,
+  );
+  const mobileSheetOpen = $derived(
+    addMenuOpen || mobileManageId !== null || (mobile && addLocalOpen),
+  );
 
   const isIosNative =
     typeof document !== "undefined" &&
@@ -194,8 +213,10 @@
         tagline: taglineDraft.trim() || null,
       });
       brandingId = null;
+      return true;
     } catch (err) {
       brandingError = err instanceof Error ? err.message : String(err);
+      return false;
     } finally {
       brandingBusy = false;
     }
@@ -203,9 +224,10 @@
 
   async function removeWorkshop(workshopId: string) {
     const ok = window.confirm("Remove this workshop from the list? You can join again later.");
-    if (!ok) return;
+    if (!ok) return false;
     await workshops.removeWorkshop(workshopId, { onHealthChange: onDaemonHealth });
     editingId = null;
+    return true;
   }
 
   async function useForDelegation(workshopId: string) {
@@ -232,11 +254,88 @@
       delegationBusy = false;
     }
   }
+
+  function openAddMenu() {
+    haptic("light");
+    mobileManageId = null;
+    addMenuOpen = true;
+  }
+
+  function openMobileManage(workshop: WorkshopServer) {
+    haptic("light");
+    addMenuOpen = false;
+    mobileManageId = workshop.id;
+    mobileManageMode = "actions";
+    editingId = workshop.id;
+    brandingId = null;
+    renamingId = null;
+    brandingError = null;
+  }
+
+  function closeMobileSheet() {
+    addMenuOpen = false;
+    addLocalOpen = false;
+    mobileManageId = null;
+    mobileManageMode = "actions";
+    editingId = null;
+    brandingId = null;
+    renamingId = null;
+  }
+
+  function chooseAddLocal() {
+    addMenuOpen = false;
+    addLocalError = null;
+    addLocalOpen = true;
+  }
+
+  function chooseJoin() {
+    addMenuOpen = false;
+    joinOpen = true;
+  }
+
+  function startMobileRename(workshop: WorkshopServer) {
+    renameDraft = workshop.label;
+    mobileManageMode = "rename";
+  }
+
+  async function saveMobileRename(workshopId: string) {
+    await commitRename(workshopId);
+    closeMobileSheet();
+  }
+
+  function startMobileBranding(workshop: WorkshopServer) {
+    startBranding(workshop);
+    mobileManageMode = "brand";
+  }
+
+  async function saveMobileBranding(workshopId: string) {
+    if (await saveBranding(workshopId)) closeMobileSheet();
+  }
+
+  async function removeMobileWorkshop(workshopId: string) {
+    if (await removeWorkshop(workshopId)) closeMobileSheet();
+  }
+
+  $effect(() => {
+    if (!mobileSheetOpen) return;
+    return registerMobileBackHandler(() => {
+      closeMobileSheet();
+      return true;
+    });
+  });
+
+  $effect(() => {
+    if (!mobileSheetOpen || !mobileSheetEl) return;
+    return attachMobileSheetGestures(mobileSheetEl, mobileSheetHeaderEl, {
+      onDismiss: closeMobileSheet,
+      swipeBack: false,
+    });
+  });
 </script>
 
 {#if isTauri()}
   <div class="ws-band" class:ws-band-lead={lead}>
-    <div class="ws-band-head">
+    <div class="ws-band-head" class:ws-band-head-mobile={mobile}>
       <div class="ws-band-copy">
         <h3 class="settings-subsection-heading">{lead ? "Your workshops" : "Workshops"}</h3>
         <p class="settings-subsection-lead">
@@ -250,42 +349,54 @@
           Learn more
         </button>
       </div>
-      <div class="ws-band-actions">
+      {#if mobile}
         <button
           type="button"
-          class="ws-icon-btn"
+          class="ws-add-btn"
           disabled={workshops.atWorkshopLimit}
-          title="Add local engine"
-          aria-label="Add local engine"
-          onclick={() => {
-            addLocalOpen = true;
-            addLocalError = null;
-          }}
+          onclick={openAddMenu}
         >
-          <HardDrive size={15} strokeWidth={1.75} />
+          <Plus size={16} strokeWidth={1.9} aria-hidden="true" />
+          Add workshop
         </button>
-        <button
-          type="button"
-          class="ws-icon-btn"
-          disabled={workshops.atWorkshopLimit}
-          title="Join paired workshop"
-          aria-label="Join paired workshop"
-          onclick={() => {
-            joinOpen = true;
-          }}
-        >
-          <Link2 size={15} strokeWidth={1.75} />
-        </button>
-      </div>
+      {:else}
+        <div class="ws-band-actions">
+          <button
+            type="button"
+            class="ws-icon-btn"
+            disabled={workshops.atWorkshopLimit}
+            title="Add local engine"
+            aria-label="Add local engine"
+            onclick={() => {
+              addLocalOpen = true;
+              addLocalError = null;
+            }}
+          >
+            <HardDrive size={15} strokeWidth={1.75} />
+          </button>
+          <button
+            type="button"
+            class="ws-icon-btn"
+            disabled={workshops.atWorkshopLimit}
+            title="Join paired workshop"
+            aria-label="Join paired workshop"
+            onclick={() => {
+              joinOpen = true;
+            }}
+          >
+            <Link2 size={15} strokeWidth={1.75} />
+          </button>
+        </div>
+      {/if}
     </div>
 
-    <div class="ws-stack">
+    <div class="ws-stack" class:ws-stack-mobile={mobile}>
       {#each workshops.workshops as workshop (workshop.id)}
         {@const Icon = workshopIcon(workshop.icon)}
         {@const active = workshop.id === workshops.activeWorkshopId}
         {@const editing = editingId === workshop.id}
-        <div class="ws-row">
-          <div class="ws-tile" class:ws-tile-active={active}>
+        <div class="ws-row" class:ws-row-mobile={mobile}>
+          <div class="ws-tile" class:ws-tile-active={active} class:ws-tile-mobile={mobile}>
             <span class="ws-icon" aria-hidden="true">
               <Icon size={15} strokeWidth={1.75} />
             </span>
@@ -321,31 +432,38 @@
                 {#if !active}
                   <button
                     type="button"
-                    class="ws-cta"
+                    class="ws-cta {mobile ? 'ws-switch-btn' : ''}"
                     disabled={workshops.switching}
                     onclick={() => void switchTo(workshop.id)}
                   >
                     Switch
                   </button>
                 {:else}
-                  <span class="ws-pill">Active</span>
+                  <span class="ws-pill">
+                    {#if mobile}<Check size={13} strokeWidth={2.4} aria-hidden="true" />{/if}
+                    Active
+                  </span>
                 {/if}
                 <button
                   type="button"
                   class="ws-icon-btn"
                   class:ws-icon-btn-active={editing}
-                  title="Edit workshop"
-                  aria-label="Edit {workshop.label}"
+                  title={mobile ? "Manage workshop" : "Edit workshop"}
+                  aria-label={mobile ? `Manage ${workshop.label}` : `Edit ${workshop.label}`}
                   aria-pressed={editing}
-                  onclick={() => toggleEdit(workshop.id)}
+                  onclick={() => mobile ? openMobileManage(workshop) : toggleEdit(workshop.id)}
                 >
-                  <Pencil size={14} strokeWidth={1.75} />
+                  {#if mobile}
+                    <Ellipsis size={18} strokeWidth={1.9} />
+                  {:else}
+                    <Pencil size={14} strokeWidth={1.75} />
+                  {/if}
                 </button>
               {/if}
             </span>
           </div>
 
-          {#if editing && renamingId !== workshop.id}
+          {#if !mobile && editing && renamingId !== workshop.id}
             <div class="ws-edit">
               <div class="ws-actions">
                 <button type="button" class="ws-cta" onclick={() => startRename(workshop)}>
@@ -465,16 +583,246 @@
   </div>
 {/if}
 
-{#if addLocalOpen}
+{#if mobile && addMenuOpen}
   <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-surface-950/80 p-4"
+    class="mobile-sheet-backdrop mobile-turn-sheet-backdrop"
     role="presentation"
     onclick={(event) => {
-      if (event.target === event.currentTarget) addLocalOpen = false;
+      if (event.target === event.currentTarget) closeMobileSheet();
     }}
   >
-    <div class="card w-full max-w-md space-y-4 p-5 shadow-xl" role="dialog" aria-label="Add local engine">
-      <header>
+    <div
+      bind:this={mobileSheetEl}
+      class="mobile-sheet mobile-turn-sheet mobile-sheet-medium"
+      role="dialog"
+      aria-label="Add workshop"
+    >
+      <header bind:this={mobileSheetHeaderEl} class="mobile-turn-sheet-header">
+        <span class="mobile-turn-sheet-header-spacer" aria-hidden="true"></span>
+        <h2 class="mobile-turn-sheet-title">Add workshop</h2>
+        <button type="button" class="ws-sheet-done" onclick={closeMobileSheet}>Done</button>
+      </header>
+      <div class="mobile-turn-sheet-body">
+        <div class="mobile-turn-sheet-group">
+          <button type="button" class="mobile-turn-sheet-row" onclick={chooseAddLocal}>
+            <span class="ws-sheet-icon" aria-hidden="true">
+              <HardDrive size={18} strokeWidth={1.8} />
+            </span>
+            <span class="mobile-turn-sheet-row-copy">
+              <span class="mobile-turn-sheet-row-title">Create on this device</span>
+              <span class="mobile-turn-sheet-row-subtitle">A separate local workshop and storage folder.</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            class="mobile-turn-sheet-row mobile-turn-sheet-row-divider"
+            onclick={chooseJoin}
+          >
+            <span class="ws-sheet-icon" aria-hidden="true">
+              <Link2 size={18} strokeWidth={1.8} />
+            </span>
+            <span class="mobile-turn-sheet-row-copy">
+              <span class="mobile-turn-sheet-row-title">Join paired workshop</span>
+              <span class="mobile-turn-sheet-row-subtitle">Connect using an invite or pairing link.</span>
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if mobile && mobileManageWorkshop}
+  <div
+    class="mobile-sheet-backdrop mobile-turn-sheet-backdrop"
+    role="presentation"
+    onclick={(event) => {
+      if (event.target === event.currentTarget) closeMobileSheet();
+    }}
+  >
+    <div
+      bind:this={mobileSheetEl}
+      class="mobile-sheet mobile-turn-sheet mobile-sheet-medium"
+      role="dialog"
+      aria-label="Manage {mobileManageWorkshop.label}"
+    >
+      <header bind:this={mobileSheetHeaderEl} class="mobile-turn-sheet-header">
+        {#if mobileManageMode === "actions"}
+          <span class="mobile-turn-sheet-header-spacer" aria-hidden="true"></span>
+        {:else}
+          <button
+            type="button"
+            class="ws-sheet-back"
+            onclick={() => (mobileManageMode = "actions")}
+          >
+            Back
+          </button>
+        {/if}
+        <h2 class="mobile-turn-sheet-title">
+          {mobileManageMode === "rename"
+            ? "Rename"
+            : mobileManageMode === "brand"
+              ? "Appearance"
+              : mobileManageWorkshop.label}
+        </h2>
+        <button type="button" class="ws-sheet-done" onclick={closeMobileSheet}>Done</button>
+      </header>
+
+      <div class="mobile-turn-sheet-body">
+        {#if mobileManageMode === "actions"}
+          <div class="mobile-turn-sheet-group">
+            <button
+              type="button"
+              class="mobile-turn-sheet-row"
+              onclick={() => startMobileRename(mobileManageWorkshop)}
+            >
+              <span class="mobile-turn-sheet-row-copy">
+                <span class="mobile-turn-sheet-row-title">Rename</span>
+                <span class="mobile-turn-sheet-row-subtitle">Change the name shown in Medousa.</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              class="mobile-turn-sheet-row mobile-turn-sheet-row-divider"
+              onclick={() => startMobileBranding(mobileManageWorkshop)}
+            >
+              <span class="mobile-turn-sheet-row-copy">
+                <span class="mobile-turn-sheet-row-title">Appearance</span>
+                <span class="mobile-turn-sheet-row-subtitle">Choose its icon, accent, and tagline.</span>
+              </span>
+            </button>
+            {#if isIosNative && workshops.activeWorkshopId === PERSONAL_WORKSHOP_ID && mobileManageWorkshop.pairing && (mobileManageWorkshop.kind === "portal" || mobileManageWorkshop.kind === "paired")}
+              <button
+                type="button"
+                class="mobile-turn-sheet-row mobile-turn-sheet-row-divider"
+                disabled={delegationBusy}
+                onclick={() => delegationBinding?.target.routeRef === mobileManageWorkshop.id
+                  ? void stopDelegation()
+                  : void useForDelegation(mobileManageWorkshop.id)}
+              >
+                <span class="mobile-turn-sheet-row-copy">
+                  <span class="mobile-turn-sheet-row-title">
+                    {delegationBinding?.target.routeRef === mobileManageWorkshop.id
+                      ? "Stop delegated work"
+                      : "Use for delegated work"}
+                  </span>
+                  <span class="mobile-turn-sheet-row-subtitle">Choose where mobile coding work runs.</span>
+                </span>
+              </button>
+            {/if}
+          </div>
+
+          {#if mobileManageWorkshop.id !== PERSONAL_WORKSHOP_ID}
+            <div class="mobile-turn-sheet-group mobile-turn-sheet-group-secondary">
+              <button
+                type="button"
+                class="mobile-turn-sheet-row ws-sheet-remove"
+                disabled={workshops.switching}
+                onclick={() => void removeMobileWorkshop(mobileManageWorkshop.id)}
+              >
+                <span class="mobile-turn-sheet-row-copy">
+                  <span class="mobile-turn-sheet-row-title">Remove workshop</span>
+                  <span class="mobile-turn-sheet-row-subtitle">You can pair it again later.</span>
+                </span>
+              </button>
+            </div>
+          {/if}
+
+          {#if delegationError}
+            <p class="mt-3 text-xs text-content-warning">{delegationError}</p>
+          {/if}
+        {:else if mobileManageMode === "rename"}
+          <div class="mobile-turn-sheet-group ws-sheet-form">
+            <label class="block">
+              <span class="workshop-label">Workshop name</span>
+              <input
+                class="input mt-2 w-full text-sm"
+                bind:value={renameDraft}
+                aria-label="Workshop name"
+                onkeydown={(event) => {
+                  if (event.key === "Enter") void saveMobileRename(mobileManageWorkshop.id);
+                }}
+              />
+            </label>
+            <button
+              type="button"
+              class="btn variant-filled-primary mt-4 w-full"
+              disabled={!renameDraft.trim()}
+              onclick={() => void saveMobileRename(mobileManageWorkshop.id)}
+            >
+              Save name
+            </button>
+          </div>
+        {:else}
+          <div class="mobile-turn-sheet-group ws-sheet-form">
+            <p class="workshop-label">Icon</p>
+            <div class="ws-actions mt-2">
+              {#each ICON_OPTIONS as option (option.id)}
+                <button
+                  type="button"
+                  class="btn btn-sm {iconDraft === option.id
+                    ? 'variant-filled-primary'
+                    : 'variant-ghost-surface'}"
+                  onclick={() => (iconDraft = option.id)}
+                >
+                  {option.label}
+                </button>
+              {/each}
+            </div>
+            <label class="mt-4 block">
+              <span class="workshop-label">Accent color</span>
+              <input
+                class="input mt-1 w-full font-mono text-xs"
+                placeholder="#7C3AED"
+                bind:value={brandColorDraft}
+              />
+            </label>
+            <label class="mt-4 block">
+              <span class="workshop-label">Tagline</span>
+              <input
+                class="input mt-1 w-full text-sm"
+                maxlength={80}
+                placeholder="Acme engineering brain"
+                bind:value={taglineDraft}
+              />
+            </label>
+            {#if brandingError}
+              <p class="mt-3 text-xs text-content-warning">{brandingError}</p>
+            {/if}
+            <button
+              type="button"
+              class="btn variant-filled-primary mt-4 w-full"
+              disabled={brandingBusy}
+              onclick={() => void saveMobileBranding(mobileManageWorkshop.id)}
+            >
+              {brandingBusy ? "Saving…" : "Save appearance"}
+            </button>
+          </div>
+        {/if}
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if addLocalOpen}
+  <div
+    class={mobile
+      ? "mobile-sheet-backdrop mobile-turn-sheet-backdrop"
+      : "fixed inset-0 z-50 flex items-center justify-center bg-surface-950/80 p-4"}
+    role="presentation"
+    onclick={(event) => {
+      if (event.target === event.currentTarget) closeMobileSheet();
+    }}
+  >
+    <div
+      bind:this={mobileSheetEl}
+      class={mobile
+        ? "mobile-sheet mobile-turn-sheet ws-add-local-sheet space-y-4 p-5"
+        : "card w-full max-w-md space-y-4 p-5 shadow-xl"}
+      role="dialog"
+      aria-label="Add local engine"
+    >
+      <header bind:this={mobileSheetHeaderEl}>
         <h3 class="text-base font-semibold text-surface-50">Add local engine</h3>
         <p class="workshop-faint mt-1 text-sm">
           A second Medousa brain {onThisHostPhrase()} with its own storage folder and port.
@@ -530,7 +878,7 @@
 
 <WorkshopJoinSheet
   open={joinOpen}
-  variant="desktop"
+  variant={mobile ? "mobile" : "desktop"}
   onClose={() => {
     joinOpen = false;
   }}
@@ -570,6 +918,26 @@
     flex-shrink: 0;
     align-items: center;
     gap: 0.35rem;
+  }
+
+  .ws-add-btn {
+    display: inline-flex;
+    min-height: 2.75rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.38);
+    border-radius: 0.7rem;
+    background: rgb(var(--color-surface-800) / 0.62);
+    padding: 0 0.85rem;
+    color: rgb(var(--color-surface-100));
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .ws-add-btn:disabled {
+    opacity: 0.4;
   }
 
   .ws-icon-btn {
@@ -683,7 +1051,10 @@
   }
 
   .ws-pill {
+    display: inline-flex;
     flex-shrink: 0;
+    align-items: center;
+    gap: 0.2rem;
     font-size: 0.65rem;
     font-weight: 600;
     color: rgb(var(--theme-link));
@@ -707,5 +1078,102 @@
     font-size: 0.7rem;
     line-height: 1.4;
     color: rgb(var(--theme-text-quiet));
+  }
+
+  .ws-band-head-mobile {
+    flex-direction: column;
+    margin-bottom: 0.8rem;
+  }
+
+  .ws-band-head-mobile .ws-add-btn {
+    width: 100%;
+  }
+
+  .ws-stack-mobile {
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid rgb(var(--color-surface-500) / 0.32);
+    border-radius: 1rem;
+    background: rgb(var(--color-surface-900) / 0.28);
+  }
+
+  .ws-row-mobile + .ws-row-mobile {
+    border-top: 1px solid rgb(var(--color-surface-500) / 0.26);
+  }
+
+  .ws-tile-mobile {
+    min-height: 4.5rem;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 0.75rem;
+  }
+
+  .ws-tile-mobile.ws-tile-active {
+    background: rgb(var(--color-primary-500) / 0.055);
+  }
+
+  .ws-tile-mobile .ws-icon-btn {
+    height: 2.75rem;
+    width: 2.75rem;
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .ws-switch-btn {
+    min-height: 2.75rem;
+    border-radius: 0.65rem;
+    padding: 0 0.65rem;
+  }
+
+  .ws-switch-btn:active:not(:disabled) {
+    background: rgb(var(--color-surface-700) / 0.45);
+  }
+
+  .ws-sheet-done,
+  .ws-sheet-back {
+    display: inline-flex;
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+    align-items: center;
+    border: 0;
+    background: transparent;
+    color: rgb(var(--theme-link));
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .ws-sheet-done {
+    justify-content: flex-end;
+  }
+
+  .ws-sheet-back {
+    justify-content: flex-start;
+  }
+
+  .ws-sheet-icon {
+    display: inline-flex;
+    height: 2.5rem;
+    width: 2.5rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.7rem;
+    background: rgb(var(--color-surface-700) / 0.55);
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  .ws-sheet-remove :global(.mobile-turn-sheet-row-title) {
+    color: rgb(var(--theme-error));
+  }
+
+  .ws-sheet-form {
+    padding: 1rem;
+  }
+
+  .ws-add-local-sheet {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 </style>

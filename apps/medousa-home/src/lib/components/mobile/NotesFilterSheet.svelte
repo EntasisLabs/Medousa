@@ -75,10 +75,10 @@
     >
       <header
         bind:this={headerEl}
-        class="mobile-sheet-header mobile-activity-sheet-header scripts-workbench-sheet-header"
+        class="mobile-sheet-stack-header mobile-activity-sheet-header"
       >
         <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
-        <div class="flex w-full items-start justify-between gap-2">
+        <div class="mobile-sheet-header-row items-start">
           <div class="min-w-0">
             <h2 class="text-sm font-semibold text-surface-50">Browse</h2>
             <p class="workshop-faint mt-0.5 text-xs">Spaces, view, and library</p>
@@ -89,7 +89,7 @@
         </div>
       </header>
 
-      <div class="mobile-you-scroll min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-4">
+      <div class="mobile-sheet-scroll space-y-6">
         <section>
           <h3 class="mobile-you-section-title">Library</h3>
           <div class="mt-2 flex gap-1 rounded-xl border border-surface-500/35 bg-surface-900/50 p-1">

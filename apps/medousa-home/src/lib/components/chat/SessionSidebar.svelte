@@ -232,10 +232,10 @@
       >
         <header
           bind:this={headerEl}
-          class="mobile-sheet-header scripts-workbench-sheet-header mobile-chat-history-header"
+          class="mobile-sheet-stack-header mobile-chat-history-header"
         >
           <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
-          <div class="flex w-full items-center justify-between gap-2">
+          <div class="mobile-sheet-header-row">
             <h2 class="text-sm font-semibold text-surface-50">Sessions</h2>
             <button
               type="button"

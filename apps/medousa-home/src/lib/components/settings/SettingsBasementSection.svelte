@@ -268,7 +268,7 @@
     </p>
   </header>
 
-  <SettingsWorkshopsSection {onDaemonHealth} lead />
+  <SettingsWorkshopsSection {onDaemonHealth} {mobile} lead />
 
   <div class="prefs-band">
     <SettingsAppUpdateCard />

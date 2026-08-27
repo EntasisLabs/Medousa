@@ -43,16 +43,16 @@
   >
     <div
       bind:this={sheetEl}
-      class="mobile-sheet"
+      class="mobile-sheet mobile-sheet-medium"
       role="dialog"
       aria-label="Automations section"
     >
       <header
         bind:this={headerEl}
-        class="mobile-sheet-header mobile-activity-sheet-header scripts-workbench-sheet-header"
+        class="mobile-sheet-stack-header mobile-activity-sheet-header"
       >
         <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
-        <div class="flex w-full items-start justify-between gap-2">
+        <div class="mobile-sheet-header-row items-start">
           <div class="min-w-0">
             <h2 class="text-sm font-semibold text-surface-50">Automations</h2>
             <p class="workshop-faint mt-0.5 text-xs">Scripts, flows, schedules, history</p>
@@ -63,7 +63,7 @@
         </div>
       </header>
 
-      <div class="mobile-you-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+      <div class="mobile-sheet-scroll space-y-4">
         <section>
           <h3 class="mobile-you-section-title">Section</h3>
           <ul class="mt-2 space-y-1">

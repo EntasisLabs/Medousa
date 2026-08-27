@@ -174,13 +174,15 @@
   >
     <div
       bind:this={sheetEl}
-      class="mobile-sheet mobile-sheet-tall scripts-workbench-tools-sheet flex flex-col"
+      class="mobile-sheet {view === 'root'
+        ? 'mobile-sheet-medium'
+        : 'mobile-sheet-tall'} scripts-workbench-tools-sheet flex flex-col"
       role="dialog"
       aria-label={sheetTitle}
     >
-      <header bind:this={headerEl} class="mobile-sheet-header scripts-workbench-sheet-header shrink-0">
+      <header bind:this={headerEl} class="mobile-sheet-stack-header">
         <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
-        <div class="flex items-center gap-2">
+        <div class="mobile-sheet-header-row">
           {#if view !== "root"}
             <button
               type="button"
@@ -227,7 +229,7 @@
           />
         </div>
       {:else}
-      <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto">
+      <div class="mobile-sheet-scroll">
         {#if view === "root"}
           <div class="mobile-turn-sheet-group">
             <button

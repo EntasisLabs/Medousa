@@ -119,13 +119,15 @@
     >
       <div
         bind:this={sheetEl}
-        class="mobile-sheet mobile-turn-sheet settings-nav-picker"
+        class="mobile-sheet mobile-turn-sheet mobile-sheet-picker settings-nav-picker"
         role="dialog"
         aria-label="Choose settings view"
       >
-        <header bind:this={headerEl} class="settings-nav-picker-header">
-          <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
-          <h2>Settings</h2>
+        <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
+        <header bind:this={headerEl} class="mobile-turn-sheet-header">
+          <span class="mobile-turn-sheet-header-spacer" aria-hidden="true"></span>
+          <h2 class="mobile-turn-sheet-title">Settings</h2>
+          <button type="button" class="settings-nav-picker-done" onclick={closePicker}>Done</button>
         </header>
         <div class="mobile-turn-sheet-body">
           <div class="mobile-turn-sheet-group">
@@ -134,7 +136,9 @@
               {#if section}
                 <button
                   type="button"
-                  class="mobile-turn-sheet-row {index > 0 ? 'mobile-turn-sheet-row-divider' : ''}"
+                  class="mobile-turn-sheet-row settings-nav-picker-row {index > 0
+                    ? 'mobile-turn-sheet-row-divider'
+                    : ''}"
                   aria-current={sectionId === active ? "page" : undefined}
                   onclick={() => selectSection(sectionId)}
                 >
@@ -250,19 +254,24 @@
   }
 
   .settings-nav-picker {
-    max-height: min(82dvh, 42rem);
+    max-height: min(78dvh, 42rem);
   }
 
-  .settings-nav-picker-header {
-    flex-shrink: 0;
-    padding: 0 1rem 0.65rem;
-    text-align: center;
+  .settings-nav-picker-row {
+    min-height: 3.85rem;
+    padding: 0.7rem 1rem;
   }
 
-  .settings-nav-picker-header h2 {
-    margin: 0.55rem 0 0;
-    color: rgb(var(--color-surface-50));
-    font-size: 0.95rem;
+  .settings-nav-picker-done {
+    display: inline-flex;
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+    align-items: center;
+    justify-content: flex-end;
+    border: 0;
+    background: transparent;
+    color: rgb(var(--theme-link));
+    font-size: 0.8rem;
     font-weight: 650;
   }
 </style>
