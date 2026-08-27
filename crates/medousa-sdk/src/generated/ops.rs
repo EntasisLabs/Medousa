@@ -1731,6 +1731,41 @@ pub const MCP_GATEWAY_STATUS_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const MCP_OAUTH_BEGIN_POST: Operation = Operation {
+    id: "mcp.oauth.begin.post",
+    method: "POST",
+    path: "/v1/mcp/oauth/begin",
+    streaming: false,
+};
+
+pub const MCP_OAUTH_BY_SERVER_ID_DELETE: Operation = Operation {
+    id: "mcp.oauth.by_server_id.delete",
+    method: "DELETE",
+    path: "/v1/mcp/oauth/{server_id}",
+    streaming: false,
+};
+
+pub const MCP_OAUTH_BY_SERVER_ID_GET: Operation = Operation {
+    id: "mcp.oauth.by_server_id.get",
+    method: "GET",
+    path: "/v1/mcp/oauth/{server_id}",
+    streaming: false,
+};
+
+pub const MCP_OAUTH_COMPLETE_POST: Operation = Operation {
+    id: "mcp.oauth.complete.post",
+    method: "POST",
+    path: "/v1/mcp/oauth/complete",
+    streaming: false,
+};
+
+pub const MCP_OAUTH_REFRESH_POST: Operation = Operation {
+    id: "mcp.oauth.refresh.post",
+    method: "POST",
+    path: "/v1/mcp/oauth/refresh",
+    streaming: false,
+};
+
 pub const MCP_POLICY_EVALUATE_POST: Operation = Operation {
     id: "mcp.policy.evaluate.post",
     method: "POST",
@@ -3049,6 +3084,11 @@ pub static ALL: &[Operation] = &[
     MANUSCRIPTS_GET,
     MANUSCRIPTS_POST,
     MCP_GATEWAY_STATUS_GET,
+    MCP_OAUTH_BEGIN_POST,
+    MCP_OAUTH_BY_SERVER_ID_DELETE,
+    MCP_OAUTH_BY_SERVER_ID_GET,
+    MCP_OAUTH_COMPLETE_POST,
+    MCP_OAUTH_REFRESH_POST,
     MCP_POLICY_EVALUATE_POST,
     MEDIA_BY_MEDIA_ID_GET,
     MEDIA_UPLOAD_POST,

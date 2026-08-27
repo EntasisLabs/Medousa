@@ -375,6 +375,75 @@
       "AuthorityId": {
         "type": "string"
       },
+      "BeginMcpOAuthRequest": {
+        "description": "Begin OAuth for one configured remote MCP server.",
+        "properties": {
+          "challenge": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_metadata_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "client_secret": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "redirect_uri": {
+            "type": "string"
+          },
+          "scopes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "server_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "redirect_uri",
+          "server_id"
+        ],
+        "title": "BeginMcpOAuthRequest",
+        "type": "object"
+      },
+      "BeginMcpOAuthResponse": {
+        "description": "Browser handoff produced when an MCP OAuth authorization begins.",
+        "properties": {
+          "authorization_url": {
+            "type": "string"
+          },
+          "login_id": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorization_url",
+          "login_id",
+          "server_id"
+        ],
+        "title": "BeginMcpOAuthResponse",
+        "type": "object"
+      },
       "CalendarAlarm": {
         "description": "Display alarm relative to event start (VALARM projection).",
         "properties": {
@@ -852,6 +921,35 @@
           "repository"
         ],
         "type": "string"
+      },
+      "CompleteMcpOAuthRequest": {
+        "properties": {
+          "callback_url": {
+            "type": "string"
+          },
+          "login_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "callback_url",
+          "login_id"
+        ],
+        "title": "CompleteMcpOAuthRequest",
+        "type": "object"
+      },
+      "CompleteMcpOAuthResponse": {
+        "description": "Result of exchanging an MCP OAuth browser callback for credentials.",
+        "properties": {
+          "connection": {
+            "$ref": "#/components/schemas/McpOAuthStatusResponse"
+          }
+        },
+        "required": [
+          "connection"
+        ],
+        "title": "CompleteMcpOAuthResponse",
+        "type": "object"
       },
       "ComponentDef": {
         "properties": {
@@ -2021,6 +2119,23 @@
           "compact"
         ],
         "type": "string"
+      },
+      "DisconnectMcpOAuthResponse": {
+        "description": "Result of dropping one MCP server's locally held OAuth grant.",
+        "properties": {
+          "disconnected": {
+            "type": "boolean"
+          },
+          "server_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "disconnected",
+          "server_id"
+        ],
+        "title": "DisconnectMcpOAuthResponse",
+        "type": "object"
       },
       "DownloadFileRecord": {
         "properties": {
@@ -3878,6 +3993,40 @@
         "title": "McpGatewayStatusResponse",
         "type": "object"
       },
+      "McpOAuthStatusResponse": {
+        "description": "Secret-free connection state for one remote MCP server's OAuth grant.",
+        "properties": {
+          "connected": {
+            "type": "boolean"
+          },
+          "issuer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scopes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connected",
+          "server_id",
+          "status"
+        ],
+        "title": "McpOAuthStatusResponse",
+        "type": "object"
+      },
       "MediaRef": {
         "description": "Reference to a user file stored locally under medousa/media/ (not inline bytes).",
         "properties": {
@@ -4076,6 +4225,18 @@
           "stashes"
         ],
         "title": "PromptStashListResponse",
+        "type": "object"
+      },
+      "RefreshMcpOAuthRequest": {
+        "properties": {
+          "server_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "server_id"
+        ],
+        "title": "RefreshMcpOAuthRequest",
         "type": "object"
       },
       "ResolvedConversationRange": {
@@ -21960,6 +22121,302 @@
               }
             },
             "description": "mcp.gateway.status.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/mcp/oauth/begin": {
+      "post": {
+        "operationId": "mcp.oauth.begin.post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BeginMcpOAuthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BeginMcpOAuthResponse"
+                }
+              }
+            },
+            "description": "mcp.oauth.begin.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mcp.oauth.begin.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mcp.oauth.begin.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/mcp/oauth/complete": {
+      "post": {
+        "operationId": "mcp.oauth.complete.post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteMcpOAuthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompleteMcpOAuthResponse"
+                }
+              }
+            },
+            "description": "mcp.oauth.complete.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mcp.oauth.complete.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mcp.oauth.complete.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/mcp/oauth/refresh": {
+      "post": {
+        "operationId": "mcp.oauth.refresh.post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshMcpOAuthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpOAuthStatusResponse"
+                }
+              }
+            },
+            "description": "mcp.oauth.refresh.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mcp.oauth.refresh.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mcp.oauth.refresh.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/mcp/oauth/{server_id}": {
+      "delete": {
+        "operationId": "mcp.oauth.by_server_id.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisconnectMcpOAuthResponse"
+                }
+              }
+            },
+            "description": "mcp.oauth.by_server_id.delete"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mcp.oauth.by_server_id.delete"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mcp.oauth.by_server_id.delete"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      },
+      "get": {
+        "operationId": "mcp.oauth.by_server_id.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpOAuthStatusResponse"
+                }
+              }
+            },
+            "description": "mcp.oauth.by_server_id.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mcp.oauth.by_server_id.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mcp.oauth.by_server_id.get"
           }
         },
         "x-medousa-policy": {

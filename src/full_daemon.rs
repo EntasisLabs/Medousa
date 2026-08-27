@@ -328,11 +328,13 @@ pub use mcp_gateway::{
     STARTER_MCP_GATEWAY_TOML, gateway_config_path, install_starter_gateway_config_if_missing,
 };
 pub use mcp_gateway_api::{
-    DEFAULT_MCP_GATEWAY_BIND, DEFAULT_MCP_GATEWAY_URL, McpAdminStatusResponse, McpDiscoverRequest,
-    McpDiscoverResponse, McpEffectClass, McpGatewayHealthResponse, McpInvokeError,
-    McpInvokeRequest, McpInvokeResponse, McpPolicyDecision, McpPolicyEvaluateRequest,
-    McpPolicyEvaluateResponse, McpServerSummary, McpServersResponse, McpToolCatalogEntry,
-    McpTurnContext, McpTurnLane, resolve_mcp_gateway_url,
+    BeginMcpOAuthRequest, BeginMcpOAuthResponse, CompleteMcpOAuthRequest,
+    CompleteMcpOAuthResponse, DEFAULT_MCP_GATEWAY_BIND, DEFAULT_MCP_GATEWAY_URL,
+    DisconnectMcpOAuthResponse, McpAdminStatusResponse, McpDiscoverRequest, McpDiscoverResponse,
+    McpEffectClass, McpGatewayHealthResponse, McpInvokeError, McpInvokeRequest, McpInvokeResponse,
+    McpOAuthStatusResponse, McpPolicyDecision, McpPolicyEvaluateRequest, McpPolicyEvaluateResponse,
+    McpServerSummary, McpServersResponse, McpToolCatalogEntry, McpTurnContext, McpTurnLane,
+    RefreshMcpOAuthRequest, resolve_mcp_gateway_url,
 };
 pub use mcp_gateway_client::{McpGatewayClient, gateway_auth_configured};
 pub use medousa_engine::{

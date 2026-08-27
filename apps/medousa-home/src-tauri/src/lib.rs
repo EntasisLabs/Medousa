@@ -479,6 +479,11 @@ fn run_home() {
             mcp_gateway::mcp_gateway_remove_server,
             mcp_gateway::mcp_gateway_set_server_enabled,
             mcp_gateway::mcp_gateway_apply_server,
+            mcp_gateway::mcp_oauth_status,
+            mcp_gateway::mcp_oauth_begin,
+            mcp_gateway::mcp_oauth_complete,
+            mcp_gateway::mcp_oauth_refresh,
+            mcp_gateway::mcp_oauth_disconnect,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_host_search,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]

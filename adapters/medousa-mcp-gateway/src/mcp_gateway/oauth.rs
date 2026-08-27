@@ -341,6 +341,9 @@ fn stored_credentials_error() -> AuthError {
 #[derive(Debug)]
 pub enum McpOAuthError {
     InvalidInput(&'static str),
+    ServerNotFound(String),
+    ServerUrlMissing(String),
+    Unavailable,
     LoginNotFound,
     NotConnected,
     ProtocolState,
@@ -351,6 +354,13 @@ impl std::fmt::Display for McpOAuthError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidInput(label) => write!(formatter, "{label} is required"),
+            Self::ServerNotFound(server_id) => {
+                write!(formatter, "MCP server '{server_id}' is not configured")
+            }
+            Self::ServerUrlMissing(server_id) => {
+                write!(formatter, "MCP server '{server_id}' has no remote URL")
+            }
+            Self::Unavailable => formatter.write_str("MCP OAuth is unavailable"),
             Self::LoginNotFound => {
                 formatter.write_str("MCP OAuth login was not found; start again")
             }

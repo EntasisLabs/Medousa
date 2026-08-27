@@ -19,11 +19,13 @@ use crate::mcp_gateway::policy_client::{DaemonPolicyClient, McpPolicyEvaluator};
 use crate::mcp_gateway::remote_client::{RemoteMcpSession, RemoteTransport};
 use crate::mcp_gateway::server_config::{McpGatewayFullConfig, McpServerConfig};
 use crate::mcp_gateway::stdio_client::StdioMcpSession;
-use medousa_types::mcp_gateway_api::{McpCatalogSyncEntry, McpCatalogSyncResponse};
 use medousa_types::mcp_gateway_api::{
-    McpEffectClass, McpInvokeError, McpInvokeRequest, McpInvokeResponse, McpPolicyEvaluateRequest,
-    McpServerSummary, McpServersResponse, McpToolCatalogEntry, McpTurnLane,
+    BeginMcpOAuthRequest, BeginMcpOAuthResponse, CompleteMcpOAuthResponse,
+    DisconnectMcpOAuthResponse, McpEffectClass, McpInvokeError, McpInvokeRequest,
+    McpInvokeResponse, McpOAuthStatusResponse, McpPolicyEvaluateRequest, McpServerSummary,
+    McpServersResponse, McpToolCatalogEntry, McpTurnLane,
 };
+use medousa_types::mcp_gateway_api::{McpCatalogSyncEntry, McpCatalogSyncResponse};
 use medousa_types::mcp_turn_token::verify_mcp_turn_token;
 
 #[derive(Debug, Clone)]
@@ -236,6 +238,66 @@ impl ServerRegistry {
         }
     }
 
+    pub async fn oauth_status(
+        &self,
+        server_id: &str,
+    ) -> Result<McpOAuthStatusResponse, McpOAuthError> {
+        self.server_url(server_id)?;
+        self.oauth_broker()?.status(server_id).await
+    }
+
+    pub async fn begin_oauth(
+        &self,
+        request: BeginMcpOAuthRequest,
+    ) -> Result<BeginMcpOAuthResponse, McpOAuthError> {
+        let server_url = self.server_url(&request.server_id)?.to_string();
+        self.oauth_broker()?
+            .begin(crate::mcp_gateway::oauth::McpOAuthBeginRequest {
+                server_id: request.server_id,
+                server_url,
+                redirect_uri: request.redirect_uri,
+                scopes: request.scopes,
+                client_metadata_url: request.client_metadata_url,
+                client_id: request.client_id,
+                client_secret: request.client_secret,
+                challenge: request.challenge,
+            })
+            .await
+    }
+
+    pub async fn complete_oauth(
+        &self,
+        login_id: &str,
+        callback_url: &str,
+    ) -> Result<CompleteMcpOAuthResponse, McpOAuthError> {
+        let response = self
+            .oauth_broker()?
+            .complete(login_id, callback_url)
+            .await?;
+        let _ = self.refresh_catalog().await;
+        Ok(response)
+    }
+
+    pub async fn refresh_oauth(
+        &self,
+        server_id: &str,
+    ) -> Result<McpOAuthStatusResponse, McpOAuthError> {
+        let server_url = self.server_url(server_id)?.to_string();
+        let response = self.oauth_broker()?.refresh(server_id, &server_url).await?;
+        let _ = self.refresh_catalog().await;
+        Ok(response)
+    }
+
+    pub async fn disconnect_oauth(
+        &self,
+        server_id: &str,
+    ) -> Result<DisconnectMcpOAuthResponse, McpOAuthError> {
+        self.server_url(server_id)?;
+        let response = self.oauth_broker()?.disconnect(server_id).await?;
+        let _ = self.refresh_catalog().await;
+        Ok(response)
+    }
+
     pub async fn invoke(
         &self,
         request: McpInvokeRequest,
@@ -433,6 +495,30 @@ impl ServerRegistry {
             Err(McpOAuthError::NotConnected) => Ok(None),
             Err(error) => Err(error.into()),
         }
+    }
+
+    fn oauth_broker(&self) -> Result<&McpOAuthBroker, McpOAuthError> {
+        self.oauth.as_deref().ok_or(McpOAuthError::Unavailable)
+    }
+
+    fn server_url(&self, server_id: &str) -> Result<&str, McpOAuthError> {
+        let server_id = server_id.trim();
+        if server_id.is_empty() {
+            return Err(McpOAuthError::InvalidInput("server id"));
+        }
+        let server = self
+            .config
+            .server_by_id(server_id)
+            .ok_or_else(|| McpOAuthError::ServerNotFound(server_id.to_string()))?;
+        if remote_transport(server).is_none() {
+            return Err(McpOAuthError::ServerUrlMissing(server.id.clone()));
+        }
+        server
+            .url
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| McpOAuthError::ServerUrlMissing(server.id.clone()))
     }
 }
 

@@ -2041,6 +2041,77 @@
     "title": "AuthorityId",
     "type": "string"
   },
+  "BeginMcpOAuthRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BeginMcpOAuthRequest",
+    "description": "Begin OAuth for one configured remote MCP server.",
+    "type": "object",
+    "required": [
+      "redirect_uri",
+      "server_id"
+    ],
+    "properties": {
+      "challenge": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "client_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "client_metadata_url": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "client_secret": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "redirect_uri": {
+        "type": "string"
+      },
+      "scopes": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "server_id": {
+        "type": "string"
+      }
+    }
+  },
+  "BeginMcpOAuthResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BeginMcpOAuthResponse",
+    "description": "Browser handoff produced when an MCP OAuth authorization begins.",
+    "type": "object",
+    "required": [
+      "authorization_url",
+      "login_id",
+      "server_id"
+    ],
+    "properties": {
+      "authorization_url": {
+        "type": "string"
+      },
+      "login_id": {
+        "type": "string"
+      },
+      "server_id": {
+        "type": "string"
+      }
+    }
+  },
   "CalendarDeleteResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "CalendarDeleteResponse",
@@ -2817,6 +2888,72 @@
       "blank",
       "repository"
     ]
+  },
+  "CompleteMcpOAuthRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CompleteMcpOAuthRequest",
+    "type": "object",
+    "required": [
+      "callback_url",
+      "login_id"
+    ],
+    "properties": {
+      "callback_url": {
+        "type": "string"
+      },
+      "login_id": {
+        "type": "string"
+      }
+    }
+  },
+  "CompleteMcpOAuthResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CompleteMcpOAuthResponse",
+    "description": "Result of exchanging an MCP OAuth browser callback for credentials.",
+    "type": "object",
+    "required": [
+      "connection"
+    ],
+    "properties": {
+      "connection": {
+        "$ref": "#/definitions/McpOAuthStatusResponse"
+      }
+    },
+    "definitions": {
+      "McpOAuthStatusResponse": {
+        "description": "Secret-free connection state for one remote MCP server's OAuth grant.",
+        "type": "object",
+        "required": [
+          "connected",
+          "server_id",
+          "status"
+        ],
+        "properties": {
+          "connected": {
+            "type": "boolean"
+          },
+          "issuer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scopes": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      }
+    }
   },
   "ComponentRuntimeEventsQuery": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -4318,6 +4455,24 @@
           "string",
           "null"
         ]
+      }
+    }
+  },
+  "DisconnectMcpOAuthResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DisconnectMcpOAuthResponse",
+    "description": "Result of dropping one MCP server's locally held OAuth grant.",
+    "type": "object",
+    "required": [
+      "disconnected",
+      "server_id"
+    ],
+    "properties": {
+      "disconnected": {
+        "type": "boolean"
+      },
+      "server_id": {
+        "type": "string"
       }
     }
   },
@@ -14508,6 +14663,41 @@
       }
     }
   },
+  "McpOAuthStatusResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "McpOAuthStatusResponse",
+    "description": "Secret-free connection state for one remote MCP server's OAuth grant.",
+    "type": "object",
+    "required": [
+      "connected",
+      "server_id",
+      "status"
+    ],
+    "properties": {
+      "connected": {
+        "type": "boolean"
+      },
+      "issuer": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "scopes": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "server_id": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      }
+    }
+  },
   "ModelDownloadProgress": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "ModelDownloadProgress",
@@ -15152,6 +15342,19 @@
             "format": "date-time"
           }
         }
+      }
+    }
+  },
+  "RefreshMcpOAuthRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "RefreshMcpOAuthRequest",
+    "type": "object",
+    "required": [
+      "server_id"
+    ],
+    "properties": {
+      "server_id": {
+        "type": "string"
       }
     }
   },
