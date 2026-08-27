@@ -18,6 +18,8 @@ pub(crate) use agent_runtime::prompt_policy;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod capability_catalog;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod chatgpt_oauth;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod daemon_api;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod daemon_runtime;
@@ -65,6 +67,8 @@ pub mod mcp_gateway_client;
 pub mod mcp_policy;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod mobile_tool_registry;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod openai_codex_chat_client;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 #[path = "runtime/persistent_locus.rs"]
 pub mod persistent_locus;

@@ -35,8 +35,9 @@ To connect the native route, open **Settings → Connections**, find **ChatGPT
 account — Medousa runtime**, and choose **Connect ChatGPT**. Medousa opens the
 verification page and displays the device code to enter. The card updates when
 authorization completes. This connection is stored and refreshed by the
-workshop daemon; it is separate from the **Codex runtime** card and can be
-disconnected independently.
+workshop daemon—including Embedded Personal on phone—and remains available
+through that workshop's secure credential store. It is separate from the
+desktop-only **Codex runtime** card and can be disconnected independently.
 
 While connected, the picker refreshes from the ChatGPT account's Codex model
 catalog. The list therefore follows that account's current entitlements; if the

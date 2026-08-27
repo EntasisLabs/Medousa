@@ -39,9 +39,13 @@ pub async fn health(
     let authority_id = crate::workshop_authority::current()
         .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?
         .clone();
-    let advertised_capabilities = ["deployment.native-workloads", "transport.http"]
-        .into_iter()
-        .chain(cfg!(feature = "iroh-transport").then_some("transport.iroh"));
+    let advertised_capabilities = [
+        "auth.chatgpt-account",
+        "deployment.native-workloads",
+        "transport.http",
+    ]
+    .into_iter()
+    .chain(cfg!(feature = "iroh-transport").then_some("transport.iroh"));
 
     Ok(Json(crate::daemon_runtime::health_response(
         authority_id,

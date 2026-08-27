@@ -258,6 +258,7 @@ embedded-daemon = [
     "dep:grapheme-sdk",
     "dep:hmac",
     "dep:icalendar",
+    "dep:futures-util",
     "dep:medousa-browser-lite",
     "dep:medousa-mcp-gateway",
     "dep:medousa-tool-macros",

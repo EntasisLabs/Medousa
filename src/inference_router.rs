@@ -6,7 +6,7 @@ use crate::inference_profiles::{InferenceProfile, InferenceProfileKind, Inferenc
 use crate::session::{load_tui_defaults, provider_api_key_configured};
 use crate::turn_failure::{TurnFailure, TurnFailureCategory};
 
-pub const OPENAI_CODEX_PROVIDER_ID: &str = "openai-codex";
+pub use crate::openai_codex_chat_client::OPENAI_CODEX_PROVIDER_ID;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CapabilityRequirement {

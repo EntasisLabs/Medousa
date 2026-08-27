@@ -53,6 +53,10 @@
     health?.runtime?.advertised_capabilities.includes("deployment.native-workloads") ??
       isTauriDesktop(),
   );
+  const chatGptAccountAuth = $derived(
+    health?.runtime?.advertised_capabilities.includes("auth.chatgpt-account") ??
+      isTauriDesktop(),
+  );
   const embeddedMcp = $derived(
     health?.runtime?.advertised_capabilities.includes("mcp.remote-config") ?? false,
   );
@@ -159,7 +163,7 @@
           {nativeWorkloads}
         />
       {:else if activeSection === "connections"}
-        <LazyFeatureView loader={loadSettingsConnectionsSection} {nativeWorkloads} />
+        <LazyFeatureView loader={loadSettingsConnectionsSection} {chatGptAccountAuth} />
       {:else if activeSection === "packages"}
         <LazyFeatureView loader={loadSettingsPackagesSection} />
       {:else if activeSection === "mcp"}

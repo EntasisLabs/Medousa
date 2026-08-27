@@ -39,10 +39,10 @@
   } from "$lib/utils/chatgptOAuth";
 
   interface Props {
-    nativeWorkloads?: boolean;
+    chatGptAccountAuth?: boolean;
   }
 
-  let { nativeWorkloads = true }: Props = $props();
+  let { chatGptAccountAuth = true }: Props = $props();
 
   let actionBusy = $state<string | null>(null);
   let actionNote = $state<string | null>(null);
@@ -59,7 +59,7 @@
   });
 
   $effect(() => {
-    if (!nativeWorkloads) {
+    if (!chatGptAccountAuth) {
       nativeChatGptLoaded = false;
       nativeChatGpt = null;
       return;
@@ -79,7 +79,7 @@
   const nativeChatGptReady = $derived(chatGptOAuthReady(nativeChatGpt));
 
   async function refreshNativeChatGpt() {
-    if (!nativeWorkloads) return;
+    if (!chatGptAccountAuth) return;
     nativeChatGptLoading = true;
     try {
       nativeChatGpt = await getChatGptOAuthConnection();
@@ -93,7 +93,7 @@
   async function refreshAllConnections() {
     await Promise.all([
       isTauriDesktop() ? accountConnections.refresh(true) : Promise.resolve(),
-      nativeWorkloads ? refreshNativeChatGpt() : Promise.resolve(),
+      chatGptAccountAuth ? refreshNativeChatGpt() : Promise.resolve(),
     ]);
   }
 
@@ -215,7 +215,7 @@
   }
 
   const desktopCli = isTauriDesktop();
-  const supported = $derived(nativeWorkloads || desktopCli);
+  const supported = $derived(chatGptAccountAuth || desktopCli);
   const anySignedIn = $derived(
     nativeChatGptReady ||
       accountConnections.isSignedIn("chatgpt") ||
@@ -267,7 +267,7 @@
     </ol>
 
     <div class="connections-cards mt-3">
-      {#if nativeWorkloads}
+      {#if chatGptAccountAuth}
         <div class="connections-card" data-account="native-chatgpt">
         <div class="connections-card-head">
           <span class="connections-card-icon" aria-hidden="true">

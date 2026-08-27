@@ -22,8 +22,10 @@ use medousa_runtime::{
     ToolRunEventPort, ToolRunFinish, ToolRunStart, TurnPresentationPort,
 };
 use medousa_types::daemon_api::{
-    AgentModeId, AgentModeSource, CancelActiveSessionTurnResponse, ContinuationStatusResponse,
-    CreateSessionResponse, CreateUserProfileResponse, DaemonStatsResponse, DeliveryHealthResponse,
+    AgentModeId, AgentModeSource, BeginChatGptOAuthResponse, CancelActiveSessionTurnResponse,
+    ChatGptModelListResponse, ChatGptOAuthStatusResponse, CompleteChatGptOAuthResponse,
+    ContinuationStatusResponse, CreateSessionResponse, CreateUserProfileResponse,
+    DaemonStatsResponse, DeliveryHealthResponse, DisconnectChatGptOAuthResponse,
     GraphemeModuleDetailResponse, GraphemeModuleOpsResponse, GraphemeModulesListResponse,
     GraphemeRunResponse, GraphemeScriptDetailResponse, GraphemeScriptsListQuery,
     GraphemeScriptsListResponse, HealthResponse, InteractiveTurnResponse, ListUserProfilesResponse,
@@ -763,6 +765,8 @@ pub struct EmbeddedDaemonConfig {
     model: String,
     chat_client: Arc<dyn AiChatClient>,
     credentialed_chat_client: Option<CredentialedAiChatClient>,
+    routed_chat_client: Option<EmbeddedRoutedChatClient>,
+    chatgpt_oauth: Option<Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>>,
     tool_registry_recipe: Arc<dyn EmbeddedToolRegistryRecipe>,
     foreground_turn_timeout: Duration,
     max_live_turns: usize,
@@ -792,6 +796,33 @@ impl EmbeddedDaemonConfig {
         Ok(config)
     }
 
+    /// Bind every portable provider route, including the canonical ChatGPT
+    /// account transport, to the host's existing credential authorities.
+    pub fn credentialed_with_chatgpt(
+        root: impl Into<PathBuf>,
+        installation_id: InstallationId,
+        provider: impl Into<String>,
+        model: impl Into<String>,
+        base_url: Option<String>,
+        credentials: Arc<dyn CredentialProvider>,
+        chatgpt_oauth: Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>,
+    ) -> Result<Self> {
+        let routed_chat_client = EmbeddedRoutedChatClient::new(
+            provider.into(),
+            model.into(),
+            base_url,
+            credentials,
+            chatgpt_oauth.clone(),
+        )?;
+        let (provider, model) = routed_chat_client.route();
+        let chat_client: Arc<dyn AiChatClient> = Arc::new(routed_chat_client.clone());
+        let mut config =
+            Self::with_chat_client(root, installation_id, provider, model, chat_client);
+        config.routed_chat_client = Some(routed_chat_client);
+        config.chatgpt_oauth = Some(chatgpt_oauth);
+        Ok(config)
+    }
+
     /// Bind an existing Stasis inference port. Useful for alternate native
     /// adapters and deterministic daemon integration tests.
     pub fn with_chat_client(
@@ -808,6 +839,8 @@ impl EmbeddedDaemonConfig {
             model: model.into(),
             chat_client,
             credentialed_chat_client: None,
+            routed_chat_client: None,
+            chatgpt_oauth: None,
             tool_registry_recipe: Arc::new(EmptyEmbeddedToolRegistryRecipe),
             foreground_turn_timeout: DEFAULT_FOREGROUND_TURN_TIMEOUT,
             max_live_turns: 1,
@@ -848,6 +881,7 @@ impl EmbeddedDaemonConfig {
 
 enum EmbeddedInferenceBinding {
     Credentialed(CredentialedAiChatClient),
+    Routed(EmbeddedRoutedChatClient),
     Fixed { provider: Arc<str>, model: Arc<str> },
 }
 
@@ -858,6 +892,7 @@ impl EmbeddedInferenceBinding {
                 let config = client.config();
                 (config.provider().to_string(), config.model().to_string())
             }
+            Self::Routed(client) => client.route(),
             Self::Fixed { provider, model } => (provider.to_string(), model.to_string()),
         }
     }
@@ -868,14 +903,162 @@ impl EmbeddedInferenceBinding {
         model: impl Into<String>,
         base_url: Option<String>,
     ) -> Result<()> {
-        let Self::Credentialed(client) = self else {
-            bail!("embedded inference binding is not reconfigurable");
-        };
+        match self {
+            Self::Credentialed(client) => {
+                let config = CredentialedAiChatConfig::new(provider, model, base_url)
+                    .context("invalid embedded inference configuration")?;
+                client.reconfigure(config);
+                Ok(())
+            }
+            Self::Routed(client) => client.reconfigure(provider, model, base_url),
+            Self::Fixed { .. } => bail!("embedded inference binding is not reconfigurable"),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct EmbeddedRoutedChatClient {
+    active: Arc<std::sync::RwLock<EmbeddedActiveInference>>,
+    credentials: Arc<dyn CredentialProvider>,
+    chatgpt_oauth: Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>,
+}
+
+#[derive(Clone)]
+struct EmbeddedActiveInference {
+    provider: String,
+    model: String,
+    client: Arc<dyn AiChatClient>,
+}
+
+impl EmbeddedRoutedChatClient {
+    fn new(
+        provider: String,
+        model: String,
+        base_url: Option<String>,
+        credentials: Arc<dyn CredentialProvider>,
+        chatgpt_oauth: Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>,
+    ) -> Result<Self> {
+        let active = Self::build_route(
+            provider,
+            model,
+            base_url,
+            credentials.clone(),
+            chatgpt_oauth.clone(),
+        )?;
+        Ok(Self {
+            active: Arc::new(std::sync::RwLock::new(active)),
+            credentials,
+            chatgpt_oauth,
+        })
+    }
+
+    fn build_route(
+        provider: String,
+        model: String,
+        base_url: Option<String>,
+        credentials: Arc<dyn CredentialProvider>,
+        chatgpt_oauth: Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>,
+    ) -> Result<EmbeddedActiveInference> {
+        if provider
+            .trim()
+            .eq_ignore_ascii_case(crate::openai_codex_chat_client::OPENAI_CODEX_PROVIDER_ID)
+        {
+            let model = validate_chatgpt_inference_route(model, base_url)?;
+            return Ok(EmbeddedActiveInference {
+                provider: crate::openai_codex_chat_client::OPENAI_CODEX_PROVIDER_ID.to_string(),
+                model: model.clone(),
+                client: Arc::new(
+                    crate::openai_codex_chat_client::OpenAiCodexChatClient::with_broker(
+                        model.clone(),
+                        chatgpt_oauth,
+                    ),
+                ),
+            });
+        }
         let config = CredentialedAiChatConfig::new(provider, model, base_url)
             .context("invalid embedded inference configuration")?;
-        client.reconfigure(config);
+        let provider = config.provider().to_string();
+        let model = config.model().to_string();
+        let client = Arc::new(
+            CredentialedAiChatClient::new(config, credentials)
+                .context("initialize embedded inference client")?,
+        );
+        Ok(EmbeddedActiveInference {
+            provider,
+            model,
+            client,
+        })
+    }
+
+    fn snapshot(&self) -> EmbeddedActiveInference {
+        self.active
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn route(&self) -> (String, String) {
+        let active = self.snapshot();
+        (active.provider, active.model)
+    }
+
+    fn reconfigure(
+        &self,
+        provider: impl Into<String>,
+        model: impl Into<String>,
+        base_url: Option<String>,
+    ) -> Result<()> {
+        let next = Self::build_route(
+            provider.into(),
+            model.into(),
+            base_url,
+            self.credentials.clone(),
+            self.chatgpt_oauth.clone(),
+        )?;
+        *self
+            .active
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = next;
         Ok(())
     }
+}
+
+#[async_trait::async_trait]
+impl AiChatClient for EmbeddedRoutedChatClient {
+    async fn complete(
+        &self,
+        request: genai::chat::ChatRequest,
+        options: Option<&genai::chat::ChatOptions>,
+    ) -> StasisResult<genai::chat::ChatResponse> {
+        self.snapshot().client.complete(request, options).await
+    }
+
+    async fn complete_stream(
+        &self,
+        request: genai::chat::ChatRequest,
+        options: Option<&genai::chat::ChatOptions>,
+        chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
+    ) -> StasisResult<genai::chat::ChatResponse> {
+        self.snapshot()
+            .client
+            .complete_stream(request, options, chunk_tx)
+            .await
+    }
+}
+
+fn validate_chatgpt_inference_route(model: String, base_url: Option<String>) -> Result<String> {
+    let model = model.trim().to_string();
+    if model.is_empty() || model.len() > 256 || model.chars().any(char::is_control) {
+        bail!("invalid embedded ChatGPT model");
+    }
+    if base_url
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|value| !value.is_empty())
+    {
+        bail!("the ChatGPT account route does not accept a custom base URL");
+    }
+    Ok(model)
 }
 
 /// Validate a route before the native host commits it to workshop settings.
@@ -884,6 +1067,15 @@ pub fn validate_credentialed_inference_route(
     model: impl Into<String>,
     base_url: Option<String>,
 ) -> Result<()> {
+    let provider = provider.into();
+    let model = model.into();
+    if provider
+        .trim()
+        .eq_ignore_ascii_case(crate::openai_codex_chat_client::OPENAI_CODEX_PROVIDER_ID)
+    {
+        validate_chatgpt_inference_route(model, base_url)?;
+        return Ok(());
+    }
     CredentialedAiChatConfig::new(provider, model, base_url)
         .context("invalid embedded inference configuration")?;
     Ok(())
@@ -916,6 +1108,7 @@ pub struct EmbeddedDaemon {
     authority_id: medousa_types::session::AuthorityId,
     local_credential_id: Arc<str>,
     inference: EmbeddedInferenceBinding,
+    chatgpt_oauth: Option<Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>>,
     chat_client: Arc<dyn AiChatClient>,
     mcp_gateway_client: Arc<crate::mcp_gateway_client::McpGatewayClient>,
     tool_registry: Arc<dyn ToolRegistry>,
@@ -1155,9 +1348,10 @@ impl EmbeddedDaemon {
             "embedded-home:{}",
             config.installation_id.storage_key().as_str()
         ));
-        let inference = match config.credentialed_chat_client {
-            Some(client) => EmbeddedInferenceBinding::Credentialed(client),
-            None => EmbeddedInferenceBinding::Fixed {
+        let inference = match (config.routed_chat_client, config.credentialed_chat_client) {
+            (Some(client), _) => EmbeddedInferenceBinding::Routed(client),
+            (None, Some(client)) => EmbeddedInferenceBinding::Credentialed(client),
+            (None, None) => EmbeddedInferenceBinding::Fixed {
                 provider: Arc::from(config.provider),
                 model: Arc::from(config.model),
             },
@@ -1169,6 +1363,7 @@ impl EmbeddedDaemon {
             authority_id,
             local_credential_id,
             inference,
+            chatgpt_oauth: config.chatgpt_oauth,
             chat_client: config.chat_client,
             mcp_gateway_client,
             tool_registry,
@@ -1689,6 +1884,56 @@ impl EmbeddedDaemonClient {
         self.daemon.inference.reconfigure(provider, model, base_url)
     }
 
+    fn chatgpt_oauth(&self) -> Result<&Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>> {
+        self.require(Capability::AdminRuntime)?;
+        self.daemon
+            .chatgpt_oauth
+            .as_ref()
+            .ok_or_else(|| anyhow!("ChatGPT account authentication is unavailable"))
+    }
+
+    pub fn chatgpt_oauth_status(&self) -> Result<ChatGptOAuthStatusResponse> {
+        Ok(self.chatgpt_oauth()?.status())
+    }
+
+    pub async fn begin_chatgpt_oauth(&self) -> Result<BeginChatGptOAuthResponse> {
+        self.chatgpt_oauth()?
+            .begin()
+            .await
+            .map_err(anyhow::Error::new)
+    }
+
+    pub async fn complete_chatgpt_oauth(
+        &self,
+        login_id: &str,
+    ) -> Result<CompleteChatGptOAuthResponse> {
+        self.chatgpt_oauth()?
+            .complete(login_id)
+            .await
+            .map_err(anyhow::Error::new)
+    }
+
+    pub async fn refresh_chatgpt_oauth(&self) -> Result<ChatGptOAuthStatusResponse> {
+        self.chatgpt_oauth()?
+            .refresh()
+            .await
+            .map_err(anyhow::Error::new)
+    }
+
+    pub async fn disconnect_chatgpt_oauth(&self) -> Result<DisconnectChatGptOAuthResponse> {
+        self.chatgpt_oauth()?
+            .disconnect()
+            .await
+            .map_err(anyhow::Error::new)
+    }
+
+    pub async fn list_chatgpt_models(&self) -> Result<ChatGptModelListResponse> {
+        self.chatgpt_oauth()?
+            .list_models()
+            .await
+            .map_err(anyhow::Error::new)
+    }
+
     pub async fn mcp_gateway_status(
         &self,
     ) -> Result<(
@@ -1913,13 +2158,17 @@ impl EmbeddedDaemonClient {
             .await
             .context("read embedded tool registry")?
             .len();
-        let advertised_capabilities = self
+        let mut advertised_capabilities = self
             .daemon
             .cluster_node
             .capability_tags
             .iter()
             .cloned()
-            .chain(["transport.in-process", "mcp.remote-config"].map(str::to_string));
+            .chain(["transport.in-process", "mcp.remote-config"].map(str::to_string))
+            .collect::<Vec<_>>();
+        if self.daemon.chatgpt_oauth.is_some() {
+            advertised_capabilities.push("auth.chatgpt-account".to_string());
+        }
         let (active_profile_id, active_profile_display_name) = {
             let registry = self
                 .daemon
@@ -3229,6 +3478,18 @@ query MobileProbe {
         }
     }
 
+    struct EmptyChatGptStore;
+
+    impl crate::chatgpt_oauth::ChatGptCredentialStore for EmptyChatGptStore {
+        fn load_bundle(&self) -> std::result::Result<Option<String>, String> {
+            Ok(None)
+        }
+
+        fn save_bundle(&self, _bundle: Option<&str>) -> std::result::Result<(), String> {
+            Ok(())
+        }
+    }
+
     #[test]
     fn credentialed_binding_reconfigures_its_route() {
         let client = CredentialedAiChatClient::new(
@@ -3249,6 +3510,38 @@ query MobileProbe {
         assert_eq!(
             binding.route(),
             ("openai".to_string(), "gpt-4.1-mini".to_string())
+        );
+    }
+
+    #[test]
+    fn routed_binding_switches_between_api_key_and_chatgpt_accounts() {
+        let broker = Arc::new(crate::chatgpt_oauth::ChatGptOAuthBroker::new(Arc::new(
+            EmptyChatGptStore,
+        )));
+        let routed = EmbeddedRoutedChatClient::new(
+            "openai".to_string(),
+            "gpt-5.4-mini".to_string(),
+            None,
+            Arc::new(CanaryCredentialProvider),
+            broker,
+        )
+        .expect("routed client");
+        let binding = EmbeddedInferenceBinding::Routed(routed);
+
+        binding
+            .reconfigure("openai-codex", "gpt-5.6-sol", None)
+            .expect("select ChatGPT account route");
+        assert_eq!(
+            binding.route(),
+            ("openai-codex".to_string(), "gpt-5.6-sol".to_string())
+        );
+
+        binding
+            .reconfigure("anthropic", "claude-sonnet-4-6", None)
+            .expect("return to API-key route");
+        assert_eq!(
+            binding.route(),
+            ("anthropic".to_string(), "claude-sonnet-4-6".to_string())
         );
     }
 

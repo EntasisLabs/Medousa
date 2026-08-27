@@ -5435,6 +5435,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "dirs 5.0.1",
+ "futures-util",
  "genai 0.6.5",
  "grapheme-compiler",
  "grapheme-runtime",

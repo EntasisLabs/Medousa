@@ -4,6 +4,8 @@
 use std::sync::Arc;
 
 #[cfg(target_os = "ios")]
+use medousa::chatgpt_oauth::{ChatGptCredentialStore, ChatGptOAuthBroker};
+#[cfg(target_os = "ios")]
 use medousa::delegated_task::{
     DelegatedTaskError, DelegatedTaskRequest, DelegatedTaskResult, DelegatedTaskTransport,
 };
@@ -218,19 +220,23 @@ fn inference_route_from_defaults(
         .filter(|value| !value.is_empty())
         .unwrap_or("gpt-5.4-mini")
         .to_string();
-    let base_url = crate::integration_secrets::load_connection_base_url(&provider)
-        .or_else(|| {
-            defaults
-                .base_url
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-        })
-        .or_else(|| {
-            crate::provider_catalog::find_provider(&provider)
-                .and_then(|entry| entry.default_base_url.map(str::to_string))
-        });
+    let base_url = if provider.eq_ignore_ascii_case("openai-codex") {
+        None
+    } else {
+        crate::integration_secrets::load_connection_base_url(&provider)
+            .or_else(|| {
+                defaults
+                    .base_url
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+            })
+            .or_else(|| {
+                crate::provider_catalog::find_provider(&provider)
+                    .and_then(|entry| entry.default_base_url.map(str::to_string))
+            })
+    };
     medousa::embedded_daemon::validate_credentialed_inference_route(
         provider.clone(),
         model.clone(),
@@ -261,13 +267,17 @@ async fn boot_embedded_daemon() -> Result<Arc<EmbeddedDaemon>, String> {
     })
     .await
     .map_err(|_| "embedded daemon configuration task failed".to_string())??;
-    let config = EmbeddedDaemonConfig::credentialed(
+    let chatgpt_oauth = Arc::new(ChatGptOAuthBroker::new(Arc::new(
+        HomeChatGptCredentialStore,
+    )));
+    let config = EmbeddedDaemonConfig::credentialed_with_chatgpt(
         root,
         installation_id,
         provider,
         model,
         base_url,
         Arc::new(HomeCredentialProvider),
+        chatgpt_oauth,
     )
     .map_err(|error| format!("configure embedded daemon inference: {error:#}"))?
     .with_tool_registry_recipe(Arc::new(
@@ -428,6 +438,29 @@ impl CredentialProvider for HomeCredentialProvider {
         .map_err(|_| ProviderCredentialError::Unavailable)?
         .ok_or(ProviderCredentialError::Missing)?;
         ProviderCredential::new(secret)
+    }
+}
+
+#[cfg(target_os = "ios")]
+#[derive(Debug)]
+struct HomeChatGptCredentialStore;
+
+#[cfg(target_os = "ios")]
+impl ChatGptCredentialStore for HomeChatGptCredentialStore {
+    fn load_bundle(&self) -> Result<Option<String>, String> {
+        Ok(crate::integration_secrets::load_kind_secret(
+            "chatgpt",
+            medousa_types::secrets::IntegrationSecretSlot::OauthBundle,
+        ))
+    }
+
+    fn save_bundle(&self, bundle: Option<&str>) -> Result<(), String> {
+        crate::integration_secrets::save_kind_secret(
+            "chatgpt",
+            medousa_types::secrets::IntegrationSecretSlot::OauthBundle,
+            bundle,
+        );
+        Ok(())
     }
 }
 

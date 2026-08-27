@@ -138,7 +138,7 @@
   const nativeProviderGroups = $derived(
     groupedOptions.filter((group) => group.options.length > 0),
   );
-  const nativeMobileReadonly = $derived(readonly || isTauriMobilePlatform());
+  const pickerReadonly = $derived(readonly);
   const nativeChatGptSelected = $derived(
     selectedNativeProvider.trim().toLowerCase() === "openai-codex",
   );
@@ -306,7 +306,7 @@
   }
 
   async function refreshLiveModelsForProvider(provider: string) {
-    if (nativeMobileReadonly || !catalogSnapshot) return;
+    if (pickerReadonly || !catalogSnapshot) return;
     loadingLiveModels = true;
     try {
       const result = provider.trim().toLowerCase() === "openai-codex"
@@ -323,7 +323,7 @@
   }
 
   async function toggleMenu() {
-    if (disabled || nativeMobileReadonly || runtime.savingControls) return;
+    if (disabled || pickerReadonly || runtime.savingControls) return;
     open = !open;
     if (open) {
       search = "";
@@ -518,13 +518,13 @@
     type="button"
     class="composer-model-trigger {quiet
       ? 'composer-model-trigger--quiet'
-      : ''} {nativeMobileReadonly ? 'composer-model-trigger-readonly' : ''}"
+      : ''} {pickerReadonly ? 'composer-model-trigger-readonly' : ''}"
     class:composer-model-trigger-open={open}
     disabled={disabled || runtime.savingControls || agentRuntimePending}
     aria-haspopup="listbox"
     aria-expanded={open}
     title={displayName}
-    onclick={nativeMobileReadonly ? openMenu : toggleMenu}
+    onclick={pickerReadonly ? openMenu : toggleMenu}
   >
     <span class="composer-model-trigger-copy">
       <span class="composer-model-trigger-name">{displayName}</span>
@@ -545,7 +545,7 @@
       tabindex="-1"
       onkeydown={handlePickerKeydown}
     >
-      {#if !nativeMobileReadonly}
+      {#if !pickerReadonly}
         {#if agentRuntime === "medousa"}
           <div class="composer-model-panel-search">
             <label class="composer-model-search">
@@ -716,7 +716,7 @@
           ? openModelsSettings
           : openConnections}
       >
-        <span>{nativeMobileReadonly
+        <span>{pickerReadonly
             ? "Open Models"
             : agentRuntime === "medousa" && !nativeChatGptSelected
               ? "Manage models and providers"

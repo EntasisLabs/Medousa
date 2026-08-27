@@ -425,6 +425,7 @@ pub fn providers_catalog_for_embedded() -> ProvidersListResult {
     let mut catalog = providers_catalog();
     catalog.providers.retain(|entry| {
         entry.id == "custom"
+            || entry.id == "openai-codex"
             || medousa_runtime::CredentialedAiChatConfig::new(
                 entry.id.clone(),
                 entry.default_model.clone(),
@@ -451,12 +452,10 @@ mod tests {
     fn chatgpt_oauth_route_is_selectable() {
         let route = find_provider("openai-codex").expect("route metadata");
         assert!(!route.needs_api_key);
-        assert!(
-            providers_catalog()
-                .providers
-                .iter()
-                .any(|entry| entry.id == "openai-codex")
-        );
+        assert!(providers_catalog()
+            .providers
+            .iter()
+            .any(|entry| entry.id == "openai-codex"));
     }
 
     #[test]
@@ -464,6 +463,7 @@ mod tests {
         let catalog = providers_catalog_for_embedded();
         for provider in [
             "openai",
+            "openai-codex",
             "anthropic",
             "google",
             "deepseek",
