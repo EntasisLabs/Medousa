@@ -17,6 +17,12 @@
   } from "$lib/types/workshopRegistry";
   import { COLOR_THEME_OPTIONS, isColorThemeId } from "$lib/types/colorThemes";
   import { pickExternalFolder } from "$lib/utils/externalDeskApi";
+  import {
+    clearDelegationBinding,
+    loadDelegationBinding,
+    setDelegationBinding,
+    type DelegationBinding,
+  } from "$lib/utils/delegationApi";
   import { openGuide } from "$lib/guide/openGuide";
   import { isTauri } from "$lib/window";
   import { onThisHostPhrase } from "$lib/platformCopy";
@@ -50,9 +56,26 @@
   let localDataDirDraft = $state("");
   let addLocalBusy = $state(false);
   let addLocalError = $state<string | null>(null);
+  let delegationBinding = $state<DelegationBinding | null>(null);
+  let delegationBusy = $state(false);
+  let delegationError = $state<string | null>(null);
+
+  const isIosNative =
+    typeof document !== "undefined" &&
+    (document.documentElement.dataset.nativeShell === "ios" ||
+      /iPhone|iPad|iPod/i.test(navigator.userAgent));
 
   onMount(() => {
-    void workshops.load();
+    void (async () => {
+      await workshops.load();
+      if (isIosNative && workshops.activeWorkshopId === PERSONAL_WORKSHOP_ID) {
+        try {
+          delegationBinding = await loadDelegationBinding();
+        } catch {
+          delegationBinding = null;
+        }
+      }
+    })();
   });
 
   function workshopIcon(icon: WorkshopIcon | undefined) {
@@ -184,6 +207,31 @@
     await workshops.removeWorkshop(workshopId, { onHealthChange: onDaemonHealth });
     editingId = null;
   }
+
+  async function useForDelegation(workshopId: string) {
+    delegationBusy = true;
+    delegationError = null;
+    try {
+      delegationBinding = await setDelegationBinding(workshopId);
+    } catch (err) {
+      delegationError = err instanceof Error ? err.message : String(err);
+    } finally {
+      delegationBusy = false;
+    }
+  }
+
+  async function stopDelegation() {
+    delegationBusy = true;
+    delegationError = null;
+    try {
+      await clearDelegationBinding();
+      delegationBinding = null;
+    } catch (err) {
+      delegationError = err instanceof Error ? err.message : String(err);
+    } finally {
+      delegationBusy = false;
+    }
+  }
 </script>
 
 {#if isTauri()}
@@ -306,6 +354,27 @@
                 <button type="button" class="ws-cta" onclick={() => startBranding(workshop)}>
                   Brand
                 </button>
+                {#if isIosNative && workshops.activeWorkshopId === PERSONAL_WORKSHOP_ID && workshop.pairing && (workshop.kind === "portal" || workshop.kind === "paired")}
+                  {#if delegationBinding?.target.routeRef === workshop.id}
+                    <button
+                      type="button"
+                      class="ws-cta"
+                      disabled={delegationBusy}
+                      onclick={() => void stopDelegation()}
+                    >
+                      Stop delegated work
+                    </button>
+                  {:else}
+                    <button
+                      type="button"
+                      class="ws-cta"
+                      disabled={delegationBusy}
+                      onclick={() => void useForDelegation(workshop.id)}
+                    >
+                      Use for delegated work
+                    </button>
+                  {/if}
+                {/if}
                 {#if workshop.id !== PERSONAL_WORKSHOP_ID}
                   <button
                     type="button"
@@ -317,6 +386,10 @@
                   </button>
                 {/if}
               </div>
+
+              {#if delegationError}
+                <p class="ws-footnote mt-2 text-content-warning">{delegationError}</p>
+              {/if}
 
               {#if brandingId === workshop.id}
                 <div class="ws-brand mt-3">

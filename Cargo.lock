@@ -7143,9 +7143,9 @@ dependencies = [
 
 [[package]]
 name = "locus-core-rs"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0c0fb70e63300b96c42b72879360fec7b30936377fde56faf37e1932513fbaf"
+checksum = "6caeb7a7d43ffd60ce612003d391b4a0098c57dc39ed34a91cd97dbad0dc6c43"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7161,9 +7161,9 @@ dependencies = [
 
 [[package]]
 name = "locus-sdk"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6a8a2da557ebbbeaae676c2c1c67055d4ba706369977f629e538a2f2c2abec5"
+checksum = "00025c5e8fadbb09a74291b5a13b7dcdfd01c94a51f4143e86054bb7a94762f8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7889,6 +7889,7 @@ name = "medousa-mcp-gateway"
 version = "0.9.1"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum 0.8.9",
  "chrono",
  "dirs 5.0.1",
@@ -14024,9 +14025,9 @@ dependencies = [
 
 [[package]]
 name = "stasis-rs"
-version = "0.9.3"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc963cb35259760147ac146ea5b4a389a1121d55df9993adcde2f155781822ea"
+checksum = "79fa0b90f9a04e8f83b9e071beb83ad74247dc6b70d19c660c6e5fa4d5384cdf"
 dependencies = [
  "anyhow",
  "askama",

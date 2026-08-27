@@ -1,0 +1,55 @@
+{
+  "estimator": "chars_div_4",
+  "entries": [
+    {
+      "id": "general_core",
+      "chars": 12290,
+      "tokens_estimate": 3073
+    },
+    {
+      "id": "coder_setup_overlay",
+      "chars": 2072,
+      "tokens_estimate": 518
+    },
+    {
+      "id": "coder_work_overlay",
+      "chars": 4004,
+      "tokens_estimate": 1001
+    },
+    {
+      "id": "host_runtime_appendices",
+      "chars": 4665,
+      "tokens_estimate": 1167
+    },
+    {
+      "id": "host_liquid_appendix",
+      "chars": 5720,
+      "tokens_estimate": 1430
+    },
+    {
+      "id": "host_ui_artifact_appendix",
+      "chars": 467,
+      "tokens_estimate": 117
+    },
+    {
+      "id": "host_route_appendix",
+      "chars": 313,
+      "tokens_estimate": 79
+    },
+    {
+      "id": "worker_runtime_prompt",
+      "chars": 13512,
+      "tokens_estimate": 3378
+    },
+    {
+      "id": "worker_liquid_appendix",
+      "chars": 5720,
+      "tokens_estimate": 1430
+    },
+    {
+      "id": "worker_ui_artifact_appendix",
+      "chars": 467,
+      "tokens_estimate": 117
+    }
+  ]
+}

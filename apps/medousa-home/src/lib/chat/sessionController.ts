@@ -15,6 +15,7 @@ import type { SessionHistoryResponse } from "$lib/types/session";
 import type { WorkCard } from "$lib/types/workspace";
 import { isAskJobId, askSessionId } from "$lib/types/askJob";
 import {
+  chatSegmentsFromParts,
   hostContextFromParts,
   modelReceiptFromParts,
   reasoningFromParts,
@@ -124,6 +125,8 @@ export function mapTurns(
       answerState: turn.answer_state ?? null,
       tools: turn.tool_names?.length ? turn.tool_names : undefined,
       toolRuns: toolRunsFromParts(turn.parts ?? null),
+      segments:
+        turn.role === "assistant" ? chatSegmentsFromParts(turn.parts ?? null) : undefined,
       uiArtifacts: uiArtifactsFromParts(turn.parts ?? null),
       reasoning: reasoningFromParts(turn.parts ?? null),
       statusLine: turn.role === "assistant" ? progressFromParts(turn.parts ?? null) : null,

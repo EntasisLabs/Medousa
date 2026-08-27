@@ -3,6 +3,14 @@ use reqwest::Client;
 
 use medousa_types::mcp_gateway_api::{McpPolicyEvaluateRequest, McpPolicyEvaluateResponse};
 
+#[async_trait::async_trait]
+pub trait McpPolicyEvaluator: Send + Sync {
+    async fn evaluate(
+        &self,
+        request: &McpPolicyEvaluateRequest,
+    ) -> Result<McpPolicyEvaluateResponse>;
+}
+
 #[derive(Clone)]
 pub struct DaemonPolicyClient {
     policy_url: String,
@@ -21,8 +29,11 @@ impl DaemonPolicyClient {
                 .unwrap_or_else(|_| Client::new()),
         }
     }
+}
 
-    pub async fn evaluate(
+#[async_trait::async_trait]
+impl McpPolicyEvaluator for DaemonPolicyClient {
+    async fn evaluate(
         &self,
         request: &McpPolicyEvaluateRequest,
     ) -> Result<McpPolicyEvaluateResponse> {

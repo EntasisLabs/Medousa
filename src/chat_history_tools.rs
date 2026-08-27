@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 
 use crate::semantic_values::TrimmedText;
-use crate::session::{ConversationTurn, SessionHistorySummary, load_history};
+use crate::session_history::{ConversationTurn, SessionHistorySummary, load_history};
 use crate::turn_parts::TurnPart;
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
@@ -76,7 +76,7 @@ fn require_visible_session(
     target_session_id: &str,
     tool_name: &str,
 ) -> Result<(), StasisError> {
-    if crate::session_catalog::session_visible_to_profile(target_session_id, &access.profile_id) {
+    if crate::session_history::session_visible_to_profile(target_session_id, &access.profile_id) {
         return Ok(());
     }
     Err(StasisError::PortFailure(format!(
@@ -96,7 +96,9 @@ fn visible_turn_text(turn: &ConversationTurn) -> Option<String> {
     let visible = parts
         .iter()
         .filter_map(|part| match part {
-            TurnPart::Text { markdown } | TurnPart::Progress { markdown } => Some(markdown.trim()),
+            TurnPart::Text { markdown, .. } | TurnPart::Progress { markdown } => {
+                Some(markdown.trim())
+            }
             TurnPart::Handoff { text, .. } => Some(text.trim()),
             TurnPart::Reasoning { .. }
             | TurnPart::ModelReceipt { .. }
@@ -206,7 +208,7 @@ pub struct CognitionChatHistorySearchTool {
 
 #[medousa_tool(id = COGNITION_CHAT_HISTORY_SEARCH_ID)]
 impl CognitionChatHistorySearchTool {
-    /// Search prior Medousa chats visible to the active profile. Omit query to list recent chats. Searches only user/assistant prose; reasoning traces and raw tool receipts are excluded.
+    /// Search prior Medousa chats. Omit query to list recent chats. Searches user and assistant messages.
     async fn invoke_typed(
         &self,
         input: ChatHistorySearchInput,
@@ -228,21 +230,18 @@ impl CognitionChatHistorySearchTool {
             .unwrap_or(DEFAULT_SESSION_SCAN_LIMIT)
             .clamp(1, MAX_SESSION_SCAN_LIMIT);
 
-        let page = crate::session::list_history_sessions_page_for_profile(
-            Some(&access.profile_id),
+        let sessions = crate::session_history::list_sessions_for_profile(
+            &access.profile_id,
             if query.is_some() { scan_limit } else { limit },
-            None,
-            None,
         );
-        let scanned_sessions = page.sessions.len();
+        let scanned_sessions = sessions.len();
         let mut results = Vec::new();
         if query.is_none() {
-            for summary in page.sessions {
+            for summary in sessions {
                 results.push(search_match_from_summary(summary, None, None, None));
             }
         } else if let Some(query_text) = query.as_deref() {
-            let mut summaries = page
-                .sessions
+            let mut summaries = sessions
                 .into_iter()
                 .map(|summary| (summary.session_id.clone(), summary))
                 .collect::<std::collections::HashMap<_, _>>();
@@ -356,7 +355,7 @@ pub struct CognitionChatHistoryReadTool {
 
 #[medousa_tool(id = COGNITION_CHAT_HISTORY_READ_ID)]
 impl CognitionChatHistoryReadTool {
-    /// Read a bounded window from one prior Medousa chat. Returns user/assistant prose and compact tool names only; reasoning traces and raw tool receipts are never returned.
+    /// Read a bounded window from one prior Medousa chat. Returns user and assistant messages plus compact tool names.
     async fn invoke_typed(
         &self,
         input: ChatHistoryReadInput,
@@ -416,12 +415,7 @@ impl CognitionChatHistoryReadTool {
             });
         }
 
-        let display_name = crate::session_catalog::get_summary(&session_id)
-            .and_then(|summary| summary.display_name)
-            .or_else(|| {
-                crate::shared_session_catalog::get_shared_row(&session_id)
-                    .and_then(|row| row.display_name)
-            });
+        let display_name = crate::session_history::display_name(&session_id);
         let returned_turns = messages.len();
         Ok(ChatHistoryReadOutput {
             ok: true,
@@ -486,6 +480,8 @@ mod tests {
                 },
                 TurnPart::Text {
                     markdown: "visible answer".to_string(),
+                    segment_id: None,
+                    model_round: None,
                 },
             ]),
         );

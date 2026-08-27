@@ -9,7 +9,7 @@ use stasis::prelude::{Result as StasisResult, StasisError};
 use crate::context_pointer_index::resolve_pointer_slice;
 use crate::environment_store::{environment_hub, resolve_profile_id};
 use crate::semantic_values::TrimmedText;
-use crate::session::load_history;
+use crate::session_history::load_history;
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 pub const COGNITION_CONTEXT_FOLLOW_POINTER: &str = "cognition_context_follow_pointer";
@@ -121,7 +121,7 @@ struct ContextFollowPointerOutput {
 
 #[medousa_tool(id = COGNITION_CONTEXT_FOLLOW_POINTER_ID)]
 impl CognitionContextFollowPointerTool {
-    /// Pull a focused slice of a context pointer into working memory. Use pointer ids from [MEDOUSA_POINTERS] at turn start. scope examples: last_5_turns.
+    /// Load a focused context slice by pointer id. scope examples: last_5_turns.
     async fn invoke_typed(
         &self,
         input: ContextFollowPointerInput,
@@ -137,7 +137,7 @@ impl CognitionContextFollowPointerTool {
         )
         .await?;
 
-        let sessions = crate::session_catalog::list_sessions(20);
+        let sessions = crate::session_history::list_sessions(20);
         let env = environment_hub().get(&resolve_profile_id(None)).await.ok();
         let digest = crate::context_pointer_index::build_pointer_digest(
             &active_session,
@@ -188,7 +188,7 @@ struct ContextListPointersOutput {
 
 #[medousa_tool(id = COGNITION_CONTEXT_LIST_POINTERS_ID)]
 impl CognitionContextListPointersTool {
-    /// List ranked context pointers for the active session (same as turn bootstrap digest).
+    /// List ranked context pointers for the active session.
     async fn invoke_typed(
         &self,
         _input: ContextListPointersInput,
@@ -199,7 +199,7 @@ impl CognitionContextListPointersTool {
             COGNITION_CONTEXT_LIST_POINTERS,
         )
         .await?;
-        let sessions = crate::session_catalog::list_sessions(20);
+        let sessions = crate::session_history::list_sessions(20);
         let env = environment_hub().get(&resolve_profile_id(None)).await.ok();
         let digest = crate::context_pointer_index::build_pointer_digest(
             &active_session,

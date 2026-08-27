@@ -1,4 +1,4 @@
-//! Runtime ambient context: wall clock, daypart, channel surface, and operator conduct hooks.
+//! Runtime ambient context: wall clock, daypart, channel, and authority facts.
 
 use chrono::{DateTime, Timelike, Utc};
 use chrono_tz::Tz;
@@ -54,14 +54,14 @@ fn daypart_label(hour: u32) -> &'static str {
     }
 }
 
-fn surface_tone(surface: &str) -> &'static str {
+fn surface_class(surface: &str) -> &'static str {
     match surface.trim().to_ascii_lowercase().as_str() {
-        "telegram" | "whatsapp" => "concise_mobile_friendly",
-        "discord" | "slack" => "threaded_markdown_ok",
-        "cli" => "scriptable_terse",
-        "tui" => "operator_console_full_detail",
-        "api" => "integration_neutral",
-        _ => "neutral",
+        "telegram" | "whatsapp" => "mobile_chat",
+        "discord" | "slack" => "threaded_chat",
+        "cli" => "cli",
+        "tui" => "tui",
+        "api" => "api",
+        _ => "chat",
     }
 }
 
@@ -84,10 +84,6 @@ pub fn build_ambient_context(input: AmbientContextInput<'_>) -> AmbientContextBl
         format!("weekday={weekday}"),
         format!("daypart={daypart}"),
         format!("session_id={}", input.session_id.trim()),
-        "operator_mode=proactive_chief_of_staff".to_string(),
-        "conduct=anticipate_intent_one_step_ahead_be_direct_warm_and_useful".to_string(),
-        "token_policy=prefer_short_replies_and_single_pass_tool_use_when_sufficient".to_string(),
-        "early_exit=allowed_end_turn_early_with_cognition_turn_action=turn.finish_when_fully_done_or_cognition_turn_action=turn.checkpoint_for_mid_task_handoff_or_cognition_turn_action=turn.update_user_for_status_or_cognition_turn_action=turn.begin_work_for_heavy_work_or_ask_one_sharp_clarifying_question_instead_of_burning_remaining_rounds".to_string(),
     ];
 
     if let Some(surface) = input.surface {
@@ -98,7 +94,7 @@ pub fn build_ambient_context(input: AmbientContextInput<'_>) -> AmbientContextBl
             .filter(|value| !value.is_empty())
         {
             lines.push(format!("channel_surface={channel}"));
-            lines.push(format!("channel_tone={}", surface_tone(channel)));
+            lines.push(format!("surface_class={}", surface_class(channel)));
         }
         if let Some(channel_id) = surface
             .channel_id
@@ -136,11 +132,6 @@ pub fn build_ambient_context(input: AmbientContextInput<'_>) -> AmbientContextBl
                     "denied"
                 }
             ));
-            if proactive_allowed {
-                lines.push(
-                    "proactive_policy=when_high_confidence_and_low_cost_offer_next_step_or_surface_risk_before_asked".to_string(),
-                );
-            }
         }
     }
 
@@ -155,6 +146,7 @@ pub fn append_ambient_context(prompt: &str, input: AmbientContextInput<'_>) -> S
 }
 
 /// Pointer digest + canvas summary for turn bootstrap.
+#[cfg(feature = "full-daemon")]
 pub async fn build_environment_ambient_extras(session_id: &str) -> String {
     let sessions = crate::session_catalog::list_sessions(20);
     let env = crate::environment_store::environment_hub()
@@ -194,7 +186,7 @@ pub async fn build_environment_ambient_extras(session_id: &str) -> String {
             })
             .collect();
         blocks.push(format!(
-            "[MEDOUSA_CANVAS]\nstudio_layout=true\npreset={}\ncomponents={}\nsurfaces={}\nsurface_ids={}\ncustom_surface_ids={}\ncomponent_summary={}\nrecipe=cognition_environment_wiki(topic=recipe) → get → merge full spec → propose/apply → ui_present(persist) OR component_create(presentation)\nactions=cognition_environment_wiki · cognition_environment_get · cognition_environment_propose/apply · cognition_component_* · cognition_ui_present(persist=true) · cognition_context_follow_pointer",
+            "[MEDOUSA_CANVAS]\nstudio_layout=true\npreset={}\ncomponents={}\nsurfaces={}\nsurface_ids={}\ncustom_surface_ids={}\ncomponent_summary={}",
             env.spec.active_preset_id.as_deref().unwrap_or("default"),
             env.spec.components.len(),
             env.spec.surfaces.len(),
@@ -227,13 +219,11 @@ mod tests {
         });
         assert!(block.appendix.contains("[MEDOUSA_AMBIENT]"));
         assert!(block.appendix.contains("channel_surface=telegram"));
-        assert!(
-            block
-                .appendix
-                .contains("channel_tone=concise_mobile_friendly")
-        );
+        assert!(block.appendix.contains("surface_class=mobile_chat"));
         assert!(block.appendix.contains("timezone="));
         assert!(block.appendix.contains("proactive_messages=allowed"));
+        assert!(!block.appendix.contains("conduct="));
+        assert!(!block.appendix.contains("policy="));
     }
 
     #[test]

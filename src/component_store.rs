@@ -457,7 +457,7 @@ pub async fn component_exists_in_profile(profile_id: &str, component_id: &str) -
         .any(|component| component.id == component_id)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 mod tests {
     use super::*;
 

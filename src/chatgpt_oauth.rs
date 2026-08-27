@@ -4,7 +4,9 @@
 //! Codex CLI credential store. Public status objects never contain tokens.
 
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock, RwLock};
+#[cfg(feature = "full-daemon")]
+use std::sync::OnceLock;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use base64::Engine;
@@ -23,7 +25,9 @@ use crate::openai_codex_chat_client::{
 
 const DEFAULT_ISSUER: &str = "https://auth.openai.com";
 const DEFAULT_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
+#[cfg(feature = "full-daemon")]
 const CREDENTIAL_SERVICE: &str = "medousa.chatgpt";
+#[cfg(feature = "full-daemon")]
 const CREDENTIAL_ACCOUNT: &str = "native_oauth";
 const DEVICE_CODE_LIFETIME_MINUTES: i64 = 15;
 const REFRESH_WINDOW_MINUTES: i64 = 5;
@@ -93,14 +97,20 @@ impl std::fmt::Debug for CredentialEnvelope {
     }
 }
 
-trait CredentialStore: Send + Sync {
-    fn load(&self) -> Result<Option<CredentialEnvelope>, OAuthError>;
-    fn save(&self, credentials: &CredentialEnvelope) -> Result<(), OAuthError>;
-    fn delete(&self) -> Result<(), OAuthError>;
+/// Host binding for the encrypted ChatGPT credential bundle.
+///
+/// The OAuth broker owns the bundle schema and token lifecycle. Deployment
+/// hosts only persist the opaque serialized value in their existing secret
+/// authority (daemon secrets on full hosts, Keychain-backed secrets on iOS).
+pub trait ChatGptCredentialStore: Send + Sync {
+    fn load_bundle(&self) -> Result<Option<String>, String>;
+    fn save_bundle(&self, bundle: Option<&str>) -> Result<(), String>;
 }
 
+#[cfg(feature = "full-daemon")]
 struct DaemonCredentialStore;
 
+#[cfg(feature = "full-daemon")]
 impl DaemonCredentialStore {
     fn load_raw() -> Option<String> {
         crate::integration_connection::load_kind_secret(
@@ -110,38 +120,17 @@ impl DaemonCredentialStore {
     }
 }
 
-impl CredentialStore for DaemonCredentialStore {
-    fn load(&self) -> Result<Option<CredentialEnvelope>, OAuthError> {
-        Self::load_raw()
-            .map(|value| {
-                serde_json::from_str(&value).map_err(|_| OAuthError::StoredCredentialsInvalid)
-            })
-            .transpose()
+#[cfg(feature = "full-daemon")]
+impl ChatGptCredentialStore for DaemonCredentialStore {
+    fn load_bundle(&self) -> Result<Option<String>, String> {
+        Ok(Self::load_raw())
     }
 
-    fn save(&self, credentials: &CredentialEnvelope) -> Result<(), OAuthError> {
-        let serialized =
-            serde_json::to_string(credentials).map_err(|_| OAuthError::StoredCredentialsInvalid)?;
+    fn save_bundle(&self, bundle: Option<&str>) -> Result<(), String> {
         crate::integration_connection::save_kind_secret(
             "chatgpt",
             medousa_types::secrets::IntegrationSecretSlot::OauthBundle,
-            Some(&serialized),
-        );
-        let _ = keyring::Entry::new(CREDENTIAL_SERVICE, CREDENTIAL_ACCOUNT)
-            .ok()
-            .map(|entry| entry.delete_password());
-        let legacy = crate::session::medousa_data_dir()
-            .join("secrets")
-            .join("chatgpt_oauth.json");
-        let _ = std::fs::remove_file(legacy);
-        Ok(())
-    }
-
-    fn delete(&self) -> Result<(), OAuthError> {
-        crate::integration_connection::save_kind_secret(
-            "chatgpt",
-            medousa_types::secrets::IntegrationSecretSlot::OauthBundle,
-            None,
+            bundle,
         );
         let _ = keyring::Entry::new(CREDENTIAL_SERVICE, CREDENTIAL_ACCOUNT)
             .ok()
@@ -166,15 +155,24 @@ struct PendingDeviceLogin {
 pub struct ChatGptOAuthBroker {
     client: reqwest::Client,
     config: OAuthConfig,
-    store: Arc<dyn CredentialStore>,
+    store: Arc<dyn ChatGptCredentialStore>,
     cached: RwLock<Option<CredentialEnvelope>>,
     pending: Mutex<HashMap<String, PendingDeviceLogin>>,
     refresh_lock: Mutex<()>,
 }
 
 impl ChatGptOAuthBroker {
-    fn new(config: OAuthConfig, store: Arc<dyn CredentialStore>) -> Self {
-        let cached = store.load().ok().flatten();
+    /// Bind the canonical OAuth lifecycle to a deployment's secret authority.
+    pub fn new(store: Arc<dyn ChatGptCredentialStore>) -> Self {
+        Self::with_config(OAuthConfig::from_env(), store)
+    }
+
+    fn with_config(config: OAuthConfig, store: Arc<dyn ChatGptCredentialStore>) -> Self {
+        let cached = store
+            .load_bundle()
+            .ok()
+            .flatten()
+            .and_then(|value| serde_json::from_str(&value).ok());
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
@@ -468,7 +466,9 @@ impl ChatGptOAuthBroker {
         } else {
             false
         };
-        self.store.delete()?;
+        self.store
+            .save_bundle(None)
+            .map_err(|_| OAuthError::CredentialStorage)?;
         *self.cached.write().expect("ChatGPT credential cache lock") = None;
         self.pending.lock().await.clear();
         Ok(DisconnectChatGptOAuthResponse {
@@ -570,7 +570,11 @@ impl ChatGptOAuthBroker {
     }
 
     fn persist(&self, credentials: CredentialEnvelope) -> Result<(), OAuthError> {
-        self.store.save(&credentials)?;
+        let serialized = serde_json::to_string(&credentials)
+            .map_err(|_| OAuthError::StoredCredentialsInvalid)?;
+        self.store
+            .save_bundle(Some(&serialized))
+            .map_err(|_| OAuthError::CredentialStorage)?;
         *self.cached.write().expect("ChatGPT credential cache lock") = Some(credentials);
         Ok(())
     }
@@ -777,47 +781,57 @@ impl std::fmt::Display for OAuthError {
 
 impl std::error::Error for OAuthError {}
 
-fn broker() -> &'static ChatGptOAuthBroker {
+#[cfg(feature = "full-daemon")]
+pub(crate) fn broker() -> &'static ChatGptOAuthBroker {
     #[cfg(test)]
     crate::test_env::panic_if_hermetic_host("chatgpt_oauth::broker (keyring)");
     static BROKER: OnceLock<ChatGptOAuthBroker> = OnceLock::new();
     BROKER.get_or_init(|| {
-        ChatGptOAuthBroker::new(OAuthConfig::from_env(), Arc::new(DaemonCredentialStore))
+        ChatGptOAuthBroker::with_config(OAuthConfig::from_env(), Arc::new(DaemonCredentialStore))
     })
 }
 
+#[cfg(feature = "full-daemon")]
 pub fn configured() -> bool {
     broker().status().connected
 }
 
+#[cfg(feature = "full-daemon")]
 pub fn status() -> ChatGptOAuthStatusResponse {
     broker().status()
 }
 
+#[cfg(feature = "full-daemon")]
 pub async fn begin() -> Result<BeginChatGptOAuthResponse, OAuthError> {
     broker().begin().await
 }
 
+#[cfg(feature = "full-daemon")]
 pub async fn complete(login_id: &str) -> Result<CompleteChatGptOAuthResponse, OAuthError> {
     broker().complete(login_id).await
 }
 
+#[cfg(feature = "full-daemon")]
 pub async fn refresh() -> Result<ChatGptOAuthStatusResponse, OAuthError> {
     broker().refresh().await
 }
 
+#[cfg(feature = "full-daemon")]
 pub async fn disconnect() -> Result<DisconnectChatGptOAuthResponse, OAuthError> {
     broker().disconnect().await
 }
 
+#[cfg(feature = "full-daemon")]
 pub async fn list_models() -> Result<ChatGptModelListResponse, OAuthError> {
     broker().list_models().await
 }
 
+#[cfg(feature = "full-daemon")]
 pub(crate) async fn request_credentials() -> Result<(String, String), OAuthError> {
     broker().credentials_for_request().await
 }
 
+#[cfg(feature = "full-daemon")]
 pub(crate) async fn refresh_request_credentials(
     rejected_access_token: &str,
 ) -> Result<(String, String), OAuthError> {
@@ -826,7 +840,7 @@ pub(crate) async fn refresh_request_credentials(
         .await
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 mod tests {
     use super::*;
     use axum::{Json, http::StatusCode};
@@ -848,20 +862,15 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct MemoryStore(RwLock<Option<CredentialEnvelope>>);
+    struct MemoryStore(RwLock<Option<String>>);
 
-    impl CredentialStore for MemoryStore {
-        fn load(&self) -> Result<Option<CredentialEnvelope>, OAuthError> {
+    impl ChatGptCredentialStore for MemoryStore {
+        fn load_bundle(&self) -> Result<Option<String>, String> {
             Ok(self.0.read().unwrap().clone())
         }
 
-        fn save(&self, credentials: &CredentialEnvelope) -> Result<(), OAuthError> {
-            *self.0.write().unwrap() = Some(credentials.clone());
-            Ok(())
-        }
-
-        fn delete(&self) -> Result<(), OAuthError> {
-            *self.0.write().unwrap() = None;
+        fn save_bundle(&self, bundle: Option<&str>) -> Result<(), String> {
+            *self.0.write().unwrap() = bundle.map(str::to_string);
             Ok(())
         }
     }
@@ -992,6 +1001,12 @@ mod tests {
         }
     }
 
+    fn save_credentials(store: &MemoryStore, credentials: &CredentialEnvelope) {
+        store
+            .save_bundle(Some(&serde_json::to_string(credentials).unwrap()))
+            .unwrap();
+    }
+
     #[test]
     fn validates_device_flow_pkce_pair() {
         let verifier = "correct-horse-battery-staple";
@@ -1098,10 +1113,8 @@ mod tests {
         tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
 
         let store = Arc::new(MemoryStore::default());
-        store
-            .save(&credentials(Utc::now() + ChronoDuration::hours(1)))
-            .unwrap();
-        let broker = ChatGptOAuthBroker::new(
+        save_credentials(&store, &credentials(Utc::now() + ChronoDuration::hours(1)));
+        let broker = ChatGptOAuthBroker::with_config(
             OAuthConfig {
                 issuer: "http://unused".to_string(),
                 client_id: "test-client".to_string(),
@@ -1121,8 +1134,8 @@ mod tests {
         let issuer = mock_server(refresh_count.clone(), Arc::new(AtomicUsize::new(0))).await;
         let store = Arc::new(MemoryStore::default());
         let stale = credentials(Utc::now() - ChronoDuration::minutes(1));
-        store.save(&stale).unwrap();
-        let broker = ChatGptOAuthBroker::new(
+        save_credentials(&store, &stale);
+        let broker = ChatGptOAuthBroker::with_config(
             OAuthConfig {
                 issuer,
                 client_id: "test-client".to_string(),
@@ -1144,10 +1157,8 @@ mod tests {
         let revoke_count = Arc::new(AtomicUsize::new(0));
         let issuer = mock_server(Arc::new(AtomicUsize::new(0)), revoke_count.clone()).await;
         let store = Arc::new(MemoryStore::default());
-        store
-            .save(&credentials(Utc::now() + ChronoDuration::hours(1)))
-            .unwrap();
-        let broker = ChatGptOAuthBroker::new(
+        save_credentials(&store, &credentials(Utc::now() + ChronoDuration::hours(1)));
+        let broker = ChatGptOAuthBroker::with_config(
             OAuthConfig {
                 issuer,
                 client_id: "test-client".to_string(),
@@ -1159,7 +1170,7 @@ mod tests {
         assert!(response.disconnected);
         assert!(response.revoked);
         assert_eq!(revoke_count.load(Ordering::SeqCst), 1);
-        assert!(store.load().unwrap().is_none());
+        assert!(store.load_bundle().unwrap().is_none());
         assert_eq!(broker.status().status, "signed_out");
     }
 
@@ -1167,7 +1178,7 @@ mod tests {
     async fn device_flow_completes_through_daemon_without_exposing_tokens() {
         let issuer = mock_device_server().await;
         let store = Arc::new(MemoryStore::default());
-        let broker = ChatGptOAuthBroker::new(
+        let broker = ChatGptOAuthBroker::with_config(
             OAuthConfig {
                 issuer: issuer.clone(),
                 client_id: "test-client".to_string(),
@@ -1188,6 +1199,6 @@ mod tests {
         assert!(!public_json.contains("device-secret"));
         assert!(!public_json.contains("authorization-secret"));
         assert!(!public_json.contains("refresh-secret"));
-        assert!(store.load().unwrap().is_some());
+        assert!(store.load_bundle().unwrap().is_some());
     }
 }

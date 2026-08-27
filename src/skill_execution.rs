@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 use crate::identity_manuscript::{
     ManuscriptContext, resolve_manuscript_path, user_manuscripts_dir,
 };
+#[cfg(feature = "full-daemon")]
 use crate::openshell_sandbox_run::OpenshellSandboxRunPayload;
 use crate::store_root::{StoreEntryKind, StorePath, StoreRoot};
 
@@ -484,6 +485,7 @@ pub fn build_skill_script_command(script_path: &Path) -> Result<Vec<String>> {
     })
 }
 
+#[cfg(feature = "full-daemon")]
 pub fn build_sandbox_payload_for_skill(
     manuscript_id: &str,
     script_relative: &str,

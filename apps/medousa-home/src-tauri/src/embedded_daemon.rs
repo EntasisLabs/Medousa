@@ -2,27 +2,18 @@
 
 #[cfg(target_os = "ios")]
 use std::sync::Arc;
-#[cfg(target_os = "ios")]
-use std::time::Duration;
 
+#[cfg(target_os = "ios")]
+use medousa::chatgpt_oauth::{ChatGptCredentialStore, ChatGptOAuthBroker};
+#[cfg(target_os = "ios")]
+use medousa::delegated_task::{
+    DelegatedTaskError, DelegatedTaskRequest, DelegatedTaskResult, DelegatedTaskTransport,
+};
 #[cfg(target_os = "ios")]
 use medousa::embedded_daemon::{
     CredentialProvider, EmbeddedDaemon, EmbeddedDaemonClient, EmbeddedDaemonConfig,
     ProviderCredential, ProviderCredentialError,
 };
-
-#[cfg(target_os = "ios")]
-const IOS_SUSPEND_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
-
-#[cfg(target_os = "ios")]
-enum IosBackgroundTaskState {
-    Starting,
-    Active(objc2_ui_kit::UIBackgroundTaskIdentifier),
-    Finished,
-}
-
-#[cfg(target_os = "ios")]
-type IosBackgroundTask = Arc<std::sync::Mutex<IosBackgroundTaskState>>;
 
 #[derive(Clone)]
 pub struct EmbeddedDaemonState {
@@ -113,28 +104,11 @@ impl EmbeddedDaemonState {
     }
 
     #[cfg(target_os = "ios")]
-    fn suspend_if_booted(&self, app: &tauri::AppHandle) -> usize {
+    fn background_if_booted(&self) -> usize {
         let Some(daemon) = self.daemon.get().cloned() else {
             return 0;
         };
-        let cancellation_requested = daemon.suspend();
-        let background_task = begin_ios_background_task();
-        let app = app.clone();
-        tauri::async_runtime::spawn(async move {
-            let report = daemon
-                .drain_suspended(cancellation_requested, IOS_SUSPEND_DRAIN_TIMEOUT)
-                .await;
-            if report.timed_out {
-                eprintln!(
-                    "[medousa-home] embedded daemon suspension deadline expired with {} turn(s) still live",
-                    report.remaining_turns
-                );
-            }
-            if let Some(background_task) = background_task {
-                finish_ios_background_task(&app, background_task);
-            }
-        });
-        cancellation_requested
+        daemon.enter_background()
     }
 
     #[cfg(target_os = "ios")]
@@ -160,70 +134,60 @@ impl EmbeddedDaemonState {
     }
 }
 
-#[cfg(target_os = "ios")]
-fn begin_ios_background_task() -> Option<IosBackgroundTask> {
-    use block2::RcBlock;
-    use objc2::MainThreadMarker;
-    use objc2_ui_kit::{UIApplication, UIBackgroundTaskInvalid};
-
-    let mtm = MainThreadMarker::new()?;
-    let state = Arc::new(std::sync::Mutex::new(IosBackgroundTaskState::Starting));
-    let expiration_state = state.clone();
-    let expiration = RcBlock::new(move || {
-        finish_ios_background_task_on_main(expiration_state.clone());
-    });
-    let application = UIApplication::sharedApplication(mtm);
-    let identifier = application.beginBackgroundTaskWithExpirationHandler(Some(&expiration));
-    if identifier == unsafe { UIBackgroundTaskInvalid } {
-        return None;
-    }
-    let end_immediately = {
-        let mut guard = state.lock().expect("iOS background task state");
-        match *guard {
-            IosBackgroundTaskState::Starting => {
-                *guard = IosBackgroundTaskState::Active(identifier);
-                false
-            }
-            IosBackgroundTaskState::Finished => true,
-            IosBackgroundTaskState::Active(_) => false,
-        }
-    };
-    if end_immediately {
-        application.endBackgroundTask(identifier);
-    }
-    Some(state)
-}
-
-#[cfg(target_os = "ios")]
-fn finish_ios_background_task(app: &tauri::AppHandle, state: IosBackgroundTask) {
-    if let Err(error) = app.run_on_main_thread(move || {
-        finish_ios_background_task_on_main(state);
-    }) {
-        eprintln!("[medousa-home] could not release iOS background task: {error}");
-    }
-}
-
-#[cfg(target_os = "ios")]
-fn finish_ios_background_task_on_main(state: IosBackgroundTask) {
-    use objc2::MainThreadMarker;
-    use objc2_ui_kit::UIApplication;
-
-    let identifier = {
-        let mut guard = state.lock().expect("iOS background task state");
-        match std::mem::replace(&mut *guard, IosBackgroundTaskState::Finished) {
-            IosBackgroundTaskState::Active(identifier) => Some(identifier),
-            IosBackgroundTaskState::Starting | IosBackgroundTaskState::Finished => None,
-        }
-    };
-    if let (Some(identifier), Some(mtm)) = (identifier, MainThreadMarker::new()) {
-        UIApplication::sharedApplication(mtm).endBackgroundTask(identifier);
-    }
-}
-
 impl Default for EmbeddedDaemonState {
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[cfg(target_os = "ios")]
+#[tauri::command]
+pub async fn embedded_delegation_binding(
+    state: tauri::State<'_, EmbeddedDaemonState>,
+) -> Result<Option<medousa::delegation::DelegationBinding>, String> {
+    let client = state
+        .client_if_active()
+        .await?
+        .ok_or_else(|| "Select Personal to manage its delegation binding".to_string())?;
+    client
+        .delegation_binding()
+        .await
+        .map_err(|error| format!("load delegation binding: {error:#}"))
+}
+
+#[cfg(target_os = "ios")]
+#[tauri::command]
+pub async fn embedded_set_delegation_binding(
+    state: tauri::State<'_, EmbeddedDaemonState>,
+    workshop_id: String,
+) -> Result<medousa::delegation::DelegationBinding, String> {
+    let workshop_id = workshop_id.trim().to_string();
+    let target = tokio::task::spawn_blocking(move || delegation_target_for(&workshop_id))
+        .await
+        .map_err(|_| "delegation binding lookup failed".to_string())??;
+    let client = state
+        .client_if_active()
+        .await?
+        .ok_or_else(|| "Select Personal to manage its delegation binding".to_string())?;
+    client
+        .set_delegation_binding(target)
+        .await
+        .map_err(|error| format!("set delegation binding: {error:#}"))
+}
+
+#[cfg(target_os = "ios")]
+#[tauri::command]
+pub async fn embedded_clear_delegation_binding(
+    state: tauri::State<'_, EmbeddedDaemonState>,
+) -> Result<bool, String> {
+    let client = state
+        .client_if_active()
+        .await?
+        .ok_or_else(|| "Select Personal to manage its delegation binding".to_string())?;
+    client
+        .clear_delegation_binding()
+        .await
+        .map_err(|error| format!("clear delegation binding: {error:#}"))
 }
 
 #[cfg(target_os = "ios")]
@@ -256,19 +220,23 @@ fn inference_route_from_defaults(
         .filter(|value| !value.is_empty())
         .unwrap_or("gpt-5.4-mini")
         .to_string();
-    let base_url = crate::integration_secrets::load_connection_base_url(&provider)
-        .or_else(|| {
-            defaults
-                .base_url
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-        })
-        .or_else(|| {
-            crate::provider_catalog::find_provider(&provider)
-                .and_then(|entry| entry.default_base_url.map(str::to_string))
-        });
+    let base_url = if provider.eq_ignore_ascii_case("openai-codex") {
+        None
+    } else {
+        crate::integration_secrets::load_connection_base_url(&provider)
+            .or_else(|| {
+                defaults
+                    .base_url
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+            })
+            .or_else(|| {
+                crate::provider_catalog::find_provider(&provider)
+                    .and_then(|entry| entry.default_base_url.map(str::to_string))
+            })
+    };
     medousa::embedded_daemon::validate_credentialed_inference_route(
         provider.clone(),
         model.clone(),
@@ -299,18 +267,156 @@ async fn boot_embedded_daemon() -> Result<Arc<EmbeddedDaemon>, String> {
     })
     .await
     .map_err(|_| "embedded daemon configuration task failed".to_string())??;
-    let config = EmbeddedDaemonConfig::credentialed(
+    let chatgpt_oauth = Arc::new(ChatGptOAuthBroker::new(Arc::new(
+        HomeChatGptCredentialStore,
+    )));
+    let config = EmbeddedDaemonConfig::credentialed_with_chatgpt(
         root,
         installation_id,
         provider,
         model,
         base_url,
         Arc::new(HomeCredentialProvider),
+        chatgpt_oauth,
     )
-    .map_err(|error| format!("configure embedded daemon inference: {error:#}"))?;
+    .map_err(|error| format!("configure embedded daemon inference: {error:#}"))?
+    .with_tool_registry_recipe(Arc::new(
+        medousa::mobile_tool_registry::PersonalMobileToolRegistryRecipe,
+    ))
+    .with_delegated_task_transport(Arc::new(HomeDelegatedTaskTransport));
     EmbeddedDaemon::boot(config)
         .await
         .map_err(|error| format!("boot embedded daemon: {error:#}"))
+}
+
+/// Native adapter for the daemon's transport port. The runtime supplies the
+/// exact persisted binding; Home only resolves that route and authenticates it.
+#[cfg(target_os = "ios")]
+#[derive(Debug)]
+struct HomeDelegatedTaskTransport;
+
+#[cfg(target_os = "ios")]
+#[async_trait::async_trait]
+impl DelegatedTaskTransport for HomeDelegatedTaskTransport {
+    async fn dispatch(
+        &self,
+        target: &medousa::delegation::DelegationTarget,
+        request: DelegatedTaskRequest,
+    ) -> Result<DelegatedTaskResult, DelegatedTaskError> {
+        let target = target.clone();
+        let config = tokio::task::spawn_blocking(move || delegation_transport_for(&target))
+            .await
+            .map_err(|_| DelegatedTaskError::transport("paired transport lookup failed"))?
+            .map_err(DelegatedTaskError::transport)?;
+        let wrapped = crate::mesh_envelope::wrap_payload_for_workshop(
+            &config,
+            crate::mesh_envelope::CAP_TASK_REQUEST,
+            request,
+        )
+        .map_err(DelegatedTaskError::transport)?;
+        let response: crate::mesh_envelope::MeshEnvelopedRequest<DelegatedTaskResult> =
+            crate::workshop_transport::workshop_post_json(
+                &config,
+                "/v1/mesh/tasks",
+                &wrapped,
+            )
+            .await
+            .map_err(DelegatedTaskError::transport)?;
+        crate::mesh_envelope::verify_payload_from_workshop(
+            &config,
+            &response,
+            crate::mesh_envelope::CAP_TASK_RESULT,
+        )
+        .map_err(DelegatedTaskError::transport)?;
+        if response.payload.terminal.participant_id.as_deref().map(str::trim)
+            != Some(config.workshop_device_id.trim())
+        {
+            return Err(DelegatedTaskError::transport(
+                "delegated terminal participant does not match the authenticated workshop",
+            ));
+        }
+        Ok(response.payload)
+    }
+}
+
+#[cfg(target_os = "ios")]
+fn delegation_transport_for(
+    target: &medousa::delegation::DelegationTarget,
+) -> Result<crate::pairing_client::WorkshopTransportConfig, String> {
+    let registry = crate::workshop_registry::ensure_migrated()?;
+    let workshop = registry
+        .workshops
+        .iter()
+        .find(|workshop| workshop.id == target.route_ref)
+        .ok_or_else(|| "Bound delegation workshop no longer exists".to_string())?;
+    if !crate::workshop_registry::is_portal_kind(&workshop.kind) {
+        return Err("Bound delegation route is not a portal workshop".to_string());
+    }
+    let pairing = workshop
+        .pairing
+        .as_ref()
+        .ok_or_else(|| "Bound delegation workshop is no longer paired".to_string())?;
+    if pairing.workshop_device_id.trim() != target.peer_device_id.trim() {
+        return Err("Bound delegation identity no longer matches the paired workshop".to_string());
+    }
+    let config = crate::pairing_client::load_workshop_transport_config_for_id(
+        &workshop.id,
+        &workshop.url,
+    )
+    .ok_or_else(|| "Bound workshop transport credentials are unavailable".to_string())?;
+    if config.workshop_device_id.trim() != target.peer_device_id.trim() {
+        return Err("Stored transport identity does not match the delegation binding".to_string());
+    }
+    if config.session_token.is_none() {
+        return Err("Bound workshop bearer credential is unavailable".to_string());
+    }
+    if config.daemon_public_key.is_none() {
+        return Err(
+            "Bound workshop identity is not pinned; pair it again before delegating work"
+                .to_string(),
+        );
+    }
+    Ok(config)
+}
+
+#[cfg(target_os = "ios")]
+fn delegation_target_for(
+    workshop_id: &str,
+) -> Result<medousa::delegation::DelegationTarget, String> {
+    let registry = crate::workshop_registry::ensure_migrated()?;
+    let workshop = registry
+        .workshops
+        .iter()
+        .find(|workshop| workshop.id == workshop_id)
+        .ok_or_else(|| format!("Unknown workshop '{workshop_id}'"))?;
+    if workshop.id == crate::workshop_registry::PERSONAL_WORKSHOP_ID
+        || !crate::workshop_registry::is_portal_kind(&workshop.kind)
+    {
+        return Err("Delegation requires a paired portal workshop".to_string());
+    }
+    let pairing = workshop
+        .pairing
+        .as_ref()
+        .ok_or_else(|| "Delegation workshop is not paired".to_string())?;
+    let config = crate::pairing_client::load_workshop_transport_config_for_id(
+        &workshop.id,
+        &workshop.url,
+    )
+    .ok_or_else(|| "Delegation workshop credentials are unavailable".to_string())?;
+    if config.session_token.is_none() || config.daemon_public_key.is_none() {
+        return Err(
+            "Reconnect this workshop before delegation so its bearer and identity are pinned"
+                .to_string(),
+        );
+    }
+    if config.workshop_device_id.trim() != pairing.workshop_device_id.trim() {
+        return Err("Workshop registry and pairing identity disagree".to_string());
+    }
+    Ok(medousa::delegation::DelegationTarget {
+        route_ref: workshop.id.clone(),
+        peer_device_id: pairing.workshop_device_id.clone(),
+        label: Some(workshop.label.clone()),
+    })
 }
 
 #[cfg(target_os = "ios")]
@@ -332,6 +438,29 @@ impl CredentialProvider for HomeCredentialProvider {
         .map_err(|_| ProviderCredentialError::Unavailable)?
         .ok_or(ProviderCredentialError::Missing)?;
         ProviderCredential::new(secret)
+    }
+}
+
+#[cfg(target_os = "ios")]
+#[derive(Debug)]
+struct HomeChatGptCredentialStore;
+
+#[cfg(target_os = "ios")]
+impl ChatGptCredentialStore for HomeChatGptCredentialStore {
+    fn load_bundle(&self) -> Result<Option<String>, String> {
+        Ok(crate::integration_secrets::load_kind_secret(
+            "chatgpt",
+            medousa_types::secrets::IntegrationSecretSlot::OauthBundle,
+        ))
+    }
+
+    fn save_bundle(&self, bundle: Option<&str>) -> Result<(), String> {
+        crate::integration_secrets::save_kind_secret(
+            "chatgpt",
+            medousa_types::secrets::IntegrationSecretSlot::OauthBundle,
+            bundle,
+        );
+        Ok(())
     }
 }
 
@@ -369,12 +498,12 @@ pub fn install_lifecycle(app: &tauri::AppHandle) {
     if let Err(error) = app.run_on_main_thread(move || {
         let center = NSNotificationCenter::defaultCenter();
         let background = RcBlock::new(move |_notification: NonNull<NSNotification>| {
-            let cancelled = background_app
+            let live_turns = background_app
                 .state::<EmbeddedDaemonState>()
-                .suspend_if_booted(&background_app);
-            if cancelled > 0 {
+                .background_if_booted();
+            if live_turns > 0 {
                 eprintln!(
-                    "[medousa-home] suspended embedded daemon; cancellation requested for {cancelled} turn(s)"
+                    "[medousa-home] embedded daemon backgrounded with {live_turns} live turn(s); execution remains OS-managed"
                 );
             }
         });

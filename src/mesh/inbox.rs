@@ -1,6 +1,6 @@
 //! Mesh inbox — durable inbound accept with sender+seq dedupe.
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -63,6 +63,15 @@ pub fn accept(
         .iter()
         .find(|item| item.sender_device_id == sender_device_id.trim() && item.seq == seq)
     {
+        if existing.capability.trim() != capability.trim()
+            || existing.payload_hash.trim() != payload_hash.trim()
+        {
+            bail!(
+                "mesh sequence {} from '{}' was reused for different content",
+                seq,
+                sender_device_id.trim()
+            );
+        }
         let mut item = existing.clone();
         item.status = MeshInboxStatus::Duplicate;
         return Ok(MeshInboxAccept {

@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use base64::Engine;
@@ -42,6 +43,8 @@ pub struct WorkshopTransportConfig {
     pub phone_id: String,
     /// Remote workshop device id (recipient for mesh envelopes).
     pub workshop_device_id: String,
+    /// Pinned daemon identity captured and verified during pairing.
+    pub daemon_public_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,6 +59,8 @@ struct PairingCredentialsFile {
     iroh_ticket: Option<String>,
     #[serde(default)]
     workshop_endpoint_id: Option<String>,
+    #[serde(default)]
+    daemon_public_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -238,6 +243,7 @@ pub async fn pair_complete_from_qr(
         &pairing_id,
         &identity.phone_id,
         &status.device_id,
+        &status.daemon_public_key,
         &daemon_url,
         &session_token,
         iroh_ticket.as_deref(),
@@ -315,6 +321,11 @@ fn build_transport_config(
         session_token: read_session_token(&file.workshop_device_id, &file.pairing_id),
         phone_id: file.phone_id.clone(),
         workshop_device_id: file.workshop_device_id.clone(),
+        daemon_public_key: file
+            .daemon_public_key
+            .as_ref()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
     })
 }
 
@@ -689,6 +700,48 @@ pub fn load_phone_signing_key() -> Result<SigningKey, String> {
     Ok(PhoneIdentity::load_or_create()?.signing_key)
 }
 
+/// Allocate durable transport sequence metadata for signed deliveries to one
+/// exact paired workshop. Task and turn identity remain owned by Stasis.
+pub fn allocate_mesh_sequence(workshop_device_id: &str) -> Result<u64, String> {
+    static SEQUENCE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    #[derive(Default, Deserialize, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct OutboundSequenceState {
+        last_seq: u64,
+    }
+
+    let device = PairingDeviceId::parse(workshop_device_id).map_err(|error| error.to_string())?;
+    let _guard = SEQUENCE_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .map_err(|_| "Mesh sequence lock is poisoned".to_string())?;
+    let path = medousa_data_dir().join("mesh").join(format!(
+        "outbound-seq.{}.json",
+        device.storage_key().as_str()
+    ));
+    let mut state = if path.is_file() {
+        let raw = fs::read_to_string(&path).map_err(|error| error.to_string())?;
+        serde_json::from_str::<OutboundSequenceState>(&raw).map_err(|error| error.to_string())?
+    } else {
+        OutboundSequenceState::default()
+    };
+    let seq = state
+        .last_seq
+        .checked_add(1)
+        .ok_or_else(|| "Mesh outbound sequence exhausted".to_string())?;
+    state.last_seq = seq;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    fs::write(
+        &path,
+        serde_json::to_vec(&state).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(seq)
+}
+
 impl PhoneIdentity {
     fn load_or_create() -> Result<Self, String> {
         let path = phone_identity_path();
@@ -737,6 +790,7 @@ fn save_pairing_credentials(
     pairing_id: &str,
     phone_id: &str,
     workshop_device_id: &str,
+    daemon_public_key: &str,
     daemon_url: &str,
     session_token: &str,
     iroh_ticket: Option<&str>,
@@ -757,6 +811,7 @@ fn save_pairing_credentials(
             .filter(|value| !value.is_empty())
             .map(str::to_string),
         workshop_endpoint_id: None,
+        daemon_public_key: Some(daemon_public_key.trim().to_string()),
     };
     let body = serde_json::to_string_pretty(&file).map_err(|err| err.to_string())?;
     fs::write(path, body).map_err(|err| err.to_string())
@@ -1066,7 +1121,7 @@ fn verify_qr_url_signature_v2(
     verify_message(verifying_key, &message, signature_b64)
 }
 
-fn parse_verifying_key(public_key_b64: &str) -> Result<VerifyingKey, String> {
+pub(crate) fn parse_verifying_key(public_key_b64: &str) -> Result<VerifyingKey, String> {
     let bytes = base64url_decode(public_key_b64)?;
     if bytes.len() != 32 {
         return Err("Workshop public key must be 32 bytes".to_string());
@@ -1119,6 +1174,7 @@ mod tests {
             paired_at: chrono::Utc::now().to_rfc3339(),
             iroh_ticket: Some("ticket-abc".to_string()),
             workshop_endpoint_id: None,
+            daemon_public_key: Some("daemon-key".to_string()),
         };
         let config = build_transport_config(&file, "http://192.168.1.2:7419").expect("config");
         assert_eq!(config.lan_base, "http://192.168.1.2:7419");

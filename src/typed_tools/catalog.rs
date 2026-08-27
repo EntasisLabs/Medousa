@@ -11,6 +11,8 @@ use stasis::domain::errors::{Result as StasisResult, StasisError};
 
 use super::TypedTool;
 
+const TOOL_SUMMARY_FALLBACK: &str = "Tool summary unavailable";
+
 /// Validated identity for a statically known first-party tool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ToolId(&'static str);
@@ -342,7 +344,7 @@ impl ToolCatalog {
 
     pub fn presentation_summary(&self, id: ToolId) -> String {
         let Some(entry) = self.entries.get(&id) else {
-            return "Session-unlocked tool — see cognition_tools_discover catalog".to_string();
+            return TOOL_SUMMARY_FALLBACK.to_string();
         };
         if let Some(summary) = entry.placement.presentation_summary {
             return summary.to_string();
@@ -353,16 +355,14 @@ impl ToolCatalog {
             .description
             .as_deref()
             .and_then(first_sentence)
-            .unwrap_or("Session-unlocked tool — see cognition_tools_discover catalog")
+            .unwrap_or(TOOL_SUMMARY_FALLBACK)
             .to_string()
     }
 
     pub fn presentation_summary_for_wire(&self, wire_name: &str) -> String {
         self.resolve_wire_id(wire_name)
             .map(|id| self.presentation_summary(id))
-            .unwrap_or_else(|_| {
-                "Session-unlocked tool — see cognition_tools_discover catalog".to_string()
-            })
+            .unwrap_or_else(|_| TOOL_SUMMARY_FALLBACK.to_string())
     }
 }
 
@@ -596,9 +596,7 @@ impl ToolCatalogHandle {
     pub fn presentation_summary_for_wire(&self, wire_name: &str) -> String {
         self.get()
             .map(|catalog| catalog.presentation_summary_for_wire(wire_name))
-            .unwrap_or_else(|| {
-                "Session-unlocked tool — see cognition_tools_discover catalog".to_string()
-            })
+            .unwrap_or_else(|| TOOL_SUMMARY_FALLBACK.to_string())
     }
 }
 

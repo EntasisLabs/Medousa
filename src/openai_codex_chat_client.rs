@@ -7,13 +7,15 @@ use genai::resolver::AuthData;
 use genai::{Client, Headers};
 use stasis::application::runtime::chat_options_resolver::apply_model_reasoning_suffix;
 use stasis::domain::errors::{Result as StasisResult, StasisError};
+#[cfg(feature = "full-daemon")]
 use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta, send_stream_delta};
 use tokio::sync::mpsc;
 
-use crate::inference_router::OPENAI_CODEX_PROVIDER_ID;
+use crate::chatgpt_oauth::ChatGptOAuthBroker;
 
 const DEFAULT_RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
+pub const OPENAI_CODEX_PROVIDER_ID: &str = "openai-codex";
 
 #[derive(Debug)]
 enum StreamOnceError {
@@ -41,9 +43,18 @@ pub(crate) fn codex_compat_user_agent() -> String {
 pub struct OpenAiCodexChatClient {
     model: String,
     responses_url: String,
+    credentials: ChatGptCredentialSource,
+}
+
+#[derive(Clone)]
+enum ChatGptCredentialSource {
+    #[cfg(feature = "full-daemon")]
+    Daemon,
+    Broker(std::sync::Arc<ChatGptOAuthBroker>),
 }
 
 impl OpenAiCodexChatClient {
+    #[cfg(feature = "full-daemon")]
     pub fn new(model: impl Into<String>) -> Self {
         Self {
             model: model.into(),
@@ -52,14 +63,43 @@ impl OpenAiCodexChatClient {
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty())
                 .unwrap_or_else(|| DEFAULT_RESPONSES_URL.to_string()),
+            credentials: ChatGptCredentialSource::Daemon,
         }
     }
 
-    #[cfg(test)]
+    pub fn with_broker(
+        model: impl Into<String>,
+        broker: std::sync::Arc<ChatGptOAuthBroker>,
+    ) -> Self {
+        Self {
+            model: model.into(),
+            responses_url: std::env::var("MEDOUSA_CHATGPT_RESPONSES_URL")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| DEFAULT_RESPONSES_URL.to_string()),
+            credentials: ChatGptCredentialSource::Broker(broker),
+        }
+    }
+
+    #[cfg(all(test, feature = "full-daemon"))]
     fn with_url(model: impl Into<String>, responses_url: impl Into<String>) -> Self {
+        struct EmptyStore;
+        impl crate::chatgpt_oauth::ChatGptCredentialStore for EmptyStore {
+            fn load_bundle(&self) -> Result<Option<String>, String> {
+                Ok(None)
+            }
+
+            fn save_bundle(&self, _bundle: Option<&str>) -> Result<(), String> {
+                Ok(())
+            }
+        }
         Self {
             model: model.into(),
             responses_url: responses_url.into(),
+            credentials: ChatGptCredentialSource::Broker(std::sync::Arc::new(
+                ChatGptOAuthBroker::new(std::sync::Arc::new(EmptyStore)),
+            )),
         }
     }
 
@@ -81,18 +121,30 @@ impl OpenAiCodexChatClient {
     }
 
     async fn credentials(&self) -> StasisResult<(String, String)> {
-        crate::chatgpt_oauth::request_credentials()
-            .await
-            .map_err(|error| StasisError::PortFailure(error.to_string()))
+        let result = match &self.credentials {
+            #[cfg(feature = "full-daemon")]
+            ChatGptCredentialSource::Daemon => crate::chatgpt_oauth::request_credentials().await,
+            ChatGptCredentialSource::Broker(broker) => broker.credentials_for_request().await,
+        };
+        result.map_err(|error| StasisError::PortFailure(error.to_string()))
     }
 
     async fn refreshed_credentials(
         &self,
         rejected_access_token: &str,
     ) -> StasisResult<(String, String)> {
-        crate::chatgpt_oauth::refresh_request_credentials(rejected_access_token)
-            .await
-            .map_err(|error| StasisError::PortFailure(error.to_string()))
+        let result = match &self.credentials {
+            #[cfg(feature = "full-daemon")]
+            ChatGptCredentialSource::Daemon => {
+                crate::chatgpt_oauth::refresh_request_credentials(rejected_access_token).await
+            }
+            ChatGptCredentialSource::Broker(broker) => {
+                broker
+                    .refresh_after_unauthorized(rejected_access_token)
+                    .await
+            }
+        };
+        result.map_err(|error| StasisError::PortFailure(error.to_string()))
     }
 
     async fn stream_once(
@@ -227,11 +279,13 @@ impl AiChatClient for OpenAiCodexChatClient {
     }
 }
 
+#[cfg(feature = "full-daemon")]
 pub enum RoutedChatClient {
     Provider(GenaiChatClient),
     ChatGpt(OpenAiCodexChatClient),
 }
 
+#[cfg(feature = "full-daemon")]
 impl RoutedChatClient {
     pub fn new(provider: &str, model: &str, base_url: Option<&str>) -> Self {
         if provider.eq_ignore_ascii_case(OPENAI_CODEX_PROVIDER_ID) {
@@ -245,6 +299,7 @@ impl RoutedChatClient {
     }
 }
 
+#[cfg(feature = "full-daemon")]
 #[async_trait]
 impl AiChatClient for RoutedChatClient {
     async fn complete(
@@ -283,6 +338,7 @@ impl AiChatClient for RoutedChatClient {
 }
 
 /// Stream options that keep tool calls in `ChatResponse.content` for transcript authority.
+#[cfg(feature = "full-daemon")]
 fn provider_stream_options(options: Option<&ChatOptions>) -> ChatOptions {
     options
         .cloned()
@@ -326,7 +382,7 @@ fn stream_once_error(model: &str, error: StreamOnceError) -> StasisError {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-daemon"))]
 mod tests {
     use super::*;
     use axum::extract::State;

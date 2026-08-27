@@ -8,7 +8,6 @@
   import ProvidersSettingsTab from "$lib/components/settings/ProvidersSettingsTab.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { voicePresets } from "$lib/stores/voicePresets.svelte";
-  import { isTauriMobilePlatform } from "$lib/platform";
   import { DEPTH_CHARTER_OPTIONS } from "$lib/types/settings";
   import {
     BUILTIN_VOICE_PRESETS,
@@ -34,15 +33,14 @@
   import { ChevronDown } from "@lucide/svelte";
 
   interface Props {
-    mobile?: boolean;
+    nativeWorkloads?: boolean;
   }
 
-  let { mobile = false }: Props = $props();
+  let { nativeWorkloads = true }: Props = $props();
 
   type ModelsExtra = "stages" | "providers" | null;
   type Picker = "stance" | "depth" | null;
 
-  const readOnly = $derived(mobile && isTauriMobilePlatform());
   const memoryPrimary = [
     {
       key: "sliceHotWindowTurns" as const,
@@ -111,6 +109,7 @@
   });
   let modePolicySaving = $state(false);
   let modePolicyFeedback = $state<string | null>(null);
+  let modePolicyLoaded = $state(false);
 
   const inferenceCatalog = $derived(catalog);
 
@@ -163,15 +162,22 @@
     } catch {
       sttReady = false;
     }
-    try {
-      modePolicy = await getAgentModeTransitionPolicy();
-    } catch {
-      modePolicyFeedback = "Mode policy is unavailable on this workshop.";
-    }
   }
 
+  $effect(() => {
+    if (!nativeWorkloads || modePolicyLoaded) return;
+    modePolicyLoaded = true;
+    void getAgentModeTransitionPolicy()
+      .then((policy) => {
+        modePolicy = policy;
+      })
+      .catch(() => {
+        modePolicyFeedback = "Mode policy is unavailable on this workshop.";
+      });
+  });
+
   async function saveModePolicy(next: AgentModeTransitionPolicy) {
-    if (readOnly || modePolicySaving) return;
+    if (modePolicySaving) return;
     modePolicySaving = true;
     modePolicyFeedback = null;
     try {
@@ -219,7 +225,7 @@
   }
 
   function openCreateEditor() {
-    if (readOnly || !canAddCustom) return;
+    if (!canAddCustom) return;
     editingId = null;
     draftName = "";
     draftDescription = "";
@@ -229,7 +235,7 @@
   }
 
   function openEditEditor(preset: VoicePreset) {
-    if (readOnly || preset.builtin) return;
+    if (preset.builtin) return;
     editingId = preset.id;
     draftName = preset.name;
     draftDescription = preset.description ?? "";
@@ -239,7 +245,7 @@
   }
 
   function setActiveVoice(voiceId: string) {
-    if (readOnly || workshopDefaults.saving) return;
+    if (workshopDefaults.saving) return;
     workshopDefaults.draft = {
       ...workshopDefaults.draft,
       activeVoiceId: voiceId,
@@ -249,7 +255,7 @@
   }
 
   function setDepth(mode: (typeof DEPTH_CHARTER_OPTIONS)[number]["id"]) {
-    if (readOnly || workshopDefaults.saving) return;
+    if (workshopDefaults.saving) return;
     workshopDefaults.draft = {
       ...workshopDefaults.draft,
       responseDepthMode: mode,
@@ -258,7 +264,7 @@
   }
 
   function deleteCustomPreset(voiceId: string) {
-    if (readOnly || workshopDefaults.saving) return;
+    if (workshopDefaults.saving) return;
     const nextCustom = customPresets.filter((preset) => preset.id !== voiceId);
     const nextActive = activeVoice.id === voiceId ? "default" : activeVoice.id;
     workshopDefaults.draft = {
@@ -271,7 +277,7 @@
   }
 
   function saveEditor() {
-    if (readOnly || workshopDefaults.saving) return;
+    if (workshopDefaults.saving) return;
     const name = draftName.trim();
     const voiceAppendix = draftAppendix.trim();
     if (!name || !voiceAppendix) return;
@@ -330,7 +336,7 @@
           class="agent-active-trigger"
           class:agent-active-trigger-open={picker === "stance"}
           aria-expanded={picker === "stance"}
-          disabled={readOnly || workshopDefaults.saving}
+          disabled={workshopDefaults.saving}
           onclick={() => togglePicker("stance")}
         >
           <span class="agent-active-copy">
@@ -354,7 +360,7 @@
                 class="prefs-choice"
                 class:prefs-choice-active={activeVoice.id === preset.id}
                 aria-selected={activeVoice.id === preset.id}
-                disabled={readOnly || workshopDefaults.saving}
+                disabled={workshopDefaults.saving}
                 title={preset.description}
                 onclick={() => setActiveVoice(preset.id)}
               >
@@ -374,7 +380,7 @@
           class="agent-active-trigger"
           class:agent-active-trigger-open={picker === "depth"}
           aria-expanded={picker === "depth"}
-          disabled={readOnly || workshopDefaults.saving}
+          disabled={workshopDefaults.saving}
           onclick={() => togglePicker("depth")}
         >
           <span class="agent-active-copy">
@@ -396,7 +402,7 @@
                 class="prefs-choice"
                 class:prefs-choice-active={activeDepth.id === option.id}
                 aria-selected={activeDepth.id === option.id}
-                disabled={readOnly || workshopDefaults.saving}
+                disabled={workshopDefaults.saving}
                 title={option.hint}
                 onclick={() => setDepth(option.id)}
               >
@@ -468,7 +474,7 @@
         {#if modelsExtra === "stages"}
           <div class="agent-extra-panel mt-3">
             <p class="settings-subsection-lead mb-3">Stage routes need Save below.</p>
-            <ModelsStagesTab disabled={readOnly || workshopDefaults.saving} {mobile} />
+            <ModelsStagesTab disabled={workshopDefaults.saving} />
           </div>
         {:else if modelsExtra === "providers"}
           <div class="agent-extra-panel mt-3">
@@ -485,85 +491,86 @@
     </details>
   </div>
 
-  <details class="prefs-more" bind:open={modeTransitionsOpen}>
-    <summary class="prefs-more-summary">
-      <span class="prefs-more-summary-copy">
-        <span>Mode suggestions</span>
-        <span class="prefs-more-summary-meta">
-          {modePolicy.auto_accept === "never" ? "Ask first" : "Auto-accept enabled"}
+  {#if nativeWorkloads}
+    <details class="prefs-more" bind:open={modeTransitionsOpen}>
+      <summary class="prefs-more-summary">
+        <span class="prefs-more-summary-copy">
+          <span>Mode suggestions</span>
+          <span class="prefs-more-summary-meta">
+            {modePolicy.auto_accept === "never" ? "Ask first" : "Auto-accept enabled"}
+          </span>
         </span>
-      </span>
-      <ChevronDown size={14} strokeWidth={2} class="prefs-more-chevron" aria-hidden="true" />
-    </summary>
-    <div class="prefs-more-body">
-      <p class="prefs-footnote mb-3">
-        Medousa may suggest a better mode at a turn boundary. These controls decide how long the
-        suggestion waits and whether it can apply automatically for the next turn.
-      </p>
-      <div class="prefs-grid">
-        <label class="prefs-tile">
-          <span class="prefs-tile-copy">
-            <span class="prefs-tile-title">Auto-accept</span>
-            <span class="prefs-tile-meta">How much transition authority Medousa has</span>
-          </span>
-          <select
-            class="prefs-endpoint-input"
-            value={modePolicy.auto_accept}
-            disabled={readOnly || modePolicySaving}
-            aria-label="Mode suggestion auto-accept policy"
-            onchange={(event) =>
-              void saveModePolicy({
-                ...modePolicy,
-                auto_accept: (event.currentTarget as HTMLSelectElement)
-                  .value as AgentModeAutoAccept,
-              })}
-          >
-            <option value="never">Never — ask me</option>
-            <option value="task">Task-scoped only</option>
-            <option value="all">All mode suggestions</option>
-          </select>
-        </label>
+        <ChevronDown size={14} strokeWidth={2} class="prefs-more-chevron" aria-hidden="true" />
+      </summary>
+      <div class="prefs-more-body">
+        <p class="prefs-footnote mb-3">
+          Medousa may suggest a better mode at a turn boundary. These controls decide how long the
+          suggestion waits and whether it can apply automatically for the next turn.
+        </p>
+        <div class="prefs-grid">
+          <label class="prefs-tile">
+            <span class="prefs-tile-copy">
+              <span class="prefs-tile-title">Auto-accept</span>
+              <span class="prefs-tile-meta">How much transition authority Medousa has</span>
+            </span>
+            <select
+              class="prefs-endpoint-input"
+              value={modePolicy.auto_accept}
+              disabled={modePolicySaving}
+              aria-label="Mode suggestion auto-accept policy"
+              onchange={(event) =>
+                void saveModePolicy({
+                  ...modePolicy,
+                  auto_accept: (event.currentTarget as HTMLSelectElement)
+                    .value as AgentModeAutoAccept,
+                })}
+            >
+              <option value="never">Never — ask me</option>
+              <option value="task">Task-scoped only</option>
+              <option value="all">All mode suggestions</option>
+            </select>
+          </label>
 
-        <label class="prefs-tile prefs-tile-metric">
-          <span class="prefs-tile-copy">
-            <span class="prefs-tile-title">Suggestion expiry</span>
-            <span class="prefs-tile-meta">5 seconds to 24 hours</span>
-          </span>
-          <span class="prefs-metric">
-            <input
-              type="number"
-              class="prefs-metric-input prefs-metric-input-wide"
-              min={5}
-              max={86400}
-              step={5}
-              inputmode="numeric"
-              value={modePolicy.proposal_ttl_seconds}
-              readonly={readOnly}
-              disabled={readOnly || modePolicySaving}
-              aria-label="Mode suggestion expiry in seconds"
-              onchange={(event) => {
-                const value = Number((event.currentTarget as HTMLInputElement).value);
-                if (Number.isFinite(value)) {
-                  void saveModePolicy({
-                    ...modePolicy,
-                    proposal_ttl_seconds: Math.round(value),
-                  });
-                }
-              }}
-            />
-            <span class="prefs-metric-unit">sec</span>
-          </span>
-        </label>
+          <label class="prefs-tile prefs-tile-metric">
+            <span class="prefs-tile-copy">
+              <span class="prefs-tile-title">Suggestion expiry</span>
+              <span class="prefs-tile-meta">5 seconds to 24 hours</span>
+            </span>
+            <span class="prefs-metric">
+              <input
+                type="number"
+                class="prefs-metric-input prefs-metric-input-wide"
+                min={5}
+                max={86400}
+                step={5}
+                inputmode="numeric"
+                value={modePolicy.proposal_ttl_seconds}
+                disabled={modePolicySaving}
+                aria-label="Mode suggestion expiry in seconds"
+                onchange={(event) => {
+                  const value = Number((event.currentTarget as HTMLInputElement).value);
+                  if (Number.isFinite(value)) {
+                    void saveModePolicy({
+                      ...modePolicy,
+                      proposal_ttl_seconds: Math.round(value),
+                    });
+                  }
+                }}
+              />
+              <span class="prefs-metric-unit">sec</span>
+            </span>
+          </label>
+        </div>
+        <p class="prefs-footnote mt-3">
+          Coder still requires a chat bound to a Forge undertaking. Auto-accept changes mode state;
+          it does not bypass Coder's worktree or tool fences.
+        </p>
+        {#if modePolicyFeedback}
+          <p class="mt-2 text-xs text-content-tertiary" role="status">{modePolicyFeedback}</p>
+        {/if}
       </div>
-      <p class="prefs-footnote mt-3">
-        Coder still requires a chat bound to a Forge undertaking. Auto-accept changes mode state;
-        it does not bypass Coder's worktree or tool fences.
-      </p>
-      {#if modePolicyFeedback}
-        <p class="mt-2 text-xs text-content-tertiary" role="status">{modePolicyFeedback}</p>
-      {/if}
-    </div>
-  </details>
+    </details>
+  {/if}
 
   <details class="prefs-more" bind:open={memoryOpen}>
     <summary class="prefs-more-summary">
@@ -593,8 +600,6 @@
                 step={1}
                 inputmode="numeric"
                 value={workshopDefaults.draft[field.key] ?? ""}
-                readonly={readOnly}
-                disabled={readOnly}
                 aria-label="{field.label} in {field.unit}"
                 oninput={(event) => numField(field.key, event)}
               />
@@ -625,8 +630,6 @@
                   step={field.step ?? 1}
                   inputmode="numeric"
                   value={workshopDefaults.draft[field.key] ?? ""}
-                  readonly={readOnly}
-                  disabled={readOnly}
                   aria-label="{field.label} in {field.unit}"
                   oninput={(event) => numField(field.key, event)}
                 />
@@ -650,7 +653,7 @@
       <ChevronDown size={14} strokeWidth={2} class="prefs-more-chevron" aria-hidden="true" />
     </summary>
     <div class="prefs-more-body">
-      {#if customPresets.length > 0 && !readOnly}
+      {#if customPresets.length > 0}
         <ul class="agent-voice-list">
           {#each customPresets as preset (preset.id)}
             <li class="prefs-tile agent-voice-row">
@@ -683,95 +686,95 @@
         </ul>
       {/if}
 
-      {#if !readOnly}
-        {#if !editorOpen}
-          <button
-            type="button"
-            class="btn btn-sm variant-soft mt-2"
-            disabled={!canAddCustom || workshopDefaults.saving}
-            onclick={openCreateEditor}
-          >
-            Add custom voice
-          </button>
-          {#if !canAddCustom}
-            <p class="prefs-footnote">Up to {MAX_CUSTOM_VOICE_PRESETS} custom voices.</p>
-          {/if}
-        {:else}
-          <div class="agent-voice-editor mt-2 space-y-3">
-            <label class="block">
-              <span class="workshop-label">Name</span>
-              <input
-                class="input mt-1 w-full"
-                bind:value={draftName}
-                maxlength={40}
-                placeholder="Briefings"
-              />
-            </label>
-            <label class="block">
-              <span class="workshop-label">Description</span>
-              <input
-                class="input mt-1 w-full"
-                bind:value={draftDescription}
-                maxlength={120}
-                placeholder="Optional one-liner"
-              />
-            </label>
-            <label class="block">
-              <span class="workshop-label">Stance</span>
-              <textarea
-                class="textarea mt-1 min-h-24 w-full resize-y"
-                bind:value={draftAppendix}
-                maxlength={600}
-                placeholder="How she should answer in this voice…"
-              ></textarea>
-            </label>
-            <div class="flex flex-wrap gap-2">
-              <button
-                type="button"
-                class="btn btn-sm variant-filled-primary"
-                disabled={workshopDefaults.saving || !draftName.trim() || !draftAppendix.trim()}
-                onclick={saveEditor}
-              >
-                {editingId ? "Save changes" : "Create voice"}
-              </button>
-              <button
-                type="button"
-                class="btn btn-sm variant-soft"
-                disabled={workshopDefaults.saving}
-                onclick={resetEditor}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
+      {#if !editorOpen}
+        <button
+          type="button"
+          class="btn btn-sm variant-soft mt-2"
+          disabled={!canAddCustom || workshopDefaults.saving}
+          onclick={openCreateEditor}
+        >
+          Add custom voice
+        </button>
+        {#if !canAddCustom}
+          <p class="prefs-footnote">Up to {MAX_CUSTOM_VOICE_PRESETS} custom voices.</p>
         {/if}
+      {:else}
+        <div class="agent-voice-editor mt-2 space-y-3">
+          <label class="block">
+            <span class="workshop-label">Name</span>
+            <input
+              class="input mt-1 w-full"
+              bind:value={draftName}
+              maxlength={40}
+              placeholder="Briefings"
+            />
+          </label>
+          <label class="block">
+            <span class="workshop-label">Description</span>
+            <input
+              class="input mt-1 w-full"
+              bind:value={draftDescription}
+              maxlength={120}
+              placeholder="Optional one-liner"
+            />
+          </label>
+          <label class="block">
+            <span class="workshop-label">Stance</span>
+            <textarea
+              class="textarea mt-1 min-h-24 w-full resize-y"
+              bind:value={draftAppendix}
+              maxlength={600}
+              placeholder="How she should answer in this voice…"
+            ></textarea>
+          </label>
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="button"
+              class="btn btn-sm variant-filled-primary"
+              disabled={workshopDefaults.saving || !draftName.trim() || !draftAppendix.trim()}
+              onclick={saveEditor}
+            >
+              {editingId ? "Save changes" : "Create voice"}
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm variant-soft"
+              disabled={workshopDefaults.saving}
+              onclick={resetEditor}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       {/if}
     </div>
   </details>
 
-  <details class="prefs-more" bind:open={presentationsOpen}>
-    <summary class="prefs-more-summary">
-      <span>Artifacts cleanup</span>
-      <ChevronDown size={14} strokeWidth={2} class="prefs-more-chevron" aria-hidden="true" />
-    </summary>
-    <div class="prefs-more-body">
-      <SettingsPresentationRetention {mobile} />
-    </div>
-  </details>
+  {#if nativeWorkloads}
+    <details class="prefs-more" bind:open={presentationsOpen}>
+      <summary class="prefs-more-summary">
+        <span>Artifacts cleanup</span>
+        <ChevronDown size={14} strokeWidth={2} class="prefs-more-chevron" aria-hidden="true" />
+      </summary>
+      <div class="prefs-more-body">
+        <SettingsPresentationRetention />
+      </div>
+    </details>
 
-  <details class="prefs-more" bind:open={storageOpen}>
-    <summary class="prefs-more-summary">
-      <span>Workshop storage</span>
-      <ChevronDown size={14} strokeWidth={2} class="prefs-more-chevron" aria-hidden="true" />
-    </summary>
-    <div class="prefs-more-body">
-      <SettingsStorageGovernance {mobile} />
-    </div>
-  </details>
+    <details class="prefs-more" bind:open={storageOpen}>
+      <summary class="prefs-more-summary">
+        <span>Workshop storage</span>
+        <ChevronDown size={14} strokeWidth={2} class="prefs-more-chevron" aria-hidden="true" />
+      </summary>
+      <div class="prefs-more-body">
+        <SettingsStorageGovernance />
+      </div>
+    </details>
+  {/if}
 
   {#if modelsExtra !== "stages"}
     <div class="agent-save mt-6 border-t border-surface-500/35 pt-5">
-      <SettingsCharterSaveBar {mobile} />
+      <SettingsCharterSaveBar />
     </div>
   {/if}
 </section>

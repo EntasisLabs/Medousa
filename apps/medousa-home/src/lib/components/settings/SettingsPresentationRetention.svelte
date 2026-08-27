@@ -7,12 +7,6 @@
   import { isTauri } from "$lib/window";
   import { onMount } from "svelte";
 
-  interface Props {
-    mobile?: boolean;
-  }
-
-  let { mobile = false }: Props = $props();
-
   let status = $state<ArtifactRetentionStatus | null>(null);
   let enabled = $state(true);
   let maxAgeDays = $state(90);

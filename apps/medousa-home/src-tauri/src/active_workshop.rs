@@ -95,6 +95,7 @@ pub fn transport_config() -> Result<WorkshopTransportConfig, String> {
                     session_token,
                     phone_id: String::new(),
                     workshop_device_id: String::new(),
+                    daemon_public_key: None,
                 });
             }
 

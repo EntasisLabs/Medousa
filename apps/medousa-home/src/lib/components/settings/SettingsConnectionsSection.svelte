@@ -18,8 +18,8 @@
   } from "@lucide/svelte";
   import { accountConnections } from "$lib/stores/accountConnections.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
+  import { isTauriDesktop } from "$lib/platform";
   import {
-    accountConnectionsSupported,
     authStatusLabel,
     beginChatgptDeviceLogin,
     beginTerminalLogin,
@@ -38,17 +38,34 @@
     type ChatGptOAuthConnection,
   } from "$lib/utils/chatgptOAuth";
 
+  interface Props {
+    chatGptAccountAuth?: boolean;
+  }
+
+  let { chatGptAccountAuth = true }: Props = $props();
+
   let actionBusy = $state<string | null>(null);
   let actionNote = $state<string | null>(null);
   let actionError = $state<string | null>(null);
   let waitingFor = $state<"chatgpt" | "cursor" | null>(null);
   let nativeChatGpt = $state<ChatGptOAuthConnection | null>(null);
   let nativeChatGptLoading = $state(false);
+  let nativeChatGptLoaded = $state(false);
   let nativeLogin = $state<BeginChatGptOAuthResponse | null>(null);
   let nativeLoginCancelled = false;
 
   onMount(() => {
-    void accountConnections.refresh(true);
+    if (isTauriDesktop()) void accountConnections.refresh(true);
+  });
+
+  $effect(() => {
+    if (!chatGptAccountAuth) {
+      nativeChatGptLoaded = false;
+      nativeChatGpt = null;
+      return;
+    }
+    if (nativeChatGptLoaded) return;
+    nativeChatGptLoaded = true;
     void refreshNativeChatGpt();
   });
 
@@ -62,6 +79,7 @@
   const nativeChatGptReady = $derived(chatGptOAuthReady(nativeChatGpt));
 
   async function refreshNativeChatGpt() {
+    if (!chatGptAccountAuth) return;
     nativeChatGptLoading = true;
     try {
       nativeChatGpt = await getChatGptOAuthConnection();
@@ -73,7 +91,10 @@
   }
 
   async function refreshAllConnections() {
-    await Promise.all([accountConnections.refresh(true), refreshNativeChatGpt()]);
+    await Promise.all([
+      isTauriDesktop() ? accountConnections.refresh(true) : Promise.resolve(),
+      chatGptAccountAuth ? refreshNativeChatGpt() : Promise.resolve(),
+    ]);
   }
 
   async function withAction(key: string, fn: () => Promise<string | null>) {
@@ -186,10 +207,15 @@
   }
 
   function openChat() {
+    if (layout.isMobile) {
+      layout.setMobileTab("chat", { bump: true });
+      return;
+    }
     layout.navigateDesktop("chat");
   }
 
-  const supported = accountConnectionsSupported();
+  const desktopCli = isTauriDesktop();
+  const supported = $derived(chatGptAccountAuth || desktopCli);
   const anySignedIn = $derived(
     nativeChatGptReady ||
       accountConnections.isSignedIn("chatgpt") ||
@@ -202,8 +228,8 @@
     <div class="min-w-0 flex-1">
       <h2 class="text-base font-semibold text-surface-50">Connections</h2>
       <p class="workshop-faint mt-1 text-sm">
-        Connect ChatGPT directly to Medousa, or sign in to the Codex and Cursor
-        runtimes. Each connection stays isolated to the runtime that owns it.
+        Connect accounts to the runtimes available on this host. Each connection
+        stays isolated to the runtime that owns it.
       </p>
     </div>
     <button
@@ -211,7 +237,7 @@
       class="workshop-rail-btn shrink-0"
       title="Refresh status"
       aria-label="Refresh status"
-      disabled={accountConnections.loading || nativeChatGptLoading || actionBusy != null}
+      disabled={!supported || accountConnections.loading || nativeChatGptLoading || actionBusy != null}
       onclick={() => void refreshAllConnections()}
     >
       <RefreshCw size={15} strokeWidth={1.85} />
@@ -220,7 +246,8 @@
 
   {#if !supported}
     <p class="workshop-faint mt-2 text-sm">
-      Connections are available in the Medousa desktop app.
+      Embedded Personal uses provider credentials under Medousa Agent. Native account adapters
+      are not installed on this host.
     </p>
   {:else}
     {#if accountConnections.error}
@@ -231,7 +258,7 @@
     {/if}
 
     <ol class="connections-steps workshop-faint mt-3">
-      <li><strong>Choose ownership</strong> — Medousa, Codex, or Cursor.</li>
+      <li><strong>Choose ownership</strong> — Medousa{desktopCli ? ", Codex, or Cursor" : ""}.</li>
       <li><strong>Sign in</strong> to that connection; credentials are not shared.</li>
       <li>
         <strong>In Chat</strong>, choose the runtime under the composer. For
@@ -240,7 +267,8 @@
     </ol>
 
     <div class="connections-cards mt-3">
-      <div class="connections-card" data-account="native-chatgpt">
+      {#if chatGptAccountAuth}
+        <div class="connections-card" data-account="native-chatgpt">
         <div class="connections-card-head">
           <span class="connections-card-icon" aria-hidden="true">
             <Sparkles size={16} strokeWidth={1.85} />
@@ -323,12 +351,14 @@
             </button>
           {/if}
         </div>
-      </div>
+        </div>
+      {/if}
 
-      {#each [
-        { info: accountConnections.connections?.chatgpt, account: "chatgpt" as const, icon: "chatgpt" },
-        { info: accountConnections.connections?.cursor, account: "cursor" as const, icon: "cursor" },
-      ] as card (card.account)}
+      {#if desktopCli}
+        {#each [
+          { info: accountConnections.connections?.chatgpt, account: "chatgpt" as const, icon: "chatgpt" },
+          { info: accountConnections.connections?.cursor, account: "cursor" as const, icon: "cursor" },
+        ] as card (card.account)}
         {@const info = card.info}
         <div class="connections-card" data-account={card.account}>
           <div class="connections-card-head">
@@ -436,7 +466,8 @@
             {/if}
           </div>
         </div>
-      {/each}
+        {/each}
+      {/if}
     </div>
 
     {#if anySignedIn && !waitingFor && !actionNote}

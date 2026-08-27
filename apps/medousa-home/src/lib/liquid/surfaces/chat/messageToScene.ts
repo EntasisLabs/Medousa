@@ -1,13 +1,14 @@
 /**
  * Chat surface adapter — maps a `ChatMessage` to a runtime-governed `document`.
  *
- * Order (alive, not buried): thinking → live pulse → settled whisper → body → tools.
- * Intensity is dialed down in the shell components; we do not hide receipts
- * behind an observability drawer.
+ * Dedicated chrome stays above the visible response. Native V3 messages then
+ * render their response/tool/artifact segments in occurrence order; legacy
+ * messages retain the flat body + tool footer. Receipts are never buried in an
+ * observability drawer.
  */
 
 import { createNode, type SceneNode } from "$lib/liquid/core";
-import type { ChatMessage, ToolRunState } from "$lib/types/chat";
+import type { ChatMessage, ChatSegment, ToolRunState } from "$lib/types/chat";
 import { stripChatBodyChrome } from "./stripChatBodyChrome";
 
 export interface ChatSceneOptions {
@@ -55,6 +56,60 @@ function settledInterimLabel(
   const body = bodyMarkdown.trim();
   if (body && whisper === body) return null;
   return whisper;
+}
+
+function chronologicalSegmentFlow(
+  message: ChatMessage,
+  segments: ChatSegment[],
+): SceneNode[] {
+  const flow: SceneNode[] = [];
+  for (const [index, segment] of segments.entries()) {
+    switch (segment.kind) {
+      case "text": {
+        const markdown = stripChatBodyChrome(segment.markdown).markdown;
+        if (markdown.trim() || (message.streaming && !segment.committed)) {
+          flow.push(
+            child(`${message.id}:segment:text:${segment.segmentId}`, "prose", {
+              markdown: markdown.trim() ? markdown : "…",
+              streaming: Boolean(message.streaming && !segment.committed),
+            }),
+          );
+        }
+        break;
+      }
+      case "tool_group":
+        if (segment.runs.length > 0) {
+          flow.push(
+            child(`${message.id}:segment:${segment.groupId}`, "tool_trace", {
+              runs: segment.runs,
+              turnIndex: message.turnIndex ?? null,
+              streaming: segment.runs.some((run) => run.status === "running"),
+              compact: true,
+            }),
+          );
+        }
+        break;
+      case "artifact":
+        flow.push(
+          child(`${message.id}:segment:artifact:${segment.artifact.artifactId}`, "presentation", {
+            artifacts: [segment.artifact],
+          }),
+        );
+        break;
+      case "handoff":
+        if (segment.text.trim()) {
+          flow.push(
+            child(
+              `${message.id}:segment:handoff:${segment.workId ?? segment.handoffKind}:${index}`,
+              "whisper",
+              { text: segment.text },
+            ),
+          );
+        }
+        break;
+    }
+  }
+  return flow;
 }
 
 function assistantFlow(message: ChatMessage, opts: ChatSceneOptions): SceneNode[] {
@@ -126,27 +181,34 @@ function assistantFlow(message: ChatMessage, opts: ChatSceneOptions): SceneNode[
     flow.push(child(`${id}:whisper`, "whisper", { text: settled }));
   }
 
-  // 5. Body (substance) — never paint leaked reasoning callouts in prose
-  if (hasContent) {
-    flow.push(child(`${id}:body`, "prose", { markdown: bodyMarkdown, streaming }));
-  } else if (streaming && !hasToolRuns && !hasReasoning) {
-    flow.push(child(`${id}:body`, "prose", { markdown: "…", streaming: true }));
-  }
+  if (message.segments !== undefined) {
+    // Native V3: paint the client-owned projection exactly where facts occurred.
+    flow.push(...chronologicalSegmentFlow(message, message.segments));
+    if (message.segments.length === 0 && streaming && !hasReasoning) {
+      flow.push(child(`${id}:body`, "prose", { markdown: "…", streaming: true }));
+    }
+  } else {
+    // Legacy turns retain the intentionally flat body + tool-footer layout.
+    if (hasContent) {
+      flow.push(child(`${id}:body`, "prose", { markdown: bodyMarkdown, streaming }));
+    } else if (streaming && !hasToolRuns && !hasReasoning) {
+      flow.push(child(`${id}:body`, "prose", { markdown: "…", streaming: true }));
+    }
 
-  if (message.uiArtifacts && message.uiArtifacts.length > 0) {
-    flow.push(child(`${id}:artifacts`, "presentation", { artifacts: message.uiArtifacts }));
-  }
+    if (message.uiArtifacts && message.uiArtifacts.length > 0) {
+      flow.push(child(`${id}:artifacts`, "presentation", { artifacts: message.uiArtifacts }));
+    }
 
-  // 6. Tool receipts at the bottom — host-lane ToolRunChips (footnote when settled)
-  if (hasToolRuns) {
-    flow.push(
-      child(`${id}:tools`, "tool_trace", {
-        runs: toolRuns,
-        turnIndex: message.turnIndex ?? null,
-        streaming,
-        compact: true,
-      }),
-    );
+    if (hasToolRuns) {
+      flow.push(
+        child(`${id}:tools`, "tool_trace", {
+          runs: toolRuns,
+          turnIndex: message.turnIndex ?? null,
+          streaming,
+          compact: true,
+        }),
+      );
+    }
   }
 
   return flow;

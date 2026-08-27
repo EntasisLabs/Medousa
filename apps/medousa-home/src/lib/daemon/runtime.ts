@@ -38,16 +38,6 @@ export async function getEngineTuiDefaults(): Promise<TuiDefaults> {
   return invoke<TuiDefaults>("runtime_get_tui_defaults");
 }
 
-let hostCharterInflight: Promise<TuiDefaults> | null = null;
-
-/** One in-flight host charter fetch — companion shells copy locally and reuse. */
-export async function fetchHostCharter(): Promise<TuiDefaults> {
-  hostCharterInflight ??= getEngineTuiDefaults().finally(() => {
-    hostCharterInflight = null;
-  });
-  return hostCharterInflight;
-}
-
 export async function putEngineTuiDefaults(dto: TuiDefaults): Promise<void> {
   await invoke("runtime_put_tui_defaults", { dto });
 }

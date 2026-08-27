@@ -14,7 +14,6 @@ use tokio::sync::RwLock;
 
 use crate::agent_runtime::provider_stream::{ProviderStreamBridge, fail_on_stream_overflow};
 use crate::agent_runtime::stream_sink::SharedAgentStreamSink;
-use crate::agent_runtime::system_prompt::DEFAULT_SYSTEM_PROMPT;
 use crate::agent_runtime::turn_completion::ToolLoopCompletionGate;
 use crate::agent_runtime::turn_ledger::append_tool_loop_policy;
 use crate::agent_runtime::turn_ledger::{
@@ -49,7 +48,6 @@ use crate::agent_runtime::worker_continuity::{
 
 use super::prompts::{
     synthesis_user_prompt, synthesis_user_prompt_with_handoff, worker_failure_user_prompt,
-    worker_system_prompt,
 };
 use super::registry::{
     AllowlistToolRegistry, SessionBootstrapToolRegistry, WorkerSessionToolRegistry,
@@ -57,11 +55,6 @@ use super::registry::{
 use super::store::{
     TurnWorkDisposition, TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, turn_worker_store,
 };
-use crate::tool_bootstrap::{
-    ToolSurfaceLane, handoff_implies_resolved_execution, unlock_session_domains,
-    worker_should_unlock_vault,
-};
-
 fn worker_canvas_lane_enabled(is_bound_workshop: bool, record: &TurnWorkRecord) -> bool {
     is_bound_workshop || record.supports_ui_artifacts
 }
@@ -87,10 +80,10 @@ fn worker_turn_scope(record: &TurnWorkRecord) -> TurnContinuationScope {
         supports_ui_artifacts: canvas_lane,
         supports_liquid_markdown: record.supports_liquid_markdown,
         supports_browser_host: record.supports_browser_host,
-        channel_surface: Some(if record.disposition == TurnWorkDisposition::Bound {
-            "workshop-canvas".to_string()
-        } else {
-            "worker".to_string()
+        channel_surface: Some(match record.disposition {
+            TurnWorkDisposition::Bound => "workshop-canvas".to_string(),
+            TurnWorkDisposition::Delegated => "delegated-worker".to_string(),
+            TurnWorkDisposition::Parallel => "worker".to_string(),
         }),
     }
 }
@@ -912,6 +905,7 @@ async fn run_worker_turn_inner(
         .await;
 
     let is_bound_workshop = record.disposition == TurnWorkDisposition::Bound;
+    let is_delegated = record.disposition == TurnWorkDisposition::Delegated;
     if is_bound_workshop && let Some(started) = store.get(&work_id) {
         crate::feed_adapters::publish_workshop_started(&started).await;
     }
@@ -923,24 +917,22 @@ async fn run_worker_turn_inner(
         .and_then(|capsule| capsule.manuscript.as_ref())
         .map(|manuscript| manuscript.tools_allow.as_slice())
         .unwrap_or(&[] as &[String]);
-    let allowlist = super::policy::worker_allowlist_for_intent_and_tools(intent, manuscript_tools);
-    if handoff_implies_resolved_execution(record.handoff_capsule.as_ref()) {
-        let _ = unlock_session_domains(&record.session_id, ToolSurfaceLane::Worker, &["execute"]);
-    }
-    if worker_should_unlock_vault(&record.task_prompt, intent) {
-        let _ = unlock_session_domains(&record.session_id, ToolSurfaceLane::Worker, &["vault"]);
-    }
-    if is_bound_workshop {
-        crate::tool_bootstrap::ensure_bound_workshop_session_tool_defaults(&record.session_id);
+    let allowlist = if is_delegated {
+        super::policy::remote_delegated_tool_ceiling()
     } else {
-        let _ = unlock_session_domains(&record.session_id, ToolSurfaceLane::Worker, &["memory"]);
-    }
+        super::policy::worker_allowlist_for_intent_and_tools(intent, manuscript_tools)
+    };
     let session_registry = Arc::new(WorkerSessionToolRegistry::new(
         ctx.tool_registry.clone(),
         record.session_id.clone(),
     ));
     let canvas_lane = worker_canvas_lane_enabled(is_bound_workshop, &record);
-    let filtered_registry: Arc<dyn ToolRegistry> = if canvas_lane {
+    let filtered_registry: Arc<dyn ToolRegistry> = if is_delegated {
+        Arc::new(AllowlistToolRegistry::delegated(
+            session_registry,
+            allowlist,
+        ))
+    } else if canvas_lane {
         Arc::new(SessionBootstrapToolRegistry::bound_workshop(
             session_registry,
             record.session_id.clone(),
@@ -1002,7 +994,7 @@ async fn run_worker_turn_inner(
 
     let request = ToolLoopExecutionRequest {
         user_prompt,
-        system_prompt: Some(worker_system_prompt(
+        system_prompt: Some(super::prompts::worker_system_prompt_for_parent_mode(
             &record.session_id,
             TurnWorkerIntent::parse(&record.intent).unwrap_or(TurnWorkerIntent::General),
             record
@@ -1011,6 +1003,7 @@ async fn run_worker_turn_inner(
                 .and_then(|capsule| capsule.manuscript.as_ref()),
             record.supports_ui_artifacts,
             record.supports_liquid_markdown,
+            record.parent_agent_mode.as_deref(),
         )),
         context: PromptExecutionContext::default(),
         tool_name: String::new(),
@@ -1238,6 +1231,9 @@ async fn deliver_worker_parent_outcome(
     stream_turn_id: u64,
     is_bound_workshop: bool,
 ) {
+    if record.disposition == TurnWorkDisposition::Delegated {
+        return;
+    }
     if is_bound_workshop {
         match record.status {
             TurnWorkStatus::Completed => {
@@ -1271,6 +1267,9 @@ pub async fn resume_synthesis_if_needed(
     sink: SharedAgentStreamSink,
     agent: Option<&TuiRuntime>,
 ) {
+    if record.disposition == TurnWorkDisposition::Delegated {
+        return;
+    }
     if parallel_worker_uses_host_resume(record.disposition) {
         let Some(agent) = agent else {
             tracing::warn!(
@@ -1380,7 +1379,9 @@ async fn run_worker_failure_notify(
         MAX_REQUEST_PROMPT_CHARS,
     ))
     .with_context(PromptExecutionContext::default())
-    .with_system_prompt(DEFAULT_SYSTEM_PROMPT.to_string());
+    .with_system_prompt(super::prompts::host_system_prompt_for_parent_mode(
+        record.parent_agent_mode.as_deref(),
+    ));
 
     let text = match pipeline.execute(request).await {
         Ok(response) => response.text,
@@ -1492,7 +1493,9 @@ async fn run_synthesis_turn(
         MAX_REQUEST_PROMPT_CHARS,
     ))
     .with_context(PromptExecutionContext::default());
-    request = request.with_system_prompt(DEFAULT_SYSTEM_PROMPT.to_string());
+    request = request.with_system_prompt(super::prompts::host_system_prompt_for_parent_mode(
+        record.parent_agent_mode.as_deref(),
+    ));
     let response = match pipeline.execute(request).await {
         Ok(response) => response,
         Err(err) => {

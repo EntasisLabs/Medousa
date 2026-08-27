@@ -3,6 +3,7 @@
 //! The model-facing entry is a tagged action enum. Parameter schemas live on
 //! each variant type — `cognition_schema` reads those types, not a parallel catalog.
 
+#[cfg(feature = "full-daemon")]
 use std::sync::Arc;
 
 use schemars::JsonSchema;
@@ -10,21 +11,21 @@ use schemars::schema::Schema;
 use serde::Deserialize;
 use serde_json::Value;
 
+#[cfg(feature = "full-daemon")]
 use crate::agent_runtime::turn_worker::TurnWorkerScheduler;
 use crate::public_api::COGNITION_TURN;
 use crate::schema_api::{
     TypedActionSchema, advertised_object_schema, string_enum_schema, typed_action_schema,
 };
 use crate::turn_control_tools::{
-    CognitionTurnBeginWorkTool, CognitionTurnCheckpointTool, CognitionTurnFinishTool,
-    CognitionTurnPrepareFinalTool, CognitionTurnProposeModeTool,
-    CognitionTurnRequestMoreRoundsTool, CognitionTurnUpdateUserTool, TurnBeginWorkInput,
-    TurnCheckpointInput, TurnFinishInput, TurnModeInput, TurnModeScopeInput, TurnPrepareFinalInput,
+    CognitionTurnCheckpointTool, CognitionTurnFinishTool, CognitionTurnRequestMoreRoundsTool,
+    CognitionTurnUpdateUserTool,
+    TurnBeginWorkInput, TurnCheckpointInput, TurnFinishInput, TurnModeInput, TurnModeScopeInput,
     TurnProposeModeInput, TurnRequestMoreRoundsInput, TurnUpdateUserInput,
 };
-use crate::typed_tools::{
-    CompatOption, ExternalJson, ToolId, TypedTool, medousa_tool, serialize_output,
-};
+#[cfg(feature = "full-daemon")]
+use crate::turn_control_tools::{CognitionTurnBeginWorkTool, CognitionTurnProposeModeTool};
+use crate::typed_tools::{ExternalJson, ToolId, TypedTool, medousa_tool, serialize_output};
 
 const TURN_ID: ToolId = ToolId::new(COGNITION_TURN);
 
@@ -37,10 +38,10 @@ pub enum TurnAction {
     UpdateUser(TurnUpdateUser),
     #[serde(rename = "turn.checkpoint")]
     Checkpoint(TurnCheckpoint),
+    #[serde(rename = "turn.request_input")]
+    RequestInput(TurnRequestInput),
     #[serde(rename = "turn.finish")]
     Finish(TurnFinish),
-    #[serde(rename = "turn.prepare_final")]
-    PrepareFinal(TurnPrepareFinal),
     #[serde(rename = "turn.request_more_rounds")]
     RequestMoreRounds(TurnRequestMoreRounds),
     #[serde(rename = "turn.propose_mode")]
@@ -77,16 +78,19 @@ pub struct TurnCheckpoint {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct TurnFinish {
-    /// Complete principal-facing final answer
+pub struct TurnRequestInput {
+    /// The concrete question or choice the principal must answer
     message: String,
     /// Optional short note for logs
     #[serde(default)]
     reason: Option<String>,
 }
 
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-pub struct TurnPrepareFinal {
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TurnFinish {
+    /// Fallback final answer when this response has no assistant prose
+    #[serde(default)]
+    message: Option<String>,
     /// Optional short note for logs
     #[serde(default)]
     reason: Option<String>,
@@ -126,8 +130,8 @@ impl JsonSchema for TurnAction {
                 "turn.begin_work",
                 "turn.update_user",
                 "turn.checkpoint",
+                "turn.request_input",
                 "turn.finish",
-                "turn.prepare_final",
                 "turn.request_more_rounds",
                 "turn.propose_mode",
             ]),
@@ -153,15 +157,15 @@ pub fn turn_type_schemas() -> Vec<TypedActionSchema> {
             "turn.checkpoint",
             "Mid-task handoff; wait for the principal",
         ),
+        typed_action_schema::<TurnRequestInput>(
+            TURN_ID,
+            "turn.request_input",
+            "Ask the principal for required input and end this turn",
+        ),
         typed_action_schema::<TurnFinish>(
             TURN_ID,
             "turn.finish",
             "Deliver the final answer and end the turn",
-        ),
-        typed_action_schema::<TurnPrepareFinal>(
-            TURN_ID,
-            "turn.prepare_final",
-            "Deprecated — prefer turn.finish",
         ),
         typed_action_schema::<TurnRequestMoreRounds>(
             TURN_ID,
@@ -177,6 +181,7 @@ pub fn turn_type_schemas() -> Vec<TypedActionSchema> {
 }
 
 pub struct CognitionTurnTool {
+    #[cfg(feature = "full-daemon")]
     scheduler: Arc<TurnWorkerScheduler>,
     bootstrap_session_id: String,
     turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
@@ -184,11 +189,13 @@ pub struct CognitionTurnTool {
 
 impl CognitionTurnTool {
     pub fn new(
+        #[cfg(feature = "full-daemon")]
         scheduler: Arc<TurnWorkerScheduler>,
         bootstrap_session_id: String,
         turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
     ) -> Self {
         Self {
+            #[cfg(feature = "full-daemon")]
             scheduler,
             bootstrap_session_id,
             turn_scope,
@@ -196,6 +203,7 @@ impl CognitionTurnTool {
     }
 }
 
+#[cfg(feature = "full-daemon")]
 pub fn register_turn_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
     scheduler: Arc<TurnWorkerScheduler>,
@@ -210,9 +218,19 @@ pub fn register_turn_tools(
     Ok(())
 }
 
+#[cfg(not(feature = "full-daemon"))]
+pub fn register_turn_tools(
+    registry: &mut impl crate::typed_tools::ToolRegistration,
+    bootstrap_session_id: String,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
+) -> stasis::prelude::Result<()> {
+    registry.register_typed_tool(CognitionTurnTool::new(bootstrap_session_id, turn_scope))?;
+    Ok(())
+}
+
 #[medousa_tool(id = TURN_ID)]
 impl CognitionTurnTool {
-    /// Control this turn: begin work, update the principal, checkpoint, finish, or request more rounds. action is a typed name (turn.finish, turn.checkpoint, …). Fetch fields with cognition_schema types=[...].
+    /// Record turn progress or set its outcome. action is a typed name (turn.finish, turn.checkpoint, …). Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(&self, action: TurnAction) -> stasis::prelude::Result<ExternalJson> {
         Ok(ExternalJson::new(dispatch(self, action).await?))
     }
@@ -223,8 +241,8 @@ async fn dispatch(tool: &CognitionTurnTool, action: TurnAction) -> stasis::prelu
         TurnAction::BeginWork(params) => params.execute(tool).await,
         TurnAction::UpdateUser(params) => params.execute().await,
         TurnAction::Checkpoint(params) => params.execute().await,
+        TurnAction::RequestInput(params) => params.execute().await,
         TurnAction::Finish(params) => params.execute().await,
-        TurnAction::PrepareFinal(params) => params.execute().await,
         TurnAction::RequestMoreRounds(params) => params.execute().await,
         TurnAction::ProposeMode(params) => params.execute(tool).await,
     }
@@ -232,6 +250,8 @@ async fn dispatch(tool: &CognitionTurnTool, action: TurnAction) -> stasis::prelu
 
 impl TurnBeginWork {
     async fn execute(self, tool: &CognitionTurnTool) -> stasis::prelude::Result<Value> {
+        #[cfg(feature = "full-daemon")]
+        {
         let output = CognitionTurnBeginWorkTool::new(tool.scheduler.clone())
             .invoke_typed(TurnBeginWorkInput {
                 message: Some(self.message),
@@ -240,6 +260,19 @@ impl TurnBeginWork {
             })
             .await?;
         serialize_output(CognitionTurnBeginWorkTool::tool_id(), output)
+        }
+        #[cfg(not(feature = "full-daemon"))]
+        {
+            let _ = tool;
+            Ok(serde_json::json!({
+                "ok": false,
+                "workshop_entered": false,
+                "error": "turn.begin_work requires a background workshop worker adapter on this host",
+                "message": self.message,
+                "goal": self.goal,
+                "intent": self.intent,
+            }))
+        }
     }
 }
 
@@ -267,26 +300,28 @@ impl TurnCheckpoint {
     }
 }
 
+impl TurnRequestInput {
+    async fn execute(self) -> stasis::prelude::Result<Value> {
+        let output = CognitionTurnCheckpointTool
+            .invoke_typed(TurnCheckpointInput {
+                message: Some(self.message.clone()),
+                awaiting: Some(self.message),
+                reason: self.reason,
+            })
+            .await?;
+        serialize_output(CognitionTurnCheckpointTool::tool_id(), output)
+    }
+}
+
 impl TurnFinish {
     async fn execute(self) -> stasis::prelude::Result<Value> {
         let output = CognitionTurnFinishTool
             .invoke_typed(TurnFinishInput {
-                message: Some(self.message),
+                message: self.message,
                 reason: self.reason,
             })
             .await?;
         serialize_output(CognitionTurnFinishTool::tool_id(), output)
-    }
-}
-
-impl TurnPrepareFinal {
-    async fn execute(self) -> stasis::prelude::Result<Value> {
-        let output = CognitionTurnPrepareFinalTool
-            .invoke_typed(TurnPrepareFinalInput {
-                reason: CompatOption::from(self.reason),
-            })
-            .await?;
-        serialize_output(CognitionTurnPrepareFinalTool::tool_id(), output)
     }
 }
 
@@ -305,6 +340,8 @@ impl TurnRequestMoreRounds {
 
 impl TurnProposeMode {
     async fn execute(self, tool: &CognitionTurnTool) -> stasis::prelude::Result<Value> {
+        #[cfg(feature = "full-daemon")]
+        {
         let output = CognitionTurnProposeModeTool::new(
             tool.bootstrap_session_id.clone(),
             tool.turn_scope.clone(),
@@ -317,6 +354,19 @@ impl TurnProposeMode {
         })
         .await?;
         serialize_output(CognitionTurnProposeModeTool::tool_id(), output)
+        }
+        #[cfg(not(feature = "full-daemon"))]
+        {
+            let _ = tool;
+            Ok(serde_json::json!({
+                "ok": false,
+                "error": "turn.propose_mode is unavailable because this host does not install Coder mode",
+                "mode": format!("{:?}", self.mode).to_ascii_lowercase(),
+                "scope": format!("{:?}", self.scope).to_ascii_lowercase(),
+                "task_id": self.task_id,
+                "reason": self.reason,
+            }))
+        }
     }
 }
 
@@ -334,7 +384,7 @@ mod tests {
         .expect("finish");
         match finish {
             TurnAction::Finish(TurnFinish { message, reason }) => {
-                assert_eq!(message, "Done.");
+                assert_eq!(message.as_deref(), Some("Done."));
                 assert!(reason.is_none());
             }
             other => panic!("expected finish, got {other:?}"),
@@ -348,5 +398,26 @@ mod tests {
         assert_eq!(props.len(), 1);
         assert!(props.contains_key("action"));
         assert_eq!(schema["additionalProperties"], true);
+        let actions = schema["properties"]["action"]["enum"]
+            .as_array()
+            .expect("action enum");
+        assert!(actions.iter().any(|value| value == "turn.request_input"));
+    }
+
+    #[test]
+    fn finish_message_is_optional_and_request_input_is_explicit() {
+        let finish: TurnAction =
+            serde_json::from_value(json!({ "action": "turn.finish" })).expect("silent finish");
+        assert!(matches!(
+            finish,
+            TurnAction::Finish(TurnFinish { message: None, .. })
+        ));
+
+        let request: TurnAction = serde_json::from_value(json!({
+            "action": "turn.request_input",
+            "message": "Which repository?"
+        }))
+        .expect("request input");
+        assert!(matches!(request, TurnAction::RequestInput(_)));
     }
 }

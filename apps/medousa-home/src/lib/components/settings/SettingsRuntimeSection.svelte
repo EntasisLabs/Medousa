@@ -4,7 +4,6 @@
   import SettingsWorkerCapacity from "$lib/components/settings/SettingsWorkerCapacity.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
-  import { isTauriMobilePlatform } from "$lib/platform";
   import { isTauri } from "$lib/window";
   import {
     HOST_BUS_CHARTER_OPTIONS,
@@ -19,14 +18,12 @@
   import { ChevronDown } from "@lucide/svelte";
 
   interface Props {
-    mobile?: boolean;
+    nativeWorkloads?: boolean;
   }
 
-  let { mobile = false }: Props = $props();
+  let { nativeWorkloads = true }: Props = $props();
 
   type Picker = "posture" | "specialists" | "search" | "backend" | null;
-
-  const readOnly = $derived(mobile && isTauriMobilePlatform());
 
   const BACKEND_LABELS: Record<(typeof BACKEND_OPTIONS)[number], { label: string; hint: string }> = {
     "surreal-mem": {
@@ -199,10 +196,11 @@
   );
 
   const runtimeSummary = $derived.by(() => {
-    const shell = agentToolsOn ? "Shell on" : "Shell off";
     const rounds = workshopDefaults.draft.maxToolRounds ?? 30;
-    const versions = workshopDefaults.draft.vaultGitEnabled ? "Versions on" : "Versions off";
-    return `${activePosture.label} · ${activeSpecialists.label} · ${shell} · ${versions} · ${rounds} rounds`;
+    const native = nativeWorkloads
+      ? ` · ${agentToolsOn ? "Shell on" : "Shell off"} · ${workshopDefaults.draft.vaultGitEnabled ? "Versions on" : "Versions off"}`
+      : "";
+    return `${activePosture.label} · ${activeSpecialists.label}${native} · ${rounds} rounds`;
   });
 
   $effect(() => {
@@ -218,7 +216,7 @@
   });
 
   $effect(() => {
-    if (!workshopDefaults.loaded) return;
+    if (!nativeWorkloads || !workshopDefaults.loaded) return;
     void workshop.loadAllowlist();
   });
 
@@ -307,6 +305,7 @@
   }
 
   async function beforeSave(): Promise<boolean> {
+    if (!nativeWorkloads) return true;
     syncListsIntoDraft();
     if (!(agentToolsOn && binariesEmpty)) return true;
     const warning =
@@ -346,7 +345,7 @@
           class="rt-active-trigger"
           class:rt-active-trigger-open={picker === "posture"}
           aria-expanded={picker === "posture"}
-          disabled={readOnly || workshopDefaults.saving}
+          disabled={workshopDefaults.saving}
           onclick={() => togglePicker("posture")}
         >
           <span class="rt-active-copy">
@@ -367,7 +366,7 @@
                 class="prefs-choice"
                 class:prefs-choice-active={activePosture.id === option.id}
                 aria-selected={activePosture.id === option.id}
-                disabled={readOnly || workshopDefaults.saving}
+                disabled={workshopDefaults.saving}
                 onclick={() => selectField("toolCallMode", option.id)}
               >
                 <span class="prefs-choice-label">{option.label}</span>
@@ -384,7 +383,7 @@
           class="rt-active-trigger"
           class:rt-active-trigger-open={picker === "specialists"}
           aria-expanded={picker === "specialists"}
-          disabled={readOnly || workshopDefaults.saving}
+          disabled={workshopDefaults.saving}
           onclick={() => togglePicker("specialists")}
         >
           <span class="rt-active-copy">
@@ -405,7 +404,7 @@
                 class="prefs-choice"
                 class:prefs-choice-active={activeSpecialists.id === option.id}
                 aria-selected={activeSpecialists.id === option.id}
-                disabled={readOnly || workshopDefaults.saving}
+                disabled={workshopDefaults.saving}
                 onclick={() => selectField("hostTurnBusMode", option.id)}
               >
                 <span class="prefs-choice-label">{option.label}</span>
@@ -422,7 +421,7 @@
           class="rt-active-trigger"
           class:rt-active-trigger-open={picker === "search"}
           aria-expanded={picker === "search"}
-          disabled={readOnly || workshopDefaults.saving}
+          disabled={workshopDefaults.saving}
           onclick={() => togglePicker("search")}
         >
           <span class="rt-active-copy">
@@ -443,7 +442,7 @@
                 class="prefs-choice"
                 class:prefs-choice-active={preferredProvider === option.value}
                 aria-selected={preferredProvider === option.value}
-                disabled={readOnly || workshopDefaults.saving}
+                disabled={workshopDefaults.saving}
                 onclick={() => setWebSearchProvider(option.value)}
               >
                 <span class="prefs-choice-label">{option.label}</span>
@@ -463,7 +462,7 @@
             type="checkbox"
             class="prefs-switch"
             checked={workshopDefaults.draft.webSearchTryFallbacks ?? true}
-            disabled={readOnly || workshopDefaults.saving}
+            disabled={workshopDefaults.saving}
             onchange={(event) =>
               (workshopDefaults.draft = {
                 ...workshopDefaults.draft,
@@ -485,8 +484,7 @@
               max="48"
               inputmode="numeric"
               value={workshopDefaults.draft.maxToolRounds ?? 30}
-              readonly={readOnly}
-              disabled={readOnly || workshopDefaults.saving}
+              disabled={workshopDefaults.saving}
               aria-label="General tool rounds per turn"
               oninput={(event) => numField("maxToolRounds", event)}
             />
@@ -516,8 +514,6 @@
           rows="2"
           bind:value={workshopDefaults.allowedModulesText}
           placeholder="websearch.search, fetch.url"
-          readonly={readOnly}
-          disabled={readOnly}
         ></textarea>
         {#if modulesEmpty}
           <p class="settings-danger-callout mt-3 text-xs leading-relaxed" role="status">
@@ -528,11 +524,12 @@
     </details>
   </div>
 
-  <div class="prefs-band">
-    <div class="prefs-band-head">
-      <h3 class="settings-subsection-heading">Shell</h3>
-      <p class="settings-subsection-lead">Process sandbox — locked down until you open it.</p>
-    </div>
+  {#if nativeWorkloads}
+    <div class="prefs-band">
+      <div class="prefs-band-head">
+        <h3 class="settings-subsection-heading">Shell</h3>
+        <p class="settings-subsection-lead">Process sandbox — locked down until you open it.</p>
+      </div>
 
     <div class="prefs-grid">
       <label class="prefs-tile">
@@ -544,7 +541,7 @@
           type="checkbox"
           class="prefs-switch"
           checked={agentToolsOn}
-          disabled={readOnly || workshopDefaults.saving}
+          disabled={workshopDefaults.saving}
           onchange={(event) =>
             (workshopDefaults.draft = {
               ...workshopDefaults.draft,
@@ -562,7 +559,7 @@
           type="checkbox"
           class="prefs-switch"
           checked={networkOn}
-          disabled={readOnly || workshopDefaults.saving}
+          disabled={workshopDefaults.saving}
           onchange={(event) =>
             (workshopDefaults.draft = {
               ...workshopDefaults.draft,
@@ -584,8 +581,7 @@
             step="100"
             inputmode="numeric"
             value={workshopDefaults.draft.shellTimeoutMs ?? 30_000}
-            readonly={readOnly}
-            disabled={readOnly || workshopDefaults.saving}
+            disabled={workshopDefaults.saving}
             aria-label="Shell timeout in milliseconds"
             oninput={setTimeoutMs}
           />
@@ -606,8 +602,7 @@
             step="1024"
             inputmode="numeric"
             value={workshopDefaults.draft.shellMaxOutputBytes ?? 262_144}
-            readonly={readOnly}
-            disabled={readOnly || workshopDefaults.saving}
+            disabled={workshopDefaults.saving}
             aria-label="Shell max output in bytes"
             oninput={setMaxOutput}
           />
@@ -630,7 +625,7 @@
           type="checkbox"
           class="prefs-switch"
           checked={workshop.isModuleAllowed("shell")}
-          disabled={readOnly || workshop.allowlistBusy}
+          disabled={workshop.allowlistBusy}
           onchange={(event) =>
             workshop.toggleAllowlistModule(
               "shell",
@@ -669,8 +664,6 @@
             value={binariesText}
             oninput={onBinariesInput}
             placeholder={"git\nls\nrg"}
-            readonly={readOnly}
-            disabled={readOnly}
             spellcheck="false"
           ></textarea>
         </label>
@@ -683,14 +676,13 @@
             value={writableRootsText}
             oninput={onWritableRootsInput}
             placeholder="/Users/you/projects"
-            readonly={readOnly}
-            disabled={readOnly}
             spellcheck="false"
           ></textarea>
         </label>
       </div>
     </details>
-  </div>
+    </div>
+  {/if}
 
   <div class="prefs-band">
     <div class="prefs-band-head">
@@ -709,7 +701,7 @@
             type="checkbox"
             class="prefs-switch"
             checked={workshopDefaults.draft.thinkingCapture ?? true}
-            disabled={readOnly || workshopDefaults.saving}
+            disabled={workshopDefaults.saving}
             onchange={(event) =>
               (workshopDefaults.draft = {
                 ...workshopDefaults.draft,
@@ -727,7 +719,7 @@
             type="checkbox"
             class="prefs-switch"
             checked={workshopDefaults.draft.stasisOtelEnabled ?? false}
-            disabled={readOnly || workshopDefaults.saving}
+            disabled={workshopDefaults.saving}
             onchange={(event) =>
               (workshopDefaults.draft = {
                 ...workshopDefaults.draft,
@@ -749,8 +741,7 @@
               max="2000"
               inputmode="numeric"
               value={workshopDefaults.draft.thinkingMaxLines ?? 300}
-              readonly={readOnly}
-              disabled={readOnly || workshopDefaults.saving}
+              disabled={workshopDefaults.saving}
               aria-label="Thinking max lines"
               oninput={(event) => numField("thinkingMaxLines", event)}
             />
@@ -759,13 +750,14 @@
         </label>
       </div>
 
-      <div class="rt-active">
+      {#if nativeWorkloads}
+        <div class="rt-active">
         <button
           type="button"
           class="rt-active-trigger"
           class:rt-active-trigger-open={picker === "backend"}
           aria-expanded={picker === "backend"}
-          disabled={readOnly || workshopDefaults.saving}
+          disabled={workshopDefaults.saving}
           onclick={() => togglePicker("backend")}
         >
           <span class="rt-active-copy">
@@ -787,7 +779,7 @@
                 class="prefs-choice"
                 class:prefs-choice-active={activeBackend === option}
                 aria-selected={activeBackend === option}
-                disabled={readOnly || workshopDefaults.saving}
+                disabled={workshopDefaults.saving}
                 onclick={() => setBackend(option)}
               >
                 <span class="prefs-choice-label">{meta.label}</span>
@@ -796,7 +788,8 @@
             {/each}
           </div>
         {/if}
-      </div>
+        </div>
+      {/if}
     </div>
 
     <details class="prefs-more" bind:open={budgetsOpen}>
@@ -823,8 +816,7 @@
                   max={field.max}
                   inputmode="numeric"
                   value={workshopDefaults.draft[field.key] ?? ""}
-                  readonly={readOnly}
-                  disabled={readOnly || workshopDefaults.saving}
+                  disabled={workshopDefaults.saving}
                   aria-label="{field.label} in {field.unit}"
                   oninput={(event) => numField(field.key, event)}
                 />
@@ -858,8 +850,7 @@
                   step={field.step}
                   inputmode="decimal"
                   value={workshopDefaults.draft[field.key] ?? ""}
-                  readonly={readOnly}
-                  disabled={readOnly || workshopDefaults.saving}
+                  disabled={workshopDefaults.saving}
                   aria-label={field.label}
                   oninput={(event) => numField(field.key, event)}
                 />
@@ -886,19 +877,19 @@
           rows="4"
           placeholder="KEY=value"
           value={workshopDefaults.draft.envOverrides ?? ""}
-          readonly={readOnly}
-          disabled={readOnly}
           oninput={setEnvOverrides}
         ></textarea>
       </div>
     </details>
   </div>
 
-  <SettingsVersionsSection {mobile} embedded />
-  <SettingsWorkerCapacity {mobile} />
+  {#if nativeWorkloads}
+    <SettingsVersionsSection embedded />
+    <SettingsWorkerCapacity />
+  {/if}
 
   <div class="rt-save mt-6 border-t border-surface-500/35 pt-5">
-    <SettingsCharterSaveBar {mobile} beforeSave={beforeSave} />
+    <SettingsCharterSaveBar beforeSave={beforeSave} />
   </div>
 </section>
 

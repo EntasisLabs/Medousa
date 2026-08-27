@@ -18,6 +18,23 @@ pub const MOBILE_FOREGROUND_TOOL_CEILING: &[&str] = &[
     "cognition_utility_uuid",
 ];
 
+/// Exact ceiling for work admitted from another authenticated daemon.
+/// A task grant admits bounded compute, never ambient local authority.
+pub const REMOTE_DELEGATED_TOOL_CEILING: &[&str] = &[
+    "cognition_turn",
+    "cognition_utility_day_of_week",
+    "cognition_utility_time_now",
+    "cognition_utility_uuid",
+    "cognition_web_search",
+];
+
+pub fn remote_delegated_tool_ceiling() -> HashSet<String> {
+    REMOTE_DELEGATED_TOOL_CEILING
+        .iter()
+        .map(|name| (*name).to_string())
+        .collect()
+}
+
 pub fn mobile_foreground_tool_ceiling() -> HashSet<String> {
     MOBILE_FOREGROUND_TOOL_CEILING
         .iter()
@@ -335,7 +352,6 @@ mod tests {
         assert!(!names.contains("cognition_grapheme_run"));
         assert!(!names.contains("cognition_capability_invoke"));
         assert!(!names.contains("cognition_mcp_invoke"));
-        assert!(!names.contains("cognition_turn_prepare_final"));
         assert!(names.contains("cognition_turn"));
         assert!(names.contains("cognition_tools_discover"));
         assert!(names.contains("cognition_web_search"));

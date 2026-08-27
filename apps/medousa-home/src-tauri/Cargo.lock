@@ -4311,6 +4311,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "icalendar"
+version = "0.17.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fda1b791865374063fa57e84adfe3823c2d5cd5968d721533be4556a24cffd8"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "iso8601",
+ "nom 8.0.0",
+ "nom-language",
+ "uuid",
+]
+
+[[package]]
 name = "ico"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4780,6 +4794,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
+name = "iso8601"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "74a0559b45528cf0732d911524974977a5749f477d7dd99652830ffdaf53c4d1"
+dependencies = [
+ "nom 8.0.0",
+]
+
+[[package]]
 name = "itertools"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5189,9 +5212,9 @@ dependencies = [
 
 [[package]]
 name = "locus-core-rs"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0c0fb70e63300b96c42b72879360fec7b30936377fde56faf37e1932513fbaf"
+checksum = "6caeb7a7d43ffd60ce612003d391b4a0098c57dc39ed34a91cd97dbad0dc6c43"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5207,9 +5230,9 @@ dependencies = [
 
 [[package]]
 name = "locus-sdk"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6a8a2da557ebbbeaae676c2c1c67055d4ba706369977f629e538a2f2c2abec5"
+checksum = "00025c5e8fadbb09a74291b5a13b7dcdfd01c94a51f4143e86054bb7a94762f8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5410,19 +5433,29 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "chrono",
+ "chrono-tz",
+ "dirs 5.0.1",
+ "futures-util",
  "genai 0.6.5",
  "grapheme-compiler",
  "grapheme-runtime",
  "grapheme-sdk",
+ "hmac",
+ "icalendar",
  "locus-core-rs",
+ "medousa-browser-lite",
  "medousa-engine",
+ "medousa-mcp-gateway",
  "medousa-runtime",
  "medousa-store",
+ "medousa-tool-macros",
  "medousa-types",
  "once_cell",
+ "reqwest 0.12.28",
  "schemars 0.8.22",
  "serde",
  "serde_json",
+ "serde_yaml",
  "sha2 0.10.9",
  "stasis-rs",
  "surrealdb",
@@ -5433,6 +5466,7 @@ dependencies = [
  "tracing",
  "unicode-normalization",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -5513,6 +5547,7 @@ dependencies = [
  "medousa-iroh-http",
  "medousa-local-credential",
  "medousa-local-inference",
+ "medousa-mcp-gateway",
  "medousa-runtime",
  "medousa-sdk",
  "medousa-sdk-iroh",
@@ -5637,6 +5672,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "medousa-mcp-gateway"
+version = "0.9.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "chrono",
+ "dirs 5.0.1",
+ "futures-util",
+ "medousa-types",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml 0.8.2",
+ "uuid",
+]
+
+[[package]]
 name = "medousa-runtime"
 version = "0.9.1"
 dependencies = [
@@ -5716,6 +5770,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "medousa-tool-macros"
+version = "0.9.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "medousa-types"
 version = "0.9.1"
 dependencies = [
@@ -5723,6 +5786,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "hmac",
+ "schemars 0.8.22",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -6129,6 +6193,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df9761775871bdef83bee530e60050f7e54b1105350d6884eb0fb4f46c2f9405"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "nom-language"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2de2bc5b451bfedaef92c90b8939a8fff5770bdcc1fafd6239d086aab8fa6b29"
+dependencies = [
+ "nom 8.0.0",
 ]
 
 [[package]]
@@ -8543,6 +8616,7 @@ version = "0.8.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fbf2ae1b8bc8e02df939598064d22402220cd5bbcca1c76f7d6a310974d5615"
 dependencies = [
+ "chrono",
  "dyn-clone",
  "indexmap 1.9.3",
  "schemars_derive",
@@ -9492,9 +9566,9 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "stasis-rs"
-version = "0.9.3"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc963cb35259760147ac146ea5b4a389a1121d55df9993adcde2f155781822ea"
+checksum = "79fa0b90f9a04e8f83b9e071beb83ad74247dc6b70d19c660c6e5fa4d5384cdf"
 dependencies = [
  "anyhow",
  "askama",

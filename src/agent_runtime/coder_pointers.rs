@@ -196,7 +196,7 @@ pub fn engineering_pointer_prompt_appendix(pointers: &[CoderEngineeringPointer])
     );
     let _ = writeln!(
         out,
-        "    retrieval_contract(.99): \"Follow a pointer with cognition_engineering_pointer_follow. Unlock bounded history with cognition_coder_tools_discover(domain=history) only when the ranked view is insufficient.\""
+        "    retrieval_contract(.99): \"Follow a pointer with cognition_engineering_pointer_follow. cognition_coder_tools_discover describes the bounded history catalog without changing the tool surface.\""
     );
     let _ = writeln!(out, "}} ⟩");
     let _ = write!(

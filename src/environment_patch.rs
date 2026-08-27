@@ -432,7 +432,7 @@ struct EnvironmentPatchOutput {
 
 #[medousa_tool(id = COGNITION_ENVIRONMENT_PATCH_ID)]
 impl CognitionEnvironmentPatchTool {
-    /// Apply incremental environment spec ops. New custom surfaces, update_surface, set_environment_theme, and preset membership go live immediately; preset rewrites require operator approval.
+    /// Apply incremental environment spec ops for custom surfaces, themes, components, and preset membership.
     async fn invoke_typed(
         &self,
         input: EnvironmentPatchInput,

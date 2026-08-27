@@ -63,7 +63,7 @@ impl SealedCandidate {
 pub fn tool_definition() -> Tool {
     Tool::new(COGNITION_CODER_EXPERIMENT_COMPARE)
         .with_description(
-            "Compare 2–4 sealed experiment candidates using immutable Forge evidence, exact Git trees, and each candidate's temporally pinned engineering notebook. Live sibling worktrees are never read.",
+            "Compare 2–4 experiment candidates using their Git trees, evidence, and engineering notes.",
         )
         .with_schema(json!({
             "type": "object",

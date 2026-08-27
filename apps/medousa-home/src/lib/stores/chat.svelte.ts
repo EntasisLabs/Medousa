@@ -8,7 +8,7 @@ import type {
   PendingBrowserChallenge,
   TurnTicketState,
 } from "$lib/types/chat";
-import type { TurnStreamEnvelopeV2 } from "$lib/types/generated/daemon_api";
+import type { TurnStreamEnvelopeV3 } from "$lib/types/generated/daemon_api";
 import type { WorkCardDetail } from "$lib/types/card";
 import type { SessionSummary, TurnTicketRecord, TurnTicketResponse } from "$lib/types/session";
 import type { WorkCard } from "$lib/types/workspace";
@@ -726,7 +726,7 @@ export class ChatStore implements ChatStoreHost {
     settleTurnCtrl(this, turnId);
   }
 
-  applyStreamEvent(event: TurnStreamEnvelopeV2) {
+  applyStreamEvent(event: TurnStreamEnvelopeV3) {
     const owner = this.streamOwners.get(event.turn_id);
     const targetSession = owner?.sessionId?.trim() || this.sessionId;
     const appliedSeq = this.lastAppliedSeq(targetSession, event.turn_id);

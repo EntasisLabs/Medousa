@@ -232,12 +232,43 @@ impl TurnEventLog {
         emitted_at_utc: Option<chrono::DateTime<chrono::Utc>>,
         stream_event_v2: Option<medousa_types::TurnStreamEventV2>,
     ) -> std::io::Result<JournalAppendReceipt> {
+        self.append_sequenced_with_stream_views(seq, event, emitted_at_utc, stream_event_v2, None)
+    }
+
+    /// Append one native V3 fact and its optional downstream V2 compatibility
+    /// view in the same journal record.
+    pub fn append_sequenced_with_stream_v3(
+        &self,
+        seq: u64,
+        event: TurnEvent,
+        emitted_at_utc: Option<chrono::DateTime<chrono::Utc>>,
+        stream_event_v3: medousa_types::TurnStreamEventV3,
+        stream_event_v2: Option<medousa_types::TurnStreamEventV2>,
+    ) -> std::io::Result<JournalAppendReceipt> {
+        self.append_sequenced_with_stream_views(
+            seq,
+            event,
+            emitted_at_utc,
+            stream_event_v2,
+            Some(stream_event_v3),
+        )
+    }
+
+    fn append_sequenced_with_stream_views(
+        &self,
+        seq: u64,
+        event: TurnEvent,
+        emitted_at_utc: Option<chrono::DateTime<chrono::Utc>>,
+        stream_event_v2: Option<medousa_types::TurnStreamEventV2>,
+        stream_event_v3: Option<medousa_types::TurnStreamEventV3>,
+    ) -> std::io::Result<JournalAppendReceipt> {
         let terminal = event.is_terminal();
         let sequenced = SequencedTurnEvent {
             envelope: self.envelope.at_seq(seq),
             event,
             emitted_at_utc,
             stream_event_v2,
+            stream_event_v3,
         };
         let mut line = serde_json::to_vec(&sequenced).map_err(std::io::Error::other)?;
         line.push(b'\n');
@@ -751,6 +782,8 @@ fn history_turn(
     let parts = if parts.is_empty() {
         vec![TurnPart::Text {
             markdown: text.to_string(),
+            segment_id: None,
+            model_round: None,
         }]
     } else {
         parts.to_vec()
@@ -1162,6 +1195,7 @@ mod tests {
             },
             emitted_at_utc: None,
             stream_event_v2: None,
+            stream_event_v3: None,
         };
         let mut file = std::fs::OpenOptions::new().append(true).open(path).unwrap();
         writeln!(file, "{{malformed}}").unwrap();
@@ -1315,6 +1349,41 @@ mod tests {
             }
             other => panic!("unexpected replay payload: {other:?}"),
         }
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn native_v3_fact_survives_reopen_without_a_synthetic_v2_record() {
+        let root = tmp_root("native-v3-stream-replay");
+        let emitted_at = Utc::now();
+        let v3 = medousa_types::TurnStreamEventV3::AssistantTextStarted {
+            segment_id: "segment-1".into(),
+            model_round: 1,
+        };
+        {
+            let log = TurnEventLog::open_in(&root, env("turn-native-v3")).unwrap();
+            log.append_sequenced_with_stream_v3(
+                1,
+                TurnEvent::StreamMirror(serde_json::to_value(&v3).unwrap()),
+                Some(emitted_at),
+                v3.clone(),
+                None,
+            )
+            .unwrap();
+        }
+
+        let reopened = TurnEventLog::open_in(&root, env("turn-native-v3")).unwrap();
+        let replay = reopened.snapshot_since(0);
+        assert_eq!(replay.len(), 1);
+        assert_eq!(replay[0].emitted_at_utc, Some(emitted_at));
+        assert!(replay[0].stream_event_v2.is_none());
+        assert!(matches!(
+            replay[0].stream_event_v3.as_ref(),
+            Some(medousa_types::TurnStreamEventV3::AssistantTextStarted {
+                segment_id,
+                model_round: 1,
+            }) if segment_id == "segment-1"
+        ));
         fs::remove_dir_all(&root).ok();
     }
 

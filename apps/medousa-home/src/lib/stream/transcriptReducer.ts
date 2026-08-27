@@ -1,11 +1,6 @@
 /**
  * H09 Train 4.1 — typed transcript reducer.
  *
- * StreamEventPump coalesces v2 envelopes; this module is the only owner of
- * v2→legacy interpretation for chat transcript mutations. Side-effecting
- * events (permissions, workers, UI scenes) return `handled: false` so the
- * store can run them without importing v2ToLegacy.
- *
  * `applyStreamEventToMessage` is the focused-field body apply (H03): pure
  * message array in → next messages out. The store writes via `replaceMessageAt`.
  */
@@ -16,16 +11,14 @@ import type {
   InteractiveTurnStreamEvent,
   ToolRunState,
 } from "$lib/types/chat";
-import type { TurnStreamEnvelopeV2 } from "$lib/types/generated/daemon_api";
 import { mapStreamUiArtifact, replaceUiArtifactEntry } from "$lib/types/artifact";
-import { turnStreamV2ToLegacy } from "$lib/stream/v2ToLegacy";
 import { resolveTurnContent } from "$lib/utils/resolveTurnContent";
 import {
   isEngineTelemetryText,
   operatorStreamStatusLine,
   shouldSuppressStreamContentDelta,
 } from "$lib/utils/chatStreamDisplay";
-import { stageWhisperAfterFinish, statusLineAfterScratchReset } from "$lib/utils/turnInterimDisplay";
+import { stageWhisperAfterFinish } from "$lib/utils/turnInterimDisplay";
 import {
   isBudgetApprovalStreamEvent,
   isBrowserChallengeStreamEvent,
@@ -45,13 +38,6 @@ export type TranscriptReduceContext = {
   messageIdForToolStream: (turnId: string) => string | null;
   messageIndexForId: (messageId: string) => number;
   showEngineDetails: boolean;
-};
-
-export type TranscriptReduceResult = {
-  legacy: InteractiveTurnStreamEvent;
-  handled: boolean;
-  messages: ChatMessage[];
-  contextUsage?: ContextUsageReport;
 };
 
 export type StreamMessageApplyCtx = {
@@ -105,12 +91,6 @@ export type FocusedStreamApplyResult = {
   messages: ChatMessage[];
   remainder: FocusedStreamRemainder;
 };
-
-export function transcriptLegacyFromV2(
-  envelope: TurnStreamEnvelopeV2,
-): InteractiveTurnStreamEvent {
-  return turnStreamV2ToLegacy(envelope);
-}
 
 function replaceMessage(
   messages: ChatMessage[],
@@ -295,23 +275,6 @@ export function applyStreamEventToMessage(
     };
   }
 
-  if (event.event_type === "assistant_pack_hold") {
-    const held = event.final_text?.trim() || event.message?.trim() || current.content;
-    return {
-      messages: replaceMessage(messages, index, {
-        ...current,
-        content: held || current.content,
-        phase: "pack_hold",
-        streaming: true,
-        statusLine: event.operator_message?.trim() || "Medousa is finishing this thought…",
-        tools: event.tool_names?.length
-          ? [...new Set([...(current.tools ?? []), ...event.tool_names])]
-          : current.tools,
-      }),
-      followUp: "none",
-    };
-  }
-
   if (event.event_type === "turn_checkpoint") {
     const checkpointBody =
       event.final_text?.trim() || event.message?.trim() || current.content;
@@ -330,21 +293,6 @@ export function applyStreamEventToMessage(
     return {
       messages: next,
       followUp: event.terminal ? "checkpoint_terminal" : "none",
-    };
-  }
-
-  if (event.event_type === "scratch_reset") {
-    if (current.phase === "pack_hold") {
-      return { messages, followUp: "none" };
-    }
-    return {
-      messages: replaceMessage(messages, index, {
-        ...current,
-        content: "",
-        phase: "tool_loop",
-        statusLine: statusLineAfterScratchReset(current.content, current.statusLine),
-      }),
-      followUp: "none",
     };
   }
 
@@ -416,20 +364,10 @@ export function applyStreamEventToMessage(
   };
 }
 
-function applyMessageBody(
-  messages: ChatMessage[],
-  index: number,
-  event: InteractiveTurnStreamEvent,
-  showEngineDetails: boolean,
-): ChatMessage[] | null {
-  const result = applyStreamEventToMessage(messages, index, event, { showEngineDetails });
-  return result.followUp === "missing" ? null : result.messages;
-}
-
 /**
- * Focused-field leftover apply after `reduceTranscriptEnvelope` returns
- * `handled: false`. Mutates messages for tools/artifacts/body; remainder
- * actions (permissions, workers, orphan attach) stay with the store.
+ * Focused-field apply for internal worker-lane and compatibility events.
+ * Mutates messages for tools/artifacts/body; remainder actions stay with the
+ * store.
  */
 export function applyFocusedStreamEvent(
   messages: ChatMessage[],
@@ -562,110 +500,4 @@ export function applyFocusedStreamEvent(
   }
 
   return { messages, remainder: { type: "none" } };
-}
-
-/**
- * Apply a v2 envelope to transcript messages when the event is message-only.
- * Returns `handled: false` for worker/permission/terminal/orphan paths.
- */
-export function reduceTranscriptEnvelope(
-  messages: ChatMessage[],
-  envelope: TurnStreamEnvelopeV2,
-  ctx: TranscriptReduceContext,
-): TranscriptReduceResult {
-  const legacy = transcriptLegacyFromV2(envelope);
-
-  if (legacy.event_type === "context_usage" && legacy.context_usage) {
-    return {
-      legacy,
-      handled: true,
-      messages,
-      contextUsage: legacy.context_usage,
-    };
-  }
-
-  if (
-    legacy.terminal ||
-    isWorkerHandoffStreamEvent(legacy) ||
-    isWorkshopHandoffStreamEvent(legacy) ||
-    isBudgetApprovalStreamEvent(legacy) ||
-    legacy.event_type === "error" ||
-    legacy.event_type === "ui_scene" ||
-    legacy.event_type === "turn_checkpoint" ||
-    legacy.event_type === "permission_request" ||
-    legacy.event_type === "secret_request" ||
-    legacy.event_type === "browser_challenge" ||
-    legacy.event_type === "browser_navigated"
-  ) {
-    return { legacy, handled: false, messages };
-  }
-
-  if (legacy.event_type === "tool_started" || legacy.event_type === "tool_finished") {
-    const messageId = ctx.messageIdForToolStream(legacy.turn_id);
-    if (!messageId) return { legacy, handled: false, messages };
-    const next = applyToolStreamEvent(messages, ctx.messageIndexForId(messageId), legacy);
-    return next
-      ? { legacy, handled: true, messages: next }
-      : { legacy, handled: false, messages };
-  }
-
-  if (legacy.event_type === "artifact_presented" && legacy.ui_artifact) {
-    const messageId = ctx.messageIdForTurn(legacy.turn_id);
-    if (!messageId) return { legacy, handled: false, messages };
-    const idx = ctx.messageIndexForId(messageId);
-    const next = applyArtifactPresented(
-      messages,
-      idx,
-      legacy.ui_artifact,
-      legacy.root_artifact_id ?? null,
-    );
-    return next
-      ? { legacy, handled: true, messages: next }
-      : { legacy, handled: false, messages };
-  }
-
-  if (
-    legacy.event_type === "artifact_updated" &&
-    legacy.ui_artifact &&
-    legacy.previous_artifact_id
-  ) {
-    const messageId = ctx.messageIdForTurn(legacy.turn_id);
-    if (!messageId) return { legacy, handled: false, messages };
-    const idx = ctx.messageIndexForId(messageId);
-    const next = applyArtifactUpdated(
-      messages,
-      idx,
-      legacy.previous_artifact_id,
-      legacy.root_artifact_id ?? null,
-      legacy.ui_artifact,
-    );
-    return next
-      ? { legacy, handled: true, messages: next }
-      : { legacy, handled: false, messages };
-  }
-
-  const messageId = ctx.messageIdForTurn(legacy.turn_id);
-  if (!messageId) return { legacy, handled: false, messages };
-
-  if (
-    legacy.event_type === "content_delta" ||
-    legacy.event_type === "reasoning_delta" ||
-    legacy.event_type === "model_receipt" ||
-    legacy.event_type === "assistant_message" ||
-    legacy.event_type === "turn_progress" ||
-    legacy.event_type === "assistant_pack_hold" ||
-    legacy.event_type === "scratch_reset"
-  ) {
-    const next = applyMessageBody(
-      messages,
-      ctx.messageIndexForId(messageId),
-      legacy,
-      ctx.showEngineDetails,
-    );
-    return next
-      ? { legacy, handled: true, messages: next }
-      : { legacy, handled: false, messages };
-  }
-
-  return { legacy, handled: false, messages };
 }

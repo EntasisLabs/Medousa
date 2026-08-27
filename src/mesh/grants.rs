@@ -5,6 +5,8 @@ use crate::pairing::{PairedDeviceRecord, PairingRole};
 pub const CAP_MESH_MESSAGE: &str = "mesh.message";
 pub const CAP_MESH_BUNDLE_PUSH: &str = "mesh.bundle.push";
 pub const CAP_TASK_REQUEST: &str = "task.request";
+/// Signed terminal response correlated to an admitted task request.
+pub const CAP_TASK_RESULT: &str = "task.result";
 /// Client↔client introduce via this workshop (endpoint-hint exchange). Not implied by portal.
 pub const CAP_CLIENT_RENDEZVOUS: &str = "client.rendezvous";
 /// Reserved — scoped signaling/byte relay. Not issued in M4+ v1.

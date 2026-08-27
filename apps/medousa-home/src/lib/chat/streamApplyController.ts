@@ -19,9 +19,13 @@ import type { StreamEventTarget } from "$lib/stream/eventPump";
 import {
   applyFocusedStreamEvent,
   applyStreamEventToMessage as reduceStreamEventToMessage,
-  reduceTranscriptEnvelope,
   type StreamMessageFollowUp,
 } from "$lib/stream/transcriptReducer";
+import {
+  applyV3EnvelopeToMessage,
+  v3EventPromotesChatMessage,
+} from "$lib/stream/v3TranscriptReducer";
+import { v3PresentationEvent } from "$lib/stream/v3PresentationAdapter";
 import { stageWhisperAfterFinish } from "$lib/utils/turnInterimDisplay";
 import { chatSettingsPort } from "$lib/runtime/chatSettingsPort";
 import {
@@ -49,26 +53,136 @@ const CONTENT_REVEAL_INTERVAL_MS = 16;
 
 export function applyPumpedStreamEvent(host: ChatStoreHost, target: StreamEventTarget) {
   host.withSessionFields(target.sessionId, () => {
-    const messageIndexes = host.currentMessageIndexes();
-    const reduced = reduceTranscriptEnvelope(host.messages, target.event, {
-      messageIdForTurn: (turnId) => host.messageIdForTurn(turnId),
-      messageIdForToolStream: (turnId) => host.messageIdForToolStream(turnId),
-      messageIndexForId: (messageId) => messageIndexes.byId.get(messageId) ?? -1,
-      showEngineDetails: chatSettingsPort().showEngineDetailsInChat(),
-    });
-    if (reduced.handled) {
-      if (!isRelevantStreamEvent(host, reduced.legacy)) return;
-      if (!applyStreamSeq(host.lastSeqByTurn, reduced.legacy)) return;
-      host.messages = reduced.messages;
-      host.messageIndexes.set(host.sessionId, {
-        ...messageIndexes,
-        messages: host.messages,
-      });
-      if (reduced.contextUsage) host.contextUsage = reduced.contextUsage;
-      return;
+    const envelope = target.event;
+    const event = envelope.event;
+    const presentation = v3PresentationEvent(envelope);
+    if (!isRelevantStreamEvent(host, presentation)) return;
+    if (!applyStreamSeq(host.lastSeqByTurn, envelope)) return;
+
+    if (
+      event.type === "status" &&
+      event.phase === "permission_resolved" &&
+      host.permissionAlert?.turnId === envelope.turn_id
+    ) {
+      host.clearPermissionAlert();
     }
-    applyStreamEventOnFocusedFields(host, reduced.legacy);
+    if (event.type !== "secret_request" && host.secretAlert?.turnId === envelope.turn_id) {
+      host.clearSecretAlert();
+    }
+    if (
+      event.type !== "error" &&
+      event.type !== "context_usage" &&
+      event.type !== "worker_synthesis"
+    ) {
+      syncTurnFromEvent(host, presentation);
+    }
+
+    const messageId =
+      event.type === "tool_started" || event.type === "tool_finished"
+        ? host.messageIdForToolStream(envelope.turn_id)
+        : host.messageIdForTurn(envelope.turn_id);
+    if (messageId) {
+      const index = host.messageIndexForId(messageId);
+      if (index >= 0) {
+        host.replaceMessageAt(
+          index,
+          applyV3EnvelopeToMessage(host.messages[index], envelope),
+        );
+      }
+    } else if (v3EventPromotesChatMessage(event)) {
+      attachOrphanV3(host, target);
+    }
+
+    switch (event.type) {
+      case "context_usage":
+        host.contextUsage = event.report;
+        return;
+      case "worker_synthesis":
+        handleWorkerSynthesisStreamEvent(host, presentation);
+        return;
+      case "browser_challenge":
+        host.handleBrowserChallenge(presentation);
+        return;
+      case "permission_request":
+        host.handlePermissionRequest(presentation);
+        return;
+      case "secret_request":
+        host.handleSecretRequest(presentation);
+        return;
+      case "browser_navigated":
+        host.handleBrowserNavigated(presentation);
+        return;
+      case "ui_scene":
+        if (messageId) {
+          chatScenes.applyWire(
+            messageId,
+            event.scene.surface_id?.trim() || `chat:${envelope.turn_id}`,
+            event.scene.ops ?? [],
+          );
+        }
+        return;
+      case "worker_ack":
+        if (messageId) {
+          releaseComposerHandoff(
+            host,
+            messageId,
+            event.ack_kind === "workshop" ? "workshop_ack" : "worker_ack",
+            presentation,
+          );
+          host.scheduleSessionsRefresh();
+        }
+        return;
+      case "budget_approval_required":
+        if (messageId) {
+          releaseComposerHandoff(host, messageId, "budget_approval", presentation);
+        }
+        return;
+      case "turn_completed":
+        if (event.outcome === "failed" || event.outcome === "fuse_exhausted") {
+          handleTurnError(host, presentation);
+        } else if (messageId) {
+          runMessageFollowUp(host, presentation, "terminal", messageId);
+        } else {
+          noteTurnTerminal(host, presentation);
+          finishAskLaneTurn(host, envelope.turn_id);
+        }
+        return;
+      default:
+        return;
+    }
   });
+}
+
+function attachOrphanV3(host: ChatStoreHost, target: StreamEventTarget) {
+  const envelope = target.event;
+  const turn = host.turns.get(envelope.turn_id);
+  const background = turn?.mode === "background";
+  const id = randomUuid();
+  const seed = applyV3EnvelopeToMessage(
+    {
+      id,
+      role: "assistant",
+      content: "",
+      segments: [],
+      streaming: envelope.event.type !== "turn_completed",
+      turnId: envelope.turn_id,
+      lane: background ? "ask" : "chat",
+      askJobId: background ? turn?.workspaceCardId ?? envelope.turn_id : null,
+      phase: null,
+      statusLine: null,
+    },
+    envelope,
+  );
+  host.appendMessage(seed);
+
+  if (turn) {
+    const next = new Map(host.turns);
+    next.set(envelope.turn_id, { ...turn, messageId: id });
+    host.turns = next;
+  }
+  if (turn?.mode === "interactive" && envelope.event.type !== "turn_completed") {
+    host.assistantId = id;
+  }
 }
 
 export function applyStreamEventOnFocusedFields(

@@ -68,8 +68,9 @@ pub use reconnect::{
 };
 #[cfg(all(feature = "async", feature = "sse"))]
 pub use reconnecting_stream::{
-    ReconnectingInteractiveStream, ReconnectingInteractiveStreamV2, ReconnectingTurnStream,
-    apply_stream_seq, apply_stream_seq_v2,
+    ReconnectingInteractiveStream, ReconnectingInteractiveStreamV2,
+    ReconnectingInteractiveStreamV3, ReconnectingTurnStream, apply_stream_seq, apply_stream_seq_v2,
+    apply_stream_seq_v3,
 };
 
 #[cfg(feature = "blocking")]

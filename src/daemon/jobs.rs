@@ -602,7 +602,7 @@ pub async fn enqueue_prompt(
     let payload = PromptJobPayload {
         user_prompt: compiled_prompt,
         system_prompt: request.system_prompt.or(Some(
-            crate::agent_runtime::LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT.to_string(),
+            crate::agent_runtime::lightweight_channel_system_prompt(),
         )),
         policy_profile: Some(effective_policy_profile),
         model_hint: request.model_hint,

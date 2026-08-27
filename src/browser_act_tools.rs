@@ -259,7 +259,7 @@ impl TryFrom<BrowserActInput> for BrowserActCommand {
 
 #[medousa_tool(id = COGNITION_BROWSER_ACT_ID)]
 impl CognitionBrowserActTool {
-    /// Act on the shared human Web tab (click, type, press, scroll, select, wait). Requires a browser-capable client (Home desktop/iOS) and agent control of the tab. Use cognition_browser_snapshot first to discover selectors.
+    /// Click, type, press, scroll, select, or wait on the shared Web tab. Use cognition_browser_snapshot to find selectors.
     async fn invoke_typed(&self, input: BrowserActInput) -> stasis::prelude::Result<ExternalJson> {
         if !self.browser_enabled().await {
             return Err(StasisError::PortFailure(format!(

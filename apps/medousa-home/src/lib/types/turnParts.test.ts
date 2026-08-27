@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  chatSegmentsFromParts,
   composeTurnMarkdown,
   hostContextFromParts,
   hostContextLabel,
@@ -37,6 +38,70 @@ describe("turnParts", () => {
       { kind: "text", markdown: "Done." },
     ];
     expect(progressFromParts(parts)).toBe("Step two");
+  });
+
+  it("hydrates native V3 parts as an honest chronological segment timeline", () => {
+    const parts: TurnPart[] = [
+      {
+        kind: "text",
+        markdown: "Let me check.",
+        segment_id: "segment-a",
+        model_round: 1,
+      },
+      {
+        kind: "tool_run",
+        run_id: "run-1",
+        tool_name: "vault.read",
+        status: "succeeded",
+        input_summary: "read note",
+        tool_round: 1,
+      },
+      {
+        kind: "tool_run",
+        run_id: "run-2",
+        tool_name: "web.search",
+        status: "succeeded",
+        input_summary: "search topic",
+        tool_round: 1,
+      },
+      {
+        kind: "text",
+        markdown: "Found it.",
+        segment_id: "segment-b",
+        model_round: 2,
+      },
+    ];
+
+    const segments = chatSegmentsFromParts(parts);
+    expect(segments?.map((segment) => segment.kind)).toEqual([
+      "text",
+      "tool_group",
+      "text",
+    ]);
+    expect(segments?.[1]).toEqual(
+      expect.objectContaining({
+        kind: "tool_group",
+        runs: [
+          expect.objectContaining({ runId: "run-1" }),
+          expect.objectContaining({ runId: "run-2" }),
+        ],
+      }),
+    );
+  });
+
+  it("leaves legacy parts on the legacy layout instead of inventing chronology", () => {
+    expect(
+      chatSegmentsFromParts([
+        { kind: "text", markdown: "Old answer" },
+        {
+          kind: "tool_run",
+          run_id: "run-1",
+          tool_name: "vault.read",
+          status: "succeeded",
+          input_summary: "read note",
+        },
+      ]),
+    ).toBeUndefined();
   });
 
   it("maps attachment_ref parts to ui artifacts", () => {

@@ -22,6 +22,7 @@ EXPORTED_TYPES = [
     "SessionHistoryResponse",
     "InteractiveTurnStreamEvent",
     "TurnStreamEnvelopeV2",
+    "TurnStreamEnvelopeV3",
     "InteractiveTurnResponse",
     "InteractiveTurnRequest",
     "SetSessionAgentModeRequest",

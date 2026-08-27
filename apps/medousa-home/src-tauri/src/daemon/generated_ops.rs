@@ -528,6 +528,8 @@ pub enum DaemonOperation {
     MeshReceiptsGet,
     #[serde(rename = "mesh.receipts.post")]
     MeshReceiptsPost,
+    #[serde(rename = "mesh.tasks.post")]
+    MeshTasksPost,
     #[serde(rename = "models.capabilities.get")]
     ModelsCapabilitiesGet,
     #[serde(rename = "models.catalog.get")]
@@ -1067,6 +1069,7 @@ impl DaemonOperation {
             Self::MeshPeersGet => "mesh.peers.get",
             Self::MeshReceiptsGet => "mesh.receipts.get",
             Self::MeshReceiptsPost => "mesh.receipts.post",
+            Self::MeshTasksPost => "mesh.tasks.post",
             Self::ModelsCapabilitiesGet => "models.capabilities.get",
             Self::ModelsCatalogGet => "models.catalog.get",
             Self::ModelsCatalogRefreshPost => "models.catalog.refresh.post",

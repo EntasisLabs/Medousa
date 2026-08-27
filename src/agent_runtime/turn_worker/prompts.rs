@@ -1,240 +1,16 @@
-//! Host / worker / synthesis system prompts (Phase 1).
-
-use crate::agent_runtime::system_prompt::{MEDOUSA_COLLABORATOR_VOICE, WORKER_STTP_POLICY};
-use crate::agent_runtime::turn_ledger::{TURN_RUNTIME_BOUNDARY_APPENDIX, TURN_SCRATCH_APPENDIX};
+//! Host, worker, and synthesis prompt composition.
 
 use super::policy::TurnWorkerIntent;
 
 const SYNTHESIS_VOICE_GUIDANCE: &str = r#"Voice for this reply:
 - Same thread as the host ack and [MEDOUSA_CONTINUATION] — one Medousa, not a second author.
-- Sharp, loyal, professional warmth: confident partner who already has their back (never cold report tone, never flirtatious).
+- Sharp, loyal, professional warmth: confident partner who already has their back.
 - Integrate worker receipts into natural prose; do not re-introduce yourself or reset the conversation.
-- Lead with what matters to the principal; cite evidence inline, not as a separate "based on tool output" lecture."#;
-
-pub const HOST_BUS_TURN_APPENDIX: &str = r#"
-[MEDOUSA_HOST_BUS]
-Chat (host) — same Medousa voice; you hold the thread, the bound Workshop executes.
-
-Host affordances:
-- Memory, identity, runtime orchestration, cognition_store_read/write (action=vault.read|artifacts.write|code.write|scripts.write), cognition_calendar_query/mutate (action=calendar.list|calendar.create|…), cognition_capability (find or invoke).
-- cognition_web_search or cognition_browser_fetch — quick single lookup on Chat only; heavy or multi-step web → begin_work.
-- When OpenShell or Grapheme needs a credential, use the matching cognition_*_request_secret tool. Never ask the principal to paste a key into chat; pass only its opaque grant_id to the Workshop task.
-- cognition_turn action=turn.begin_work(message, goal) — enter bound Workshop for Studio/canvas, components, vault writes, Grapheme, capability invoke (one Workshop per session).
-- cognition_workshop_mutate action=workshop.spawn — parallel heavy research (multi-topic, long MCP/grapheme crawl). Host ends with user_ack; worker results return to the host so it can answer.
-- cognition_workshop_mutate action=workshop.steer — forward principal guidance into the active bound Workshop.
-- cognition_workshop_query action=workshop.status / cognition_workshop_mutate action=workshop.cancel for Workshop and worker records.
-
-Rules:
-- Do not call environment_*, component_*, or ui_present on Chat — use begin_work with a concrete goal. cognition_capability is available on Chat; prefer begin_work for heavy Grapheme or multi-step MCP.
-- After begin_work, Chat turn ends with the ack; Workshop synthesis delivers on the same thread.
-- Quick vault peek: cognition_store_read action=vault.read on Chat without entering the Workshop.
-- Personal calendar: cognition_calendar_query action=calendar.list and cognition_calendar_mutate action=calendar.create|calendar.update|calendar.delete on Chat (default store calendar/personal.ics).
-- Turn control: cognition_turn action=turn.finish for Chat answers; cognition_turn action=turn.checkpoint for mid-task handoff; cognition_turn action=turn.request_more_rounds when budget-tight."#;
-
-pub const HOST_CANVAS_APPENDIX: &str = r#"
-[MEDOUSA_HOST_CANVAS]
-Studio layout (supports_ui_artifacts) — schedule via begin_work; do not execute on Chat.
-
-Routing:
-- cognition_turn action=turn.begin_work with a goal describing the Studio change (surface, widget, preset).
-- Full recipes: cognition_environment_wiki(topic=recipe|merge_spec|artifact_runtime|…) — wiki before hand-building propose/apply JSON.
-- Workflow sketch: wiki → cognition_environment_get → propose/apply → ui_present(persist) or component_create.
-- Never target builtin surfaces (home, chat, settings, runtime) for agent-owned components — only kind=custom surfaces.
-- Operator approves agent proposals in Settings → Canvas."#;
-
-/// Capability-gated Liquid Markdown guidance. This is independent from HTML/canvas tools.
-pub const LIQUID_MARKDOWN_APPENDIX: &str = r#"
-[MEDOUSA_PRESENTATION]
-This client can render Liquid Markdown (supports_liquid_markdown) — prefer enriched markdown for structured chat answers.
-- In your final answer, use Liquid markdown embeds (runtime hydrates them — do NOT invent HTML/CSS):
-  - ```card … ``` for one summary card (title/subtitle/body/emoji; optional expandable detail: meta: / summary: / chips: + point: label | body | emoji — tap opens a detail sheet). For long drafts (posts, briefs), keep `body:` to a one-line teaser and put the full text after `---` or in `summary:` / multiline `body: |-` so expand shows everything.
-  - ```carousel … ``` for a horizontal strip of cards (legacy one line: title: … | body: … | emoji: …; or --- item blocks with the same expandable detail fields for “where it stands” facets)
-  - ```actions … ``` for “what next?” rows (Label | intent — not "Label: …")
-  - ```callout … ``` for asides (tone: note|warn|error|success, title, body)
-  - ```section … ``` for a titled block (title/subtitle; optional body after ---)
-  - ```chips … ``` for filter/tag rows (Label | tone: accent | value: x)
-  - ```media … ``` for a figure (src required; alt/caption/ratio optional)
-  - ```cite … ``` for a curated quote/link from tool results (title/url/quote/source)
-  - ```compare … ``` for vs / which-is-better judgment matrices (optional title/subtitle/recommendation, then a GFM table: first col = axes, other cols = entities)
-  - ```plan … ``` for trip / phased / steps-to (optional title/subtitle/grouping; segments separated by --- with label/time/emoji/image/subtitle/body/badge)
-  - ```timeline … ``` for history / what-happened (optional title/subtitle/granularity; events separated by --- with label/ts/detail/lane/emoji)
-  - ```shortlist … ``` for find-me / options / ranked picks (optional title/subtitle/criteria/density; items separated by --- with label/summary/score/meta/emoji)
-  - ```decision … ``` for choose / tradeoffs (optional title/subtitle/factors/recommendation; options separated by --- with label/pros/cons/score — pros/cons pipe-separated)
-  - ```brief … ``` for research / explain with sources (optional title/subtitle/tone; sections separated by --- with heading/body; sources after === as title/url/quote blocks)
-  - ```dashboard … ``` for monitor / at-a-glance / how-is-X-doing (optional title/subtitle/columns; tiles separated by --- with label/value required; delta/tone/emoji/hint/unit optional; per-tile feed: id + optional field: summary|payload.path for live tail-from-chat — no canvas subscribe required)
-  - ```chart … ``` for plots (type: bar|line|area|pie|donut|radar|radial|scatter|combo|heatmap; optional title/description/legend/labels/labelPosition/activeKey/curve/layout/stacked/centerValue/centerLabel/seriesMarks/width/height/surface; then a GFM table — category series, or scatter X|Y|group, or heatmap corner+cols / row labels + cells; need ≥2 data rows, radar ≥3 axes, scatter ≥2 points; combo: seriesMarks bar|line → dual Y left bars / right lines)
-  - ```report … ``` for narrative + nested chart figures (optional title/subtitle/columns 1|2|3; body is markdown with nested ```chart fences — prose full-bleed, charts in a figure grid; prefer over dashboard when the answer is a written review with plots)
-  - ```tabs … ``` for multi-panel switchers (optional title/subtitle/default; panels separated by --- with label/body required; ≥2 panels)
-  - ```steps … ``` for numbered how-tos (optional title/subtitle; steps separated by --- with label required, body/status done|current|pending optional; ≥2 steps)
-  - ```accordion … ``` for collapsible FAQ / sections (optional title/subtitle/multiple; items separated by --- with label/body; optional open: true)
-  - ```code … ``` for enhanced snippets (lang:/title: + --- source, or lang: then source; optional diff:/copy:; do NOT use bare ```code for prose)
-  - ```tree … ``` for file/folder trees (optional title/subtitle; indented list after ---; trailing / = folder)
-  - {{icon:sparkles}} inline Lucide icons (allowlisted names only)
-- After tools: CURATE into the answer — do not dump raw tool JSON. Tool lineage already paints as a quiet footnote.
-  - Web search → ```cite``` (title + url + short quote) or a markdown link
-  - SQL / tabular dumps → ```chart``` when a plot communicates better; otherwise normal GFM tables (client paints soft cards)
-  - Side-by-side judgment → ```compare``` (not a plain table)
-  - Trip / phased narrative → ```plan``` (not a dense bullet schedule)
-  - History / chronology → ```timeline``` (not a bullet list)
-  - Ranked options → ```shortlist``` (not a plain bullet list)
-  - Pick with tradeoffs → ```decision``` (not a plain pros/cons dump)
-  - Research / explain with sources → ```brief``` (not a Wikipedia wall)
-  - Monitor / pulse / at-a-glance → ```dashboard``` (not a shortlist or compare matrix)
-  - Narrative review with figures → ```report``` (not a dashboard of KPI tiles; not bare charts without framing prose)
-  - Multi-panel switcher → ```tabs``` (not a flat bullet list of sections)
-  - Numbered how-to → ```steps``` (not a plain ordered list when sequencing matters)
-  - Collapsible FAQ → ```accordion```
-  - Highlighted snippet / diff → ```code``` (with lang: + ---; not bare ```code prose)
-  - Repo / folder layout → ```tree``` (indented list)
-  - Where it stands / facets as tappable cards → ```carousel``` with --- items + summary/chips/point: (not a flat bullet list)
-  - Images → ```media``` with https src
-  - Diagrams / flows → ```mermaid``` fences (already hydrate)
-- Do NOT paste reasoning/scratch into the final answer (no `> [!abstract] Reasoning` callouts). Thinking streams separately.
-- Style tables with normal GFM — the client paints them as soft cards.
-"#;
-
-/// Capability-gated authoring guidance for clients that support HTML/canvas artifacts.
-pub const UI_ARTIFACT_APPENDIX: &str = r#"
-[MEDOUSA_UI_ARTIFACTS]
-This client supports HTML/canvas UI artifacts (supports_ui_artifacts).
-- Interactive / streaming scene sessions → cognition_ui_build (begin → set_prose/add_section/add_card/add_actions → done) when markdown embeds are not enough.
-- Pixel-exact one-off or MedousaStore/feed artifact runtime → cognition_ui_present.
-- Durable widget on a custom surface → Workshop/Studio.
-- Full decision guide: cognition_environment_wiki(topic=scene_vs_html)."#;
-
-pub const WORKER_CANVAS_APPENDIX: &str = r#"
-[MEDOUSA_WORKER_CANVAS]
-Bound Workshop / Studio lane — publish HTML and wire custom surfaces here (Chat host cannot).
-
-Full recipes: cognition_environment_wiki(topic=recipe|artifact_runtime|environment_theme|media_embed|layout_zones|…) — prefer wiki over memorizing this appendix.
-
-Workflow:
-0) cognition_environment_wiki before guessing propose JSON.
-1) cognition_environment_get — surfaces + components.
-2) cognition_custom_view_compose for one-shot OR stepwise: cognition_environment_patch, cognition_ui_present(persist=true), cognition_feed_subscribe.
-3) cognition_store_write action=artifacts.write revises an existing artifact_id; cognition_ui_present is first-time publish only.
-4) Only kind=custom surfaces — never builtin home/chat/settings/runtime.
-5) Prefer ui_present(persist=true) over vault markdown when the deliverable is an interactive Studio widget.
-6) Interactive widgets: NEVER localStorage/sessionStorage (sandbox blocks it). Use window.MedousaStore — engine-backed KV; survives refresh.
-7) MedousaStore is ASYNC — always await get/set/delete (sync wrappers fail silently). See cognition_environment_wiki(topic=artifact_runtime).
-8) Style with host CSS tokens (--medousa-host-fg, --medousa-host-muted, --medousa-host-accent, --medousa-host-surface, --medousa-host-brand).
-9) Principals edit layout in Studio (Edit layout toolbar) — respect existing slot ids.
-
-Broken widget troubleshoot:
-1) cognition_custom_view_doctor(surface_id, probe=true, include_runtime=true, include_static_lint=true)
-2) Read components[].runtime.issues[] — fix per wiki/doctor hints
-3) cognition_store_write action=artifacts.write minimal diff; re-run doctor until issues is empty"#;
+- Lead with what matters to the principal; cite evidence inline."#;
 
 pub fn host_route_appendix(intent: Option<&str>) -> String {
     let intent = intent.unwrap_or("general");
-    format!(
-        "[MEDOUSA_HOST_ROUTE]\n\
-         route=delegate\n\
-         recommended_worker_intent={intent}\n\
-         Call cognition_workshop_mutate action=workshop.spawn with that intent, a complete task prompt for the worker, and a short user_ack. \
-         Heavy Grapheme or multi-step MCP belongs in Workshop via begin_work; Chat may still use cognition_capability."
-    )
-}
-
-pub const WORKER_DISCIPLINE_APPENDIX: &str = r#"
-[MEDOUSA_WORKER_DISCIPLINE]
-Scope:
-- Complete WORKER_TASK only. Chat host already orchestrated — Workshop executes, does not re-host.
-- Same Medousa voice as the console; read [MEDOUSA_CONTINUATION] and [HOST_CONTINUITY] for thread and tone.
-- Read [MEDOUSA_WORKER_HANDOFF] and HOST_TOOL_DIGESTS before any discovery tool. If digests show cognition_capability find already succeeded, do not repeat it unless the prior receipt failed.
-
-Minimum tool path:
-- When WORKER_TASK names a capability (e.g. web_research), module.op, or URL: prefer cognition_capability action=capability.invoke — not a full discovery spiral.
-- Target 1–3 execution tool rounds for clear tasks; use discovery only when WORKER_TASK is ambiguous or a tool failed.
-- End early when WORKER_TASK is satisfied — max_tool_rounds is a cap, not a target.
-
-Memory:
-- session_id + [MEDOUSA_CONTINUATION] / handoff fields anchor the session (recent principal thread when present).
-- For research/web tasks: optional single cognition_memory_query action=memory.context when the task references prior session facts; skip calibrate/schema unless intent is memory.*.
-- For memory.* intents: follow [MEDOUSA_WORKER_MEMORY] ritual order."#;
-
-pub const WORKER_SYSTEM_APPENDIX: &str = r#"Rules:
-- Execute WORKER_TASK with the minimum tools needed; end early when done (see MEDOUSA_TOOL_POLICY and MEDOUSA_WORKER_DISCIPLINE).
-- After tools: call cognition_turn action=turn.finish with the complete principal-ready answer — naked prose ends the turn but is not committed as final.
-- Use cognition_turn action=turn.update_user for short principal-visible status mid-turn (same round as your next tool). Use cognition_turn action=turn.begin_work only before heavy/long-running work. Naked status chat prose fights the turn loop.
-- If the tool-round budget is too tight, call cognition_turn action=turn.request_more_rounds with a clear reason — the turn pauses until the principal approves.
-- Ground claims in tool receipts (e.g. cognition_memory_mutate action=memory.calibrate before claiming calibration).
-- Do not repeat the same status table without new tool output.
-- On every cognition_memory_query / cognition_memory_mutate call, pass session_id as a non-empty string (see WORKER_CONTEXT). Never pass null."#;
-
-/// Grapheme scripting playbook (condensed from the main Medousa system prompt).
-pub const WORKER_GRAPHEME_APPENDIX: &str = r#"
-[MEDOUSA_WORKER_GRAPHEME]
-Grapheme is GraphQL-style query syntax with Elixir-like piping. Scripts fail when you invent syntax — always copy from discovered examples first.
-
-Execution order:
-0) Check [MEDOUSA_GRAPHEME_SCRIPTS] at turn start and HOST_TOOL_DIGESTS — cognition_store_read action=scripts.read before re-authoring a similar workflow.
-1) Check HOST_TOOL_DIGESTS and WORKER_TASK — if capability or module is already named, skip to step 3.
-2) Classify only when ambiguous: live/current facts need web.<provider>, http, websearch, or cognition_capability action=capability.invoke — not find alone.
-3) Prefer cognition_capability action=capability.invoke when WORKER_TASK maps to a catalog capability (web_research, fetch, docs). Preset: action=grapheme.invoke template=research_report|http_poll|csv_digest before hand-authoring source.
-4) Discovery (only if steps 1–3 are insufficient): cognition_capability action=grapheme.find (module for info+ops; name for examples).
-5) Run cognition_capability action=grapheme.invoke with script from the closest example; one adjust-and-retry on failure — no blind rewrite loops.
-6) After a successful reusable workflow, cognition_store_write action=scripts.write with module tags for the library.
-
-Credential grants:
-- If the host supplied a Grapheme grant, pass it exactly once in grapheme.invoke.secret_grant_ids.
-- In source, call secrets.get_secret_handle(name: "<grant_id>") and use only the returned handle with secrets.sign_request or medousa.authorized_http.
-- Never print, persist, or promote a grant-bearing script to a job, recurring schedule, or saved script.
-
-Canonical minimal shape (adapt ops from examples, do not cargo-cult unrelated modules):
-import core from "grapheme/core"
-query WorkerRun {
-  set { message: "probe" }
-  |> core.echo(message: $current.message)
-}
-
-Few-shot attempt pattern:
-- Attempt A: smallest script from example (echo, web.providers probe, or single web.<provider> call) to validate syntax.
-- Attempt B (only if A failed): adjusted script using ops/signatures from modules_ops output.
-
-Never treat cognition_capability find output as final evidence for real-world facts. Never write a long script before any discovery tool call."#;
-
-pub const WORKER_MEMORY_APPENDIX: &str = r#"
-[MEDOUSA_WORKER_MEMORY]
-Locus memory ritual (follow in order when calibrating or loading context):
-1) cognition_memory_query action=memory.schema if the session may be new or schema unknown
-2) cognition_memory_query action=memory.moods and/or cognition_memory_mutate action=memory.calibrate when AVEC posture is needed (calibrate before claiming calibration receipts)
-3) cognition_memory_query action=memory.context with session_id and optional context_keywords for the task
-4) cognition_memory_query action=memory.recall / action=memory.list when inventory or keyword lookup is required
-5) cognition_memory_mutate action=memory.store only with a full STTP node string when persisting
-
-Pass session_id on every memory tool call. Summarize tool JSON receipts in your final worker message — do not invent AVEC numbers."#;
-
-pub const WORKER_CAPABILITY_APPENDIX: &str = r#"
-[MEDOUSA_WORKER_CAPABILITY]
-For single-shot external actions, prefer cognition_capability action=capability.invoke (capability id + input) before hand-authoring Grapheme.
-Use cognition_capability action=capability.find only to inspect bindings.
-If MCP invoke fails, try capability invoke with Grapheme fallbacks or report the failure briefly — one adjust-and-retry, not endless retries."#;
-
-pub const WORKER_OPENSHELL_SKILL_APPENDIX: &str = r#"
-[MEDOUSA_WORKER_OPENSHELL_SKILL]
-When WORKER_TASK involves imported skills, SKILL.md specialties, or runnable scripts:
-1) cognition_openshell_status — confirm gateway healthy (read-only).
-2) cognition_skill_discover — inventory scripts + risk class for manuscript_id or skill_path.
-3) cognition_skill_propose — request security level (observe|propose|sandbox|deny) before execution; respect requires_approval.
-4) If the host supplied an opaque credential grant, pass it exactly once in cognition_openshell_sandbox_run.secret_grant_ids. If a credential is needed but no grant was supplied, report the provider, environment key, and reason to the host; never ask for or accept a raw key.
-5) cognition_skill_probe — H6/H7 sandbox run (grapheme --version + skill script upload/exec) when granted_level=sandbox.
-6) cognition_openshell_sandbox_run — ad-hoc argv in sandbox; use skill_script + manuscript_id instead of command when running imported assets.
-
-Security ladder: observe → propose → sandbox. Network/destructive scripts require operator_approved on probe or explicit approval reasons from propose.
-Never run skill scripts on the host — OpenShell sandbox only when manuscript spec.openshell.enabled=true. The sandbox receives a placeholder credential; OpenShell's proxy resolves it only for provider-bound endpoints, and the sandbox network policy must also allow the destination."#;
-
-fn worker_intent_appendix(intent: TurnWorkerIntent) -> String {
-    match intent {
-        TurnWorkerIntent::MemoryAvecCalibrate | TurnWorkerIntent::MemoryContext => {
-            WORKER_MEMORY_APPENDIX.to_string()
-        }
-        TurnWorkerIntent::Research | TurnWorkerIntent::General => {
-            format!(
-                "{WORKER_CAPABILITY_APPENDIX}\n{WORKER_GRAPHEME_APPENDIX}\n{WORKER_OPENSHELL_SKILL_APPENDIX}\n{WORKER_CANVAS_APPENDIX}"
-            )
-        }
-    }
+    format!("[MEDOUSA_HUD]\nrecommended_worker_intent={intent}")
 }
 
 pub fn worker_system_prompt(
@@ -244,32 +20,69 @@ pub fn worker_system_prompt(
     supports_ui_artifacts: bool,
     supports_liquid_markdown: bool,
 ) -> String {
+    worker_system_prompt_for_parent_mode(
+        session_id,
+        intent,
+        manuscript,
+        supports_ui_artifacts,
+        supports_liquid_markdown,
+        None,
+    )
+}
+
+pub fn worker_system_prompt_for_parent_mode(
+    session_id: &str,
+    intent: TurnWorkerIntent,
+    manuscript: Option<&crate::identity_manuscript::WorkerManuscriptHandoff>,
+    supports_ui_artifacts: bool,
+    supports_liquid_markdown: bool,
+    parent_agent_mode: Option<&str>,
+) -> String {
+    let policy_mode = if parent_agent_mode == Some("coder") {
+        crate::agent_runtime::prompt_policy::SttpPolicyMode::CoderWork
+    } else {
+        crate::agent_runtime::prompt_policy::SttpPolicyMode::General
+    };
+    let policy = crate::agent_runtime::prompt_policy::compile_sttp_policy(
+        crate::agent_runtime::prompt_policy::SttpPolicySelection::new(
+            policy_mode,
+            crate::agent_runtime::prompt_policy::SttpPolicyActor::Worker,
+        ),
+    )
+    .expect("built-in STTP worker policy must compile")
+    .rendered;
     let manuscript_block = manuscript
         .map(crate::identity_manuscript::format_worker_manuscript_block)
         .map(|block| format!("\n{block}\n"))
         .unwrap_or_default();
-    let mut presentation_block = String::new();
-    if supports_liquid_markdown {
-        presentation_block.push_str("\n\n");
-        presentation_block.push_str(LIQUID_MARKDOWN_APPENDIX);
-    }
-    if supports_ui_artifacts {
-        presentation_block.push_str("\n\n");
-        presentation_block.push_str(UI_ARTIFACT_APPENDIX);
-    }
     format!(
-        "{WORKER_STTP_POLICY}{manuscript_block}\n\n\
-         [MEDOUSA_COLLABORATOR_VOICE]\n{MEDOUSA_COLLABORATOR_VOICE}\n\n\
-         {WORKER_SYSTEM_APPENDIX}\n\n{WORKER_DISCIPLINE_APPENDIX}\n\n{}{presentation_block}\n\n{TURN_RUNTIME_BOUNDARY_APPENDIX}\n\n[MEDOUSA_WORKER_CONTEXT]\n\
+        "{policy}{manuscript_block}\n\n[MEDOUSA_HUD]\n\
          session_id={session_id}\n\
          worker_intent={}\n\
-         Read [MEDOUSA_CONTINUATION] and [HOST_CONTINUITY] in the user prompt when present.\n\
-         Always include \"session_id\": \"{session_id}\" on cognition_memory_query and \
-         cognition_memory_mutate.",
-        worker_intent_appendix(intent),
+         ui_artifacts={}\n\
+         liquid_markdown={}\n\
+         parent_agent_mode={}",
         intent.as_str(),
-        session_id = session_id,
+        supports_ui_artifacts,
+        supports_liquid_markdown,
+        parent_agent_mode.unwrap_or("general"),
     )
+}
+
+pub fn host_system_prompt_for_parent_mode(parent_agent_mode: Option<&str>) -> String {
+    let policy_mode = if parent_agent_mode == Some("coder") {
+        crate::agent_runtime::prompt_policy::SttpPolicyMode::CoderWork
+    } else {
+        crate::agent_runtime::prompt_policy::SttpPolicyMode::General
+    };
+    crate::agent_runtime::prompt_policy::compile_sttp_policy(
+        crate::agent_runtime::prompt_policy::SttpPolicySelection::new(
+            policy_mode,
+            crate::agent_runtime::prompt_policy::SttpPolicyActor::Host,
+        ),
+    )
+    .expect("built-in STTP host policy must compile")
+    .rendered
 }
 
 pub fn worker_failure_user_prompt(
@@ -279,11 +92,9 @@ pub fn worker_failure_user_prompt(
     error: &str,
 ) -> String {
     format!(
-        "The background worker did not complete. Write one clear message for the principal: what failed, and what to try next (retry, clarify session, or simpler request). Do not invent tool results.\n\n\
-         WORK_ID: {work_id}\n\
-         WORKER_INTENT: {intent}\n\n\
-         ORIGINAL_USER_MESSAGE:\n{parent_user_prompt}\n\n\
-         WORKER_ERROR:\n{error}\n"
+        "The background worker did not complete. Write one clear message for the principal: what failed, and what to try next. Do not invent tool results.\n\n\
+         WORK_ID: {work_id}\nWORKER_INTENT: {intent}\n\n\
+         ORIGINAL_USER_MESSAGE:\n{parent_user_prompt}\n\nWORKER_ERROR:\n{error}\n"
     )
 }
 
@@ -298,16 +109,8 @@ pub fn system_prompt_for_host_profile(
         return base.to_string();
     }
     let mut out = format!(
-        "{base}\n\n[MEDOUSA_COLLABORATOR_VOICE]\n{MEDOUSA_COLLABORATOR_VOICE}\n\n{HOST_BUS_TURN_APPENDIX}\n\n{HOST_CANVAS_APPENDIX}\n\n{TURN_RUNTIME_BOUNDARY_APPENDIX}\n\n{TURN_SCRATCH_APPENDIX}"
+        "{base}\n\n[MEDOUSA_HUD]\nhost_bus=active\nui_artifacts={supports_ui_artifacts}\nliquid_markdown={supports_liquid_markdown}"
     );
-    if supports_liquid_markdown {
-        out.push_str("\n\n");
-        out.push_str(LIQUID_MARKDOWN_APPENDIX);
-    }
-    if supports_ui_artifacts {
-        out.push_str("\n\n");
-        out.push_str(UI_ARTIFACT_APPENDIX);
-    }
     if let Some(intent) = worker_intent {
         out.push('\n');
         out.push_str(&host_route_appendix(Some(intent)));
@@ -328,10 +131,10 @@ pub fn synthesis_user_prompt_with_handoff(
         tool_names.join(", ")
     };
     let scratch_block = worker_scratch
-        .map(|s| {
+        .map(|scratch| {
             format!(
                 "\n\nWORKER_SCRATCHPAD (end of worker tool loop):\n{}",
-                s.format_control_body(0)
+                scratch.format_control_body(0)
             )
         })
         .unwrap_or_default();
@@ -341,19 +144,14 @@ pub fn synthesis_user_prompt_with_handoff(
         .map(|manuscript| format!("MANUSCRIPT: {} ({})\n", manuscript.name, manuscript.id))
         .unwrap_or_default();
     format!(
-        "Synthesize one principal-facing reply for the host bus. Continue the same conversation thread — do not rewrite from scratch.\n\n\
-         {SYNTHESIS_VOICE_GUIDANCE}\n\n\
-         {manuscript_line}\
-         WORK_ID: (see handoff)\n\
-         WORKER_INTENT: {}\n\
-         HOST_SCRATCH_DIGEST: {}\n\n\
-         ORIGINAL_USER_MESSAGE:\n{}\n\n\
-         WORKER_TASK:\n{}\n\n\
-         HOST_TOOL_DIGESTS:\n{}\n\n\
-         WORKER_TOOLS:\n{tools}\n\n\
+        "Synthesize one principal-facing reply for the host bus. Continue the same conversation thread.\n\n\
+         {SYNTHESIS_VOICE_GUIDANCE}\n\n{manuscript_line}\
+         WORKER_INTENT: {}\nHOST_SCRATCH_DIGEST: {}\n\n\
+         ORIGINAL_USER_MESSAGE:\n{}\n\nWORKER_TASK:\n{}\n\n\
+         HOST_TOOL_DIGESTS:\n{}\n\nWORKER_TOOLS:\n{tools}\n\n\
          WORKER_TOOL_SUMMARY:\n{worker_tools_summary}{scratch_block}\n\n\
          WORKER_RESULT:\n{worker_result}\n\n\
-         Deliver the integrated answer for the principal. Include outcomes and receipts from the worker without internal jargon.",
+         Deliver the integrated answer for the principal. Include outcomes and receipts without internal jargon.",
         handoff.intent,
         handoff.scratch_digest_hash,
         handoff.parent_user_prompt,
@@ -377,13 +175,9 @@ pub fn synthesis_user_prompt(
     };
     format!(
         "Synthesize one principal-facing reply for the host bus. Continue the same conversation thread.\n\n\
-         {SYNTHESIS_VOICE_GUIDANCE}\n\n\
-         WORK_ID: {work_id}\n\
-         WORKER_INTENT: {intent}\n\n\
-         ORIGINAL_USER_MESSAGE:\n{parent_user_prompt}\n\n\
-         WORKER_TASK:\n{task_prompt}\n\n\
-         WORKER_TOOLS: {tools}\n\n\
-         WORKER_RESULT:\n{worker_result}\n\n\
+         {SYNTHESIS_VOICE_GUIDANCE}\n\nWORK_ID: {work_id}\nWORKER_INTENT: {intent}\n\n\
+         ORIGINAL_USER_MESSAGE:\n{parent_user_prompt}\n\nWORKER_TASK:\n{task_prompt}\n\n\
+         WORKER_TOOLS: {tools}\n\nWORKER_RESULT:\n{worker_result}\n\n\
          Deliver the integrated answer for the principal. Include outcomes and receipts without internal jargon."
     )
 }
@@ -393,16 +187,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn research_worker_prompt_includes_grapheme_discovery() {
+    fn worker_prompt_uses_exact_worker_policy_and_plain_hud() {
         let prompt = worker_system_prompt("sess-1", TurnWorkerIntent::Research, None, false, false);
-        assert!(prompt.contains("MEDOUSA_WORKER_DISCIPLINE"));
-        assert!(prompt.contains("HOST_TOOL_DIGESTS"));
-        assert!(prompt.contains("cognition_capability"));
-        assert!(prompt.contains("minimum tools"));
+        assert!(prompt.contains("p1_core(.99)"));
+        assert!(prompt.contains("p2_mode_general(.99)"));
+        assert!(prompt.contains("p3_actor_worker(.99)"));
+        assert!(!prompt.contains("p3_actor_host(.99)"));
+        assert!(prompt.contains("[MEDOUSA_HUD]"));
+        assert!(prompt.contains("worker_intent=research"));
     }
 
     #[test]
-    fn memory_worker_prompt_includes_calibrate_ritual() {
+    fn worker_intent_does_not_swap_the_policy_slice() {
         let prompt = worker_system_prompt(
             "sess-1",
             TurnWorkerIntent::MemoryAvecCalibrate,
@@ -410,74 +206,35 @@ mod tests {
             false,
             false,
         );
-        assert!(prompt.contains("cognition_memory_mutate action=memory.calibrate"));
-        assert!(!prompt.contains("[MEDOUSA_WORKER_GRAPHEME]"));
+        assert!(prompt.contains("worker_intent=memory.avec_calibrate"));
+        assert!(prompt.contains("p2_mode_general(.99)"));
+        assert!(!prompt.contains("MEDOUSA_WORKER_GRAPHEME"));
     }
 
     #[test]
-    fn host_and_worker_prompts_share_collaborator_voice() {
-        let worker = worker_system_prompt("sess-1", TurnWorkerIntent::General, None, false, false);
-        assert!(worker.contains("[MEDOUSA_COLLABORATOR_VOICE]"));
-        assert!(worker.contains("cognition_turn action=turn.finish"));
-        assert!(!worker.contains("background specialist"));
-
-        let host = system_prompt_for_host_profile("base-sttp", true, false, false, None);
-        assert!(host.contains("[MEDOUSA_COLLABORATOR_VOICE]"));
-        assert!(host.contains("[MEDOUSA_HOST_BUS]"));
-        assert!(host.contains("Chat (host)"));
+    fn coder_parent_selects_coder_work_with_the_exact_actor() {
+        let worker = worker_system_prompt_for_parent_mode(
+            "sess-1",
+            TurnWorkerIntent::General,
+            None,
+            false,
+            false,
+            Some("coder"),
+        );
+        assert!(worker.contains("p2_mode_coder_work(.99)"));
+        assert!(worker.contains("p3_actor_worker(.99)"));
+        let host = host_system_prompt_for_parent_mode(Some("coder"));
+        assert!(host.contains("p2_mode_coder_work(.99)"));
+        assert!(host.contains("p3_actor_host(.99)"));
     }
 
     #[test]
-    fn liquid_and_ui_appendices_are_independently_capability_gated() {
-        let liquid_only = system_prompt_for_host_profile("base-sttp", true, false, true, None);
-        assert!(liquid_only.contains("[MEDOUSA_PRESENTATION]"));
-        assert!(liquid_only.contains("```card"));
-        assert!(liquid_only.contains("point:"));
-        assert!(liquid_only.contains("summary:"));
-        assert!(liquid_only.contains("```callout"));
-        assert!(liquid_only.contains("```cite"));
-        assert!(liquid_only.contains("```compare"));
-        assert!(liquid_only.contains("```plan"));
-        assert!(liquid_only.contains("```timeline"));
-        assert!(liquid_only.contains("```shortlist"));
-        assert!(liquid_only.contains("```decision"));
-        assert!(liquid_only.contains("```brief"));
-        assert!(liquid_only.contains("```dashboard"));
-        assert!(liquid_only.contains("feed:"));
-        assert!(liquid_only.contains("```chart"));
-        assert!(liquid_only.contains("```report"));
-        assert!(liquid_only.contains("```tabs"));
-        assert!(liquid_only.contains("```steps"));
-        assert!(liquid_only.contains("```accordion"));
-        assert!(liquid_only.contains("```tree"));
-        assert!(liquid_only.contains("scatter"));
-        assert!(liquid_only.contains("dual Y"));
-        assert!(liquid_only.contains("```mermaid"));
-        assert!(liquid_only.contains("CURATE"));
-        assert!(!liquid_only.contains("cognition_ui_build"));
-        assert!(!liquid_only.contains("[MEDOUSA_UI_ARTIFACTS]"));
-
-        let ui_only = system_prompt_for_host_profile("base-sttp", true, true, false, None);
-        assert!(!ui_only.contains("[MEDOUSA_PRESENTATION]"));
-        assert!(ui_only.contains("[MEDOUSA_UI_ARTIFACTS]"));
-        assert!(ui_only.contains("cognition_ui_build"));
-
-        let neither = system_prompt_for_host_profile("base-sttp", true, false, false, None);
-        assert!(!neither.contains("[MEDOUSA_PRESENTATION]"));
-        assert!(!neither.contains("[MEDOUSA_UI_ARTIFACTS]"));
-
-        // host_bus_active=false returns the bare base regardless of capability.
-        let bare = system_prompt_for_host_profile("base-sttp", false, true, true, None);
-        assert_eq!(bare, "base-sttp");
-
-        // Worker lane mirrors the gate.
-        let worker_liquid =
-            worker_system_prompt("sess-1", TurnWorkerIntent::General, None, false, true);
-        assert!(worker_liquid.contains("[MEDOUSA_PRESENTATION]"));
-        assert!(!worker_liquid.contains("[MEDOUSA_UI_ARTIFACTS]"));
-        let worker_ui =
-            worker_system_prompt("sess-1", TurnWorkerIntent::General, None, true, false);
-        assert!(worker_ui.contains("[MEDOUSA_UI_ARTIFACTS]"));
-        assert!(!worker_ui.contains("[MEDOUSA_PRESENTATION]"));
+    fn capabilities_are_hud_facts() {
+        let host = system_prompt_for_host_profile("base-sttp", true, true, false, None);
+        assert!(host.contains("ui_artifacts=true"));
+        assert!(host.contains("liquid_markdown=false"));
+        assert!(!host.contains("[MEDOUSA_UI_ARTIFACTS]"));
+        let worker = worker_system_prompt("sess-1", TurnWorkerIntent::General, None, false, true);
+        assert!(worker.contains("liquid_markdown=true"));
     }
 }

@@ -322,13 +322,7 @@ impl medousa_runtime::HostHandoffPort for DaemonHostHandoffPort {
 }
 
 fn default_worker_constraints() -> Vec<String> {
-    vec![
-        "Complete WORKER_TASK only — host already orchestrated; do not redo its discovery".to_string(),
-        "Read HOST_TOOL_DIGESTS before cognition_capability action=capability.find".to_string(),
-        "Use session_id on cognition_memory_query and cognition_memory_mutate".to_string(),
-        "Ground final worker text in tool receipts; do not invent results".to_string(),
-        "After tools: cognition_turn action=turn.finish commits the final reply — naked prose ends the turn with a stub. cognition_turn action=turn.update_user for mid-turn status; cognition_turn action=turn.begin_work before heavy work; cognition_turn action=turn.checkpoint for mid-task handoff; call tools for more work, never plan-only prose".to_string(),
-    ]
+    Vec::new()
 }
 
 fn truncate_field(text: &str, max_chars: usize) -> String {

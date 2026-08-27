@@ -43,7 +43,7 @@ pub fn tool_definitions() -> Vec<Tool> {
     vec![
         Tool::new(COGNITION_CODER_SYMBOL_REFACTOR)
             .with_description(
-                "Resolve symbol references or preview a language-server rename in the exact governed attempt. Rename previews issue a stable, digest-fenced change_set_id but do not mutate files.",
+                "Resolve symbol references or preview a language-server rename. Rename previews return a change_set_id for cognition_coder_change_set_apply.",
             )
             .with_schema(json!({
                 "type": "object",
@@ -75,7 +75,7 @@ pub fn tool_definitions() -> Vec<Tool> {
             })),
         Tool::new(COGNITION_CODER_CHANGE_SET_APPLY)
             .with_description(
-                "Apply one runtime-issued semantic change set exactly once through Forge. The change set is lease-fenced, path-policy checked, and digest-or-absence guarded for every touched path.",
+                "Apply a change set returned by a Coder preview tool.",
             )
             .with_schema(json!({
                 "type": "object",

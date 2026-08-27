@@ -41,7 +41,6 @@ pub enum SafeCheckpointBoundary {
     TurnStarted,
     ModelResponseCompleted,
     ToolBatchCompleted,
-    PackHold,
     AwaitingApproval,
     AwaitingUser,
     BudgetExhausted,
@@ -66,13 +65,10 @@ pub struct ActiveTurnCounters {
     pub model_rounds_executed: usize,
     pub max_tool_rounds: usize,
     pub tool_batches_completed: usize,
-    pub interim_continues_used: usize,
-    pub empty_after_tools_continues_used: usize,
     pub text_only_continues_without_new_tools: usize,
     pub invocations_at_last_text_continue: usize,
     pub user_responses_sent: usize,
     pub last_response_preview: Option<String>,
-    pub pending_final_answer: bool,
     pub retry_count: usize,
     pub orchestration: Option<TurnOrchestrationState>,
 }
@@ -118,7 +114,6 @@ pub struct ActiveTurnResumeState {
     pub counters: ActiveTurnCounters,
     pub transcript: ActiveTurnTranscript,
     pub invocations: Vec<CheckpointToolInvocation>,
-    pub pack_hold_fragments: Vec<String>,
     pub scratch: TurnScratchpad,
 }
 
@@ -130,7 +125,6 @@ pub struct ToolLoopCheckpointState {
     pub user_lane_prefix: Vec<ChatMessage>,
     pub tool_lane_messages: Vec<ChatMessage>,
     pub invocations: Vec<CheckpointToolInvocation>,
-    pub pack_hold_fragments: Vec<String>,
     pub scratch: TurnScratchpad,
     pub outstanding_boundary: Option<OutstandingTurnBoundary>,
     pub tool_names: Vec<String>,

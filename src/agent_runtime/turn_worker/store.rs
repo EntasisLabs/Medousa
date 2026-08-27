@@ -41,6 +41,9 @@ pub enum TurnWorkDisposition {
     #[default]
     Parallel,
     Bound,
+    /// Authenticated daemon-to-daemon work. It executes in the normal worker
+    /// loop but never resumes or synthesizes into a receiver-local host turn.
+    Delegated,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,6 +168,69 @@ pub struct TurnWorkRecord {
     pub updated_at: DateTime<Utc>,
 }
 
+impl TurnWorkRecord {
+    #[allow(clippy::too_many_arguments)]
+    pub fn delegated(
+        work_id: String,
+        session_id: String,
+        identity_user_id: String,
+        parent_turn_correlation_id: String,
+        task_prompt: String,
+        provider: String,
+        model: String,
+        response_depth_mode: String,
+        max_tool_rounds: usize,
+        handoff_capsule: WorkerHandoffCapsule,
+    ) -> Self {
+        let now = Utc::now();
+        Self {
+            work_id,
+            session_id,
+            identity_user_id: Some(identity_user_id),
+            parent_turn_correlation_id: Some(parent_turn_correlation_id),
+            parent_stream_turn_id: 0,
+            intent: "research".to_string(),
+            task_prompt,
+            status: TurnWorkStatus::Pending,
+            result_text: None,
+            tool_names: Vec::new(),
+            termination_reason: None,
+            error: None,
+            user_ack: String::new(),
+            provider,
+            model,
+            response_depth_mode,
+            max_tool_rounds: max_tool_rounds.max(1),
+            delivery_target: None,
+            parent_user_prompt: None,
+            parent_agent_mode: None,
+            parent_code_work_id: None,
+            handoff_capsule: Some(handoff_capsule),
+            worker_scratch: None,
+            synthesis_delivered: false,
+            stasis_job_id: None,
+            thread_id: None,
+            stage_role: None,
+            model_hint: None,
+            manuscript_id: None,
+            branch_group_id: None,
+            archived: false,
+            disposition: TurnWorkDisposition::Delegated,
+            steer_messages: Vec::new(),
+            supports_ui_artifacts: false,
+            supports_liquid_markdown: false,
+            supports_browser_host: false,
+            live_tool_activity: Vec::new(),
+            live_thinking: String::new(),
+            live_output: String::new(),
+            thinking_started_at: None,
+            thinking_finished_at: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+}
+
 pub struct TurnWorkerStore {
     records: Mutex<HashMap<String, TurnWorkRecord>>,
     live_cancellations: Mutex<HashMap<String, Arc<CancellationToken>>>,
@@ -202,6 +268,12 @@ impl Drop for WorkerExecutionLease {
 pub enum BoundWorkshopAdmissionError {
     SessionDeleting,
     ActiveGeneration { work_id: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DelegatedWorkAdmissionError {
+    SessionDeleting,
+    ConflictingIdentity,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -422,6 +494,40 @@ impl TurnWorkerStore {
         drop(records);
         self.persist(&work_id, stasis_job_id.as_deref());
         Ok(())
+    }
+
+    /// Admit one worker whose identity is derived from a signed Stasis grant.
+    /// Exact retries reuse the existing record; changed work under the same
+    /// identity fails closed.
+    pub fn try_insert_delegated(
+        &self,
+        record: TurnWorkRecord,
+    ) -> Result<bool, DelegatedWorkAdmissionError> {
+        debug_assert_eq!(record.disposition, TurnWorkDisposition::Delegated);
+        let Ok((_session, _mutation)) =
+            crate::session_deletion::acquire_mutation_for_str(&record.session_id)
+        else {
+            return Err(DelegatedWorkAdmissionError::SessionDeleting);
+        };
+        let work_id = record.work_id.clone();
+        let stasis_job_id = record.stasis_job_id.clone();
+        let mut records = self.records.lock().expect("turn worker records");
+        if let Some(existing) = records.get(&work_id) {
+            let matches = existing.disposition == TurnWorkDisposition::Delegated
+                && existing.session_id == record.session_id
+                && existing.identity_user_id == record.identity_user_id
+                && existing.parent_turn_correlation_id == record.parent_turn_correlation_id
+                && existing.task_prompt == record.task_prompt;
+            return if matches {
+                Ok(false)
+            } else {
+                Err(DelegatedWorkAdmissionError::ConflictingIdentity)
+            };
+        }
+        records.insert(work_id.clone(), record);
+        drop(records);
+        self.persist(&work_id, stasis_job_id.as_deref());
+        Ok(true)
     }
 
     pub fn get(&self, work_id: &str) -> Option<TurnWorkRecord> {

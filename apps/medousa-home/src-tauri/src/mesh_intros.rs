@@ -57,6 +57,7 @@ pub struct MeshPeerGrantRow {
     pub role: String,
     pub mesh_grants: Vec<String>,
     pub rendezvous: bool,
+    pub task_request: bool,
     pub last_seen: String,
 }
 
@@ -258,6 +259,9 @@ async fn fetch_local_mesh_peers(base: &str) -> Result<Vec<MeshPeerGrantRow>, Str
             let rendezvous = mesh_grants
                 .iter()
                 .any(|grant| grant.eq_ignore_ascii_case("client.rendezvous"));
+            let task_request = mesh_grants
+                .iter()
+                .any(|grant| grant.eq_ignore_ascii_case("task.request"));
             let last_seen = peer
                 .get("lastSeen")
                 .and_then(|v| v.as_str())
@@ -269,6 +273,7 @@ async fn fetch_local_mesh_peers(base: &str) -> Result<Vec<MeshPeerGrantRow>, Str
                 role,
                 mesh_grants,
                 rendezvous,
+                task_request,
                 last_seen,
             })
         })
@@ -289,6 +294,24 @@ pub async fn mesh_set_peer_rendezvous(
     device_id: String,
     enabled: bool,
 ) -> Result<MeshPeerGrantRow, String> {
+    set_peer_grant(state, device_id, "client.rendezvous", enabled).await
+}
+
+#[tauri::command]
+pub async fn mesh_set_peer_task_request(
+    state: State<'_, DaemonState>,
+    device_id: String,
+    enabled: bool,
+) -> Result<MeshPeerGrantRow, String> {
+    set_peer_grant(state, device_id, "task.request", enabled).await
+}
+
+async fn set_peer_grant(
+    state: State<'_, DaemonState>,
+    device_id: String,
+    capability: &str,
+    enabled: bool,
+) -> Result<MeshPeerGrantRow, String> {
     let base = daemon_base_from_state(&state)?;
     let peers = fetch_local_mesh_peers(&base).await?;
     let current = peers
@@ -299,11 +322,11 @@ pub async fn mesh_set_peer_rendezvous(
     let mut grants = current
         .mesh_grants
         .iter()
-        .filter(|grant| !grant.eq_ignore_ascii_case("client.rendezvous"))
+        .filter(|grant| !grant.eq_ignore_ascii_case(capability))
         .cloned()
         .collect::<Vec<_>>();
     if enabled {
-        grants.push("client.rendezvous".to_string());
+        grants.push(capability.to_string());
     }
     if grants.is_empty() {
         grants = vec!["mesh.message".to_string(), "mesh.bundle.push".to_string()];
@@ -349,6 +372,9 @@ pub async fn mesh_set_peer_rendezvous(
         rendezvous: mesh_grants
             .iter()
             .any(|grant| grant.eq_ignore_ascii_case("client.rendezvous")),
+        task_request: mesh_grants
+            .iter()
+            .any(|grant| grant.eq_ignore_ascii_case("task.request")),
         last_seen: peer
             .get("lastSeen")
             .and_then(|v| v.as_str())

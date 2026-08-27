@@ -78,7 +78,7 @@ pub fn decode_sse_json<T: serde::de::DeserializeOwned>(data: &str) -> Result<T, 
 #[cfg(all(test, feature = "sse"))]
 mod tests {
     use super::*;
-    use medousa_types::TurnStreamEnvelopeV2;
+    use medousa_types::{TurnStreamEnvelopeV2, TurnStreamEnvelopeV3};
 
     #[test]
     fn sdk_decoder_roundtrips_v2_discriminated_events() {
@@ -88,6 +88,17 @@ mod tests {
         assert_eq!(
             serde_json::to_value(decoded).unwrap()["event"]["type"],
             "content_append"
+        );
+    }
+
+    #[test]
+    fn sdk_decoder_roundtrips_v3_chronological_facts() {
+        let json = r#"{"schema_version":3,"turn_id":"turn-1","seq":8,"emitted_at_utc":"2026-08-14T00:00:00Z","event":{"type":"assistant_text_started","segment_id":"segment-1","model_round":1}}"#;
+        let decoded: TurnStreamEnvelopeV3 = decode_sse_json(json).unwrap();
+        assert_eq!(decoded.seq, 8);
+        assert_eq!(
+            serde_json::to_value(decoded).unwrap()["event"]["segment_id"],
+            "segment-1"
         );
     }
 }

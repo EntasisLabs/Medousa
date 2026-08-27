@@ -1,0 +1,442 @@
+{
+  "schema_version": 3,
+  "cases": [
+    {
+      "id": "direct_response",
+      "rounds": [
+        {
+          "model_round": 1,
+          "text": "A direct answer ends in one inference.",
+          "actions": []
+        }
+      ],
+      "expected": [
+        {
+          "type": "assistant_text_started",
+          "segment_id": "direct_response:text:1",
+          "model_round": 1
+        },
+        {
+          "type": "content_append",
+          "segment_id": "direct_response:text:1",
+          "text": "A direct answer ends in one inference."
+        },
+        {
+          "type": "assistant_text_committed",
+          "segment_id": "direct_response:text:1"
+        },
+        {
+          "type": "turn_completed",
+          "outcome": "completed",
+          "aggregate_text": "A direct answer ends in one inference."
+        }
+      ]
+    },
+    {
+      "id": "chronological_work_with_naked_prose",
+      "rounds": [
+        {
+          "model_round": 1,
+          "text": "I’ll inspect the two relevant sources.",
+          "actions": [
+            {
+              "kind": "tool_group",
+              "tools": [
+                {
+                  "run_id": "probe-a",
+                  "name": "data_probe",
+                  "status": "succeeded"
+                },
+                {
+                  "run_id": "probe-b",
+                  "name": "schema_probe",
+                  "status": "succeeded"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "model_round": 2,
+          "text": "The first pass exposed one remaining gap.",
+          "actions": []
+        },
+        {
+          "model_round": 3,
+          "text": "I’m checking that gap against the durable record.",
+          "actions": [
+            {
+              "kind": "tool_group",
+              "tools": [
+                {
+                  "run_id": "probe-c",
+                  "name": "history_probe",
+                  "status": "succeeded"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "model_round": 4,
+          "text": "The durable record confirms the fix.",
+          "actions": [
+            {
+              "kind": "finish"
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "type": "assistant_text_started",
+          "segment_id": "chronological_work_with_naked_prose:text:1",
+          "model_round": 1
+        },
+        {
+          "type": "content_append",
+          "segment_id": "chronological_work_with_naked_prose:text:1",
+          "text": "I’ll inspect the two relevant sources."
+        },
+        {
+          "type": "assistant_text_committed",
+          "segment_id": "chronological_work_with_naked_prose:text:1"
+        },
+        {
+          "type": "tool_started",
+          "run_id": "probe-a",
+          "name": "data_probe",
+          "tool_round": 1
+        },
+        {
+          "type": "tool_started",
+          "run_id": "probe-b",
+          "name": "schema_probe",
+          "tool_round": 1
+        },
+        {
+          "type": "tool_finished",
+          "run_id": "probe-a",
+          "status": "succeeded"
+        },
+        {
+          "type": "tool_finished",
+          "run_id": "probe-b",
+          "status": "succeeded"
+        },
+        {
+          "type": "assistant_text_started",
+          "segment_id": "chronological_work_with_naked_prose:text:2",
+          "model_round": 2
+        },
+        {
+          "type": "content_append",
+          "segment_id": "chronological_work_with_naked_prose:text:2",
+          "text": "The first pass exposed one remaining gap."
+        },
+        {
+          "type": "assistant_text_committed",
+          "segment_id": "chronological_work_with_naked_prose:text:2"
+        },
+        {
+          "type": "assistant_text_started",
+          "segment_id": "chronological_work_with_naked_prose:text:3",
+          "model_round": 3
+        },
+        {
+          "type": "content_append",
+          "segment_id": "chronological_work_with_naked_prose:text:3",
+          "text": "I’m checking that gap against the durable record."
+        },
+        {
+          "type": "assistant_text_committed",
+          "segment_id": "chronological_work_with_naked_prose:text:3"
+        },
+        {
+          "type": "tool_started",
+          "run_id": "probe-c",
+          "name": "history_probe",
+          "tool_round": 3
+        },
+        {
+          "type": "tool_finished",
+          "run_id": "probe-c",
+          "status": "succeeded"
+        },
+        {
+          "type": "assistant_text_started",
+          "segment_id": "chronological_work_with_naked_prose:text:4",
+          "model_round": 4
+        },
+        {
+          "type": "content_append",
+          "segment_id": "chronological_work_with_naked_prose:text:4",
+          "text": "The durable record confirms the fix."
+        },
+        {
+          "type": "assistant_text_committed",
+          "segment_id": "chronological_work_with_naked_prose:text:4"
+        },
+        {
+          "type": "turn_completed",
+          "outcome": "completed",
+          "aggregate_text": "I’ll inspect the two relevant sources.\n\nThe first pass exposed one remaining gap.\n\nI’m checking that gap against the durable record.\n\nThe durable record confirms the fix."
+        }
+      ]
+    },
+    {
+      "id": "finish_message_fallback",
+      "rounds": [
+        {
+          "model_round": 1,
+          "actions": [
+            {
+              "kind": "tool_group",
+              "tools": [
+                {
+                  "run_id": "fallback-probe",
+                  "name": "data_probe",
+                  "status": "succeeded"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "model_round": 2,
+          "actions": [
+            {
+              "kind": "finish",
+              "message": "Compatibility finish text becomes the final segment."
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "type": "tool_started",
+          "run_id": "fallback-probe",
+          "name": "data_probe",
+          "tool_round": 1
+        },
+        {
+          "type": "tool_finished",
+          "run_id": "fallback-probe",
+          "status": "succeeded"
+        },
+        {
+          "type": "assistant_text_started",
+          "segment_id": "finish_message_fallback:text:1",
+          "model_round": 2
+        },
+        {
+          "type": "content_append",
+          "segment_id": "finish_message_fallback:text:1",
+          "text": "Compatibility finish text becomes the final segment."
+        },
+        {
+          "type": "assistant_text_committed",
+          "segment_id": "finish_message_fallback:text:1"
+        },
+        {
+          "type": "turn_completed",
+          "outcome": "completed",
+          "aggregate_text": "Compatibility finish text becomes the final segment."
+        }
+      ]
+    },
+    {
+      "id": "checkpoint_after_visible_prose",
+      "rounds": [
+        {
+          "model_round": 1,
+          "text": "I found an authority choice that needs your decision.",
+          "actions": [
+            {
+              "kind": "tool_group",
+              "tools": [
+                {
+                  "run_id": "authority-probe",
+                  "name": "authority_probe",
+                  "status": "succeeded"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "model_round": 2,
+          "text": "Both paths are safe, but they produce different durable ownership.",
+          "actions": [
+            {
+              "kind": "checkpoint"
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "type": "assistant_text_started",
+          "segment_id": "checkpoint_after_visible_prose:text:1",
+          "model_round": 1
+        },
+        {
+          "type": "content_append",
+          "segment_id": "checkpoint_after_visible_prose:text:1",
+          "text": "I found an authority choice that needs your decision."
+        },
+        {
+          "type": "assistant_text_committed",
+          "segment_id": "checkpoint_after_visible_prose:text:1"
+        },
+        {
+          "type": "tool_started",
+          "run_id": "authority-probe",
+          "name": "authority_probe",
+          "tool_round": 1
+        },
+        {
+          "type": "tool_finished",
+          "run_id": "authority-probe",
+          "status": "succeeded"
+        },
+        {
+          "type": "assistant_text_started",
+          "segment_id": "checkpoint_after_visible_prose:text:2",
+          "model_round": 2
+        },
+        {
+          "type": "content_append",
+          "segment_id": "checkpoint_after_visible_prose:text:2",
+          "text": "Both paths are safe, but they produce different durable ownership."
+        },
+        {
+          "type": "assistant_text_committed",
+          "segment_id": "checkpoint_after_visible_prose:text:2"
+        },
+        {
+          "type": "turn_completed",
+          "outcome": "checkpointed",
+          "aggregate_text": "I found an authority choice that needs your decision.\n\nBoth paths are safe, but they produce different durable ownership."
+        }
+      ]
+    },
+    {
+      "id": "failure_preserves_partial_timeline",
+      "rounds": [
+        {
+          "model_round": 1,
+          "text": "I’m checking the live service before changing anything.",
+          "actions": [
+            {
+              "kind": "tool_group",
+              "tools": [
+                {
+                  "run_id": "service-probe",
+                  "name": "service_probe",
+                  "status": "failed"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "runtime_terminal": {
+        "outcome": "failed"
+      },
+      "expected": [
+        {
+          "type": "assistant_text_started",
+          "segment_id": "failure_preserves_partial_timeline:text:1",
+          "model_round": 1
+        },
+        {
+          "type": "content_append",
+          "segment_id": "failure_preserves_partial_timeline:text:1",
+          "text": "I’m checking the live service before changing anything."
+        },
+        {
+          "type": "assistant_text_committed",
+          "segment_id": "failure_preserves_partial_timeline:text:1"
+        },
+        {
+          "type": "tool_started",
+          "run_id": "service-probe",
+          "name": "service_probe",
+          "tool_round": 1
+        },
+        {
+          "type": "tool_finished",
+          "run_id": "service-probe",
+          "status": "failed"
+        },
+        {
+          "type": "turn_completed",
+          "outcome": "failed",
+          "aggregate_text": "I’m checking the live service before changing anything."
+        }
+      ]
+    },
+    {
+      "id": "request_input_after_visible_prose",
+      "rounds": [
+        {
+          "model_round": 1,
+          "actions": [
+            {
+              "kind": "tool_group",
+              "tools": [
+                {
+                  "run_id": "scope-probe",
+                  "name": "scope_probe",
+                  "status": "succeeded"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "model_round": 2,
+          "text": "Which governed project should own this change?",
+          "actions": [
+            {
+              "kind": "request_input"
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "type": "tool_started",
+          "run_id": "scope-probe",
+          "name": "scope_probe",
+          "tool_round": 1
+        },
+        {
+          "type": "tool_finished",
+          "run_id": "scope-probe",
+          "status": "succeeded"
+        },
+        {
+          "type": "assistant_text_started",
+          "segment_id": "request_input_after_visible_prose:text:1",
+          "model_round": 2
+        },
+        {
+          "type": "content_append",
+          "segment_id": "request_input_after_visible_prose:text:1",
+          "text": "Which governed project should own this change?"
+        },
+        {
+          "type": "assistant_text_committed",
+          "segment_id": "request_input_after_visible_prose:text:1"
+        },
+        {
+          "type": "turn_completed",
+          "outcome": "needs_input",
+          "aggregate_text": "Which governed project should own this change?"
+        }
+      ]
+    }
+  ]
+}

@@ -6,8 +6,6 @@ import {
 } from "$lib/types/colorThemes";
 import { resolveSkeletonThemeName } from "$lib/types/themeResolve";
 import { applySelectedThemeStylesheet } from "$lib/theme/themeStylesheet";
-import { loadTuiDefaults, persistTuiDefaults } from "$lib/config";
-import { getRuntimeDefaults } from "$lib/daemon";
 import { workshopDefaultsQueryPort } from "$lib/runtime/workshopDefaultsPorts";
 import { isTauri, isTauriMobilePlatform } from "$lib/platform";
 import {
@@ -176,37 +174,29 @@ export class SettingsStore {
     localStorage.setItem(WORK_WIPE_DAYS_KEY, String(normalized));
   }
 
-  /** Pull authoritative retention policy from the Mac daemon (`tui_defaults.json`). */
+  /** Pull authoritative retention policy from the active workshop. */
   async hydrateWorkRetentionFromDaemon() {
     try {
-      if (isTauriMobilePlatform() && workshopDefaultsQueryPort().loaded()) {
-        const hideAfter = workshopDefaultsQueryPort().workCardHideAfterHours();
-        const wipeAfter = workshopDefaultsQueryPort().workCardWipeAfterDays();
-        if (hideAfter != null) {
-          this.setWorkCardHideAfterHours(hideAfter);
-        }
-        if (wipeAfter != null) {
-          this.setWorkCardWipeAfterDays(wipeAfter);
-        }
-        return;
-      }
-      const defaults = await getRuntimeDefaults();
-      this.setWorkCardHideAfterHours(defaults.work_card_hide_after_hours);
-      this.setWorkCardWipeAfterDays(defaults.work_card_wipe_after_days);
+      const defaults = workshopDefaultsQueryPort();
+      await defaults.load();
+      const hideAfter = defaults.workCardHideAfterHours();
+      const wipeAfter = defaults.workCardWipeAfterDays();
+      if (hideAfter != null) this.setWorkCardHideAfterHours(hideAfter);
+      if (wipeAfter != null) this.setWorkCardWipeAfterDays(wipeAfter);
     } catch {
       // Offline — keep local fallback until connected.
     }
   }
 
-  /** Persist retention fields into `tui_defaults.json` (Mac desktop only). */
+  /** Persist retention fields into the active workshop defaults. */
   async persistWorkRetention() {
-    if (!isTauri() || isTauriMobilePlatform()) return;
-    const current = await loadTuiDefaults();
-    await persistTuiDefaults({
-      ...current,
-      workCardHideAfterHours: this.workCardHideAfterHours,
-      workCardWipeAfterDays: this.workCardWipeAfterDays,
-    });
+    if (!isTauri()) return;
+    const defaults = workshopDefaultsQueryPort();
+    defaults.setWorkCardRetention(
+      this.workCardHideAfterHours,
+      this.workCardWipeAfterDays,
+    );
+    await defaults.save();
   }
 }
 

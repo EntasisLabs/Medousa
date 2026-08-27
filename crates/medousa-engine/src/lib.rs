@@ -32,6 +32,6 @@ pub use turn_event_log::{
 };
 pub use turn_pipeline::{
     TURN_PIPELINE_BATCH_BYTES, TURN_PIPELINE_BYTE_CAPACITY, TURN_PIPELINE_COALESCE,
-    TURN_PIPELINE_COMMAND_CAPACITY, TurnPipelineEmission, TurnPipelineError, TurnPipelineHandle,
-    TurnPipelineMetrics, TurnPipelineMetricsSnapshot, TurnPipelineOutput,
+    TURN_PIPELINE_COMMAND_CAPACITY, TurnPipelineEmission, TurnPipelineEnvelope, TurnPipelineError,
+    TurnPipelineHandle, TurnPipelineMetrics, TurnPipelineMetricsSnapshot, TurnPipelineOutput,
 };

@@ -1,15 +1,12 @@
-//! `cognition_tools_discover` — session-scoped tool domain unlock (Phase 9C).
-
-use std::collections::HashSet;
+//! `cognition_tools_discover` — inspect the session tool-domain catalog.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 
-use crate::agent_runtime::turn_worker::{host_bus_tool_names, tool_allowed};
 use crate::tool_bootstrap::{
     COGNITION_TOOLS_DISCOVER, ToolSurfaceLane, bootstrap_tools, discover_session_domain,
-    domain_catalog, load_session_tool_surface,
+    domain_catalog,
 };
 use crate::typed_tools::{CompatOption, ToolCatalogHandle, ToolId, medousa_tool};
 
@@ -53,9 +50,8 @@ pub struct ToolsDiscoverInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     session_id: Option<String>,
-    /// If true, return catalog without unlocking
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     list_only: Option<bool>,
 }
 
@@ -135,7 +131,6 @@ impl From<ToolSurfaceLane> for DiscoverLaneOutput {
 pub struct DomainCatalogSummary {
     domain: String,
     summary: String,
-    unlocked: bool,
     tool_count: usize,
 }
 
@@ -146,52 +141,29 @@ pub struct DomainToolSummary {
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
-pub struct DomainUnlockCatalog {
-    domain: String,
-    summary: String,
-    tools: Vec<String>,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
 #[serde(untagged)]
 pub enum ToolsDiscoverOutput {
     Domains {
         ok: bool,
         session_id: String,
         lane: DiscoverLaneOutput,
-        bootstrap_tools: Vec<String>,
+        common_tools: Vec<String>,
         domains: Vec<DomainCatalogSummary>,
-        unlocked_domains: Vec<String>,
-        hint: String,
     },
-    Detail {
-        ok: bool,
-        session_id: String,
-        domain: String,
-        summary: String,
-        unlocked: bool,
-        tools: Vec<DomainToolSummary>,
-    },
-    Error {
-        ok: bool,
-        error: String,
-    },
-    Unlocked {
+    Inspected {
         ok: bool,
         session_id: String,
         lane: DiscoverLaneOutput,
         domain: String,
-        unlocked_domains: Vec<String>,
-        tools_unlocked: Vec<String>,
-        catalog: Option<DomainUnlockCatalog>,
-        bootstrap_tools: Vec<String>,
+        summary: String,
+        tools: Vec<DomainToolSummary>,
         message: String,
     },
 }
 
 #[medousa_tool(id = COGNITION_TOOLS_DISCOVER_ID)]
 impl CognitionToolsDiscoverTool {
-    /// Unlock a tool domain for this session and return its catalog. Host: memory + vault auto-unlock at session start; environment auto-unlocks on UI-capable clients (Home). Other host domains: catalog, runtime, history, identity, skill, overlay, environment. Worker domains: execute, discover, memory, vault, openshell, scripts. Bootstrap tools stay visible without discover.
+    /// List tools in a domain with concise usage summaries.
     async fn invoke_typed(
         &self,
         input: ToolsDiscoverInput,
@@ -203,7 +175,7 @@ impl CognitionToolsDiscoverTool {
         )
         .await?;
         let lane = resolve_lane(&self.turn_scope, input.lane);
-        let list_only = input.list_only.unwrap_or(false);
+        let _list_only = input.list_only.unwrap_or(false);
 
         if input
             .domain
@@ -215,70 +187,43 @@ impl CognitionToolsDiscoverTool {
 
         let domain = input.domain.as_deref().map(str::trim).unwrap_or_default();
 
-        if list_only {
-            return Ok(domain_detail(
-                &session_id,
-                lane,
-                domain,
-                &host_bus_tool_names(),
-                &self.catalog,
-            ));
-        }
+        let (_surface, tool_names) =
+            discover_session_domain(&session_id, lane, domain).map_err(StasisError::PortFailure)?;
 
-        let allowlist = match lane {
-            ToolSurfaceLane::Host => host_bus_tool_names(),
-            ToolSurfaceLane::Worker => {
-                // Worker discover uses worker general allowlist as ceiling for catalog display.
-                crate::agent_runtime::turn_worker::allowed_tool_names_for_intent(
-                    crate::agent_runtime::turn_worker::TurnWorkerIntent::Research,
-                )
-            }
-        };
-
-        let (surface, tools) = discover_session_domain(&session_id, lane, domain, &allowlist)
-            .map_err(StasisError::PortFailure)?;
-
-        let catalog = domain_catalog(lane)
+        let entry = domain_catalog(lane)
             .iter()
             .find(|entry| entry.domain == domain.to_ascii_lowercase())
-            .map(|entry| DomainUnlockCatalog {
-                domain: entry.domain.to_string(),
-                summary: entry.summary.to_string(),
-                tools: entry.tools.iter().map(|tool| (*tool).to_string()).collect(),
-            });
+            .expect("discover_session_domain validated the domain");
+        let tools = tool_names
+            .iter()
+            .map(|name| DomainToolSummary {
+                name: name.clone(),
+                summary: self.catalog.presentation_summary_for_wire(name),
+            })
+            .collect();
 
-        Ok(ToolsDiscoverOutput::Unlocked {
+        Ok(ToolsDiscoverOutput::Inspected {
             ok: true,
             session_id,
             lane: lane.into(),
             domain: domain.to_ascii_lowercase(),
-            unlocked_domains: surface.unlocked_domains,
-            tools_unlocked: tools.clone(),
-            catalog,
-            bootstrap_tools: bootstrap_tools(lane)
-                .iter()
-                .map(|tool| (*tool).to_string())
-                .collect(),
+            summary: entry.summary.to_string(),
+            tools,
             message: format!(
-                "Unlocked domain '{}' for session — {} tools now on surface",
+                "Inspected domain '{}' — {} catalogued tools",
                 domain.to_ascii_lowercase(),
-                tools.len()
+                tool_names.len()
             ),
         })
     }
 }
 
 fn list_domains_catalog(session_id: &str, lane: ToolSurfaceLane) -> ToolsDiscoverOutput {
-    let surface = load_session_tool_surface(session_id);
     let domains = domain_catalog(lane)
         .iter()
         .map(|entry| DomainCatalogSummary {
             domain: entry.domain.to_string(),
             summary: entry.summary.to_string(),
-            unlocked: surface
-                .unlocked_domains
-                .iter()
-                .any(|domain| domain == entry.domain),
             tool_count: entry.tools.len(),
         })
         .collect();
@@ -286,54 +231,11 @@ fn list_domains_catalog(session_id: &str, lane: ToolSurfaceLane) -> ToolsDiscove
         ok: true,
         session_id: session_id.to_string(),
         lane: lane.into(),
-        bootstrap_tools: bootstrap_tools(lane)
+        common_tools: bootstrap_tools(lane)
             .iter()
             .map(|tool| (*tool).to_string())
             .collect(),
         domains,
-        unlocked_domains: surface.unlocked_domains,
-        hint: "Call with domain=memory|catalog|runtime|… to unlock a group for this session."
-            .to_string(),
-    }
-}
-
-fn domain_detail(
-    session_id: &str,
-    lane: ToolSurfaceLane,
-    domain: &str,
-    allowlist: &HashSet<String>,
-    catalog: &ToolCatalogHandle,
-) -> ToolsDiscoverOutput {
-    let normalized = domain.trim().to_ascii_lowercase();
-    let entry = domain_catalog(lane)
-        .iter()
-        .find(|entry| entry.domain == normalized);
-    let Some(entry) = entry else {
-        return ToolsDiscoverOutput::Error {
-            ok: false,
-            error: format!("unknown domain: {domain}"),
-        };
-    };
-    let tools = entry
-        .tools
-        .iter()
-        .filter(|name| tool_allowed(name, allowlist))
-        .map(|name| DomainToolSummary {
-            name: (*name).to_string(),
-            summary: catalog.presentation_summary_for_wire(name),
-        })
-        .collect();
-    let surface = load_session_tool_surface(session_id);
-    ToolsDiscoverOutput::Detail {
-        ok: true,
-        session_id: session_id.to_string(),
-        domain: entry.domain.to_string(),
-        summary: entry.summary.to_string(),
-        unlocked: surface
-            .unlocked_domains
-            .iter()
-            .any(|domain| domain == entry.domain),
-        tools,
     }
 }
 

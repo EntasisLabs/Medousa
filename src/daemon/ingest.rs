@@ -60,6 +60,7 @@ pub struct StreamSinceQuery {
 enum StreamWireVersion {
     V1,
     V2,
+    V3,
 }
 
 fn requested_stream_version(
@@ -96,6 +97,7 @@ fn requested_stream_version(
                 continue;
             }
             match version {
+                Some("3") => return Ok(StreamWireVersion::V3),
                 Some("2") => return Ok(StreamWireVersion::V2),
                 Some(_) => unsupported_version = true,
                 None => accepts_v1 = true,
@@ -155,24 +157,28 @@ fn try_acquire_replay_reader() -> Option<OwnedSemaphorePermit> {
         .ok()
 }
 
-fn sse_event_from_payload(payload: PublishedTurnEvent, version: StreamWireVersion) -> Event {
-    let encoded = match (version, payload.v2) {
-        (StreamWireVersion::V1, _) => Event::default()
-            .event(payload.v1.event_type.clone())
-            .json_data(payload.v1),
-        (StreamWireVersion::V2, Some(v2)) => Event::default().event("turn_stream_v2").json_data(v2),
-        (StreamWireVersion::V2, None) => {
-            return Event::default()
-                .event("error")
-                .data("turn event has no v2 projection");
+fn sse_event_from_payload(
+    payload: PublishedTurnEvent,
+    version: StreamWireVersion,
+) -> Option<Event> {
+    let encoded = match version {
+        StreamWireVersion::V1 => {
+            let v1 = payload.v1?;
+            Event::default().event(v1.event_type.clone()).json_data(v1)
         }
+        StreamWireVersion::V2 => Event::default()
+            .event("turn_stream_v2")
+            .json_data(payload.v2?),
+        StreamWireVersion::V3 => Event::default()
+            .event("turn_stream_v3")
+            .json_data(payload.v3?),
     };
-    match encoded {
+    Some(match encoded {
         Ok(value) => value,
         Err(err) => Event::default()
             .event("error")
             .data(format!("stream serialization error: {err}")),
-    }
+    })
 }
 
 pub async fn stream_events_from_registry(
@@ -244,10 +250,10 @@ pub async fn stream_events_from_registry(
                     continue;
                 }
                 state.last_seq = state.last_seq.max(payload.seq());
-                return Some((
-                    Ok::<Event, Infallible>(sse_event_from_payload(payload, state.wire_version)),
-                    state,
-                ));
+                if let Some(event) = sse_event_from_payload(payload, state.wire_version) {
+                    return Some((Ok::<Event, Infallible>(event), state));
+                }
+                continue;
             }
             if state.drained {
                 return None;
@@ -274,15 +280,35 @@ pub async fn stream_events_from_registry(
                             .events
                             .iter()
                             .map(|event| {
-                                let v1 =
-                                    crate::sse_turn_projection::sequenced_to_stream_event(event);
-                                let v2 = match state.wire_version {
-                                    StreamWireVersion::V1 => None,
-                                    StreamWireVersion::V2 => {
-                                        Some(crate::sse_turn_projection::sequenced_to_v2(event)?)
+                                let (v1, v2, v3) = match state.wire_version {
+                                    StreamWireVersion::V1 => {
+                                        let v2 =
+                                            crate::sse_turn_projection::sequenced_to_v2_optional(
+                                                event,
+                                            )?;
+                                        let v1 =
+                                            v2.as_ref().map(crate::sse_turn_projection::v2_to_v1);
+                                        (v1, v2, None)
                                     }
+                                    StreamWireVersion::V2 => (
+                                        None,
+                                        crate::sse_turn_projection::sequenced_to_v2_optional(
+                                            event,
+                                        )?,
+                                        None,
+                                    ),
+                                    StreamWireVersion::V3 => (
+                                        None,
+                                        None,
+                                        Some(crate::sse_turn_projection::sequenced_to_v3(event)?),
+                                    ),
                                 };
-                                Ok::<PublishedTurnEvent, String>(PublishedTurnEvent { v1, v2 })
+                                Ok::<PublishedTurnEvent, String>(PublishedTurnEvent {
+                                    seq: event.seq(),
+                                    v1,
+                                    v2,
+                                    v3,
+                                })
                             })
                             .collect::<Result<VecDeque<_>, _>>();
                         let Ok(projected) = projected else {
@@ -291,7 +317,7 @@ pub async fn stream_events_from_registry(
                                 Ok::<Event, Infallible>(
                                     Event::default()
                                         .event("error")
-                                        .data("turn replay has no v2 projection"),
+                                        .data("turn replay has no requested stream projection"),
                                 ),
                                 state,
                             ));
@@ -339,13 +365,10 @@ pub async fn stream_events_from_registry(
                         continue;
                     }
                     state.last_seq = state.last_seq.max(payload.seq());
-                    return Some((
-                        Ok::<Event, Infallible>(sse_event_from_payload(
-                            payload,
-                            state.wire_version,
-                        )),
-                        state,
-                    ));
+                    if let Some(event) = sse_event_from_payload(payload, state.wire_version) {
+                        return Some((Ok::<Event, Infallible>(event), state));
+                    }
+                    continue;
                 }
                 Err(broadcast::error::RecvError::Lagged(_)) => {
                     // We fell behind the live ring; recover the gap from the
@@ -407,11 +430,22 @@ pub async fn stream_events_from_registry(
     response
         .headers_mut()
         .insert(VARY, axum::http::HeaderValue::from_static("Accept"));
-    if matches!(wire_version, StreamWireVersion::V2) {
-        response.headers_mut().insert(
-            CONTENT_TYPE,
-            axum::http::HeaderValue::from_static(TURN_STREAM_V2_MEDIA_TYPE),
-        );
+    match wire_version {
+        StreamWireVersion::V1 => {}
+        StreamWireVersion::V2 => {
+            response.headers_mut().insert(
+                CONTENT_TYPE,
+                axum::http::HeaderValue::from_static(TURN_STREAM_V2_MEDIA_TYPE),
+            );
+        }
+        StreamWireVersion::V3 => {
+            response.headers_mut().insert(
+                CONTENT_TYPE,
+                axum::http::HeaderValue::from_static(
+                    medousa_types::turn_stream::TURN_STREAM_V3_MEDIA_TYPE,
+                ),
+            );
+        }
     }
     Ok(response)
 }
@@ -1555,6 +1589,8 @@ impl AgentStreamSink for ApiAgentStreamSink {
                 None,
                 vec![crate::turn_parts::TurnPart::Text {
                     markdown: text.clone(),
+                    segment_id: None,
+                    model_round: None,
                 }],
             ),
         )
@@ -1750,6 +1786,8 @@ impl AgentStreamSink for IngestAgentStreamSink {
                     Some("worker_ack".to_string()),
                     vec![crate::turn_parts::TurnPart::Text {
                         markdown: text.clone(),
+                        segment_id: None,
+                        model_round: None,
                     }],
                 )
             });
@@ -1786,26 +1824,6 @@ impl AgentStreamSink for IngestAgentStreamSink {
         ) {
             publish_interactive_turn_event(&self.stream, Ok(event));
         }
-    }
-
-    async fn agent_final_pending(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
-        if self
-            .cancelled_streams
-            .read()
-            .await
-            .contains(&self.stream_id)
-        {
-            return;
-        }
-
-        publish_interactive_turn_event(
-            &self.stream,
-            crate::interactive_turn_runtime::turn_progress_stream_event(
-                &self.stream_id,
-                &text,
-                tool_names,
-            ),
-        );
     }
 
     async fn agent_turn_progress(&self, _turn_id: u64, message: String, tool_names: Vec<String>) {
@@ -2374,6 +2392,19 @@ mod stream_version_tests {
     }
 
     #[test]
+    fn stream_v3_requires_an_explicit_accepted_media_type() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("TEXT/EVENT-STREAM; Medousa-Version=\"3\""),
+        );
+        assert_eq!(
+            requested_stream_version(&headers).unwrap(),
+            StreamWireVersion::V3
+        );
+    }
+
+    #[test]
     fn unsupported_explicit_stream_version_is_rejected() {
         let mut headers = HeaderMap::new();
         headers.insert(
@@ -2440,6 +2471,152 @@ mod stream_version_tests {
         assert_eq!(body.matches("\"seq\":1").count(), 1, "{body}");
         assert_eq!(body.matches("\"seq\":2").count(), 1, "{body}");
         assert!(body.find("\"seq\":1").unwrap() < body.find("\"seq\":2").unwrap());
+
+        entry.log.close_journal();
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[tokio::test]
+    async fn v2_replay_skips_v3_only_facts_without_fabricating_events() {
+        let root = std::env::temp_dir().join(format!("medousa-v2-from-v3-{}", Uuid::new_v4()));
+        let turn_id = "turn-v2-from-v3";
+        let entry = TurnStreamEntry {
+            channel: TurnEventChannel::new(8),
+            log: Arc::new(
+                TurnEventLog::open_in(&root, TurnEnvelope::new(turn_id, Principal::operator()))
+                    .unwrap(),
+            ),
+        };
+        let started = medousa_types::TurnStreamEventV3::AssistantTextStarted {
+            segment_id: "segment-1".into(),
+            model_round: 1,
+        };
+        entry
+            .log
+            .append_sequenced_with_stream_v3(
+                1,
+                medousa_engine::TurnEvent::StreamMirror(serde_json::to_value(&started).unwrap()),
+                Some(Utc::now()),
+                started,
+                None,
+            )
+            .unwrap();
+        let append = medousa_types::TurnStreamEventV3::ContentAppend {
+            segment_id: "segment-1".into(),
+            text: "visible".into(),
+        };
+        entry
+            .log
+            .append_sequenced_with_stream_v3(
+                2,
+                medousa_engine::TurnEvent::ContentDelta {
+                    delta: "visible".into(),
+                },
+                Some(Utc::now()),
+                append,
+                None,
+            )
+            .unwrap();
+        let registry = crate::daemon::turn_stream_registry::new_turn_stream_registry();
+        registry
+            .write()
+            .await
+            .insert(turn_id.to_string(), entry.clone());
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("text/event-stream; medousa-version=2"),
+        );
+
+        let response =
+            stream_events_from_registry(&registry, turn_id, "test stream", Some(0), &headers)
+                .await
+                .unwrap();
+        entry.channel.mark_closed();
+        let body = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+
+        assert!(!body.contains("assistant_text_started"), "{body}");
+        assert!(!body.contains("\"seq\":1"), "{body}");
+        assert_eq!(body.matches("\"seq\":2").count(), 1, "{body}");
+        assert!(body.contains("\"text\":\"visible\""), "{body}");
+
+        entry.log.close_journal();
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[tokio::test]
+    async fn v3_replay_returns_native_facts_without_requiring_a_client_fold() {
+        let root = std::env::temp_dir().join(format!("medousa-v3-replay-{}", Uuid::new_v4()));
+        let turn_id = "turn-v3-replay";
+        let entry = TurnStreamEntry {
+            channel: TurnEventChannel::new(8),
+            log: Arc::new(
+                TurnEventLog::open_in(&root, TurnEnvelope::new(turn_id, Principal::operator()))
+                    .unwrap(),
+            ),
+        };
+        let started = medousa_types::TurnStreamEventV3::AssistantTextStarted {
+            segment_id: "segment-1".into(),
+            model_round: 1,
+        };
+        entry
+            .log
+            .append_sequenced_with_stream_v3(
+                1,
+                medousa_engine::TurnEvent::StreamMirror(serde_json::to_value(&started).unwrap()),
+                Some(Utc::now()),
+                started,
+                None,
+            )
+            .unwrap();
+        let append = medousa_types::TurnStreamEventV3::ContentAppend {
+            segment_id: "segment-1".into(),
+            text: "visible".into(),
+        };
+        entry
+            .log
+            .append_sequenced_with_stream_v3(
+                2,
+                medousa_engine::TurnEvent::ContentDelta {
+                    delta: "visible".into(),
+                },
+                Some(Utc::now()),
+                append,
+                None,
+            )
+            .unwrap();
+        let registry = crate::daemon::turn_stream_registry::new_turn_stream_registry();
+        registry
+            .write()
+            .await
+            .insert(turn_id.to_string(), entry.clone());
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("text/event-stream; medousa-version=3"),
+        );
+
+        let response =
+            stream_events_from_registry(&registry, turn_id, "test stream", Some(0), &headers)
+                .await
+                .unwrap();
+        assert_eq!(
+            response.headers().get(CONTENT_TYPE).unwrap(),
+            medousa_types::turn_stream::TURN_STREAM_V3_MEDIA_TYPE
+        );
+        entry.channel.mark_closed();
+        let body = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+
+        assert!(body.contains("event: turn_stream_v3"), "{body}");
+        assert!(
+            body.contains("\"type\":\"assistant_text_started\""),
+            "{body}"
+        );
+        assert!(body.contains("\"seq\":1"), "{body}");
+        assert!(body.contains("\"type\":\"content_append\""), "{body}");
+        assert!(body.contains("\"seq\":2"), "{body}");
 
         entry.log.close_journal();
         std::fs::remove_dir_all(root).ok();

@@ -1,4 +1,5 @@
-import { isCompanionShell, thisHostLabel } from "$lib/platformCopy";
+import { isTauriMobilePlatform } from "$lib/platform";
+import { thisHostLabel } from "$lib/platformCopy";
 
 export type SettingsSectionId =
   | "preferences"
@@ -25,14 +26,14 @@ export const SETTINGS_MOBILE_SECTIONS: SettingsSectionId[] = [
   "basement",
 ];
 
-/** Host-only sections — the companion shell can't install or run these. */
-const COMPANION_HIDDEN_SECTIONS: SettingsSectionId[] = ["packages", "mcp"];
+/** Sections backed only by executable sidecars on this app host. */
+const LOCAL_NATIVE_WORKLOAD_SECTIONS: SettingsSectionId[] = ["packages"];
 
 /** Mobile pager order for the current shell. */
 export function settingsMobileSections(): SettingsSectionId[] {
-  if (!isCompanionShell()) return SETTINGS_MOBILE_SECTIONS;
+  if (!isTauriMobilePlatform()) return SETTINGS_MOBILE_SECTIONS;
   return SETTINGS_MOBILE_SECTIONS.filter(
-    (section) => !COMPANION_HIDDEN_SECTIONS.includes(section),
+    (section) => !LOCAL_NATIVE_WORKLOAD_SECTIONS.includes(section),
   );
 }
 

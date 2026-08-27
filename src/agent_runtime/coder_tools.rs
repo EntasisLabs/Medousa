@@ -68,7 +68,7 @@ impl<'de> Deserialize<'de> for CoderToolIntent {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct CoderCallMetadata {
-    /// One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).
+    /// Short purpose of this tool call.
     #[schemars(length(max = 320))]
     intent: CoderToolIntent,
 }
@@ -854,7 +854,6 @@ impl super::turn_context::ToolRoundContextProvider for CoderBoundToolRegistry {
             return Ok(None);
         };
         let pointers = self.ranked_pointers(super::coder_pointers::MAX_AMBIENT_POINTERS)?;
-        self.refresh_visible_from_pointers(&pointers)?;
         let changed_paths = authority
             .forge
             .git()
@@ -970,17 +969,10 @@ impl CoderBoundToolRegistry {
     ) -> Self {
         let memory_scope = super::coder_memory::CoderMemoryScope::for_entry(&entry);
         let memory_retry_queue = shared_memory_retry_queue(&memory_scope);
-        let mut visible_tools = coder_initial_tool_ids()
+        let visible_tools = coder_visible_tool_ids()
             .into_iter()
             .filter(|id| coder_tool_allowed(*id, &policy))
             .collect::<HashSet<_>>();
-        if entry.editor.active_path.is_some() || entry.editor.containing_symbol.is_some() {
-            visible_tools.extend(
-                crate::code_intelligence_tools::CODE_COGNITION_TOOLS
-                    .iter()
-                    .map(|name| ToolId::new(name)),
-            );
-        }
         Self {
             inner,
             catalog,
@@ -1018,7 +1010,6 @@ impl CoderBoundToolRegistry {
         let authority = self.authority()?;
         let shared = authority.shared_space_prompt_appendix()?;
         let pointers = self.ranked_pointers(super::coder_pointers::MAX_AMBIENT_POINTERS)?;
-        self.refresh_visible_from_pointers(&pointers)?;
         let lineage_reconciliation =
             reconcile_coder_memory_lineage(self.inner.clone(), &self.memory_scope.repo_id).await;
         if lineage_reconciliation.get("ok").and_then(Value::as_bool) == Some(false) {
@@ -1028,15 +1019,6 @@ impl CoderBoundToolRegistry {
             );
         }
         let memory = self.environment_memory_overview(&authority, 10).await?;
-        self.refresh_visible_from_memory_overview(&memory)?;
-        if super::coder_experiments::sealed_candidate_count(
-            authority.forge.as_ref(),
-            &self.entry.work_id,
-        )
-        .is_ok_and(|count| count >= 2)
-        {
-            let _ = self.unlock_domain(ToolDomainId::new("experiments"))?;
-        }
         Ok(format!(
             "{shared}\n\n{}\n\n{}",
             super::coder_pointers::engineering_pointer_prompt_appendix(&pointers),
@@ -1062,20 +1044,18 @@ impl CoderBoundToolRegistry {
         Ok(visible)
     }
 
-    /// Restore only model visibility. Forge/runtime policy remains the immutable
-    /// authority superset, and `list_tools` still intersects this set with the
-    /// tools actually registered for the turn.
+    /// Restore checkpoint metadata without narrowing the current model surface.
+    /// The immutable Forge/runtime policy remains the authority ceiling.
     pub(crate) fn restore_checkpoint_surface(
         &self,
-        visible_tools: &[String],
+        _visible_tools: &[String],
         memory_cursor: Option<&str>,
     ) -> Result<()> {
         let mut visible = self.visible_tools.lock().map_err(|err| {
             StasisError::PortFailure(format!("Coder visible tool lock poisoned: {err}"))
         })?;
-        *visible = visible_tools
-            .iter()
-            .filter_map(|name| self.resolve_wire_tool_id(name).ok())
+        *visible = coder_visible_tool_ids()
+            .into_iter()
             .filter(|id| coder_tool_allowed(*id, &self.policy))
             .collect();
         drop(visible);
@@ -1167,7 +1147,6 @@ impl CoderBoundToolRegistry {
     ) -> Result<EngineeringPointersOutput> {
         let limit = input.limit.into_option().unwrap_or(12).clamp(1, 24);
         let pointers = self.ranked_pointers(limit)?;
-        self.refresh_visible_from_pointers(&pointers)?;
         Ok(EngineeringPointersOutput {
             ok: true,
             count: pointers.len(),
@@ -1175,115 +1154,18 @@ impl CoderBoundToolRegistry {
         })
     }
 
-    fn unlock_domain(&self, domain: ToolDomainId) -> Result<Vec<String>> {
+    fn inspect_domain(&self, domain: ToolDomainId) -> Result<Vec<String>> {
         let ids = coder_domain_tool_ids(domain).ok_or_else(|| {
             StasisError::PortFailure(format!(
                 "unknown Coder tool domain '{domain}'; expected one of {}",
                 CODER_DISCOVERABLE_DOMAINS.join(", ")
             ))
         })?;
-        let mut visible = self.visible_tools.lock().map_err(|err| {
-            StasisError::PortFailure(format!("Coder visible tool lock poisoned: {err}"))
-        })?;
-        let mut unlocked = Vec::new();
-        for id in ids {
-            if coder_tool_allowed(id, &self.policy) && visible.insert(id) {
-                unlocked.push(id.as_str().to_string());
-            }
-        }
-        Ok(unlocked)
-    }
-
-    fn refresh_visible_from_pointers(
-        &self,
-        pointers: &[super::coder_pointers::CoderEngineeringPointer],
-    ) -> Result<()> {
-        let needs_intelligence = pointers.iter().any(|pointer| {
-            matches!(
-                pointer.kind,
-                super::coder_pointers::CoderPointerKind::Symbol
-                    | super::coder_pointers::CoderPointerKind::DiagnosticSet
-            )
-        });
-        if needs_intelligence {
-            let _ = self.unlock_domain(ToolDomainId::new("intelligence"))?;
-        }
-        let needs_semantic_actions = pointers.iter().any(|pointer| {
-            matches!(
-                pointer.kind,
-                super::coder_pointers::CoderPointerKind::Symbol
-                    | super::coder_pointers::CoderPointerKind::ChangeSet
-            )
-        });
-        if needs_semantic_actions {
-            let _ = self.unlock_domain(ToolDomainId::new("semantic_actions"))?;
-        }
-        let needs_causal = pointers.iter().any(|pointer| {
-            matches!(
-                pointer.status,
-                super::coder_activity::CoderActivityKind::ToolBlocked
-                    | super::coder_activity::CoderActivityKind::ToolFailed
-            )
-        });
-        if needs_causal {
-            let _ = self.unlock_domain(ToolDomainId::new("causal"))?;
-        }
-        Ok(())
-    }
-
-    fn refresh_visible_from_memory_overview(&self, overview: &Value) -> Result<()> {
-        let nodes = overview
-            .get("nodes")
-            .and_then(Value::as_array)
+        Ok(ids
             .into_iter()
-            .flatten()
-            .chain(
-                overview
-                    .get("pending_writes")
-                    .and_then(Value::as_array)
-                    .into_iter()
-                    .flatten(),
-            );
-        let mut needs_intelligence = false;
-        let mut needs_semantic_actions = false;
-        let mut needs_causal = false;
-        let mut needs_world_model = false;
-        let mut needs_experiments = false;
-        for node in nodes {
-            let kind = node.get("kind").and_then(Value::as_str);
-            let has_symbols = node
-                .get("symbols")
-                .and_then(Value::as_array)
-                .is_some_and(|symbols| !symbols.is_empty());
-            needs_intelligence |=
-                has_symbols || matches!(kind, Some("discovery" | "hypothesis" | "open_gap"));
-            needs_world_model |= matches!(
-                kind,
-                Some("change" | "verification" | "checkpoint" | "handoff")
-            );
-            needs_semantic_actions |= matches!(kind, Some("change" | "decision" | "verification"));
-            needs_causal |= matches!(kind, Some("hypothesis" | "verification" | "open_gap"));
-            needs_experiments |= matches!(
-                kind,
-                Some("experiment" | "acceptance_criterion" | "next_action")
-            );
-        }
-        if needs_intelligence {
-            let _ = self.unlock_domain(ToolDomainId::new("intelligence"))?;
-        }
-        if needs_world_model {
-            let _ = self.unlock_domain(ToolDomainId::new("world_model"))?;
-        }
-        if needs_semantic_actions {
-            let _ = self.unlock_domain(ToolDomainId::new("semantic_actions"))?;
-        }
-        if needs_causal {
-            let _ = self.unlock_domain(ToolDomainId::new("causal"))?;
-        }
-        if needs_experiments {
-            let _ = self.unlock_domain(ToolDomainId::new("experiments"))?;
-        }
-        Ok(())
+            .filter(|id| coder_tool_allowed(*id, &self.policy))
+            .map(|id| id.as_str().to_string())
+            .collect())
     }
 
     fn invoke_runtime_tool(&self, tool_name: &str, input: &Value) -> Result<Value> {
@@ -1301,11 +1183,11 @@ impl CoderBoundToolRegistry {
                         CODER_DISCOVERABLE_DOMAINS.join(", ")
                     ))
                 })?;
-                let unlocked = self.unlock_domain(domain_id)?;
+                let tools = self.inspect_domain(domain_id)?;
                 Ok(json!({
                     "ok": true,
                     "domain": domain,
-                    "newly_visible": unlocked,
+                    "tools": tools,
                     "available_domains": CODER_DISCOVERABLE_DOMAINS,
                 }))
             }
@@ -1828,12 +1710,6 @@ impl CoderBoundToolRegistry {
                     &authority.identity,
                     &current_head,
                 )?;
-                if matches!(
-                    commit.kind.as_str(),
-                    "experiment" | "acceptance_criterion" | "next_action"
-                ) {
-                    let _ = self.unlock_domain(ToolDomainId::new("experiments"))?;
-                }
                 Ok(self
                     .persist_or_queue_memory_commit(authority, commit, "model_commit")
                     .await)
@@ -2309,13 +2185,6 @@ impl ToolRegistry for CoderBoundToolRegistry {
                 "tool is outside the Coder mode contract: {tool_name}"
             )));
         }
-        let visible = self
-            .visible_tools
-            .lock()
-            .map_err(|err| {
-                StasisError::PortFailure(format!("Coder visible tool lock poisoned: {err}"))
-            })?
-            .contains(&tool_id);
         let tool_name = tool_id.as_str();
         let authority = self.authority()?;
         authority.heartbeat()?;
@@ -2356,26 +2225,6 @@ impl ToolRegistry for CoderBoundToolRegistry {
         };
         let call_id = admission.call_id;
         let _claim_heartbeat = ClaimHeartbeatGuard::start(&authority, &call_id);
-        if !visible && !crate::public_api::is_public_api_tool(tool_name) {
-            let err = StasisError::PortFailure(format!(
-                "Coder tool is authorized but not visible; unlock its domain with {COGNITION_CODER_TOOLS_DISCOVER}: {tool_name}"
-            ));
-            authority.finish_tool_activity(
-                &call_id,
-                tool_name,
-                intent.as_str(),
-                targets,
-                Err(&err),
-            );
-            authority.append_receipt(tool_receipt(
-                tool_name,
-                intent.as_str(),
-                &call_id,
-                &input,
-                Err(&err),
-            ));
-            return Err(err);
-        }
         let input = match self.bind_input(tool_name, input) {
             Ok(input) => input,
             Err(err) => {
@@ -2518,7 +2367,7 @@ fn coder_runtime_tool_definitions() -> Vec<Tool> {
     let mut tools = vec![
         Tool::new(COGNITION_CODER_TOOLS_DISCOVER)
             .with_description(
-                "Reveal one already-authorized Coder tool pack for this turn. Packs are monotonic and cannot expand Forge authority.",
+                "List tools in a Coder domain with concise usage summaries.",
             )
             .with_schema(json!({
                 "type": "object",
@@ -2595,10 +2444,10 @@ fn with_required_coder_intent(
 fn with_coder_tool_advertisement(tool: Tool) -> Tool {
     match tool.name.as_str() {
         crate::public_api::COGNITION_WORKSHOP_MUTATE => tool.with_description(
-            "Spawn, cancel, or steer a peer sub-agent. action=workshop.spawn for parallel research while Coder stays on the Forge lease.",
+            "Spawn, cancel, or steer a peer sub-agent. Use action=workshop.spawn for parallel work.",
         ),
         crate::public_api::COGNITION_WORKSHOP_QUERY => {
-            tool.with_description("Check status of peer sub-agents spawned from this Coder turn.")
+            tool.with_description("Check status of peer sub-agents.")
         }
         _ => tool,
     }
@@ -3349,7 +3198,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn surface_exposes_only_the_coder_bootstrap_until_discovery() {
+    async fn surface_exposes_the_authorized_coder_catalog() {
         let fixture = fixture();
         let authority = authority(&fixture);
         let inner = Arc::new(RecordingRegistry::default());
@@ -3361,8 +3210,11 @@ mod tests {
         );
         let tools = registry.list_tools().await.expect("list");
         assert!(
-            registry.visible_tools.lock().expect("visible tools").len() <= 27,
-            "Coder bootstrap schema must remain intentionally bounded"
+            !registry
+                .visible_tools
+                .lock()
+                .expect("visible tools")
+                .is_empty()
         );
         for memory_tool in super::super::coder_memory::CODER_MEMORY_TOOL_NAMES {
             assert!(
@@ -3451,12 +3303,11 @@ mod tests {
                 .iter()
                 .any(|tool| tool.name.as_str() == crate::public_api::COGNITION_MEMORY_MUTATE)
         );
-        for hidden in ["cognition_web_search"] {
-            assert!(
-                tools.iter().all(|tool| tool.name.as_str() != hidden),
-                "unselected tool leaked into the Coder bootstrap: {hidden}"
-            );
-        }
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name.as_str() == "cognition_web_search")
+        );
         for runtime_control in ["cognition_runtime_jobs_cancel", "cognition_shell_run"] {
             assert!(
                 tools
@@ -3581,7 +3432,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn exact_restore_replaces_visible_surface_without_expanding_authority() {
+    async fn exact_restore_preserves_current_authorized_surface() {
         let fixture = fixture();
         let authority = authority(&fixture);
         let inner = Arc::new(RecordingRegistry::default());
@@ -3602,19 +3453,23 @@ mod tests {
             )
             .expect("restore checkpoint surface");
 
-        assert_eq!(
-            registry.checkpoint_visible_tools().unwrap(),
-            vec![crate::public_api::COGNITION_STORE_READ.to_string()]
-        );
+        let visible = registry.checkpoint_visible_tools().unwrap();
+        assert!(visible.contains(&crate::public_api::COGNITION_STORE_READ.to_string()));
+        assert!(!visible.contains(&"cognition_runtime_jobs_cancel".to_string()));
         assert_eq!(
             registry.checkpoint_memory_cursor().unwrap().as_deref(),
             Some("node-42")
         );
         let tools = registry.list_tools().await.expect("list restored tools");
-        assert_eq!(tools.len(), 1);
-        assert_eq!(
-            tools[0].name.as_str(),
-            crate::public_api::COGNITION_STORE_READ
+        assert!(
+            tools
+                .iter()
+                .any(|tool| { tool.name.as_str() == crate::public_api::COGNITION_STORE_READ })
+        );
+        assert!(
+            tools
+                .iter()
+                .all(|tool| { tool.name.as_str() != "cognition_runtime_jobs_cancel" })
         );
     }
 
@@ -4328,7 +4183,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn discovery_reveals_only_authorized_coder_domains_between_rounds() {
+    async fn discovery_inspects_authorized_coder_domains_without_surface_changes() {
         let fixture = fixture();
         let authority = authority(&fixture);
         let registry = CoderBoundToolRegistry::new(
@@ -4349,35 +4204,17 @@ mod tests {
                 .any(|tool| tool.name.as_str() == COGNITION_ENGINEERING_POINTERS)
         );
         assert!(
-            !initial
+            initial
                 .iter()
                 .any(|tool| tool.name.as_str() == COGNITION_ENGINEERING_HISTORY)
         );
-        assert!(!initial.iter().any(|tool| {
+        assert!(initial.iter().any(|tool| {
             tool.name.as_str() == crate::code_intelligence_tools::COGNITION_CODE_DIAGNOSTICS
         }));
-
-        let hidden = registry
-            .invoke_tool(
-                crate::code_intelligence_tools::COGNITION_CODE_DIAGNOSTICS,
-                json!({
-                    "intent": "Inspect current compiler diagnostics",
-                    "uri": format!("file://{}", fixture.entry.worktree.join("src/lib.rs").display())
-                }),
-            )
-            .await
-            .expect_err("hidden tool denied");
-        assert!(hidden.to_string().contains("not visible"));
-        let hidden_events = fixture
-            .activity
-            .events_for_work(&fixture.entry.work_id)
-            .expect("activity after hidden call");
-        assert!(hidden_events.iter().any(|event| {
-            event.kind == super::super::coder_activity::CoderActivityKind::ToolFailed
-                && event.tool.as_deref()
-                    == Some(crate::code_intelligence_tools::COGNITION_CODE_DIAGNOSTICS)
-                && event.intent.as_deref() == Some("Inspect current compiler diagnostics")
-        }));
+        let initial_names = initial
+            .iter()
+            .map(|tool| tool.name.as_str().to_string())
+            .collect::<HashSet<_>>();
 
         let discovered = registry
             .invoke_tool(
@@ -4390,11 +4227,16 @@ mod tests {
             .await
             .expect("discover intelligence");
         assert!(
-            discovered["newly_visible"]
+            discovered["tools"]
                 .as_array()
                 .is_some_and(|tools| !tools.is_empty())
         );
         let after = registry.list_tools().await.expect("tools after discover");
+        let after_names = after
+            .iter()
+            .map(|tool| tool.name.as_str().to_string())
+            .collect::<HashSet<_>>();
+        assert_eq!(initial_names, after_names);
         assert!(after.iter().any(|tool| {
             tool.name.as_str() == crate::code_intelligence_tools::COGNITION_CODE_DIAGNOSTICS
         }));
@@ -4419,18 +4261,12 @@ mod tests {
             )
             .await
             .expect("discover experiments");
-        assert!(
-            experiments["newly_visible"]
-                .as_array()
-                .is_some_and(|tools| {
-                    tools.iter().any(|tool| {
-                        tool.as_str()
-                            == Some(
-                                super::super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE,
-                            )
-                    })
-                })
-        );
+        assert!(experiments["tools"].as_array().is_some_and(|tools| {
+            tools.iter().any(|tool| {
+                tool.as_str()
+                    == Some(super::super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE)
+            })
+        }));
         let after = registry.list_tools().await.expect("experiment tools");
         let compare = after
             .iter()
@@ -4467,7 +4303,7 @@ mod tests {
                 )
                 .await
                 .expect("discover final-slice domain");
-            assert!(discovered["newly_visible"].as_array().is_some_and(|tools| {
+            assert!(discovered["tools"].as_array().is_some_and(|tools| {
                 tools
                     .iter()
                     .any(|tool| tool.as_str() == Some(expected_tool))
@@ -4507,7 +4343,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn experiment_notebook_state_auto_reveals_only_the_comparison_tool() {
+    async fn experiment_notebook_state_does_not_change_the_tool_surface() {
         let fixture = fixture();
         let authority = authority(&fixture);
         let registry = CoderBoundToolRegistry::new(
@@ -4517,9 +4353,9 @@ mod tests {
             fixture.policy.clone(),
         );
         let before = registry.list_tools().await.expect("initial tools");
-        assert!(before.iter().all(|tool| {
+        assert!(before.iter().any(|tool| {
             tool.name.as_str()
-                != super::super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE
+                == super::super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE
         }));
 
         registry
@@ -4541,12 +4377,12 @@ mod tests {
         assert!(
             after
                 .iter()
-                .all(|tool| tool.name.as_str() != COGNITION_ENGINEERING_HISTORY)
+                .any(|tool| tool.name.as_str() == COGNITION_ENGINEERING_HISTORY)
         );
     }
 
     #[tokio::test]
-    async fn engineering_history_is_bounded_and_unlocked_on_demand() {
+    async fn engineering_history_is_bounded_and_discoverable() {
         let fixture = fixture();
         let authority = authority(&fixture);
         let registry = CoderBoundToolRegistry::new(

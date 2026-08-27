@@ -98,10 +98,9 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         "cognition_turn" => {
             let action = input.get("action").and_then(Value::as_str).unwrap_or("");
             match action {
-                "turn.finish"
-                | "turn.checkpoint"
-                | "turn.prepare_final"
-                | "turn.request_more_rounds" => StepExecutionClass::ReadOnly,
+                "turn.finish" | "turn.checkpoint" | "turn.request_more_rounds" => {
+                    StepExecutionClass::ReadOnly
+                }
                 _ => StepExecutionClass::Mutating,
             }
         }

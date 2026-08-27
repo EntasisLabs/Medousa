@@ -110,7 +110,6 @@ pub struct ActiveTurnCheckpoint {
     pub counters: ActiveTurnCounters,
     pub transcript: ActiveTurnTranscript,
     pub invocations: Vec<CheckpointToolInvocation>,
-    pub pack_hold_fragments: Vec<String>,
     pub scratch: TurnScratchpad,
     pub forge: CheckpointForgeState,
     pub activity_cursor: u64,
@@ -148,11 +147,6 @@ impl ActiveTurnCheckpoint {
                 Vec::new()
             } else {
                 self.invocations.clone()
-            },
-            pack_hold_fragments: if reset_turn_budget {
-                Vec::new()
-            } else {
-                self.pack_hold_fragments.clone()
             },
             scratch: self.scratch.clone(),
         }
@@ -772,10 +766,6 @@ impl CoderTurnCheckpointController {
                 .as_ref()
                 .map(|state| state.invocations.clone())
                 .unwrap_or_default(),
-            pack_hold_fragments: resume_state
-                .as_ref()
-                .map(|state| state.pack_hold_fragments.clone())
-                .unwrap_or_default(),
             scratch: resume_state
                 .as_ref()
                 .map(|state| state.scratch.clone())
@@ -915,7 +905,6 @@ impl ActiveTurnCheckpointSink for CoderTurnCheckpointController {
             tool_lane_messages: state.tool_lane_messages,
         };
         checkpoint.invocations = state.invocations;
-        checkpoint.pack_hold_fragments = state.pack_hold_fragments;
         checkpoint.current_goal = state.scratch.goal.clone();
         checkpoint.scratch = state.scratch;
         checkpoint.outstanding_boundary = state.outstanding_boundary;
@@ -1170,12 +1159,6 @@ fn bound_checkpoint(checkpoint: &mut ActiveTurnCheckpoint) {
         .iter()
         .map(|path| truncate(path, 4_000))
         .take(MAX_CHANGED_PATHS)
-        .collect();
-    checkpoint.pack_hold_fragments = checkpoint
-        .pack_hold_fragments
-        .iter()
-        .map(|fragment| bounded_checkpoint_text(fragment, MAX_MESSAGE_PART_CHARS))
-        .take(4)
         .collect();
     checkpoint.invocations.iter_mut().for_each(|invocation| {
         invocation.tool_name = truncate(&invocation.tool_name, 256);
@@ -1518,7 +1501,6 @@ mod tests {
                 tool_lane_messages: vec![ChatMessage::assistant("working")],
             },
             invocations: Vec::new(),
-            pack_hold_fragments: Vec::new(),
             scratch: TurnScratchpad::from_user_prompt("fix it"),
             forge: CheckpointForgeState {
                 work_id: work.into(),
@@ -1755,7 +1737,6 @@ mod tests {
         durable.authoritative_prompt = "api_key=prompt-secret continue".into();
         durable.current_goal = "password=goal-secret finish".into();
         durable.counters.last_response_preview = Some("token=preview-secret done".into());
-        durable.pack_hold_fragments = vec!["secret=pack-secret wait".into()];
         durable.scratch.goal = "auth_token=scratch-secret resume".into();
         durable.scratch.working_notes = vec!["access_token=note-secret later".into()];
         durable.transcript.user_lane_prefix = vec![ChatMessage::user(
@@ -1797,7 +1778,6 @@ mod tests {
             "prompt-secret",
             "goal-secret",
             "preview-secret",
-            "pack-secret",
             "scratch-secret",
             "note-secret",
             "transcript-secret",

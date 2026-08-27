@@ -708,6 +708,20 @@ operator-issued, unexpired, single-use invite can enter the ceremony.
 
 Cookbook: [mobile-and-lan.md](../cookbook/mobile-and-lan.md)
 
+## Explicit daemon delegation
+
+`POST /v1/mesh/tasks` is a native-only daemon-to-daemon route. It requires all
+of the following: an authenticated pairing bearer, an explicit `task.request`
+grant on that pairing, and a signed mesh envelope whose sender and recipient
+exactly match the paired identities. The body carries a bounded Stasis
+`TurnGranted` request; the response is a signed `task.result` envelope with the
+remote execution and session-derivation provenance.
+
+Pairing does not enable this route. The source daemon also needs a separate,
+revocable delegation binding created by an explicit user action. Binding sends
+no traffic, does not select a portal, and does not merge either workshop's
+session catalog.
+
 ## Local credential operations
 
 These native-only administration routes require `admin.identity`. They never
@@ -741,8 +755,9 @@ medousa-cli daemon-ask "Summarize open risks" --daemon-url http://127.0.0.1:7419
 **Streaming chat:**
 
 1. `POST /v1/interactive/turn`
-2. `GET` the returned `stream_url` as SSE. Use `Accept: text/event-stream` for
-   v1 or `Accept: text/event-stream; medousa-version=2` for the typed v2
-   envelope; both retain `?since=<seq>` replay semantics.
+2. `GET` the returned `stream_url` as SSE. Use
+   `Accept: text/event-stream; medousa-version=3` for native chronological
+   facts, `medousa-version=2` for the typed compatibility envelope, or the
+   unversioned media type for v1. All retain `?since=<seq>` replay semantics.
 
 More: [integrate-without-the-app.md](../cookbook/integrate-without-the-app.md)

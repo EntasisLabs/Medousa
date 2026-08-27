@@ -13,12 +13,7 @@ use stasis::prelude::Result;
 use super::policy::tool_allowed;
 use crate::browser_tools::BROWSER_COGNITION_TOOLS;
 use crate::client_tools::ClientRegistry;
-use crate::tool_bootstrap::{
-    ToolSurfaceLane, effective_tool_names, ensure_bound_workshop_session_tool_defaults,
-    ensure_browser_domain_for_capable_clients, ensure_environment_domain_for_ui_clients,
-    ensure_host_session_tool_defaults, ensure_worker_browser_domain_for_capable_clients,
-    ensure_worker_environment_domain_for_ui_clients,
-};
+use crate::tool_bootstrap::{ToolSurfaceLane, effective_tool_names};
 
 fn memory_tool_needs_session(tool_name: &str) -> bool {
     let lower = tool_name.to_ascii_lowercase();
@@ -82,6 +77,7 @@ pub struct AllowlistToolRegistry {
     inner: Arc<dyn ToolRegistry>,
     allowlist: HashSet<String>,
     include_public_api: bool,
+    delegated_finish_only: bool,
 }
 
 impl AllowlistToolRegistry {
@@ -90,6 +86,7 @@ impl AllowlistToolRegistry {
             inner,
             allowlist,
             include_public_api: true,
+            delegated_finish_only: false,
         }
     }
 
@@ -104,6 +101,16 @@ impl AllowlistToolRegistry {
             inner,
             allowlist,
             include_public_api: false,
+            delegated_finish_only: false,
+        }
+    }
+
+    pub fn delegated(inner: Arc<dyn ToolRegistry>, allowlist: HashSet<String>) -> Self {
+        Self {
+            inner,
+            allowlist,
+            include_public_api: false,
+            delegated_finish_only: true,
         }
     }
 
@@ -136,9 +143,6 @@ impl SessionBootstrapToolRegistry {
         client_registry: ClientRegistry,
     ) -> Self {
         let session_id = session_id.into();
-        ensure_host_session_tool_defaults(&session_id);
-        ensure_browser_domain_for_capable_clients(&session_id, supports_browser_host);
-        ensure_environment_domain_for_ui_clients(&session_id, supports_ui_artifacts);
         Self {
             inner,
             session_id,
@@ -179,9 +183,6 @@ impl SessionBootstrapToolRegistry {
         client_registry: ClientRegistry,
     ) -> Self {
         let session_id = session_id.into();
-        ensure_bound_workshop_session_tool_defaults(&session_id);
-        ensure_worker_environment_domain_for_ui_clients(&session_id, supports_ui_artifacts);
-        ensure_worker_browser_domain_for_capable_clients(&session_id, supports_browser_host);
         Self {
             inner,
             session_id,
@@ -233,7 +234,7 @@ impl ToolRegistry for SessionBootstrapToolRegistry {
             && !tool_allowed(tool_name, &self.effective_allowlist())
         {
             return Err(StasisError::PortFailure(format!(
-                "tool not on session surface (call cognition_tools_discover to unlock catalog/runtime/…): {tool_name}"
+                "tool is outside this session's immutable lane ceiling: {tool_name}"
             )));
         }
         self.inner.invoke_tool(tool_name, input).await
@@ -246,7 +247,31 @@ impl ToolRegistry for AllowlistToolRegistry {
         let tools = self.inner.list_tools().await?;
         Ok(tools
             .into_iter()
-            .filter(|tool| self.allows(tool.name.as_str()))
+            .filter_map(|mut tool| {
+                if !self.allows(tool.name.as_str()) {
+                    return None;
+                }
+                if self.delegated_finish_only
+                    && tool.name.as_str() == crate::public_api::COGNITION_TURN
+                {
+                    tool.description = Some(
+                        "Finish authenticated delegated work and return its final result."
+                            .to_string(),
+                    );
+                    tool.schema = Some(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "action": { "type": "string", "enum": ["turn.finish"] },
+                            "message": { "type": "string", "minLength": 1 },
+                            "reason": { "type": "string" }
+                        },
+                        "required": ["action", "message"],
+                        "additionalProperties": false
+                    }));
+                    tool.strict = Some(true);
+                }
+                Some(tool)
+            })
             .collect())
     }
 
@@ -255,6 +280,14 @@ impl ToolRegistry for AllowlistToolRegistry {
             return Err(StasisError::PortFailure(format!(
                 "tool not allowed in this turn profile: {tool_name}"
             )));
+        }
+        if self.delegated_finish_only
+            && tool_name == crate::public_api::COGNITION_TURN
+            && input.get("action").and_then(Value::as_str) != Some("turn.finish")
+        {
+            return Err(StasisError::PortFailure(
+                "delegated workers may only use cognition_turn action=turn.finish".to_string(),
+            ));
         }
         self.inner.invoke_tool(tool_name, input).await
     }

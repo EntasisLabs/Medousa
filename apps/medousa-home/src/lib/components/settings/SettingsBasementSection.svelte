@@ -23,6 +23,7 @@
   import SettingsLocalBrainPanel from "$lib/components/settings/SettingsLocalBrainPanel.svelte";
   import SettingsWorkshopsSection from "$lib/components/settings/SettingsWorkshopsSection.svelte";
   import { isTauri } from "$lib/window";
+  import { isTauriDesktop } from "$lib/platform";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { workshopBasementConnectionLabel, thisHostLabel } from "$lib/platformCopy";
 
@@ -145,7 +146,7 @@
   }
 
   async function restartWorkshopEngine() {
-    if (!isTauri() || mobile) return;
+    if (!isTauriDesktop()) return;
     const ok = window.confirm(
       "Restart the workshop engine and its code and shell services? Active chats, terminals, and tools will pause until they come back.",
     );
@@ -185,7 +186,7 @@
   });
 
   $effect(() => {
-    if (isTauri() && !mobile && !configPaths) {
+    if (isTauriDesktop() && !configPaths) {
       void loadConfigPaths();
     }
   });
@@ -199,7 +200,7 @@
   }
 
   onMount(() => {
-    if (isTauri() && !mobile) {
+    if (isTauriDesktop()) {
       void loadConnectionPrefsState();
     }
   });
@@ -365,7 +366,7 @@
         </p>
       {/if}
 
-      {#if isTauri() && !mobile}
+      {#if isTauriDesktop()}
         <div class="prefs-tile">
           <span class="prefs-tile-copy">
             <span class="prefs-tile-title">Engine</span>
@@ -390,7 +391,7 @@
     </div>
   </div>
 
-  {#if isTauri() && !mobile}
+  {#if isTauriDesktop()}
     <div class="prefs-band">
       <div class="prefs-band-head">
         <h3 class="settings-subsection-heading">{thisHostLabel()}</h3>
@@ -462,7 +463,7 @@
     </div>
   {/if}
 
-  {#if isTauri() && !mobile}
+  {#if isTauriDesktop()}
     <SettingsLocalBrainPanel />
   {/if}
 
@@ -498,7 +499,7 @@
         />
       </label>
 
-      {#if !mobile}
+      {#if isTauriDesktop()}
         <details class="prefs-nested" bind:open={advancedOpen}>
           <summary class="prefs-nested-summary">
             <span>Files & diagnostics</span>

@@ -8,8 +8,8 @@
 //! we exercise the production decision code, not a reimplementation of it.
 //!
 //! What is locked here (the cases the plan calls out):
-//! * two consecutive non-tool replies commit (`content_pack_merged`),
-//! * announcement before tools holds, then a tool round can proceed,
+//! * Direct prose commits immediately, independent of wording,
+//! * prose after tools remains chronological ActiveWork until typed terminal,
 //! * tool round then `cognition_turn_finish` — terminal commit + tool slicing,
 //! * checkpoint / worker-ack handoff termination reasons,
 //! * event-driven prose completion before and after tool use,
@@ -27,7 +27,9 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use genai::ModelIden;
 use genai::adapter::AdapterKind;
-use genai::chat::{ChatOptions, ChatRequest, ChatResponse, MessageContent, Tool, ToolCall};
+use genai::chat::{
+    ChatOptions, ChatRequest, ChatResponse, ContentPart, MessageContent, Tool, ToolCall,
+};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -95,6 +97,13 @@ fn checkpoint_call(message: &str) -> ToolCall {
     )
 }
 
+fn request_input_call(message: &str) -> ToolCall {
+    tool_call(
+        COGNITION_TURN,
+        json!({ "action": "turn.request_input", "message": message }),
+    )
+}
+
 fn register_golden_turn_tool(registry: &InMemoryToolRegistry) {
     registry.register_tool(GoldenTurnTool).unwrap();
 }
@@ -102,6 +111,22 @@ fn register_golden_turn_tool(registry: &InMemoryToolRegistry) {
 fn tool_response(calls: Vec<ToolCall>) -> ChatResponse {
     ChatResponse {
         content: MessageContent::from_tool_calls(calls),
+        reasoning_content: None,
+        model_iden: mock_iden(),
+        provider_model_iden: mock_iden(),
+        stop_reason: None,
+        usage: Default::default(),
+        captured_raw_body: None,
+        response_id: None,
+    }
+}
+
+fn prose_and_tool_response(text: &str, call: ToolCall) -> ChatResponse {
+    ChatResponse {
+        content: MessageContent::from_parts(vec![
+            ContentPart::Text(text.to_string()),
+            ContentPart::ToolCall(call),
+        ]),
         reasoning_content: None,
         model_iden: mock_iden(),
         provider_model_iden: mock_iden(),
@@ -264,8 +289,6 @@ enum Ev {
     ToolStarted { tool: String, round: usize },
     ToolFinished { tool: String, round: usize },
     Progress(String),
-    PackHold(String),
-    ScratchReset,
     Content(String),
 }
 
@@ -287,8 +310,6 @@ impl CapturingPorts {
                 Ev::ToolStarted { tool, .. } => format!("tool_started:{tool}"),
                 Ev::ToolFinished { tool, .. } => format!("tool_finished:{tool}"),
                 Ev::Progress(_) => "progress".to_string(),
-                Ev::PackHold(_) => "pack_hold".to_string(),
-                Ev::ScratchReset => "scratch_reset".to_string(),
                 Ev::Content(_) => "content".to_string(),
             })
             .collect()
@@ -323,11 +344,6 @@ impl TurnPresentationPort for CapturingPorts {
         Box::pin(async {})
     }
 
-    fn scratch_reset(&self, _stream_turn_id: u64) -> RuntimePortFuture<()> {
-        self.push(Ev::ScratchReset);
-        Box::pin(async {})
-    }
-
     fn turn_progress(
         &self,
         _stream_turn_id: u64,
@@ -335,16 +351,6 @@ impl TurnPresentationPort for CapturingPorts {
         _tool_names: Vec<String>,
     ) -> RuntimePortFuture<()> {
         self.push(Ev::Progress(message));
-        Box::pin(async {})
-    }
-
-    fn pack_hold(
-        &self,
-        _stream_turn_id: u64,
-        fragments: Vec<String>,
-        _tool_names: Vec<String>,
-    ) -> RuntimePortFuture<()> {
-        self.push(Ev::PackHold(fragments.join("\n\n")));
         Box::pin(async {})
     }
 }
@@ -615,7 +621,7 @@ async fn golden_model_visible_tools_refresh_after_a_tool_round() {
 }
 
 #[tokio::test]
-async fn golden_plain_reply_commits_on_two_consecutive_non_tool_responses() {
+async fn golden_plain_reply_commits_directly() {
     let first = "Here is a complete explanation of how the ingester maps channel \
                  sessions to Medousa history without any further steps needed.";
     let second = "That mapping is the whole answer; nothing else to inspect.";
@@ -627,11 +633,11 @@ async fn golden_plain_reply_commits_on_two_consecutive_non_tool_responses() {
     )
     .await;
 
-    assert_eq!(outcome.termination_reason, "content_pack_merged");
-    assert_eq!(outcome.text, format!("{first}\n\n{second}"));
-    assert_eq!(outcome.rounds_executed, 2);
+    assert_eq!(outcome.termination_reason, "direct_prose");
+    assert_eq!(outcome.text, first);
+    assert_eq!(outcome.rounds_executed, 1);
     assert!(outcome.tool_invocations.is_empty());
-    assert_eq!(outcome.event_kinds, vec!["pack_hold".to_string()]);
+    assert!(outcome.event_kinds.is_empty());
 }
 
 #[tokio::test]
@@ -671,15 +677,16 @@ async fn golden_tool_round_then_finish_commits_terminal_body() {
 }
 
 #[tokio::test]
-async fn golden_finish_appends_to_held_non_tool_response() {
-    let held = "The pager is only the visible symptom; the PTY command has no completion boundary.";
+async fn golden_finish_message_is_fallback_not_a_prose_merge() {
+    let progress =
+        "The pager is only the visible symptom; the PTY command has no completion boundary.";
     let finish =
         "The fix is a scoped noninteractive environment plus an explicit completion sentinel.";
     let outcome = run_golden(
         "diagnose the pager problem",
         vec![
             tool_response(vec![tool_call("data_probe", json!({ "q": "pty" }))]),
-            text_response(held),
+            text_response(progress),
             tool_response(vec![finish_call(finish)]),
         ],
         10,
@@ -688,32 +695,31 @@ async fn golden_finish_appends_to_held_non_tool_response() {
     .await;
 
     assert_eq!(outcome.termination_reason, "cognition_turn_finish");
-    assert_eq!(outcome.text, format!("{held}\n\n{finish}"));
+    assert_eq!(outcome.text, finish);
     assert_eq!(outcome.rounds_executed, 3);
 }
 
 #[tokio::test]
-async fn golden_tool_call_resets_the_held_non_tool_response() {
-    let stale = "I found a possible cause and need one more probe.";
-    let held = "The second probe confirmed the missing PTY completion boundary.";
+async fn golden_active_work_prose_never_merges_into_terminal_fallback() {
+    let first_progress = "I found a possible cause and need one more probe.";
+    let second_progress = "The second probe confirmed the missing PTY completion boundary.";
     let final_text = "The pager environment and sentinel fix are ready to implement.";
     let outcome = run_golden(
         "keep diagnosing the pager problem",
         vec![
             tool_response(vec![tool_call("data_probe", json!({ "q": "first" }))]),
-            text_response(stale),
+            text_response(first_progress),
             tool_response(vec![tool_call("data_probe", json!({ "q": "second" }))]),
-            text_response(held),
-            text_response(final_text),
+            text_response(second_progress),
+            tool_response(vec![finish_call(final_text)]),
         ],
         10,
         false,
     )
     .await;
 
-    assert_eq!(outcome.termination_reason, "content_pack_merged");
-    assert_eq!(outcome.text, format!("{held}\n\n{final_text}"));
-    assert!(!outcome.text.contains(stale));
+    assert_eq!(outcome.termination_reason, "cognition_turn_finish");
+    assert_eq!(outcome.text, final_text);
     assert_eq!(outcome.rounds_executed, 5);
 }
 
@@ -735,67 +741,130 @@ async fn golden_checkpoint_handoff_terminates_as_checkpoint() {
 }
 
 #[tokio::test]
-async fn golden_non_tool_announcement_before_tools_holds_then_tools_proceed() {
-    let held = "The probe confirmed the mapping is owned by the ingest adapter.";
-    let final_text = "No further inspection is required; that is the answer.";
+async fn golden_request_input_is_a_distinct_typed_terminal() {
+    let question = "Which repository should I inspect?";
+    let outcome = run_golden(
+        "inspect the repository",
+        vec![tool_response(vec![request_input_call(question)])],
+        10,
+        false,
+    )
+    .await;
+
+    assert_eq!(outcome.termination_reason, "cognition_turn_request_input");
+    assert_eq!(outcome.text, question);
+    assert_eq!(outcome.rounds_executed, 1);
+}
+
+#[tokio::test]
+async fn golden_terminal_mixed_with_ordinary_action_is_ignored() {
+    let outcome = run_golden(
+        "probe then finish honestly",
+        vec![
+            tool_response(vec![
+                tool_call("data_probe", json!({ "q": "ingest" })),
+                finish_call("premature"),
+            ]),
+            tool_response(vec![finish_call("Grounded final answer.")]),
+        ],
+        10,
+        false,
+    )
+    .await;
+
+    assert_eq!(outcome.termination_reason, "cognition_turn_finish");
+    assert_eq!(outcome.text, "Grounded final answer.");
+    assert_eq!(outcome.rounds_executed, 2);
+    assert_eq!(
+        outcome.tool_invocations,
+        vec![
+            "data_probe".to_string(),
+            "cognition_turn".to_string(),
+            "cognition_turn".to_string(),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn golden_finish_prefers_same_response_prose_over_message_fallback() {
+    let prose = "The probe confirms the ingest adapter owns the mapping.";
+    let outcome = run_golden(
+        "probe then answer",
+        vec![
+            tool_response(vec![tool_call("data_probe", json!({ "q": "ingest" }))]),
+            prose_and_tool_response(prose, finish_call("fallback should not win")),
+        ],
+        10,
+        false,
+    )
+    .await;
+
+    assert_eq!(outcome.termination_reason, "cognition_turn_finish");
+    assert_eq!(outcome.text, prose);
+    assert_eq!(outcome.rounds_executed, 2);
+}
+
+#[tokio::test]
+async fn golden_non_tool_announcement_without_action_ends_directly() {
     let outcome = run_golden(
         "kick off some work",
         vec![
             text_response("Let me check that for you."),
             tool_response(vec![tool_call("data_probe", json!({ "q": "ingest" }))]),
-            text_response(held),
-            text_response(final_text),
         ],
         10,
         false,
     )
     .await;
 
-    assert_eq!(outcome.termination_reason, "content_pack_merged");
-    assert_eq!(outcome.text, format!("{held}\n\n{final_text}"));
-    assert!(!outcome.text.contains("Let me check that for you."));
-    assert_eq!(outcome.rounds_executed, 4);
-    assert_eq!(outcome.tool_invocations, vec!["data_probe".to_string()]);
+    assert_eq!(outcome.termination_reason, "direct_prose");
+    assert_eq!(outcome.text, "Let me check that for you.");
+    assert_eq!(outcome.rounds_executed, 1);
+    assert!(outcome.tool_invocations.is_empty());
 }
 
 #[tokio::test]
-async fn golden_foreground_announcement_tools_and_two_prose_final() {
-    let first_final = "The completion policy is now separate from the execution lane. Coder keeps \
-                       its announcement alive, executes the requested probe, and holds this completed \
-                       principal-facing prose for one bounded resolution round.";
-    let second_final = "The focused regression passed, so these two prose responses now commit together as one answer.";
-    let expected = format!("{first_final}\n\n{second_final}");
+async fn golden_active_work_prose_continues_until_finish() {
+    let progress = "The completion policy is now separate from the execution lane. The probe passed; I am reconciling the receipt now.";
+    let final_text = "The focused regression passed and the receipt matches the change.";
     let outcome = run_golden(
         "inspect the runtime and report back",
         vec![
             tool_response(vec![tool_call("data_probe", json!({ "q": "completion" }))]),
-            text_response(first_final),
-            text_response(second_final),
+            text_response(progress),
+            tool_response(vec![finish_call(final_text)]),
         ],
         10,
         false,
     )
     .await;
 
-    assert_eq!(outcome.termination_reason, "content_pack_merged");
-    assert_eq!(outcome.text, expected);
+    assert_eq!(outcome.termination_reason, "cognition_turn_finish");
+    assert_eq!(outcome.text, final_text);
     assert_eq!(outcome.rounds_executed, 3);
-    assert_eq!(outcome.tool_invocations, vec!["data_probe".to_string()]);
+    assert_eq!(
+        outcome.tool_invocations,
+        vec!["data_probe".to_string(), "cognition_turn".to_string()]
+    );
 }
 
 #[tokio::test]
 async fn golden_max_rounds_fuse_terminates() {
-    // A text reply on the final permitted round trips the max-rounds fuse.
+    // Direct prose wins even on the final permitted round. Enter ActiveWork
+    // first to exercise the fuse.
     let outcome = run_golden(
         "answer immediately",
-        vec![text_response("partial")],
-        1,
+        vec![
+            tool_response(vec![tool_call("data_probe", json!({ "q": "partial" }))]),
+            text_response("partial"),
+        ],
+        2,
         false,
     )
     .await;
 
     assert_eq!(outcome.termination_reason, "max_rounds_fuse");
-    assert_eq!(outcome.rounds_executed, 1);
+    assert_eq!(outcome.rounds_executed, 2);
 }
 
 #[tokio::test]
@@ -811,20 +880,17 @@ async fn golden_streamed_content_reaches_sink() {
     )
     .await;
 
-    assert_eq!(outcome.termination_reason, "content_pack_merged");
-    assert_eq!(outcome.rounds_executed, 2);
-    assert_eq!(outcome.request_count, 2);
-    assert_eq!(
-        outcome.streamed,
-        vec![first.to_string(), second.to_string()]
-    );
+    assert_eq!(outcome.termination_reason, "direct_prose");
+    assert_eq!(outcome.rounds_executed, 1);
+    assert_eq!(outcome.request_count, 1);
+    assert_eq!(outcome.streamed, vec![first.to_string()]);
     assert_eq!(
         outcome
             .event_kinds
             .iter()
             .filter(|kind| kind.as_str() == "content")
             .count(),
-        2
+        1
     );
-    assert!(outcome.event_kinds.iter().any(|kind| kind == "pack_hold"));
+    assert!(!outcome.event_kinds.iter().any(|kind| kind == "pack_hold"));
 }

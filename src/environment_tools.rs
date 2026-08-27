@@ -37,7 +37,7 @@ const COGNITION_COMPONENT_CREATE_ID: ToolId = ToolId::new(COGNITION_COMPONENT_CR
 const COGNITION_COMPONENT_UPDATE_ID: ToolId = ToolId::new(COGNITION_COMPONENT_UPDATE);
 const COGNITION_COMPONENT_DELETE_ID: ToolId = ToolId::new(COGNITION_COMPONENT_DELETE);
 
-const ENVIRONMENT_SPEC_PATCH_HINT: &str = "Patch surfaces/components on the full spec. Custom surfaces must be listed in the active layout preset surfaces array. Components render only on kind=custom surfaces.";
+const ENVIRONMENT_SPEC_PATCH_HINT: &str = "Patch surfaces and components on the full spec. Include custom surfaces in the active layout preset; components render on custom surfaces.";
 
 fn component_def_schema() -> Value {
     json!({
@@ -52,7 +52,7 @@ fn component_def_schema() -> Value {
             },
             "surfaceId": {
                 "type": "string",
-                "description": "Target surface id — agent components MUST use kind=custom surfaces (not home/chat builtins)"
+                "description": "Target custom surface id"
             },
             "slot": {
                 "type": "string",
@@ -287,7 +287,7 @@ enum EnvironmentApplyOutput {
 
 #[medousa_tool(id = COGNITION_ENVIRONMENT_APPLY_ID)]
 impl CognitionEnvironmentApplyTool {
-    /// Apply an approved environment spec to the daemon store. Surfaces, components, and chrome sync to Home.
+    /// Apply an environment spec. Surfaces, components, and chrome sync to Home.
     async fn invoke_typed(
         &self,
         input: EnvironmentApplyInput,
@@ -664,7 +664,7 @@ impl CognitionComponentCreateTool {
             component: updated.spec.components.last().cloned().map(Box::new),
             live: true,
             nav_visible,
-            hint: crate::custom_view_status::nav_visibility_hint(
+            hint: crate::environment_navigation::nav_visibility_hint(
                 &component.surface_id,
                 nav_visible,
             ),
@@ -1074,7 +1074,7 @@ fn apply_component_patch(component: &mut ComponentDef, patch: ComponentPatchInpu
 }
 
 pub fn surface_nav_visible_for_spec(spec: &EnvironmentSpec, surface_id: &str) -> bool {
-    crate::custom_view_status::surface_nav_visible(spec, surface_id)
+    crate::environment_navigation::surface_nav_visible(spec, surface_id)
 }
 
 /// Helper for agent-driven custom surface creation.

@@ -25,9 +25,7 @@ use crate::engine_context::{EngineExecutionLane, default_policy_profile_for_lane
 use crate::identity_store_ext::{wrap_in_memory, wrap_surreal};
 use crate::runtime::surreal_startup::timed_step;
 
-const DEFAULT_PERSONA_ID: &str = "persona:default";
 pub use crate::user_profiles::DEFAULT_USER_ID;
-const DEFAULT_CHANNEL_ID: &str = "channel:default";
 const DEFAULT_PERSONA_DISPLAY_NAME: &str = "Medousa";
 
 pub use crate::cognitive_identity::build_identity_context_request;
@@ -91,64 +89,10 @@ pub fn parse_identity_context_mode_label(raw: Option<&str>) -> IdentityContextMo
     }
 }
 
-pub fn resolve_identity_persona_id() -> String {
-    resolve_non_empty_env("MEDOUSA_IDENTITY_PERSONA_ID")
-        .or_else(|| resolve_non_empty_env("STASIS_DEFAULT_PERSONA_ID"))
-        .unwrap_or_else(|| DEFAULT_PERSONA_ID.to_string())
-}
-
-pub fn resolve_identity_user_id(explicit: Option<&str>) -> String {
-    if let Some(value) = explicit.and_then(trimmed_non_empty) {
-        return value.to_string();
-    }
-
-    resolve_non_empty_env("MEDOUSA_IDENTITY_USER_ID")
-        .or_else(|| resolve_non_empty_env("STASIS_DEFAULT_USER_ID"))
-        .unwrap_or_else(|| DEFAULT_USER_ID.to_string())
-}
-
-/// Identity principal for cognition tools at runtime assembly time.
-///
-/// Workshop/daemon surfaces use the canonical operator user (`user:default` or env override).
-/// TUI keeps session-scoped identity for power-user isolation.
-pub fn resolve_tool_identity_user_id(session_id: &str, workshop_operator: bool) -> String {
-    if workshop_operator {
-        crate::user_profiles::resolve_workshop_identity_user_id()
-    } else {
-        resolve_identity_user_id(Some(session_id))
-    }
-}
-
-pub fn resolve_identity_channel_id(policy_profile: Option<&str>) -> String {
-    if let Some(profile) = policy_profile.and_then(trimmed_non_empty) {
-        if profile.eq_ignore_ascii_case("interactive") {
-            return workshop_interactive_channel_id();
-        }
-        return format!("channel:{}", profile.to_ascii_lowercase());
-    }
-
-    resolve_non_empty_env("MEDOUSA_IDENTITY_CHANNEL_ID")
-        .or_else(|| resolve_non_empty_env("STASIS_DEFAULT_CHANNEL_ID"))
-        .unwrap_or_else(|| DEFAULT_CHANNEL_ID.to_string())
-}
-
-/// Interactive-lane channel for the active workshop profile (`channel:work`, `channel:interactive`, …).
-pub fn workshop_interactive_channel_id() -> String {
-    match crate::user_profiles::profile_slug_from_id(
-        &crate::user_profiles::resolve_workshop_active_profile_id(),
-    ) {
-        Some(slug) if slug != "default" => format!("channel:{slug}"),
-        _ => "channel:interactive".to_string(),
-    }
-}
-
-/// Profile-scoped channel id for a given identity user principal.
-pub fn profile_channel_id_for_user_id(user_id: &str) -> String {
-    match crate::user_profiles::profile_slug_from_id(user_id) {
-        Some(slug) if slug != "default" => format!("channel:{slug}"),
-        _ => "channel:interactive".to_string(),
-    }
-}
+pub use crate::identity_coordinates::{
+    profile_channel_id_for_user_id, resolve_identity_channel_id, resolve_identity_persona_id,
+    resolve_identity_user_id, resolve_tool_identity_user_id, workshop_interactive_channel_id,
+};
 
 pub fn build_seeded_medousa_identity_store()
 -> Result<Arc<crate::identity_store_ext::MedousaIdentityMemoryStore>> {
@@ -900,15 +844,6 @@ fn resolve_non_empty_env(key: &str) -> Option<String> {
             Some(trimmed.to_string())
         }
     })
-}
-
-fn trimmed_non_empty(value: &str) -> Option<&str> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed)
-    }
 }
 
 fn is_user_contact_relationship(relationship: &RelationshipEntity, user_id: &str) -> bool {

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 
 use crate::semantic_values::TrimmedText;
-use crate::session::load_history;
+use crate::session_history::load_history;
 use crate::turn_slice::{
     DEFAULT_TOOL_HISTORY_DETAIL_CHARS, DEFAULT_TOOL_HISTORY_SUMMARY_TURNS, ToolHistorySliceRow,
     tool_history_detail_markdown, tool_history_summary_rows,
@@ -116,7 +116,7 @@ pub struct ToolHistorySummaryOutput {
 
 #[medousa_tool(id = COGNITION_TOOL_HISTORY_SUMMARY_ID)]
 impl CognitionToolHistorySummaryTool {
-    /// High-level tool-history slices for recent session turns. Use after reading [MEDOUSA_TOOL_SLICES] at turn start when you need to verify what already ran. Returns slice_id values (turn:N) for detail drill-down.
+    /// Summarize tool activity for recent session turns. Returns slice_id values for cognition_tool_history_detail.
     async fn invoke_typed(
         &self,
         input: ToolHistorySummaryInput,
@@ -242,7 +242,7 @@ pub struct ToolHistoryDetailOutput {
 
 #[medousa_tool(id = COGNITION_TOOL_HISTORY_DETAIL_ID)]
 impl CognitionToolHistoryDetailTool {
-    /// Full tool-run detail for one session slice (slice_id=turn:N from summary or [MEDOUSA_TOOL_SLICES]). Optional tool_round for a single round's receipts.
+    /// Read tool-run details for one session slice. Optional tool_round selects one round.
     async fn invoke_typed(
         &self,
         input: ToolHistoryDetailInput,
@@ -275,7 +275,7 @@ impl CognitionToolHistoryDetailTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::ConversationTurn;
+    use crate::session_history::ConversationTurn;
     use crate::turn_parts::TurnPart;
     use chrono::Utc;
 

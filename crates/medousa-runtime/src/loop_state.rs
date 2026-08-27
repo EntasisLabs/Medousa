@@ -7,53 +7,14 @@ use serde::{Deserialize, Serialize};
 use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 
 use crate::completion_fsm::ContinueReason;
-use crate::turn_policy::pack_hold_resolution_control_message;
 
 /// Default when a composition does not provide its own text-only limit.
 pub const MAX_TEXT_ONLY_STUCK_CONTINUES: usize = 3;
 pub const USER_RESPONSE_PREVIEW_MAX_CHARS: usize = 100;
 pub const TURN_CONTROL_PREFIX: &str = "[MEDOUSA_TURN_CONTROL]";
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct AssistantPackHold {
-    pub fragments: Vec<String>,
-}
-
-/// Injected on host/worker tool turns and echoed in STTP.
-pub const TURN_RUNTIME_BOUNDARY_APPENDIX: &str = r#"[MEDOUSA_TURN_RUNTIME]
-Runtime boundary (enforced by the daemon):
-- Chat (host): memory, identity, runtime, vault read, quick cognition_web_search/cognition_browser_fetch, cognition_turn action=turn.begin_work (message, goal) for multi-tool execution, cognition_workshop_mutate action=workshop.spawn for parallel research.
-- cognition_turn action=turn.begin_work enters the bound Workshop (one per session) — Chat ends with ack; synthesis delivers on the same thread.
-- Completion is event-driven: tools continue/reset the prose count; two consecutive non-tool responses end the turn and both are preserved. cognition_turn action=turn.finish ends immediately and appends its message to one held response. Prose wording is never classified.
-- Continuing work requires a tool call in the current model response. If you say you will inspect, run, or fix something next, call that tool now. Use cognition_turn action=turn.update_user in a tool round for visible interim status that does not end execution.
-- Mid-task handoff: cognition_turn action=turn.checkpoint. Parallel delegate: cognition_workshop_mutate action=workshop.spawn in a tool round. Worker results return to the host so it can answer.
-- UI stream draft may reset between rounds; [MEDOUSA_SCRATCH] engine notes persist across rounds and client disconnect."#;
-
-pub const TURN_SCRATCH_APPENDIX: &str = r#"[MEDOUSA_SCRATCH_POLICY]
-[MEDOUSA_SCRATCH] is your engine sticky notes — persists across tool rounds and client disconnect.
-The streamed UI draft may reset between rounds; scratch does not.
-Check scratch digests_recent / tools_this_turn / open_gaps before re-calling tools you already ran."#;
-
-/// Merge held assistant fragments with the resolution prose into one body.
-pub fn merge_assistant_pack_fragments(fragments: &[String], resolution: &str) -> String {
-    let mut parts: Vec<String> = fragments
-        .iter()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .collect();
-    let trimmed_resolution = resolution.trim();
-    if !trimmed_resolution.is_empty() {
-        parts.push(trimmed_resolution.to_string());
-    }
-    parts.join("\n\n")
-}
-
 pub fn resolve_max_text_only_stuck_continues(max_tool_rounds: usize) -> usize {
     max_tool_rounds.max(1)
-}
-
-pub fn push_pack_hold_message(messages: &mut Vec<ChatMessage>) {
-    messages.push(ChatMessage::system(pack_hold_resolution_control_message()));
 }
 
 pub fn push_turn_control_message(messages: &mut Vec<ChatMessage>, body: &str) {
@@ -73,17 +34,12 @@ pub fn ledger_tool_names(invocations: &[ToolInvocation]) -> Vec<String> {
         .collect()
 }
 
-/// `[MEDOUSA_TOOL_POLICY]` block appended to interactive tool-loop prompts.
+/// Dynamic loop HUD appended to interactive tool-loop prompts.
 pub fn append_tool_loop_policy(prompt: &str, max_tool_rounds: usize) -> String {
     let max_tool_rounds = max_tool_rounds.max(1);
     format!(
-        "{prompt}\n\n[MEDOUSA_TOOL_POLICY]\n\
-         mode=tool_loop\n\
-         max_tool_rounds={max_tool_rounds}\n\
-         {TURN_RUNTIME_BOUNDARY_APPENDIX}\n\
-         {TURN_SCRATCH_APPENDIX}\n\
-         Turn start injects [MEDOUSA_TOOL_SLICES], [MEDOUSA_TOOL_HINTS], and matched [MEDOUSA_GRAPHEME_SCRIPTS]. \
-         Call cognition_tools_discover(domain=…) to unlock tool groups for this session; drill history with cognition_tool_history_detail(slice_id=turn:N)."
+        "{prompt}\n\n[MEDOUSA_HUD]\n\
+         max_tool_rounds={max_tool_rounds}"
     )
 }
 
@@ -351,22 +307,11 @@ mod tests {
     }
 
     #[test]
-    fn assistant_pack_preserves_every_non_empty_fragment() {
-        assert_eq!(
-            merge_assistant_pack_fragments(
-                &["Which repo?".to_string(), "".to_string()],
-                "Medousa."
-            ),
-            "Which repo?\n\nMedousa."
-        );
-    }
-
-    #[test]
-    fn policy_carries_the_structural_completion_contract() {
+    fn hud_contains_only_dynamic_round_state() {
         let policy = append_tool_loop_policy("hello", 12);
         assert!(policy.contains("max_tool_rounds=12"));
-        assert!(policy.contains("two consecutive non-tool responses"));
-        assert!(policy.contains("cognition_turn action=turn.finish"));
-        assert!(policy.contains("[MEDOUSA_SCRATCH_POLICY]"));
+        assert!(!policy.contains("typed_terminal="));
+        assert!(!policy.contains("unlock"));
+        assert!(!policy.contains("[MEDOUSA_SCRATCH_POLICY]"));
     }
 }

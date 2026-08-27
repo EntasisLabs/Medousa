@@ -6,6 +6,7 @@
   import SettingsNav from "$lib/components/settings/SettingsNav.svelte";
   import type { DaemonHealth } from "$lib/daemon";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
+  import { workshops } from "$lib/stores/workshops.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { depthModeLabel } from "$lib/utils/chatModelPicker";
@@ -13,6 +14,7 @@
   import { peerUnreadCount } from "$lib/utils/lanShareApi";
   import { appUpdate } from "$lib/stores/appUpdate.svelte";
   import { isTauri } from "$lib/window";
+  import { isTauriDesktop } from "$lib/platform";
   import type { SettingsSectionId } from "$lib/types/settings";
   import {
     loadSettingsAgentSection,
@@ -47,6 +49,20 @@
   let unreadTimer: ReturnType<typeof setInterval> | null = null;
   const activeSection = $derived(settingsNav.activeSection);
   const shellNav = $derived(!mobile && !embedded);
+  const nativeWorkloads = $derived(
+    health?.runtime?.advertised_capabilities.includes("deployment.native-workloads") ??
+      isTauriDesktop(),
+  );
+  const chatGptAccountAuth = $derived(
+    health?.runtime?.advertised_capabilities.includes("auth.chatgpt-account") ??
+      isTauriDesktop(),
+  );
+  const embeddedMcp = $derived(
+    health?.runtime?.advertised_capabilities.includes("mcp.remote-config") ?? false,
+  );
+  const canManageMcp = $derived(
+    embeddedMcp || (isTauriDesktop() && workshops.activeWorkshop?.kind === "local"),
+  );
 
   async function refreshNearbyUnread() {
     if (!isTauri()) return;
@@ -133,19 +149,25 @@
 
     <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4">
       {#if activeSection === "preferences"}
-        <LazyFeatureView loader={loadSettingsPreferencesSection} {mobile} />
+        <LazyFeatureView loader={loadSettingsPreferencesSection} />
       {:else if activeSection === "agent"}
-        <LazyFeatureView loader={loadSettingsAgentSection} {mobile} />
+        <LazyFeatureView loader={loadSettingsAgentSection} {nativeWorkloads} />
       {:else if activeSection === "runtime"}
-        <LazyFeatureView loader={loadSettingsRuntimeSection} {mobile} />
+        <LazyFeatureView loader={loadSettingsRuntimeSection} {nativeWorkloads} />
       {:else if activeSection === "network"}
-        <LazyFeatureView loader={loadSettingsNetworkSection} {mobile} {visible} {health} />
+        <LazyFeatureView
+          loader={loadSettingsNetworkSection}
+          {mobile}
+          {visible}
+          {health}
+          {nativeWorkloads}
+        />
       {:else if activeSection === "connections"}
-        <LazyFeatureView loader={loadSettingsConnectionsSection} />
+        <LazyFeatureView loader={loadSettingsConnectionsSection} {chatGptAccountAuth} />
       {:else if activeSection === "packages"}
-        <LazyFeatureView loader={loadSettingsPackagesSection} {mobile} />
+        <LazyFeatureView loader={loadSettingsPackagesSection} />
       {:else if activeSection === "mcp"}
-        <LazyFeatureView loader={loadSettingsMcpSection} {mobile} />
+        <LazyFeatureView loader={loadSettingsMcpSection} {embeddedMcp} {canManageMcp} />
       {:else}
         <LazyFeatureView
           loader={loadSettingsBasementSection}

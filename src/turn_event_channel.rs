@@ -6,18 +6,20 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use tokio::sync::{broadcast, watch};
 
-use medousa_types::TurnStreamEnvelopeV2;
 use medousa_types::daemon_api::InteractiveTurnStreamEvent;
+use medousa_types::{TurnStreamEnvelopeV2, TurnStreamEnvelopeV3};
 
 #[derive(Debug, Clone)]
 pub struct PublishedTurnEvent {
-    pub v1: InteractiveTurnStreamEvent,
+    pub(crate) seq: u64,
+    pub v1: Option<InteractiveTurnStreamEvent>,
     pub v2: Option<TurnStreamEnvelopeV2>,
+    pub v3: Option<TurnStreamEnvelopeV3>,
 }
 
 impl PublishedTurnEvent {
     pub fn seq(&self) -> u64 {
-        self.v1.seq
+        self.seq
     }
 }
 
@@ -118,13 +120,39 @@ impl TurnEventChannel {
         let v2 = crate::sse_turn_projection::v1_to_v2(&event)
             .inspect_err(|error| tracing::error!(%error, "stream event has no v2 projection"))
             .ok();
-        let _ = self.tx.send(PublishedTurnEvent { v1: event, v2 });
+        let _ = self.tx.send(PublishedTurnEvent {
+            seq: event.seq,
+            v1: Some(event),
+            v2,
+            v3: None,
+        });
     }
 
     /// Broadcast the canonical v2 event and its frozen v1 compatibility view.
     pub fn publish_pair(&self, v1: InteractiveTurnStreamEvent, v2: TurnStreamEnvelopeV2) {
         debug_assert_eq!(v1.seq, v2.seq, "v1/v2 stream sequence must match");
-        let _ = self.tx.send(PublishedTurnEvent { v1, v2: Some(v2) });
+        let _ = self.tx.send(PublishedTurnEvent {
+            seq: v2.seq,
+            v1: Some(v1),
+            v2: Some(v2),
+            v3: None,
+        });
+    }
+
+    /// Broadcast one native V3 fact and any honest legacy compatibility views.
+    pub fn publish_v3(&self, v3: TurnStreamEnvelopeV3, v2: Option<TurnStreamEnvelopeV2>) {
+        debug_assert_eq!(
+            v2.as_ref().map(|event| event.seq).unwrap_or(v3.seq),
+            v3.seq,
+            "v2/v3 stream sequence must match"
+        );
+        let v1 = v2.as_ref().map(crate::sse_turn_projection::v2_to_v1);
+        let _ = self.tx.send(PublishedTurnEvent {
+            seq: v3.seq,
+            v1,
+            v2,
+            v3: Some(v3),
+        });
     }
 
     /// Mark the turn finished while the registry retains replay state.
@@ -157,7 +185,9 @@ mod tests {
         ch.publish(ev(1));
         let got = rx.try_recv().expect("live event");
         assert_eq!(got.seq(), 1);
+        assert!(got.v1.is_some());
         assert!(got.v2.is_some());
+        assert!(got.v3.is_none());
     }
 
     #[test]

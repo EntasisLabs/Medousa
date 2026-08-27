@@ -9,7 +9,6 @@ use stasis::domain::errors::{Result as StasisResult, StasisError};
 
 use medousa_types::authority_id::{ManuscriptId, ManuscriptOverlayProposalId};
 
-use crate::session;
 use crate::store_root::{StoreEntryKind, StorePath, StoreRoot};
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
@@ -42,7 +41,7 @@ pub fn register_manuscript_overlay_tools(
 }
 
 fn overlay_root() -> PathBuf {
-    session::medousa_data_dir().join("manuscript-overlays")
+    crate::paths::medousa_data_dir().join("manuscript-overlays")
 }
 
 fn pending_dir() -> PathBuf {
@@ -155,7 +154,7 @@ pub struct ManuscriptOverlayProposeOutput {
 
 #[medousa_tool(id = COGNITION_MANUSCRIPT_OVERLAY_PROPOSE_ID)]
 impl CognitionManuscriptOverlayProposeTool {
-    /// Propose a session-scoped manuscript overlay appendix for operator approval — never mutates kernel STTP. Writes a pending YAML under the Medousa data dir at manuscript-overlays/pending/. Operator approves by promoting the file to user manuscripts (manual for now).
+    /// Create a session-scoped manuscript overlay proposal for operator review.
     async fn invoke_typed(
         &self,
         input: ManuscriptOverlayProposeInput,

@@ -67,6 +67,13 @@ export function bindAllFeaturePorts(): void {
     dirty: () => workshopDefaults.dirty,
     workCardHideAfterHours: () => workshopDefaults.draft.workCardHideAfterHours,
     workCardWipeAfterDays: () => workshopDefaults.draft.workCardWipeAfterDays,
+    setWorkCardRetention: (hideAfterHours, wipeAfterDays) => {
+      workshopDefaults.draft = {
+        ...workshopDefaults.draft,
+        workCardHideAfterHours: hideAfterHours,
+        workCardWipeAfterDays: wipeAfterDays,
+      };
+    },
     vaultGitEnabled: () => workshopDefaults.draft.vaultGitEnabled,
     setVaultGitEnabled: (enabled) => {
       workshopDefaults.draft = {

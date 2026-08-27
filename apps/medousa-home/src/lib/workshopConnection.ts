@@ -51,12 +51,7 @@ import {
 } from "$lib/stores/environment.svelte";
 import type { EnvironmentStreamEvent } from "$lib/types/environment";
 import { homeChannelSurface } from "$lib/platform";
-import type {
-  InteractiveTurnStreamEvent,
-  TurnStreamEnvelopeV2,
-} from "$lib/types/generated/daemon_api";
-import { turnStreamPayloadToV2 } from "$lib/stream/v2ToLegacy";
-import { isTerminalTurnStreamEventV2 } from "$lib/stream/v2";
+import type { TurnStreamEnvelopeV3 } from "$lib/types/generated/daemon_api";
 import type { WorkspaceStreamEvent } from "$lib/types/workspace";
 
 export type WorkshopConnection = {
@@ -215,9 +210,8 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
     }),
   );
   unlisteners.push(
-    onInteractiveEvent<TurnStreamEnvelopeV2 | InteractiveTurnStreamEvent>((payload) => {
+    onInteractiveEvent<TurnStreamEnvelopeV3>((envelope) => {
       if (workshopTransitioning) return;
-      const envelope = turnStreamPayloadToV2(payload);
       const turnBefore = chat.turns.get(envelope.turn_id);
       chat.applyStreamEvent(envelope);
       if (!isTauriMobilePlatform()) return;
@@ -244,7 +238,7 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
         return;
       }
 
-      if (isTerminalTurnStreamEventV2(envelope.event)) {
+      if (envelope.event.type === "turn_completed") {
         void notifyTurnTicketTerminal(envelope, turnBefore?.workspaceCardId);
         haptic("success");
       }

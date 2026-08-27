@@ -18,8 +18,8 @@
 //! code aligned with the live SSE `event_type` taxonomy.
 
 use chrono::{DateTime, Utc};
-use medousa_types::TurnStreamEventV2;
 use medousa_types::turn::TurnPart;
+use medousa_types::{TurnStreamEventV2, TurnStreamEventV3};
 use serde::{Deserialize, Serialize};
 
 /// Default commit timestamp for journals written before the rich-body fields
@@ -155,8 +155,6 @@ pub enum TurnEvent {
         #[serde(default)]
         tool_names: Vec<String>,
     },
-    /// In-flight assistant scratch was reset before the next model round.
-    ScratchReset,
     /// A tool run began.
     ToolRunStarted {
         tool_run_id: String,
@@ -276,7 +274,6 @@ impl TurnEvent {
             TurnEvent::ContentDelta { .. } => "content_delta",
             TurnEvent::ReasoningDelta { .. } => "reasoning_delta",
             TurnEvent::Progress { .. } => "turn_progress",
-            TurnEvent::ScratchReset => "scratch_reset",
             TurnEvent::ToolRunStarted { .. } => "tool_started",
             TurnEvent::ToolRunFinished { .. } => "tool_finished",
             TurnEvent::Notice { .. } => "status",
@@ -381,6 +378,10 @@ pub struct SequencedTurnEvent {
     /// losslessly. Common deltas/statuses pay no duplicate-payload cost.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream_event_v2: Option<TurnStreamEventV2>,
+    /// Native chronological fact. Present for V3-authored records; absence
+    /// means the record predates V3 and must not be reverse-inferred from V2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_event_v3: Option<TurnStreamEventV3>,
 }
 
 impl SequencedTurnEvent {
@@ -463,11 +464,14 @@ mod tests {
                 tool_names: vec!["data_probe".into()],
                 parts: vec![TurnPart::Text {
                     markdown: "the answer".into(),
+                    segment_id: None,
+                    model_round: None,
                 }],
                 committed_at: Utc::now(),
             },
             emitted_at_utc: None,
             stream_event_v2: None,
+            stream_event_v3: None,
         };
         let json = serde_json::to_string(&original).unwrap();
         let decoded: SequencedTurnEvent = serde_json::from_str(&json).unwrap();
@@ -475,6 +479,7 @@ mod tests {
         assert_eq!(decoded.event, original.event);
         assert_eq!(decoded.emitted_at_utc, original.emitted_at_utc);
         assert!(decoded.stream_event_v2.is_none());
+        assert!(decoded.stream_event_v3.is_none());
         assert_eq!(decoded.seq(), 3);
         assert_eq!(decoded.event.kind(), "final");
     }

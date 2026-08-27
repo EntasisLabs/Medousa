@@ -100,7 +100,7 @@ pub struct BrowserSnapshotOutput {
 
 #[medousa_tool(id = COGNITION_BROWSER_SNAPSHOT_ID)]
 impl CognitionBrowserSnapshotTool {
-    /// Capture a markdown snapshot of the current page or a URL via Agent Browser. Requires a browser-capable client (Home desktop/iOS).
+    /// Capture a markdown snapshot of the current page or a URL via Agent Browser.
     async fn invoke_typed(
         &self,
         input: BrowserSnapshotInput,

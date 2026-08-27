@@ -15,6 +15,7 @@ use crate::runtime_api::runtime_type_schemas;
 use crate::store_tools::store_type_schemas;
 use crate::turn_api::turn_type_schemas;
 use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
+#[cfg(feature = "full-daemon")]
 use crate::workshop_api::workshop_type_schemas;
 
 const SCHEMA_ID: ToolId = ToolId::new(COGNITION_SCHEMA);
@@ -183,28 +184,33 @@ struct CatalogItem {
     parameters: Value,
 }
 
+#[allow(unused_mut)]
 fn catalog() -> Vec<CatalogItem> {
-    generated_items(SchemaDomain::Runtime, runtime_type_schemas())
-        .chain(generated_items(SchemaDomain::Store, store_type_schemas()))
+    let mut items = generated_items(SchemaDomain::Store, store_type_schemas())
         .chain(generated_items(
             SchemaDomain::Capability,
             capability_type_schemas(),
         ))
-        .chain(generated_items(SchemaDomain::Turn, turn_type_schemas()))
         .chain(generated_items(SchemaDomain::Memory, memory_type_schemas()))
-        .chain(generated_items(
-            SchemaDomain::Identity,
-            identity_type_schemas(),
-        ))
         .chain(generated_items(
             SchemaDomain::Calendar,
             calendar_type_schemas(),
         ))
         .chain(generated_items(
+            SchemaDomain::Identity,
+            identity_type_schemas(),
+        ))
+        .chain(generated_items(SchemaDomain::Runtime, runtime_type_schemas()))
+        .chain(generated_items(SchemaDomain::Turn, turn_type_schemas()))
+        .collect::<Vec<_>>();
+    #[cfg(feature = "full-daemon")]
+    {
+        items.extend(generated_items(
             SchemaDomain::Workshop,
             workshop_type_schemas(),
-        ))
-        .collect()
+        ));
+    }
+    items
 }
 
 fn generated_items(

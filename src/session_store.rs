@@ -199,7 +199,7 @@ struct SessionTurnRecord {
     search_text: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, SurrealValue)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, SurrealValue)]
 struct TranscriptEntryRecord {
     entry_id: String,
     role: String,
@@ -342,7 +342,9 @@ fn turn_search_text(turn: &ConversationTurn) -> Option<String> {
         .as_deref()?
         .iter()
         .filter_map(|part| match part {
-            TurnPart::Text { markdown } | TurnPart::Progress { markdown } => Some(markdown.trim()),
+            TurnPart::Text { markdown, .. } | TurnPart::Progress { markdown } => {
+                Some(markdown.trim())
+            }
             TurnPart::Handoff { text, .. } => Some(text.trim()),
             _ => None,
         })
@@ -452,7 +454,7 @@ impl From<&ConversationTurn> for SessionTurnRecord {
     }
 }
 
-fn content_digest(turn: &ConversationTurn) -> Result<String, StoreError> {
+pub(crate) fn transcript_content_digest(turn: &ConversationTurn) -> Result<String, StoreError> {
     use sha2::{Digest as _, Sha256};
 
     let bytes =
@@ -485,7 +487,7 @@ fn materialize_append(
     entry_seq: u64,
     append: &TranscriptAppend,
 ) -> Result<TranscriptEntry, StoreError> {
-    let digest = content_digest(&append.turn)?;
+    let digest = transcript_content_digest(&append.turn)?;
     if append
         .expected_digest
         .as_deref()
@@ -513,7 +515,7 @@ fn materialize_legacy_turn(
     entry_seq: u64,
     turn: ConversationTurn,
 ) -> Result<TranscriptEntry, StoreError> {
-    let digest = content_digest(&turn)?;
+    let digest = transcript_content_digest(&turn)?;
     Ok(TranscriptEntry {
         entry_id: legacy_entry_id(session_id, entry_seq, &digest),
         entry_seq,
@@ -1419,33 +1421,40 @@ impl SessionStore for SurrealSessionStore {
             ));
         }
 
-        #[derive(Debug, Deserialize, SurrealValue)]
-        struct EntryIdRow {
-            entry_id: String,
-        }
         let entry_ids = entries
             .iter()
             .map(|entry| entry.entry_id.to_string())
             .collect::<Vec<_>>();
         let mut payload_response = self
             .db
-            .query("SELECT entry_id FROM transcript_entry WHERE entry_id IN $entry_ids")
+            .query(
+                "SELECT entry_id, role, content, timestamp, tool_names, answer_state, parts, \
+                 slice_summary, speaker_profile_id, execution_authority_id, \
+                 execution_session_id, execution_id, content_digest \
+                 FROM transcript_entry WHERE entry_id IN $entry_ids",
+            )
             .bind(("entry_ids", entry_ids.clone()))
             .await
             .map_err(|error| StoreError::Backend(error.to_string()))?;
-        let available = payload_response
-            .take::<Vec<EntryIdRow>>(0)
+        let existing_payloads = payload_response
+            .take::<Vec<TranscriptEntryRecord>>(0)
             .map_err(|error| StoreError::Serialization(error.to_string()))?
             .into_iter()
-            .map(|row| row.entry_id)
-            .collect::<std::collections::HashSet<_>>();
-        if entry_ids
-            .iter()
-            .any(|entry_id| !available.contains(entry_id))
-        {
-            return Err(StoreError::InvalidInput(
-                "a selected transcript payload is no longer available".to_string(),
-            ));
+            .map(|record| (record.entry_id.clone(), record))
+            .collect::<HashMap<_, _>>();
+        let expected_payloads = entries.iter().map(entry_record).collect::<Vec<_>>();
+        let mut missing_payloads = Vec::new();
+        for expected in expected_payloads {
+            match existing_payloads.get(&expected.entry_id) {
+                Some(existing) if existing == &expected => {}
+                Some(_) => {
+                    return Err(StoreError::InvalidInput(format!(
+                        "transcript entry {} already exists with a different immutable payload",
+                        expected.entry_id
+                    )));
+                }
+                None => missing_payloads.push(expected),
+            }
         }
 
         let record = stored_derivation_record(request)?;
@@ -1461,20 +1470,36 @@ impl SessionStore for SurrealSessionStore {
             .iter()
             .map(|entry| binding_record(target, entry))
             .collect::<Vec<_>>();
-        let response = self
-            .db
-            .query(
-                "BEGIN TRANSACTION; \
-                 INSERT INTO context_manifest $manifests; \
-                 INSERT INTO session_derivation $derivations; \
-                 INSERT INTO session_entry $bindings; \
-                 COMMIT TRANSACTION;",
-            )
-            .bind(("manifests", vec![manifest_record]))
-            .bind(("derivations", vec![record]))
-            .bind(("bindings", bindings))
-            .await
-            .map_err(|error| StoreError::Backend(error.to_string()))?;
+        let response = if missing_payloads.is_empty() {
+            self.db
+                .query(
+                    "BEGIN TRANSACTION; \
+                     INSERT INTO context_manifest $manifests; \
+                     INSERT INTO session_derivation $derivations; \
+                     INSERT INTO session_entry $bindings; \
+                     COMMIT TRANSACTION;",
+                )
+                .bind(("manifests", vec![manifest_record]))
+                .bind(("derivations", vec![record]))
+                .bind(("bindings", bindings))
+                .await
+        } else {
+            self.db
+                .query(
+                    "BEGIN TRANSACTION; \
+                     INSERT INTO transcript_entry $entries; \
+                     INSERT INTO context_manifest $manifests; \
+                     INSERT INTO session_derivation $derivations; \
+                     INSERT INTO session_entry $bindings; \
+                     COMMIT TRANSACTION;",
+                )
+                .bind(("entries", missing_payloads))
+                .bind(("manifests", vec![manifest_record]))
+                .bind(("derivations", vec![record]))
+                .bind(("bindings", bindings))
+                .await
+        }
+        .map_err(|error| StoreError::Backend(error.to_string()))?;
         response
             .check()
             .map_err(|error| StoreError::Backend(error.to_string()))?;
@@ -1778,11 +1803,7 @@ pub fn get_session_store() -> Arc<dyn SessionStore> {
 
 /// Release a test deployment's database-backed global handle so a same-process
 /// reboot can model the handle teardown that happens at process exit.
-#[cfg(all(
-    test,
-    feature = "embedded-daemon",
-    not(feature = "full-daemon")
-))]
+#[cfg(all(test, feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub(crate) fn reset_session_store_for_test() {
     set_session_store(Arc::new(FileSessionStore::new()));
 }

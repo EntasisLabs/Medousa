@@ -44,6 +44,7 @@ export interface MeshPeerGrantRow {
   role: string;
   meshGrants: string[];
   rendezvous: boolean;
+  taskRequest: boolean;
   lastSeen: string;
 }
 
@@ -116,6 +117,14 @@ export async function meshSetPeerRendezvous(
 ): Promise<MeshPeerGrantRow> {
   requireTauri();
   return invoke<MeshPeerGrantRow>("mesh_set_peer_rendezvous", { deviceId, enabled });
+}
+
+export async function meshSetPeerTaskRequest(
+  deviceId: string,
+  enabled: boolean,
+): Promise<MeshPeerGrantRow> {
+  requireTauri();
+  return invoke<MeshPeerGrantRow>("mesh_set_peer_task_request", { deviceId, enabled });
 }
 
 export function oppositeEndpoints(

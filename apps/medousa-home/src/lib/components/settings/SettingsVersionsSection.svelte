@@ -2,18 +2,14 @@
   import { untrack } from "svelte";
   import { vaultVersions } from "$lib/stores/vaultVersions.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
-  import { isTauriMobilePlatform } from "$lib/platform";
   import { ChevronDown } from "@lucide/svelte";
 
   interface Props {
-    mobile?: boolean;
     /** Omit page chrome when nested under Runtime Controls. */
     embedded?: boolean;
   }
 
-  let { mobile = false, embedded = false }: Props = $props();
-
-  const readOnly = $derived(mobile && isTauriMobilePlatform());
+  let { embedded = false }: Props = $props();
   const versionsOn = $derived(workshopDefaults.draft.vaultGitEnabled ?? false);
 
   // Only react to loaded/on — untrack store reads/writes so refresh can't loop.
@@ -90,7 +86,7 @@
         type="checkbox"
         class="versions-switch"
         checked={versionsOn}
-        disabled={readOnly || vaultVersions.busy || vaultVersions.unsupported}
+        disabled={vaultVersions.busy || vaultVersions.unsupported}
         aria-label="Enable vault versioning"
         onchange={(event) =>
           void applyEnable((event.currentTarget as HTMLInputElement).checked)}
@@ -144,7 +140,7 @@
               <button
                 type="button"
                 class="btn btn-sm variant-soft-surface"
-                disabled={readOnly || vaultVersions.busy}
+                disabled={vaultVersions.busy}
                 onclick={() => void vaultVersions.installGit()}
               >
                 Install / locate Git
@@ -154,7 +150,7 @@
               <button
                 type="button"
                 class="btn btn-sm variant-filled-primary"
-                disabled={readOnly || vaultVersions.busy}
+                disabled={vaultVersions.busy}
                 onclick={() => void vaultVersions.startVersioning()}
               >
                 Start versioning

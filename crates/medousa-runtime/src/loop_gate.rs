@@ -139,15 +139,6 @@ impl ToolLoopCompletionGate<'_> {
             active_turn_resume: None,
         }
     }
-
-    pub async fn reset_scratch(&self, streaming_enabled: bool) {
-        if !streaming_enabled {
-            return;
-        }
-        if let Some(presentation) = self.runtime_ports.turn_presentation() {
-            presentation.scratch_reset(self.stream_turn_id).await;
-        }
-    }
 }
 
 pub fn collect_tool_names(invocations: &[ToolInvocation]) -> Vec<String> {
@@ -155,64 +146,4 @@ pub fn collect_tool_names(invocations: &[ToolInvocation]) -> Vec<String> {
         .iter()
         .map(|invocation| invocation.tool_name.clone())
         .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::Mutex;
-
-    use crate::ports::{RuntimePortFuture, TurnPresentationPort};
-
-    use super::*;
-
-    #[derive(Default)]
-    struct RecordingPresentation {
-        scratch_resets: Arc<Mutex<Vec<u64>>>,
-    }
-
-    impl TurnPresentationPort for RecordingPresentation {
-        fn notice(&self, _message: String) -> RuntimePortFuture<()> {
-            Box::pin(async {})
-        }
-
-        fn scratch_reset(&self, stream_turn_id: u64) -> RuntimePortFuture<()> {
-            let scratch_resets = Arc::clone(&self.scratch_resets);
-            Box::pin(async move {
-                scratch_resets.lock().unwrap().push(stream_turn_id);
-            })
-        }
-
-        fn turn_progress(
-            &self,
-            _stream_turn_id: u64,
-            _message: String,
-            _tool_names: Vec<String>,
-        ) -> RuntimePortFuture<()> {
-            Box::pin(async {})
-        }
-
-        fn pack_hold(
-            &self,
-            _stream_turn_id: u64,
-            _fragments: Vec<String>,
-            _tool_names: Vec<String>,
-        ) -> RuntimePortFuture<()> {
-            Box::pin(async {})
-        }
-    }
-
-    #[tokio::test]
-    async fn scratch_reset_is_optional_and_streaming_gated() {
-        let presentation = Arc::new(RecordingPresentation::default());
-        let resets = Arc::clone(&presentation.scratch_resets);
-        let ports = RuntimePorts::new().with_turn_presentation(presentation);
-        let gate = ToolLoopCompletionGate::new_for_execution(42, ports, 0);
-
-        gate.reset_scratch(false).await;
-        gate.reset_scratch(true).await;
-
-        assert_eq!(*resets.lock().unwrap(), vec![42]);
-        assert_eq!(gate.max_tool_rounds, 1);
-        assert_eq!(gate.tool_round_budget_ceiling, 1);
-    }
 }

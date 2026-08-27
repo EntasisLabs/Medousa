@@ -26,6 +26,7 @@
   import {
     meshListLocalPeers,
     meshSetPeerRendezvous,
+    meshSetPeerTaskRequest,
     type MeshPeerGrantRow,
   } from "$lib/utils/meshIntroApi";
   import { workshopBasementRestartHint } from "$lib/platformCopy";
@@ -34,16 +35,18 @@
     isMissingCapabilityError,
   } from "$lib/utils/normieErrors";
   import { reconnectWorkshop } from "$lib/workshopConnection";
+  import { isTauriDesktop } from "$lib/platform";
   import { isTauri } from "$lib/window";
   import { ChevronDown, Share2, Upload } from "@lucide/svelte";
 
   interface Props {
     mobile?: boolean;
+    nativeWorkloads?: boolean;
     /** Omit page chrome when nested under Sharing. */
     embedded?: boolean;
   }
 
-  let { mobile = false, embedded = false }: Props = $props();
+  let { mobile = false, nativeWorkloads = true, embedded = false }: Props = $props();
 
   let backupOpen = $state(false);
 
@@ -94,7 +97,7 @@
   }
 
   async function refreshLanPairing() {
-    if (!isTauri()) return;
+    if (!isTauriDesktop()) return;
     try {
       lanPairing = await getLanPairingStatus();
     } catch (err) {
@@ -106,7 +109,7 @@
   }
 
   async function refreshConnectionPrefs() {
-    if (!isTauri() || mobile) return;
+    if (!isTauriDesktop()) return;
     try {
       connectionPrefs = await loadConnectionPrefs();
     } catch {
@@ -143,8 +146,27 @@
     }
   }
 
+  async function toggleTaskRequest(peer: MeshPeerGrantRow, enabled: boolean) {
+    meshBusy = true;
+    error = null;
+    success = null;
+    try {
+      const updated = await meshSetPeerTaskRequest(peer.deviceId, enabled);
+      meshPeers = meshPeers.map((entry) =>
+        entry.deviceId === updated.deviceId ? updated : entry,
+      );
+      success = enabled
+        ? `Delegated work on for ${updated.displayName}.`
+        : `Delegated work off for ${updated.displayName}.`;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      meshBusy = false;
+    }
+  }
+
   async function togglePublicBind(enabled: boolean) {
-    if (!isTauri() || mobile) return;
+    if (!isTauriDesktop()) return;
     reachBusy = true;
     error = null;
     success = null;
@@ -165,6 +187,7 @@
   }
 
   async function toggleLanPairing(enabled: boolean) {
+    if (!isTauriDesktop()) return;
     lanBusy = true;
     error = null;
     success = null;
@@ -310,7 +333,7 @@
   {/if}
 
   <div class="nearby-stack">
-    {#if isTauri() && !mobile}
+    {#if isTauriDesktop()}
       <label class="nearby-tile">
         <span class="nearby-tile-copy">
           <span class="nearby-tile-title">Always reachable on Wi‑Fi</span>
@@ -333,7 +356,8 @@
       </label>
     {/if}
 
-    <label class="nearby-tile">
+    {#if isTauriDesktop()}
+      <label class="nearby-tile">
       <span class="nearby-tile-copy">
         <span class="nearby-tile-title">Open pairing window</span>
         <span class="nearby-tile-meta">
@@ -354,7 +378,8 @@
         onchange={(event) =>
           void toggleLanPairing((event.currentTarget as HTMLInputElement).checked)}
       />
-    </label>
+      </label>
+    {/if}
 
     <button type="button" class="nearby-tile nearby-tile-action" onclick={openPeers}>
       <span class="nearby-tile-copy">
@@ -400,30 +425,51 @@
             Let paired clients introduce each other. Addresses stay private until both consent.
           </p>
           {#each meshPeers as peer (peer.deviceId)}
-            <label class="nearby-tile">
-              <span class="nearby-tile-copy">
-                <span class="nearby-tile-title">{peer.displayName}</span>
-                <span class="nearby-tile-meta">{peer.role}</span>
-              </span>
-              <input
-                type="checkbox"
-                class="nearby-switch"
-                checked={peer.rendezvous}
-                disabled={meshBusy}
-                aria-label="Rendezvous for {peer.displayName}"
-                onchange={(event) =>
-                  void toggleRendezvous(
-                    peer,
-                    (event.currentTarget as HTMLInputElement).checked,
-                  )}
-              />
-            </label>
+            <div class="nearby-stack">
+              <label class="nearby-tile">
+                <span class="nearby-tile-copy">
+                  <span class="nearby-tile-title">{peer.displayName}</span>
+                  <span class="nearby-tile-meta">Let this client introduce peers</span>
+                </span>
+                <input
+                  type="checkbox"
+                  class="nearby-switch"
+                  checked={peer.rendezvous}
+                  disabled={meshBusy}
+                  aria-label="Rendezvous for {peer.displayName}"
+                  onchange={(event) =>
+                    void toggleRendezvous(
+                      peer,
+                      (event.currentTarget as HTMLInputElement).checked,
+                    )}
+                />
+              </label>
+              <label class="nearby-tile">
+                <span class="nearby-tile-copy">
+                  <span class="nearby-tile-title">Run delegated work</span>
+                  <span class="nearby-tile-meta">Allow {peer.displayName} to send bounded tasks</span>
+                </span>
+                <input
+                  type="checkbox"
+                  class="nearby-switch"
+                  checked={peer.taskRequest}
+                  disabled={meshBusy}
+                  aria-label="Delegated work for {peer.displayName}"
+                  onchange={(event) =>
+                    void toggleTaskRequest(
+                      peer,
+                      (event.currentTarget as HTMLInputElement).checked,
+                    )}
+                />
+              </label>
+            </div>
           {/each}
         </div>
       </details>
     {/if}
 
-    <details class="nearby-more" bind:open={backupOpen}>
+    {#if nativeWorkloads}
+      <details class="nearby-more" bind:open={backupOpen}>
       <summary class="nearby-more-summary">
         <span class="nearby-more-summary-copy">
           <span>Canvas backup & send</span>
@@ -527,7 +573,8 @@
           </div>
         {/if}
       </div>
-    </details>
+      </details>
+    {/if}
 
     {#if error}
       <p class="nearby-feedback nearby-feedback-error">{error}</p>

@@ -5,10 +5,15 @@ use std::hash::{Hash, Hasher};
 
 use serde_json::{Value, json};
 
+#[cfg(feature = "full-daemon")]
 use crate::session::{ConversationTurn, list_history_sessions_page, load_history};
+#[cfg(feature = "full-daemon")]
 use crate::turn_parts::TurnPart;
+#[cfg(feature = "full-daemon")]
 use crate::turn_slice::{format_slice_id, parse_turn_index_from_slice_id, session_turn_index};
-use crate::workflow::{WorkflowRunRequest, WorkflowStepSpec, new_workflow_id};
+#[cfg(feature = "full-daemon")]
+use crate::workflow::WorkflowRunRequest;
+use crate::workflow::{WorkflowStepSpec, new_workflow_id};
 
 pub use medousa_types::tool_history::{
     ToolHistoryListQuery, ToolHistoryListResponse, ToolHistoryRunEntry, ToolHistorySliceRef,
@@ -87,10 +92,12 @@ pub fn sanitize_tool_input(tool_name: &str, input_summary: &str) -> (Value, bool
     (value, redacted, hash_text(&serialized))
 }
 
+#[cfg(feature = "full-daemon")]
 fn entry_id_for_run(session_id: &str, slice_id: &str, tool_round: usize, run_id: &str) -> String {
     format!("{session_id}:{slice_id}:r{tool_round}:{run_id}")
 }
 
+#[cfg(feature = "full-daemon")]
 fn extract_runs_from_turn(
     session_id: &str,
     turns: &[ConversationTurn],
@@ -145,6 +152,7 @@ fn extract_runs_from_turn(
         .collect()
 }
 
+#[cfg(feature = "full-daemon")]
 pub fn list_tool_history_runs(query: &ToolHistoryListQuery) -> ToolHistoryListResponse {
     let run_limit = query.limit.unwrap_or(100).clamp(1, 500);
     let session_limit = query.session_limit.unwrap_or(40).clamp(1, 200);
@@ -218,6 +226,7 @@ pub fn list_tool_history_runs(query: &ToolHistoryListQuery) -> ToolHistoryListRe
     ToolHistoryListResponse { count, runs }
 }
 
+#[cfg(feature = "full-daemon")]
 pub fn resolve_tool_history_refs(
     refs: &[ToolHistorySliceRef],
 ) -> Result<Vec<ToolHistoryRunEntry>, String> {
@@ -430,6 +439,7 @@ pub fn promote_run_to_step(
     )
 }
 
+#[cfg(feature = "full-daemon")]
 pub fn build_workflow_from_slice_refs(
     refs: &[ToolHistorySliceRef],
     name: Option<&str>,

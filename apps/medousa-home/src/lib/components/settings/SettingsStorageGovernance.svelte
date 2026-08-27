@@ -9,11 +9,6 @@
   import { isTauri } from "$lib/window";
   import { onMount } from "svelte";
 
-  interface Props {
-    mobile?: boolean;
-  }
-
-  let { mobile = false }: Props = $props();
   const gib = 1024 ** 3;
 
   let status = $state<StorageUsageReport | null>(null);
@@ -205,7 +200,7 @@
     {/if}
 
     <div class="mt-4 flex flex-wrap gap-2">
-      <button type="button" class="btn btn-sm variant-filled-primary" disabled={saving || maintaining || mobile} onclick={() => void save()}>
+      <button type="button" class="btn btn-sm variant-filled-primary" disabled={saving || maintaining} onclick={() => void save()}>
         {saving ? "Saving…" : "Save policy"}
       </button>
       <button type="button" class="btn btn-sm variant-soft" disabled={saving || maintaining} onclick={() => void maintain(true)}>
@@ -214,7 +209,7 @@
       <button
         type="button"
         class="btn btn-sm variant-soft"
-        disabled={saving || maintaining || !preview || preview.actions.length === 0 || mobile}
+        disabled={saving || maintaining || !preview || preview.actions.length === 0}
         onclick={() => void maintain(false)}
       >
         Clean previewed caches

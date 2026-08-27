@@ -19,8 +19,6 @@
   } from "$lib/liveActivity";
   import {
     hostComputerPhrase,
-    workshopRetentionLocalHint,
-    workshopRetentionReadHint,
   } from "$lib/platformCopy";
   import { Check, ChevronDown, Moon, RotateCcw, Sun } from "@lucide/svelte";
   import MedousaCompanion from "$lib/components/brand/MedousaCompanion.svelte";
@@ -50,11 +48,7 @@
   } from "$lib/commands/commandBindings";
   import { formatCatalogKeys } from "$lib/utils/keyboardShortcutsCatalog";
 
-  interface Props {
-    mobile?: boolean;
-  }
-
-  let { mobile = false }: Props = $props();
+  const nativeMobile = isTauriMobilePlatform();
 
   const activePreset = $derived(
     environment.spec?.layoutPresets?.find((preset) => preset.active) ??
@@ -141,10 +135,8 @@
     bindingError = null;
   }
 
-  const retentionReadOnly = $derived(mobile || isTauriMobilePlatform());
-
   async function refreshLiveActivityStatus() {
-    if (!mobile && !isTauriMobilePlatform()) return;
+    if (!nativeMobile) return;
     liveActivityStatus = await queryLiveActivityAvailability();
   }
 
@@ -546,12 +538,7 @@
     <div class="prefs-band-head">
       <h3 class="settings-subsection-heading">Work cards</h3>
       <p class="settings-subsection-lead">
-        {#if retentionReadOnly}
-          {workshopRetentionReadHint()}
-        {:else}
-          Done cards leave the board, then archives clear.
-          <span class="opacity-80"> {workshopRetentionLocalHint()}</span>
-        {/if}
+        Done cards leave the board, then archives clear with the active workshop.
       </p>
     </div>
 
@@ -569,7 +556,6 @@
             inputmode="numeric"
             class="prefs-metric-input"
             value={settings.workCardHideAfterHours}
-            disabled={retentionReadOnly}
             aria-label="Hide from board after hours"
             onchange={(event) => commitHideHours((event.currentTarget as HTMLInputElement).value)}
           />
@@ -590,7 +576,6 @@
             inputmode="numeric"
             class="prefs-metric-input"
             value={settings.workCardWipeAfterDays}
-            disabled={retentionReadOnly}
             aria-label="Clear archives after days"
             onchange={(event) => commitWipeDays((event.currentTarget as HTMLInputElement).value)}
           />
@@ -730,7 +715,7 @@
         />
       </label>
 
-      {#if mobile}
+      {#if nativeMobile}
         <label class="prefs-tile">
           <span class="prefs-tile-copy">
             <span class="prefs-tile-title">Remote push</span>
@@ -763,7 +748,7 @@
       {/if}
     </div>
 
-    {#if mobile && liveActivityStatus}
+    {#if nativeMobile && liveActivityStatus}
       <p class="prefs-footnote">
         {#if liveActivityStatus.error}
           Live Activity: {liveActivityStatus.error}

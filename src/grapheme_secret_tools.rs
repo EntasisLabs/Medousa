@@ -53,7 +53,7 @@ pub enum GraphemeRequestSecretOutput {
 
 #[medousa_tool(id = COGNITION_GRAPHEME_REQUEST_SECRET_ID)]
 impl CognitionGraphemeRequestSecretTool {
-    /// Ask the user for a credential through Medousa's trusted UI for one native Grapheme run. The value never enters chat, Grapheme source/state, Stasis payloads, or model-visible output. The returned grant must be attached once to `cognition_capability` action `grapheme.invoke` via `secret_grant_ids`.
+    /// Request a credential through Medousa's secret-entry UI and return a one-use grant for `cognition_capability` action `grapheme.invoke`.
     async fn invoke_typed(
         &self,
         input: GraphemeRequestSecretInput,

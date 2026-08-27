@@ -574,7 +574,7 @@ enum CodeReadOutput {
 
 #[medousa_tool(id = COGNITION_CODE_READ_ID)]
 impl CognitionCodeReadTool {
-    /// Read a whole text file when it fits, or a bounded line/byte range. Oversized whole-file requests return actionable range orientation instead of an opaque failure. Coding domain only.
+    /// Read a whole text file or a bounded line or byte range. Oversized requests return range guidance.
     async fn invoke_typed(&self, input: CodeReadInput) -> stasis::prelude::Result<CodeReadOutput> {
         let requested_root = input.root.as_ref().cloned();
         let (root, path) = root_and_path(&input.path, requested_root.as_deref())?;
@@ -1079,7 +1079,7 @@ struct CodeSearchOutput {
 
 #[medousa_tool(id = COGNITION_CODE_SEARCH_ID)]
 impl CognitionCodeSearchTool {
-    /// Search for a substring under the scripts root or a Forge worktree. Coding domain only.
+    /// Search for a substring under the scripts root or a Forge worktree.
     async fn invoke_typed(
         &self,
         input: CodeSearchInput,
@@ -1215,7 +1215,7 @@ struct CodeApplyPatchOutput {
 
 #[medousa_tool(id = COGNITION_CODE_APPLY_PATCH_ID)]
 impl CognitionCodeApplyPatchTool {
-    /// Write full content or replace an exact snippet in a file under the session root / Forge worktree. Coding domain only.
+    /// Write full content or replace an exact snippet in a file under the session root or Forge worktree.
     async fn invoke_typed(
         &self,
         input: CodeApplyPatchInput,
@@ -1334,7 +1334,7 @@ struct ShellSessionStatusInput {
 
 #[medousa_tool(id = COGNITION_SHELL_SESSION_STATUS_ID)]
 impl CognitionShellSessionStatusTool {
-    /// List or create a workshop shell session (PTY). Coding domain only — sessions are shared by Home Terminal tabs and agents.
+    /// List or create a shared workshop shell session (PTY).
     async fn invoke_typed(
         &self,
         input: ShellSessionStatusInput,
@@ -1443,7 +1443,7 @@ struct ShellSessionRunOutput {
 
 #[medousa_tool(id = COGNITION_SHELL_SESSION_RUN_ID)]
 impl CognitionShellSessionRunTool {
-    /// Write a command or raw input into a workshop shell session, or set `poll` to read pending output without typing into the PTY. Streams output for `wait_ms`. Coding domain only.
+    /// Write a command or raw input into a workshop shell session, or set poll to read pending output. Streams output for wait_ms.
     async fn invoke_typed(
         &self,
         input: ShellSessionRunInput,
@@ -1696,7 +1696,7 @@ struct ShellSessionInterruptInput {
 
 #[medousa_tool(id = COGNITION_SHELL_SESSION_INTERRUPT_ID)]
 impl CognitionShellSessionInterruptTool {
-    /// Send SIGINT to a workshop shell session. Coding domain only.
+    /// Send SIGINT to a workshop shell session.
     async fn invoke_typed(
         &self,
         input: ShellSessionInterruptInput,
@@ -1752,7 +1752,7 @@ struct CoderShellStatusOutput {
 
 #[medousa_tool(id = COGNITION_CODER_SHELL_STATUS_ID)]
 impl CognitionCoderShellStatusTool {
-    /// Coder-only: report Forge-bound Terminal shell readiness for this undertaking. Prefer cognition_coder_shell_run for one-shot commands.
+    /// Report shell readiness for the active Coder worktree.
     async fn invoke_typed(
         &self,
         input: CoderShellStatusInput,
@@ -1848,7 +1848,7 @@ struct CoderShellRunOutput {
 
 #[medousa_tool(id = COGNITION_CODER_SHELL_RUN_ID)]
 impl CognitionCoderShellRunTool {
-    /// Coder one-shot shell: run a command in the Forge-bound undertaking Terminal (PTY). Same ergonomics as a simple shell_run, but cwd/authority follow the active lease worktree. Do not use cognition_shell_run in Coder. For multi-step interactive Terminal work use cognition_shell_session_*.
+    /// Run a one-shot shell command in the active Coder worktree. For interactive commands, use cognition_shell_session_*.
     async fn invoke_typed(
         &self,
         input: CoderShellRunInput,

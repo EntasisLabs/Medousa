@@ -4,7 +4,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_browser_act",
-      "description": "Act on the shared human Web tab (click, type, press, scroll, select, wait). Requires a browser-capable client (Home desktop/iOS) and agent control of the tab. Use cognition_browser_snapshot first to discover selectors.",
+      "description": "Click, type, press, scroll, select, or wait on the shared Web tab. Use cognition_browser_snapshot to find selectors.",
       "input_schema": {
         "properties": {
           "action": {
@@ -29,7 +29,7 @@
             "type": "integer"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -69,11 +69,11 @@
     {
       "registry": "coder_bound",
       "name": "cognition_browser_fetch",
-      "description": "Fetch a public URL via Agent Browser and return a markdown excerpt for synthesis. Requires a browser-capable client (Home desktop/iOS).",
+      "description": "Fetch a public URL via Agent Browser and return a markdown excerpt.",
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -101,11 +101,11 @@
     {
       "registry": "coder_bound",
       "name": "cognition_browser_snapshot",
-      "description": "Capture a markdown snapshot of the current page or a URL via Agent Browser. Requires a browser-capable client (Home desktop/iOS).",
+      "description": "Capture a markdown snapshot of the current page or a URL via Agent Browser.",
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -147,7 +147,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           }
@@ -178,7 +178,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           }
@@ -213,7 +213,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           }
@@ -233,11 +233,11 @@
     {
       "registry": "coder_bound",
       "name": "cognition_chat_history_read",
-      "description": "Read a bounded window from one prior Medousa chat. Returns user/assistant prose and compact tool names only; reasoning traces and raw tool receipts are never returned.",
+      "description": "Read a bounded window from one prior Medousa chat. Returns user and assistant messages plus compact tool names.",
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -272,11 +272,11 @@
     {
       "registry": "coder_bound",
       "name": "cognition_chat_history_search",
-      "description": "Search prior Medousa chats visible to the active profile. Omit query to list recent chats. Searches only user/assistant prose; reasoning traces and raw tool receipts are excluded.",
+      "description": "Search prior Medousa chats. Omit query to list recent chats. Searches user and assistant messages.",
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -318,7 +318,7 @@
             "type": "integer"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -354,7 +354,7 @@
             "type": "integer"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -390,7 +390,7 @@
             "type": "integer"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -426,7 +426,7 @@
             "type": "integer"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -458,7 +458,7 @@
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -492,7 +492,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_coder_causal_query",
-      "description": "Query stable Coder traces with why, observation-only replay, regression, or sealed counterfactual workflows. This never exposes hidden reasoning or automatically reruns a tool.",
+      "description": "Query Coder traces for why, observation replay, regression, or counterfactual comparison.",
       "input_schema": {
         "properties": {
           "attempt_ids": {
@@ -510,7 +510,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -542,7 +542,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_coder_change_set_apply",
-      "description": "Apply one runtime-issued semantic change set exactly once through Forge. The change set is lease-fenced, path-policy checked, and digest-or-absence guarded for every touched path.",
+      "description": "Apply a change set returned by a Coder preview tool.",
       "input_schema": {
         "properties": {
           "change_set_id": {
@@ -550,7 +550,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           }
@@ -573,7 +573,7 @@
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -605,7 +605,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_coder_experiment_compare",
-      "description": "Compare 2–4 sealed experiment candidates using immutable Forge evidence, exact Git trees, and each candidate's temporally pinned engineering notebook. Live sibling worktrees are never read.",
+      "description": "Compare 2–4 experiment candidates using their Git trees, evidence, and engineering notes.",
       "input_schema": {
         "properties": {
           "attempt_ids": {
@@ -620,7 +620,7 @@
             "uniqueItems": true
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           }
@@ -638,7 +638,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_coder_memory_commit",
-      "description": "Commit an explicit engineering working-state summary as canonical STTP in this governed environment. Store decisions and evidence, not private reasoning or raw source/log payloads.",
+      "description": "Commit an engineering working-state summary as STTP.",
       "input_schema": {
         "properties": {
           "details": {
@@ -654,7 +654,7 @@
             "type": "array"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -747,11 +747,11 @@
     {
       "registry": "coder_bound",
       "name": "cognition_coder_memory_overview",
-      "description": "Load compact semantic working state for this governed Coder environment plus a bounded fork snapshot and accepted undertaking/repository knowledge. Live sibling state is excluded.",
+      "description": "Load compact engineering working state, a fork snapshot, and accepted project knowledge.",
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -774,11 +774,11 @@
     {
       "registry": "coder_bound",
       "name": "cognition_coder_memory_recall",
-      "description": "Recall bounded STTP working-memory nodes from this governed environment, its immutable parent snapshot, and accepted knowledge scopes. The runtime pins every scope, excludes live sibling state, and labels changed-HEAD observations stale.",
+      "description": "Recall bounded STTP working-memory nodes from project and repository knowledge.",
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -827,7 +827,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_coder_shell_run",
-      "description": "Coder one-shot shell: run a command in the Forge-bound undertaking Terminal (PTY). Same ergonomics as a simple shell_run, but cwd/authority follow the active lease worktree. Do not use cognition_shell_run in Coder. For multi-step interactive Terminal work use cognition_shell_session_*.",
+      "description": "Run a one-shot shell command in the active Coder worktree. For interactive commands, use cognition_shell_session_*.",
       "input_schema": {
         "properties": {
           "attempt_id": {
@@ -838,7 +838,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -874,14 +874,14 @@
     {
       "registry": "coder_bound",
       "name": "cognition_coder_shell_status",
-      "description": "Coder-only: report Forge-bound Terminal shell readiness for this undertaking. Prefer cognition_coder_shell_run for one-shot commands.",
+      "description": "Report shell readiness for the active Coder worktree.",
       "input_schema": {
         "properties": {
           "attempt_id": {
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -908,7 +908,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_coder_symbol_refactor",
-      "description": "Resolve symbol references or preview a language-server rename in the exact governed attempt. Rename previews issue a stable, digest-fenced change_set_id but do not mutate files.",
+      "description": "Resolve symbol references or preview a language-server rename. Rename previews return a change_set_id for cognition_coder_change_set_apply.",
       "input_schema": {
         "properties": {
           "action": {
@@ -924,7 +924,7 @@
             "type": "integer"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -962,7 +962,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_coder_tools_discover",
-      "description": "Reveal one already-authorized Coder tool pack for this turn. Packs are monotonic and cannot expand Forge authority.",
+      "description": "List tools in a Coder domain with concise usage summaries.",
       "input_schema": {
         "properties": {
           "domain": {
@@ -981,7 +981,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           }
@@ -1000,11 +1000,11 @@
     {
       "registry": "coder_bound",
       "name": "cognition_detamu_code_avec",
-      "description": "Code AVEC gap/score summary for a Detamu snapshot (which entities lack measurements or scores). Response field is `code_avec` — never bare `avec`. Detamu domain only.",
+      "description": "Summarize which Detamu code entities lack AVEC measurements or scores. Returns `code_avec`.",
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1031,11 +1031,11 @@
     {
       "registry": "coder_bound",
       "name": "cognition_detamu_files",
-      "description": "List file entities from a Detamu snapshot (inventory). Prefer work_id when a Forge undertaking is bound. Detamu domain only — opt-in.",
+      "description": "List file entities from a Detamu snapshot. Accepts a snapshot id or Forge work_id.",
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1070,11 +1070,11 @@
     {
       "registry": "coder_bound",
       "name": "cognition_detamu_find",
-      "description": "Find Detamu code entities by kind/path/name (symbols, modules, files). Optional path+line resolves the narrowest entity at that location. Detamu domain only.",
+      "description": "Find Detamu code entities by kind, path, or name. Optional path and line resolve the narrowest entity at that location.",
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1118,7 +1118,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_detamu_impact",
-      "description": "Dependents of one code entity (callers/references/imports/types) from a Detamu snapshot. Prefer work_id when a Forge undertaking is bound. Empty graph returns ok:true with zero dependents. Detamu domain only — opt-in.",
+      "description": "List callers, references, imports, and types that depend on a Detamu code entity.",
       "input_schema": {
         "properties": {
           "entity_id": {
@@ -1126,7 +1126,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1160,11 +1160,11 @@
     {
       "registry": "coder_bound",
       "name": "cognition_detamu_status",
-      "description": "Probe Detamu world-model host readiness and optional Forge work binding (baseline/sealed snapshot pointers). Detamu domain only — opt-in.",
+      "description": "Report Detamu readiness and optional Forge baseline and snapshot pointers.",
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1200,7 +1200,7 @@
             "type": "boolean"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1233,7 +1233,7 @@
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1259,7 +1259,7 @@
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1295,7 +1295,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           }
@@ -1326,7 +1326,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           }
@@ -1358,7 +1358,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           }
@@ -1394,7 +1394,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           }
@@ -1433,7 +1433,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           }
@@ -1469,7 +1469,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           }
@@ -1506,7 +1506,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1565,8 +1565,8 @@
                 "turn.begin_work",
                 "turn.checkpoint",
                 "turn.finish",
-                "turn.prepare_final",
                 "turn.propose_mode",
+                "turn.request_input",
                 "turn.request_more_rounds",
                 "turn.update_user",
                 "vault.delete",
@@ -1603,11 +1603,11 @@
     {
       "registry": "coder_bound",
       "name": "cognition_shell_session_interrupt",
-      "description": "Send SIGINT to a workshop shell session. Coding domain only.",
+      "description": "Send SIGINT to a workshop shell session.",
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1629,7 +1629,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_shell_session_run",
-      "description": "Write a command or raw input into a workshop shell session, or set `poll` to read pending output without typing into the PTY. Streams output for `wait_ms`. Coding domain only.",
+      "description": "Write a command or raw input into a workshop shell session, or set poll to read pending output. Streams output for wait_ms.",
       "input_schema": {
         "properties": {
           "attempt_id": {
@@ -1645,7 +1645,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1687,7 +1687,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_shell_session_status",
-      "description": "List or create a workshop shell session (PTY). Coding domain only — sessions are shared by Home Terminal tabs and agents.",
+      "description": "List or create a shared workshop shell session (PTY).",
       "input_schema": {
         "properties": {
           "attempt_id": {
@@ -1699,7 +1699,7 @@
             "type": "boolean"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1750,7 +1750,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           }
@@ -1787,7 +1787,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           }
@@ -1807,7 +1807,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_turn",
-      "description": "Control this turn: begin work, update the principal, checkpoint, finish, or request more rounds. action is a typed name (turn.finish, turn.checkpoint, …). Fetch fields with cognition_schema types=[...].",
+      "description": "Record turn progress or set its outcome. action is a typed name (turn.finish, turn.checkpoint, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -1816,15 +1816,15 @@
               "turn.begin_work",
               "turn.checkpoint",
               "turn.finish",
-              "turn.prepare_final",
               "turn.propose_mode",
+              "turn.request_input",
               "turn.request_more_rounds",
               "turn.update_user"
             ],
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           }
@@ -1847,7 +1847,7 @@
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1889,7 +1889,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_workshop_mutate",
-      "description": "Spawn, cancel, or steer a peer sub-agent. action=workshop.spawn for parallel research while Coder stays on the Forge lease.",
+      "description": "Spawn, cancel, or steer a peer sub-agent. Use action=workshop.spawn for parallel work.",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -1902,7 +1902,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           }
@@ -1921,7 +1921,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_workshop_query",
-      "description": "Check status of peer sub-agents spawned from this Coder turn.",
+      "description": "Check status of peer sub-agents.",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -1932,7 +1932,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "One short outcome-oriented sentence explaining why this tool call is being made (not private reasoning).",
+            "description": "Short purpose of this tool call.",
             "maxLength": 320,
             "type": "string"
           }
@@ -1951,7 +1951,7 @@
     {
       "registry": "coder_setup",
       "name": "cognition_project_bind",
-      "description": "Bind this conversation to a ready Forge project selected by the user. The full Coder workspace becomes active on the next turn.",
+      "description": "Bind a ready Forge project selected by the user.",
       "input_schema": {
         "properties": {
           "work_id": {
@@ -1972,7 +1972,7 @@
     {
       "registry": "coder_setup",
       "name": "cognition_project_create",
-      "description": "Create, provision, and bind a code project after the user explicitly asks for project creation. Blank projects are initialized under the connected workshop's Medousa projects directory.",
+      "description": "Create, provision, and bind a blank or repository-backed code project.",
       "input_schema": {
         "properties": {
           "base_ref": {
@@ -2013,7 +2013,7 @@
     {
       "registry": "coder_setup",
       "name": "cognition_project_list",
-      "description": "List ready Forge projects that this Coder conversation can continue.",
+      "description": "List ready Forge projects.",
       "input_schema": {
         "properties": {},
         "type": "object"
@@ -2026,7 +2026,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_browser_act",
-      "description": "Act on the shared human Web tab (click, type, press, scroll, select, wait). Requires a browser-capable client (Home desktop/iOS) and agent control of the tab. Use cognition_browser_snapshot first to discover selectors.",
+      "description": "Click, type, press, scroll, select, or wait on the shared Web tab. Use cognition_browser_snapshot to find selectors.",
       "input_schema": {
         "properties": {
           "action": {
@@ -2087,7 +2087,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_browser_fetch",
-      "description": "Fetch a public URL via Agent Browser and return a markdown excerpt for synthesis. Requires a browser-capable client (Home desktop/iOS).",
+      "description": "Fetch a public URL via Agent Browser and return a markdown excerpt.",
       "input_schema": {
         "properties": {
           "max_chars": {
@@ -2115,7 +2115,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_browser_snapshot",
-      "description": "Capture a markdown snapshot of the current page or a URL via Agent Browser. Requires a browser-capable client (Home desktop/iOS).",
+      "description": "Capture a markdown snapshot of the current page or a URL via Agent Browser.",
       "input_schema": {
         "properties": {
           "max_chars": {
@@ -2249,7 +2249,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_chat_history_read",
-      "description": "Read a bounded window from one prior Medousa chat. Returns user/assistant prose and compact tool names only; reasoning traces and raw tool receipts are never returned.",
+      "description": "Read a bounded window from one prior Medousa chat. Returns user and assistant messages plus compact tool names.",
       "input_schema": {
         "properties": {
           "last_k": {
@@ -2283,7 +2283,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_chat_history_search",
-      "description": "Search prior Medousa chats visible to the active profile. Omit query to list recent chats. Searches only user/assistant prose; reasoning traces and raw tool receipts are excluded.",
+      "description": "Search prior Medousa chats. Omit query to list recent chats. Searches user and assistant messages.",
       "input_schema": {
         "properties": {
           "limit": {
@@ -2438,7 +2438,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_coder_shell_run",
-      "description": "Coder one-shot shell: run a command in the Forge-bound undertaking Terminal (PTY). Same ergonomics as a simple shell_run, but cwd/authority follow the active lease worktree. Do not use cognition_shell_run in Coder. For multi-step interactive Terminal work use cognition_shell_session_*.",
+      "description": "Run a one-shot shell command in the active Coder worktree. For interactive commands, use cognition_shell_session_*.",
       "input_schema": {
         "properties": {
           "attempt_id": {
@@ -2479,7 +2479,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_coder_shell_status",
-      "description": "Coder-only: report Forge-bound Terminal shell readiness for this undertaking. Prefer cognition_coder_shell_run for one-shot commands.",
+      "description": "Report shell readiness for the active Coder worktree.",
       "input_schema": {
         "properties": {
           "attempt_id": {
@@ -2558,7 +2558,7 @@
                 "type": "string"
               },
               "surfaceId": {
-                "description": "Target surface id — agent components MUST use kind=custom surfaces (not home/chat builtins)",
+                "description": "Target custom surface id",
                 "type": "string"
               },
               "type": {
@@ -2730,7 +2730,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_context_follow_pointer",
-      "description": "Pull a focused slice of a context pointer into working memory. Use pointer ids from [MEDOUSA_POINTERS] at turn start. scope examples: last_5_turns.",
+      "description": "Load a focused context slice by pointer id. scope examples: last_5_turns.",
       "input_schema": {
         "properties": {
           "pointer_id": {
@@ -2757,7 +2757,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_context_list_pointers",
-      "description": "List ranked context pointers for the active session (same as turn bootstrap digest).",
+      "description": "List ranked context pointers for the active session.",
       "input_schema": {
         "properties": {},
         "type": "object"
@@ -2912,7 +2912,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_detamu_code_avec",
-      "description": "Code AVEC gap/score summary for a Detamu snapshot (which entities lack measurements or scores). Response field is `code_avec` — never bare `avec`. Detamu domain only.",
+      "description": "Summarize which Detamu code entities lack AVEC measurements or scores. Returns `code_avec`.",
       "input_schema": {
         "properties": {
           "version": {
@@ -2935,7 +2935,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_detamu_files",
-      "description": "List file entities from a Detamu snapshot (inventory). Prefer work_id when a Forge undertaking is bound. Detamu domain only — opt-in.",
+      "description": "List file entities from a Detamu snapshot. Accepts a snapshot id or Forge work_id.",
       "input_schema": {
         "properties": {
           "limit": {
@@ -2966,7 +2966,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_detamu_find",
-      "description": "Find Detamu code entities by kind/path/name (symbols, modules, files). Optional path+line resolves the narrowest entity at that location. Detamu domain only.",
+      "description": "Find Detamu code entities by kind, path, or name. Optional path and line resolve the narrowest entity at that location.",
       "input_schema": {
         "properties": {
           "kind": {
@@ -3006,7 +3006,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_detamu_impact",
-      "description": "Dependents of one code entity (callers/references/imports/types) from a Detamu snapshot. Prefer work_id when a Forge undertaking is bound. Empty graph returns ok:true with zero dependents. Detamu domain only — opt-in.",
+      "description": "List callers, references, imports, and types that depend on a Detamu code entity.",
       "input_schema": {
         "properties": {
           "entity_id": {
@@ -3042,7 +3042,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_detamu_status",
-      "description": "Probe Detamu world-model host readiness and optional Forge work binding (baseline/sealed snapshot pointers). Detamu domain only — opt-in.",
+      "description": "Report Detamu readiness and optional Forge baseline and snapshot pointers.",
       "input_schema": {
         "properties": {
           "work_id": {
@@ -3087,11 +3087,11 @@
     {
       "registry": "general_runtime",
       "name": "cognition_environment_apply",
-      "description": "Apply an approved environment spec to the daemon store. Surfaces, components, and chrome sync to Home.",
+      "description": "Apply an environment spec. Surfaces, components, and chrome sync to Home.",
       "input_schema": {
         "properties": {
           "spec": {
-            "description": "Patch surfaces/components on the full spec. Custom surfaces must be listed in the active layout preset surfaces array. Components render only on kind=custom surfaces.",
+            "description": "Patch surfaces and components on the full spec. Include custom surfaces in the active layout preset; components render on custom surfaces.",
             "type": "object"
           }
         },
@@ -3131,7 +3131,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_environment_patch",
-      "description": "Apply incremental environment spec ops. New custom surfaces, update_surface, set_environment_theme, and preset membership go live immediately; preset rewrites require operator approval.",
+      "description": "Apply incremental environment spec ops for custom surfaces, themes, components, and preset membership.",
       "input_schema": {
         "properties": {
           "ops": {
@@ -3173,7 +3173,7 @@
       "input_schema": {
         "properties": {
           "spec": {
-            "description": "Patch surfaces/components on the full spec. Custom surfaces must be listed in the active layout preset surfaces array. Components render only on kind=custom surfaces.",
+            "description": "Patch surfaces and components on the full spec. Include custom surfaces in the active layout preset; components render on custom surfaces.",
             "properties": {
               "activePresetId": {
                 "type": "string"
@@ -3229,7 +3229,7 @@
                       "type": "string"
                     },
                     "surfaceId": {
-                      "description": "Target surface id — agent components MUST use kind=custom surfaces (not home/chat builtins)",
+                      "description": "Target custom surface id",
                       "type": "string"
                     },
                     "type": {
@@ -3285,7 +3285,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_environment_wiki",
-      "description": "Environment/canvas SDK as STTP temporal nodes — schemas, merge rules, propose/apply, ui_present, ui_scene. Returns response_format=sttp (same family as system prompt). Call topic=recipe or merge_spec BEFORE hand-building environment spec JSON. Topics: scene_vs_html, mental_model, recipe, merge_spec, surface_schema, component_schema, propose_apply, ui_present, ui_scene, presets, layout_schema, layout_zones, media_embed, feed_client, example_trip_poll, common_errors, example_writing_studio, tool_map.",
+      "description": "Load environment and canvas SDK guidance as STTP nodes. Topics include recipes, merge rules, schemas, layouts, media, feeds, examples, and tool mapping.",
       "input_schema": {
         "properties": {
           "topic": {
@@ -3327,7 +3327,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_feed_publish",
-      "description": "Publish a bounded feed event for subscribed environment components. Prefer internal publishers for workshop pulse.",
+      "description": "Publish a bounded feed event for subscribed environment components.",
       "input_schema": {
         "properties": {
           "feed_id": {
@@ -3379,7 +3379,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_feed_subscribe",
-      "description": "Bind feed ids on a canvas component so runtime publishers can deliver component_patch updates.",
+      "description": "Bind feed ids on a canvas component for component_patch updates.",
       "input_schema": {
         "properties": {
           "component_id": {
@@ -3408,6 +3408,47 @@
         "workshop:authorized:general",
         "workshop:authorized:research",
         "workshop:domain:environment"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_grapheme_request_secret",
+      "description": "Request a credential through Medousa's secret-entry UI and return a one-use grant for `cognition_capability` action `grapheme.invoke`.",
+      "input_schema": {
+        "properties": {
+          "allowed_hosts": {
+            "default": [],
+            "description": "Exact HTTPS hosts (or host:port authorities) to which Medousa may attach this credential. Empty permits signing only and denies authenticated HTTP.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "credential_key": {
+            "description": "Uppercase logical credential name, such as `GITHUB_TOKEN`.",
+            "type": "string"
+          },
+          "label": {
+            "description": "Short trusted-UI label describing the credential.",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why the Grapheme run needs the credential.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "credential_key",
+          "label",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:bootstrap",
+        "general:domain:skill"
       ]
     },
     {
@@ -3608,7 +3649,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_manuscript_list",
-      "description": "List YAML identity manuscripts (specialty packs) from project and user dirs. Use before spawn, recurring register, or ingest /brief.",
+      "description": "List YAML identity manuscripts from project and user directories.",
       "input_schema": {
         "properties": {
           "limit": {
@@ -3650,7 +3691,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_manuscript_overlay_propose",
-      "description": "Propose a session-scoped manuscript overlay appendix for operator approval — never mutates kernel STTP. Writes a pending YAML under the Medousa data dir at manuscript-overlays/pending/. Operator approves by promoting the file to user manuscripts (manual for now).",
+      "description": "Create a session-scoped manuscript overlay proposal for operator review.",
       "input_schema": {
         "properties": {
           "appendix": {
@@ -3684,7 +3725,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_manuscript_resolve",
-      "description": "Resolve a manuscript id to its merged YAML specialty summary (tools, worker intent, pins). Read-only catalog inspect — does not run a turn.",
+      "description": "Load the merged YAML specialty summary for a manuscript id, including tools, worker intent, and pins.",
       "input_schema": {
         "properties": {
           "id": {
@@ -3780,8 +3821,46 @@
     },
     {
       "registry": "general_runtime",
+      "name": "cognition_openshell_request_secret",
+      "description": "Request a credential through Medousa's secret-entry UI and return a one-use grant for `cognition_openshell_sandbox_run.secret_grant_ids`.",
+      "input_schema": {
+        "properties": {
+          "credential_key": {
+            "description": "Environment variable expected by that provider, such as `GITHUB_TOKEN`.",
+            "type": "string"
+          },
+          "label": {
+            "description": "Short trusted-UI label describing the credential.",
+            "type": "string"
+          },
+          "provider_type": {
+            "description": "OpenShell provider profile id, such as `github` or `openai`.",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why this turn needs the credential and what it will do with it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "credential_key",
+          "label",
+          "provider_type",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:bootstrap",
+        "general:domain:skill"
+      ]
+    },
+    {
+      "registry": "general_runtime",
       "name": "cognition_openshell_sandbox_run",
-      "description": "Enqueue a durable OpenShell sandbox job (create → upload skill assets → exec → destroy). Pass command OR skill_script+manuscript_id for imported skill assets. Requires gateway healthy and manuscript spec.openshell.enabled when manuscript_id is set. Worker lane primary; not available on scheduled lane unless spec.openshell.allow_scheduled=true.",
+      "description": "Run a command or imported skill script in a disposable OpenShell sandbox. Pass command or skill_script with manuscript_id.",
       "input_schema": {
         "properties": {
           "command": {
@@ -3817,6 +3896,14 @@
             "description": "OpenShell --from source (default base or manuscript spec)",
             "type": "string"
           },
+          "secret_grant_ids": {
+            "default": [],
+            "description": "Opaque one-use grants returned by cognition_openshell_request_secret.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "skill_script": {
             "description": "Relative script path in imported skill assets (e.g. scripts/run.sh). Requires manuscript_id.",
             "type": "string"
@@ -3839,7 +3926,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_openshell_status",
-      "description": "Probe local OpenShell gateway health (TCP, /readyz, CLI binaries, Podman socket, policy templates). Read-only — does not create sandboxes.",
+      "description": "Report local OpenShell gateway health, including TCP, /readyz, CLI binaries, Podman socket, and templates.",
       "input_schema": {
         "properties": {},
         "type": "object"
@@ -4005,8 +4092,8 @@
                 "turn.begin_work",
                 "turn.checkpoint",
                 "turn.finish",
-                "turn.prepare_final",
                 "turn.propose_mode",
+                "turn.request_input",
                 "turn.request_more_rounds",
                 "turn.update_user",
                 "vault.delete",
@@ -4100,7 +4187,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_shell_session_interrupt",
-      "description": "Send SIGINT to a workshop shell session. Coding domain only.",
+      "description": "Send SIGINT to a workshop shell session.",
       "input_schema": {
         "properties": {
           "session_id": {
@@ -4120,7 +4207,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_shell_session_run",
-      "description": "Write a command or raw input into a workshop shell session, or set `poll` to read pending output without typing into the PTY. Streams output for `wait_ms`. Coding domain only.",
+      "description": "Write a command or raw input into a workshop shell session, or set poll to read pending output. Streams output for wait_ms.",
       "input_schema": {
         "properties": {
           "attempt_id": {
@@ -4170,7 +4257,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_shell_session_status",
-      "description": "List or create a workshop shell session (PTY). Coding domain only — sessions are shared by Home Terminal tabs and agents.",
+      "description": "List or create a shared workshop shell session (PTY).",
       "input_schema": {
         "properties": {
           "attempt_id": {
@@ -4244,7 +4331,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_skill_probe",
-      "description": "H6/H7 validation: optionally run grapheme --version in sandbox, then upload and execute an imported skill script when policy grants sandbox level. Host filesystem stays untouched.",
+      "description": "Validate Grapheme availability, then upload and execute an imported skill script in a sandbox.",
       "input_schema": {
         "properties": {
           "check_grapheme": {
@@ -4406,7 +4493,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_tool_history_detail",
-      "description": "Full tool-run detail for one session slice (slice_id=turn:N from summary or [MEDOUSA_TOOL_SLICES]). Optional tool_round for a single round's receipts.",
+      "description": "Read tool-run details for one session slice. Optional tool_round selects one round.",
       "input_schema": {
         "properties": {
           "max_chars": {
@@ -4441,7 +4528,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_tool_history_summary",
-      "description": "High-level tool-history slices for recent session turns. Use after reading [MEDOUSA_TOOL_SLICES] at turn start when you need to verify what already ran. Returns slice_id values (turn:N) for detail drill-down.",
+      "description": "Summarize tool activity for recent session turns. Returns slice_id values for cognition_tool_history_detail.",
       "input_schema": {
         "properties": {
           "keyword": {
@@ -4474,7 +4561,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_tools_discover",
-      "description": "Unlock a tool domain for this session and return its catalog. Host: memory + vault auto-unlock at session start; environment auto-unlocks on UI-capable clients (Home). Other host domains: catalog, runtime, history, identity, skill, overlay, environment. Worker domains: execute, discover, memory, vault, openshell, scripts. Bootstrap tools stay visible without discover.",
+      "description": "List tools in a domain with concise usage summaries.",
       "input_schema": {
         "properties": {
           "domain": {
@@ -4489,10 +4576,6 @@
               "worker"
             ],
             "type": "string"
-          },
-          "list_only": {
-            "description": "If true, return catalog without unlocking",
-            "type": "boolean"
           },
           "session_id": {
             "description": "Session id (defaults to active turn session)",
@@ -4518,7 +4601,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_turn",
-      "description": "Control this turn: begin work, update the principal, checkpoint, finish, or request more rounds. action is a typed name (turn.finish, turn.checkpoint, …). Fetch fields with cognition_schema types=[...].",
+      "description": "Record turn progress or set its outcome. action is a typed name (turn.finish, turn.checkpoint, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -4527,8 +4610,8 @@
               "turn.begin_work",
               "turn.checkpoint",
               "turn.finish",
-              "turn.prepare_final",
               "turn.propose_mode",
+              "turn.request_input",
               "turn.request_more_rounds",
               "turn.update_user"
             ],
@@ -4554,7 +4637,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_ui_build",
-      "description": "Build a streaming interactive Liquid UI body with atomic verbs that chain. Prefer markdown embeds (```card``` / ```carousel``` / ```actions``` / {{icon:}}) for ordinary structured chat answers; use this tool when you need a multi-step scene session. Preferred over cognition_ui_scene — you never invent layout trees. Call verb=begin first; each response returns handles + next[] for the following call. Verbs: begin, set_prose, add_section, add_card, add_actions, done. Pass parent= from a prior handles.* id. Runtime expands verbs into scene ops.",
+      "description": "Build a streaming interactive Liquid UI with chained verbs. Call begin first, then set_prose, add_section, add_card, or add_actions using returned handles; call done to finish.",
       "input_schema": {
         "properties": {
           "actions": {
@@ -4634,7 +4717,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_ui_present",
-      "description": "Present an HTML artifact in chat (inline card, side panel, or fullscreen) when the connected client advertises supports_ui_artifacts. Persist workflow: publish HTML here, then persist=true + surface_id (custom surface only) + component_id + slot to pin on the canvas. For first-time publish only — use cognition_store_write action=artifacts.write to revise an existing artifact. Canvas widgets: use MedousaStore (not localStorage); get/set/delete are async — await them in async handlers. inline: compact preview card. panel/fullscreen: use a transparent outer page background (no hard-coded #000 body); center content up to ~900px wide. Use height only for inline preview cap.",
+      "description": "Publish a new HTML artifact in chat as an inline card, side panel, or fullscreen view. To pin it on a custom canvas surface, set persist, surface_id, component_id, and slot. Revise published HTML with cognition_store_write action=artifacts.write.",
       "input_schema": {
         "properties": {
           "component_id": {
@@ -4667,7 +4750,7 @@
             "type": "string"
           },
           "surface_id": {
-            "description": "Target custom surface id for persisted component (required when persist=true; never builtin home/chat)",
+            "description": "Custom surface id for a persisted component.",
             "type": "string"
           },
           "title": {
@@ -4696,7 +4779,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_ui_scene",
-      "description": "Author a native, streamable scene (structure-then-fill) when the client advertises supports_ui_artifacts. Preferred over cognition_ui_present for interactive UI — the model composes typed nodes, not HTML. Emit ops in the scene-op JSON shape; go bones-first: send a plan_layout with skeleton slots, then follow up with fill_slot batches (call again in the same turn) so structure paints before content streams in. Keep each call small (plan_layout first, then 1–3 fill_slot ops per follow-up) — ops must be valid JSON. Ops: plan_layout, fill_slot, patch_props, set_binding, set_fill_state, precompute, remove. Each op is an object with a string op field; nodes carry id (stable reconciliation key), type (archetype), and props.",
+      "description": "Build a native streamable scene from scene-op JSON. Start with plan_layout, then fill slots in small batches. Ops: plan_layout, fill_slot, patch_props, set_binding, set_fill_state, precompute, remove.",
       "input_schema": {
         "properties": {
           "ops": {

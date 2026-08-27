@@ -17,6 +17,7 @@ Living documentation for system shape, component boundaries, and active roadmap.
 | Doc | Purpose |
 |-----|---------|
 | [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md) | **Turn loop, FSM, host/worker bus, lanes, Specialists** |
+| [sttp-native-prompt-and-chronological-turn-plan.md](sttp-native-prompt-and-chronological-turn-plan.md) | **Locked target: STTP-native policy composition and chronological prose/tool turns** |
 | [coder-durability-memory-and-tool-surface.md](coder-durability-memory-and-tool-surface.md) | **Coder recovery, worktree STTP memory, and dynamic tools** |
 | [typed-tool-contract-runtime-plan.md](typed-tool-contract-runtime-plan.md) | **Typed tool macro, catalog, mode envelopes, and hexagonal runtime migration** |
 | [hardening/README.md](hardening/README.md) | **Security, correctness, performance, and architecture hardening program** |
@@ -62,6 +63,7 @@ Shipped product features: [artifacts](../docs/engine/artifacts.md), [mobile shel
 | Doc | Topic |
 |-----|--------|
 | [hardening/README.md](hardening/README.md) | **Repo-wide hardening** — authority containment, trustworthy state, bounded hot paths, and enforced architecture |
+| [sttp-native-prompt-and-chronological-turn-plan.md](sttp-native-prompt-and-chronological-turn-plan.md) | **STTP + chronological turns** — compact compiled policy, explicit completion, ordered streaming/persistence/client presentation |
 | [agent-runtime-modes-plan.md](agent-runtime-modes-plan.md) | **Agent runtime modes** — General parity, mode transitions, and Medousa Coder |
 | [ios-embedded-daemon-plan.md](ios-embedded-daemon-plan.md) | **iOS embedded daemon** — daemon-owned mobile work, local-root client access, and authenticated daemon peers |
 | [ios-embedded-phase0-baseline.md](ios-embedded-phase0-baseline.md) | **iOS embedded daemon Phase 0** — target/link gate, pre-embedding size/startup baseline, and Keychain proof |

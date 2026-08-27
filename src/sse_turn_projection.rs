@@ -4,7 +4,10 @@
 use chrono::Utc;
 use medousa_engine::{SequencedTurnEvent, TurnEvent};
 use medousa_types::daemon_api::InteractiveTurnStreamEvent;
-use medousa_types::turn_stream::{TurnStreamEnvelopeV2, TurnStreamEventV2, WorkerAckKind};
+use medousa_types::turn_stream::{
+    TurnCompletionOutcomeV3, TurnStreamEnvelopeV2, TurnStreamEnvelopeV3, TurnStreamEventV2,
+    TurnStreamEventV3, WorkerAckKind,
+};
 
 /// Lift a live SSE payload into the typed spine vocabulary for journaling.
 pub fn stream_event_to_turn_event(event: &InteractiveTurnStreamEvent) -> TurnEvent {
@@ -32,7 +35,12 @@ pub fn stream_event_to_turn_event(event: &InteractiveTurnStreamEvent) -> TurnEve
             operator_message: event.operator_message.clone(),
             debug_message: event.debug_message.clone(),
         },
-        "scratch_reset" => TurnEvent::ScratchReset,
+        "scratch_reset" => TurnEvent::Status {
+            phase: "legacy_compat".to_string(),
+            message: String::new(),
+            operator_message: None,
+            debug_message: Some("ignored legacy scratch_reset event".to_string()),
+        },
         "tool_started" => TurnEvent::ToolRunStarted {
             tool_run_id: event
                 .tool_run_id
@@ -188,6 +196,21 @@ pub fn sequenced_to_stream_event(sequenced: &SequencedTurnEvent) -> InteractiveT
 }
 
 pub fn sequenced_to_v2(sequenced: &SequencedTurnEvent) -> Result<TurnStreamEnvelopeV2, String> {
+    if let Some(event) = &sequenced.stream_event_v3 {
+        let v3 = TurnStreamEnvelopeV3::new(
+            sequenced.envelope.turn_id.clone(),
+            sequenced.seq(),
+            sequenced.emitted_at_utc.unwrap_or_else(Utc::now),
+            event.clone(),
+        )
+        .map_err(|error| error.to_string())?;
+        return v3_to_v2(&v3)?.ok_or_else(|| {
+            format!(
+                "turn stream v3 sequence {} has no v2 compatibility projection",
+                sequenced.seq()
+            )
+        });
+    }
     if let Some(event) = &sequenced.stream_event_v2 {
         return TurnStreamEnvelopeV2::new(
             sequenced.envelope.turn_id.clone(),
@@ -212,7 +235,6 @@ pub fn sequenced_to_v2(sequenced: &SequencedTurnEvent) -> Result<TurnStreamEnvel
             message: message.clone(),
             tool_names: tool_names.clone(),
         },
-        TurnEvent::ScratchReset => TurnStreamEventV2::ScratchReset,
         TurnEvent::ToolRunStarted {
             tool_run_id,
             tool_name,
@@ -332,6 +354,352 @@ pub fn sequenced_to_v2(sequenced: &SequencedTurnEvent) -> Result<TurnStreamEnvel
     .map_err(|error| error.to_string())
 }
 
+/// Read a journal record as V2 when the native fact has an honest compatibility
+/// view. Segment lifecycle facts intentionally return `None` instead of
+/// fabricating a legacy event.
+pub fn sequenced_to_v2_optional(
+    sequenced: &SequencedTurnEvent,
+) -> Result<Option<TurnStreamEnvelopeV2>, String> {
+    if let Some(event) = &sequenced.stream_event_v3 {
+        let v3 = TurnStreamEnvelopeV3::new(
+            sequenced.envelope.turn_id.clone(),
+            sequenced.seq(),
+            sequenced.emitted_at_utc.unwrap_or_else(Utc::now),
+            event.clone(),
+        )
+        .map_err(|error| error.to_string())?;
+        return v3_to_v2(&v3);
+    }
+    sequenced_to_v2(sequenced).map(Some)
+}
+
+/// Replay only facts that were authored natively as V3. Old V2 records are not
+/// reverse-inferred because their missing segment identity cannot be recovered.
+pub fn sequenced_to_v3(sequenced: &SequencedTurnEvent) -> Result<TurnStreamEnvelopeV3, String> {
+    let event = sequenced.stream_event_v3.clone().ok_or_else(|| {
+        format!(
+            "turn stream sequence {} predates native v3",
+            sequenced.seq()
+        )
+    })?;
+    TurnStreamEnvelopeV3::new(
+        sequenced.envelope.turn_id.clone(),
+        sequenced.seq(),
+        sequenced.emitted_at_utc.unwrap_or_else(Utc::now),
+        event,
+    )
+    .map_err(|error| error.to_string())
+}
+
+/// Deliberately lossy downstream compatibility view. V3 remains the source;
+/// lifecycle-only facts have no V2 equivalent and are omitted from that view.
+pub fn v3_to_v2(envelope: &TurnStreamEnvelopeV3) -> Result<Option<TurnStreamEnvelopeV2>, String> {
+    let Some(event) = v3_event_to_v2(&envelope.event) else {
+        return Ok(None);
+    };
+    TurnStreamEnvelopeV2::new(
+        envelope.turn_id.clone(),
+        envelope.seq,
+        envelope.emitted_at_utc,
+        event,
+    )
+    .map(Some)
+    .map_err(|error| error.to_string())
+}
+
+fn v3_event_to_v2(event: &TurnStreamEventV3) -> Option<TurnStreamEventV2> {
+    Some(match event {
+        TurnStreamEventV3::AssistantTextStarted { .. }
+        | TurnStreamEventV3::AssistantTextCommitted { .. } => return None,
+        TurnStreamEventV3::ContentAppend { text, .. } => {
+            TurnStreamEventV2::ContentAppend { text: text.clone() }
+        }
+        TurnStreamEventV3::ReasoningAppend { text } => {
+            TurnStreamEventV2::ReasoningAppend { text: text.clone() }
+        }
+        TurnStreamEventV3::Status {
+            phase,
+            operator_message,
+            debug_message,
+        } => TurnStreamEventV2::Status {
+            phase: phase.clone(),
+            operator_message: operator_message.clone(),
+            debug_message: debug_message.clone(),
+        },
+        TurnStreamEventV3::Progress {
+            message,
+            tool_names,
+        } => TurnStreamEventV2::Progress {
+            message: message.clone(),
+            tool_names: tool_names.clone(),
+        },
+        TurnStreamEventV3::ModelReceipt { provider, model } => TurnStreamEventV2::ModelReceipt {
+            provider: provider.clone(),
+            model: model.clone(),
+        },
+        TurnStreamEventV3::WorkerAck {
+            ack_kind,
+            text,
+            tool_names,
+            work_id,
+        } => TurnStreamEventV2::WorkerAck {
+            ack_kind: *ack_kind,
+            text: text.clone(),
+            tool_names: tool_names.clone(),
+            work_id: work_id.clone(),
+        },
+        TurnStreamEventV3::WorkerSynthesis {
+            text,
+            tool_names,
+            work_id,
+        } => TurnStreamEventV2::WorkerSynthesis {
+            text: text.clone(),
+            tool_names: tool_names.clone(),
+            work_id: work_id.clone(),
+        },
+        // V2 errors are terminal. A V3 diagnostic is not projected until the
+        // explicit TurnCompleted settlement arrives.
+        TurnStreamEventV3::Error { .. } => return None,
+        TurnStreamEventV3::ToolStarted {
+            tool_run_id,
+            tool_name,
+            input_summary,
+            input_params,
+            tool_round,
+        } => TurnStreamEventV2::ToolStarted {
+            tool_run_id: tool_run_id.clone(),
+            tool_name: tool_name.clone(),
+            input_summary: input_summary.clone(),
+            input_params: input_params.clone(),
+            tool_round: *tool_round,
+        },
+        TurnStreamEventV3::ToolFinished {
+            tool_run_id,
+            tool_name,
+            status,
+            input_summary,
+            input_params,
+            output_summary,
+            tool_round,
+            artifact_refs,
+        } => TurnStreamEventV2::ToolFinished {
+            tool_run_id: tool_run_id.clone(),
+            tool_name: tool_name.clone(),
+            status: status.clone(),
+            input_summary: input_summary.clone(),
+            input_params: input_params.clone(),
+            output_summary: output_summary.clone(),
+            tool_round: *tool_round,
+            artifact_refs: artifact_refs.clone(),
+        },
+        TurnStreamEventV3::ArtifactPresented { artifact } => TurnStreamEventV2::ArtifactPresented {
+            artifact: artifact.clone(),
+        },
+        TurnStreamEventV3::ArtifactUpdated {
+            previous_artifact_id,
+            artifact,
+            root_artifact_id,
+        } => TurnStreamEventV2::ArtifactUpdated {
+            previous_artifact_id: previous_artifact_id.clone(),
+            artifact: artifact.clone(),
+            root_artifact_id: root_artifact_id.clone(),
+        },
+        TurnStreamEventV3::UiScene { scene } => TurnStreamEventV2::UiScene {
+            scene: scene.clone(),
+        },
+        TurnStreamEventV3::BudgetApprovalRequired {
+            request_id,
+            rounds_executed,
+            max_tool_rounds,
+            requested_rounds,
+            reason,
+            progress_summary,
+        } => TurnStreamEventV2::BudgetApprovalRequired {
+            request_id: request_id.clone(),
+            rounds_executed: *rounds_executed,
+            max_tool_rounds: *max_tool_rounds,
+            requested_rounds: *requested_rounds,
+            reason: reason.clone(),
+            progress_summary: progress_summary.clone(),
+        },
+        TurnStreamEventV3::BrowserChallenge {
+            session_id,
+            challenge_url,
+            reason,
+        } => TurnStreamEventV2::BrowserChallenge {
+            session_id: session_id.clone(),
+            challenge_url: challenge_url.clone(),
+            reason: reason.clone(),
+        },
+        TurnStreamEventV3::BrowserNavigated {
+            url,
+            title,
+            opened_by_agent,
+        } => TurnStreamEventV2::BrowserNavigated {
+            url: url.clone(),
+            title: title.clone(),
+            opened_by_agent: *opened_by_agent,
+        },
+        TurnStreamEventV3::ContextUsage {
+            report,
+            operator_summary,
+        } => TurnStreamEventV2::ContextUsage {
+            report: report.clone(),
+            operator_summary: operator_summary.clone(),
+        },
+        TurnStreamEventV3::PermissionRequest {
+            request_id,
+            message,
+            agent_session_id,
+            agent_runtime,
+        } => TurnStreamEventV2::PermissionRequest {
+            request_id: request_id.clone(),
+            message: message.clone(),
+            agent_session_id: agent_session_id.clone(),
+            agent_runtime: agent_runtime.clone(),
+        },
+        TurnStreamEventV3::SecretRequest {
+            request_id,
+            label,
+            reason,
+            provider_type,
+            credential_key,
+            backend,
+            allowed_hosts,
+        } => TurnStreamEventV2::SecretRequest {
+            request_id: request_id.clone(),
+            label: label.clone(),
+            reason: reason.clone(),
+            provider_type: provider_type.clone(),
+            credential_key: credential_key.clone(),
+            backend: backend.clone(),
+            allowed_hosts: allowed_hosts.clone(),
+        },
+        TurnStreamEventV3::TurnCompleted {
+            outcome,
+            aggregate_text,
+            tool_names,
+            operator_message,
+            debug_message,
+        } => match outcome {
+            TurnCompletionOutcomeV3::Completed => TurnStreamEventV2::Final {
+                text: aggregate_text.clone(),
+                tool_names: tool_names.clone(),
+            },
+            TurnCompletionOutcomeV3::NeedsInput => TurnStreamEventV2::NeedsInput {
+                text: aggregate_text.clone(),
+                tool_names: tool_names.clone(),
+            },
+            TurnCompletionOutcomeV3::Checkpointed => TurnStreamEventV2::Checkpoint {
+                text: aggregate_text.clone(),
+                tool_names: tool_names.clone(),
+            },
+            TurnCompletionOutcomeV3::Failed
+            | TurnCompletionOutcomeV3::Cancelled
+            | TurnCompletionOutcomeV3::FuseExhausted => TurnStreamEventV2::Error {
+                operator_message: operator_message
+                    .clone()
+                    .unwrap_or_else(|| "turn did not complete".to_string()),
+                debug_message: debug_message.clone(),
+            },
+        },
+    })
+}
+
+/// Domain mirror for durability/history folding. Exact V3 semantics remain in
+/// `stream_event_v3`; this mapping supplies the existing journal spine with the
+/// closest lossless domain event and never feeds V3 reconstruction.
+pub fn journal_turn_event_for_v3(envelope: &TurnStreamEnvelopeV3) -> TurnEvent {
+    match &envelope.event {
+        TurnStreamEventV3::ContentAppend { text, .. } => TurnEvent::ContentDelta {
+            delta: text.clone(),
+        },
+        TurnStreamEventV3::ReasoningAppend { text } => TurnEvent::ReasoningDelta {
+            delta: text.clone(),
+        },
+        TurnStreamEventV3::Progress {
+            message,
+            tool_names,
+        } => TurnEvent::Progress {
+            message: message.clone(),
+            tool_names: tool_names.clone(),
+        },
+        TurnStreamEventV3::Status {
+            phase,
+            operator_message,
+            debug_message,
+        } => TurnEvent::Status {
+            phase: phase.clone(),
+            message: operator_message
+                .clone()
+                .or_else(|| debug_message.clone())
+                .unwrap_or_default(),
+            operator_message: operator_message.clone(),
+            debug_message: debug_message.clone(),
+        },
+        TurnStreamEventV3::ToolStarted {
+            tool_run_id,
+            tool_name,
+            input_summary,
+            tool_round,
+            ..
+        } => TurnEvent::ToolRunStarted {
+            tool_run_id: tool_run_id.clone(),
+            tool_name: tool_name.clone(),
+            input_summary: input_summary.clone(),
+            tool_round: *tool_round,
+        },
+        TurnStreamEventV3::ToolFinished {
+            tool_run_id,
+            tool_name,
+            status,
+            output_summary,
+            tool_round,
+            ..
+        } => TurnEvent::ToolRunFinished {
+            tool_run_id: tool_run_id.clone(),
+            tool_name: tool_name.clone(),
+            status: status.clone(),
+            output_summary: output_summary.clone(),
+            tool_round: *tool_round,
+        },
+        TurnStreamEventV3::TurnCompleted {
+            outcome,
+            aggregate_text,
+            tool_names,
+            operator_message,
+            ..
+        } => match outcome {
+            TurnCompletionOutcomeV3::Completed => TurnEvent::FinalResponse {
+                text: aggregate_text.clone(),
+                tool_names: tool_names.clone(),
+                parts: Vec::new(),
+                committed_at: envelope.emitted_at_utc,
+            },
+            TurnCompletionOutcomeV3::NeedsInput => TurnEvent::NeedsInput {
+                text: aggregate_text.clone(),
+                tool_names: tool_names.clone(),
+                parts: Vec::new(),
+                committed_at: envelope.emitted_at_utc,
+            },
+            TurnCompletionOutcomeV3::Checkpointed => TurnEvent::Checkpoint {
+                text: aggregate_text.clone(),
+                tool_names: tool_names.clone(),
+                parts: Vec::new(),
+                committed_at: envelope.emitted_at_utc,
+            },
+            TurnCompletionOutcomeV3::Failed
+            | TurnCompletionOutcomeV3::Cancelled
+            | TurnCompletionOutcomeV3::FuseExhausted => TurnEvent::Error {
+                message: operator_message
+                    .clone()
+                    .unwrap_or_else(|| "turn did not complete".to_string()),
+            },
+        },
+        other => TurnEvent::StreamMirror(serde_json::to_value(other).unwrap_or_default()),
+    }
+}
+
 fn typed_turn_event_to_stream(
     turn_id: &str,
     seq: u64,
@@ -370,10 +738,6 @@ fn typed_turn_event_to_stream(
             base.message = message.clone();
             base.operator_message = operator_message.clone();
             base.debug_message = debug_message.clone();
-        }
-        TurnEvent::ScratchReset => {
-            base.event_type = "scratch_reset".to_string();
-            base.phase = "streaming".to_string();
         }
         TurnEvent::ToolRunStarted {
             tool_run_id,
@@ -1055,7 +1419,12 @@ pub fn journal_turn_event_for_v2(envelope: &TurnStreamEnvelopeV2) -> TurnEvent {
             message: message.clone(),
             tool_names: tool_names.clone(),
         },
-        TurnStreamEventV2::ScratchReset => TurnEvent::ScratchReset,
+        TurnStreamEventV2::ScratchReset => TurnEvent::Status {
+            phase: "legacy_compat".to_string(),
+            message: String::new(),
+            operator_message: None,
+            debug_message: Some("ignored legacy scratch_reset event".to_string()),
+        },
         TurnStreamEventV2::ToolStarted {
             tool_run_id,
             tool_name,
@@ -1238,6 +1607,7 @@ mod tests {
             event: journal,
             emitted_at_utc: None,
             stream_event_v2: None,
+            stream_event_v3: None,
         };
         let replay = sequenced_to_stream_event(&sequenced);
         assert_eq!(replay.event_type, "artifact_presented");
@@ -1300,6 +1670,7 @@ mod tests {
             event: journal_turn_event_for_v2(&envelope),
             emitted_at_utc: Some(envelope.emitted_at_utc),
             stream_event_v2: frozen_v2_replay_event(&envelope.event),
+            stream_event_v3: None,
         };
 
         let replay = sequenced_to_v2(&sequenced).unwrap();
@@ -1344,6 +1715,7 @@ mod tests {
             event: journal_turn_event_for_v2(&envelope),
             emitted_at_utc: Some(envelope.emitted_at_utc),
             stream_event_v2: frozen_v2_replay_event(&envelope.event),
+            stream_event_v3: None,
         };
 
         let replay = sequenced_to_v2(&sequenced).unwrap();
@@ -1378,6 +1750,7 @@ mod tests {
             event: journal_turn_event_for_v2(&envelope),
             emitted_at_utc: Some(envelope.emitted_at_utc),
             stream_event_v2: frozen_v2_replay_event(&envelope.event),
+            stream_event_v3: None,
         };
 
         assert!(sequenced.stream_event_v2.is_some());
@@ -1391,5 +1764,100 @@ mod tests {
             sequenced_to_stream_event(&sequenced).event_type,
             "workshop_ack"
         );
+    }
+
+    #[test]
+    fn v3_lifecycle_facts_are_omitted_not_fabricated_for_v2() {
+        let started = TurnStreamEnvelopeV3::new(
+            "turn-v3",
+            1,
+            Utc::now(),
+            TurnStreamEventV3::AssistantTextStarted {
+                segment_id: "segment-1".into(),
+                model_round: 1,
+            },
+        )
+        .unwrap();
+        assert!(v3_to_v2(&started).unwrap().is_none());
+
+        let append = TurnStreamEnvelopeV3::new(
+            "turn-v3",
+            2,
+            Utc::now(),
+            TurnStreamEventV3::ContentAppend {
+                segment_id: "segment-1".into(),
+                text: "visible now".into(),
+            },
+        )
+        .unwrap();
+        let v2 = v3_to_v2(&append).unwrap().unwrap();
+        assert_eq!(v2.seq, 2);
+        assert!(matches!(
+            v2.event,
+            TurnStreamEventV2::ContentAppend { text } if text == "visible now"
+        ));
+    }
+
+    #[test]
+    fn v3_failure_settlement_projects_diagnostic_metadata_not_partial_prose() {
+        let diagnostic = TurnStreamEnvelopeV3::new(
+            "turn-v3-failed",
+            6,
+            Utc::now(),
+            TurnStreamEventV3::Error {
+                operator_message: "Could not finish the turn.".into(),
+                debug_message: Some("provider disconnected".into()),
+            },
+        )
+        .unwrap();
+        assert!(v3_to_v2(&diagnostic).unwrap().is_none());
+
+        let completed = TurnStreamEnvelopeV3::new(
+            "turn-v3-failed",
+            7,
+            Utc::now(),
+            TurnStreamEventV3::TurnCompleted {
+                outcome: TurnCompletionOutcomeV3::Failed,
+                aggregate_text: "I checked the first source.".into(),
+                tool_names: vec!["search".into()],
+                operator_message: Some("Could not finish the turn.".into()),
+                debug_message: Some("provider disconnected".into()),
+            },
+        )
+        .unwrap();
+        let projected = v3_to_v2(&completed).unwrap().unwrap();
+
+        assert_eq!(projected.seq, 7);
+        assert!(matches!(
+            projected.event,
+            TurnStreamEventV2::Error { operator_message, debug_message }
+                if operator_message == "Could not finish the turn."
+                    && debug_message.as_deref() == Some("provider disconnected")
+        ));
+    }
+
+    #[test]
+    fn journal_replay_reads_native_v3_without_using_v2_as_its_source() {
+        let event = TurnStreamEventV3::ContentAppend {
+            segment_id: "segment-9".into(),
+            text: "delta".into(),
+        };
+        let sequenced = SequencedTurnEvent {
+            envelope: TurnEnvelope::new("turn-v3", Principal::operator()).at_seq(9),
+            event: TurnEvent::ContentDelta {
+                delta: "delta".into(),
+            },
+            emitted_at_utc: Some(Utc::now()),
+            stream_event_v2: None,
+            stream_event_v3: Some(event),
+        };
+
+        let replay = sequenced_to_v3(&sequenced).unwrap();
+        assert_eq!(replay.seq, 9);
+        assert!(matches!(
+            replay.event,
+            TurnStreamEventV3::ContentAppend { segment_id, .. } if segment_id == "segment-9"
+        ));
+        assert!(sequenced_to_v2_optional(&sequenced).unwrap().is_some());
     }
 }

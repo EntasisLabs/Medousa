@@ -250,6 +250,7 @@ pub fn config_from_lan_base(lan_base: &str) -> WorkshopTransportConfig {
             session_token: None,
             phone_id: String::new(),
             workshop_device_id: String::new(),
+            daemon_public_key: None,
         });
     if local_credential.is_some() {
         config.session_token = local_credential;
@@ -713,6 +714,7 @@ mod tests {
             session_token: Some("home-secret".to_string()),
             phone_id: String::new(),
             workshop_device_id: String::new(),
+            daemon_public_key: None,
         };
         let headers = auth_headers(&config);
         assert_eq!(
@@ -756,6 +758,7 @@ mod tests {
             session_token: None,
             phone_id: String::new(),
             workshop_device_id: String::new(),
+            daemon_public_key: None,
         };
 
         let body = lan_request(

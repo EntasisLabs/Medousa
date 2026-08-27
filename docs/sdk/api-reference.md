@@ -44,6 +44,11 @@ this generic HTTP client rather than a dedicated typed SDK accessor. See the
 [Forge engine guide](../engine/forge.md) and the
 [HTTP route index](../engine/http-api.md#forge-undertakings).
 
+Daemon delegation uses the generated native-only operation
+`mesh.tasks.post`. Application clients should not construct it directly: the
+daemon owns Stasis turn identity, bounded context, retries, and provenance,
+while the native host supplies the paired signed transport.
+
 ---
 
 ## `ingest()`
@@ -167,11 +172,15 @@ applied.
 |--------|------|-------|
 | `start_turn(request)` | `POST /v1/interactive/turn` | `InteractiveTurnRequest` → `InteractiveTurnResponse` |
 | `stream(stream_url)` | SSE from `stream_url` | `InteractiveTurnStreamEvent` stream |
+| `stream_v3(stream_url)` | native chronological SSE from `stream_url` | `TurnStreamEnvelopeV3` stream |
 | `stream_v2(stream_url)` | negotiated SSE from `stream_url` | `TurnStreamEnvelopeV2` stream |
 | `stream_turn(request)` | start + SSE | combined helper |
-| `stream_reconnecting_v2(stream_url)` | negotiated SSE with `?since=` replay | `TurnStreamEnvelopeV2` stream (recommended) |
+| `stream_reconnecting_v3(stream_url)` | native chronological SSE with `?since=` replay | `TurnStreamEnvelopeV3` stream (recommended) |
+| `stream_reconnecting_v3_with_policy(stream_url, policy)` | native chronological SSE with custom `ReconnectPolicy` | `TurnStreamEnvelopeV3` stream |
+| `stream_turn_reconnecting_v3(request)` | start + native chronological reconnecting SSE | combined helper (recommended) |
+| `stream_reconnecting_v2(stream_url)` | negotiated compatibility SSE with `?since=` replay | `TurnStreamEnvelopeV2` stream |
 | `stream_reconnecting_v2_with_policy(stream_url, policy)` | negotiated SSE with custom `ReconnectPolicy` | `TurnStreamEnvelopeV2` stream |
-| `stream_turn_reconnecting_v2(request)` | start + typed reconnecting SSE | combined helper (recommended) |
+| `stream_turn_reconnecting_v2(request)` | start + typed reconnecting SSE | combined compatibility helper |
 | `stream_reconnecting*`, `stream_turn_reconnecting` | legacy SSE replay | frozen `InteractiveTurnStreamEvent` compatibility helpers |
 | `cancel(session_id)` | `POST /v1/sessions/{id}/active-turn` | cancel active turn |
 

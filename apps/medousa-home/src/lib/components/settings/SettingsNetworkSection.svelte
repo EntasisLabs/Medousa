@@ -4,8 +4,6 @@
   import PhonePairPanel from "$lib/components/pairing/PhonePairPanel.svelte";
   import SettingsLanShareSection from "$lib/components/settings/SettingsLanShareSection.svelte";
   import type { DaemonHealth } from "$lib/daemon";
-  import { isTauriMobilePlatform } from "$lib/platform";
-  import { workshopPairingManagedHint } from "$lib/platformCopy";
   import { sharedMode } from "$lib/stores/sharedMode.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { isTauri } from "$lib/window";
@@ -14,11 +12,10 @@
     mobile?: boolean;
     visible?: boolean;
     health: DaemonHealth | null;
+    nativeWorkloads?: boolean;
   }
 
-  let { mobile = false, visible = true, health }: Props = $props();
-
-  const readOnly = $derived(mobile || isTauriMobilePlatform());
+  let { mobile = false, visible = true, health, nativeWorkloads = true }: Props = $props();
 
   const networkSummary = $derived.by(() => {
     const mode = sharedMode.isShared ? "Shared" : "Personal";
@@ -26,12 +23,15 @@
   });
 
   onMount(() => {
-    void sharedMode.load();
     void userProfiles.load({ suppressRemoteNotice: true });
   });
 
+  $effect(() => {
+    if (nativeWorkloads) void sharedMode.load();
+  });
+
   async function toggleShared(enabled: boolean) {
-    if (readOnly || sharedMode.saving) return;
+    if (!nativeWorkloads || sharedMode.saving) return;
     await sharedMode.setMode(enabled ? "shared" : "personal");
   }
 </script>
@@ -42,7 +42,8 @@
     <p class="workshop-faint mt-1 text-sm">{networkSummary}</p>
   </header>
 
-  <div class="prefs-band">
+  {#if nativeWorkloads}
+    <div class="prefs-band">
     <div class="prefs-band-head">
       <h3 class="settings-subsection-heading">Shared</h3>
       <p class="settings-subsection-lead">
@@ -71,8 +72,7 @@
             type="checkbox"
             class="prefs-switch"
             checked={sharedMode.isShared}
-            disabled={readOnly ||
-              sharedMode.loading ||
+            disabled={sharedMode.loading ||
               sharedMode.saving ||
               sharedMode.unsupported}
             onchange={(event) =>
@@ -86,25 +86,18 @@
         <p class="mt-2 text-xs text-content-warning/90">{sharedMode.error}</p>
       {/if}
     {/if}
-  </div>
-
-  <div class="prefs-band">
-    <div class="prefs-band-head">
-      <h3 class="settings-subsection-heading">Phone</h3>
-      <p class="settings-subsection-lead">
-        Pair as a second portal on the same Wi‑Fi.
-      </p>
     </div>
 
-    {#if mobile && isTauriMobilePlatform()}
-      <div class="network-callout text-sm leading-relaxed text-content-secondary">
-        {workshopPairingManagedHint()} Then connect this app under Settings → Connection using your
-        workshop's LAN address.
+    <div class="prefs-band">
+      <div class="prefs-band-head">
+        <h3 class="settings-subsection-heading">Phone</h3>
+        <p class="settings-subsection-lead">
+          Pair as a second portal on the same Wi‑Fi.
+        </p>
       </div>
-    {:else}
       <PhonePairPanel mode="settings" />
-    {/if}
-  </div>
+    </div>
+  {/if}
 
   <div class="prefs-band">
     <div class="prefs-band-head">
@@ -114,7 +107,7 @@
       </p>
     </div>
 
-    <SettingsLanShareSection {mobile} embedded />
+    <SettingsLanShareSection {mobile} {nativeWorkloads} embedded />
   </div>
 
   <div class="prefs-band">

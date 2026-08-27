@@ -3,8 +3,11 @@ use std::process::Command;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, Local, NaiveDate, Utc};
+use chrono::Duration;
+#[cfg(feature = "full-daemon")]
 use locus_core_rs::NodeStore;
+#[cfg(feature = "full-daemon")]
 use medousa_runtime::MedousaToolLoopPipeline;
 use schemars::JsonSchema;
 use schemars::schema::{InstanceType, Schema, SchemaObject};
@@ -13,10 +16,14 @@ use serde_json::{Value, json};
 use tokio::sync::{RwLock, mpsc};
 use uuid::Uuid;
 
-use stasis::application::orchestration::tool_registry::{StasisTool, ToolRegistry};
+use stasis::application::orchestration::tool_registry::ToolRegistry;
 use stasis::domain::runtime::job_attempt::JobAttemptOutcome;
+#[cfg(feature = "full-daemon")]
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
-use stasis::prelude::{RuntimeBackend, RuntimeComposition, StasisError};
+use stasis::prelude::{RuntimeComposition, StasisError};
+#[cfg(feature = "full-daemon")]
+use stasis::prelude::RuntimeBackend;
+#[cfg(feature = "full-daemon")]
 use stasis::prelude_ext::{MemoryContextReader, MemoryContextWriter};
 
 use crate::capability_catalog::{
@@ -33,7 +40,7 @@ use crate::grapheme_sttp_compaction::{
 use crate::mcp_gateway_api::{McpDiscoverRequest, McpInvokeRequest, McpTurnContext, McpTurnLane};
 use crate::mcp_gateway_client::McpGatewayClient;
 use crate::mcp_turn_token::mint_mcp_turn_token;
-use crate::process_once;
+use crate::runtime_composition_ext::process_once;
 use crate::recurring_delivery::{
     DeliveryResolveContext, RecurringDeliverySpec, ambient_from_turn_scope,
     bind_recurring_delivery_spec_for_registration,
@@ -42,6 +49,7 @@ use crate::recurring_feed::{RecurringFeedSpec, bind_recurring_feed_spec_for_regi
 use crate::recurring_schedule::RecurringScheduleSpec;
 use crate::runtime_composition_ext::RuntimeCompositionExt;
 use crate::runtime_job_spec::ToolJobSpec;
+#[cfg(feature = "full-daemon")]
 use crate::tui::runtime_services::{
     build_tool_loop_pipeline_for_target, build_tui_runtime_services,
 };
@@ -1923,7 +1931,7 @@ impl CognitionRuntimeRecurringPreviewTool {
         let _ = self
             .event_tx
             .send(TuiEvent::ToolInvoked {
-                tool_name: self.name().to_string(),
+                tool_name: COGNITION_RUNTIME_RECURRING_PREVIEW_ID.as_str().to_string(),
                 input_summary: format!("{cron_expr} @ {timezone}"),
             })
             .await;
@@ -2854,6 +2862,7 @@ pub use crate::grapheme_source::extract_module_ops_from_source;
 
 // ── Registry builder ─────────────────────────────────────────────────────────
 
+#[cfg(feature = "full-daemon")]
 pub struct TuiRuntime {
     pub runtime: Arc<RuntimeComposition>,
     pub tool_loop_pipeline: MedousaToolLoopPipeline,
@@ -2875,6 +2884,7 @@ pub struct TuiRuntime {
     pub worker_scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
 }
 
+#[cfg(feature = "full-daemon")]
 impl TuiRuntime {
     pub fn tool_loop_pipeline_for_target(
         &self,
@@ -2887,6 +2897,7 @@ impl TuiRuntime {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(feature = "full-daemon")]
 pub async fn build_tui_runtime(
     backend: RuntimeBackend,
     provider: Option<&str>,

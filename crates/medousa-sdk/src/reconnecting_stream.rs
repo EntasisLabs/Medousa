@@ -9,7 +9,7 @@ use std::task::{Context, Poll};
 use futures_util::{Stream, StreamExt};
 
 #[cfg(all(feature = "async", feature = "sse"))]
-use medousa_types::{InteractiveTurnStreamEvent, TurnStreamEnvelopeV2};
+use medousa_types::{InteractiveTurnStreamEvent, TurnStreamEnvelopeV2, TurnStreamEnvelopeV3};
 #[cfg(all(feature = "async", feature = "sse"))]
 use serde::de::DeserializeOwned;
 
@@ -63,6 +63,9 @@ pub type ReconnectingInteractiveStream<'a> = ReconnectingTurnStream<'a, Interact
 pub type ReconnectingInteractiveStreamV2<'a> = ReconnectingTurnStream<'a, TurnStreamEnvelopeV2>;
 
 #[cfg(all(feature = "async", feature = "sse"))]
+pub type ReconnectingInteractiveStreamV3<'a> = ReconnectingTurnStream<'a, TurnStreamEnvelopeV3>;
+
+#[cfg(all(feature = "async", feature = "sse"))]
 impl<'a> ReconnectingTurnStream<'a, InteractiveTurnStreamEvent> {
     pub fn new(client: &'a MedousaClient, stream_path: impl Into<String>) -> Self {
         Self::with_policy(client, stream_path, ReconnectPolicy::default())
@@ -100,6 +103,28 @@ impl<'a> ReconnectingTurnStream<'a, TurnStreamEnvelopeV2> {
             stream_path,
             policy,
             medousa_types::turn_stream::TURN_STREAM_V2_MEDIA_TYPE,
+            |envelope| envelope.seq,
+            |envelope| envelope.event.is_terminal(),
+        )
+    }
+}
+
+#[cfg(all(feature = "async", feature = "sse"))]
+impl<'a> ReconnectingTurnStream<'a, TurnStreamEnvelopeV3> {
+    pub fn new_v3(client: &'a MedousaClient, stream_path: impl Into<String>) -> Self {
+        Self::with_policy_v3(client, stream_path, ReconnectPolicy::default())
+    }
+
+    pub fn with_policy_v3(
+        client: &'a MedousaClient,
+        stream_path: impl Into<String>,
+        policy: ReconnectPolicy,
+    ) -> Self {
+        Self::with_wire(
+            client,
+            stream_path,
+            policy,
+            medousa_types::turn_stream::TURN_STREAM_V3_MEDIA_TYPE,
             |envelope| envelope.seq,
             |envelope| envelope.event.is_terminal(),
         )
@@ -280,6 +305,11 @@ pub fn apply_stream_seq(last_seq: &mut u64, event: &InteractiveTurnStreamEvent) 
 
 #[cfg(all(feature = "async", feature = "sse"))]
 pub fn apply_stream_seq_v2(last_seq: &mut u64, event: &TurnStreamEnvelopeV2) -> bool {
+    apply_sequence(last_seq, event.seq)
+}
+
+#[cfg(all(feature = "async", feature = "sse"))]
+pub fn apply_stream_seq_v3(last_seq: &mut u64, event: &TurnStreamEnvelopeV3) -> bool {
     apply_sequence(last_seq, event.seq)
 }
 

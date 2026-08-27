@@ -9,107 +9,12 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 const DEFAULT_GATEWAY_URL: &str = "http://127.0.0.1:7420";
-const DEFAULT_GATEWAY_BIND: &str = "127.0.0.1:7420";
-
-const STARTER_MCP_GATEWAY_TOML: &str = r#"# Medousa MCP Client gateway
-# Guide: docs/mcp-gateway-setup.md
-
-[gateway]
-bind = "127.0.0.1:7420"
-daemon_policy_url = "http://127.0.0.1:7419/v1/mcp/policy/evaluate"
-use_mock_fallback = true
-
-[[servers]]
-id = "notion"
-title = "Notion MCP (mock)"
-enabled = true
-transport = "stdio"
-use_mock = true
-allowed_lanes = ["interactive", "scheduled"]
-allowed_effect_classes = ["external_read", "external_write", "external_side_effect"]
-
-[[servers]]
-id = "gmail"
-title = "Gmail MCP (mock)"
-enabled = true
-transport = "stdio"
-use_mock = true
-allowed_lanes = ["interactive", "scheduled"]
-allowed_effect_classes = ["external_read", "external_write", "external_side_effect"]
-"#;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct McpGatewayFileConfig {
-    #[serde(default)]
-    pub gateway: GatewaySection,
-    #[serde(default)]
-    pub servers: Vec<McpServerConfigDto>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GatewaySection {
-    #[serde(default = "default_bind")]
-    pub bind: String,
-    #[serde(default = "default_daemon_policy_url")]
-    pub daemon_policy_url: String,
-    #[serde(default = "default_max_invoke_ms")]
-    pub max_invoke_duration_ms: u64,
-    #[serde(default = "default_catalog_refresh_secs")]
-    pub catalog_refresh_interval_secs: u64,
-    #[serde(default = "default_true")]
-    pub use_mock_fallback: bool,
-}
-
-impl Default for GatewaySection {
-    fn default() -> Self {
-        Self {
-            bind: default_bind(),
-            daemon_policy_url: default_daemon_policy_url(),
-            max_invoke_duration_ms: default_max_invoke_ms(),
-            catalog_refresh_interval_secs: default_catalog_refresh_secs(),
-            use_mock_fallback: true,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct McpServerConfigDto {
-    pub id: String,
-    pub title: String,
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    #[serde(default = "default_transport")]
-    pub transport: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub command: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub args: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        rename = "bearer_token"
-    )]
-    pub bearer_token: Option<String>,
-    #[serde(default = "default_allowed_lanes")]
-    pub allowed_lanes: Vec<String>,
-    #[serde(default = "default_allowed_effects")]
-    pub allowed_effect_classes: Vec<String>,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub tool_tags: HashMap<String, Vec<String>>,
-    #[serde(default)]
-    pub use_mock: bool,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpGatewayConfigLoadResult {
     pub path: String,
-    pub config: McpGatewayFileConfig,
+    pub config: medousa_mcp_gateway::McpGatewayFileConfig,
     pub file_exists: bool,
 }
 
@@ -192,19 +97,29 @@ pub struct McpGatewayTestResult {
     pub tool_count: u32,
 }
 
-fn gateway_config_path() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("medousa")
-        .join("mcp-gateway.toml")
-}
-
 fn medousa_data_dir() -> PathBuf {
     crate::paths::medousa_data_dir()
 }
 
 fn gateway_log_path() -> PathBuf {
     medousa_data_dir().join("logs").join("mcp-gateway.log")
+}
+
+fn active_workshop_uses_local_mcp_config() -> Result<bool, String> {
+    Ok(match crate::active_workshop::resolve()? {
+        crate::active_workshop::ActiveWorkshopTarget::EmbeddedPersonal => true,
+        crate::active_workshop::ActiveWorkshopTarget::Transport { workshop, .. } => {
+            workshop.kind == "local"
+        }
+    })
+}
+
+fn require_local_mcp_config() -> Result<(), String> {
+    if active_workshop_uses_local_mcp_config()? {
+        Ok(())
+    } else {
+        Err("MCP configuration is managed by the selected workshop".to_string())
+    }
 }
 
 fn resolve_gateway_url() -> String {
@@ -229,22 +144,6 @@ fn resolve_admin_token() -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-fn default_bind() -> String {
-    DEFAULT_GATEWAY_BIND.to_string()
-}
-
-fn default_daemon_policy_url() -> String {
-    "http://127.0.0.1:7419/v1/mcp/policy/evaluate".to_string()
-}
-
-fn default_max_invoke_ms() -> u64 {
-    30_000
-}
-
-fn default_catalog_refresh_secs() -> u64 {
-    300
-}
-
 fn default_true() -> bool {
     true
 }
@@ -265,31 +164,45 @@ fn default_allowed_effects() -> Vec<String> {
     ]
 }
 
-fn install_starter_if_missing() -> Result<PathBuf, String> {
-    let path = gateway_config_path();
-    if path.exists() {
-        return Ok(path);
-    }
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-    fs::write(&path, STARTER_MCP_GATEWAY_TOML).map_err(|err| err.to_string())?;
-    Ok(path)
+#[cfg(target_os = "ios")]
+fn count_u32(value: usize) -> u32 {
+    u32::try_from(value).unwrap_or(u32::MAX)
 }
 
-fn load_file_config() -> Result<(McpGatewayFileConfig, PathBuf, bool), String> {
+fn install_starter_if_missing() -> Result<PathBuf, String> {
+    medousa_mcp_gateway::install_starter_gateway_config_if_missing().map_err(|err| err.to_string())
+}
+
+fn load_file_config() -> Result<(medousa_mcp_gateway::McpGatewayFileConfig, PathBuf, bool), String>
+{
     let path = install_starter_if_missing()?;
     let raw = fs::read_to_string(&path).map_err(|err| err.to_string())?;
-    let config = toml::from_str::<McpGatewayFileConfig>(&raw)
+    let config = toml::from_str::<medousa_mcp_gateway::McpGatewayFileConfig>(&raw)
         .map_err(|err| format!("failed to parse {}: {err}", path.display()))?;
     Ok((config, path, true))
 }
 
-fn persist_file_config(config: &McpGatewayFileConfig) -> Result<PathBuf, String> {
+fn persist_file_config(
+    config: &medousa_mcp_gateway::McpGatewayFileConfig,
+) -> Result<PathBuf, String> {
     let path = install_starter_if_missing()?;
     let encoded = toml::to_string_pretty(config).map_err(|err| err.to_string())?;
     fs::write(&path, encoded).map_err(|err| err.to_string())?;
     Ok(path)
+}
+
+fn persist_server(server: medousa_mcp_gateway::McpServerConfig) -> Result<PathBuf, String> {
+    let (mut config, _, _) = load_file_config()?;
+    if let Some(existing) = config
+        .servers
+        .iter_mut()
+        .find(|entry| entry.id.eq_ignore_ascii_case(&server.id))
+    {
+        *existing = server;
+    } else {
+        config.servers.push(server);
+    }
+    persist_file_config(&config)
 }
 
 fn normalize_server_id(raw: &str) -> Result<String, String> {
@@ -318,7 +231,9 @@ fn normalize_transport(raw: &str) -> Result<String, String> {
     }
 }
 
-fn validate_server(request: &McpServerUpsertRequest) -> Result<McpServerConfigDto, String> {
+fn validate_server(
+    request: &McpServerUpsertRequest,
+) -> Result<medousa_mcp_gateway::McpServerConfig, String> {
     let id = normalize_server_id(&request.id)?;
     let title = request.title.trim();
     if title.is_empty() {
@@ -327,7 +242,7 @@ fn validate_server(request: &McpServerUpsertRequest) -> Result<McpServerConfigDt
     let transport = normalize_transport(&request.transport)?;
 
     if request.use_mock {
-        return Ok(McpServerConfigDto {
+        return Ok(medousa_mcp_gateway::McpServerConfig {
             id,
             title: title.to_string(),
             enabled: request.enabled,
@@ -363,7 +278,7 @@ fn validate_server(request: &McpServerUpsertRequest) -> Result<McpServerConfigDt
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
-        return Ok(McpServerConfigDto {
+        return Ok(medousa_mcp_gateway::McpServerConfig {
             id,
             title: title.to_string(),
             enabled: request.enabled,
@@ -391,7 +306,7 @@ fn validate_server(request: &McpServerUpsertRequest) -> Result<McpServerConfigDt
         .ok_or_else(|| {
             "Command is required for stdio MCP servers (or enable mock mode)".to_string()
         })?;
-    Ok(McpServerConfigDto {
+    Ok(medousa_mcp_gateway::McpServerConfig {
         id,
         title: title.to_string(),
         enabled: request.enabled,
@@ -517,6 +432,17 @@ async fn reindex_daemon_capabilities(
         .await
         .map(|_| ())
         .map_err(crate::daemon::sdk::sdk_error)
+}
+
+#[cfg(target_os = "ios")]
+async fn reload_embedded_mcp(
+    client: &medousa::embedded_daemon::EmbeddedDaemonClient,
+) -> Result<(), String> {
+    let config = medousa_mcp_gateway::McpGatewayFullConfig::from_env_and_args(&[]).remote_only();
+    client
+        .reconfigure_mcp_gateway(config)
+        .await
+        .map_err(|error| format!("reload embedded MCP adapter: {error:#}"))
 }
 
 fn bind_port(bind: &str) -> Option<u16> {
@@ -653,6 +579,7 @@ async fn wait_for_gateway(bind: &str, timeout_seconds: u64) -> bool {
 
 #[tauri::command]
 pub async fn mcp_gateway_load_config() -> Result<McpGatewayConfigLoadResult, String> {
+    require_local_mcp_config()?;
     let (config, path, file_exists) = load_file_config()?;
     Ok(McpGatewayConfigLoadResult {
         path: path.display().to_string(),
@@ -664,9 +591,54 @@ pub async fn mcp_gateway_load_config() -> Result<McpGatewayConfigLoadResult, Str
 #[tauri::command]
 pub async fn mcp_gateway_status(
     state: tauri::State<'_, crate::daemon::DaemonState>,
+    _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
 ) -> Result<McpGatewayStatusResult, String> {
-    let (config, path, _) = load_file_config()?;
-    let config_path = path.display().to_string();
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        let (_, path, _) = load_file_config()?;
+        let (health, servers) = client
+            .mcp_gateway_status()
+            .await
+            .map_err(|error| format!("embedded MCP adapter status: {error:#}"))?;
+        return Ok(McpGatewayStatusResult {
+            gateway_url: "in-process://embedded".to_string(),
+            reachable: true,
+            message: "Embedded MCP adapter is running".to_string(),
+            health: Some(McpGatewayHealthDto {
+                status: health.status,
+                invokes_enabled: health.invokes_enabled,
+                registered_servers: count_u32(health.registered_servers),
+                connected_servers: count_u32(health.connected_servers),
+                catalog_entries: count_u32(health.catalog_entries),
+            }),
+            servers: servers
+                .servers
+                .into_iter()
+                .map(|server| McpServerRuntimeDto {
+                    server_id: server.server_id,
+                    title: server.title,
+                    enabled: server.enabled,
+                    connected: server.connected,
+                    tool_count: count_u32(server.tool_count),
+                    allowed_lanes: server.allowed_lanes,
+                })
+                .collect(),
+            config_path: path.display().to_string(),
+        });
+    }
+
+    let (config, config_path) = if active_workshop_uses_local_mcp_config()? {
+        let (config, path, _) = load_file_config()?;
+        (config, path.display().to_string())
+    } else {
+        (
+            medousa_mcp_gateway::McpGatewayFileConfig {
+                gateway: medousa_mcp_gateway::GatewaySection::default(),
+                servers: Vec::new(),
+            },
+            String::new(),
+        )
+    };
 
     let status = match crate::daemon::sdk::client(&state) {
         Ok(client) => client.mcp_gateway().status().await,
@@ -674,9 +646,7 @@ pub async fn mcp_gateway_status(
             return Ok(McpGatewayStatusResult {
                 gateway_url: resolve_gateway_url(),
                 reachable: false,
-                message: format!(
-                    "Workshop unavailable — cannot check MCP gateway status ({err})"
-                ),
+                message: format!("Workshop unavailable — cannot check MCP gateway status ({err})"),
                 health: None,
                 servers: servers_from_local_config(&config, false),
                 config_path,
@@ -703,7 +673,7 @@ pub async fn mcp_gateway_status(
 
 fn merge_daemon_gateway_status(
     daemon_status: medousa_types::McpGatewayStatusResponse,
-    config: &McpGatewayFileConfig,
+    config: &medousa_mcp_gateway::McpGatewayFileConfig,
     config_path: String,
 ) -> McpGatewayStatusResult {
     let servers = if daemon_status.servers.is_empty() {
@@ -748,7 +718,7 @@ fn merge_daemon_gateway_status(
 }
 
 fn servers_from_local_config(
-    config: &McpGatewayFileConfig,
+    config: &medousa_mcp_gateway::McpGatewayFileConfig,
     connected: bool,
 ) -> Vec<McpServerRuntimeDto> {
     config
@@ -819,31 +789,63 @@ async fn perform_mcp_gateway_restart() -> Result<(McpGatewayRestartResult, bool)
 
 #[tauri::command]
 pub async fn mcp_gateway_restart(
-    state: tauri::State<'_, crate::daemon::DaemonState>,
+    _state: tauri::State<'_, crate::daemon::DaemonState>,
+    _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
 ) -> Result<McpGatewayRestartResult, String> {
-    let (result, ready) = perform_mcp_gateway_restart().await?;
-    if ready {
-        let _ = reindex_daemon_capabilities(&state).await;
+    require_local_mcp_config()?;
+    #[cfg(target_os = "ios")]
+    {
+        let client = _embedded_state
+            .client_if_active()
+            .await?
+            .ok_or_else(|| "MCP configuration is managed by the selected workshop".to_string())?;
+        reload_embedded_mcp(&client).await?;
+        return Ok(McpGatewayRestartResult {
+            started: false,
+            already_running: true,
+            log_path: String::new(),
+            message: "Embedded MCP catalog reloaded".to_string(),
+        });
     }
+
+    #[cfg(not(target_os = "ios"))]
+    let (result, ready) = perform_mcp_gateway_restart().await?;
+    #[cfg(not(target_os = "ios"))]
+    if ready {
+        let _ = reindex_daemon_capabilities(&_state).await;
+    }
+    #[cfg(not(target_os = "ios"))]
     Ok(result)
 }
 
 #[tauri::command]
 pub async fn mcp_gateway_upsert_server(
+    _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     request: McpServerUpsertRequest,
 ) -> Result<McpServerMutationResult, String> {
+    require_local_mcp_config()?;
     let server = validate_server(&request)?;
-    let (mut config, _, _) = load_file_config()?;
-    if let Some(existing) = config
-        .servers
-        .iter_mut()
-        .find(|entry| entry.id.eq_ignore_ascii_case(&server.id))
-    {
-        *existing = server;
-    } else {
-        config.servers.push(server);
+    #[cfg(target_os = "ios")]
+    if server.transport == "stdio" && !server.use_mock {
+        return Err("Embedded MCP supports hosted HTTP and SSE servers only".to_string());
     }
-    let path = persist_file_config(&config)?;
+    #[cfg(target_os = "ios")]
+    let embedded_client = _embedded_state
+        .client_if_active()
+        .await?
+        .ok_or_else(|| "MCP configuration is managed by the selected workshop".to_string())?;
+    let path = persist_server(server)?;
+    #[cfg(target_os = "ios")]
+    {
+        reload_embedded_mcp(&embedded_client).await?;
+        return Ok(McpServerMutationResult {
+            ok: true,
+            message: "Server saved and applied".to_string(),
+            config_path: path.display().to_string(),
+        });
+    }
+
+    #[cfg(not(target_os = "ios"))]
     Ok(McpServerMutationResult {
         ok: true,
         message: "Server saved — restart the MCP gateway to apply".to_string(),
@@ -853,8 +855,15 @@ pub async fn mcp_gateway_upsert_server(
 
 #[tauri::command]
 pub async fn mcp_gateway_remove_server(
+    _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     server_id: String,
 ) -> Result<McpServerMutationResult, String> {
+    require_local_mcp_config()?;
+    #[cfg(target_os = "ios")]
+    let embedded_client = _embedded_state
+        .client_if_active()
+        .await?
+        .ok_or_else(|| "MCP configuration is managed by the selected workshop".to_string())?;
     let id = normalize_server_id(&server_id)?;
     let (mut config, _, _) = load_file_config()?;
     let before = config.servers.len();
@@ -865,6 +874,17 @@ pub async fn mcp_gateway_remove_server(
         return Err(format!("unknown MCP server '{id}'"));
     }
     let path = persist_file_config(&config)?;
+    #[cfg(target_os = "ios")]
+    {
+        reload_embedded_mcp(&embedded_client).await?;
+        return Ok(McpServerMutationResult {
+            ok: true,
+            message: "Server removed".to_string(),
+            config_path: path.display().to_string(),
+        });
+    }
+
+    #[cfg(not(target_os = "ios"))]
     Ok(McpServerMutationResult {
         ok: true,
         message: "Server removed — restart the MCP gateway to apply".to_string(),
@@ -874,9 +894,16 @@ pub async fn mcp_gateway_remove_server(
 
 #[tauri::command]
 pub async fn mcp_gateway_set_server_enabled(
+    _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     server_id: String,
     enabled: bool,
 ) -> Result<McpServerMutationResult, String> {
+    require_local_mcp_config()?;
+    #[cfg(target_os = "ios")]
+    let embedded_client = _embedded_state
+        .client_if_active()
+        .await?
+        .ok_or_else(|| "MCP configuration is managed by the selected workshop".to_string())?;
     let id = normalize_server_id(&server_id)?;
     let (mut config, _, _) = load_file_config()?;
     let entry = config
@@ -886,6 +913,21 @@ pub async fn mcp_gateway_set_server_enabled(
         .ok_or_else(|| format!("unknown MCP server '{id}'"))?;
     entry.enabled = enabled;
     let path = persist_file_config(&config)?;
+    #[cfg(target_os = "ios")]
+    {
+        reload_embedded_mcp(&embedded_client).await?;
+        return Ok(McpServerMutationResult {
+            ok: true,
+            message: if enabled {
+                "Server enabled".to_string()
+            } else {
+                "Server disabled".to_string()
+            },
+            config_path: path.display().to_string(),
+        });
+    }
+
+    #[cfg(not(target_os = "ios"))]
     Ok(McpServerMutationResult {
         ok: true,
         message: if enabled {
@@ -899,26 +941,82 @@ pub async fn mcp_gateway_set_server_enabled(
 
 #[tauri::command]
 pub async fn mcp_gateway_apply_server(
-    state: tauri::State<'_, crate::daemon::DaemonState>,
+    _state: tauri::State<'_, crate::daemon::DaemonState>,
+    _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     request: McpServerUpsertRequest,
 ) -> Result<McpGatewayTestResult, String> {
-    mcp_gateway_upsert_server(request.clone()).await?;
-    let (_, ready) = perform_mcp_gateway_restart().await?;
-    let gateway_url = resolve_gateway_url();
-    let _ = admin_refresh_catalog(&gateway_url).await;
-    if ready {
-        let _ = reindex_daemon_capabilities(&state).await;
+    require_local_mcp_config()?;
+    #[cfg(target_os = "ios")]
+    {
+        let client = _embedded_state
+            .client_if_active()
+            .await?
+            .ok_or_else(|| "MCP configuration is managed by the selected workshop".to_string())?;
+        let server = validate_server(&request)?;
+        if server.transport == "stdio" && !server.use_mock {
+            return Err("Embedded MCP supports hosted HTTP and SSE servers only".to_string());
+        }
+        persist_server(server)?;
+        reload_embedded_mcp(&client).await?;
+        let (_, servers) = client
+            .mcp_gateway_status()
+            .await
+            .map_err(|error| format!("embedded MCP adapter status: {error:#}"))?;
+        let id = normalize_server_id(&request.id)?;
+        let runtime = servers
+            .servers
+            .iter()
+            .find(|server| server.server_id.eq_ignore_ascii_case(&id));
+        return Ok(match runtime {
+            Some(runtime) => McpGatewayTestResult {
+                ok: runtime.connected || request.use_mock,
+                connected: runtime.connected,
+                tool_count: count_u32(runtime.tool_count),
+                message: if runtime.connected {
+                    format!(
+                        "{} connected with {} tool(s)",
+                        runtime.title, runtime.tool_count
+                    )
+                } else {
+                    format!("{} saved but did not connect", runtime.title)
+                },
+            },
+            None => McpGatewayTestResult {
+                ok: false,
+                connected: false,
+                tool_count: 0,
+                message: "Server saved, but runtime status is unavailable".to_string(),
+            },
+        });
     }
+
+    #[cfg(not(target_os = "ios"))]
+    mcp_gateway_upsert_server(_embedded_state, request.clone()).await?;
+    #[cfg(not(target_os = "ios"))]
+    let (_, ready) = perform_mcp_gateway_restart().await?;
+    #[cfg(not(target_os = "ios"))]
+    let gateway_url = resolve_gateway_url();
+    #[cfg(not(target_os = "ios"))]
+    let _ = admin_refresh_catalog(&gateway_url).await;
+    #[cfg(not(target_os = "ios"))]
+    if ready {
+        let _ = reindex_daemon_capabilities(&_state).await;
+    }
+    #[cfg(not(target_os = "ios"))]
     tokio::time::sleep(Duration::from_millis(750)).await;
 
+    #[cfg(not(target_os = "ios"))]
     let id = normalize_server_id(&request.id)?;
+    #[cfg(not(target_os = "ios"))]
     let servers = fetch_runtime_servers(&gateway_url)
         .await
         .unwrap_or_default();
+    #[cfg(not(target_os = "ios"))]
     let runtime = servers
         .iter()
         .find(|server| server.server_id.eq_ignore_ascii_case(&id));
 
+    #[cfg(not(target_os = "ios"))]
     if let Some(runtime) = runtime {
         return Ok(McpGatewayTestResult {
             ok: runtime.connected || request.use_mock,
@@ -941,6 +1039,7 @@ pub async fn mcp_gateway_apply_server(
         });
     }
 
+    #[cfg(not(target_os = "ios"))]
     Ok(McpGatewayTestResult {
         ok: false,
         connected: false,

@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use axum::extract::{Extension, Path, Query, State};
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
@@ -11,7 +12,15 @@ use serde::{Deserialize, Serialize};
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
-use crate::mesh::envelope::MeshCapability;
+use crate::delegated_task::{
+    DelegatedTaskError, DelegatedTaskErrorKind, DelegatedTaskRequest, DelegatedTaskResult,
+    delegated_work_id, validate_task_request,
+};
+use crate::mesh::delivery;
+use crate::mesh::envelope::{
+    DEFAULT_ENVELOPE_TTL_SECS, MeshCapability, MeshEnvelopedRequest, MeshInboundBody,
+    payload_hash_hex, sign_envelope, verify_enveloped_payload,
+};
 use crate::mesh::intros::{self, MeshIntroCandidate, MeshIntroRecord, MeshIntroStatus};
 use crate::mesh::outbox::{self, MeshOutboxItem, MeshOutboxStatus};
 use crate::mesh::receipts::{self, MeshReceipt};
@@ -27,6 +36,7 @@ use crate::request_principal::{Capability, PrincipalKind, RequestPrincipal, Tran
 pub struct MeshApiState {
     pub pairing: Option<Arc<PairingService>>,
     pub local_device_id: String,
+    pub delegated_task_executor: Option<Arc<dyn super::task::DelegatedTaskExecutor>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -159,6 +169,10 @@ pub fn mesh_surface() -> DeclaredRouter<MeshApiState> {
         .route(
             peer_policy(axum::http::Method::GET, "/v1/mesh/inbox", 1024),
             get(list_mesh_inbox),
+        )
+        .route(
+            peer_policy(axum::http::Method::POST, "/v1/mesh/tasks", 1024 * 1024),
+            post(execute_mesh_task),
         )
         .methods([
             (
@@ -549,6 +563,106 @@ async fn list_mesh_inbox(
     Ok(Json(MeshInboxListResponse { items }))
 }
 
+async fn execute_mesh_task(
+    State(state): State<MeshApiState>,
+    Extension(principal): Extension<RequestPrincipal>,
+    Json(body): Json<MeshInboundBody<DelegatedTaskRequest>>,
+) -> Result<Response, (StatusCode, String)> {
+    require_pairing_principal(&principal)?;
+    let record = authorize_remote_peer(&state, &principal)?;
+    if !record_has_capability(&record, CAP_TASK_REQUEST) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "task.request grant required".to_string(),
+        ));
+    }
+    let (envelope, payload) = body.into_parts();
+    let envelope = envelope.ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            "signed mesh envelope required for remote task delivery".to_string(),
+        )
+    })?;
+    if envelope.sender_device_id.trim() != record.phone_id.trim()
+        || envelope.recipient_device_id.trim() != state.local_device_id.trim()
+    {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "delegated task envelope identities must exactly match the authenticated pairing"
+                .to_string(),
+        ));
+    }
+    validate_task_request(&payload).map_err(map_delegated_task_error)?;
+    verify_enveloped_payload(
+        &MeshEnvelopedRequest {
+            envelope: envelope.clone(),
+            payload: payload.clone(),
+        },
+        &record.phone_public_key,
+        &record.phone_id,
+        &state.local_device_id,
+        MeshCapability::TaskRequest,
+        true,
+    )
+    .map_err(|error| (StatusCode::UNAUTHORIZED, error.to_string()))?;
+
+    let payload_hash =
+        payload_hash_hex(&payload).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let pairing = state.pairing.as_ref().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "LAN pairing is not enabled on this workshop".to_string(),
+        )
+    })?;
+    let accepted = delivery::accept_inbound_delivery(
+        pairing.identity().signing_key(),
+        &state.local_device_id,
+        &envelope,
+        &payload_hash,
+    )
+    .map_err(internal)?;
+    let turn_id = payload
+        .grant
+        .turn_id
+        .as_deref()
+        .expect("validated delegated turn id");
+    let work_id = delegated_work_id(&record.phone_id, turn_id);
+    delivery::bind_delivery_local_ref(&accepted.inbox_id, &work_id, &accepted.receipt.id)
+        .map_err(internal)?;
+
+    let executor = state.delegated_task_executor.as_ref().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "delegated task execution is not configured".to_string(),
+        )
+    })?;
+    let result: DelegatedTaskResult = executor
+        .execute(&record, &payload)
+        .await
+        .map_err(map_delegated_task_error)?;
+    let result_hash = payload_hash_hex(&result)
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    let seq = registry::allocate_outbound_seq(&record.phone_id).map_err(internal)?;
+    let result_envelope = sign_envelope(
+        pairing.identity().signing_key(),
+        &state.local_device_id,
+        &record.phone_id,
+        seq,
+        MeshCapability::TaskResult,
+        &result_hash,
+        chrono::Duration::seconds(DEFAULT_ENVELOPE_TTL_SECS),
+    );
+    let receipt = delivery::receipt_header_value(&accepted.receipt).map_err(internal)?;
+    Ok((
+        [("x-medousa-mesh-receipt", receipt)],
+        Json(MeshEnvelopedRequest {
+            envelope: result_envelope,
+            payload: result,
+        }),
+    )
+        .into_response())
+}
+
 async fn list_mesh_receipts(
     State(_state): State<MeshApiState>,
     Extension(principal): Extension<RequestPrincipal>,
@@ -585,6 +699,19 @@ fn require_trusted_local(principal: &RequestPrincipal) -> Result<(), (StatusCode
     Err((
         StatusCode::FORBIDDEN,
         "mesh admin routes require trusted local access".to_string(),
+    ))
+}
+
+fn require_pairing_principal(principal: &RequestPrincipal) -> Result<(), (StatusCode, String)> {
+    if matches!(
+        principal.kind(),
+        PrincipalKind::Peer | PrincipalKind::Portal | PrincipalKind::Root
+    ) {
+        return Ok(());
+    }
+    Err((
+        StatusCode::UNAUTHORIZED,
+        "daemon-to-daemon tasks require an authenticated pairing principal".to_string(),
     ))
 }
 
@@ -656,6 +783,16 @@ fn internal(err: impl ToString) -> (StatusCode, String) {
     (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
 }
 
+fn map_delegated_task_error(error: DelegatedTaskError) -> (StatusCode, String) {
+    let status = match error.kind {
+        DelegatedTaskErrorKind::Invalid => StatusCode::BAD_REQUEST,
+        DelegatedTaskErrorKind::Conflict => StatusCode::CONFLICT,
+        DelegatedTaskErrorKind::Transport => StatusCode::GATEWAY_TIMEOUT,
+        DelegatedTaskErrorKind::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    (status, error.message)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -691,7 +828,7 @@ mod tests {
     #[test]
     fn mesh_inventory_is_complete_and_peer_scoped() {
         let entries = mesh_surface().inventory().entries().collect::<Vec<_>>();
-        assert_eq!(entries.len(), 13);
+        assert_eq!(entries.len(), 14);
         assert!(entries.iter().all(|entry| {
             entry.group == RouteGroup::PeerExchange
                 && entry.required_capability == Some("peer.exchange")

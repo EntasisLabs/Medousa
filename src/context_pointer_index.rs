@@ -27,6 +27,13 @@ pub struct WorkCardHint {
 
 /// Ranked work-card breadcrumbs from the materialized workspace snapshot.
 pub fn collect_work_card_hints(active_session_id: &str) -> Vec<WorkCardHint> {
+    #[cfg(not(feature = "full-daemon"))]
+    {
+        let _ = active_session_id;
+        return Vec::new();
+    }
+    #[cfg(feature = "full-daemon")]
+    {
     let Some(hub) = crate::workspace::projector::workspace_hub() else {
         return Vec::new();
     };
@@ -64,6 +71,7 @@ pub fn collect_work_card_hints(active_session_id: &str) -> Vec<WorkCardHint> {
 
     hints.sort_by_key(|b| std::cmp::Reverse(b.last_active_at));
     hints
+    }
 }
 
 pub fn build_pointer_digest(

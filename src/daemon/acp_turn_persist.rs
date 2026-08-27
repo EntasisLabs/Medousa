@@ -145,6 +145,8 @@ pub fn fold_prompt_to_turns(
             answer_state.map(str::to_owned),
             vec![TurnPart::Text {
                 markdown: String::new(),
+                segment_id: None,
+                model_round: None,
             }],
         )
     });

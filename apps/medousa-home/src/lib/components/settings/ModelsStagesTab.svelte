@@ -4,10 +4,9 @@
 
   interface Props {
     disabled?: boolean;
-    mobile?: boolean;
   }
 
-  let { disabled = false, mobile = false }: Props = $props();
+  let { disabled = false }: Props = $props();
 
   const STAGE_ROLE_LABELS: Record<string, string> = {
     orchestrator: "Lead",
@@ -95,7 +94,7 @@
   {/if}
 
   <div class="mt-5">
-    <SettingsCharterSaveBar {mobile} />
+    <SettingsCharterSaveBar />
   </div>
 </div>
 

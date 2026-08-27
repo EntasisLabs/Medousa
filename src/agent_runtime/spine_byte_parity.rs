@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn fold_byte_matches_legacy_interim_prose_turn() {
         let mut acc = TurnPartsAccumulator::default();
-        acc.archive_progress_note("Let me check that for you.");
+        acc.commit_text_segment("Let me check that for you.", None, None);
         acc.tool_started("tr-1", "data_probe", "q=ingest", 1);
         acc.tool_finished("tr-1", "succeeded", None, vec![]);
         let legacy = acc.finalize_assistant_turn(
@@ -85,6 +85,23 @@ mod tests {
         );
         let event = TurnEvent::final_response_from_turn(&legacy);
         assert_fold_matches_legacy("be-interim", &legacy, event);
+    }
+
+    #[test]
+    fn fold_byte_matches_chronological_segment_turn() {
+        let mut acc = TurnPartsAccumulator::default();
+        acc.commit_text_segment("Let me check that for you.", Some("segment-1"), Some(1));
+        acc.tool_started("tr-1", "data_probe", "q=ingest", 1);
+        acc.tool_finished("tr-1", "succeeded", Some("3 hits".into()), vec![]);
+        acc.commit_text_segment("Done — here is the result.", Some("segment-2"), Some(2));
+        let chronological = acc.finalize_chronological_turn(
+            "Let me check that for you.\n\nDone — here is the result.".into(),
+            vec!["data_probe".into()],
+            None,
+        );
+        let event = TurnEvent::final_response_from_turn(&chronological);
+
+        assert_fold_matches_legacy("be-chronological", &chronological, event);
     }
 
     #[test]

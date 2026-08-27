@@ -2,20 +2,19 @@ use chrono::Utc;
 use serde_json::{Value, json};
 
 use medousa::events::TuiEvent;
+use medousa_types::{TurnArtifactRef, TurnCompletionOutcomeV3, TurnStreamEventV3, WorkerAckKind};
 
 use super::{ConversationTurn, JobHistoryEntry, TuiState};
 
 fn event_turn_id(event: &TuiEvent) -> Option<u64> {
     match event {
-        TuiEvent::AgentScratchReset { turn_id }
-        | TuiEvent::AgentPackHold { turn_id, .. }
-        | TuiEvent::AgentChunk { turn_id, .. }
+        TuiEvent::AgentChunk { turn_id, .. }
         | TuiEvent::AgentReasoningChunk { turn_id, .. }
-        | TuiEvent::AgentFinalPending { turn_id, .. }
         | TuiEvent::AgentNeedsInput { turn_id, .. }
         | TuiEvent::AgentResponse { turn_id, .. }
         | TuiEvent::AgentError { turn_id, .. }
         | TuiEvent::AgentTurnProgress { turn_id, .. }
+        | TuiEvent::TurnStreamV3 { turn_id, .. }
         | TuiEvent::TurnBudgetApprovalRequired { turn_id, .. } => Some(*turn_id),
         _ => None,
     }
@@ -48,11 +47,10 @@ async fn handle_tui_event_for_focused(event: TuiEvent, state: &mut TuiState) {
         flush_pending_agent_chunks(state);
     }
 
-    if matches!(event, TuiEvent::AgentScratchReset { .. }) {
-        flush_pending_agent_chunks(state);
-    }
-
     match event {
+        TuiEvent::TurnStreamV3 { turn_id, envelope } => {
+            handle_turn_stream_v3(turn_id, envelope.seq, envelope.event, state).await;
+        }
         TuiEvent::UiNotice(text) => {
             super::push_obs(state, text);
         }
@@ -95,67 +93,6 @@ async fn handle_tui_event_for_focused(event: TuiEvent, state: &mut TuiState) {
                 ),
             );
         }
-        TuiEvent::AgentScratchReset { turn_id } => {
-            if !is_active_stream_turn(state, turn_id) {
-                return;
-            }
-            if let Some(idx) = state.active_agent_stream_turn {
-                let answer_state = state
-                    .conversation
-                    .get(idx)
-                    .and_then(|turn| turn.answer_state.as_deref());
-                // Home skips scratch_reset while PackHold holds the visible draft.
-                if answer_state == Some("pack_hold") {
-                    state.pending_agent_chunk_delta.clear();
-                    state.pending_agent_chunk_count = 0;
-                    return;
-                }
-                let draft = state
-                    .conversation
-                    .get(idx)
-                    .map(|turn| turn.content.trim().to_string())
-                    .unwrap_or_default();
-                if !draft.is_empty() {
-                    state.turn_parts.archive_progress_note(&draft);
-                    super::push_obs(state, format!("◈ {draft}"));
-                }
-                if let Some(turn) = state.conversation.get_mut(idx) {
-                    turn.content.clear();
-                    turn.answer_state = Some("tool_loop".to_string());
-                }
-            }
-            state.pending_agent_chunk_delta.clear();
-            state.pending_agent_chunk_count = 0;
-            super::invalidate_markdown_cache(state);
-        }
-        TuiEvent::AgentPackHold {
-            turn_id,
-            held,
-            tool_names,
-        } => {
-            if !is_active_stream_turn(state, turn_id) {
-                return;
-            }
-            if let Some(idx) = state.active_agent_stream_turn
-                && let Some(turn) = state.conversation.get_mut(idx)
-            {
-                let body = held.trim();
-                if !body.is_empty() {
-                    turn.content = body.to_string();
-                }
-                if !tool_names.is_empty() {
-                    turn.tool_names = tool_names;
-                }
-                turn.answer_state = Some("pack_hold".to_string());
-                turn.timestamp = Utc::now();
-            }
-            state.pending_agent_chunk_delta.clear();
-            state.pending_agent_chunk_count = 0;
-            if state.auto_scroll {
-                state.conv_scroll = state.conv_max_scroll;
-            }
-            super::invalidate_markdown_cache(state);
-        }
         TuiEvent::AgentChunk { turn_id, delta } => {
             if !is_active_stream_turn(state, turn_id) {
                 return;
@@ -181,29 +118,6 @@ async fn handle_tui_event_for_focused(event: TuiEvent, state: &mut TuiState) {
                 super::push_thinking(state, delta);
             }
         }
-        TuiEvent::AgentFinalPending {
-            turn_id,
-            text,
-            tool_names,
-        } => {
-            if !is_active_stream_turn(state, turn_id) {
-                return;
-            }
-            // Progress whispers stay out of the answer body (Home shouldMirrorStatusIntoContent=false).
-            state.turn_parts.archive_progress_note(&text);
-            super::push_obs(state, format!("◈ {text}"));
-            if let Some(idx) = state.active_agent_stream_turn
-                && let Some(turn) = state.conversation.get_mut(idx)
-            {
-                turn.tool_names = tool_names;
-                turn.answer_state = Some("final_pending".to_string());
-                turn.timestamp = Utc::now();
-            }
-            if state.auto_scroll {
-                state.conv_scroll = state.conv_max_scroll;
-            }
-            super::invalidate_markdown_cache(state);
-        }
         TuiEvent::AgentTurnProgress {
             turn_id,
             message,
@@ -212,8 +126,7 @@ async fn handle_tui_event_for_focused(event: TuiEvent, state: &mut TuiState) {
             if !is_active_stream_turn(state, turn_id) {
                 return;
             }
-            // Never mirror status into the answer bubble — that re-injected archived
-            // interim after scratch_reset and duplicated final text.
+            // Never mirror status into the answer bubble; status is separate chrome.
             state.turn_parts.archive_progress_note(&message);
             super::push_obs(state, format!("◈ {message}"));
             if let Some(idx) = state.active_agent_stream_turn
@@ -453,6 +366,13 @@ async fn handle_tui_event_for_focused(event: TuiEvent, state: &mut TuiState) {
             input_summary,
             tool_round,
         } => {
+            if let Some(draft) = state
+                .active_agent_stream_turn
+                .and_then(|index| state.conversation.get(index))
+                .map(|turn| turn.content.clone())
+            {
+                state.turn_parts.commit_legacy_text_draft(&draft);
+            }
             state
                 .turn_parts
                 .tool_started(&tool_run_id, &tool_name, &input_summary, tool_round);
@@ -671,6 +591,322 @@ async fn handle_tui_event_for_focused(event: TuiEvent, state: &mut TuiState) {
             }
         }
     }
+}
+
+async fn handle_turn_stream_v3(
+    turn_id: u64,
+    seq: u64,
+    event: TurnStreamEventV3,
+    state: &mut TuiState,
+) {
+    if !is_active_stream_turn(state, turn_id) {
+        return;
+    }
+
+    match event {
+        TurnStreamEventV3::AssistantTextStarted {
+            segment_id,
+            model_round,
+        } => {
+            ensure_chronological_turn(state);
+            state
+                .turn_parts
+                .start_text_segment(&segment_id, Some(model_round));
+            sync_chronological_turn(state, None, None);
+        }
+        TurnStreamEventV3::ContentAppend { segment_id, text } => {
+            ensure_chronological_turn(state);
+            state.turn_parts.append_text_segment(&segment_id, &text);
+            sync_chronological_turn(state, None, None);
+        }
+        TurnStreamEventV3::AssistantTextCommitted { segment_id } => {
+            state.turn_parts.finish_text_segment(&segment_id);
+            sync_chronological_turn(state, None, None);
+        }
+        TurnStreamEventV3::ReasoningAppend { text } => {
+            if !text.is_empty() {
+                state.received_native_reasoning = true;
+                state.turn_parts.push_reasoning_delta(&text);
+                super::push_thinking(state, text);
+            }
+        }
+        TurnStreamEventV3::Status {
+            phase,
+            operator_message,
+            ..
+        } => {
+            if let Some(message) = operator_message.filter(|value| !value.trim().is_empty()) {
+                super::push_obs(state, format!("◈ {phase} {message}"));
+            }
+        }
+        TurnStreamEventV3::Progress {
+            message,
+            tool_names,
+        } => {
+            ensure_chronological_turn(state);
+            state.turn_parts.archive_progress_note(&message);
+            sync_chronological_turn(state, Some(tool_names), Some("tool_loop"));
+            if !message.trim().is_empty() {
+                super::push_obs(state, format!("◈ {message}"));
+            }
+        }
+        TurnStreamEventV3::ModelReceipt { provider, model } => {
+            state.turn_parts.set_model_receipt(&provider, &model);
+        }
+        TurnStreamEventV3::WorkerAck {
+            ack_kind,
+            text,
+            tool_names,
+            work_id,
+        } => {
+            ensure_chronological_turn(state);
+            let handoff_kind = match ack_kind {
+                WorkerAckKind::Worker => "worker",
+                WorkerAckKind::Workshop => "workshop",
+            };
+            state.turn_parts.push_handoff(handoff_kind, &text, work_id);
+            sync_chronological_turn(state, Some(tool_names), None);
+        }
+        TurnStreamEventV3::WorkerSynthesis {
+            text,
+            tool_names,
+            work_id,
+        } => {
+            ensure_chronological_turn(state);
+            let segment_id = format!("worker-synthesis-{seq}");
+            state
+                .turn_parts
+                .commit_text_segment(&text, Some(&segment_id), None);
+            if work_id.is_some() {
+                state
+                    .turn_parts
+                    .push_handoff("worker_synthesis", "", work_id);
+            }
+            sync_chronological_turn(state, Some(tool_names), None);
+        }
+        TurnStreamEventV3::Error {
+            operator_message, ..
+        } => {
+            // Error is a fact, not settlement. Later recovery prose and receipts
+            // remain part of this same chronological turn.
+            super::push_obs(state, format!("⚠ {operator_message}"));
+        }
+        TurnStreamEventV3::ToolStarted {
+            tool_run_id,
+            tool_name,
+            input_summary,
+            tool_round,
+            ..
+        } => {
+            ensure_chronological_turn(state);
+            state
+                .turn_parts
+                .tool_started(&tool_run_id, &tool_name, &input_summary, tool_round);
+            sync_chronological_turn(state, Some(vec![tool_name.clone()]), Some("tool_loop"));
+            let label = super::tui_presentation::format_tool_name(&tool_name);
+            super::push_obs(state, format!("◆ {label}  {input_summary}"));
+        }
+        TurnStreamEventV3::ToolFinished {
+            tool_run_id,
+            tool_name,
+            status,
+            input_summary,
+            output_summary,
+            tool_round,
+            artifact_refs,
+            ..
+        } => {
+            ensure_chronological_turn(state);
+            let artifact_refs = artifact_refs
+                .into_iter()
+                .map(|artifact| TurnArtifactRef {
+                    role: artifact.role,
+                    content_type: artifact.content_type,
+                    byte_size: artifact.byte_size,
+                    hash64: artifact.hash64,
+                    artifact_id: artifact.artifact_id,
+                    label: artifact.label,
+                })
+                .collect();
+            state.turn_parts.tool_finished_observed(
+                &tool_run_id,
+                &tool_name,
+                &input_summary,
+                tool_round,
+                &status,
+                output_summary.clone(),
+                artifact_refs,
+            );
+            sync_chronological_turn(state, Some(vec![tool_name.clone()]), Some("tool_loop"));
+            let suffix = output_summary
+                .filter(|value| !value.trim().is_empty())
+                .map(|value| format!(" → {value}"))
+                .unwrap_or_default();
+            let label = super::tui_presentation::format_tool_name(&tool_name);
+            super::push_obs(state, format!("◈ tool {label} {status}{suffix}"));
+        }
+        TurnStreamEventV3::ArtifactPresented { artifact } => {
+            ensure_chronological_turn(state);
+            state.turn_parts.push_attachment_ref(
+                &artifact.artifact_id,
+                &artifact.mime,
+                &artifact.label,
+                artifact.byte_size,
+                Some(artifact.presentation),
+                artifact.height_px,
+            );
+            sync_chronological_turn(state, None, None);
+        }
+        TurnStreamEventV3::ArtifactUpdated {
+            previous_artifact_id,
+            artifact,
+            ..
+        } => {
+            ensure_chronological_turn(state);
+            state.turn_parts.replace_attachment_ref(
+                &previous_artifact_id,
+                &artifact.artifact_id,
+                &artifact.mime,
+                &artifact.label,
+                artifact.byte_size,
+                Some(artifact.presentation),
+                artifact.height_px,
+            );
+            sync_chronological_turn(state, None, None);
+        }
+        TurnStreamEventV3::BudgetApprovalRequired {
+            request_id,
+            rounds_executed,
+            max_tool_rounds,
+            requested_rounds,
+            reason,
+            progress_summary,
+        } => {
+            state.pending_budget_request_id = Some(request_id.clone());
+            state.pending_budget_requested_rounds = Some(requested_rounds);
+            let progress = progress_summary
+                .map(|value| format!(" — {value}"))
+                .unwrap_or_default();
+            super::push_obs(
+                state,
+                format!(
+                    "⏸ turn budget request {request_id}: at {rounds_executed}/{max_tool_rounds}, \
+                     asking +{requested_rounds} rounds — {reason}{progress}"
+                ),
+            );
+        }
+        TurnStreamEventV3::ContextUsage { report, .. } => {
+            state.last_context_usage = Some(report);
+        }
+        TurnStreamEventV3::BrowserChallenge { reason, .. } => {
+            super::push_obs(state, format!("◈ browser challenge {reason}"));
+        }
+        TurnStreamEventV3::BrowserNavigated { title, url, .. } => {
+            super::push_obs(
+                state,
+                format!("◈ browser navigated {}", title.as_deref().unwrap_or(&url)),
+            );
+        }
+        TurnStreamEventV3::PermissionRequest { message, .. } => {
+            super::push_obs(state, format!("⏸ permission required {message}"));
+        }
+        TurnStreamEventV3::SecretRequest { label, reason, .. } => {
+            super::push_obs(
+                state,
+                format!("⏸ secure credential entry requires Medousa — {label}: {reason}"),
+            );
+        }
+        TurnStreamEventV3::UiScene { .. } => {}
+        TurnStreamEventV3::TurnCompleted {
+            outcome,
+            aggregate_text,
+            tool_names,
+            operator_message,
+            ..
+        } => {
+            ensure_chronological_turn(state);
+            let answer_state = match outcome {
+                TurnCompletionOutcomeV3::NeedsInput => Some("needs_input".to_string()),
+                TurnCompletionOutcomeV3::Failed
+                | TurnCompletionOutcomeV3::Cancelled
+                | TurnCompletionOutcomeV3::FuseExhausted => Some("provisional".to_string()),
+                _ => state
+                    .pending_response_verified
+                    .take()
+                    .map(|verified| if verified { "verified" } else { "provisional" }.to_string()),
+            };
+            let finalized = state.turn_parts.finalize_chronological_turn(
+                aggregate_text,
+                tool_names,
+                answer_state,
+            );
+            if let Some(index) = state.active_agent_stream_turn {
+                if let Some(existing) = state.conversation.get_mut(index) {
+                    *existing = finalized.clone();
+                }
+            } else {
+                state.conversation.push(finalized.clone());
+            }
+            state.is_processing = false;
+            state.open_stream_turn_id = None;
+            state.active_agent_stream_turn = None;
+            state.in_thinking_tag = false;
+            state.stream_tag_tail.clear();
+            state.received_native_reasoning = false;
+            super::flush_thinking_buffer(state);
+            super::workspace_runtime::clear_stream_turn(state, turn_id);
+            if let Some(message) = operator_message.filter(|value| !value.trim().is_empty()) {
+                super::push_obs(state, format!("◈ {message}"));
+            }
+            let session_id = state.session_id.clone();
+            super::history_services::append_turn_daemon_first(state, &session_id, &finalized).await;
+        }
+    }
+
+    if state.auto_scroll {
+        state.conv_scroll = state.conv_max_scroll;
+    }
+    super::invalidate_markdown_cache(state);
+}
+
+fn ensure_chronological_turn(state: &mut TuiState) {
+    if state.active_agent_stream_turn.is_some() {
+        return;
+    }
+    state.conversation.push(ConversationTurn::plain(
+        "assistant",
+        String::new(),
+        Utc::now(),
+        Vec::new(),
+        None,
+    ));
+    state.active_agent_stream_turn = Some(state.conversation.len().saturating_sub(1));
+}
+
+fn sync_chronological_turn(
+    state: &mut TuiState,
+    tool_names: Option<Vec<String>>,
+    answer_state: Option<&str>,
+) {
+    let content = state.turn_parts.chronological_text();
+    let Some(index) = state.active_agent_stream_turn else {
+        return;
+    };
+    let Some(turn) = state.conversation.get_mut(index) else {
+        return;
+    };
+    turn.content = content;
+    if let Some(names) = tool_names {
+        for name in names {
+            if !turn.tool_names.contains(&name) {
+                turn.tool_names.push(name);
+            }
+        }
+    }
+    if let Some(answer_state) = answer_state {
+        turn.answer_state = Some(answer_state.to_string());
+    }
+    turn.timestamp = Utc::now();
 }
 
 fn is_active_stream_turn(state: &TuiState, turn_id: u64) -> bool {

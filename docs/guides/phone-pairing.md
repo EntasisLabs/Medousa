@@ -1,9 +1,10 @@
 # Phone pairing
 
-**Audience:** people who want iOS or Android as a **portal** into a desktop
-engine — not a second brain.
+**Audience:** people who want iOS or Android to connect to another Medousa
+workshop.
 
-Your phone is a window. The Mac/PC (or a workshop host) runs Medousa Engine.
+The phone's Personal workshop remains its own brain. Pairing adds a separate
+portal you may switch to; it does not replace Personal or merge their data.
 
 ---
 
@@ -53,9 +54,25 @@ the host's LAN or public IP address.
 
 ## What you can do on the phone
 
-- Chat with the same brain
+- Chat and work in the phone's independent Personal workshop
+- Switch into a paired portal to work directly with that workshop
 - Browse vault / library surfaces the shell exposes
-- Switch workshops you’ve paired as portals (workshop switcher)
+
+## Optional delegated work from Personal
+
+Delegation is separate from pairing and portal selection:
+
+1. On the receiving workshop, explicitly allow **Run delegated work** for the
+   paired phone in **Settings → Sharing**.
+2. On the phone, keep Personal selected. Open the paired workshop's edit
+   actions under **Settings → Connection**, then choose **Use for delegated
+   work**.
+3. Use **Stop delegated work** there to revoke the phone daemon's binding.
+
+Creating the binding sends no work and does not switch workshops. When the
+Personal agent delegates, it sends only bounded context to that exact paired
+identity; the signed result returns with provenance while both stores and
+session catalogs stay independent.
 
 You do **not** install offline brain packages on the phone — do that on the host
 via [Packages](packages.md).

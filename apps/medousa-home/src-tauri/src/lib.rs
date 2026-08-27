@@ -458,6 +458,13 @@ fn run_home() {
             mesh_intros::mesh_decline_intro,
             mesh_intros::mesh_list_local_peers,
             mesh_intros::mesh_set_peer_rendezvous,
+            mesh_intros::mesh_set_peer_task_request,
+            #[cfg(target_os = "ios")]
+            embedded_daemon::embedded_delegation_binding,
+            #[cfg(target_os = "ios")]
+            embedded_daemon::embedded_set_delegation_binding,
+            #[cfg(target_os = "ios")]
+            embedded_daemon::embedded_clear_delegation_binding,
             workshop_registry::workshops_load,
             workshop_registry::workshops_set_active,
             workshop_registry::workshops_add_local,

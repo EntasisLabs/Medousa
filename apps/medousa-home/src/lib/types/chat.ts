@@ -32,6 +32,32 @@ export interface ToolRunState {
   artifactRefs?: ToolArtifactRef[];
 }
 
+/** Medousa's client-owned chronological projection of Turn Stream V3 facts. */
+export type ChatSegment =
+  | {
+      kind: "text";
+      segmentId: string;
+      modelRound: number | null;
+      markdown: string;
+      committed: boolean;
+    }
+  | {
+      kind: "tool_group";
+      groupId: string;
+      toolRound: number;
+      runs: ToolRunState[];
+    }
+  | {
+      kind: "artifact";
+      artifact: UiArtifact;
+    }
+  | {
+      kind: "handoff";
+      handoffKind: string;
+      text: string;
+      workId?: string | null;
+    };
+
 import type { ChatMediaAttachment } from "$lib/types/media";
 import type {
   ContextUsageLayer as GeneratedContextUsageLayer,
@@ -58,6 +84,8 @@ export interface ChatMessage {
   tools?: string[];
   /** Structured tool runs grouped by round (P1). */
   toolRuns?: ToolRunState[];
+  /** Ordered visible response/tool timeline for native V3 turns. */
+  segments?: ChatSegment[];
   /** Rich HTML artifacts presented via cognition_ui_present. */
   uiArtifacts?: UiArtifact[];
   /** Collapsed reasoning scratch from reasoning_delta. */

@@ -7,8 +7,8 @@
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -16,12 +16,16 @@ use chrono::Utc;
 use genai::chat::ChatMessage;
 use medousa_engine::{TurnPipelineHandle, TurnStreamRegistryPort};
 use medousa_runtime::{
-    CredentialedAiChatClient, CredentialedAiChatConfig, MAX_REQUEST_PROMPT_CHARS,
-    MedousaToolLoopPipeline,
+    CredentialedAiChatClient, CredentialedAiChatConfig, DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS,
+    MAX_REQUEST_PROMPT_CHARS, MedousaToolLoopPipeline, ModelResponseCompleted,
+    ModelResponseEventPort, RuntimePortFuture, RuntimePorts, ToolLoopCompletionGate,
+    ToolRunEventPort, ToolRunFinish, ToolRunStart, TurnPresentationPort,
 };
 use medousa_types::daemon_api::{
-    AgentModeId, AgentModeSource, CancelActiveSessionTurnResponse, ContinuationStatusResponse,
-    CreateSessionResponse, CreateUserProfileResponse, DaemonStatsResponse, DeliveryHealthResponse,
+    AgentModeId, AgentModeSource, BeginChatGptOAuthResponse, CancelActiveSessionTurnResponse,
+    ChatGptModelListResponse, ChatGptOAuthStatusResponse, CompleteChatGptOAuthResponse,
+    ContinuationStatusResponse, CreateSessionResponse, CreateUserProfileResponse,
+    DaemonStatsResponse, DeliveryHealthResponse, DisconnectChatGptOAuthResponse,
     GraphemeModuleDetailResponse, GraphemeModuleOpsResponse, GraphemeModulesListResponse,
     GraphemeRunResponse, GraphemeScriptDetailResponse, GraphemeScriptsListQuery,
     GraphemeScriptsListResponse, HealthResponse, InteractiveTurnResponse, ListUserProfilesResponse,
@@ -41,7 +45,11 @@ use medousa_types::environment::{
 use medousa_types::environment_validate::validate_environment_spec;
 use medousa_types::secrets::InstallationId;
 use medousa_types::session::{ConversationTurn, SessionHistorySummary, TranscriptEntry};
-use medousa_types::turn_stream::{TurnStreamEnvelopeV2, TurnStreamEventV2};
+#[cfg(test)]
+use medousa_types::turn_stream::TurnStreamEventV2;
+use medousa_types::turn_stream::{
+    TurnCompletionOutcomeV3, TurnStreamEnvelopeV2, TurnStreamEnvelopeV3, TurnStreamEventV3,
+};
 use medousa_types::turn_ticket::{TurnTicket, TurnTicketMode, TurnTicketPhase};
 use medousa_types::{
     GraphemeAllowlistResponse, GraphemeAllowlistUpdateRequest, GraphemeCompileRequest,
@@ -49,28 +57,25 @@ use medousa_types::{
     GraphemeModuleLoadResponse, GraphemeScriptDeleteResponse, GraphemeScriptSaveRequest,
     GraphemeScriptSaveResponse,
 };
-use serde_json::json;
+use serde_json::{Value, json};
 use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionContext, PromptExecutionPipeline,
 };
 use stasis::application::orchestration::tool_loop_pipeline::{
     ToolCallMode, ToolLoopExecutionRequest,
 };
-use stasis::application::orchestration::tool_registry::{
-    InMemoryToolRegistry, StasisTool, ToolRegistry,
-};
+use stasis::application::orchestration::tool_registry::ToolRegistry;
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 use stasis::domain::runtime::cluster_node::{
     ClusterNode, ClusterNodeHeartbeat, ClusterNodeRole, NewClusterNode,
 };
-use stasis::infrastructure::memory::locus_memory_operations::LocusMemoryOperations;
 use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta};
 use stasis::ports::outbound::memory::memory_context_reader::MemoryContextReader;
 use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
 use stasis::ports::outbound::memory::memory_operations::MemoryOperations;
 use stasis::ports::outbound::runtime::cluster_node_store::ClusterNodeStore;
 use stasis::prelude::{RuntimeBackend, RuntimeComposition, RuntimeFactory, RuntimeSdk};
-use tokio::sync::{Mutex as AsyncMutex, mpsc};
+use tokio::sync::{Mutex as AsyncMutex, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -80,7 +85,6 @@ use crate::execution_context::{
     ProviderRoute, SurfaceCapabilities, TurnExecutionContext, TurnExecutionRegistry,
     with_turn_execution_context,
 };
-use crate::persistent_locus::build_persistent_locus_memory;
 use crate::request_principal::{Capability, RequestPrincipal, TransportClass};
 use crate::runtime_composition_ext::{
     RuntimeCompositionExt, RuntimeRecoveryReport, reconcile_after_unavailability,
@@ -102,134 +106,651 @@ use crate::turn_ticket::{
     register_turn,
 };
 
+struct EmbeddedMcpPolicyEvaluator;
+
+#[async_trait::async_trait]
+impl medousa_mcp_gateway::McpPolicyEvaluator for EmbeddedMcpPolicyEvaluator {
+    async fn evaluate(
+        &self,
+        request: &medousa_types::mcp_gateway_api::McpPolicyEvaluateRequest,
+    ) -> anyhow::Result<medousa_types::mcp_gateway_api::McpPolicyEvaluateResponse> {
+        Ok(crate::mcp_policy::evaluate_mcp_policy(request))
+    }
+}
+
 const EMBEDDED_STREAM_SCHEME: &str = "medousa-embedded://turn";
 const EMBEDDED_NODE_LEASE_SECONDS: i64 = 300;
 const DEFAULT_FOREGROUND_TURN_TIMEOUT: Duration = Duration::from_secs(180);
-const EMBEDDED_SUSPEND_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 const EMBEDDED_RECOVERY_MAX_JOBS: usize = 32;
 const STREAM_DELTA_CAPACITY: usize = 128;
+const EMBEDDED_RUNTIME_EVENT_CAPACITY: usize = 64;
+const EMBEDDED_TOOL_PARAM_LIMIT: usize = 6;
+const EMBEDDED_TOOL_VALUE_CHARS: usize = 120;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EmbeddedSuspendReport {
-    pub cancellation_requested: usize,
-    pub remaining_turns: usize,
-    pub timed_out: bool,
+fn embedded_system_prompt() -> String {
+    static PROMPT: OnceLock<String> = OnceLock::new();
+    PROMPT
+        .get_or_init(|| {
+            let policy = crate::prompt_policy::compile_sttp_policy(
+                crate::prompt_policy::SttpPolicySelection::new(
+                    crate::prompt_policy::SttpPolicyMode::General,
+                    crate::prompt_policy::SttpPolicyActor::Host,
+                ),
+            )
+            .expect("built-in embedded STTP policy must compile")
+            .rendered;
+            format!(
+                "{policy}\n\n[MEDOUSA_HUD]\nsurface=personal_mobile\n\
+                 catalog_tool=cognition_tools_discover\n\
+                 web_tool=cognition_web_search"
+            )
+        })
+        .clone()
 }
 
-/// Mobile capability layer over the daemon's injected tool registry.
-///
-/// The canonical turn-control and portable daemon tools are always daemon-owned
-/// and cannot be replaced by a host-supplied registry. Additional admitted
-/// tools delegate to the registry selected by the embedded composition.
-struct EmbeddedToolRegistry {
-    delegate: Arc<dyn ToolRegistry>,
-    portable: InMemoryToolRegistry,
-    turn_control: InMemoryToolRegistry,
+fn embedded_sensitive_key(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    [
+        "token",
+        "secret",
+        "password",
+        "credential",
+        "authorization",
+        "api_key",
+    ]
+    .iter()
+    .any(|marker| key.contains(marker))
 }
 
-impl EmbeddedToolRegistry {
-    fn new(delegate: Arc<dyn ToolRegistry>, portable: InMemoryToolRegistry) -> StasisResult<Self> {
-        let turn_control = InMemoryToolRegistry::default();
-        turn_control.register_tool(EmbeddedTurnControlTool)?;
-        Ok(Self {
-            delegate,
-            portable,
-            turn_control,
+fn embedded_bounded_text(value: &str) -> (String, bool) {
+    let mut chars = value.chars();
+    let text = chars
+        .by_ref()
+        .take(EMBEDDED_TOOL_VALUE_CHARS)
+        .collect::<String>();
+    let truncated = chars.next().is_some();
+    (text, truncated)
+}
+
+fn embedded_tool_value(key: &str, value: &Value) -> (String, bool) {
+    if embedded_sensitive_key(key) {
+        return ("[redacted]".to_string(), false);
+    }
+    match value {
+        Value::String(value) => embedded_bounded_text(value),
+        Value::Null | Value::Bool(_) | Value::Number(_) => {
+            embedded_bounded_text(&value.to_string())
+        }
+        Value::Array(values) => (format!("[{} items]", values.len()), false),
+        Value::Object(values) => (format!("{{{} fields}}", values.len()), false),
+    }
+}
+
+fn embedded_tool_input_params(input: &Value) -> Vec<medousa_types::daemon_api::ToolInputParam> {
+    let Some(object) = input.as_object() else {
+        return Vec::new();
+    };
+    object
+        .iter()
+        .take(EMBEDDED_TOOL_PARAM_LIMIT)
+        .map(|(key, value)| {
+            let (value, truncated) = embedded_tool_value(key, value);
+            medousa_types::daemon_api::ToolInputParam {
+                key: key.clone(),
+                value,
+                truncated,
+            }
+        })
+        .collect()
+}
+
+fn embedded_tool_input_summary(tool_name: &str, input: &Value) -> String {
+    for key in ["query", "task", "prompt", "action", "intent", "path", "url"] {
+        if let Some(value) = input.get(key).and_then(Value::as_str) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return embedded_bounded_text(trimmed).0;
+            }
+        }
+    }
+    tool_name.to_string()
+}
+
+fn embedded_tool_output_summary(_output: &Value) -> Option<String> {
+    // Tool outputs remain model evidence. The embedded presentation path does
+    // not surface arbitrary payload values without the full receipt/redaction
+    // services used by a server daemon.
+    None
+}
+
+fn embedded_tool_status(output: &Value) -> &'static str {
+    if output
+        .get("ok")
+        .and_then(Value::as_bool)
+        .is_some_and(|ok| !ok)
+        || output.get("error").is_some()
+    {
+        "failed"
+    } else {
+        "succeeded"
+    }
+}
+
+#[derive(Debug)]
+struct EmbeddedActiveTextSegment {
+    segment_id: String,
+    model_round: usize,
+    markdown: String,
+}
+
+#[derive(Debug)]
+struct EmbeddedTextState {
+    model_round: usize,
+    next_ordinal: usize,
+    active: Option<EmbeddedActiveTextSegment>,
+    committed_markdown: Vec<String>,
+}
+
+impl Default for EmbeddedTextState {
+    fn default() -> Self {
+        Self {
+            model_round: 1,
+            next_ordinal: 0,
+            active: None,
+            committed_markdown: Vec::new(),
+        }
+    }
+}
+
+struct EmbeddedChronologicalTurn {
+    turn_id: String,
+    pipeline: TurnPipelineHandle,
+    parts: std::sync::Mutex<crate::turn_parts::TurnPartsAccumulator>,
+    text: std::sync::Mutex<EmbeddedTextState>,
+}
+
+impl EmbeddedChronologicalTurn {
+    fn new(turn_id: &str, pipeline: TurnPipelineHandle) -> Self {
+        Self {
+            turn_id: turn_id.to_string(),
+            pipeline,
+            parts: std::sync::Mutex::new(crate::turn_parts::TurnPartsAccumulator::default()),
+            text: std::sync::Mutex::new(EmbeddedTextState::default()),
+        }
+    }
+
+    async fn publish(
+        &self,
+        event: TurnStreamEventV3,
+    ) -> Result<(), medousa_engine::TurnPipelineError> {
+        if matches!(
+            event,
+            TurnStreamEventV3::ContentAppend { .. } | TurnStreamEventV3::ReasoningAppend { .. }
+        ) {
+            self.pipeline.admit_v3(event).await
+        } else {
+            self.pipeline.emit_v3(event).await.map(|_| ())
+        }
+    }
+
+    async fn content_delta(&self, text: String) -> Result<(), medousa_engine::TurnPipelineError> {
+        if text.is_empty() {
+            return Ok(());
+        }
+        let (started, append) = {
+            let mut state = self
+                .text
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let started = if state.active.is_none() {
+                state.next_ordinal = state.next_ordinal.saturating_add(1);
+                let segment_id = format!("{}:text:{}", self.turn_id, state.next_ordinal);
+                let model_round = state.model_round;
+                state.active = Some(EmbeddedActiveTextSegment {
+                    segment_id: segment_id.clone(),
+                    model_round,
+                    markdown: String::new(),
+                });
+                Some(TurnStreamEventV3::AssistantTextStarted {
+                    segment_id,
+                    model_round,
+                })
+            } else {
+                None
+            };
+            let active = state.active.as_mut().expect("active text initialized");
+            active.markdown.push_str(&text);
+            let append = TurnStreamEventV3::ContentAppend {
+                segment_id: active.segment_id.clone(),
+                text,
+            };
+            (started, append)
+        };
+        if let Some(started) = started {
+            self.publish(started).await?;
+        }
+        self.publish(append).await
+    }
+
+    async fn reasoning_delta(&self, text: String) -> Result<(), medousa_engine::TurnPipelineError> {
+        if text.is_empty() {
+            return Ok(());
+        }
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.push_reasoning_delta(&text);
+        }
+        self.publish(TurnStreamEventV3::ReasoningAppend { text })
+            .await
+    }
+
+    async fn commit_active(
+        &self,
+        advance_model_round: bool,
+    ) -> Result<(), medousa_engine::TurnPipelineError> {
+        let committed = {
+            let mut state = self
+                .text
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let active = state.active.take();
+            if advance_model_round {
+                state.model_round = state.model_round.saturating_add(1);
+            }
+            active
+                .filter(|segment| !segment.markdown.is_empty())
+                .inspect(|segment| {
+                    state.committed_markdown.push(segment.markdown.clone());
+                })
+        };
+        let Some(committed) = committed else {
+            return Ok(());
+        };
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.commit_text_segment(
+                &committed.markdown,
+                Some(&committed.segment_id),
+                Some(committed.model_round),
+            );
+        }
+        self.publish(TurnStreamEventV3::AssistantTextCommitted {
+            segment_id: committed.segment_id,
+        })
+        .await
+    }
+
+    async fn tool_started(
+        &self,
+        tool_run_id: String,
+        event: ToolRunStart,
+    ) -> Result<(), medousa_engine::TurnPipelineError> {
+        self.commit_active(false).await?;
+        let input_summary = embedded_tool_input_summary(&event.tool_name, &event.tool_input);
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.tool_started(
+                &tool_run_id,
+                &event.tool_name,
+                &input_summary,
+                event.tool_round,
+            );
+        }
+        self.publish(TurnStreamEventV3::ToolStarted {
+            tool_run_id,
+            tool_name: event.tool_name,
+            input_summary,
+            input_params: embedded_tool_input_params(&event.tool_input),
+            tool_round: event.tool_round,
+        })
+        .await
+    }
+
+    async fn tool_finished(
+        &self,
+        event: ToolRunFinish,
+    ) -> Result<(), medousa_engine::TurnPipelineError> {
+        let invocation = event.invocation;
+        let input_summary =
+            embedded_tool_input_summary(&invocation.tool_name, &invocation.tool_input);
+        let output_summary = embedded_tool_output_summary(&invocation.tool_output);
+        let status = embedded_tool_status(&invocation.tool_output).to_string();
+        let ui_artifact =
+            crate::ui_tool_output::ui_artifact_from_tool_output(&invocation.tool_output);
+        let ui_scene = crate::ui_tool_output::scene_ops_from_tool_output(&invocation.tool_output);
+        let previous_artifact_id = invocation
+            .tool_output
+            .get("previous_artifact_id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let root_artifact_id = invocation
+            .tool_output
+            .get("root_artifact_id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.tool_finished(
+                &event.tool_run_id,
+                &status,
+                output_summary.clone(),
+                Vec::new(),
+            );
+            if let Some(artifact) = ui_artifact.as_ref() {
+                if let Some(previous_artifact_id) = previous_artifact_id.as_deref() {
+                    parts.replace_attachment_ref(
+                        previous_artifact_id,
+                        &artifact.artifact_id,
+                        &artifact.mime,
+                        &artifact.label,
+                        artifact.byte_size,
+                        Some(artifact.presentation.clone()),
+                        artifact.height_px,
+                    );
+                } else {
+                    parts.push_attachment_ref(
+                        &artifact.artifact_id,
+                        &artifact.mime,
+                        &artifact.label,
+                        artifact.byte_size,
+                        Some(artifact.presentation.clone()),
+                        artifact.height_px,
+                    );
+                }
+            }
+        }
+        if let Some(artifact) = ui_artifact {
+            if let Some(previous_artifact_id) = previous_artifact_id {
+                self.publish(TurnStreamEventV3::ArtifactUpdated {
+                    previous_artifact_id,
+                    artifact,
+                    root_artifact_id,
+                })
+                .await?;
+            } else {
+                self.publish(TurnStreamEventV3::ArtifactPresented { artifact })
+                    .await?;
+            }
+        }
+        if let Some(scene) = ui_scene {
+            self.publish(TurnStreamEventV3::UiScene { scene }).await?;
+        }
+        self.publish(TurnStreamEventV3::ToolFinished {
+            tool_run_id: event.tool_run_id,
+            tool_name: invocation.tool_name,
+            status,
+            input_summary,
+            input_params: embedded_tool_input_params(&invocation.tool_input),
+            output_summary,
+            tool_round: event.tool_round,
+            artifact_refs: Vec::new(),
+        })
+        .await
+    }
+
+    async fn progress(
+        &self,
+        message: String,
+        tool_names: Vec<String>,
+    ) -> Result<(), medousa_engine::TurnPipelineError> {
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.archive_progress_note(&message);
+        }
+        self.publish(TurnStreamEventV3::Progress {
+            message,
+            tool_names,
+        })
+        .await
+    }
+
+    fn aggregate_text(&self) -> String {
+        self.text
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .committed_markdown
+            .join("\n\n")
+    }
+
+    async fn terminal_body(
+        &self,
+        fallback: &str,
+    ) -> Result<String, medousa_engine::TurnPipelineError> {
+        self.commit_active(false).await?;
+        if self.aggregate_text().trim().is_empty() && !fallback.trim().is_empty() {
+            self.content_delta(fallback.to_string()).await?;
+            self.commit_active(false).await?;
+        }
+        Ok(self.aggregate_text())
+    }
+
+    fn set_model_receipt(&self, provider: &str, model: &str) {
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.set_model_receipt(provider, model);
+        }
+    }
+
+    fn partial_tool_names(&self) -> Vec<String> {
+        self.parts
+            .lock()
+            .map(|parts| {
+                parts
+                    .preview_tool_runs()
+                    .into_iter()
+                    .filter_map(|part| match part {
+                        medousa_types::turn::TurnPart::ToolRun { tool_name, .. } => Some(tool_name),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn has_partial_timeline(&self) -> bool {
+        !self.aggregate_text().trim().is_empty() || !self.partial_tool_names().is_empty()
+    }
+
+    fn finalize_turn(
+        &self,
+        body: String,
+        tool_names: Vec<String>,
+        answer_state: Option<String>,
+    ) -> ConversationTurn {
+        match self.parts.lock() {
+            Ok(mut parts) => parts.finalize_chronological_turn(body, tool_names, answer_state),
+            Err(_) => {
+                ConversationTurn::plain("assistant", body, Utc::now(), tool_names, answer_state)
+            }
+        }
+    }
+}
+
+enum EmbeddedRuntimeEvent {
+    ModelResponseCompleted {
+        event: ModelResponseCompleted,
+        response_text: Option<String>,
+        acknowledged: oneshot::Sender<()>,
+    },
+    ToolStarted {
+        tool_run_id: String,
+        event: ToolRunStart,
+    },
+    ToolFinished(ToolRunFinish),
+    Notice(String),
+    Progress {
+        message: String,
+        tool_names: Vec<String>,
+    },
+}
+
+#[derive(Clone)]
+struct EmbeddedModelResponseEvents {
+    tx: mpsc::Sender<EmbeddedRuntimeEvent>,
+}
+
+impl ModelResponseEventPort for EmbeddedModelResponseEvents {
+    fn completed(&self, event: ModelResponseCompleted) -> RuntimePortFuture<()> {
+        self.completed_with_text(event, None)
+    }
+
+    fn completed_with_text(
+        &self,
+        event: ModelResponseCompleted,
+        response_text: Option<String>,
+    ) -> RuntimePortFuture<()> {
+        let tx = self.tx.clone();
+        Box::pin(async move {
+            let (acknowledged, wait) = oneshot::channel();
+            if tx
+                .send(EmbeddedRuntimeEvent::ModelResponseCompleted {
+                    event,
+                    response_text,
+                    acknowledged,
+                })
+                .await
+                .is_ok()
+            {
+                let _ = wait.await;
+            }
         })
     }
 }
 
-#[async_trait::async_trait]
-impl ToolRegistry for EmbeddedToolRegistry {
-    async fn list_tools(&self) -> StasisResult<Vec<genai::chat::Tool>> {
-        let mut tools = self.portable.list_tools().await?;
-        let mut delegated = self.delegate.list_tools().await?;
-        delegated.retain(|tool| {
-            tool.name.as_str() != medousa_runtime::turn_control::COGNITION_TURN
-                && !crate::portable_daemon_tools::PORTABLE_DAEMON_TOOL_NAMES
-                    .contains(&tool.name.as_str())
-        });
-        tools.extend(delegated);
-        tools.extend(self.turn_control.list_tools().await?);
-        Ok(tools)
+#[derive(Clone)]
+struct EmbeddedToolRunEvents {
+    tx: mpsc::Sender<EmbeddedRuntimeEvent>,
+}
+
+impl ToolRunEventPort for EmbeddedToolRunEvents {
+    fn started(&self, event: ToolRunStart) -> RuntimePortFuture<String> {
+        let tx = self.tx.clone();
+        Box::pin(async move {
+            let tool_run_id = format!("tr-{}", Uuid::new_v4().simple());
+            let _ = tx
+                .send(EmbeddedRuntimeEvent::ToolStarted {
+                    tool_run_id: tool_run_id.clone(),
+                    event,
+                })
+                .await;
+            tool_run_id
+        })
     }
 
-    async fn invoke_tool(
-        &self,
-        tool_name: &str,
-        input: serde_json::Value,
-    ) -> StasisResult<serde_json::Value> {
-        if tool_name.trim() == medousa_runtime::turn_control::COGNITION_TURN {
-            self.turn_control.invoke_tool(tool_name, input).await
-        } else if crate::portable_daemon_tools::PORTABLE_DAEMON_TOOL_NAMES
-            .contains(&tool_name.trim())
-        {
-            self.portable.invoke_tool(tool_name, input).await
-        } else {
-            self.delegate.invoke_tool(tool_name, input).await
-        }
+    fn finished(&self, event: ToolRunFinish) -> RuntimePortFuture<()> {
+        let tx = self.tx.clone();
+        Box::pin(async move {
+            let _ = tx.send(EmbeddedRuntimeEvent::ToolFinished(event)).await;
+        })
     }
 }
 
-struct EmbeddedTurnControlTool;
+#[derive(Clone)]
+struct EmbeddedTurnPresentation {
+    tx: mpsc::Sender<EmbeddedRuntimeEvent>,
+}
 
-#[async_trait::async_trait]
-impl StasisTool for EmbeddedTurnControlTool {
-    fn name(&self) -> &'static str {
-        medousa_runtime::turn_control::COGNITION_TURN
+impl TurnPresentationPort for EmbeddedTurnPresentation {
+    fn notice(&self, message: String) -> RuntimePortFuture<()> {
+        let tx = self.tx.clone();
+        Box::pin(async move {
+            let _ = tx.send(EmbeddedRuntimeEvent::Notice(message)).await;
+        })
     }
 
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Control this foreground turn: update the user, checkpoint for input, prepare a final response, or finish.",
-        )
+    fn turn_progress(
+        &self,
+        _stream_turn_id: u64,
+        message: String,
+        tool_names: Vec<String>,
+    ) -> RuntimePortFuture<()> {
+        let tx = self.tx.clone();
+        Box::pin(async move {
+            let _ = tx
+                .send(EmbeddedRuntimeEvent::Progress {
+                    message,
+                    tool_names,
+                })
+                .await;
+        })
     }
+}
 
-    fn input_schema(&self) -> Option<serde_json::Value> {
-        Some(json!({
-            "type": "object",
-            "required": ["action"],
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": [
-                        "turn.update_user",
-                        "turn.checkpoint",
-                        "turn.prepare_final",
-                        "turn.finish"
-                    ]
-                },
-                "message": { "type": "string" },
-                "awaiting": { "type": "string" },
-                "reason": { "type": "string" }
-            },
-            "additionalProperties": false
-        }))
-    }
+/// Services made available to a deployment's tool-registry recipe.
+///
+/// These are outbound ports and shared runtime services, not a deployment
+/// identity. A mobile, desktop, browser, or test host may select any recipe
+/// compatible with the services it can provide.
+#[derive(Clone)]
+pub struct EmbeddedToolRegistryBindings {
+    pub runtime: Arc<RuntimeComposition>,
+    pub locus_store: Arc<dyn locus_core_rs::NodeStore>,
+    pub semantic_index: Arc<dyn locus_core_rs::SemanticIndexStore>,
+    pub memory_reader: Arc<dyn MemoryContextReader>,
+    pub memory_writer: Arc<dyn MemoryContextWriter>,
+    pub memory_operations: Arc<dyn MemoryOperations>,
+    pub identity_store: Arc<crate::identity_store_ext::MedousaIdentityMemoryStore>,
+    pub mcp_gateway_client: Arc<crate::mcp_gateway_client::McpGatewayClient>,
+    pub provider: String,
+    pub model: String,
+    pub chat_client: Arc<dyn AiChatClient>,
+    pub delegation_service: Option<Arc<crate::delegation::DelegationService>>,
+}
 
-    async fn invoke(&self, input: serde_json::Value) -> StasisResult<serde_json::Value> {
-        let action = input
-            .get("action")
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim);
-        match action {
-            Some("turn.prepare_final") => Ok(json!({ "ok": true })),
-            Some("turn.update_user" | "turn.checkpoint" | "turn.finish")
-                if input
-                    .get("message")
-                    .and_then(serde_json::Value::as_str)
-                    .is_some_and(|message| !message.trim().is_empty()) =>
-            {
-                Ok(json!({ "ok": true }))
-            }
-            Some("turn.update_user" | "turn.checkpoint" | "turn.finish") => Err(
-                StasisError::PortFailure("turn-control message must be non-empty".to_string()),
-            ),
-            _ => Err(StasisError::PortFailure(
-                "turn-control action is outside the embedded foreground capability ceiling"
-                    .to_string(),
-            )),
+/// An unfinished registry assembled by a deployment recipe.
+///
+/// The runtime adds its FSM tools before finalizing the one exact catalog.
+pub struct EmbeddedToolRegistryAssembly {
+    registrar: crate::typed_tools::ToolRegistrar,
+    catalog_handles: Vec<crate::typed_tools::ToolCatalogHandle>,
+}
+
+impl EmbeddedToolRegistryAssembly {
+    pub fn new(placements: crate::typed_tools::ToolPlacementIndex) -> Self {
+        Self {
+            registrar: crate::typed_tools::ToolRegistrar::new(placements),
+            catalog_handles: Vec::new(),
         }
+    }
+
+    pub fn registrar(&mut self) -> &mut crate::typed_tools::ToolRegistrar {
+        &mut self.registrar
+    }
+
+    pub fn initialize_handle_after_finish(
+        &mut self,
+        handle: crate::typed_tools::ToolCatalogHandle,
+    ) {
+        self.catalog_handles.push(handle);
+    }
+
+    fn finish(self) -> StasisResult<(Arc<dyn ToolRegistry>, Arc<crate::typed_tools::ToolCatalog>)> {
+        let (registry, catalog) = self.registrar.finish();
+        for handle in self.catalog_handles {
+            handle
+                .initialize(catalog.clone())
+                .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+        }
+        Ok((Arc::new(registry), catalog))
+    }
+}
+
+/// Composition port for selecting business tools without forking runtime logic.
+pub trait EmbeddedToolRegistryRecipe: Send + Sync {
+    fn assemble(
+        &self,
+        bindings: EmbeddedToolRegistryBindings,
+    ) -> StasisResult<EmbeddedToolRegistryAssembly>;
+}
+
+struct EmptyEmbeddedToolRegistryRecipe;
+
+impl EmbeddedToolRegistryRecipe for EmptyEmbeddedToolRegistryRecipe {
+    fn assemble(
+        &self,
+        _bindings: EmbeddedToolRegistryBindings,
+    ) -> StasisResult<EmbeddedToolRegistryAssembly> {
+        Ok(EmbeddedToolRegistryAssembly::new(
+            crate::typed_tools::ToolPlacementIndex::default(),
+        ))
     }
 }
 
@@ -244,9 +765,12 @@ pub struct EmbeddedDaemonConfig {
     model: String,
     chat_client: Arc<dyn AiChatClient>,
     credentialed_chat_client: Option<CredentialedAiChatClient>,
-    tool_registry: Arc<dyn ToolRegistry>,
+    routed_chat_client: Option<EmbeddedRoutedChatClient>,
+    chatgpt_oauth: Option<Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>>,
+    tool_registry_recipe: Arc<dyn EmbeddedToolRegistryRecipe>,
     foreground_turn_timeout: Duration,
     max_live_turns: usize,
+    delegated_task_transport: Option<Arc<dyn crate::delegated_task::DelegatedTaskTransport>>,
 }
 
 impl EmbeddedDaemonConfig {
@@ -272,6 +796,33 @@ impl EmbeddedDaemonConfig {
         Ok(config)
     }
 
+    /// Bind every portable provider route, including the canonical ChatGPT
+    /// account transport, to the host's existing credential authorities.
+    pub fn credentialed_with_chatgpt(
+        root: impl Into<PathBuf>,
+        installation_id: InstallationId,
+        provider: impl Into<String>,
+        model: impl Into<String>,
+        base_url: Option<String>,
+        credentials: Arc<dyn CredentialProvider>,
+        chatgpt_oauth: Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>,
+    ) -> Result<Self> {
+        let routed_chat_client = EmbeddedRoutedChatClient::new(
+            provider.into(),
+            model.into(),
+            base_url,
+            credentials,
+            chatgpt_oauth.clone(),
+        )?;
+        let (provider, model) = routed_chat_client.route();
+        let chat_client: Arc<dyn AiChatClient> = Arc::new(routed_chat_client.clone());
+        let mut config =
+            Self::with_chat_client(root, installation_id, provider, model, chat_client);
+        config.routed_chat_client = Some(routed_chat_client);
+        config.chatgpt_oauth = Some(chatgpt_oauth);
+        Ok(config)
+    }
+
     /// Bind an existing Stasis inference port. Useful for alternate native
     /// adapters and deterministic daemon integration tests.
     pub fn with_chat_client(
@@ -288,15 +839,22 @@ impl EmbeddedDaemonConfig {
             model: model.into(),
             chat_client,
             credentialed_chat_client: None,
-            tool_registry: Arc::new(InMemoryToolRegistry::default()),
+            routed_chat_client: None,
+            chatgpt_oauth: None,
+            tool_registry_recipe: Arc::new(EmptyEmbeddedToolRegistryRecipe),
             foreground_turn_timeout: DEFAULT_FOREGROUND_TURN_TIMEOUT,
             max_live_turns: 1,
+            delegated_task_transport: None,
         }
     }
 
-    /// Supply the daemon's already-filtered mobile tool registry.
-    pub fn with_tool_registry(mut self, tool_registry: Arc<dyn ToolRegistry>) -> Self {
-        self.tool_registry = tool_registry;
+    /// Supply the deployment recipe that assembles business tools from the
+    /// runtime's outbound services.
+    pub fn with_tool_registry_recipe(
+        mut self,
+        recipe: Arc<dyn EmbeddedToolRegistryRecipe>,
+    ) -> Self {
+        self.tool_registry_recipe = recipe;
         self
     }
 
@@ -309,10 +867,21 @@ impl EmbeddedDaemonConfig {
         self.max_live_turns = max_live_turns.max(1);
         self
     }
+
+    /// Supply host routing and authenticated transport for explicit
+    /// daemon-to-daemon delegation. This does not create a binding.
+    pub fn with_delegated_task_transport(
+        mut self,
+        transport: Arc<dyn crate::delegated_task::DelegatedTaskTransport>,
+    ) -> Self {
+        self.delegated_task_transport = Some(transport);
+        self
+    }
 }
 
 enum EmbeddedInferenceBinding {
     Credentialed(CredentialedAiChatClient),
+    Routed(EmbeddedRoutedChatClient),
     Fixed { provider: Arc<str>, model: Arc<str> },
 }
 
@@ -323,6 +892,7 @@ impl EmbeddedInferenceBinding {
                 let config = client.config();
                 (config.provider().to_string(), config.model().to_string())
             }
+            Self::Routed(client) => client.route(),
             Self::Fixed { provider, model } => (provider.to_string(), model.to_string()),
         }
     }
@@ -333,14 +903,162 @@ impl EmbeddedInferenceBinding {
         model: impl Into<String>,
         base_url: Option<String>,
     ) -> Result<()> {
-        let Self::Credentialed(client) = self else {
-            bail!("embedded inference binding is not reconfigurable");
-        };
+        match self {
+            Self::Credentialed(client) => {
+                let config = CredentialedAiChatConfig::new(provider, model, base_url)
+                    .context("invalid embedded inference configuration")?;
+                client.reconfigure(config);
+                Ok(())
+            }
+            Self::Routed(client) => client.reconfigure(provider, model, base_url),
+            Self::Fixed { .. } => bail!("embedded inference binding is not reconfigurable"),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct EmbeddedRoutedChatClient {
+    active: Arc<std::sync::RwLock<EmbeddedActiveInference>>,
+    credentials: Arc<dyn CredentialProvider>,
+    chatgpt_oauth: Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>,
+}
+
+#[derive(Clone)]
+struct EmbeddedActiveInference {
+    provider: String,
+    model: String,
+    client: Arc<dyn AiChatClient>,
+}
+
+impl EmbeddedRoutedChatClient {
+    fn new(
+        provider: String,
+        model: String,
+        base_url: Option<String>,
+        credentials: Arc<dyn CredentialProvider>,
+        chatgpt_oauth: Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>,
+    ) -> Result<Self> {
+        let active = Self::build_route(
+            provider,
+            model,
+            base_url,
+            credentials.clone(),
+            chatgpt_oauth.clone(),
+        )?;
+        Ok(Self {
+            active: Arc::new(std::sync::RwLock::new(active)),
+            credentials,
+            chatgpt_oauth,
+        })
+    }
+
+    fn build_route(
+        provider: String,
+        model: String,
+        base_url: Option<String>,
+        credentials: Arc<dyn CredentialProvider>,
+        chatgpt_oauth: Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>,
+    ) -> Result<EmbeddedActiveInference> {
+        if provider
+            .trim()
+            .eq_ignore_ascii_case(crate::openai_codex_chat_client::OPENAI_CODEX_PROVIDER_ID)
+        {
+            let model = validate_chatgpt_inference_route(model, base_url)?;
+            return Ok(EmbeddedActiveInference {
+                provider: crate::openai_codex_chat_client::OPENAI_CODEX_PROVIDER_ID.to_string(),
+                model: model.clone(),
+                client: Arc::new(
+                    crate::openai_codex_chat_client::OpenAiCodexChatClient::with_broker(
+                        model.clone(),
+                        chatgpt_oauth,
+                    ),
+                ),
+            });
+        }
         let config = CredentialedAiChatConfig::new(provider, model, base_url)
             .context("invalid embedded inference configuration")?;
-        client.reconfigure(config);
+        let provider = config.provider().to_string();
+        let model = config.model().to_string();
+        let client = Arc::new(
+            CredentialedAiChatClient::new(config, credentials)
+                .context("initialize embedded inference client")?,
+        );
+        Ok(EmbeddedActiveInference {
+            provider,
+            model,
+            client,
+        })
+    }
+
+    fn snapshot(&self) -> EmbeddedActiveInference {
+        self.active
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn route(&self) -> (String, String) {
+        let active = self.snapshot();
+        (active.provider, active.model)
+    }
+
+    fn reconfigure(
+        &self,
+        provider: impl Into<String>,
+        model: impl Into<String>,
+        base_url: Option<String>,
+    ) -> Result<()> {
+        let next = Self::build_route(
+            provider.into(),
+            model.into(),
+            base_url,
+            self.credentials.clone(),
+            self.chatgpt_oauth.clone(),
+        )?;
+        *self
+            .active
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = next;
         Ok(())
     }
+}
+
+#[async_trait::async_trait]
+impl AiChatClient for EmbeddedRoutedChatClient {
+    async fn complete(
+        &self,
+        request: genai::chat::ChatRequest,
+        options: Option<&genai::chat::ChatOptions>,
+    ) -> StasisResult<genai::chat::ChatResponse> {
+        self.snapshot().client.complete(request, options).await
+    }
+
+    async fn complete_stream(
+        &self,
+        request: genai::chat::ChatRequest,
+        options: Option<&genai::chat::ChatOptions>,
+        chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
+    ) -> StasisResult<genai::chat::ChatResponse> {
+        self.snapshot()
+            .client
+            .complete_stream(request, options, chunk_tx)
+            .await
+    }
+}
+
+fn validate_chatgpt_inference_route(model: String, base_url: Option<String>) -> Result<String> {
+    let model = model.trim().to_string();
+    if model.is_empty() || model.len() > 256 || model.chars().any(char::is_control) {
+        bail!("invalid embedded ChatGPT model");
+    }
+    if base_url
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|value| !value.is_empty())
+    {
+        bail!("the ChatGPT account route does not accept a custom base URL");
+    }
+    Ok(model)
 }
 
 /// Validate a route before the native host commits it to workshop settings.
@@ -349,6 +1067,15 @@ pub fn validate_credentialed_inference_route(
     model: impl Into<String>,
     base_url: Option<String>,
 ) -> Result<()> {
+    let provider = provider.into();
+    let model = model.into();
+    if provider
+        .trim()
+        .eq_ignore_ascii_case(crate::openai_codex_chat_client::OPENAI_CODEX_PROVIDER_ID)
+    {
+        validate_chatgpt_inference_route(model, base_url)?;
+        return Ok(());
+    }
     CredentialedAiChatConfig::new(provider, model, base_url)
         .context("invalid embedded inference configuration")?;
     Ok(())
@@ -363,9 +1090,13 @@ impl std::fmt::Debug for EmbeddedDaemonConfig {
             .field("provider", &self.provider)
             .field("model", &self.model)
             .field("chat_client", &"REDACTED")
-            .field("tool_registry", &"capability-filtered")
+            .field("tool_registry", &"deployment-recipe")
             .field("foreground_turn_timeout", &self.foreground_turn_timeout)
             .field("max_live_turns", &self.max_live_turns)
+            .field(
+                "delegated_task_transport",
+                &self.delegated_task_transport.is_some(),
+            )
             .finish()
     }
 }
@@ -377,7 +1108,9 @@ pub struct EmbeddedDaemon {
     authority_id: medousa_types::session::AuthorityId,
     local_credential_id: Arc<str>,
     inference: EmbeddedInferenceBinding,
+    chatgpt_oauth: Option<Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>>,
     chat_client: Arc<dyn AiChatClient>,
+    mcp_gateway_client: Arc<crate::mcp_gateway_client::McpGatewayClient>,
     tool_registry: Arc<dyn ToolRegistry>,
     session_store: Arc<dyn SessionStore>,
     profile_registry: Arc<std::sync::RwLock<crate::user_profiles::UserProfileRegistry>>,
@@ -392,9 +1125,10 @@ pub struct EmbeddedDaemon {
     turn_tickets: TurnTicketRegistry,
     executions: TurnExecutionRegistry,
     foreground_turn_timeout: Duration,
-    suspended: AtomicBool,
+    backgrounded: AtomicBool,
     lifecycle_epoch: AtomicU64,
     recovery_lock: AsyncMutex<()>,
+    delegation_service: Option<Arc<crate::delegation::DelegationService>>,
 }
 
 impl EmbeddedDaemon {
@@ -419,6 +1153,7 @@ impl EmbeddedDaemon {
         );
         let environment_hub =
             crate::environment_store::EnvironmentHub::new_with_store(environment_files);
+        let environment_hub = crate::environment_store::install_environment_hub(environment_hub);
         let vault_path =
             crate::store_root::StorePath::parse("vault").context("validate embedded vault path")?;
         let vault_files = Arc::new(
@@ -469,20 +1204,17 @@ impl EmbeddedDaemon {
             .await
             .context("initialize embedded session schema")?;
 
-        let (session_store, locus_memory): (
-            Arc<dyn SessionStore>,
-            Arc<stasis::infrastructure::memory::locus_node_store_factory::LocusMemoryStore>,
-        ) = match &runtime {
-            RuntimeComposition::Surreal(runtime) => {
-                let locus_memory = build_persistent_locus_memory(runtime.job_store.db())
-                    .await
-                    .context("initialize embedded Locus memory")?;
-                (get_session_store(), locus_memory)
-            }
+        let session_store: Arc<dyn SessionStore> = match &runtime {
+            RuntimeComposition::Surreal(_) => get_session_store(),
             RuntimeComposition::InMemory(_) => {
                 bail!("embedded daemon requires its SurrealKV persistence backend")
             }
         };
+        let memory =
+            crate::runtime::memory_bundle::MemoryAdapterBundle::from_runtime_shell(&runtime)
+                .await
+                .context("initialize embedded memory adapters")?;
+        let locus_memory = memory.locus_memory.clone();
         let turn_store = crate::turn_recovery::SessionStoreTurnStore::new(session_store.clone());
         for item in medousa_engine::recover_uncommitted(&turn_log_root) {
             let report =
@@ -497,41 +1229,67 @@ impl EmbeddedDaemon {
                 "reconciled interrupted embedded turn journal"
             );
         }
-        let memory_reader: Arc<dyn MemoryContextReader> = Arc::new(
-            stasis::infrastructure::memory::locus_context_reader::LocusContextReader::new(
-                locus_memory.clone(),
-            ),
-        );
-        let memory_writer: Arc<dyn MemoryContextWriter> =
-            Arc::new(crate::locus_memory::MedousaLocusContextWriter::new(
-                locus_memory.node_store.clone(),
-                crate::locus_memory::resolve_locus_ingest_profile(),
-            ));
-        let memory_operations: Arc<dyn MemoryOperations> =
-            Arc::new(LocusMemoryOperations::new(locus_memory.clone(), None));
+        let memory_reader = memory.memory_reader.clone();
+        let memory_writer = memory.memory_writer.clone();
+        let memory_operations = memory.memory_operations.clone();
         let locus_service = crate::locus_service::LocusService::new(
             locus_memory.node_store.clone(),
             locus_memory.semantic_index.clone(),
             memory_reader.clone(),
         );
         let runtime = Arc::new(runtime);
-        let portable_tools = crate::portable_daemon_tools::build_portable_daemon_tool_registry(
-            runtime.clone(),
-            locus_service.clone(),
-            memory_writer.clone(),
-        )
-        .context("initialize portable daemon tools")?;
-        let tool_registry: Arc<dyn ToolRegistry> = Arc::new(
-            EmbeddedToolRegistry::new(config.tool_registry.clone(), portable_tools)
-                .context("initialize embedded tool capability layer")?,
+        let delegation_service = config
+            .delegated_task_transport
+            .clone()
+            .map(|transport| {
+                crate::delegation::install_delegation_runtime(
+                    runtime.clone(),
+                    authority_id.clone(),
+                    session_store.clone(),
+                    transport,
+                )
+            })
+            .transpose()
+            .context("install embedded delegation runtime")?;
+        let mcp_config = Arc::new(
+            medousa_mcp_gateway::McpGatewayFullConfig::from_env_and_args(&[]).remote_only(),
         );
+        let mcp_invokes_enabled = mcp_config.invokes_enabled;
+        let mcp_registry = Arc::new(medousa_mcp_gateway::ServerRegistry::with_policy_evaluator(
+            mcp_config,
+            Arc::new(EmbeddedMcpPolicyEvaluator),
+        ));
+        let mcp_gateway_client = Arc::new(crate::mcp_gateway_client::McpGatewayClient::in_process(
+            mcp_registry,
+            mcp_invokes_enabled,
+        ));
+        let tool_assembly = config
+            .tool_registry_recipe
+            .assemble(EmbeddedToolRegistryBindings {
+                runtime: runtime.clone(),
+                locus_store: locus_memory.node_store.clone(),
+                semantic_index: locus_memory.semantic_index.clone(),
+                memory_reader: memory_reader.clone(),
+                memory_writer: memory_writer.clone(),
+                memory_operations: memory_operations.clone(),
+                identity_store: memory.identity_store.clone(),
+                mcp_gateway_client: mcp_gateway_client.clone(),
+                provider: config.provider.clone(),
+                model: config.model.clone(),
+                chat_client: config.chat_client.clone(),
+                delegation_service: delegation_service.clone(),
+            })
+            .context("assemble deployment tool registry")?;
+        let (tool_registry, _tool_catalog) = tool_assembly
+            .finish()
+            .context("finalize runtime tool catalog")?;
         let thread_store = RuntimeFactory::resolve_thread_store(runtime.as_ref(), None);
         let cluster_node_store = RuntimeFactory::resolve_cluster_node_store(runtime.as_ref(), None);
         let workflow_engine = RuntimeFactory::default_workflow_engine();
         let memory_reader = Some(memory_reader);
         let memory_writer_for_runtime = Some(memory_writer.clone());
         let memory_operations = Some(memory_operations);
-        let identity_store = None;
+        let identity_store = Some(memory.identity_store_dyn());
         match runtime.as_ref() {
             RuntimeComposition::InMemory(runtime) => {
                 crate::daemon_runtime_handlers::register_daemon_runtime_handlers(
@@ -590,9 +1348,10 @@ impl EmbeddedDaemon {
             "embedded-home:{}",
             config.installation_id.storage_key().as_str()
         ));
-        let inference = match config.credentialed_chat_client {
-            Some(client) => EmbeddedInferenceBinding::Credentialed(client),
-            None => EmbeddedInferenceBinding::Fixed {
+        let inference = match (config.routed_chat_client, config.credentialed_chat_client) {
+            (Some(client), _) => EmbeddedInferenceBinding::Routed(client),
+            (None, Some(client)) => EmbeddedInferenceBinding::Credentialed(client),
+            (None, None) => EmbeddedInferenceBinding::Fixed {
                 provider: Arc::from(config.provider),
                 model: Arc::from(config.model),
             },
@@ -604,7 +1363,9 @@ impl EmbeddedDaemon {
             authority_id,
             local_credential_id,
             inference,
+            chatgpt_oauth: config.chatgpt_oauth,
             chat_client: config.chat_client,
+            mcp_gateway_client,
             tool_registry,
             session_store,
             profile_registry,
@@ -619,9 +1380,10 @@ impl EmbeddedDaemon {
             turn_tickets: new_registry(),
             executions: TurnExecutionRegistry::new(config.max_live_turns),
             foreground_turn_timeout: config.foreground_turn_timeout,
-            suspended: AtomicBool::new(false),
+            backgrounded: AtomicBool::new(false),
             lifecycle_epoch: AtomicU64::new(0),
             recovery_lock: AsyncMutex::new(()),
+            delegation_service,
         }))
     }
 
@@ -648,49 +1410,25 @@ impl EmbeddedDaemon {
         }
     }
 
-    /// Cancel foreground work before iOS suspends the process.
-    pub fn suspend(&self) -> usize {
-        self.suspended.store(true, Ordering::Release);
+    /// Close foreground admission while the mobile host is backgrounded.
+    ///
+    /// Existing executions remain owned by the runtime. The OS may continue,
+    /// suspend, or terminate the process; app lifecycle never fabricates a
+    /// turn cancellation.
+    pub fn enter_background(&self) -> usize {
+        self.backgrounded.store(true, Ordering::Release);
         self.lifecycle_epoch.fetch_add(1, Ordering::AcqRel);
-        self.executions.cancel_all()
-    }
-
-    /// Let cancelled foreground owners publish their terminal event and release
-    /// their exact execution leases, without exceeding the host deadline.
-    pub async fn drain_suspended(
-        &self,
-        cancellation_requested: usize,
-        timeout: Duration,
-    ) -> EmbeddedSuspendReport {
-        let idle = self.executions.wait_for_idle(timeout).await;
-        let remaining_turns = self.executions.live_count();
-        EmbeddedSuspendReport {
-            cancellation_requested,
-            remaining_turns,
-            timed_out: !idle,
-        }
-    }
-
-    pub async fn suspend_and_drain(&self, timeout: Duration) -> EmbeddedSuspendReport {
-        let cancellation_requested = self.suspend();
-        self.drain_suspended(cancellation_requested, timeout).await
+        self.executions.live_count()
     }
 
     /// Re-advertise the same Stasis node and run its canonical durable-work
     /// reconciliation before foreground admission reopens.
     pub async fn resume(&self) -> Result<RuntimeRecoveryReport> {
         let _recovery = self.recovery_lock.lock().await;
-        if !self.suspended.load(Ordering::Acquire) {
+        if !self.backgrounded.load(Ordering::Acquire) {
             return Ok(RuntimeRecoveryReport::default());
         }
         let lifecycle_epoch = self.lifecycle_epoch.load(Ordering::Acquire);
-        if !self
-            .executions
-            .wait_for_idle(EMBEDDED_SUSPEND_DRAIN_TIMEOUT)
-            .await
-        {
-            bail!("embedded foreground turns did not drain before resume");
-        }
         if lifecycle_epoch != self.lifecycle_epoch.load(Ordering::Acquire) {
             return Ok(RuntimeRecoveryReport::default());
         }
@@ -717,7 +1455,7 @@ impl EmbeddedDaemon {
         .await
         .context("reconcile embedded Stasis work after wake")?;
         if lifecycle_epoch == self.lifecycle_epoch.load(Ordering::Acquire) {
-            self.suspended.store(false, Ordering::Release);
+            self.backgrounded.store(false, Ordering::Release);
         }
         Ok(report)
     }
@@ -780,9 +1518,10 @@ impl EmbeddedDaemon {
                 stream.log.clone(),
             )),
         );
+        let chronological = EmbeddedChronologicalTurn::new(&turn_id, pipeline.clone());
 
-        if pipeline
-            .emit(TurnStreamEventV2::Status {
+        if chronological
+            .publish(TurnStreamEventV3::Status {
                 phase: "accepted".to_string(),
                 operator_message: Some("foreground turn accepted".to_string()),
                 debug_message: None,
@@ -794,11 +1533,11 @@ impl EmbeddedDaemon {
             return;
         }
         note_stream_event(&self.turn_tickets, &turn_id, "status", "accepted", false).await;
-        let _ = pipeline
-            .emit(TurnStreamEventV2::ModelReceipt {
-                provider: context.route().provider().to_string(),
-                model: context.route().model().to_string(),
-            })
+        let provider = context.route().provider().to_string();
+        let model = context.route().model().to_string();
+        chronological.set_model_receipt(&provider, &model);
+        let _ = chronological
+            .publish(TurnStreamEventV3::ModelReceipt { provider, model })
             .await;
 
         let execution_ref =
@@ -807,7 +1546,7 @@ impl EmbeddedDaemon {
                 Err(error) => {
                     self.finish_with_error(
                         &turn_id,
-                        &pipeline,
+                        &chronological,
                         "turn identity unavailable",
                         &error,
                     )
@@ -831,7 +1570,7 @@ impl EmbeddedDaemon {
         {
             self.finish_with_error(
                 &turn_id,
-                &pipeline,
+                &chronological,
                 "could not persist the user turn",
                 &error.to_string(),
             )
@@ -844,7 +1583,7 @@ impl EmbeddedDaemon {
         let tool_loop = MedousaToolLoopPipeline::new(prompt_pipeline, self.tool_registry.clone());
         let request = ToolLoopExecutionRequest {
             user_prompt: inference_prompt,
-            system_prompt: None,
+            system_prompt: Some(embedded_system_prompt()),
             context: PromptExecutionContext {
                 correlation_id: Some(context.correlation_id().to_string()),
                 model_hint: Some(context.route().model().to_string()),
@@ -855,13 +1594,32 @@ impl EmbeddedDaemon {
             tool_call_mode: ToolCallMode::Auto,
         };
         let (delta_tx, mut delta_rx) = mpsc::channel(STREAM_DELTA_CAPACITY);
+        let (runtime_tx, mut runtime_rx) = mpsc::channel(EMBEDDED_RUNTIME_EVENT_CAPACITY);
+        let runtime_ports = RuntimePorts::new()
+            .with_model_response_events(Arc::new(EmbeddedModelResponseEvents {
+                tx: runtime_tx.clone(),
+            }))
+            .with_tool_run_events(Arc::new(EmbeddedToolRunEvents {
+                tx: runtime_tx.clone(),
+            }))
+            .with_turn_presentation(Arc::new(EmbeddedTurnPresentation {
+                tx: runtime_tx.clone(),
+            }));
+        let mut completion_gate = ToolLoopCompletionGate::new_for_execution(
+            0,
+            runtime_ports,
+            DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS,
+        );
         let outcome = {
             let execution = with_turn_execution_context(
                 context.clone(),
-                tool_loop.execute_with_stream_prior_messages(
+                tool_loop.execute_with_stream_prior_messages_max_rounds(
                     request,
                     prior_messages,
                     Some(&delta_tx),
+                    DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS,
+                    Some(&mut completion_gate),
+                    None,
                 ),
             );
             tokio::pin!(execution);
@@ -872,7 +1630,13 @@ impl EmbeddedDaemon {
                     () = context.cancellation().cancelled() => break ForegroundOutcome::Cancelled,
                     delta = delta_rx.recv() => {
                         let Some(delta) = delta else { continue; };
-                        if let Err(error) = emit_provider_delta(&pipeline, delta).await {
+                        if let Err(error) = emit_provider_delta(&chronological, delta).await {
+                            break ForegroundOutcome::Failed(error.to_string());
+                        }
+                    }
+                    runtime_event = runtime_rx.recv() => {
+                        let Some(runtime_event) = runtime_event else { continue; };
+                        if let Err(error) = emit_embedded_runtime_event(&chronological, runtime_event).await {
                             break ForegroundOutcome::Failed(error.to_string());
                         }
                     }
@@ -885,6 +1649,7 @@ impl EmbeddedDaemon {
                                     .into_iter()
                                     .map(|invocation| invocation.tool_name)
                                     .collect(),
+                                termination_reason: response.termination_reason,
                             },
                             Err(error) => ForegroundOutcome::Failed(error.to_string()),
                         };
@@ -894,19 +1659,47 @@ impl EmbeddedDaemon {
         };
         drop(delta_tx);
         while let Ok(delta) = delta_rx.try_recv() {
-            if emit_provider_delta(&pipeline, delta).await.is_err() {
+            if emit_provider_delta(&chronological, delta).await.is_err() {
+                break;
+            }
+        }
+        drop(runtime_tx);
+        while let Ok(runtime_event) = runtime_rx.try_recv() {
+            if emit_embedded_runtime_event(&chronological, runtime_event)
+                .await
+                .is_err()
+            {
                 break;
             }
         }
 
         match outcome {
-            ForegroundOutcome::Completed { text, tool_names } => {
-                let assistant_turn = ConversationTurn::plain(
-                    "assistant",
-                    text.clone(),
-                    Utc::now(),
+            ForegroundOutcome::Completed {
+                text,
+                tool_names,
+                termination_reason,
+            } => {
+                let completion_outcome = embedded_completion_outcome(&termination_reason);
+                let answer_state = embedded_answer_state(completion_outcome);
+                let body = match chronological.terminal_body(&text).await {
+                    Ok(body) => body,
+                    Err(error) => {
+                        self.finish_with_error(
+                            &turn_id,
+                            &chronological,
+                            "could not finalize the assistant response",
+                            &error.to_string(),
+                        )
+                        .await;
+                        self.turn_stream_port.mark_stream_closed(&turn_id).await;
+                        drop(lease);
+                        return;
+                    }
+                };
+                let assistant_turn = chronological.finalize_turn(
+                    body.clone(),
                     tool_names.clone(),
-                    None,
+                    answer_state.map(str::to_string),
                 );
                 match self
                     .session_store
@@ -914,25 +1707,37 @@ impl EmbeddedDaemon {
                         &session_id,
                         &[TranscriptAppend::native(
                             assistant_turn,
-                            Some(execution_ref),
+                            Some(execution_ref.clone()),
                         )],
                     )
                     .await
                 {
                     Ok(_) => {
-                        if pipeline
-                            .emit(TurnStreamEventV2::Final { text, tool_names })
+                        if chronological
+                            .publish(TurnStreamEventV3::TurnCompleted {
+                                outcome: completion_outcome,
+                                aggregate_text: body,
+                                tool_names,
+                                operator_message: None,
+                                debug_message: None,
+                            })
                             .await
                             .is_ok()
                         {
-                            note_stream_event(&self.turn_tickets, &turn_id, "final", "done", true)
-                                .await;
+                            note_stream_event(
+                                &self.turn_tickets,
+                                &turn_id,
+                                "turn_completed",
+                                embedded_ticket_phase(completion_outcome),
+                                true,
+                            )
+                            .await;
                         }
                     }
                     Err(error) => {
                         self.finish_with_error(
                             &turn_id,
-                            &pipeline,
+                            &chronological,
                             "could not persist the assistant turn",
                             &error.to_string(),
                         )
@@ -941,16 +1746,38 @@ impl EmbeddedDaemon {
                 }
             }
             ForegroundOutcome::Cancelled => {
-                let _ = pipeline
-                    .emit(TurnStreamEventV2::Error {
+                let _ = chronological.commit_active(false).await;
+                let _ = self
+                    .persist_partial_timeline(
+                        &session_id,
+                        &execution_ref,
+                        &chronological,
+                        "cancelled",
+                    )
+                    .await;
+                let _ = chronological
+                    .publish(TurnStreamEventV3::Error {
                         operator_message: "foreground turn cancelled".to_string(),
+                        debug_message: None,
+                    })
+                    .await;
+                let _ = chronological
+                    .publish(TurnStreamEventV3::TurnCompleted {
+                        outcome: TurnCompletionOutcomeV3::Cancelled,
+                        aggregate_text: chronological.aggregate_text(),
+                        tool_names: Vec::new(),
+                        operator_message: Some("foreground turn cancelled".to_string()),
                         debug_message: None,
                     })
                     .await;
                 mark_cancelled(&self.turn_tickets, &turn_id).await;
             }
             ForegroundOutcome::Failed(error) => {
-                self.finish_with_error(&turn_id, &pipeline, "foreground turn failed", &error)
+                let _ = chronological.commit_active(false).await;
+                let _ = self
+                    .persist_partial_timeline(&session_id, &execution_ref, &chronological, "failed")
+                    .await;
+                self.finish_with_error(&turn_id, &chronological, "foreground turn failed", &error)
                     .await;
             }
         }
@@ -959,21 +1786,57 @@ impl EmbeddedDaemon {
         drop(lease);
     }
 
+    async fn persist_partial_timeline(
+        &self,
+        session_id: &SessionId,
+        execution_ref: &medousa_types::session::ExecutionRef,
+        chronological: &EmbeddedChronologicalTurn,
+        answer_state: &str,
+    ) -> Result<()> {
+        if !chronological.has_partial_timeline() {
+            return Ok(());
+        }
+        let body = chronological
+            .terminal_body("")
+            .await
+            .map_err(|error| anyhow!(error.to_string()))?;
+        let tool_names = chronological.partial_tool_names();
+        let turn = chronological.finalize_turn(body, tool_names, Some(answer_state.to_string()));
+        self.session_store
+            .append_transcript_batch(
+                session_id,
+                &[TranscriptAppend::native(turn, Some(execution_ref.clone()))],
+            )
+            .await
+            .map_err(|error| anyhow!(error.to_string()))?;
+        Ok(())
+    }
+
     async fn finish_with_error(
         &self,
         turn_id: &str,
-        pipeline: &TurnPipelineHandle,
+        chronological: &EmbeddedChronologicalTurn,
         operator_message: &str,
         debug_message: &str,
     ) {
         tracing::warn!(turn_id, error = %debug_message, "{operator_message}");
-        let _ = pipeline
-            .emit(TurnStreamEventV2::Error {
+        let _ = chronological.commit_active(false).await;
+        let _ = chronological
+            .publish(TurnStreamEventV3::Error {
                 operator_message: operator_message.to_string(),
-                debug_message: None,
+                debug_message: Some(debug_message.to_string()),
             })
             .await;
-        note_stream_event(&self.turn_tickets, turn_id, "error", "error", true).await;
+        let _ = chronological
+            .publish(TurnStreamEventV3::TurnCompleted {
+                outcome: TurnCompletionOutcomeV3::Failed,
+                aggregate_text: chronological.aggregate_text(),
+                tool_names: Vec::new(),
+                operator_message: Some(operator_message.to_string()),
+                debug_message: Some(debug_message.to_string()),
+            })
+            .await;
+        note_stream_event(&self.turn_tickets, turn_id, "turn_completed", "error", true).await;
     }
 }
 
@@ -981,6 +1844,7 @@ enum ForegroundOutcome {
     Completed {
         text: String,
         tool_names: Vec<String>,
+        termination_reason: String,
     },
     Cancelled,
     Failed(String),
@@ -1018,6 +1882,118 @@ impl EmbeddedDaemonClient {
     ) -> Result<()> {
         self.require(Capability::AdminRuntime)?;
         self.daemon.inference.reconfigure(provider, model, base_url)
+    }
+
+    fn chatgpt_oauth(&self) -> Result<&Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>> {
+        self.require(Capability::AdminRuntime)?;
+        self.daemon
+            .chatgpt_oauth
+            .as_ref()
+            .ok_or_else(|| anyhow!("ChatGPT account authentication is unavailable"))
+    }
+
+    pub fn chatgpt_oauth_status(&self) -> Result<ChatGptOAuthStatusResponse> {
+        Ok(self.chatgpt_oauth()?.status())
+    }
+
+    pub async fn begin_chatgpt_oauth(&self) -> Result<BeginChatGptOAuthResponse> {
+        self.chatgpt_oauth()?
+            .begin()
+            .await
+            .map_err(anyhow::Error::new)
+    }
+
+    pub async fn complete_chatgpt_oauth(
+        &self,
+        login_id: &str,
+    ) -> Result<CompleteChatGptOAuthResponse> {
+        self.chatgpt_oauth()?
+            .complete(login_id)
+            .await
+            .map_err(anyhow::Error::new)
+    }
+
+    pub async fn refresh_chatgpt_oauth(&self) -> Result<ChatGptOAuthStatusResponse> {
+        self.chatgpt_oauth()?
+            .refresh()
+            .await
+            .map_err(anyhow::Error::new)
+    }
+
+    pub async fn disconnect_chatgpt_oauth(&self) -> Result<DisconnectChatGptOAuthResponse> {
+        self.chatgpt_oauth()?
+            .disconnect()
+            .await
+            .map_err(anyhow::Error::new)
+    }
+
+    pub async fn list_chatgpt_models(&self) -> Result<ChatGptModelListResponse> {
+        self.chatgpt_oauth()?
+            .list_models()
+            .await
+            .map_err(anyhow::Error::new)
+    }
+
+    pub async fn mcp_gateway_status(
+        &self,
+    ) -> Result<(
+        medousa_types::mcp_gateway_api::McpGatewayHealthResponse,
+        medousa_types::mcp_gateway_api::McpServersResponse,
+    )> {
+        self.require(Capability::WorkshopRead)?;
+        let health = self.daemon.mcp_gateway_client.health().await?;
+        let servers = self.daemon.mcp_gateway_client.list_servers().await?;
+        Ok((health, servers))
+    }
+
+    pub async fn reconfigure_mcp_gateway(
+        &self,
+        config: medousa_mcp_gateway::McpGatewayFullConfig,
+    ) -> Result<()> {
+        self.require(Capability::AdminRuntime)?;
+        let config = Arc::new(config.remote_only());
+        let invokes_enabled = config.invokes_enabled;
+        let registry = Arc::new(medousa_mcp_gateway::ServerRegistry::with_policy_evaluator(
+            config,
+            Arc::new(EmbeddedMcpPolicyEvaluator),
+        ));
+        self.daemon
+            .mcp_gateway_client
+            .replace_in_process(registry, invokes_enabled)
+            .await
+    }
+
+    pub async fn delegation_binding(&self) -> Result<Option<crate::delegation::DelegationBinding>> {
+        self.require(Capability::AdminRuntime)?;
+        let service = self
+            .daemon
+            .delegation_service
+            .as_ref()
+            .ok_or_else(|| anyhow!("delegation transport is not configured"))?;
+        service.binding().await
+    }
+
+    pub async fn set_delegation_binding(
+        &self,
+        target: crate::delegation::DelegationTarget,
+    ) -> Result<crate::delegation::DelegationBinding> {
+        self.require(Capability::AdminRuntime)?;
+        let service = self
+            .daemon
+            .delegation_service
+            .as_ref()
+            .ok_or_else(|| anyhow!("delegation transport is not configured"))?;
+        service.bind(target).await
+    }
+
+    pub async fn clear_delegation_binding(&self) -> Result<bool> {
+        self.require(Capability::AdminRuntime)?;
+        let service = self
+            .daemon
+            .delegation_service
+            .as_ref()
+            .ok_or_else(|| anyhow!("delegation transport is not configured"))?;
+        service.clear().await
     }
 
     pub async fn environment_spec(
@@ -1182,13 +2158,17 @@ impl EmbeddedDaemonClient {
             .await
             .context("read embedded tool registry")?
             .len();
-        let advertised_capabilities = self
+        let mut advertised_capabilities = self
             .daemon
             .cluster_node
             .capability_tags
             .iter()
             .cloned()
-            .chain(std::iter::once("transport.in-process".to_string()));
+            .chain(["transport.in-process", "mcp.remote-config"].map(str::to_string))
+            .collect::<Vec<_>>();
+        if self.daemon.chatgpt_oauth.is_some() {
+            advertised_capabilities.push("auth.chatgpt-account".to_string());
+        }
         let (active_profile_id, active_profile_display_name) = {
             let registry = self
                 .daemon
@@ -1813,8 +2793,8 @@ impl EmbeddedDaemonClient {
         voice_appendix: Option<String>,
     ) -> Result<InteractiveTurnResponse> {
         self.require(Capability::WorkshopInteract)?;
-        if self.daemon.suspended.load(Ordering::Acquire) {
-            bail!("embedded daemon is suspended");
+        if self.daemon.backgrounded.load(Ordering::Acquire) {
+            bail!("embedded daemon is backgrounded");
         }
         let session_id = SessionId::parse(session_id).map_err(|error| anyhow!(error))?;
         let prompt = prompt.into();
@@ -1902,7 +2882,7 @@ impl EmbeddedDaemonClient {
             provider: provider.clone(),
             model: model.clone(),
             response_depth_mode: "standard".to_string(),
-            supports_ui_artifacts: false,
+            supports_ui_artifacts: true,
             supports_liquid_markdown: true,
             supports_browser_host: false,
             channel_surface: channel_surface.or_else(|| Some("mobile".to_string())),
@@ -1914,7 +2894,7 @@ impl EmbeddedDaemonClient {
             self.principal.clone(),
             ProviderRoute::new(provider, model),
             SurfaceCapabilities {
-                ui_artifacts: false,
+                ui_artifacts: true,
                 liquid_markdown: true,
                 browser_host: false,
             },
@@ -1997,7 +2977,13 @@ impl EmbeddedDaemonClient {
             .log
             .snapshot_since(since)
             .into_iter()
-            .map(|event| crate::sse_turn_projection::sequenced_to_v2(&event))
+            .filter_map(|event| {
+                match crate::sse_turn_projection::sequenced_to_v2_optional(&event) {
+                    Ok(Some(envelope)) => Some(Ok(envelope)),
+                    Ok(None) => None,
+                    Err(error) => Some(Err(error)),
+                }
+            })
             .collect::<std::result::Result<VecDeque<_>, _>>()
             .map_err(|error| anyhow!(error))?;
         Ok(EmbeddedTurnStream {
@@ -2019,10 +3005,55 @@ impl EmbeddedDaemonClient {
             .ok_or_else(|| anyhow!("turn journal is unavailable"))?;
         log.snapshot_since(since)
             .into_iter()
-            .map(|event| {
-                crate::sse_turn_projection::sequenced_to_v2(&event).map_err(anyhow::Error::msg)
+            .filter_map(|event| {
+                match crate::sse_turn_projection::sequenced_to_v2_optional(&event) {
+                    Ok(Some(envelope)) => Some(Ok(envelope)),
+                    Ok(None) => None,
+                    Err(error) => Some(Err(anyhow::Error::msg(error))),
+                }
             })
             .collect()
+    }
+
+    pub async fn subscribe_turn_v3(
+        &self,
+        turn_id: &str,
+        since: u64,
+    ) -> Result<EmbeddedTurnStreamV3> {
+        self.require(Capability::ContentRead)?;
+        let entry = self.daemon.ensure_turn_stream(turn_id).await?;
+        let live = entry
+            .channel
+            .try_subscribe()
+            .ok_or_else(|| anyhow!("turn stream subscriber limit reached"))?;
+        let replay = entry
+            .log
+            .snapshot_since(since)
+            .into_iter()
+            .filter_map(|event| crate::sse_turn_projection::sequenced_to_v3(&event).ok())
+            .collect();
+        Ok(EmbeddedTurnStreamV3 {
+            replay,
+            live,
+            last_seq: since,
+        })
+    }
+
+    pub async fn replay_turn_v3(
+        &self,
+        turn_id: &str,
+        since: u64,
+    ) -> Result<Vec<TurnStreamEnvelopeV3>> {
+        self.require(Capability::ContentRead)?;
+        self.daemon.ensure_turn_stream(turn_id).await?;
+        let log = turn_stream_log(&self.daemon.turn_streams, turn_id)
+            .await
+            .ok_or_else(|| anyhow!("turn journal is unavailable"))?;
+        Ok(log
+            .snapshot_since(since)
+            .into_iter()
+            .filter_map(|event| crate::sse_turn_projection::sequenced_to_v3(&event).ok())
+            .collect())
     }
 
     fn require(&self, capability: Capability) -> Result<()> {
@@ -2044,6 +3075,49 @@ pub struct EmbeddedTurnStream {
     last_seq: u64,
 }
 
+/// Replay-first native V3 stream for the co-located Medousa client.
+pub struct EmbeddedTurnStreamV3 {
+    replay: VecDeque<TurnStreamEnvelopeV3>,
+    live: TurnEventSubscription,
+    last_seq: u64,
+}
+
+impl EmbeddedTurnStreamV3 {
+    pub fn last_seq(&self) -> u64 {
+        self.last_seq
+    }
+
+    pub async fn recv(&mut self) -> Result<Option<TurnStreamEnvelopeV3>> {
+        while let Some(event) = self.replay.pop_front() {
+            if event.seq > self.last_seq {
+                self.last_seq = event.seq;
+                return Ok(Some(event));
+            }
+        }
+        loop {
+            match self.live.recv().await {
+                Ok(event) => {
+                    if event.seq() <= self.last_seq {
+                        continue;
+                    }
+                    self.last_seq = event.seq();
+                    let Some(envelope) = event.v3 else {
+                        continue;
+                    };
+                    return Ok(Some(envelope));
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return Ok(None),
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    bail!(
+                        "turn stream lagged by {skipped} events; replay from sequence {}",
+                        self.last_seq
+                    )
+                }
+            }
+        }
+    }
+}
+
 impl EmbeddedTurnStream {
     pub fn last_seq(&self) -> u64 {
         self.last_seq
@@ -2062,10 +3136,16 @@ impl EmbeddedTurnStream {
                     if event.seq() <= self.last_seq {
                         continue;
                     }
+                    let event_seq = event.seq();
                     let envelope = match event.v2 {
                         Some(envelope) => envelope,
-                        None => crate::sse_turn_projection::v1_to_v2(&event.v1)
-                            .map_err(anyhow::Error::msg)?,
+                        None => {
+                            self.last_seq = event_seq;
+                            let Some(v1) = event.v1 else {
+                                continue;
+                            };
+                            crate::sse_turn_projection::v1_to_v2(&v1).map_err(anyhow::Error::msg)?
+                        }
                     };
                     self.last_seq = envelope.seq;
                     return Ok(Some(envelope));
@@ -2159,23 +3239,97 @@ fn history_to_chat_messages(history: Vec<ConversationTurn>) -> Vec<ChatMessage> 
 }
 
 async fn emit_provider_delta(
-    pipeline: &TurnPipelineHandle,
+    chronological: &EmbeddedChronologicalTurn,
     delta: StreamDelta,
 ) -> Result<(), medousa_engine::TurnPipelineError> {
     match delta {
-        StreamDelta::Content(text) => {
-            pipeline
-                .emit(TurnStreamEventV2::ContentAppend { text })
-                .await?;
-        }
-        StreamDelta::Reasoning(text) => {
-            pipeline
-                .emit(TurnStreamEventV2::ReasoningAppend { text })
-                .await?;
-        }
+        StreamDelta::Content(text) => chronological.content_delta(text).await?,
+        StreamDelta::Reasoning(text) => chronological.reasoning_delta(text).await?,
         StreamDelta::ThoughtSignature(_) => {}
     }
     Ok(())
+}
+
+async fn emit_embedded_runtime_event(
+    chronological: &EmbeddedChronologicalTurn,
+    event: EmbeddedRuntimeEvent,
+) -> Result<(), medousa_engine::TurnPipelineError> {
+    match event {
+        EmbeddedRuntimeEvent::ModelResponseCompleted {
+            event,
+            response_text,
+            acknowledged,
+        } => {
+            let needs_fallback = chronological
+                .text
+                .lock()
+                .map(|state| {
+                    state
+                        .active
+                        .as_ref()
+                        .is_none_or(|segment| segment.markdown.is_empty())
+                })
+                .unwrap_or(false);
+            if needs_fallback
+                && let Some(text) = response_text.filter(|text| !text.trim().is_empty())
+            {
+                chronological.content_delta(text).await?;
+            }
+            let result = chronological.commit_active(true).await;
+            let _ = acknowledged.send(());
+            debug_assert!(event.model_round > 0);
+            result
+        }
+        EmbeddedRuntimeEvent::ToolStarted { tool_run_id, event } => {
+            chronological.tool_started(tool_run_id, event).await
+        }
+        EmbeddedRuntimeEvent::ToolFinished(event) => chronological.tool_finished(event).await,
+        EmbeddedRuntimeEvent::Notice(message) => {
+            chronological
+                .publish(TurnStreamEventV3::Status {
+                    phase: "orchestration".to_string(),
+                    operator_message: None,
+                    debug_message: Some(message),
+                })
+                .await
+        }
+        EmbeddedRuntimeEvent::Progress {
+            message,
+            tool_names,
+        } => chronological.progress(message, tool_names).await,
+    }
+}
+
+fn embedded_completion_outcome(termination_reason: &str) -> TurnCompletionOutcomeV3 {
+    match termination_reason {
+        "cognition_turn_checkpoint" => TurnCompletionOutcomeV3::Checkpointed,
+        medousa_runtime::TOOL_ROUND_BUDGET_EXHAUSTED_REASON | "stuck_text_only_continue" => {
+            TurnCompletionOutcomeV3::FuseExhausted
+        }
+        _ => TurnCompletionOutcomeV3::Completed,
+    }
+}
+
+fn embedded_answer_state(outcome: TurnCompletionOutcomeV3) -> Option<&'static str> {
+    match outcome {
+        TurnCompletionOutcomeV3::Checkpointed => Some("checkpoint"),
+        TurnCompletionOutcomeV3::NeedsInput => Some("needs_input"),
+        TurnCompletionOutcomeV3::FuseExhausted => Some("fuse_exhausted"),
+        TurnCompletionOutcomeV3::Failed => Some("failed"),
+        TurnCompletionOutcomeV3::Cancelled => Some("cancelled"),
+        TurnCompletionOutcomeV3::Completed => None,
+    }
+}
+
+fn embedded_ticket_phase(outcome: TurnCompletionOutcomeV3) -> &'static str {
+    match outcome {
+        TurnCompletionOutcomeV3::Completed => "done",
+        TurnCompletionOutcomeV3::NeedsInput => "awaiting_operator",
+        TurnCompletionOutcomeV3::Checkpointed => "handoff",
+        TurnCompletionOutcomeV3::Failed
+        | TurnCompletionOutcomeV3::Cancelled
+        | TurnCompletionOutcomeV3::FuseExhausted => "error",
+    }
 }
 
 #[cfg(test)]
@@ -2196,7 +3350,7 @@ mod tests {
     const INSTALLATION_ID: &str = crate::workshop_authority::TEST_INSTALLATION_ID;
     const SECRET_CANARY: &str = "embedded-secret-must-never-escape";
     const FIRST_REPLY: &str = "The embedded daemon owns this foreground turn.";
-    const SECOND_REPLY: &str = "The mobile shell remains only its privileged local client.";
+    const BACKGROUND_REPLY: &str = "The turn survived the app lifecycle transition.";
     const GRAPHEME_REPLY: &str = "The portable Grapheme workflow completed on the phone daemon.";
     const GRAPHEME_SOURCE: &str = r#"import core from "grapheme/core"
 
@@ -2206,6 +3360,17 @@ query MobileProbe {
     }
 }
 "#;
+
+    #[test]
+    fn embedded_prompt_uses_general_sttp_and_tool_hud() {
+        let prompt = embedded_system_prompt();
+        assert!(prompt.contains("p1_core(.99)"));
+        assert!(prompt.contains("p2_mode_general(.99)"));
+        assert!(prompt.contains("p3_actor_host(.99)"));
+        assert!(prompt.contains("[MEDOUSA_HUD]"));
+        assert!(prompt.contains("catalog_tool=cognition_tools_discover"));
+        assert!(prompt.contains("web_tool=cognition_web_search"));
+    }
 
     fn text_response(text: &str) -> ChatResponse {
         let model = ModelIden::from_static(AdapterKind::OpenAI, "embedded-test-model");
@@ -2243,6 +3408,7 @@ query MobileProbe {
     #[derive(Default)]
     struct LifecycleChatClient {
         calls: AtomicUsize,
+        background_reply: tokio::sync::Notify,
     }
 
     impl LifecycleChatClient {
@@ -2250,16 +3416,22 @@ query MobileProbe {
             self.calls.load(Ordering::Acquire)
         }
 
+        fn release_background_turn(&self) {
+            self.background_reply.notify_one();
+        }
+
         async fn next(&self) -> StasisResult<ChatResponse> {
             match self.calls.fetch_add(1, Ordering::AcqRel) {
                 0 => Ok(text_response(FIRST_REPLY)),
-                1 => Ok(text_response(SECOND_REPLY)),
-                2 => pending::<StasisResult<ChatResponse>>().await,
-                3 => Ok(tool_response(
-                    "cognition_grapheme_run",
-                    json!({ "source": GRAPHEME_SOURCE }),
+                1 => {
+                    self.background_reply.notified().await;
+                    Ok(text_response(BACKGROUND_REPLY))
+                }
+                2 => Ok(tool_response(
+                    "cognition_capability",
+                    json!({ "action": "grapheme.invoke", "script": GRAPHEME_SOURCE }),
                 )),
-                4 => Ok(tool_response(
+                3 => Ok(tool_response(
                     medousa_runtime::turn_control::COGNITION_TURN,
                     json!({ "action": "turn.finish", "message": GRAPHEME_REPLY }),
                 )),
@@ -2306,6 +3478,18 @@ query MobileProbe {
         }
     }
 
+    struct EmptyChatGptStore;
+
+    impl crate::chatgpt_oauth::ChatGptCredentialStore for EmptyChatGptStore {
+        fn load_bundle(&self) -> std::result::Result<Option<String>, String> {
+            Ok(None)
+        }
+
+        fn save_bundle(&self, _bundle: Option<&str>) -> std::result::Result<(), String> {
+            Ok(())
+        }
+    }
+
     #[test]
     fn credentialed_binding_reconfigures_its_route() {
         let client = CredentialedAiChatClient::new(
@@ -2329,6 +3513,38 @@ query MobileProbe {
         );
     }
 
+    #[test]
+    fn routed_binding_switches_between_api_key_and_chatgpt_accounts() {
+        let broker = Arc::new(crate::chatgpt_oauth::ChatGptOAuthBroker::new(Arc::new(
+            EmptyChatGptStore,
+        )));
+        let routed = EmbeddedRoutedChatClient::new(
+            "openai".to_string(),
+            "gpt-5.4-mini".to_string(),
+            None,
+            Arc::new(CanaryCredentialProvider),
+            broker,
+        )
+        .expect("routed client");
+        let binding = EmbeddedInferenceBinding::Routed(routed);
+
+        binding
+            .reconfigure("openai-codex", "gpt-5.6-sol", None)
+            .expect("select ChatGPT account route");
+        assert_eq!(
+            binding.route(),
+            ("openai-codex".to_string(), "gpt-5.6-sol".to_string())
+        );
+
+        binding
+            .reconfigure("anthropic", "claude-sonnet-4-6", None)
+            .expect("return to API-key route");
+        assert_eq!(
+            binding.route(),
+            ("anthropic".to_string(), "claude-sonnet-4-6".to_string())
+        );
+    }
+
     async fn collect_to_eof(mut stream: EmbeddedTurnStream) -> Vec<TurnStreamEnvelopeV2> {
         let mut events = Vec::new();
         loop {
@@ -2341,6 +3557,14 @@ query MobileProbe {
                 None => return events,
             }
         }
+    }
+
+    async fn collect_v3_to_eof(mut stream: EmbeddedTurnStreamV3) -> Vec<TurnStreamEnvelopeV3> {
+        let mut events = Vec::new();
+        while let Some(event) = stream.recv().await.expect("read embedded v3 stream") {
+            events.push(event);
+        }
+        events
     }
 
     async fn wait_until(mut predicate: impl FnMut() -> bool) {
@@ -2394,13 +3618,18 @@ query MobileProbe {
         drop(credentialed_config);
 
         let chat = Arc::new(LifecycleChatClient::default());
-        let daemon = EmbeddedDaemon::boot(EmbeddedDaemonConfig::with_chat_client(
-            sandbox.path(),
-            installation_id.clone(),
-            "openai",
-            "embedded-test-model",
-            chat.clone(),
-        ))
+        let daemon = EmbeddedDaemon::boot(
+            EmbeddedDaemonConfig::with_chat_client(
+                sandbox.path(),
+                installation_id.clone(),
+                "openai",
+                "embedded-test-model",
+                chat.clone(),
+            )
+            .with_tool_registry_recipe(Arc::new(
+                crate::mobile_tool_registry::PersonalMobileToolRegistryRecipe,
+            )),
+        )
         .await
         .expect("boot embedded daemon");
         let delivery_endpoints =
@@ -2571,9 +3800,14 @@ query MobileProbe {
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>();
         assert!(
-            crate::portable_daemon_tools::PORTABLE_DAEMON_TOOL_NAMES
+            crate::mobile_tool_registry::PERSONAL_MOBILE_TOOL_NAMES
                 .iter()
-                .all(|name| tool_names.contains(name))
+                .all(|name| tool_names.contains(name)),
+            "missing expected mobile tools: {:?}",
+            crate::mobile_tool_registry::PERSONAL_MOBILE_TOOL_NAMES
+                .iter()
+                .filter(|name| !tool_names.contains(name))
+                .collect::<Vec<_>>()
         );
         assert!(tool_names.iter().all(|name| {
             !["pty", "forge", "coder", "detamu"]
@@ -2679,10 +3913,9 @@ query MobileProbe {
         )
         .await;
         assert!(!events.is_empty());
-        assert!(events.iter().enumerate().all(|(index, event)| {
-            event.turn_id == accepted.turn_id && event.seq == index as u64 + 1
-        }));
-        let final_text = format!("{FIRST_REPLY}\n\n{SECOND_REPLY}");
+        assert!(events.iter().all(|event| event.turn_id == accepted.turn_id));
+        assert!(events.windows(2).all(|pair| pair[0].seq < pair[1].seq));
+        let final_text = FIRST_REPLY.to_string();
         assert!(
             matches!(
                 events.last().map(|event| &event.event),
@@ -2700,6 +3933,44 @@ query MobileProbe {
             serde_json::to_value(&replay).expect("serialize replay"),
             serde_json::to_value(&events).expect("serialize live events")
         );
+        let v3 = collect_v3_to_eof(
+            client
+                .subscribe_turn_v3(&accepted.turn_id, 0)
+                .await
+                .expect("subscribe native v3 foreground turn"),
+        )
+        .await;
+        assert!(v3.iter().enumerate().all(|(index, event)| {
+            event.turn_id == accepted.turn_id && event.seq == index as u64 + 1
+        }));
+        assert_eq!(
+            v3.iter()
+                .filter_map(|event| match &event.event {
+                    TurnStreamEventV3::AssistantTextStarted { model_round, .. } => {
+                        Some(*model_round)
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            vec![1]
+        );
+        assert_eq!(
+            v3.iter()
+                .filter_map(|event| match &event.event {
+                    TurnStreamEventV3::ContentAppend { text, .. } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            vec![FIRST_REPLY]
+        );
+        assert!(matches!(
+            v3.last().map(|event| &event.event),
+            Some(TurnStreamEventV3::TurnCompleted {
+                outcome: TurnCompletionOutcomeV3::Completed,
+                aggregate_text,
+                ..
+            }) if aggregate_text == &final_text
+        ));
 
         let transcript = client
             .load_transcript_entries(&session.session_id)
@@ -2710,6 +3981,20 @@ query MobileProbe {
         assert_eq!(transcript[1].entry_seq, 2);
         assert_eq!(transcript[1].turn.role, "assistant");
         assert_eq!(transcript[1].turn.content, final_text);
+        assert_eq!(
+            transcript[1]
+                .turn
+                .parts
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|part| match part {
+                    medousa_types::turn::TurnPart::Text { model_round, .. } => *model_round,
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            vec![1]
+        );
         let user_execution = transcript[0]
             .caused_by
             .as_ref()
@@ -2729,75 +4014,70 @@ query MobileProbe {
                 .any(|summary| summary.session_id == session.session_id && summary.turns == 2)
         );
 
-        let cancelled = client
-            .start_turn(&session.session_id, "this turn should be suspended")
+        let background_turn = client
+            .start_turn(
+                &session.session_id,
+                "this turn should survive backgrounding",
+            )
             .await
-            .expect("start cancellable foreground turn");
-        wait_until(|| chat.calls() >= 3).await;
+            .expect("start foreground turn before backgrounding");
+        wait_until(|| chat.calls() >= 2).await;
         assert_eq!(daemon.live_turn_count(), 1);
-        let suspend_report = daemon.suspend_and_drain(Duration::from_secs(2)).await;
-        assert_eq!(suspend_report.cancellation_requested, 1);
-        assert_eq!(suspend_report.remaining_turns, 0);
-        assert!(!suspend_report.timed_out);
+        assert_eq!(daemon.enter_background(), 1);
+        assert_eq!(daemon.live_turn_count(), 1);
         assert!(
             client
-                .start_turn(&session.session_id, "suspended work must fail closed")
+                .start_turn(&session.session_id, "background admission must fail closed")
                 .await
-                .expect_err("suspended daemon accepted work")
+                .expect_err("backgrounded daemon accepted work")
                 .to_string()
-                .contains("suspended")
+                .contains("backgrounded")
         );
-        let cancelled_events = collect_to_eof(
+        let wake = daemon.resume().await.expect("resume embedded daemon");
+        assert_eq!(wake.materialized, 0);
+        assert_eq!(daemon.live_turn_count(), 1);
+        chat.release_background_turn();
+        let background_events = collect_to_eof(
             client
-                .subscribe_turn(&cancelled.turn_id, 0)
+                .subscribe_turn(&background_turn.turn_id, 0)
                 .await
-                .expect("subscribe cancelled turn"),
+                .expect("reattach backgrounded turn"),
         )
         .await;
         assert!(matches!(
-            cancelled_events.last().map(|event| &event.event),
-            Some(TurnStreamEventV2::Error {
-                operator_message,
-                debug_message: None,
-            }) if operator_message == "foreground turn cancelled"
+            background_events.last().map(|event| &event.event),
+            Some(TurnStreamEventV2::Final { text, tool_names })
+                if text == BACKGROUND_REPLY && tool_names.is_empty()
         ));
         assert_eq!(
-            cancelled_events
+            background_events
                 .iter()
                 .filter(|event| event.event.is_terminal())
                 .count(),
             1
         );
-        let transcript_after_cancel = client
+        let transcript_after_background = client
             .load_transcript_entries(&session.session_id)
-            .expect("load transcript after cancellation");
-        assert_eq!(transcript_after_cancel.len(), 3);
-        assert_eq!(transcript_after_cancel[2].turn.role, "user");
+            .expect("load transcript after background resume");
+        assert_eq!(transcript_after_background.len(), 4);
+        assert_eq!(transcript_after_background[2].turn.role, "user");
+        assert_eq!(transcript_after_background[3].turn.role, "assistant");
         assert_eq!(
-            transcript_after_cancel[2]
+            transcript_after_background[3]
                 .caused_by
                 .as_ref()
-                .expect("cancelled user execution")
+                .expect("resumed assistant execution")
                 .execution_id
                 .as_str(),
-            cancelled.turn_id
+            background_turn.turn_id
         );
-        assert!(transcript_after_cancel.iter().all(|entry| {
-            entry.turn.role == "user"
-                || entry
-                    .caused_by
-                    .as_ref()
-                    .is_none_or(|execution| execution.execution_id.as_str() != cancelled.turn_id)
-        }));
         assert!(
             !client
                 .active_turn(&session.session_id)
                 .await
-                .expect("read cancelled turn state")
+                .expect("read resumed turn state")
                 .active
         );
-        let wake = daemon.resume().await.expect("resume embedded daemon");
-        assert_eq!(wake.materialized, 0);
 
         let grapheme_turn = client
             .start_turn(&session.session_id, "run the portable Grapheme probe")
@@ -2814,7 +4094,7 @@ query MobileProbe {
             grapheme_events.last().map(|event| &event.event),
             Some(TurnStreamEventV2::Final { text, tool_names })
                 if text == GRAPHEME_REPLY
-                    && tool_names.iter().any(|name| name == "cognition_grapheme_run")
+                    && tool_names.iter().any(|name| name == "cognition_capability")
         ));
 
         let schedule = client
@@ -2839,16 +4119,17 @@ query MobileProbe {
             .into_iter()
             .find(|definition| definition.id == schedule.recurring_id)
             .expect("registered embedded recurring definition");
-        due_definition.next_run_at = Utc::now() - chrono::Duration::seconds(1);
+        // Several missed ticks still materialize one catch-up job. Stasis
+        // advances the definition from wake time instead of replaying every
+        // interval the mobile process could not execute.
+        due_definition.next_run_at = Utc::now() - chrono::Duration::days(3);
         daemon
             .runtime
             .save_recurring(due_definition)
             .await
             .expect("make embedded schedule due");
 
-        let idle_suspend = daemon.suspend_and_drain(Duration::from_secs(2)).await;
-        assert_eq!(idle_suspend.cancellation_requested, 0);
-        assert!(!idle_suspend.timed_out);
+        assert_eq!(daemon.enter_background(), 0);
         let schedule_wake = daemon
             .resume()
             .await
@@ -2875,8 +4156,7 @@ query MobileProbe {
             .count();
         assert_eq!(succeeded_after_wake, 1);
 
-        let second_idle_suspend = daemon.suspend_and_drain(Duration::from_secs(2)).await;
-        assert!(!second_idle_suspend.timed_out);
+        assert_eq!(daemon.enter_background(), 0);
         let second_wake = daemon.resume().await.expect("repeat wake reconciliation");
         assert_eq!(second_wake.materialized, 0);
         assert!(second_wake.processed_job_ids.is_empty());
@@ -2930,13 +4210,18 @@ query MobileProbe {
         std::fs::write(sandbox.path().join("runtime.surrealkv/LOCK"), b"stale")
             .expect("stale lock fixture");
 
-        let rebooted = EmbeddedDaemon::boot(EmbeddedDaemonConfig::with_chat_client(
-            sandbox.path(),
-            installation_id.clone(),
-            "openai",
-            "embedded-test-model",
-            chat,
-        ))
+        let rebooted = EmbeddedDaemon::boot(
+            EmbeddedDaemonConfig::with_chat_client(
+                sandbox.path(),
+                installation_id.clone(),
+                "openai",
+                "embedded-test-model",
+                chat,
+            )
+            .with_tool_registry_recipe(Arc::new(
+                crate::mobile_tool_registry::PersonalMobileToolRegistryRecipe,
+            )),
+        )
         .await
         .expect("reboot embedded daemon from its sandbox");
         assert_eq!(rebooted.authority_id(), &authority_id);
@@ -3004,15 +4289,17 @@ query MobileProbe {
         let rebooted_transcript = rebooted_client
             .load_transcript_entries(&session.session_id)
             .expect("reload transcript after reboot");
-        assert_eq!(rebooted_transcript.len(), 6);
+        assert_eq!(rebooted_transcript.len(), 7);
         assert_eq!(rebooted_transcript[2].turn.role, "user");
-        assert_eq!(rebooted_transcript[3].turn.role, "user");
-        assert_eq!(rebooted_transcript[4].turn.role, "assistant");
-        assert_eq!(rebooted_transcript[4].turn.content, GRAPHEME_REPLY);
+        assert_eq!(rebooted_transcript[3].turn.role, "assistant");
+        assert_eq!(rebooted_transcript[3].turn.content, BACKGROUND_REPLY);
+        assert_eq!(rebooted_transcript[4].turn.role, "user");
         assert_eq!(rebooted_transcript[5].turn.role, "assistant");
-        assert_eq!(rebooted_transcript[5].turn.content, RECOVERED_REPLY);
+        assert_eq!(rebooted_transcript[5].turn.content, GRAPHEME_REPLY);
+        assert_eq!(rebooted_transcript[6].turn.role, "assistant");
+        assert_eq!(rebooted_transcript[6].turn.content, RECOVERED_REPLY);
         assert_eq!(
-            rebooted_transcript[5]
+            rebooted_transcript[6]
                 .caused_by
                 .as_ref()
                 .expect("recovered execution identity")
@@ -3032,12 +4319,12 @@ query MobileProbe {
             serde_json::to_value(rebooted_replay).expect("serialize reboot replay"),
             serde_json::to_value(events).expect("serialize original events")
         );
-        let rebooted_cancelled_replay = rebooted_client
-            .replay_turn(&cancelled.turn_id, 0)
+        let rebooted_background_replay = rebooted_client
+            .replay_turn(&background_turn.turn_id, 0)
             .await
-            .expect("reload cancelled journal after reboot");
+            .expect("reload background-surviving journal after reboot");
         assert_eq!(
-            rebooted_cancelled_replay
+            rebooted_background_replay
                 .iter()
                 .filter(|event| event.event.is_terminal())
                 .count(),
@@ -3069,7 +4356,7 @@ query MobileProbe {
                 .load_transcript_entries(&session.session_id)
                 .expect("transcript before credential probe")
                 .len(),
-            6,
+            7,
             "journal recovery must remain idempotent across another boot"
         );
         let credential_probe = credentialed_client
@@ -3088,10 +4375,7 @@ query MobileProbe {
         .await;
         assert!(matches!(
             credential_events.last().map(|event| &event.event),
-            Some(TurnStreamEventV2::Error {
-                debug_message: None,
-                ..
-            })
+            Some(TurnStreamEventV2::Error { .. })
         ));
         assert_eq!(
             credential_events

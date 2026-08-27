@@ -159,6 +159,154 @@ describe("chatMessageToScene — assistant order (thinking → body → tools)",
   });
 });
 
+describe("chatMessageToScene — native V3 chronology", () => {
+  it("renders response → tools → response → tools → response without flattening", () => {
+    const scene = chatMessageToScene(
+      msg({
+        // These compatibility fields must not become a second flat rendering.
+        content: "flattened compatibility answer",
+        toolRuns: [
+          { runId: "compat", toolName: "ignored", status: "succeeded", round: 1 },
+        ],
+        segments: [
+          {
+            kind: "text",
+            segmentId: "text-a",
+            modelRound: 1,
+            markdown: "Let me check.",
+            committed: true,
+          },
+          {
+            kind: "tool_group",
+            groupId: "tools-a",
+            toolRound: 1,
+            runs: [
+              { runId: "run-1", toolName: "vault.read", status: "succeeded", round: 1 },
+              { runId: "run-2", toolName: "web.search", status: "succeeded", round: 1 },
+            ],
+          },
+          {
+            kind: "text",
+            segmentId: "text-b",
+            modelRound: 2,
+            markdown: "I found a lead.",
+            committed: true,
+          },
+          {
+            kind: "tool_group",
+            groupId: "tools-b",
+            toolRound: 2,
+            runs: [
+              { runId: "run-3", toolName: "code.search", status: "succeeded", round: 2 },
+            ],
+          },
+          {
+            kind: "text",
+            segmentId: "text-c",
+            modelRound: 3,
+            markdown: "Here is the answer.",
+            committed: true,
+          },
+        ],
+      }),
+    );
+
+    expect(scene.slots?.flow?.map((node) => node.id)).toEqual([
+      "m1:segment:text:text-a",
+      "m1:segment:tools-a",
+      "m1:segment:text:text-b",
+      "m1:segment:tools-b",
+      "m1:segment:text:text-c",
+    ]);
+    expect(findNode(scene, "m1:body")).toBeNull();
+    expect(findNode(scene, "m1:tools")).toBeNull();
+    expect(findNode(scene, "m1:segment:text:text-a")?.props.markdown).toBe(
+      "Let me check.",
+    );
+  });
+
+  it("renders an active text segment immediately and settles it in place", () => {
+    const active = chatMessageToScene(
+      msg({
+        streaming: true,
+        segments: [
+          {
+            kind: "text",
+            segmentId: "text-a",
+            modelRound: 1,
+            markdown: "",
+            committed: false,
+          },
+        ],
+      }),
+    );
+    const settled = chatMessageToScene(
+      msg({
+        streaming: true,
+        segments: [
+          {
+            kind: "text",
+            segmentId: "text-a",
+            modelRound: 1,
+            markdown: "Visible now.",
+            committed: true,
+          },
+        ],
+      }),
+    );
+
+    const activeNode = findNode(active, "m1:segment:text:text-a");
+    const settledNode = findNode(settled, "m1:segment:text:text-a");
+    expect(activeNode?.props).toEqual({ markdown: "…", streaming: true });
+    expect(settledNode?.props).toEqual({ markdown: "Visible now.", streaming: false });
+  });
+
+  it("keeps artifacts and handoffs at their chronological positions", () => {
+    const scene = chatMessageToScene(
+      msg({
+        segments: [
+          {
+            kind: "text",
+            segmentId: "text-a",
+            modelRound: 1,
+            markdown: "Chart first.",
+            committed: true,
+          },
+          {
+            kind: "artifact",
+            artifact: {
+              artifactId: "artifact-1",
+              mime: "text/html",
+              label: "Chart",
+              presentation: "panel",
+            },
+          },
+          {
+            kind: "handoff",
+            handoffKind: "worker",
+            text: "Worker completed the audit.",
+            workId: "work-1",
+          },
+          {
+            kind: "text",
+            segmentId: "text-b",
+            modelRound: 2,
+            markdown: "And now the conclusion.",
+            committed: true,
+          },
+        ],
+      }),
+    );
+
+    expect(scene.slots?.flow?.map((node) => node.type)).toEqual([
+      "prose",
+      "presentation",
+      "whisper",
+      "prose",
+    ]);
+  });
+});
+
 describe("chatMessageToScene — user / system", () => {
   it("renders user text as plain prose", () => {
     const scene = chatMessageToScene(msg({ role: "user", content: "# not a heading" }));

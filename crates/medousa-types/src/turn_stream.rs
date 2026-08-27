@@ -7,6 +7,8 @@ use crate::daemon_api::{
 
 pub const TURN_STREAM_SCHEMA_VERSION: u8 = 2;
 pub const TURN_STREAM_V2_MEDIA_TYPE: &str = "text/event-stream; medousa-version=2";
+pub const TURN_STREAM_V3_SCHEMA_VERSION: u8 = 3;
+pub const TURN_STREAM_V3_MEDIA_TYPE: &str = "text/event-stream; medousa-version=3";
 
 fn deserialize_v2<'de, D>(deserializer: D) -> Result<u8, D::Error>
 where
@@ -14,6 +16,19 @@ where
 {
     let version = u8::deserialize(deserializer)?;
     if version != TURN_STREAM_SCHEMA_VERSION {
+        return Err(serde::de::Error::custom(format!(
+            "unsupported turn stream schema version {version}"
+        )));
+    }
+    Ok(version)
+}
+
+fn deserialize_v3<'de, D>(deserializer: D) -> Result<u8, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let version = u8::deserialize(deserializer)?;
+    if version != TURN_STREAM_V3_SCHEMA_VERSION {
         return Err(serde::de::Error::custom(format!(
             "unsupported turn stream schema version {version}"
         )));
@@ -267,6 +282,222 @@ impl TurnStreamEventV2 {
     }
 }
 
+/// Segment-aware chronological stream envelope. V3 is introduced alongside
+/// V2 so producers and consumers can migrate without changing V2 semantics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct TurnStreamEnvelopeV3 {
+    #[serde(deserialize_with = "deserialize_v3")]
+    #[cfg_attr(feature = "json-schema", schemars(range(min = 3, max = 3)))]
+    pub schema_version: u8,
+    pub turn_id: String,
+    #[cfg_attr(feature = "json-schema", schemars(range(min = 1)))]
+    pub seq: u64,
+    pub emitted_at_utc: DateTime<Utc>,
+    pub event: TurnStreamEventV3,
+}
+
+impl TurnStreamEnvelopeV3 {
+    pub fn new(
+        turn_id: impl Into<String>,
+        seq: u64,
+        emitted_at_utc: DateTime<Utc>,
+        event: TurnStreamEventV3,
+    ) -> Result<Self, TurnStreamEnvelopeError> {
+        let envelope = Self {
+            schema_version: TURN_STREAM_V3_SCHEMA_VERSION,
+            turn_id: turn_id.into(),
+            seq,
+            emitted_at_utc,
+            event,
+        };
+        envelope.validate()?;
+        Ok(envelope)
+    }
+
+    pub fn validate(&self) -> Result<(), TurnStreamEnvelopeError> {
+        if self.schema_version != TURN_STREAM_V3_SCHEMA_VERSION {
+            return Err(TurnStreamEnvelopeError::UnsupportedVersion(
+                self.schema_version,
+            ));
+        }
+        if self.turn_id.trim().is_empty() {
+            return Err(TurnStreamEnvelopeError::EmptyTurnId);
+        }
+        if self.seq == 0 {
+            return Err(TurnStreamEnvelopeError::ZeroSequence);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum TurnCompletionOutcomeV3 {
+    Completed,
+    NeedsInput,
+    Checkpointed,
+    Failed,
+    Cancelled,
+    FuseExhausted,
+}
+
+/// Chronological turn facts. Visible prose is addressed by `segment_id`, tool
+/// receipts update by `tool_run_id`, and terminal settlement never replaces
+/// the preceding timeline.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum TurnStreamEventV3 {
+    AssistantTextStarted {
+        segment_id: String,
+        model_round: usize,
+    },
+    ContentAppend {
+        segment_id: String,
+        text: String,
+    },
+    AssistantTextCommitted {
+        segment_id: String,
+    },
+    ReasoningAppend {
+        text: String,
+    },
+    Status {
+        phase: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        operator_message: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        debug_message: Option<String>,
+    },
+    Progress {
+        message: String,
+        #[serde(default)]
+        tool_names: Vec<String>,
+    },
+    ModelReceipt {
+        provider: String,
+        model: String,
+    },
+    WorkerAck {
+        ack_kind: WorkerAckKind,
+        text: String,
+        #[serde(default)]
+        tool_names: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        work_id: Option<String>,
+    },
+    WorkerSynthesis {
+        text: String,
+        #[serde(default)]
+        tool_names: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        work_id: Option<String>,
+    },
+    Error {
+        operator_message: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        debug_message: Option<String>,
+    },
+    ToolStarted {
+        tool_run_id: String,
+        tool_name: String,
+        input_summary: String,
+        #[serde(default)]
+        input_params: Vec<ToolInputParam>,
+        tool_round: usize,
+    },
+    ToolFinished {
+        tool_run_id: String,
+        tool_name: String,
+        status: String,
+        input_summary: String,
+        #[serde(default)]
+        input_params: Vec<ToolInputParam>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        output_summary: Option<String>,
+        tool_round: usize,
+        #[serde(default)]
+        artifact_refs: Vec<StreamToolArtifactRef>,
+    },
+    ArtifactPresented {
+        artifact: StreamUiArtifact,
+    },
+    ArtifactUpdated {
+        previous_artifact_id: String,
+        artifact: StreamUiArtifact,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        root_artifact_id: Option<String>,
+    },
+    UiScene {
+        scene: StreamUiScene,
+    },
+    BudgetApprovalRequired {
+        request_id: String,
+        rounds_executed: usize,
+        max_tool_rounds: usize,
+        requested_rounds: usize,
+        reason: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        progress_summary: Option<String>,
+    },
+    BrowserChallenge {
+        session_id: String,
+        challenge_url: String,
+        reason: String,
+    },
+    BrowserNavigated {
+        url: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        #[serde(default)]
+        opened_by_agent: bool,
+    },
+    ContextUsage {
+        report: ContextUsageReport,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        operator_summary: Option<String>,
+    },
+    PermissionRequest {
+        request_id: String,
+        message: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent_session_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent_runtime: Option<String>,
+    },
+    /// Trusted UI prompt for credential material. This event carries request
+    /// metadata only; the value travels over the dedicated fulfill endpoint.
+    SecretRequest {
+        request_id: String,
+        label: String,
+        reason: String,
+        provider_type: String,
+        credential_key: String,
+        backend: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        allowed_hosts: Vec<String>,
+    },
+    TurnCompleted {
+        outcome: TurnCompletionOutcomeV3,
+        aggregate_text: String,
+        #[serde(default)]
+        tool_names: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        operator_message: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        debug_message: Option<String>,
+    },
+}
+
+impl TurnStreamEventV3 {
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, Self::TurnCompleted { .. })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -453,5 +684,178 @@ mod tests {
             "event": { "type": "future_event" }
         });
         assert!(serde_json::from_value::<TurnStreamEnvelopeV2>(unknown).is_err());
+    }
+
+    #[test]
+    fn v3_chronology_roundtrips_with_one_typed_terminal_event() {
+        let events = vec![
+            TurnStreamEventV3::AssistantTextStarted {
+                segment_id: "segment-1".into(),
+                model_round: 1,
+            },
+            TurnStreamEventV3::ContentAppend {
+                segment_id: "segment-1".into(),
+                text: "Let me check.".into(),
+            },
+            TurnStreamEventV3::AssistantTextCommitted {
+                segment_id: "segment-1".into(),
+            },
+            TurnStreamEventV3::ToolStarted {
+                tool_run_id: "run-1".into(),
+                tool_name: "search".into(),
+                input_summary: "query".into(),
+                input_params: Vec::new(),
+                tool_round: 1,
+            },
+            TurnStreamEventV3::ToolFinished {
+                tool_run_id: "run-1".into(),
+                tool_name: "search".into(),
+                status: "ok".into(),
+                input_summary: "query".into(),
+                input_params: Vec::new(),
+                output_summary: Some("found".into()),
+                tool_round: 1,
+                artifact_refs: Vec::new(),
+            },
+            TurnStreamEventV3::AssistantTextStarted {
+                segment_id: "segment-2".into(),
+                model_round: 2,
+            },
+            TurnStreamEventV3::ContentAppend {
+                segment_id: "segment-2".into(),
+                text: "Found it.".into(),
+            },
+            TurnStreamEventV3::AssistantTextCommitted {
+                segment_id: "segment-2".into(),
+            },
+            TurnStreamEventV3::TurnCompleted {
+                outcome: TurnCompletionOutcomeV3::Completed,
+                aggregate_text: "Let me check.\n\nFound it.".into(),
+                tool_names: vec!["search".into()],
+                operator_message: None,
+                debug_message: None,
+            },
+        ];
+
+        for (index, event) in events.into_iter().enumerate() {
+            let envelope =
+                TurnStreamEnvelopeV3::new("turn-1", index as u64 + 1, Utc::now(), event).unwrap();
+            let encoded = serde_json::to_value(&envelope).unwrap();
+            let decoded: TurnStreamEnvelopeV3 = serde_json::from_value(encoded.clone()).unwrap();
+            assert_eq!(serde_json::to_value(decoded).unwrap(), encoded);
+        }
+    }
+
+    #[test]
+    fn v3_rejects_v2_and_requires_segment_identity() {
+        let v2 = json!({
+            "schema_version": 2,
+            "turn_id": "turn-1",
+            "seq": 1,
+            "emitted_at_utc": Utc::now(),
+            "event": { "type": "content_append", "segment_id": "segment-1", "text": "a" }
+        });
+        assert!(serde_json::from_value::<TurnStreamEnvelopeV3>(v2).is_err());
+
+        let missing_segment = json!({
+            "schema_version": 3,
+            "turn_id": "turn-1",
+            "seq": 1,
+            "emitted_at_utc": Utc::now(),
+            "event": { "type": "content_append", "text": "a" }
+        });
+        assert!(serde_json::from_value::<TurnStreamEnvelopeV3>(missing_segment).is_err());
+    }
+
+    #[test]
+    fn v3_error_is_not_terminal_until_turn_completed() {
+        assert!(
+            !TurnStreamEventV3::Error {
+                operator_message: "failed".into(),
+                debug_message: None,
+            }
+            .is_terminal()
+        );
+        assert!(
+            TurnStreamEventV3::TurnCompleted {
+                outcome: TurnCompletionOutcomeV3::Failed,
+                aggregate_text: "partial answer".into(),
+                tool_names: Vec::new(),
+                operator_message: Some("turn failed".into()),
+                debug_message: None,
+            }
+            .is_terminal()
+        );
+    }
+
+    #[test]
+    fn v3_preserves_honest_v2_tool_and_terminal_fields() {
+        let started = serde_json::to_value(TurnStreamEventV3::ToolStarted {
+            tool_run_id: "run-1".into(),
+            tool_name: "search".into(),
+            input_summary: "query".into(),
+            input_params: Vec::new(),
+            tool_round: 2,
+        })
+        .unwrap();
+        assert_eq!(started["tool_round"], 2);
+        assert!(started.get("model_round").is_none());
+
+        let completed = serde_json::to_value(TurnStreamEventV3::TurnCompleted {
+            outcome: TurnCompletionOutcomeV3::Completed,
+            aggregate_text: "done".into(),
+            tool_names: vec!["search".into()],
+            operator_message: None,
+            debug_message: None,
+        })
+        .unwrap();
+        assert_eq!(completed["tool_names"], json!(["search"]));
+    }
+
+    #[test]
+    fn v3_replay_suffix_does_not_require_a_contiguous_sequence_or_prior_fold() {
+        let suffix = [
+            TurnStreamEnvelopeV3::new(
+                "turn-1",
+                41,
+                Utc::now(),
+                TurnStreamEventV3::ContentAppend {
+                    segment_id: "segment-created-before-cursor".into(),
+                    text: "remaining delta".into(),
+                },
+            )
+            .unwrap(),
+            TurnStreamEnvelopeV3::new(
+                "turn-1",
+                45,
+                Utc::now(),
+                TurnStreamEventV3::ToolFinished {
+                    tool_run_id: "run-created-before-cursor".into(),
+                    tool_name: "search".into(),
+                    status: "succeeded".into(),
+                    input_summary: "query".into(),
+                    input_params: Vec::new(),
+                    output_summary: Some("found".into()),
+                    tool_round: 2,
+                    artifact_refs: Vec::new(),
+                },
+            )
+            .unwrap(),
+        ];
+
+        assert_eq!(
+            suffix.iter().map(|event| event.seq).collect::<Vec<_>>(),
+            [41, 45]
+        );
+        assert!(matches!(
+            &suffix[0].event,
+            TurnStreamEventV3::ContentAppend { segment_id, .. }
+                if segment_id == "segment-created-before-cursor"
+        ));
+        assert!(matches!(
+            &suffix[1].event,
+            TurnStreamEventV3::ToolFinished { tool_run_id, .. }
+                if tool_run_id == "run-created-before-cursor"
+        ));
     }
 }

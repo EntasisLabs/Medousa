@@ -420,7 +420,11 @@ Gate:
 Work:
 
 - treat suspend as loss of execution time, not loss of durable state;
-- cancel or checkpoint live leaves within a bounded background deadline;
+- leave live turns under runtime/OS ownership when Home backgrounds; app
+  lifecycle must not synthesize cancellation or checkpoint outcomes;
+- let process suspension pause/resume the live owner naturally; after process
+  termination, use existing Stasis lease recovery for durable work and the
+  existing turn journal for idempotent timeline reattachment;
 - on wake/restart, run the existing Stasis recovery and schedule reconciliation
   path before admitting conflicting work;
 - define and test catch-up/coalescing behavior using Stasis policies rather than
