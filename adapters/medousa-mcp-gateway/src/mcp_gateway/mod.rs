@@ -3,6 +3,7 @@
 mod auth;
 pub mod catalog;
 pub mod config;
+pub mod oauth;
 pub mod policy_client;
 pub mod registry;
 mod remote_client;
@@ -14,6 +15,10 @@ pub use auth::{verify_admin_bearer, verify_gateway_bearer, verify_policy_bearer}
 pub use catalog::{discover_from_catalog, mock_catalog_sync_response, mock_tool_catalog};
 pub use config::{
     resolve_mcp_gateway_admin_token, resolve_mcp_gateway_token, resolve_mcp_policy_token,
+};
+pub use oauth::{
+    McpOAuthBeginRequest, McpOAuthBroker, McpOAuthBundleStore, McpOAuthError,
+    SecureMcpOAuthBundleStore,
 };
 pub use policy_client::McpPolicyEvaluator;
 pub use registry::ServerRegistry;

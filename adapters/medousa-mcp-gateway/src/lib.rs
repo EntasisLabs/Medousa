@@ -13,6 +13,7 @@ pub use mcp_gateway::starter_config::{
     STARTER_MCP_GATEWAY_TOML, install_starter_gateway_config_if_missing,
 };
 pub use mcp_gateway::{
-    GatewayState, McpPolicyEvaluator, ServerRegistry, build_router, serve, verify_admin_bearer,
-    verify_gateway_bearer, verify_policy_bearer,
+    GatewayState, McpOAuthBeginRequest, McpOAuthBroker, McpOAuthBundleStore, McpOAuthError,
+    McpPolicyEvaluator, SecureMcpOAuthBundleStore, ServerRegistry, build_router, serve,
+    verify_admin_bearer, verify_gateway_bearer, verify_policy_bearer,
 };

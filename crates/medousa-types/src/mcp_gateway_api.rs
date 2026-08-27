@@ -158,6 +158,39 @@ pub struct McpServersResponse {
     pub servers: Vec<McpServerSummary>,
 }
 
+/// Secret-free connection state for one remote MCP server's OAuth grant.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct McpOAuthStatusResponse {
+    pub server_id: String,
+    pub status: String,
+    pub connected: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issuer: Option<String>,
+    #[serde(default)]
+    pub scopes: Vec<String>,
+}
+
+/// Browser handoff produced when an MCP OAuth authorization begins.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BeginMcpOAuthResponse {
+    pub server_id: String,
+    pub login_id: String,
+    pub authorization_url: String,
+}
+
+/// Result of exchanging an MCP OAuth browser callback for credentials.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CompleteMcpOAuthResponse {
+    pub connection: McpOAuthStatusResponse,
+}
+
+/// Result of dropping one MCP server's locally held OAuth grant.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DisconnectMcpOAuthResponse {
+    pub server_id: String,
+    pub disconnected: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpGatewayHealthResponse {
     pub status: String,
