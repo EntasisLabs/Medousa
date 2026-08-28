@@ -1,44 +1,19 @@
-//! Remote execution adapter for the canonical workshop worker command.
+//! Bound-remote execution adapter for the canonical workshop tools.
 
 use std::sync::Arc;
 
-use schemars::JsonSchema;
-use serde::Deserialize;
+use async_trait::async_trait;
 use serde_json::{Value, json};
 
 use crate::delegation::DelegationService;
-use crate::public_api::COGNITION_WORKSHOP_MUTATE;
-use crate::schema_api::{advertised_object_schema, string_enum_schema};
-use crate::typed_tools::{ExternalJson, ToolId, ToolRegistration, medousa_tool};
+use crate::workshop_api::{
+    WorkshopCancel, WorkshopExecution, WorkshopStatus, WorkshopSteer,
+    register_workshop_execution_tools,
+};
 use crate::workshop_contract::WorkshopSpawn;
 
-const WORKSHOP_MUTATE_ID: ToolId = ToolId::new(COGNITION_WORKSHOP_MUTATE);
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "action")]
-pub enum RemoteWorkshopMutateAction {
-    #[serde(rename = "workshop.spawn")]
-    Spawn(WorkshopSpawn),
-}
-
-impl JsonSchema for RemoteWorkshopMutateAction {
-    fn schema_name() -> String {
-        "RemoteWorkshopMutateAction".to_string()
-    }
-
-    fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
-        advertised_object_schema(&[("action", string_enum_schema(&["workshop.spawn"]), true)])
-    }
-}
-
-pub struct RemoteWorkshopMutateTool {
+struct RemoteWorkshopExecution {
     service: Arc<DelegationService>,
-}
-
-impl RemoteWorkshopMutateTool {
-    pub fn new(service: Arc<DelegationService>) -> Self {
-        Self { service }
-    }
 }
 
 fn remote_spawn_intent(spawn: &WorkshopSpawn) -> stasis::prelude::Result<&str> {
@@ -73,57 +48,57 @@ fn reject_unsupported_remote_hints(spawn: &WorkshopSpawn) -> stasis::prelude::Re
     Ok(())
 }
 
-fn remote_work_id(result: &Value) -> Option<&str> {
-    result
-        .get("execution")
-        .and_then(|execution| execution.get("executionId"))
-        .and_then(Value::as_str)
-}
+#[async_trait]
+impl WorkshopExecution for RemoteWorkshopExecution {
+    async fn status(&self, input: WorkshopStatus) -> stasis::prelude::Result<Value> {
+        self.service
+            .status(input.work_id.as_deref(), input.session_id.as_deref())
+            .await
+    }
 
-#[medousa_tool(id = WORKSHOP_MUTATE_ID)]
-impl RemoteWorkshopMutateTool {
-    /// Start worker execution on the explicitly bound remote workshop. Use action=workshop.spawn. The bound peer is selected by daemon policy, never by model input.
-    async fn invoke_typed(
-        &self,
-        action: RemoteWorkshopMutateAction,
-    ) -> stasis::prelude::Result<ExternalJson> {
-        let RemoteWorkshopMutateAction::Spawn(spawn) = action;
-        let intent = remote_spawn_intent(&spawn)?;
+    async fn spawn(&self, spawn: WorkshopSpawn) -> stasis::prelude::Result<Value> {
+        let intent = remote_spawn_intent(&spawn)?.to_string();
         reject_unsupported_remote_hints(&spawn)?;
-        let result = self.service.delegate(&spawn.task).await?;
-        Ok(ExternalJson::new(json!({
+        let ticket = self
+            .service
+            .submit(&spawn.task, &spawn.user_ack, &intent)
+            .await?;
+        Ok(json!({
             "ok": true,
             "worker_spawned": true,
             "execution_target": "bound_remote",
-            "work_id": remote_work_id(&result),
+            "work_id": ticket.work_id,
+            "stasis_job_id": ticket.job_id,
             "intent": intent,
-            "status": "completed",
+            "status": ticket.status,
             "user_ack": spawn.user_ack,
-            "result": result,
-        })))
+            "message": "Remote worker admitted on the durable workshop bus.",
+        }))
+    }
+
+    async fn cancel(&self, input: WorkshopCancel) -> stasis::prelude::Result<Value> {
+        self.service.cancel(&input.work_id).await
+    }
+
+    async fn steer(&self, input: WorkshopSteer) -> stasis::prelude::Result<Value> {
+        let _requested_generation = input.work_id;
+        let _guidance = input.message;
+        Err(stasis::domain::errors::StasisError::PortFailure(
+            "the bound remote workshop does not support steering yet".to_string(),
+        ))
     }
 }
 
 pub fn register_remote_workshop_tools(
-    registry: &mut impl ToolRegistration,
+    registry: &mut impl crate::typed_tools::ToolRegistration,
     service: Arc<DelegationService>,
 ) -> stasis::prelude::Result<()> {
-    registry.register_typed_tool(RemoteWorkshopMutateTool::new(service))
+    register_workshop_execution_tools(registry, Arc::new(RemoteWorkshopExecution { service }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn remote_workshop_schema_only_advertises_spawn() {
-        let schema = serde_json::to_value(schemars::schema_for!(RemoteWorkshopMutateAction))
-            .expect("schema");
-        assert_eq!(
-            schema["properties"]["action"]["enum"],
-            json!(["workshop.spawn"])
-        );
-    }
 
     #[test]
     fn remote_spawn_rejects_unavailable_execution_profiles() {

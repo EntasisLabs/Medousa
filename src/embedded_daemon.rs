@@ -49,6 +49,7 @@ use medousa_types::session::{ConversationTurn, SessionHistorySummary, Transcript
 use medousa_types::turn_stream::TurnStreamEventV2;
 use medousa_types::turn_stream::{
     TurnCompletionOutcomeV3, TurnStreamEnvelopeV2, TurnStreamEnvelopeV3, TurnStreamEventV3,
+    WorkerAckKind,
 };
 use medousa_types::turn_ticket::{TurnTicket, TurnTicketMode, TurnTicketPhase};
 use medousa_types::{
@@ -126,6 +127,93 @@ const STREAM_DELTA_CAPACITY: usize = 128;
 const EMBEDDED_RUNTIME_EVENT_CAPACITY: usize = 64;
 const EMBEDDED_TOOL_PARAM_LIMIT: usize = 6;
 const EMBEDDED_TOOL_VALUE_CHARS: usize = 120;
+
+struct EmbeddedDelegationCompletionSink {
+    turn_streams: TurnStreamRegistry,
+    turn_stream_port: TurnStreamRegistryPortAdapter,
+    turn_tickets: TurnTicketRegistry,
+}
+
+#[async_trait::async_trait]
+impl crate::delegation::DelegationCompletionSink for EmbeddedDelegationCompletionSink {
+    async fn deliver(&self, event: crate::delegation::DelegationCompletionEvent) -> Result<()> {
+        let Some(stream) = self
+            .turn_streams
+            .read()
+            .await
+            .get(&event.source_turn_id)
+            .cloned()
+        else {
+            return Ok(());
+        };
+        if stream.log.is_committed() {
+            return Ok(());
+        }
+        let pipeline = TurnPipelineHandle::spawn(
+            &event.source_turn_id,
+            stream.log.replay_fence(),
+            daemon_turn_pipeline_budget(),
+            Arc::new(TurnJournalOutput::new(
+                stream.channel.clone(),
+                stream.log.clone(),
+            )),
+        );
+        let chronological = EmbeddedChronologicalTurn::new(&event.source_turn_id, pipeline);
+        let outcome = match event.status {
+            stasis::domain::agent::turn_wait::TurnWaitStatus::Completed => {
+                chronological
+                    .publish(TurnStreamEventV3::WorkerSynthesis {
+                        text: event.text.clone(),
+                        tool_names: event.tool_names.clone(),
+                        work_id: Some(event.work_id.clone()),
+                    })
+                    .await?;
+                TurnCompletionOutcomeV3::Completed
+            }
+            stasis::domain::agent::turn_wait::TurnWaitStatus::Cancelled => {
+                chronological
+                    .publish(TurnStreamEventV3::Error {
+                        operator_message: event.text.clone(),
+                        debug_message: None,
+                    })
+                    .await?;
+                TurnCompletionOutcomeV3::Cancelled
+            }
+            stasis::domain::agent::turn_wait::TurnWaitStatus::Failed
+            | stasis::domain::agent::turn_wait::TurnWaitStatus::TimedOut => {
+                chronological
+                    .publish(TurnStreamEventV3::Error {
+                        operator_message: event.text.clone(),
+                        debug_message: None,
+                    })
+                    .await?;
+                TurnCompletionOutcomeV3::Failed
+            }
+            stasis::domain::agent::turn_wait::TurnWaitStatus::Pending => return Ok(()),
+        };
+        chronological
+            .publish(TurnStreamEventV3::TurnCompleted {
+                outcome,
+                aggregate_text: event.text,
+                tool_names: event.tool_names,
+                operator_message: None,
+                debug_message: None,
+            })
+            .await?;
+        note_stream_event(
+            &self.turn_tickets,
+            &event.source_turn_id,
+            "turn_completed",
+            embedded_ticket_phase(outcome),
+            true,
+        )
+        .await;
+        self.turn_stream_port
+            .mark_stream_closed(&event.source_turn_id)
+            .await;
+        Ok(())
+    }
+}
 
 fn embedded_system_prompt() -> String {
     static PROMPT: OnceLock<String> = OnceLock::new();
@@ -1249,6 +1337,9 @@ impl EmbeddedDaemon {
             memory_reader.clone(),
         );
         let runtime = Arc::new(runtime);
+        let turn_streams = new_turn_stream_registry();
+        let turn_stream_port = TurnStreamRegistryPortAdapter::new(turn_streams.clone());
+        let turn_tickets = new_registry();
         let delegation_service = config
             .delegated_task_transport
             .clone()
@@ -1262,6 +1353,13 @@ impl EmbeddedDaemon {
             })
             .transpose()
             .context("install embedded delegation runtime")?;
+        if let Some(service) = delegation_service.as_ref() {
+            service.set_completion_sink(Arc::new(EmbeddedDelegationCompletionSink {
+                turn_streams: turn_streams.clone(),
+                turn_stream_port: turn_stream_port.clone(),
+                turn_tickets: turn_tickets.clone(),
+            }));
+        }
         let mcp_config = Arc::new(
             medousa_mcp_gateway::McpGatewayFullConfig::from_env_and_args(&[]).remote_only(),
         );
@@ -1357,8 +1455,6 @@ impl EmbeddedDaemon {
             );
         }
 
-        let turn_streams = new_turn_stream_registry();
-        let turn_stream_port = TurnStreamRegistryPortAdapter::new(turn_streams.clone());
         let local_credential_id: Arc<str> = Arc::from(format!(
             "embedded-home:{}",
             config.installation_id.storage_key().as_str()
@@ -1372,7 +1468,7 @@ impl EmbeddedDaemon {
             },
         };
 
-        Ok(Arc::new(Self {
+        let daemon = Arc::new(Self {
             root,
             environment_hub,
             authority_id,
@@ -1393,14 +1489,21 @@ impl EmbeddedDaemon {
             cluster_node,
             turn_streams,
             turn_stream_port,
-            turn_tickets: new_registry(),
+            turn_tickets,
             executions: TurnExecutionRegistry::new(config.max_live_turns),
             foreground_turn_timeout: config.foreground_turn_timeout,
             backgrounded: AtomicBool::new(false),
             lifecycle_epoch: AtomicU64::new(0),
             recovery_lock: AsyncMutex::new(()),
-            delegation_service,
-        }))
+            delegation_service: delegation_service.clone(),
+        });
+        if let Some(service) = delegation_service {
+            service
+                .resume_pending()
+                .await
+                .context("resume embedded delegation drivers")?;
+        }
+        Ok(daemon)
     }
 
     pub fn root(&self) -> &Path {
@@ -1470,6 +1573,12 @@ impl EmbeddedDaemon {
         )
         .await
         .context("reconcile embedded Stasis work after wake")?;
+        if let Some(service) = self.delegation_service.as_ref() {
+            service
+                .resume_pending()
+                .await
+                .context("resume embedded delegation drivers after wake")?;
+        }
         if lifecycle_epoch == self.lifecycle_epoch.load(Ordering::Acquire) {
             self.backgrounded.store(false, Ordering::Release);
         }
@@ -1658,15 +1767,22 @@ impl EmbeddedDaemon {
                     }
                     result = &mut execution => {
                         break match result {
-                            Ok(response) => ForegroundOutcome::Completed {
-                                text: response.text,
-                                tool_names: response
-                                    .tool_invocations
-                                    .into_iter()
-                                    .map(|invocation| invocation.tool_name)
-                                    .collect(),
-                                termination_reason: response.termination_reason,
-                            },
+                            Ok(response) => {
+                                let worker_work_id = medousa_runtime::turn_control::worker_spawn_from_invocations(
+                                    &response.tool_invocations,
+                                )
+                                .map(|(work_id, _)| work_id);
+                                ForegroundOutcome::Completed {
+                                    text: response.text,
+                                    tool_names: response
+                                        .tool_invocations
+                                        .into_iter()
+                                        .map(|invocation| invocation.tool_name)
+                                        .collect(),
+                                    termination_reason: response.termination_reason,
+                                    worker_work_id,
+                                }
+                            }
                             Err(error) => ForegroundOutcome::Failed(error.to_string()),
                         };
                     }
@@ -1689,11 +1805,13 @@ impl EmbeddedDaemon {
             }
         }
 
+        let mut keep_stream_open = false;
         match outcome {
             ForegroundOutcome::Completed {
                 text,
                 tool_names,
                 termination_reason,
+                worker_work_id,
             } => {
                 let completion_outcome = embedded_completion_outcome(&termination_reason);
                 let answer_state = embedded_answer_state(completion_outcome);
@@ -1717,6 +1835,30 @@ impl EmbeddedDaemon {
                     tool_names.clone(),
                     answer_state.map(str::to_string),
                 );
+                let handoff_work_id = (termination_reason == "worker_spawned")
+                    .then_some(worker_work_id)
+                    .flatten();
+                if let Some(work_id) = handoff_work_id.as_ref() {
+                    keep_stream_open = chronological
+                        .publish(TurnStreamEventV3::WorkerAck {
+                            ack_kind: WorkerAckKind::Worker,
+                            text: body.clone(),
+                            tool_names: tool_names.clone(),
+                            work_id: Some(work_id.clone()),
+                        })
+                        .await
+                        .is_ok();
+                    if keep_stream_open {
+                        note_stream_event(
+                            &self.turn_tickets,
+                            &turn_id,
+                            "worker_ack",
+                            "worker_ack",
+                            false,
+                        )
+                        .await;
+                    }
+                }
                 match self
                     .session_store
                     .append_transcript_batch(
@@ -1729,16 +1871,17 @@ impl EmbeddedDaemon {
                     .await
                 {
                     Ok(_) => {
-                        if chronological
-                            .publish(TurnStreamEventV3::TurnCompleted {
-                                outcome: completion_outcome,
-                                aggregate_text: body,
-                                tool_names,
-                                operator_message: None,
-                                debug_message: None,
-                            })
-                            .await
-                            .is_ok()
+                        if handoff_work_id.is_none()
+                            && chronological
+                                .publish(TurnStreamEventV3::TurnCompleted {
+                                    outcome: completion_outcome,
+                                    aggregate_text: body,
+                                    tool_names,
+                                    operator_message: None,
+                                    debug_message: None,
+                                })
+                                .await
+                                .is_ok()
                         {
                             note_stream_event(
                                 &self.turn_tickets,
@@ -1751,6 +1894,7 @@ impl EmbeddedDaemon {
                         }
                     }
                     Err(error) => {
+                        keep_stream_open = false;
                         self.finish_with_error(
                             &turn_id,
                             &chronological,
@@ -1798,7 +1942,9 @@ impl EmbeddedDaemon {
             }
         }
 
-        self.turn_stream_port.mark_stream_closed(&turn_id).await;
+        if !keep_stream_open {
+            self.turn_stream_port.mark_stream_closed(&turn_id).await;
+        }
         drop(lease);
     }
 
@@ -1861,6 +2007,7 @@ enum ForegroundOutcome {
         text: String,
         tool_names: Vec<String>,
         termination_reason: String,
+        worker_work_id: Option<String>,
     },
     Cancelled,
     Failed(String),
