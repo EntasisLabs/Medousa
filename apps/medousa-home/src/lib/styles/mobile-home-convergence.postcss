@@ -436,22 +436,77 @@
   color: rgb(var(--theme-text-secondary));
 }
 
-.mobile-notes-filter-seg {
-  @apply min-h-11 min-w-0 flex-1 rounded-lg px-3 py-2 text-sm font-medium transition;
+.mobile-notes-filter-sheet {
+  width: 100%;
+  max-height: min(82dvh, 44rem);
+}
+
+.mobile-notes-filter-body {
+  @apply space-y-5 px-5 pb-5 pt-2;
+}
+
+.mobile-notes-filter-section-title {
+  @apply mb-2 px-1 text-[11px] font-semibold uppercase leading-[14px] tracking-[0.12em];
+  color: rgb(var(--theme-text-quiet));
+}
+
+.mobile-notes-library-switch {
+  @apply flex gap-1 rounded-2xl border p-1;
+  border-color: rgb(var(--color-surface-600) / 0.28);
+  background: rgb(var(--color-surface-800) / 0.6);
+}
+
+.mobile-notes-library-option {
+  @apply min-h-11 min-w-0 flex-1 rounded-xl px-3 py-2 text-sm font-medium transition;
   color: rgb(var(--theme-text-tertiary));
 }
 
-.mobile-notes-filter-seg-active {
-  @apply bg-surface-800 text-surface-50;
+.mobile-notes-library-option-active {
+  @apply text-surface-50;
+  background: rgb(var(--color-surface-700) / 0.7);
+  box-shadow: inset 0 0 0 1px rgb(var(--color-surface-500) / 0.24);
 }
 
-.mobile-notes-filter-chip {
-  @apply inline-flex min-h-11 shrink-0 items-center gap-1 rounded-full border border-surface-500/40 bg-surface-800/60 px-3 text-xs font-medium transition;
+.mobile-notes-space-options {
+  @apply flex flex-wrap gap-2;
+}
+
+.mobile-notes-space-option {
+  @apply inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border px-3 text-[13px] font-medium transition active:bg-surface-700/70;
+  border-color: rgb(var(--color-surface-600) / 0.3);
+  background: rgb(var(--color-surface-800) / 0.58);
   color: rgb(var(--theme-text-secondary));
 }
 
-.mobile-notes-filter-chip-active {
-  @apply border-primary-500/50 bg-primary-500/15 text-primary-200;
+.mobile-notes-space-option-active {
+  border-color: rgb(var(--color-primary-500) / 0.42);
+  background: rgb(var(--color-primary-500) / 0.13);
+  color: rgb(var(--color-primary-200));
+}
+
+.mobile-notes-space-count {
+  @apply tabular-nums;
+  color: rgb(var(--theme-text-quiet));
+}
+
+.mobile-notes-space-check {
+  @apply shrink-0;
+  color: rgb(var(--color-primary-300));
+}
+
+.mobile-notes-view-row {
+  min-height: 3.85rem;
+  padding-inline: 1rem;
+  padding-block: 0.65rem;
+}
+
+.mobile-notes-view-row-active {
+  background: rgb(var(--color-surface-700) / 0.24);
+}
+
+.mobile-notes-view-icon {
+  @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-content-tertiary;
+  background: rgb(var(--color-surface-900) / 0.58);
 }
 
 .mobile-notes-filter-row {
