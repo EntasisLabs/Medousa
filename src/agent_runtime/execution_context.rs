@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -88,6 +89,7 @@ pub struct TurnExecutionContext {
     deadline: Instant,
     legacy_scope: Arc<TurnContinuationScope>,
     work_environment: Option<medousa_runtime::WorkEnvironmentBinding>,
+    work_environment_operation_sequence: AtomicU64,
     last_grapheme_source: Mutex<Option<Arc<str>>>,
     tasks: Arc<TurnTaskGroup>,
 }
@@ -118,6 +120,7 @@ impl TurnExecutionContext {
             deadline,
             legacy_scope: Arc::new(legacy_scope),
             work_environment: None,
+            work_environment_operation_sequence: AtomicU64::new(0),
             last_grapheme_source: Mutex::new(None),
             tasks,
         }
@@ -204,6 +207,14 @@ impl TurnExecutionContext {
 
     pub fn work_environment(&self) -> Option<&medousa_runtime::WorkEnvironmentBinding> {
         self.work_environment.as_ref()
+    }
+
+    pub fn next_work_environment_operation_id(&self, tool_name: &str) -> String {
+        let sequence = self
+            .work_environment_operation_sequence
+            .fetch_add(1, Ordering::Relaxed)
+            .saturating_add(1);
+        format!("{}:{tool_name}:{sequence}", self.handle)
     }
 
     pub fn remember_grapheme_source(&self, source: &str) {

@@ -1859,7 +1859,8 @@ impl CoderBoundToolRegistry {
                 _ => {}
             }
         } else if crate::code_intelligence_tools::is_code_cognition_tool(tool_name) {
-            self.validate_lsp_uri(map.get("uri"))?;
+            let uri = self.bind_lsp_uri(map.get("uri"))?;
+            map.insert("uri".into(), Value::String(uri));
             reject_mismatched_string(map.get("work_id"), &self.entry.work_id, "work_id")?;
             let authority = self.authority()?;
             reject_mismatched_string(
@@ -1984,7 +1985,7 @@ impl CoderBoundToolRegistry {
         Ok(())
     }
 
-    fn validate_lsp_uri(&self, value: Option<&Value>) -> Result<()> {
+    fn bind_lsp_uri(&self, value: Option<&Value>) -> Result<String> {
         let uri = value.and_then(Value::as_str).ok_or_else(|| {
             StasisError::PortFailure("uri is required for Coder language intelligence".into())
         })?;
@@ -1993,6 +1994,32 @@ impl CoderBoundToolRegistry {
         let path = url.to_file_path().map_err(|_| {
             StasisError::PortFailure("Coder language intelligence requires a file:// URI".into())
         })?;
+        let environment_bound =
+            crate::agent_runtime::execution_context::active_turn_execution_context()
+                .and_then(|context| context.work_environment().cloned())
+                .is_some();
+        if environment_bound && path.starts_with(medousa_runtime::WORK_ENVIRONMENT_WORKSPACE_ROOT) {
+            let relative = path
+                .strip_prefix(medousa_runtime::WORK_ENVIRONMENT_WORKSPACE_ROOT)
+                .map_err(|_| {
+                    StasisError::PortFailure(
+                        "LSP path escapes the bound work environment".to_string(),
+                    )
+                })?;
+            if relative.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir
+                        | std::path::Component::RootDir
+                        | std::path::Component::Prefix(_)
+                )
+            }) {
+                return Err(StasisError::PortFailure(
+                    "LSP path escapes the bound work environment".to_string(),
+                ));
+            }
+            return Ok(uri.to_string());
+        }
         let canonical = path
             .canonicalize()
             .map_err(|err| StasisError::PortFailure(format!("cannot resolve LSP path: {err}")))?;
@@ -2001,7 +2028,21 @@ impl CoderBoundToolRegistry {
                 "LSP path escapes the governed Coder worktree".into(),
             ));
         }
-        Ok(())
+        if !environment_bound {
+            return Ok(uri.to_string());
+        }
+        let relative = canonical.strip_prefix(&self.entry.worktree).map_err(|_| {
+            StasisError::PortFailure("LSP path escapes the governed Coder worktree".into())
+        })?;
+        let environment_path =
+            std::path::Path::new(medousa_runtime::WORK_ENVIRONMENT_WORKSPACE_ROOT).join(relative);
+        reqwest::Url::from_file_path(environment_path)
+            .map(|url| url.to_string())
+            .map_err(|_| {
+                StasisError::PortFailure(
+                    "cannot encode bound work-environment LSP path".to_string(),
+                )
+            })
     }
 
     async fn validate_shell_session(&self, tool_name: &str, input: &Value) -> Result<()> {

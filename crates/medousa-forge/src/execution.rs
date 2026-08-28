@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use tokio::io::AsyncWriteExt;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::error::{ForgeError, Result};
@@ -645,8 +646,9 @@ async fn terminate_and_reap(child: &mut tokio::process::Child) {
     let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
 }
 
-async fn supervise_child(
+async fn supervise_child_with_input(
     command: &mut tokio::process::Command,
+    input: Option<Vec<u8>>,
     timeout: Duration,
     max_output: usize,
 ) -> Result<(Vec<u8>, Vec<u8>, bool, std::process::ExitStatus)> {
@@ -654,10 +656,26 @@ async fn supervise_child(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
+    if input.is_some() {
+        command.stdin(std::process::Stdio::piped());
+    }
     configure_supervised_command(command);
     let mut child = command
         .spawn()
         .map_err(|err| ForgeError::Command(format!("failed to spawn command: {err}")))?;
+    let stdin_task = match input {
+        Some(input) => {
+            let mut stdin = child
+                .stdin
+                .take()
+                .ok_or_else(|| ForgeError::Command("command stdin was unavailable".to_string()))?;
+            Some(tokio::spawn(async move {
+                stdin.write_all(&input).await?;
+                stdin.shutdown().await
+            }))
+        }
+        None => None,
+    };
     let stdout = child
         .stdout
         .take()
@@ -673,20 +691,40 @@ async fn supervise_child(
     let status = match tokio::time::timeout(timeout, child.wait()).await {
         Ok(Ok(status)) => status,
         Ok(Err(err)) => {
+            if let Some(stdin_task) = stdin_task {
+                let _ = stdin_task.await;
+            }
             let _ = stdout_task.await;
             let _ = stderr_task.await;
             return Err(ForgeError::Command(format!("command wait failed: {err}")));
         }
         Err(_) => {
             terminate_and_reap(&mut child).await;
+            if let Some(stdin_task) = stdin_task {
+                let _ = stdin_task.await;
+            }
             let _ = stdout_task.await;
             let _ = stderr_task.await;
             return Err(ForgeError::Command("command timed out".into()));
         }
     };
+    if let Some(stdin_task) = stdin_task {
+        stdin_task
+            .await
+            .map_err(|err| ForgeError::Command(format!("command stdin task failed: {err}")))?
+            .map_err(|err| ForgeError::Command(format!("command stdin write failed: {err}")))?;
+    }
     let (stdout, stdout_trunc) = stdout_task.await.unwrap_or_else(|_| (Vec::new(), false));
     let (stderr, stderr_trunc) = stderr_task.await.unwrap_or_else(|_| (Vec::new(), false));
     Ok((stdout, stderr, stdout_trunc || stderr_trunc, status))
+}
+
+async fn supervise_child(
+    command: &mut tokio::process::Command,
+    timeout: Duration,
+    max_output: usize,
+) -> Result<(Vec<u8>, Vec<u8>, bool, std::process::ExitStatus)> {
+    supervise_child_with_input(command, None, timeout, max_output).await
 }
 
 /// Supervise a non-interactive child with timeout, bounded output, and
@@ -706,6 +744,26 @@ pub async fn supervise_command(
     }
     command.envs(environment);
     supervise_child(&mut command, timeout, max_output).await
+}
+
+/// Supervise a non-interactive child with bounded stdin, timeout, output caps,
+/// and process-tree termination.
+pub async fn supervise_command_with_input(
+    program: impl AsRef<Path>,
+    cwd: Option<std::path::PathBuf>,
+    args: Vec<String>,
+    environment: Vec<(String, String)>,
+    input: Vec<u8>,
+    timeout: Duration,
+    max_output: usize,
+) -> Result<(Vec<u8>, Vec<u8>, bool, std::process::ExitStatus)> {
+    let mut command = tokio::process::Command::new(program.as_ref());
+    command.args(args);
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
+    command.envs(environment);
+    supervise_child_with_input(&mut command, Some(input), timeout, max_output).await
 }
 
 /// Capture stdout/stderr from a spawned child with a hard byte bound.
@@ -940,6 +998,26 @@ mod tests {
         assert_eq!(value, 7);
         assert_eq!(service.queued_commands(), 0);
         assert_eq!(service.running_commands(), 0);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn supervised_command_streams_bounded_stdin() {
+        let (stdout, stderr, truncated, status) = supervise_command_with_input(
+            "/bin/sh",
+            None,
+            vec!["-c".into(), "cat".into()],
+            Vec::new(),
+            b"fenced input\n".to_vec(),
+            Duration::from_secs(5),
+            1024,
+        )
+        .await
+        .expect("supervised stdin");
+        assert!(status.success());
+        assert_eq!(stdout, b"fenced input\n");
+        assert!(stderr.is_empty());
+        assert!(!truncated);
     }
 
     #[tokio::test]

@@ -1339,6 +1339,13 @@ impl CognitionShellSessionStatusTool {
         &self,
         input: ShellSessionStatusInput,
     ) -> stasis::prelude::Result<ExternalJson> {
+        if crate::work_environment_tools::EnvironmentToolInvocation::active(
+            COGNITION_SHELL_SESSION_STATUS,
+        )
+        .is_some()
+        {
+            return Err(crate::work_environment_tools::pty_unavailable());
+        }
         let create = input.create.into_option().unwrap_or(false);
         let work_id = input.work_id.into_option();
         let lease_id = input.lease_id.into_option();
@@ -1448,6 +1455,13 @@ impl CognitionShellSessionRunTool {
         &self,
         input: ShellSessionRunInput,
     ) -> stasis::prelude::Result<ShellSessionRunOutput> {
+        if crate::work_environment_tools::EnvironmentToolInvocation::active(
+            COGNITION_SHELL_SESSION_RUN,
+        )
+        .is_some()
+        {
+            return Err(crate::work_environment_tools::pty_unavailable());
+        }
         let session_id_input = input.session_id.into_option();
         let work_id = input.work_id.into_option();
         let lease_id = input.lease_id.into_option();
@@ -1701,6 +1715,13 @@ impl CognitionShellSessionInterruptTool {
         &self,
         input: ShellSessionInterruptInput,
     ) -> stasis::prelude::Result<ExternalJson> {
+        if crate::work_environment_tools::EnvironmentToolInvocation::active(
+            COGNITION_SHELL_SESSION_INTERRUPT,
+        )
+        .is_some()
+        {
+            return Err(crate::work_environment_tools::pty_unavailable());
+        }
         let session_id = input.session_id.trim();
         if session_id.is_empty() {
             return Err(StasisError::PortFailure("session_id is required".into()));
@@ -1757,6 +1778,21 @@ impl CognitionCoderShellStatusTool {
         &self,
         input: CoderShellStatusInput,
     ) -> stasis::prelude::Result<CoderShellStatusOutput> {
+        if let Some(invocation) = crate::work_environment_tools::EnvironmentToolInvocation::active(
+            COGNITION_CODER_SHELL_STATUS,
+        ) {
+            let (ready, phase) = crate::work_environment_tools::status(&invocation).await?;
+            return Ok(CoderShellStatusOutput {
+                ok: ready,
+                surface: "work_environment".to_string(),
+                session_id: None,
+                session: ExternalJson::new(json!({
+                    "environment_id": invocation.binding().handle.environment_id(),
+                    "phase": format!("{phase:?}").to_ascii_lowercase(),
+                    "pty": false,
+                })),
+            });
+        }
         // Ensure a bound session exists so status reflects the undertaking Terminal.
         let work_id = input.work_id.into_option();
         let lease_id = input.lease_id.into_option();
@@ -1856,6 +1892,47 @@ impl CognitionCoderShellRunTool {
         let command = input.command.trim().to_string();
         if command.is_empty() {
             return Err(StasisError::PortFailure("command is required".into()));
+        }
+        if let Some(invocation) = crate::work_environment_tools::EnvironmentToolInvocation::active(
+            COGNITION_CODER_SHELL_RUN,
+        ) {
+            let wait_ms = input
+                .wait_ms
+                .as_ref()
+                .copied()
+                .unwrap_or(15_000)
+                .clamp(100, 15_000);
+            let result = crate::work_environment_tools::shell_exec(
+                &invocation,
+                "/bin/sh".to_string(),
+                vec!["-lc".to_string(), command.clone()],
+                None,
+                None,
+                wait_ms,
+                MAX_SHELL_OUTPUT_BYTES as u64,
+            )
+            .await?;
+            let mut output = result.stdout;
+            if !result.stderr.is_empty() {
+                if !output.is_empty() && !output.ends_with('\n') {
+                    output.push('\n');
+                }
+                output.push_str(&result.stderr);
+            }
+            return Ok(CoderShellRunOutput {
+                ok: result.exit_code == Some(0),
+                surface: "work_environment".to_string(),
+                session_id: invocation.binding().handle.environment_id().to_string(),
+                command,
+                output,
+                input_written: true,
+                next_sequence: 0,
+                replay_truncated: false,
+                output_truncated: result.output_truncated,
+                completed: result.exit_code.is_some(),
+                exit_code: result.exit_code,
+                interrupted: false,
+            });
         }
         let session_id_input = input.session_id.into_option();
         let work_id = input.work_id.into_option();

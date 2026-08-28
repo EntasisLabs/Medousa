@@ -18,6 +18,8 @@ use thiserror::Error;
 
 pub const OCI_WORK_ENVIRONMENT_CAPABILITY: &str = "work_environment.oci";
 pub const MAX_WORK_ENVIRONMENT_RETENTION: Duration = Duration::days(7);
+pub const WORK_ENVIRONMENT_WORKSPACE_ROOT: &str = "/workspace";
+pub const MAX_WORK_ENVIRONMENT_STDIN_BYTES: usize = 4 * 1024 * 1024;
 
 fn validate_identifier(name: &str, value: &str) -> Result<(), WorkEnvironmentError> {
     let value = value.trim();
@@ -440,6 +442,8 @@ pub struct WorkEnvironmentExecRequest {
     pub working_directory: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub environment: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stdin: Option<String>,
     pub timeout_seconds: u64,
     pub max_output_bytes: u64,
 }
@@ -758,6 +762,15 @@ impl WorkEnvironmentPort for InMemoryWorkEnvironmentPort {
                     "exec timeout and output bound must be greater than zero".to_string(),
                 ));
             }
+            if request
+                .stdin
+                .as_ref()
+                .is_some_and(|stdin| stdin.len() > MAX_WORK_ENVIRONMENT_STDIN_BYTES)
+            {
+                return Err(WorkEnvironmentError::InvalidSpec(format!(
+                    "exec stdin exceeds {MAX_WORK_ENVIRONMENT_STDIN_BYTES} bytes"
+                )));
+            }
             if let Some(working_directory) = request.working_directory.as_deref() {
                 validate_container_path(working_directory)?;
             }
@@ -944,6 +957,7 @@ mod tests {
             args: vec!["test".to_string()],
             working_directory: Some("/workspace".to_string()),
             environment: BTreeMap::new(),
+            stdin: None,
             timeout_seconds: 300,
             max_output_bytes: 1024 * 1024,
         }

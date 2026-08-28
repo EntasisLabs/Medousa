@@ -1,6 +1,6 @@
 # Daemon-owned OCI work environments
 
-> **Status:** Active implementation — Phase 2 complete, ready for Phase 3
+> **Status:** Active implementation — Phase 3 complete, ready for Phase 4
 >
 > **Date:** 2026-08-28
 >
@@ -474,6 +474,38 @@ network enforcement to their named later phases.
 **Exit:** the normal agent loop edits and verifies a repository whose toolchain
 exists only in the OCI image, with no OCI-specific tool catalog.
 
+**Landed boundary:** turn admission still binds one runtime-neutral
+`WorkEnvironmentBinding`; the existing code store, general shell, Coder shell,
+and code-intelligence tools now resolve that binding before selecting their
+host adapter. The catalog ids, schemas, placement metadata, mode surfaces, and
+tool FSM are unchanged. Filesystem paths are lexically confined to
+`/workspace`, host absolute paths and parent traversal fail closed, and no
+environment-bound operation falls back to the daemon host.
+
+`code.read`, `code.search`, and optimistic-digest `code.write` execute through
+the fenced environment port. Writes use bounded stdin and an atomic temporary
+file inside the workspace. General and Coder one-shot shell execution use the
+same port, so Git, builds, tests, package managers, and image-local toolchains
+need no separate OCI tool registrations. Mutating execution requires the
+active Stasis attempt plus both Forge generations. Every tool invocation gets
+a turn-scoped idempotency identity; the Docker adapter includes that identity
+and the complete fence in its durable receipt key.
+
+Code-intelligence URIs are rebound from the governed daemon-local worktree to
+`file:///workspace/...` and execute an image-provided `medousa-code query`
+adapter. Missing image support is explicit and never proxies to the host.
+Daemon-native model, memory, web, orchestration, federation, and UI operations
+remain outside the environment. Shared PTY tools likewise return an explicit
+unavailable result while attachment is deferred, rather than opening a host
+PTY.
+
+The real-engine conformance test now drives the production catalog adapters to
+write and read a source file and verify it with the environment shell inside a
+digest-pinned, deny-network Docker environment. Unit contracts prove path
+confinement, bounded stdin, complete Stasis/Forge fencing, image-local code
+intelligence, and fail-closed mutation. The unchanged Coder catalog contract
+and embedded-daemon feature profile both compile and pass independently.
+
 ### Phase 4 — Durable checkpoints and atomic publication
 
 **Goal:** make a local environment truly disposable.
@@ -647,7 +679,8 @@ Progress begins here:
 - [x] Phase 0b — map federation ownership and remove only coordination superseded by Stasis.
 - [x] Phase 1 — lock the runtime-neutral environment contract.
 - [x] Phase 2 — land and prove one local OCI lifecycle adapter.
-- [ ] Phases 3–9 — implementation and qualification.
+- [x] Phase 3 — route the existing tool catalog through bound environments.
+- [ ] Phases 4–9 — implementation and qualification.
 
 ## Definition of done
 

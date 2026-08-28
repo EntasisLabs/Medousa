@@ -11,9 +11,11 @@ use std::time::Duration;
 use async_trait::async_trait;
 use chrono::Utc;
 use medousa_forge::execution::{
-    ExecutionClass, ForgeExecutionService, MAX_CAPTURE_BYTES, supervise_command, supervise_git,
+    ExecutionClass, ForgeExecutionService, MAX_CAPTURE_BYTES, supervise_command,
+    supervise_command_with_input, supervise_git,
 };
 use medousa_runtime::{
+    MAX_WORK_ENVIRONMENT_STDIN_BYTES, WORK_ENVIRONMENT_WORKSPACE_ROOT,
     WorkEnvironmentCheckpointPolicy, WorkEnvironmentError, WorkEnvironmentExecRequest,
     WorkEnvironmentExecResult, WorkEnvironmentFence, WorkEnvironmentHandle, WorkEnvironmentId,
     WorkEnvironmentMountAccess, WorkEnvironmentMountKind, WorkEnvironmentNetworkPolicy,
@@ -36,7 +38,7 @@ const MAX_EXEC_TIMEOUT_SECONDS: u64 = 60 * 60;
 const MAX_EXEC_OUTPUT_BYTES: usize = 1024 * 1024;
 const MAX_EXECUTION_RECORD_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_MANIFEST_BYTES: u64 = 256 * 1024;
-const WORKSPACE_TARGET: &str = "/workspace";
+const WORKSPACE_TARGET: &str = WORK_ENVIRONMENT_WORKSPACE_ROOT;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct LocalEnvironmentRecord {
@@ -270,7 +272,7 @@ impl DockerCliWorkEnvironmentPort {
         timeout: Duration,
         max_output: usize,
     ) -> Result<CommandOutput, WorkEnvironmentError> {
-        self.run_docker_with_environment(args, Vec::new(), timeout, max_output)
+        self.run_docker_with_environment(args, Vec::new(), None, timeout, max_output)
             .await
     }
 
@@ -278,6 +280,7 @@ impl DockerCliWorkEnvironmentPort {
         &self,
         args: Vec<String>,
         environment: Vec<(String, String)>,
+        stdin: Option<Vec<u8>>,
         timeout: Duration,
         max_output: usize,
     ) -> Result<CommandOutput, WorkEnvironmentError> {
@@ -289,7 +292,24 @@ impl DockerCliWorkEnvironmentPort {
                 max_output.max(1),
                 None,
                 async move {
-                    supervise_command(docker, None, args, environment, timeout, max_output).await
+                    match stdin {
+                        Some(stdin) => {
+                            supervise_command_with_input(
+                                docker,
+                                None,
+                                args,
+                                environment,
+                                stdin,
+                                timeout,
+                                max_output,
+                            )
+                            .await
+                        }
+                        None => {
+                            supervise_command(docker, None, args, environment, timeout, max_output)
+                                .await
+                        }
+                    }
                 },
             )
             .await
@@ -890,6 +910,13 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
         );
         let started_at = Utc::now();
         let mut args = vec!["exec".into()];
+        let stdin = request
+            .stdin
+            .as_ref()
+            .map(|stdin| stdin.as_bytes().to_vec());
+        if stdin.is_some() {
+            args.push("-i".into());
+        }
         if let Some(cwd) = request.working_directory.as_ref() {
             args.extend(["--workdir".into(), cwd.clone()]);
         }
@@ -904,6 +931,7 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
             .run_docker_with_environment(
                 args,
                 environment,
+                stdin,
                 Duration::from_secs(request.timeout_seconds),
                 request.max_output_bytes as usize,
             )
@@ -1185,6 +1213,15 @@ fn validate_exec_request(request: &WorkEnvironmentExecRequest) -> Result<(), Wor
             "exec output bound must be between one byte and {MAX_EXEC_OUTPUT_BYTES} bytes"
         )));
     }
+    if request
+        .stdin
+        .as_ref()
+        .is_some_and(|stdin| stdin.len() > MAX_WORK_ENVIRONMENT_STDIN_BYTES)
+    {
+        return Err(WorkEnvironmentError::InvalidSpec(format!(
+            "exec stdin exceeds {MAX_WORK_ENVIRONMENT_STDIN_BYTES} bytes"
+        )));
+    }
     if request.args.len() > 256
         || request.args.iter().any(|arg| arg.contains('\0'))
         || request.args.iter().map(String::len).sum::<usize>() > 256 * 1024
@@ -1254,7 +1291,8 @@ fn bound_combined_output(
 mod tests {
     use super::*;
     use medousa_runtime::{
-        WorkEnvironmentImage, WorkEnvironmentRepository, WorkEnvironmentRequirements, WorkspaceId,
+        WorkEnvironmentBinding, WorkEnvironmentImage, WorkEnvironmentRepository,
+        WorkEnvironmentRequirements, WorkspaceId,
     };
     use stasis::domain::runtime::provenance::ContentDigest;
     use stasis::domain::runtime::resource_lease::FencingToken;
@@ -1404,6 +1442,7 @@ mod tests {
                     ],
                     working_directory: Some(WORKSPACE_TARGET.into()),
                     environment: BTreeMap::from([("MEDOUSA_TEST_VALUE".into(), "scoped".into())]),
+                    stdin: None,
                     timeout_seconds: 30,
                     max_output_bytes: 64 * 1024,
                 },
@@ -1413,6 +1452,86 @@ mod tests {
             .unwrap();
         assert_eq!(result.exit_code, Some(0));
         assert_eq!(result.stdout, "container:pinned input\nenv:scoped");
+
+        let stdin_result = adapter
+            .exec(
+                &handle,
+                WorkEnvironmentExecRequest {
+                    idempotency_key: "bounded-stdin-roundtrip".into(),
+                    program: "/bin/sh".into(),
+                    args: vec![
+                        "-c".into(),
+                        "cat > generated.txt && cat generated.txt".into(),
+                    ],
+                    working_directory: Some(WORKSPACE_TARGET.into()),
+                    environment: BTreeMap::new(),
+                    stdin: Some("written through fenced stdin\n".into()),
+                    timeout_seconds: 30,
+                    max_output_bytes: 64 * 1024,
+                },
+                &fence,
+            )
+            .await
+            .unwrap();
+        assert_eq!(stdin_result.exit_code, Some(0));
+        assert_eq!(stdin_result.stdout, "written through fenced stdin\n");
+
+        let invocation = crate::work_environment_tools::EnvironmentToolInvocation::new(
+            WorkEnvironmentBinding {
+                port: adapter.clone(),
+                handle: handle.clone(),
+                fence: fence.clone(),
+            },
+            "oci-tool-routing",
+        );
+        let write = crate::work_environment_tools::code_write(
+            &invocation,
+            crate::work_environment_tools::EnvironmentCodeWriteRequest {
+                path: "src/phase3.txt".into(),
+                expected_sha256: "missing".into(),
+                content: Some("written by the catalog adapter\n".into()),
+                find: None,
+                replace: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(write["ok"], true);
+        let read = crate::work_environment_tools::code_read(
+            &invocation,
+            crate::work_environment_tools::EnvironmentCodeReadRequest {
+                path: "src/phase3.txt".into(),
+                line_start: None,
+                line_end: None,
+                byte_start: None,
+                byte_end: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(read["content"], "written by the catalog adapter\n");
+        let search =
+            crate::work_environment_tools::code_search(&invocation, "catalog adapter", Some(10))
+                .await
+                .unwrap();
+        assert_eq!(search["results"][0]["path"], "src/phase3.txt");
+        let verify = crate::work_environment_tools::shell_exec(
+            &invocation,
+            "/bin/sh".into(),
+            vec![
+                "-c".into(),
+                "test \"$(cat src/phase3.txt)\" = 'written by the catalog adapter' && printf verified"
+                    .into(),
+            ],
+            None,
+            None,
+            30_000,
+            64 * 1024,
+        )
+        .await
+        .unwrap();
+        assert_eq!(verify.exit_code, Some(0));
+        assert_eq!(verify.stdout, "verified");
 
         let unknown_name = format!("medousa-unknown-{}", uuid::Uuid::new_v4().simple());
         adapter
