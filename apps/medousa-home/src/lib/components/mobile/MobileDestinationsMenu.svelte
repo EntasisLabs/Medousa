@@ -16,7 +16,6 @@
     Sparkles,
     UserRound,
     Users,
-    X,
     Zap,
   } from "@lucide/svelte";
   import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
@@ -40,6 +39,7 @@
     popBrowserPopoverOverlay,
     pushBrowserPopoverOverlay,
   } from "$lib/utils/browserPopoverOverlay";
+  import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
   import type { Component } from "svelte";
 
   interface Props {
@@ -53,6 +53,8 @@
   let editing = $state(false);
   let editBusyId = $state<string | null>(null);
   let editError = $state<string | null>(null);
+  let sheetEl = $state<HTMLDivElement | null>(null);
+  let headerEl = $state<HTMLElement | null>(null);
 
   const icons: Record<string, Component> = {
     "tab-home": Home,
@@ -127,6 +129,36 @@
     layout.openCustomSurface(surfaceId);
   }
 
+  function isActive(item: MobileDestinationItem): boolean {
+    if (item.kind === "tab" && item.tab) {
+      if (item.tab === "home") {
+        return layout.mobileTab === "home" && !layout.mobileSurfaceOverride;
+      }
+      return layout.mobileTab === item.tab;
+    }
+    return (
+      item.kind === "more" &&
+      Boolean(item.more) &&
+      layout.mobileTab === "more" &&
+      layout.moreDestination === item.more
+    );
+  }
+
+  function isCustomViewActive(surfaceId: string): boolean {
+    return (
+      layout.mobileTab === "home" && layout.mobileSurfaceOverride === surfaceId
+    );
+  }
+
+  function finishOrClose() {
+    if (editing) {
+      editing = false;
+      editError = null;
+      return;
+    }
+    onClose();
+  }
+
   async function toggleSurface(surfaceId: string) {
     if (!environment.spec || editBusyId) return;
     haptic("light");
@@ -152,6 +184,14 @@
     });
   });
 
+  $effect(() => {
+    if (!open || !sheetEl) return;
+    return attachMobileSheetGestures(sheetEl, headerEl, {
+      onDismiss: onClose,
+      swipeBack: false,
+    });
+  });
+
   /** Native WKWebView paints above DOM — hide the embed while the menu is open. */
   $effect(() => {
     if (!open) return;
@@ -165,16 +205,19 @@
 {#if open}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
-    class="mobile-dest-menu-backdrop"
+    class="mobile-sheet-backdrop mobile-turn-sheet-backdrop"
     role="presentation"
-    onclick={onClose}
+    onclick={(event) => {
+      if (event.target === event.currentTarget) onClose();
+    }}
     onkeydown={(e) => {
       if (e.key === "Escape") onClose();
     }}
   >
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
-      class="mobile-dest-menu"
+      bind:this={sheetEl}
+      class="mobile-sheet mobile-turn-sheet mobile-sheet-tall mobile-dest-menu"
       role="dialog"
       tabindex="-1"
       aria-modal="true"
@@ -182,9 +225,11 @@
       onclick={(e) => e.stopPropagation()}
       onkeydown={(e) => e.stopPropagation()}
     >
-      <header class="mobile-dest-menu-head">
-        <h2 class="mobile-dest-menu-title">{editing ? "Edit menu" : "Menu"}</h2>
-        <div class="mobile-dest-menu-head-actions">
+      <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
+      <header bind:this={headerEl} class="mobile-dest-menu-head">
+        {#if editing}
+          <span class="mobile-dest-menu-header-spacer" aria-hidden="true"></span>
+        {:else}
           <button
             type="button"
             class="mobile-dest-menu-edit-toggle"
@@ -197,10 +242,9 @@
           >
             {editing ? "Done" : "Edit"}
           </button>
-          <button type="button" class="mobile-icon-btn" aria-label="Close" onclick={onClose}>
-            <X size={18} strokeWidth={1.75} />
-          </button>
-        </div>
+        {/if}
+        <h2 class="mobile-dest-menu-title">{editing ? "Edit menu" : "Menu"}</h2>
+        <button type="button" class="mobile-dest-menu-done" onclick={finishOrClose}>Done</button>
       </header>
 
       {#if !editing}
@@ -216,13 +260,14 @@
                 onToggleActivity();
               }}
             >
-              Activity
+              <Activity size={16} strokeWidth={1.75} aria-hidden="true" />
+              <span>Activity</span>
             </button>
           {/if}
         </div>
       {/if}
 
-      <div class="mobile-dest-menu-scroll">
+      <div class="mobile-turn-sheet-body mobile-dest-menu-scroll">
         {#if editing}
           <div class="mobile-dest-menu-edit-intro">
             <strong>{activeLayoutLabel}</strong>
@@ -233,15 +278,17 @@
           </div>
 
           <p class="mobile-dest-menu-section">Destinations</p>
-          <ul class="mobile-dest-menu-list">
-            {#each editableItems as item (item.id)}
+          <ul class="mobile-turn-sheet-group mobile-dest-menu-list">
+            {#each editableItems as item, index (item.id)}
               {@const Icon = icons[item.id] ?? Sparkles}
               {#if item.surfaceId}
                 {@const visible = visibleSurfaceIds.has(item.surfaceId)}
                 <li>
                   <button
                     type="button"
-                    class="mobile-dest-menu-row mobile-dest-menu-edit-row"
+                    class="mobile-turn-sheet-row mobile-dest-menu-row mobile-dest-menu-edit-row {index > 0
+                      ? 'mobile-turn-sheet-row-divider'
+                      : ''}"
                     class:mobile-dest-menu-edit-row-hidden={!visible}
                     aria-pressed={visible}
                     aria-label={`${visible ? "Hide" : "Show"} ${item.label}`}
@@ -249,7 +296,7 @@
                     onclick={() => void toggleSurface(item.surfaceId!)}
                   >
                     <Icon size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
-                    <span class="mobile-dest-menu-row-title min-w-0 flex-1 text-left">
+                    <span class="mobile-turn-sheet-row-title min-w-0 flex-1 text-left">
                       {item.label}
                     </span>
                     <span
@@ -273,13 +320,15 @@
 
           {#if editableCustomViews.length > 0}
             <p class="mobile-dest-menu-section">My views</p>
-            <ul class="mobile-dest-menu-list">
-              {#each editableCustomViews as view (view.id)}
+            <ul class="mobile-turn-sheet-group mobile-dest-menu-list">
+              {#each editableCustomViews as view, index (view.id)}
                 {@const visible = visibleSurfaceIds.has(view.id)}
                 <li>
                   <button
                     type="button"
-                    class="mobile-dest-menu-row mobile-dest-menu-edit-row"
+                    class="mobile-turn-sheet-row mobile-dest-menu-row mobile-dest-menu-edit-row {index > 0
+                      ? 'mobile-turn-sheet-row-divider'
+                      : ''}"
                     class:mobile-dest-menu-edit-row-hidden={!visible}
                     aria-pressed={visible}
                     aria-label={`${visible ? "Hide" : "Show"} ${view.label}`}
@@ -287,7 +336,7 @@
                     onclick={() => void toggleSurface(view.id)}
                   >
                     <Sparkles size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
-                    <span class="mobile-dest-menu-row-title min-w-0 flex-1 text-left">
+                    <span class="mobile-turn-sheet-row-title min-w-0 flex-1 text-left">
                       {view.label}
                     </span>
                     <span
@@ -315,18 +364,28 @@
         {:else}
           {#if goToSection}
             <p class="mobile-dest-menu-section">{goToSection.title}</p>
-            <ul class="mobile-dest-menu-list">
-              {#each goToSection.items as item (item.id)}
+            <ul class="mobile-turn-sheet-group mobile-dest-menu-list">
+              {#each goToSection.items as item, index (item.id)}
                 {@const Icon = icons[item.id] ?? Sparkles}
                 <li>
-                  <button type="button" class="mobile-dest-menu-row" onclick={() => pick(item)}>
+                  <button
+                    type="button"
+                    class="mobile-turn-sheet-row mobile-dest-menu-row {index > 0
+                      ? 'mobile-turn-sheet-row-divider'
+                      : ''}"
+                    aria-current={isActive(item) ? "page" : undefined}
+                    onclick={() => pick(item)}
+                  >
                     <Icon size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
-                    <span class="min-w-0 flex-1 text-left">
-                      <span class="mobile-dest-menu-row-title">{item.label}</span>
+                    <span class="mobile-turn-sheet-row-copy text-left">
+                      <span class="mobile-turn-sheet-row-title">{item.label}</span>
                       {#if item.hint}
-                        <span class="mobile-dest-menu-row-hint line-clamp-2">{item.hint}</span>
+                        <span class="mobile-turn-sheet-row-subtitle line-clamp-2">{item.hint}</span>
                       {/if}
                     </span>
+                    {#if isActive(item)}
+                      <Check size={18} strokeWidth={2.2} class="mobile-turn-sheet-row-check" />
+                    {/if}
                   </button>
                 </li>
               {/each}
@@ -335,16 +394,24 @@
 
           {#if customViews.length > 0}
             <p class="mobile-dest-menu-section">My views</p>
-            <ul class="mobile-dest-menu-list">
-              {#each customViews as view (view.id)}
+            <ul class="mobile-turn-sheet-group mobile-dest-menu-list">
+              {#each customViews as view, index (view.id)}
                 <li>
                   <button
                     type="button"
-                    class="mobile-dest-menu-row"
+                    class="mobile-turn-sheet-row mobile-dest-menu-row {index > 0
+                      ? 'mobile-turn-sheet-row-divider'
+                      : ''}"
+                    aria-current={isCustomViewActive(view.id) ? "page" : undefined}
                     onclick={() => pickCustom(view.id)}
                   >
                     <Sparkles size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
-                    <span class="mobile-dest-menu-row-title">{view.label}</span>
+                    <span class="mobile-turn-sheet-row-copy text-left">
+                      <span class="mobile-turn-sheet-row-title">{view.label}</span>
+                    </span>
+                    {#if isCustomViewActive(view.id)}
+                      <Check size={18} strokeWidth={2.2} class="mobile-turn-sheet-row-check" />
+                    {/if}
                   </button>
                 </li>
               {/each}
@@ -353,42 +420,56 @@
 
           {#if moreSection}
             <p class="mobile-dest-menu-section">{moreSection.title}</p>
-            <ul class="mobile-dest-menu-list">
-              {#each moreSection.items as item (item.id)}
+            <ul class="mobile-turn-sheet-group mobile-dest-menu-list">
+              {#each moreSection.items as item, index (item.id)}
                 {@const Icon = icons[item.id] ?? Sparkles}
                 <li>
-                  <button type="button" class="mobile-dest-menu-row" onclick={() => pick(item)}>
+                  <button
+                    type="button"
+                    class="mobile-turn-sheet-row mobile-dest-menu-row {index > 0
+                      ? 'mobile-turn-sheet-row-divider'
+                      : ''}"
+                    aria-current={isActive(item) ? "page" : undefined}
+                    onclick={() => pick(item)}
+                  >
                     <Icon size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
-                    <span class="min-w-0 flex-1 text-left">
-                      <span class="mobile-dest-menu-row-title">{item.label}</span>
+                    <span class="mobile-turn-sheet-row-copy text-left">
+                      <span class="mobile-turn-sheet-row-title">{item.label}</span>
                       {#if item.hint}
-                        <span class="mobile-dest-menu-row-hint line-clamp-2">{item.hint}</span>
+                        <span class="mobile-turn-sheet-row-subtitle line-clamp-2">{item.hint}</span>
                       {/if}
                     </span>
+                    {#if isActive(item)}
+                      <Check size={18} strokeWidth={2.2} class="mobile-turn-sheet-row-check" />
+                    {/if}
                   </button>
                 </li>
               {/each}
             </ul>
           {/if}
 
-          <ul class="mobile-dest-menu-list mobile-dest-menu-list--tail">
+          <ul class="mobile-turn-sheet-group mobile-dest-menu-list mobile-dest-menu-list--tail">
             <li>
               <button
                 type="button"
-                class="mobile-dest-menu-row"
+                class="mobile-turn-sheet-row mobile-dest-menu-row"
+                aria-current={isActive(settingsItem) ? "page" : undefined}
                 onclick={() => pick(settingsItem)}
               >
                 <Settings size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
-                <span class="min-w-0 flex-1 text-left">
-                  <span class="mobile-dest-menu-row-title">
+                <span class="mobile-turn-sheet-row-copy text-left">
+                  <span class="mobile-turn-sheet-row-title">
                     {settingsItem.label}
                   </span>
                   {#if settingsItem.hint}
-                    <span class="mobile-dest-menu-row-hint line-clamp-2">
+                    <span class="mobile-turn-sheet-row-subtitle line-clamp-2">
                       {settingsItem.hint}
                     </span>
                   {/if}
                 </span>
+                {#if isActive(settingsItem)}
+                  <Check size={18} strokeWidth={2.2} class="mobile-turn-sheet-row-check" />
+                {/if}
               </button>
             </li>
           </ul>
