@@ -21,7 +21,7 @@ use crate::typed_tools::ToolCatalogHandle;
 pub const PERSONAL_MOBILE_TOOL_NAMES: &[&str] = &[
     "cognition_tools_discover",
     "cognition_web_search",
-    "cognition_delegate",
+    crate::public_api::COGNITION_WORKSHOP_MUTATE,
     "cognition_capability",
     "cognition_schema",
     "cognition_runtime_query",

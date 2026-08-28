@@ -23,6 +23,7 @@ use crate::schema_api::{
 use crate::typed_tools::{
     CompatOption, ExternalJson, ToolId, TypedTool, medousa_tool, serialize_output,
 };
+use crate::workshop_contract::{WorkshopSpawn, workshop_spawn_type_schema};
 
 const WORKSHOP_QUERY_ID: ToolId = ToolId::new(COGNITION_WORKSHOP_QUERY);
 const WORKSHOP_MUTATE_ID: ToolId = ToolId::new(COGNITION_WORKSHOP_MUTATE);
@@ -51,26 +52,6 @@ pub struct WorkshopStatus {
     work_id: Option<String>,
     #[serde(default)]
     session_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct WorkshopSpawn {
-    /// Worker profile: memory.avec_calibrate | memory.context | research | general
-    #[serde(default)]
-    intent: Option<String>,
-    /// Focused task for the worker
-    task: String,
-    /// Short message for the user while the worker runs
-    user_ack: String,
-    /// Optional YAML specialty
-    #[serde(default)]
-    manuscript_id: Option<String>,
-    /// Optional StageRoutingMatrix role
-    #[serde(default)]
-    stage_role: Option<String>,
-    /// Prefer omit or auto; only set provider:model when explicitly requested
-    #[serde(default)]
-    model_hint: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -117,11 +98,7 @@ pub fn workshop_type_schemas() -> Vec<TypedActionSchema> {
             "workshop.status",
             "List or fetch status of background turn workers / bound workshop",
         ),
-        typed_action_schema::<WorkshopSpawn>(
-            WORKSHOP_MUTATE_ID,
-            "workshop.spawn",
-            "Delegate heavy work to a background turn worker",
-        ),
+        workshop_spawn_type_schema(),
         typed_action_schema::<WorkshopCancel>(
             WORKSHOP_MUTATE_ID,
             "workshop.cancel",

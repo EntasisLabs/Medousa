@@ -114,7 +114,7 @@ pub fn register_portable_interactive_tools(
     bindings: &SharedToolRegistrationBindings,
 ) -> stasis::prelude::Result<()> {
     if let Some(service) = &bindings.delegation_service {
-        crate::delegation_tools::register_delegation_tools(registry, service.clone())?;
+        crate::delegation_tools::register_remote_workshop_tools(registry, service.clone())?;
     }
     crate::ui_present_tools::register_ui_present_tools(registry, bindings.turn_scope.clone())?;
     crate::skill_tools::register_portable_skill_tools(registry)?;

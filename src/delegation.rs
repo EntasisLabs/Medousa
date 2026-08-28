@@ -43,7 +43,6 @@ use crate::runtime_composition_ext::{RuntimeCompositionExt, process_once};
 use crate::session_store::SessionStore;
 
 pub const DELEGATION_ENDPOINT_ID: &str = "stasisd:endpoint:medousa-delegation";
-pub const COGNITION_DELEGATE: &str = "cognition_delegate";
 const DELEGATION_TIMEOUT_SECONDS: u64 = 120;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

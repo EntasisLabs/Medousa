@@ -102,6 +102,7 @@ pub mod session_deletion;
 pub mod vault_tools;
 pub mod workflow;
 pub mod workflow_plan;
+pub mod workshop_contract;
 pub mod stage_routing;
 pub mod identity_manuscript;
 pub mod manuscript_tools;

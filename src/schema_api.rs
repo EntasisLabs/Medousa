@@ -17,6 +17,8 @@ use crate::turn_api::turn_type_schemas;
 use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
 #[cfg(feature = "full-daemon")]
 use crate::workshop_api::workshop_type_schemas;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+use crate::workshop_contract::workshop_type_schemas;
 
 const SCHEMA_ID: ToolId = ToolId::new(COGNITION_SCHEMA);
 
@@ -203,7 +205,7 @@ fn catalog() -> Vec<CatalogItem> {
         .chain(generated_items(SchemaDomain::Runtime, runtime_type_schemas()))
         .chain(generated_items(SchemaDomain::Turn, turn_type_schemas()))
         .collect::<Vec<_>>();
-    #[cfg(feature = "full-daemon")]
+    #[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]
     {
         items.extend(generated_items(
             SchemaDomain::Workshop,

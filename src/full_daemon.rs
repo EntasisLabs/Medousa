@@ -268,6 +268,7 @@ pub mod workflow;
 pub mod workflow_handlers;
 pub mod workflow_plan;
 pub mod workshop_api;
+pub mod workshop_contract;
 pub mod workshop_env;
 
 use std::sync::Arc;
