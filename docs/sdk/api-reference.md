@@ -47,7 +47,9 @@ this generic HTTP client rather than a dedicated typed SDK accessor. See the
 Daemon delegation uses the generated native-only operation
 `mesh.tasks.post`. Application clients should not construct it directly: the
 daemon owns Stasis turn identity, bounded context, retries, and provenance,
-while the native host supplies the paired signed transport.
+while the native host supplies the paired signed transport. The operation is a
+replay-safe submit-or-observe exchange: it returns immediately with remote
+worker state, and the daemon's durable Stasis job repeats it until terminal.
 
 ---
 

@@ -714,8 +714,17 @@ Cookbook: [mobile-and-lan.md](../cookbook/mobile-and-lan.md)
 of the following: an authenticated pairing bearer, an explicit `task.request`
 grant on that pairing, and a signed mesh envelope whose sender and recipient
 exactly match the paired identities. The body carries a bounded Stasis
-`TurnGranted` request; the response is a signed `task.result` envelope with the
-remote execution and session-derivation provenance.
+`TurnGranted` request. The operation is idempotent under that Stasis turn
+identity: the first exchange admits the canonical remote worker and later
+exchanges observe the same work. Every response is an immediate signed
+`task.result` observation with `pending`, `running`, or terminal state plus the
+remote execution and session-derivation provenance. The HTTP request is never
+held open for the lifetime of the worker.
+
+The source daemon keeps the bounded request and observation schedule in its
+Stasis job. A suspended client can therefore replay the identical exchange
+after restart and complete the original durable turn wait; it does not create a
+new remote worker or a second task registry.
 
 Pairing does not enable this route. The source daemon also needs a separate,
 revocable delegation binding created by an explicit user action. Binding sends

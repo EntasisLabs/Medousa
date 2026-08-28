@@ -13,7 +13,7 @@ use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
 use crate::delegated_task::{
-    DelegatedTaskError, DelegatedTaskErrorKind, DelegatedTaskRequest, DelegatedTaskResult,
+    DelegatedTaskError, DelegatedTaskErrorKind, DelegatedTaskObservation, DelegatedTaskRequest,
     delegated_work_id, validate_task_request,
 };
 use crate::mesh::delivery;
@@ -172,7 +172,7 @@ pub fn mesh_surface() -> DeclaredRouter<MeshApiState> {
         )
         .route(
             peer_policy(axum::http::Method::POST, "/v1/mesh/tasks", 1024 * 1024),
-            post(execute_mesh_task),
+            post(exchange_mesh_task),
         )
         .methods([
             (
@@ -563,7 +563,7 @@ async fn list_mesh_inbox(
     Ok(Json(MeshInboxListResponse { items }))
 }
 
-async fn execute_mesh_task(
+async fn exchange_mesh_task(
     State(state): State<MeshApiState>,
     Extension(principal): Extension<RequestPrincipal>,
     Json(body): Json<MeshInboundBody<DelegatedTaskRequest>>,
@@ -636,11 +636,11 @@ async fn execute_mesh_task(
             "delegated task execution is not configured".to_string(),
         )
     })?;
-    let result: DelegatedTaskResult = executor
-        .execute(&record, &payload)
+    let observation: DelegatedTaskObservation = executor
+        .submit_or_observe(&record, &payload)
         .await
         .map_err(map_delegated_task_error)?;
-    let result_hash = payload_hash_hex(&result)
+    let result_hash = payload_hash_hex(&observation)
         .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
     let seq = registry::allocate_outbound_seq(&record.phone_id).map_err(internal)?;
     let result_envelope = sign_envelope(
@@ -657,7 +657,7 @@ async fn execute_mesh_task(
         [("x-medousa-mesh-receipt", receipt)],
         Json(MeshEnvelopedRequest {
             envelope: result_envelope,
-            payload: result,
+            payload: observation,
         }),
     )
         .into_response())

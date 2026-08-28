@@ -1,7 +1,6 @@
-//! Execute an authenticated Stasis grant through the existing durable worker.
+//! Admit or observe an authenticated Stasis grant through the existing worker.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use medousa_types::session::{ExecutionId, ExecutionRef};
@@ -17,25 +16,21 @@ use crate::agent_runtime::turn_worker::{
     DelegatedWorkAdmissionError, TurnWorkRecord, TurnWorkStatus, turn_worker_store,
 };
 use crate::delegated_task::{
-    DELEGATED_TASK_SCHEMA_VERSION, DelegatedTaskError, DelegatedTaskRequest, DelegatedTaskResult,
+    DELEGATED_TASK_SCHEMA_VERSION, DelegatedTaskAdmission, DelegatedTaskError,
+    DelegatedTaskObservation, DelegatedTaskRequest, DelegatedTaskResult, DelegatedTaskStatus,
     delegated_context_prompt, delegated_work_id, materialize_delegated_context,
     validate_task_request,
 };
 use crate::pairing::PairedDeviceRecord;
 use crate::runtime_composition_ext::RuntimeCompositionExt;
 
-// Leave transport headroom inside the source daemon's 120-second Stasis wait
-// and the existing native HTTP timeout.
-const DELEGATED_WORK_TIMEOUT: Duration = Duration::from_secs(105);
-const DELEGATED_WORK_POLL: Duration = Duration::from_millis(100);
-
 #[async_trait]
 pub trait DelegatedTaskExecutor: Send + Sync {
-    async fn execute(
+    async fn submit_or_observe(
         &self,
         sender: &PairedDeviceRecord,
         request: &DelegatedTaskRequest,
-    ) -> Result<DelegatedTaskResult, DelegatedTaskError>;
+    ) -> Result<DelegatedTaskObservation, DelegatedTaskError>;
 }
 
 /// Production adapter: context enters the canonical session store, execution
@@ -119,43 +114,71 @@ impl DaemonDelegatedTaskExecutor {
         Ok(())
     }
 
-    async fn wait_for_terminal(&self, work_id: &str) -> Result<TurnWorkRecord, DelegatedTaskError> {
-        let terminal = tokio::time::timeout(DELEGATED_WORK_TIMEOUT, async {
-            loop {
-                let record = turn_worker_store().get(work_id).ok_or_else(|| {
-                    DelegatedTaskError::internal("delegated worker record disappeared")
-                })?;
-                if matches!(
-                    record.status,
-                    TurnWorkStatus::Completed | TurnWorkStatus::Failed | TurnWorkStatus::Cancelled
-                ) {
-                    return Ok(record);
-                }
-                tokio::time::sleep(DELEGATED_WORK_POLL).await;
-            }
-        })
-        .await;
-        match terminal {
-            Ok(result) => result,
-            Err(_) => {
-                if let Some(record) = turn_worker_store().get(work_id) {
-                    let _ = turn_worker_store().cancel_exact(&record.session_id, work_id);
-                }
-                Err(DelegatedTaskError::transport(
-                    "delegated worker exceeded its execution deadline",
-                ))
-            }
+    fn terminal_result(
+        &self,
+        request: &DelegatedTaskRequest,
+        terminal_record: &TurnWorkRecord,
+        execution: &ExecutionRef,
+        derivation: &medousa_types::session::SessionDerivation,
+    ) -> DelegatedTaskResult {
+        let (kind, payload) = match terminal_record.status {
+            TurnWorkStatus::Completed => (
+                AgentEnvelopeKind::TurnCompleted,
+                json!({
+                    "text": terminal_record.result_text.clone(),
+                    "tool_names": terminal_record.tool_names.clone(),
+                    "termination_reason": terminal_record.termination_reason.clone(),
+                    "execution": execution,
+                    "derivation": derivation,
+                }),
+            ),
+            TurnWorkStatus::Cancelled => (
+                AgentEnvelopeKind::Cancelled,
+                json!({
+                    "error": terminal_record.error.clone().unwrap_or_else(|| "delegated worker cancelled".to_string()),
+                    "execution": execution,
+                    "derivation": derivation,
+                }),
+            ),
+            TurnWorkStatus::Failed => (
+                AgentEnvelopeKind::Failed,
+                json!({
+                    "error": terminal_record.error.clone().unwrap_or_else(|| "delegated worker failed".to_string()),
+                    "execution": execution,
+                    "derivation": derivation,
+                }),
+            ),
+            TurnWorkStatus::Pending | TurnWorkStatus::Running => unreachable!("terminal wait"),
+        };
+        DelegatedTaskResult {
+            schema_version: DELEGATED_TASK_SCHEMA_VERSION,
+            terminal: AgentEnvelope {
+                schema_version: AGENT_ENVELOPE_SCHEMA_VERSION_V1,
+                kind,
+                envelope_id: format!("result-{}", terminal_record.work_id),
+                session_id: request.grant.session_id.clone(),
+                thread_id: request.grant.thread_id.clone(),
+                turn_id: request.grant.turn_id.clone(),
+                job_id: request.grant.job_id.clone(),
+                correlation_id: request.grant.correlation_id.clone(),
+                causation_id: request.grant.envelope_id.clone(),
+                participant_id: Some(self.local_device_id.clone()),
+                occurred_at: terminal_record.updated_at,
+                payload,
+            },
+            execution: execution.clone(),
+            derivation: derivation.clone(),
         }
     }
 }
 
 #[async_trait]
 impl DelegatedTaskExecutor for DaemonDelegatedTaskExecutor {
-    async fn execute(
+    async fn submit_or_observe(
         &self,
         sender: &PairedDeviceRecord,
         request: &DelegatedTaskRequest,
-    ) -> Result<DelegatedTaskResult, DelegatedTaskError> {
+    ) -> Result<DelegatedTaskObservation, DelegatedTaskError> {
         validate_task_request(request)?;
         let target_authority = crate::workshop_authority::current()
             .map_err(DelegatedTaskError::internal)?
@@ -172,7 +195,6 @@ impl DelegatedTaskExecutor for DaemonDelegatedTaskExecutor {
         // The derived session remains internal to this worker execution. It is
         // not projected into the receiving workshop's visible session catalog.
         let profile_id = format!("peer:{}", sender.phone_id.trim());
-
         let turn_id = request
             .grant
             .turn_id
@@ -198,7 +220,7 @@ impl DelegatedTaskExecutor for DaemonDelegatedTaskExecutor {
         let record = TurnWorkRecord::delegated(
             work_id.clone(),
             target_session.to_string(),
-            profile_id,
+            profile_id.clone(),
             request.grant.correlation_id.clone(),
             task_prompt,
             self.provider.clone(),
@@ -221,63 +243,47 @@ impl DelegatedTaskExecutor for DaemonDelegatedTaskExecutor {
                     }
                 })?;
         self.ensure_worker_job(&work_id, created).await?;
-        let terminal_record = self.wait_for_terminal(&work_id).await?;
+        let current = turn_worker_store()
+            .get(&work_id)
+            .ok_or_else(|| DelegatedTaskError::internal("delegated worker record disappeared"))?;
+        if current.identity_user_id.as_deref() != Some(profile_id.as_str()) {
+            return Err(DelegatedTaskError::conflict(
+                "delegated worker does not belong to the authenticated peer",
+            ));
+        }
         let execution = ExecutionRef {
             authority_id: target_authority,
             session_id: target_session,
             execution_id: ExecutionId::parse(&work_id)
                 .map_err(|error| DelegatedTaskError::internal(error.to_string()))?,
         };
-        let (kind, payload) = match terminal_record.status {
-            TurnWorkStatus::Completed => (
-                AgentEnvelopeKind::TurnCompleted,
-                json!({
-                    "text": terminal_record.result_text,
-                    "tool_names": terminal_record.tool_names,
-                    "termination_reason": terminal_record.termination_reason,
-                    "execution": execution,
-                    "derivation": materialized.derivation,
-                }),
-            ),
-            TurnWorkStatus::Cancelled => (
-                AgentEnvelopeKind::Cancelled,
-                json!({
-                    "error": terminal_record.error.unwrap_or_else(|| "delegated worker cancelled".to_string()),
-                    "execution": execution,
-                    "derivation": materialized.derivation,
-                }),
-            ),
-            TurnWorkStatus::Failed => (
-                AgentEnvelopeKind::Failed,
-                json!({
-                    "error": terminal_record.error.unwrap_or_else(|| "delegated worker failed".to_string()),
-                    "execution": execution,
-                    "derivation": materialized.derivation,
-                }),
-            ),
-            TurnWorkStatus::Pending | TurnWorkStatus::Running => unreachable!("terminal wait"),
+        let status = match current.status {
+            TurnWorkStatus::Pending => DelegatedTaskStatus::Pending,
+            TurnWorkStatus::Running => DelegatedTaskStatus::Running,
+            TurnWorkStatus::Completed => DelegatedTaskStatus::Completed,
+            TurnWorkStatus::Failed => DelegatedTaskStatus::Failed,
+            TurnWorkStatus::Cancelled => DelegatedTaskStatus::Cancelled,
         };
-        turn_worker_store().update(&work_id, |record| {
-            record.synthesis_delivered = true;
-        });
-        Ok(DelegatedTaskResult {
+        let result = status
+            .is_terminal()
+            .then(|| self.terminal_result(request, &current, &execution, &materialized.derivation));
+        if result.is_some() {
+            turn_worker_store().update(&work_id, |record| {
+                record.synthesis_delivered = true;
+            });
+        }
+        Ok(DelegatedTaskObservation {
             schema_version: DELEGATED_TASK_SCHEMA_VERSION,
-            terminal: AgentEnvelope {
-                schema_version: AGENT_ENVELOPE_SCHEMA_VERSION_V1,
-                kind,
-                envelope_id: format!("result-{work_id}"),
-                session_id: request.grant.session_id.clone(),
-                thread_id: request.grant.thread_id.clone(),
-                turn_id: request.grant.turn_id.clone(),
-                job_id: request.grant.job_id.clone(),
-                correlation_id: request.grant.correlation_id.clone(),
-                causation_id: request.grant.envelope_id.clone(),
-                participant_id: Some(self.local_device_id.clone()),
-                occurred_at: terminal_record.updated_at,
-                payload,
+            work_id,
+            admission: if created {
+                DelegatedTaskAdmission::Accepted
+            } else {
+                DelegatedTaskAdmission::Existing
             },
+            status,
             execution,
             derivation: materialized.derivation,
+            result,
         })
     }
 }

@@ -133,17 +133,59 @@ pub struct DelegatedTaskResult {
     pub derivation: SessionDerivation,
 }
 
-/// Host integration port. Implementations supply the existing pairing bearer,
-/// signed mesh envelope, pinned peer verification, and LAN/Iroh routing. They
-/// must bind the returned terminal participant to that authenticated peer and
-/// never own task identity or context selection.
+/// Whether this exchange created the canonical remote worker or observed the
+/// one already admitted under the same Stasis identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DelegatedTaskAdmission {
+    Accepted,
+    Existing,
+}
+
+/// Current state of the canonical worker on the receiving daemon.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DelegatedTaskStatus {
+    Pending,
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+impl DelegatedTaskStatus {
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Self::Completed | Self::Failed | Self::Cancelled)
+    }
+}
+
+/// Immediate, signed response for an idempotent submit-or-observe exchange.
+/// Non-terminal responses carry canonical remote provenance but do not hold
+/// the transport open while the worker runs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DelegatedTaskObservation {
+    pub schema_version: u32,
+    pub work_id: String,
+    pub admission: DelegatedTaskAdmission,
+    pub status: DelegatedTaskStatus,
+    pub execution: ExecutionRef,
+    pub derivation: SessionDerivation,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<DelegatedTaskResult>,
+}
+
+/// Host integration port. Each exchange idempotently admits or observes the
+/// same canonical remote worker. Implementations supply the existing pairing
+/// bearer, signed mesh envelope, pinned peer verification, and LAN/Iroh
+/// routing; they never own task identity, retry state, or context selection.
 #[async_trait]
 pub trait DelegatedTaskTransport: Send + Sync {
-    async fn dispatch(
+    async fn submit_or_observe(
         &self,
         target: &crate::delegation::DelegationTarget,
         request: DelegatedTaskRequest,
-    ) -> Result<DelegatedTaskResult, DelegatedTaskError>;
+    ) -> Result<DelegatedTaskObservation, DelegatedTaskError>;
 }
 
 fn versioned_hash(domain: &[u8], chunks: &[&[u8]]) -> String {
@@ -577,6 +619,63 @@ pub fn validate_task_result(
     Ok(())
 }
 
+pub fn validate_task_observation(
+    request: &DelegatedTaskRequest,
+    observation: &DelegatedTaskObservation,
+) -> Result<(), DelegatedTaskError> {
+    if observation.schema_version != DELEGATED_TASK_SCHEMA_VERSION {
+        return Err(DelegatedTaskError::invalid(format!(
+            "unsupported delegated observation schema version {}",
+            observation.schema_version
+        )));
+    }
+    if observation.work_id.trim().is_empty()
+        || observation.execution.execution_id.as_str() != observation.work_id
+    {
+        return Err(DelegatedTaskError::conflict(
+            "delegated observation has invalid canonical work identity",
+        ));
+    }
+    if observation.derivation.manifest != request.context.manifest
+        || observation.derivation.caused_by.as_ref() != Some(&request.source_execution)
+        || observation.derivation.intent != "mesh.task.request"
+        || observation.execution.authority_id != observation.derivation.target_session.authority_id
+        || observation.execution.session_id != observation.derivation.target_session.session_id
+    {
+        return Err(DelegatedTaskError::conflict(
+            "delegated observation provenance does not match the granted context",
+        ));
+    }
+    match (&observation.status, &observation.result) {
+        (status, None) if !status.is_terminal() => Ok(()),
+        (status, Some(result)) if status.is_terminal() => {
+            validate_task_result(request, result)?;
+            if result.execution != observation.execution
+                || result.derivation != observation.derivation
+            {
+                return Err(DelegatedTaskError::conflict(
+                    "delegated terminal result does not match its observation provenance",
+                ));
+            }
+            let expected_status = match result.terminal.kind {
+                AgentEnvelopeKind::TurnCompleted => DelegatedTaskStatus::Completed,
+                AgentEnvelopeKind::Failed => DelegatedTaskStatus::Failed,
+                AgentEnvelopeKind::Cancelled => DelegatedTaskStatus::Cancelled,
+                _ => unreachable!("validated terminal kind"),
+            };
+            if *status != expected_status {
+                return Err(DelegatedTaskError::conflict(
+                    "delegated observation status does not match its terminal envelope",
+                ));
+            }
+            Ok(())
+        }
+        _ => Err(DelegatedTaskError::conflict(
+            "delegated observation terminal payload does not match its status",
+        )),
+    }
+}
+
 pub fn delegated_context_prompt(context: &DelegatedContextGrant) -> String {
     let mut output = String::from(
         "[MEDOUSA_DELEGATED_CONTEXT]\nThe following immutable transcript range was granted by the source daemon.\n",
@@ -780,6 +879,28 @@ mod tests {
             derivation,
         };
         validate_task_result(&request, &result).unwrap();
+        let pending = DelegatedTaskObservation {
+            schema_version: DELEGATED_TASK_SCHEMA_VERSION,
+            work_id: execution.execution_id.to_string(),
+            admission: DelegatedTaskAdmission::Accepted,
+            status: DelegatedTaskStatus::Running,
+            execution: execution.clone(),
+            derivation: result.derivation.clone(),
+            result: None,
+        };
+        validate_task_observation(&request, &pending).unwrap();
+        let mut terminal = pending;
+        terminal.admission = DelegatedTaskAdmission::Existing;
+        terminal.status = DelegatedTaskStatus::Completed;
+        terminal.result = Some(result.clone());
+        validate_task_observation(&request, &terminal).unwrap();
+        terminal.status = DelegatedTaskStatus::Running;
+        assert_eq!(
+            validate_task_observation(&request, &terminal)
+                .unwrap_err()
+                .kind,
+            DelegatedTaskErrorKind::Conflict
+        );
         result.terminal.job_id = Some("different-job".to_string());
         assert_eq!(
             validate_task_result(&request, &result).unwrap_err().kind,
