@@ -45,10 +45,9 @@
   interface Props {
     open: boolean;
     onClose: () => void;
-    onToggleActivity?: () => void;
   }
 
-  let { open, onClose, onToggleActivity }: Props = $props();
+  let { open, onClose }: Props = $props();
 
   let editing = $state(false);
   let editBusyId = $state<string | null>(null);
@@ -251,19 +250,17 @@
         <div class="mobile-dest-menu-switchers">
           <WorkshopSwitcherCompact />
           <ProfileSwitcherCompact />
-          {#if onToggleActivity}
-            <button
-              type="button"
-              class="mobile-dest-menu-activity"
-              onclick={() => {
-                onClose();
-                onToggleActivity();
-              }}
-            >
-              <Activity size={16} strokeWidth={1.75} aria-hidden="true" />
-              <span>Activity</span>
-            </button>
-          {/if}
+          <button
+            type="button"
+            class="mobile-dest-menu-activity"
+            onclick={() => {
+              onClose();
+              layout.toggleActivitySheet();
+            }}
+          >
+            <Activity size={16} strokeWidth={1.75} aria-hidden="true" />
+            <span>Activity</span>
+          </button>
         </div>
       {/if}
 
