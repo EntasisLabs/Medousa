@@ -1,6 +1,6 @@
 # Daemon-owned OCI work environments
 
-> **Status:** Locked design — ready for Phase 0
+> **Status:** Locked design — Phase 0 complete, ready for Phase 1
 >
 > **Date:** 2026-08-28
 >
@@ -336,6 +336,48 @@ The initial OCI adapter must default to:
 OCI isolation is a containment layer, not proof that produced code or artifacts
 are safe. Forge governance and review remain in force.
 
+## Phase 0 federation fit audit
+
+Stasis 0.10 supplies the runtime-neutral federation vocabulary. Medousa's
+existing delegated-turn path supplies the production transport and the
+application-specific conversation behavior. They meet at the following seams:
+
+| Concern | Stasis 0.10 owner | Current Medousa seam | Decision |
+|---|---|---|---|
+| Job identity and retry | `Job`, `NewJob`, attempts, leases, backoff | `DelegationService` enqueues `workflow.medousa.delegation` | Stasis remains authoritative; do not add another task identity |
+| Placement | `PlacementConstraints`, `WorkerCapabilities` | Delegation currently targets one explicitly bound peer | Carry generic requirements on the job; capability-based destination selection starts with environment admission |
+| Payload identity | `BlobDescriptor` on `RemoteJobEnvelope` | Bounded `DelegatedTaskRequest` crosses the signed mesh route inline | Move application bytes behind a blob adapter when remote job federation is wired; never put workspace contents in job records |
+| Cross-runtime delivery | `FederatedDeliveryPort`, `FederatedIngressPort` | `DelegatedTaskTransport` resolves the paired route, authenticates it, and calls `/v1/mesh/tasks` | The Medousa mesh becomes the production adapter for the Stasis ports; it is not replaced by an in-memory bus |
+| Signals and terminal results | `FederatedSignalEnvelope`, `FederatedTerminalResult` | Submit-or-observe returns signed `DelegatedTaskObservation` values and terminal agent envelopes | Migrate transport identity and terminal delivery to Stasis envelopes while preserving Medousa result content |
+| Durable waiting | Stasis durable waits and agent-event ingress | `RuntimeDelegationWaitStore` maps the agent turn wait onto the runtime durable wait store | Retain the mapping until terminal federation can drive the existing ingress directly |
+| Ownership transfer | `OwnershipHandoffStore`, resource leases, fencing tokens | No environment ownership is transferred today | Adopt this contract for environment handoff; do not invent a Medousa ownership table |
+| Conversation authority | Outside generic job federation | Context grants, session derivation, transcript commits, and completion presentation | Remains Medousa-owned application behavior |
+
+The audit found no production Stasis adapter that makes Medousa's current peer
+transport removable. Stasis 0.10 includes public contracts and in-memory
+reference implementations for federation, blobs, and ownership handoff; it
+does not include Medousa pairing, LAN/Iroh routing, durable production blob
+storage, or a reverse delivery endpoint for an embedded mobile origin.
+
+Therefore Phase 0 removes only coordination that is actually superseded:
+
+- fabricated STTP input/output identifiers are gone; provenance is optional
+  and structured through `ProvenanceRef` only when a real source exists;
+- every job carries Stasis placement constraints, defaulting honestly to
+  unrestricted until a host capability is required; and
+- every Stasis dependency and independent lock graph moves together to 0.10.
+
+The polling driver is retained for the proven delegated-turn path. Replacing
+it before a production `FederatedDeliveryPort` can deliver terminal results
+back to mobile would remove durable behavior, not duplicate coordination. The
+Phase 6 transport migration must delete that polling path in the same slice
+that installs signed terminal delivery; it must not leave both paths active.
+
+No local substitute is added for the remaining upstream-neutral gaps. Phase 1
+defines only the Medousa-owned work-environment domain and ports. Production
+federation, blob, and ownership adapters are introduced in the phases that can
+exercise their complete lifecycle.
+
 ## Phased delivery
 
 Each phase must leave a useful, testable boundary and must not pre-build the
@@ -580,7 +622,7 @@ Progress begins here:
 - [x] Generic durable job/federation support published in Stasis 0.10.0.
 - [x] Medousa daemon-to-daemon delegated turns proven on the current branch.
 - [x] Phase 0a — upgrade Medousa and adopt optional structured provenance and placement.
-- [ ] Phase 0b — map federation ownership and remove only coordination superseded by Stasis.
+- [x] Phase 0b — map federation ownership and remove only coordination superseded by Stasis.
 - [ ] Phase 1 — lock the runtime-neutral environment contract.
 - [ ] Phases 2–9 — implementation and qualification.
 
