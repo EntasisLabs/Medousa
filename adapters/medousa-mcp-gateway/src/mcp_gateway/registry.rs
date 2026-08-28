@@ -14,15 +14,18 @@ use uuid::Uuid;
 use crate::mcp_gateway::catalog::{
     auto_tag_capabilities, discover_from_entries, mock_tool_catalog,
 };
+use crate::mcp_gateway::oauth::{McpOAuthBroker, McpOAuthError};
 use crate::mcp_gateway::policy_client::{DaemonPolicyClient, McpPolicyEvaluator};
 use crate::mcp_gateway::remote_client::{RemoteMcpSession, RemoteTransport};
 use crate::mcp_gateway::server_config::{McpGatewayFullConfig, McpServerConfig};
 use crate::mcp_gateway::stdio_client::StdioMcpSession;
-use medousa_types::mcp_gateway_api::{McpCatalogSyncEntry, McpCatalogSyncResponse};
 use medousa_types::mcp_gateway_api::{
-    McpEffectClass, McpInvokeError, McpInvokeRequest, McpInvokeResponse, McpPolicyEvaluateRequest,
-    McpServerSummary, McpServersResponse, McpToolCatalogEntry, McpTurnLane,
+    BeginMcpOAuthRequest, BeginMcpOAuthResponse, CompleteMcpOAuthResponse,
+    DisconnectMcpOAuthResponse, McpEffectClass, McpInvokeError, McpInvokeRequest,
+    McpInvokeResponse, McpOAuthStatusResponse, McpPolicyEvaluateRequest, McpServerSummary,
+    McpServersResponse, McpToolCatalogEntry, McpTurnLane,
 };
+use medousa_types::mcp_gateway_api::{McpCatalogSyncEntry, McpCatalogSyncResponse};
 use medousa_types::mcp_turn_token::verify_mcp_turn_token;
 
 #[derive(Debug, Clone)]
@@ -47,6 +50,7 @@ pub struct CatalogSnapshot {
 pub struct ServerRegistry {
     config: Arc<McpGatewayFullConfig>,
     policy: Arc<dyn McpPolicyEvaluator>,
+    oauth: Option<Arc<McpOAuthBroker>>,
     snapshot: Arc<RwLock<CatalogSnapshot>>,
 }
 
@@ -67,12 +71,18 @@ impl ServerRegistry {
         Self {
             config,
             policy,
+            oauth: None,
             snapshot: Arc::new(RwLock::new(CatalogSnapshot {
                 tools: mock_tool_catalog(),
                 servers: Vec::new(),
                 updated_at: Utc::now(),
             })),
         }
+    }
+
+    pub fn with_oauth(mut self, oauth: Arc<McpOAuthBroker>) -> Self {
+        self.oauth = Some(oauth);
+        self
     }
 
     pub async fn bootstrap(&self) {
@@ -128,7 +138,11 @@ impl ServerRegistry {
                 continue;
             }
 
-            match list_tools_for_server(server, timeout).await {
+            let live_tools = match self.remote_bearer_token(server).await {
+                Ok(bearer_token) => list_tools_for_server(server, bearer_token, timeout).await,
+                Err(error) => Err(error),
+            };
+            match live_tools {
                 Ok(live_tools) => {
                     let count = live_tools.len();
                     tools.extend(live_tools);
@@ -222,6 +236,66 @@ impl ServerRegistry {
                 })
                 .collect(),
         }
+    }
+
+    pub async fn oauth_status(
+        &self,
+        server_id: &str,
+    ) -> Result<McpOAuthStatusResponse, McpOAuthError> {
+        self.server_url(server_id)?;
+        self.oauth_broker()?.status(server_id).await
+    }
+
+    pub async fn begin_oauth(
+        &self,
+        request: BeginMcpOAuthRequest,
+    ) -> Result<BeginMcpOAuthResponse, McpOAuthError> {
+        let server_url = self.server_url(&request.server_id)?.to_string();
+        self.oauth_broker()?
+            .begin(crate::mcp_gateway::oauth::McpOAuthBeginRequest {
+                server_id: request.server_id,
+                server_url,
+                redirect_uri: request.redirect_uri,
+                scopes: request.scopes,
+                client_metadata_url: request.client_metadata_url,
+                client_id: request.client_id,
+                client_secret: request.client_secret,
+                challenge: request.challenge,
+            })
+            .await
+    }
+
+    pub async fn complete_oauth(
+        &self,
+        login_id: &str,
+        callback_url: &str,
+    ) -> Result<CompleteMcpOAuthResponse, McpOAuthError> {
+        let response = self
+            .oauth_broker()?
+            .complete(login_id, callback_url)
+            .await?;
+        let _ = self.refresh_catalog().await;
+        Ok(response)
+    }
+
+    pub async fn refresh_oauth(
+        &self,
+        server_id: &str,
+    ) -> Result<McpOAuthStatusResponse, McpOAuthError> {
+        let server_url = self.server_url(server_id)?.to_string();
+        let response = self.oauth_broker()?.refresh(server_id, &server_url).await?;
+        let _ = self.refresh_catalog().await;
+        Ok(response)
+    }
+
+    pub async fn disconnect_oauth(
+        &self,
+        server_id: &str,
+    ) -> Result<DisconnectMcpOAuthResponse, McpOAuthError> {
+        self.server_url(server_id)?;
+        let response = self.oauth_broker()?.disconnect(server_id).await?;
+        let _ = self.refresh_catalog().await;
+        Ok(response)
     }
 
     pub async fn invoke(
@@ -355,7 +429,19 @@ impl ServerRegistry {
         }
 
         let timeout = Duration::from_millis(self.config.max_invoke_duration_ms.max(1_000));
-        match execute_invoke(server, &request.tool_name, request.input.clone(), timeout).await {
+        let bearer_token = match self.remote_bearer_token(server).await {
+            Ok(bearer_token) => bearer_token,
+            Err(error) => return fail("invoke_failed", error.to_string(), true),
+        };
+        match execute_invoke(
+            server,
+            &request.tool_name,
+            request.input.clone(),
+            bearer_token,
+            timeout,
+        )
+        .await
+        {
             Ok(output) => McpInvokeResponse {
                 invoke_id,
                 server_id: request.server_id,
@@ -380,14 +466,69 @@ impl ServerRegistry {
             .count();
         (registered, connected, snapshot.tools.len())
     }
+
+    async fn remote_bearer_token(&self, server: &McpServerConfig) -> Result<Option<String>> {
+        if remote_transport(server).is_none() {
+            return Ok(None);
+        }
+
+        if let Some(token) = server
+            .bearer_token
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            return Ok(Some(token.to_string()));
+        }
+
+        let Some(oauth) = self.oauth.as_ref() else {
+            return Ok(None);
+        };
+        let url = server
+            .url
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .context("remote MCP server missing url")?;
+        match oauth.access_token(&server.id, url).await {
+            Ok(token) => Ok(Some(token)),
+            Err(McpOAuthError::NotConnected) => Ok(None),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    fn oauth_broker(&self) -> Result<&McpOAuthBroker, McpOAuthError> {
+        self.oauth.as_deref().ok_or(McpOAuthError::Unavailable)
+    }
+
+    fn server_url(&self, server_id: &str) -> Result<&str, McpOAuthError> {
+        let server_id = server_id.trim();
+        if server_id.is_empty() {
+            return Err(McpOAuthError::InvalidInput("server id"));
+        }
+        let server = self
+            .config
+            .server_by_id(server_id)
+            .ok_or_else(|| McpOAuthError::ServerNotFound(server_id.to_string()))?;
+        if remote_transport(server).is_none() {
+            return Err(McpOAuthError::ServerUrlMissing(server.id.clone()));
+        }
+        server
+            .url
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| McpOAuthError::ServerUrlMissing(server.id.clone()))
+    }
 }
 
 async fn list_tools_for_server(
     server: &McpServerConfig,
+    bearer_token: Option<String>,
     timeout: Duration,
 ) -> Result<Vec<McpToolCatalogEntry>> {
     let tools = match remote_transport(server) {
-        Some(transport) => list_tools_from_remote(server, transport, timeout).await?,
+        Some(transport) => list_tools_from_remote(server, transport, bearer_token, timeout).await?,
         None => list_tools_from_stdio(server, timeout).await?,
     };
     Ok(tools
@@ -411,6 +552,7 @@ async fn list_tools_from_stdio(
 async fn list_tools_from_remote(
     server: &McpServerConfig,
     transport: RemoteTransport,
+    bearer_token: Option<String>,
     timeout: Duration,
 ) -> Result<Vec<crate::mcp_gateway::stdio_client::McpToolDefinition>> {
     let url = server
@@ -419,12 +561,6 @@ async fn list_tools_from_remote(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .context("remote MCP server missing url")?;
-    let bearer_token = server
-        .bearer_token
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
     let mut session = RemoteMcpSession::connect(url, transport, bearer_token, timeout).await?;
     session.list_tools().await
 }
@@ -456,6 +592,7 @@ async fn execute_invoke(
     server: &McpServerConfig,
     tool_name: &str,
     input: Value,
+    bearer_token: Option<String>,
     timeout: Duration,
 ) -> Result<Value> {
     if server_unconfigured(server) {
@@ -475,12 +612,6 @@ async fn execute_invoke(
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .context("remote MCP server missing url")?;
-        let bearer_token = server
-            .bearer_token
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
         let mut session = RemoteMcpSession::connect(url, transport, bearer_token, timeout).await?;
         return session.call_tool(tool_name, input).await;
     }
@@ -575,8 +706,33 @@ fn dedupe_tools(tools: &mut Vec<McpToolCatalogEntry>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mcp_gateway::oauth::McpOAuthBundleStore;
     use crate::mcp_gateway::server_config::McpServerConfig;
     use std::sync::Arc;
+
+    struct EmptyBundleStore;
+
+    impl McpOAuthBundleStore for EmptyBundleStore {
+        fn load_bundle(&self, _server_id: &str) -> Result<Option<String>, String> {
+            Ok(None)
+        }
+
+        fn save_bundle(&self, _server_id: &str, _bundle: Option<&str>) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    struct FailingBundleStore;
+
+    impl McpOAuthBundleStore for FailingBundleStore {
+        fn load_bundle(&self, _server_id: &str) -> Result<Option<String>, String> {
+            Err("credential store should not be consulted".to_string())
+        }
+
+        fn save_bundle(&self, _server_id: &str, _bundle: Option<&str>) -> Result<(), String> {
+            Ok(())
+        }
+    }
 
     fn test_registry() -> ServerRegistry {
         let config = Arc::new(McpGatewayFullConfig {
@@ -613,5 +769,36 @@ mod tests {
         registry.bootstrap().await;
         let tools = registry.discover("notion", None, 10).await;
         assert!(tools.iter().any(|tool| tool.tool_name == "search_pages"));
+    }
+
+    #[tokio::test]
+    async fn configured_bearer_precedes_oauth() {
+        let registry =
+            test_registry().with_oauth(Arc::new(McpOAuthBroker::new(Arc::new(FailingBundleStore))));
+        let server = McpServerConfig {
+            transport: "http".to_string(),
+            url: Some("https://example.com/mcp".to_string()),
+            bearer_token: Some(" configured-token ".to_string()),
+            ..registry.config.servers[0].clone()
+        };
+
+        assert_eq!(
+            registry.remote_bearer_token(&server).await.unwrap(),
+            Some("configured-token".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_oauth_grant_preserves_unauthenticated_remote_access() {
+        let registry =
+            test_registry().with_oauth(Arc::new(McpOAuthBroker::new(Arc::new(EmptyBundleStore))));
+        let server = McpServerConfig {
+            transport: "http".to_string(),
+            url: Some("https://example.com/mcp".to_string()),
+            bearer_token: None,
+            ..registry.config.servers[0].clone()
+        };
+
+        assert_eq!(registry.remote_bearer_token(&server).await.unwrap(), None);
     }
 }

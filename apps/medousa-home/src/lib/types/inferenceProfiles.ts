@@ -97,3 +97,39 @@ export function syncFlatFieldsFromProfiles(
     sttBaseUrl: profiles.stt?.baseUrl ?? draft.sttBaseUrl,
   };
 }
+
+/**
+ * Keep the persisted main inference profile and its legacy flat fields on the
+ * same selection. Startup normalization treats the profile as authoritative,
+ * so updating only `provider` and `model` would be undone on the next launch.
+ */
+export function applyMainInferenceSelection(
+  draft: import("$lib/types/workshopDefaults").TuiDefaults,
+  provider: string,
+  model: string,
+): import("$lib/types/workshopDefaults").TuiDefaults {
+  const nextProvider = provider.trim();
+  const nextModel = model.trim();
+  const currentMain = draft.inferenceProfiles?.main;
+  const sameProvider =
+    currentMain?.provider.trim().toLowerCase() === nextProvider.toLowerCase();
+  const main: InferenceProfile = {
+    provider: nextProvider,
+    model: nextModel,
+    baseUrl: sameProvider
+      ? (currentMain?.baseUrl ?? draft.baseUrl ?? null)
+      : null,
+    fallbacks: currentMain?.fallbacks ?? [],
+  };
+
+  return {
+    ...draft,
+    provider: nextProvider,
+    model: nextModel,
+    baseUrl: main.baseUrl,
+    inferenceProfiles: {
+      ...draft.inferenceProfiles,
+      main,
+    },
+  };
+}

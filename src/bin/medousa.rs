@@ -3025,6 +3025,7 @@ fn start_mcp_gateway_background() -> Result<()> {
     let log = medousa::service_launch::BackgroundLog::new(mcp_gateway_log_path());
     let mut command = Command::new(&gateway.program);
     command.args(&gateway.pre_args);
+    command.env("MEDOUSA_DATA_DIR", medousa_data_dir());
     let pid =
         medousa::service_launch::spawn_command_background(command, &log).with_context(|| {
             format!(

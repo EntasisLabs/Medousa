@@ -25,7 +25,7 @@ export type MobileChromeActionId =
   | "scriptTools"
   | "scriptSave"
   | "scriptRun"
-  | "scriptCompile"
+  | "scriptMore"
   | "flowAddStep"
   | "flowPlan"
   | "flowRun"
@@ -109,13 +109,7 @@ export function mobileChromeTrailing(
         return ["flowAddStep", "flowPlan", "flowRun", "flowSchedule", "flowClose"];
       }
       if (automationsMode === "script-editor") {
-        return [
-          "automationsFilter",
-          "scriptSave",
-          "scriptRun",
-          "scriptCompile",
-          "scriptTools",
-        ];
+        return ["scriptSave", "scriptRun", "scriptMore"];
       }
       switch (automationsSection) {
         case "scripts":

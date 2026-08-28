@@ -10,6 +10,7 @@ export function attachMobileKeyboardViewport(
     const viewport = window.visualViewport;
     if (!viewport) {
       root.style.setProperty("--mobile-keyboard-inset", "0px");
+      root.style.setProperty("--mobile-layout-height", `${window.innerHeight}px`);
       return;
     }
 
@@ -23,25 +24,29 @@ export function attachMobileKeyboardViewport(
     ) {
       layoutHeight = window.innerHeight;
     }
+    root.style.setProperty("--mobile-layout-height", `${layoutHeight}px`);
   };
 
   update();
   window.visualViewport?.addEventListener("resize", update);
   window.visualViewport?.addEventListener("scroll", update);
-  window.addEventListener("orientationchange", () => {
+  const onOrientationChange = () => {
     layoutHeight = window.innerHeight;
     update();
-  });
+  };
+  window.addEventListener("orientationchange", onOrientationChange);
   window.addEventListener("resize", update);
 
   return () => {
     window.visualViewport?.removeEventListener("resize", update);
     window.visualViewport?.removeEventListener("scroll", update);
-    window.removeEventListener("orientationchange", update);
+    window.removeEventListener("orientationchange", onOrientationChange);
     window.removeEventListener("resize", update);
     root.style.removeProperty("--mobile-keyboard-inset");
+    root.style.removeProperty("--mobile-layout-height");
     root.dataset.mobileComposerActive = "false";
     root.dataset.mobileBrowserUrlActive = "false";
+    root.dataset.mobileScriptEditorActive = "false";
   };
 }
 
@@ -60,6 +65,12 @@ export function setMobileBrowserUrlFocus(active: boolean) {
 export function isMobileBrowserUrlFocused(): boolean {
   if (typeof document === "undefined") return false;
   return document.documentElement.dataset.mobileBrowserUrlActive === "true";
+}
+
+/** Script editor owns the visible viewport while its native keyboard is open. */
+export function setMobileScriptEditorFocus(active: boolean) {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.mobileScriptEditorActive = active ? "true" : "false";
 }
 
 function isLayoutDebugEnabled(): boolean {

@@ -2,10 +2,14 @@
   import {
     ChevronLeft,
     ChevronRight,
-    FileCode2,
+    GitBranchPlus,
+    Hammer,
     LayoutTemplate,
     MessageSquare,
+    Pencil,
     Plus,
+    Terminal,
+    Zap,
   } from "@lucide/svelte";
   import ScriptWorkbenchChatPanel from "$lib/components/automations/ScriptWorkbenchChatPanel.svelte";
   import {
@@ -13,10 +17,12 @@
     type GraphemeRecipe,
   } from "$lib/grapheme/graphemeRecipes";
   import { haptic } from "$lib/haptics";
+  import { persistScriptName } from "$lib/grapheme/scriptWorkbenchActions";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
   import { layout } from "$lib/runtime/layout.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
+  import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import type { GraphemeScriptEntry } from "$lib/types/grapheme";
 
   interface Props {
@@ -32,7 +38,7 @@
     onInserted?: () => void;
   }
 
-  type ToolsView = "root" | "templates" | "library" | "chat";
+  type ToolsView = "root" | "templates" | "library" | "chat" | "rename";
 
   let {
     open,
@@ -48,6 +54,10 @@
 
   let view = $state<ToolsView>("root");
   let search = $state("");
+  let renameDraft = $state("");
+  let renameBusy = $state(false);
+  let renameError = $state<string | null>(null);
+  let renameInput = $state<HTMLInputElement | null>(null);
   let sheetEl = $state<HTMLDivElement | null>(null);
   let headerEl = $state<HTMLElement | null>(null);
 
@@ -63,15 +73,20 @@
 
   const sheetTitle = $derived(
     view === "root"
-      ? "Script tools"
+      ? "Script actions"
       : view === "templates"
         ? "Templates"
         : view === "library"
           ? "Library"
           : view === "chat"
             ? "Script chat"
+            : view === "rename"
+              ? "Rename script"
             : "Script tools",
   );
+
+  const activeTab = $derived(graphemeScriptEditor.activeTab);
+  const hasSource = $derived(Boolean(activeTab?.body.trim()));
 
   const filteredScripts = $derived(
     workshop.scripts.filter((entry) => {
@@ -103,7 +118,17 @@
   function goTo(next: ToolsView) {
     haptic("light");
     search = "";
+    if (next === "rename") {
+      renameDraft = activeTab?.name ?? "";
+      renameError = null;
+    }
     view = next;
+    if (next === "rename") {
+      requestAnimationFrame(() => {
+        renameInput?.focus();
+        renameInput?.select();
+      });
+    }
   }
 
   function goBack() {
@@ -133,6 +158,28 @@
     onNewScript();
     haptic("light");
     closeAll();
+  }
+
+  function runAction(eventName: string) {
+    haptic("light");
+    window.dispatchEvent(new CustomEvent(eventName));
+    onClose();
+  }
+
+  async function commitRename() {
+    if (!activeTab || renameBusy) return;
+    renameBusy = true;
+    renameError = null;
+    try {
+      await persistScriptName(activeTab, renameDraft);
+      haptic("success");
+      onClose();
+    } catch (err) {
+      renameError = err instanceof Error ? err.message : String(err);
+      haptic("warning");
+    } finally {
+      renameBusy = false;
+    }
   }
 
   function handleSheetSwipeBack(): boolean {
@@ -174,13 +221,17 @@
   >
     <div
       bind:this={sheetEl}
-      class="mobile-sheet mobile-sheet-tall scripts-workbench-tools-sheet flex flex-col"
+      class="mobile-sheet {view === 'root'
+        ? 'scripts-workbench-actions-sheet'
+        : view === 'rename'
+          ? 'mobile-sheet-medium'
+          : 'mobile-sheet-tall'} automations-sheet scripts-workbench-tools-sheet flex flex-col"
       role="dialog"
       aria-label={sheetTitle}
     >
-      <header bind:this={headerEl} class="mobile-sheet-header scripts-workbench-sheet-header shrink-0">
+      <header bind:this={headerEl} class="mobile-sheet-stack-header">
         <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
-        <div class="flex items-center gap-2">
+        <div class="mobile-sheet-header-row">
           {#if view !== "root"}
             <button
               type="button"
@@ -200,8 +251,8 @@
         </div>
       </header>
 
-      {#if view !== "root" && view !== "chat"}
-        <div class="shrink-0 px-3 py-2">
+      {#if view === "templates" || view === "library"}
+        <div class="automation-sheet-search shrink-0 py-2">
           <input
             class="input w-full text-xs"
             type="search"
@@ -227,9 +278,66 @@
           />
         </div>
       {:else}
-      <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto">
+      <div class="mobile-sheet-scroll">
         {#if view === "root"}
           <div class="mobile-turn-sheet-group">
+            <button
+              type="button"
+              class="mobile-turn-sheet-link-row"
+              disabled={!activeTab}
+              onclick={() => goTo("rename")}
+            >
+              <span class="flex items-center gap-2">
+                <Pencil size={16} strokeWidth={1.75} class="text-content-link" />
+                <span class="mobile-turn-sheet-link-label">Rename</span>
+              </span>
+              <ChevronRight size={16} strokeWidth={2} class="mobile-turn-sheet-link-chevron" />
+            </button>
+            <button
+              type="button"
+              class="mobile-turn-sheet-link-row mobile-turn-sheet-row-divider"
+              disabled={!hasSource || graphemeScriptEditor.compileBusy}
+              onclick={() => runAction("medousa-mobile-script-compile")}
+            >
+              <span class="flex items-center gap-2">
+                <Hammer size={16} strokeWidth={1.75} class="text-content-link" />
+                <span class="mobile-turn-sheet-link-label">Compile check</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              class="mobile-turn-sheet-link-row mobile-turn-sheet-row-divider"
+              disabled={!hasSource || graphemeScriptEditor.compileBusy}
+              onclick={() => runAction("medousa-mobile-script-optimize")}
+            >
+              <span class="flex items-center gap-2">
+                <Zap size={16} strokeWidth={1.75} class="text-content-link" />
+                <span class="mobile-turn-sheet-link-label">Optimize AOT</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              class="mobile-turn-sheet-link-row mobile-turn-sheet-row-divider"
+              disabled={!hasSource}
+              onclick={() => runAction("medousa-mobile-script-add-flow")}
+            >
+              <span class="flex items-center gap-2">
+                <GitBranchPlus size={16} strokeWidth={1.75} class="text-content-link" />
+                <span class="mobile-turn-sheet-link-label">Add to flow</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              class="mobile-turn-sheet-link-row mobile-turn-sheet-row-divider"
+              onclick={() => runAction("medousa-mobile-script-output")}
+            >
+              <span class="flex items-center gap-2">
+                <Terminal size={16} strokeWidth={1.75} class="text-content-link" />
+                <span class="mobile-turn-sheet-link-label">View output</span>
+              </span>
+            </button>
+          </div>
+          <div class="mobile-turn-sheet-group mobile-turn-sheet-group-secondary">
             <button
               type="button"
               class="mobile-turn-sheet-link-row"
@@ -238,17 +346,6 @@
               <span class="flex items-center gap-2">
                 <LayoutTemplate size={16} strokeWidth={1.75} class="text-content-link" />
                 <span class="mobile-turn-sheet-link-label">Templates</span>
-              </span>
-              <ChevronRight size={16} strokeWidth={2} class="mobile-turn-sheet-link-chevron" />
-            </button>
-            <button
-              type="button"
-              class="mobile-turn-sheet-link-row mobile-turn-sheet-row-divider"
-              onclick={() => goTo("library")}
-            >
-              <span class="flex items-center gap-2">
-                <FileCode2 size={16} strokeWidth={1.75} class="text-content-link" />
-                <span class="mobile-turn-sheet-link-label">Library</span>
               </span>
               <ChevronRight size={16} strokeWidth={2} class="mobile-turn-sheet-link-chevron" />
             </button>
@@ -264,47 +361,94 @@
               <ChevronRight size={16} strokeWidth={2} class="mobile-turn-sheet-link-chevron" />
             </button>
           </div>
+        {:else if view === "rename"}
+          <form
+            class="space-y-3 px-1 py-2"
+            onsubmit={(event) => {
+              event.preventDefault();
+              void commitRename();
+            }}
+          >
+            <label class="block">
+              <span class="workshop-label">Name</span>
+              <input
+                bind:this={renameInput}
+                class="input mt-1 w-full text-sm"
+                type="text"
+                bind:value={renameDraft}
+                autocomplete="off"
+                spellcheck="false"
+              />
+            </label>
+            {#if renameError}
+              <p class="text-xs text-content-error">{renameError}</p>
+            {/if}
+            <button
+              type="submit"
+              class="btn variant-filled-primary w-full justify-center"
+              disabled={renameBusy || !activeTab}
+            >
+              {renameBusy ? "Renaming…" : "Rename"}
+            </button>
+          </form>
         {:else if view === "templates"}
           {#if filteredRecipes.length === 0}
             <p class="workshop-muted px-3 py-4 text-xs">No templates match.</p>
           {:else}
-            <ul class="divide-y divide-surface-500/35">
-              {#each filteredRecipes as recipe (recipe.id)}
+            <ul class="mobile-turn-sheet-group">
+              {#each filteredRecipes as recipe, index (recipe.id)}
                 <li>
                   <button
                     type="button"
-                    class="flex w-full flex-col px-4 py-3 text-left active:bg-surface-800/70"
+                    class="mobile-turn-sheet-row {index > 0
+                      ? 'mobile-turn-sheet-row-divider'
+                      : ''}"
                     style="touch-action: manipulation"
                     onclick={() => applyTemplate(recipe)}
                   >
-                    <span class="text-sm font-medium text-surface-100">{recipe.title}</span>
-                    <span class="workshop-faint mt-0.5 text-[11px]">{recipe.subtitle}</span>
+                    <span class="mobile-turn-sheet-row-copy">
+                      <span class="mobile-turn-sheet-row-title">{recipe.title}</span>
+                      <span class="mobile-turn-sheet-row-subtitle">{recipe.subtitle}</span>
+                    </span>
                   </button>
                 </li>
               {/each}
             </ul>
           {/if}
         {:else if view === "library"}
-          <div class="px-4 pb-2 pt-1">
-            <button type="button" class="workshop-text-action text-xs" onclick={startNewScript}>
-              + New script
-            </button>
-          </div>
           {#if filteredScripts.length === 0}
-            <p class="workshop-muted px-4 py-4 text-xs">No saved scripts yet.</p>
+            <div class="mobile-turn-sheet-group">
+              <button type="button" class="mobile-turn-sheet-row" onclick={startNewScript}>
+                <Plus size={18} strokeWidth={1.8} class="shrink-0 text-content-link" />
+                <span class="mobile-turn-sheet-row-copy">
+                  <span class="mobile-turn-sheet-row-title">New script</span>
+                </span>
+              </button>
+            </div>
+            <p class="workshop-muted px-1 py-4 text-xs">No saved scripts yet.</p>
           {:else}
-            <ul class="divide-y divide-surface-500/35">
+            <ul class="mobile-turn-sheet-group">
+              <li>
+                <button type="button" class="mobile-turn-sheet-row" onclick={startNewScript}>
+                  <Plus size={18} strokeWidth={1.8} class="shrink-0 text-content-link" />
+                  <span class="mobile-turn-sheet-row-copy">
+                    <span class="mobile-turn-sheet-row-title">New script</span>
+                  </span>
+                </button>
+              </li>
               {#each filteredScripts as entry (entry.id)}
                 <li>
                   <button
                     type="button"
-                    class="flex w-full flex-col px-4 py-3 text-left active:bg-surface-800/70"
+                    class="mobile-turn-sheet-row mobile-turn-sheet-row-divider"
                     style="touch-action: manipulation"
                     onclick={() => void openScript(entry)}
                   >
-                    <span class="truncate text-sm font-medium text-surface-100">{entry.name}</span>
-                    <span class="workshop-faint mt-0.5 truncate font-mono text-[10px]">
-                      {entry.id}
+                    <span class="mobile-turn-sheet-row-copy">
+                      <span class="mobile-turn-sheet-row-title truncate">{entry.name}</span>
+                      <span class="mobile-turn-sheet-row-subtitle truncate font-mono">
+                        {entry.id}
+                      </span>
                     </span>
                   </button>
                 </li>

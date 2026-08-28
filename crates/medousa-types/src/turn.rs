@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::daemon_api::ToolInputParam;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct HostContextPosition {
@@ -104,6 +106,8 @@ pub enum TurnPart {
         tool_name: String,
         status: String,
         input_summary: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        input_params: Vec<ToolInputParam>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         output_summary: Option<String>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]

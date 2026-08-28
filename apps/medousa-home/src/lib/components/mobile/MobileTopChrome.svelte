@@ -4,9 +4,9 @@
     ArrowLeft,
     ArrowRight,
     CalendarClock,
+    ChevronDown,
     ChevronLeft,
     Eye,
-    Hammer,
     History,
     Layers,
     ListFilter,
@@ -29,6 +29,7 @@
   } from "@lucide/svelte";
   import type { Component } from "svelte";
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
+  import SettingsNav from "$lib/components/settings/SettingsNav.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { vault } from "$lib/stores/vault.svelte";
@@ -40,6 +41,7 @@
   import { workshop } from "$lib/stores/workshop.svelte";
   import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
   import { mobileCodeWorkspaceState } from "$lib/stores/mobileCodeWorkspaceState.svelte";
+  import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { haptic } from "$lib/haptics";
   import { prepareTalkAboutNote } from "$lib/utils/vaultNoteBridge";
   import { openMobileCodeThread } from "$lib/utils/mobileCodeOpen";
@@ -91,6 +93,9 @@
   const notesFilterActive = $derived(
     vault.activeSpaceFilter !== null || vault.libraryBrowseMode !== "folders",
   );
+  const settingsTitle = $derived(
+    surface === "more-nested" && layout.moreDestination === "settings",
+  );
 
   const icons: Partial<Record<MobileChromeActionId, Component>> = {
     menu: Menu,
@@ -108,7 +113,7 @@
     scriptTools: Wrench,
     scriptSave: Save,
     scriptRun: Play,
-    scriptCompile: Hammer,
+    scriptMore: MoreHorizontal,
     flowAddStep: Plus,
     flowPlan: Sparkles,
     flowRun: Play,
@@ -225,8 +230,8 @@
       case "scriptRun":
         window.dispatchEvent(new CustomEvent("medousa-mobile-script-run"));
         return;
-      case "scriptCompile":
-        window.dispatchEvent(new CustomEvent("medousa-mobile-script-compile"));
+      case "scriptMore":
+        window.dispatchEvent(new CustomEvent("medousa-mobile-script-more"));
         return;
       case "flowAddStep":
         window.dispatchEvent(new CustomEvent("medousa-mobile-flow-add"));
@@ -334,8 +339,8 @@
         return "Save script";
       case "scriptRun":
         return "Run script";
-      case "scriptCompile":
-        return "Compile script";
+      case "scriptMore":
+        return "More script actions";
       case "flowAddStep":
         return "Add step";
       case "flowPlan":
@@ -381,7 +386,11 @@
       case "browserForward":
         return !humanBrowser.canGoForward;
       case "scriptSave":
-        return graphemeScriptEditor.saveBusy || !graphemeScriptEditor.activeTab;
+        return (
+          graphemeScriptEditor.saveBusy ||
+          !graphemeScriptEditor.activeTab ||
+          !graphemeScriptEditor.activeTab.dirty
+        );
       case "codeSave": {
         const workId = mobileCodeWorkspaceState.selectedWorkId;
         const tab = workId ? codeWorkspace.activeFor(workId) : null;
@@ -391,11 +400,6 @@
         return !mobileCodeWorkspaceState.selectedWorkId;
       case "scriptRun":
         return workshop.runBusy || !graphemeScriptEditor.activeTab?.body.trim();
-      case "scriptCompile":
-        return (
-          graphemeScriptEditor.compileBusy ||
-          !graphemeScriptEditor.activeTab?.body.trim()
-        );
       case "flowRun":
         return flows.running || flows.composerDraft.steps.length === 0;
       default:
@@ -419,7 +423,12 @@
   }
 </script>
 
-<header class="mobile-top-chrome" data-chrome-surface={surface} data-automations-mode={automationsMode}>
+<header
+  class="mobile-top-chrome"
+  data-chrome-surface={surface}
+  data-automations-mode={automationsMode}
+  data-settings-title={settingsTitle || undefined}
+>
   {#if leading}
     <button
       type="button"
@@ -437,90 +446,135 @@
     <span class="mobile-chrome-leading-spacer" aria-hidden="true"></span>
   {/if}
 
-  <div class="mobile-chrome-actions">
-    {#each trailing as action (action)}
-      {#if action === "sessions"}
-        <OverflowMenu
-          bind:open={sessionsMenuOpen}
-          align="right"
-          label="Sessions"
-          title="Sessions"
-          panelWidth={12.5 * 16}
-          panelClass="w-[12.5rem] rounded-xl border border-surface-500/40 bg-surface-900/95 p-1 shadow-xl backdrop-blur"
-          onOpenChange={(open) => {
-            if (open) haptic("light");
-          }}
-        >
-          {#snippet trigger({ open, toggle })}
-            <button
-              type="button"
-              class="mobile-chrome-icon"
-              class:mobile-chrome-icon-active={open}
-              aria-label="Sessions"
-              title="Sessions"
-              aria-expanded={open}
-              aria-haspopup="menu"
-              onclick={toggle}
-            >
-              <MessagesSquare size={18} strokeWidth={1.75} />
-            </button>
-          {/snippet}
-          <button
-            type="button"
-            role="menuitem"
-            class="vault-menu-item rounded-lg"
-            onclick={() => void createNewChat()}
-          >
-            <Plus size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
-            New chat
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            class="vault-menu-item rounded-lg"
-            onclick={openPreviousSessions}
-          >
-            <History size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
-            Previous sessions
-          </button>
-        </OverflowMenu>
-      {:else if action === "workshop"}
+  {#if settingsTitle}
+    <SettingsNav
+      active={settingsNav.activeSection}
+      mobile={true}
+      onSelect={(section) => settingsNav.setActiveSection(section)}
+    />
+    <span class="mobile-chrome-leading-spacer" aria-hidden="true"></span>
+  {:else if automationsMode === "script-editor"}
+    <button
+      type="button"
+      class="mobile-script-title"
+      aria-label="Switch script"
+      onclick={() => {
+        haptic("light");
+        window.dispatchEvent(new CustomEvent("medousa-mobile-script-title"));
+      }}
+    >
+      <span class="truncate">{graphemeScriptEditor.activeTab?.name ?? "Scripts"}</span>
+      {#if graphemeScriptEditor.activeTab?.dirty}
+        <span class="mobile-script-dirty" aria-label="Unsaved changes"></span>
+      {/if}
+      <ChevronDown size={13} strokeWidth={2} class="shrink-0 text-content-quiet" />
+    </button>
+    <div class="mobile-chrome-actions mobile-script-actions">
+      {#each trailing as action (action)}
+        {@const Icon = icons[action]}
         <button
           type="button"
-          class="mobile-chrome-icon mobile-chrome-workshop"
-          style={brandStyle}
+          class:mobile-script-run={action === "scriptRun"}
+          class:mobile-chrome-icon={action !== "scriptRun"}
           aria-label={labelFor(action)}
-          onclick={() => void run(action)}
-        >
-          <span class="mobile-chrome-workshop-mono">{workshops.activeMonogram}</span>
-        </button>
-      {:else}
-        {@const Icon =
-          action === "browserReload" && humanBrowser.loading
-            ? Square
-            : action === "noteEdit" && vault.editorMode === "edit"
-              ? Eye
-              : icons[action]}
-        <button
-          type="button"
-          class="mobile-chrome-icon"
-          class:text-content-link={action === "noteChat" ||
-            (action === "noteEdit" && vault.editorMode === "edit") ||
-            (action === "notesFilter" && notesFilterActive)}
-          aria-label={labelFor(action)}
-          aria-pressed={action === "noteEdit" ? vault.editorMode === "edit" : undefined}
           disabled={isDisabled(action)}
-          data-browser-popover-trigger={action === "browserTabs" ? "" : undefined}
           onclick={(event) => void run(action, event.currentTarget)}
         >
           {#if Icon}
-            <Icon
-              size={action === "browserReload" && humanBrowser.loading ? 12 : 18}
-              strokeWidth={action === "browserReload" && humanBrowser.loading ? 2.25 : 1.75}
-            />
+            <Icon size={17} strokeWidth={1.85} />
+          {/if}
+          {#if action === "scriptRun"}
+            <span>Run</span>
           {/if}
         </button>
-      {/if}
-    {/each}
-  </div>
+      {/each}
+    </div>
+  {:else}
+    <div class="mobile-chrome-actions">
+      {#each trailing as action (action)}
+        {#if action === "sessions"}
+          <OverflowMenu
+            bind:open={sessionsMenuOpen}
+            align="right"
+            label="Sessions"
+            title="Sessions"
+            panelWidth={12.5 * 16}
+            panelClass="w-[12.5rem] rounded-xl border border-surface-500/40 bg-surface-900/95 p-1 shadow-xl backdrop-blur"
+            onOpenChange={(open) => {
+              if (open) haptic("light");
+            }}
+          >
+            {#snippet trigger({ open, toggle })}
+              <button
+                type="button"
+                class="mobile-chrome-icon"
+                class:mobile-chrome-icon-active={open}
+                aria-label="Sessions"
+                title="Sessions"
+                aria-expanded={open}
+                aria-haspopup="menu"
+                onclick={toggle}
+              >
+                <MessagesSquare size={18} strokeWidth={1.75} />
+              </button>
+            {/snippet}
+            <button
+              type="button"
+              role="menuitem"
+              class="vault-menu-item rounded-lg"
+              onclick={() => void createNewChat()}
+            >
+              <Plus size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
+              New chat
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              class="vault-menu-item rounded-lg"
+              onclick={openPreviousSessions}
+            >
+              <History size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
+              Previous sessions
+            </button>
+          </OverflowMenu>
+        {:else if action === "workshop"}
+          <button
+            type="button"
+            class="mobile-chrome-icon mobile-chrome-workshop"
+            style={brandStyle}
+            aria-label={labelFor(action)}
+            onclick={() => void run(action)}
+          >
+            <span class="mobile-chrome-workshop-mono">{workshops.activeMonogram}</span>
+          </button>
+        {:else}
+          {@const Icon =
+            action === "browserReload" && humanBrowser.loading
+              ? Square
+              : action === "noteEdit" && vault.editorMode === "edit"
+                ? Eye
+                : icons[action]}
+          <button
+            type="button"
+            class="mobile-chrome-icon"
+            class:text-content-link={action === "noteChat" ||
+              (action === "noteEdit" && vault.editorMode === "edit") ||
+              (action === "notesFilter" && notesFilterActive)}
+            aria-label={labelFor(action)}
+            aria-pressed={action === "noteEdit" ? vault.editorMode === "edit" : undefined}
+            disabled={isDisabled(action)}
+            data-browser-popover-trigger={action === "browserTabs" ? "" : undefined}
+            onclick={(event) => void run(action, event.currentTarget)}
+          >
+            {#if Icon}
+              <Icon
+                size={action === "browserReload" && humanBrowser.loading ? 12 : 18}
+                strokeWidth={action === "browserReload" && humanBrowser.loading ? 2.25 : 1.75}
+              />
+            {/if}
+          </button>
+        {/if}
+      {/each}
+    </div>
+  {/if}
 </header>

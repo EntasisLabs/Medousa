@@ -1224,6 +1224,7 @@ class Kind4(Enum):
 class TurnPart5(MedousaModel):
     artifact_refs: list[TurnArtifactRef] | None = None
     finished_at: AwareDatetime | None = None
+    input_params: list[ToolInputParam] | None = None
     input_summary: str
     kind: Kind4
     output_summary: str | None = None

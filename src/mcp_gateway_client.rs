@@ -6,8 +6,10 @@ use std::sync::Arc;
 
 use crate::capability_catalog::McpCatalogSyncResponse;
 use crate::mcp_gateway_api::{
-    McpDiscoverRequest, McpDiscoverResponse, McpGatewayHealthResponse, McpInvokeRequest,
-    McpInvokeResponse, McpServersResponse, resolve_mcp_gateway_url,
+    BeginMcpOAuthRequest, BeginMcpOAuthResponse, CompleteMcpOAuthRequest, CompleteMcpOAuthResponse,
+    DisconnectMcpOAuthResponse, McpDiscoverRequest, McpDiscoverResponse, McpGatewayHealthResponse,
+    McpInvokeRequest, McpInvokeResponse, McpOAuthStatusResponse, McpServersResponse,
+    RefreshMcpOAuthRequest, resolve_mcp_gateway_url,
 };
 use medousa_mcp_gateway::resolve_mcp_gateway_token;
 
@@ -280,6 +282,149 @@ impl McpGatewayClient {
                 let active = Self::active_in_process(active).await;
                 active.initialize().await;
                 Ok(active.registry.list_servers().await)
+            }
+        }
+    }
+
+    pub async fn oauth_status(&self, server_id: &str) -> Result<McpOAuthStatusResponse> {
+        match &self.backend {
+            McpGatewayBackend::Http {
+                base_url,
+                token,
+                client,
+            } => {
+                let response = Self::apply_auth(
+                    token.as_deref(),
+                    client.get(format!("{base_url}/v1/mcp/oauth/{}", server_id.trim())),
+                )
+                .send()
+                .await
+                .context("failed to reach MCP OAuth status endpoint")?
+                .error_for_status()
+                .context("MCP OAuth status endpoint returned error")?;
+                Ok(response.json().await?)
+            }
+            McpGatewayBackend::InProcess { active } => {
+                let active = Self::active_in_process(active).await;
+                Ok(active.registry.oauth_status(server_id).await?)
+            }
+        }
+    }
+
+    pub async fn begin_oauth(
+        &self,
+        request: BeginMcpOAuthRequest,
+    ) -> Result<BeginMcpOAuthResponse> {
+        match &self.backend {
+            McpGatewayBackend::Http {
+                base_url,
+                token,
+                client,
+            } => {
+                let response = Self::apply_auth(
+                    token.as_deref(),
+                    client
+                        .post(format!("{base_url}/v1/mcp/oauth/begin"))
+                        .json(&request),
+                )
+                .send()
+                .await
+                .context("failed to reach MCP OAuth begin endpoint")?
+                .error_for_status()
+                .context("MCP OAuth begin endpoint returned error")?;
+                Ok(response.json().await?)
+            }
+            McpGatewayBackend::InProcess { active } => {
+                let active = Self::active_in_process(active).await;
+                Ok(active.registry.begin_oauth(request).await?)
+            }
+        }
+    }
+
+    pub async fn complete_oauth(
+        &self,
+        request: CompleteMcpOAuthRequest,
+    ) -> Result<CompleteMcpOAuthResponse> {
+        match &self.backend {
+            McpGatewayBackend::Http {
+                base_url,
+                token,
+                client,
+            } => {
+                let response = Self::apply_auth(
+                    token.as_deref(),
+                    client
+                        .post(format!("{base_url}/v1/mcp/oauth/complete"))
+                        .json(&request),
+                )
+                .send()
+                .await
+                .context("failed to reach MCP OAuth complete endpoint")?
+                .error_for_status()
+                .context("MCP OAuth complete endpoint returned error")?;
+                Ok(response.json().await?)
+            }
+            McpGatewayBackend::InProcess { active } => {
+                let active = Self::active_in_process(active).await;
+                Ok(active
+                    .registry
+                    .complete_oauth(&request.login_id, &request.callback_url)
+                    .await?)
+            }
+        }
+    }
+
+    pub async fn refresh_oauth(&self, server_id: &str) -> Result<McpOAuthStatusResponse> {
+        let request = RefreshMcpOAuthRequest {
+            server_id: server_id.trim().to_string(),
+        };
+        match &self.backend {
+            McpGatewayBackend::Http {
+                base_url,
+                token,
+                client,
+            } => {
+                let response = Self::apply_auth(
+                    token.as_deref(),
+                    client
+                        .post(format!("{base_url}/v1/mcp/oauth/refresh"))
+                        .json(&request),
+                )
+                .send()
+                .await
+                .context("failed to reach MCP OAuth refresh endpoint")?
+                .error_for_status()
+                .context("MCP OAuth refresh endpoint returned error")?;
+                Ok(response.json().await?)
+            }
+            McpGatewayBackend::InProcess { active } => {
+                let active = Self::active_in_process(active).await;
+                Ok(active.registry.refresh_oauth(&request.server_id).await?)
+            }
+        }
+    }
+
+    pub async fn disconnect_oauth(&self, server_id: &str) -> Result<DisconnectMcpOAuthResponse> {
+        match &self.backend {
+            McpGatewayBackend::Http {
+                base_url,
+                token,
+                client,
+            } => {
+                let response = Self::apply_auth(
+                    token.as_deref(),
+                    client.delete(format!("{base_url}/v1/mcp/oauth/{}", server_id.trim())),
+                )
+                .send()
+                .await
+                .context("failed to reach MCP OAuth disconnect endpoint")?
+                .error_for_status()
+                .context("MCP OAuth disconnect endpoint returned error")?;
+                Ok(response.json().await?)
+            }
+            McpGatewayBackend::InProcess { active } => {
+                let active = Self::active_in_process(active).await;
+                Ok(active.registry.disconnect_oauth(server_id).await?)
             }
         }
     }

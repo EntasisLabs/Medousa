@@ -283,7 +283,6 @@
       <MobileDestinationsMenu
         open={true}
         onClose={() => layout.setMobileDestinationsMenuOpen(false)}
-        onToggleActivity={() => layout.toggleActivitySheet()}
       />
     {/await}
   {/if}

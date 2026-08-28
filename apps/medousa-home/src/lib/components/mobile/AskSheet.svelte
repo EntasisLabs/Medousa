@@ -26,10 +26,10 @@
       if (event.target === event.currentTarget) layout.setAskSheetOpen(false);
     }}
   >
-    <div bind:this={sheetEl} class="mobile-sheet" role="dialog" aria-label="New ask">
-      <header bind:this={headerEl} class="mobile-sheet-header scripts-workbench-sheet-header">
+    <div bind:this={sheetEl} class="mobile-sheet mobile-sheet-medium" role="dialog" aria-label="New ask">
+      <header bind:this={headerEl} class="mobile-sheet-stack-header">
         <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
-        <div class="flex w-full items-center justify-between gap-2">
+        <div class="mobile-sheet-header-row">
           <h2 class="text-sm font-semibold text-surface-50">New ask</h2>
           <button
             type="button"

@@ -107,6 +107,11 @@ model response. Preserve `segment_id` and `tool_run_id` if you build a custom
 projection; terminal aggregate text is a compatibility/search field, not a
 replacement for the preceding facts.
 
+Tool start and finish facts include a bounded, redacted `input_params` preview.
+The same preview is retained on persisted `tool_run` turn parts returned by
+session history, so reconnecting clients can render equivalent tool details
+without storing or displaying raw tool payloads.
+
 ### Reconnecting typed v2 compatibility stream
 
 V2 remains supported during the client migration window. It is projected from

@@ -9,7 +9,7 @@ use std::str::FromStr;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::authority_id::{IdentifierError, StorageAuthorityKey, WorkshopScopeId};
+use crate::authority_id::{IdentifierError, McpServerId, StorageAuthorityKey, WorkshopScopeId};
 
 /// Durable installation identity persisted in `{dataDir}/installation.json`.
 ///
@@ -294,6 +294,10 @@ pub enum DaemonSecretPath {
         connection_id: ConnectionId,
         slot: IntegrationSecretSlot,
     },
+    McpOAuth {
+        installation_id: InstallationId,
+        server_id: McpServerId,
+    },
     LocalAuth {
         installation_id: InstallationId,
         client_kind: LocalClientKind,
@@ -316,6 +320,14 @@ impl DaemonSecretPath {
                 installation_id.as_str(),
                 connection_id.as_str(),
                 slot.as_str()
+            ),
+            Self::McpOAuth {
+                installation_id,
+                server_id,
+            } => format!(
+                "v1/{}/mcp/{}/oauth",
+                installation_id.as_str(),
+                server_id.as_str()
             ),
             Self::LocalAuth {
                 installation_id,
@@ -351,6 +363,10 @@ impl DaemonSecretPath {
                 installation_id: InstallationId::parse(installation)?,
                 connection_id: ConnectionId::parse(connection)?,
                 slot: IntegrationSecretSlot::parse(slot)?,
+            }),
+            ["v1", installation, "mcp", server_id, "oauth"] => Ok(Self::McpOAuth {
+                installation_id: InstallationId::parse(installation)?,
+                server_id: McpServerId::parse(server_id)?,
             }),
             ["v1", installation, "local-auth", kind, client_id, "token"] => {
                 if client_id.is_empty() || !client_id.is_ascii() {
@@ -394,11 +410,7 @@ impl ClientSecretPath {
             Self::PairingToken {
                 remote_id,
                 session_id,
-            } => format!(
-                "v1/{}/pairing/{}/token",
-                remote_id.as_str(),
-                session_id
-            ),
+            } => format!("v1/{}/pairing/{}/token", remote_id.as_str(), session_id),
         }
     }
 
@@ -465,8 +477,7 @@ mod tests {
 
     #[test]
     fn daemon_path_round_trips() {
-        let installation =
-            InstallationId::parse("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let installation = InstallationId::parse("550e8400-e29b-41d4-a716-446655440000").unwrap();
         let connection = ConnectionId::parse("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let path = DaemonSecretPath::Integration {
             installation_id: installation.clone(),
@@ -490,5 +501,19 @@ mod tests {
         };
         let account = path.account();
         assert_eq!(ClientSecretPath::parse(&account).unwrap(), path);
+    }
+
+    #[test]
+    fn mcp_oauth_path_round_trips() {
+        let path = DaemonSecretPath::McpOAuth {
+            installation_id: InstallationId::parse("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+            server_id: McpServerId::parse("notion").unwrap(),
+        };
+        let account = path.account();
+        assert_eq!(
+            account,
+            "v1/550e8400-e29b-41d4-a716-446655440000/mcp/notion/oauth"
+        );
+        assert_eq!(DaemonSecretPath::parse(&account).unwrap(), path);
     }
 }

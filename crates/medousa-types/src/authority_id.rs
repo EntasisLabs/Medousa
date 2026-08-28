@@ -191,6 +191,13 @@ authority_id!(FeedId, "feed_id", "fd1-", "feed", |value: &str| {
     lower_slug(value, true)
 });
 authority_id!(
+    McpServerId,
+    "mcp_server_id",
+    "mc1-",
+    "mcp-server",
+    |value: &str| lower_slug(value, false)
+);
+authority_id!(
     ManuscriptId,
     "manuscript_id",
     "ms1-",

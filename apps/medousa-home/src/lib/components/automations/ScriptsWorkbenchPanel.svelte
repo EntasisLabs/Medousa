@@ -29,6 +29,7 @@
     shouldSuppressScriptContextMenuClick,
   } from "$lib/utils/scriptContextMenuEvents";
   import { SCRIPT_WORKBENCH_OPEN_CONSOLE_EVENT } from "$lib/utils/scriptWorkbenchChromeEvents";
+  import { setMobileScriptEditorFocus } from "$lib/utils/mobileKeyboardViewport";
   import { onMount, tick } from "svelte";
 
   interface Props {
@@ -95,6 +96,7 @@
     if (!mobile || !visible) return;
     automationsNav.setMobileChromeMode("script-editor");
     return () => {
+      setMobileScriptEditorFocus(false);
       if (automationsNav.mobileChromeMode === "script-editor") {
         automationsNav.setMobileChromeMode("browse");
       }
@@ -113,11 +115,17 @@
   $effect(() => {
     if (!mobile || !visible) return;
     const onTools = () => openTools("root");
+    const onTitle = () => openTools("library");
+    const onMore = () => openTools("root");
     const onSearch = () => openTools("library");
     window.addEventListener("medousa-mobile-automations-tools", onTools);
+    window.addEventListener("medousa-mobile-script-title", onTitle);
+    window.addEventListener("medousa-mobile-script-more", onMore);
     window.addEventListener("medousa-mobile-automations-search-focus", onSearch);
     return () => {
       window.removeEventListener("medousa-mobile-automations-tools", onTools);
+      window.removeEventListener("medousa-mobile-script-title", onTitle);
+      window.removeEventListener("medousa-mobile-script-more", onMore);
       window.removeEventListener("medousa-mobile-automations-search-focus", onSearch);
     };
   });
@@ -480,25 +488,21 @@
         onOpenOutput={mobile ? openOutput : undefined}
       />
 
-      {#if mobile && mobileActiveTab}
-        <div
-          class="scripts-workbench-mobile-title shrink-0 border-b border-surface-500/30 px-3 py-2"
-        >
-          <p class="truncate text-sm font-medium text-surface-100">
-            {mobileActiveTab.name}
-          </p>
-          {#if mobileActiveTab.body.trim()}
-            <p class="workshop-faint mt-0.5 truncate font-mono text-[10px] leading-snug">
-              {mobileActiveTab.body.trim().split("\n")[0]}
-            </p>
-          {:else}
-            <p class="workshop-faint mt-0.5 text-[10px]">Empty script</p>
-          {/if}
-        </div>
-      {/if}
-
       <div class="flex min-h-0 flex-1 overflow-hidden">
-        <div class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div
+          class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+          onfocusin={() => {
+            if (mobile) setMobileScriptEditorFocus(true);
+          }}
+          onfocusout={(event) => {
+            if (
+              mobile &&
+              !(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)
+            ) {
+              setMobileScriptEditorFocus(false);
+            }
+          }}
+        >
           {#if mobile}
             {#if mobileActiveTab}
               {#key `${mobileActiveTab.tabId}:${graphemeScriptEditor.contentEpoch}`}
@@ -532,7 +536,7 @@
               class="scripts-workbench-mobile-empty pointer-events-none absolute inset-x-0 top-8 flex justify-center px-6"
             >
               <p class="rounded-lg border border-surface-500/30 bg-surface-900/90 px-3 py-2 text-center text-[11px] text-content-tertiary">
-                Open Script tools in the top bar for templates, or start typing
+                Choose a template from Script actions, or start typing
               </p>
             </div>
           {/if}

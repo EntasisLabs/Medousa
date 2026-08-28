@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Check } from "@lucide/svelte";
   import { AUTOMATIONS_SECTIONS } from "$lib/automationsSections";
   import { haptic } from "$lib/haptics";
   import type { AutomationsSection } from "$lib/stores/automationsNav.svelte";
@@ -43,16 +44,16 @@
   >
     <div
       bind:this={sheetEl}
-      class="mobile-sheet"
+      class="mobile-sheet mobile-sheet-medium automations-sheet"
       role="dialog"
       aria-label="Automations section"
     >
       <header
         bind:this={headerEl}
-        class="mobile-sheet-header mobile-activity-sheet-header scripts-workbench-sheet-header"
+        class="mobile-sheet-stack-header mobile-activity-sheet-header"
       >
         <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
-        <div class="flex w-full items-start justify-between gap-2">
+        <div class="mobile-sheet-header-row items-start">
           <div class="min-w-0">
             <h2 class="text-sm font-semibold text-surface-50">Automations</h2>
             <p class="workshop-faint mt-0.5 text-xs">Scripts, flows, schedules, history</p>
@@ -63,28 +64,25 @@
         </div>
       </header>
 
-      <div class="mobile-you-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
-        <section>
-          <h3 class="mobile-you-section-title">Section</h3>
-          <ul class="mt-2 space-y-1">
-            {#each AUTOMATIONS_SECTIONS as tab (tab.id)}
-              <li>
-                <button
-                  type="button"
-                  class="mobile-notes-filter-row {section === tab.id
-                    ? 'mobile-notes-filter-row-active'
-                    : ''}"
-                  aria-pressed={section === tab.id}
-                  onclick={() => selectSection(tab.id)}
-                >
-                  <span class="min-w-0 flex-1 text-left text-sm font-medium text-surface-100"
-                    >{tab.label}</span
-                  >
-                </button>
-              </li>
-            {/each}
-          </ul>
-        </section>
+      <div class="mobile-sheet-scroll">
+        <div class="mobile-turn-sheet-group" role="listbox" aria-label="Automations section">
+          {#each AUTOMATIONS_SECTIONS as tab, index (tab.id)}
+            <button
+              type="button"
+              class="mobile-turn-sheet-row {index > 0 ? 'mobile-turn-sheet-row-divider' : ''}"
+              role="option"
+              aria-selected={section === tab.id}
+              onclick={() => selectSection(tab.id)}
+            >
+              <span class="mobile-turn-sheet-row-copy">
+                <span class="mobile-turn-sheet-row-title">{tab.label}</span>
+              </span>
+              {#if section === tab.id}
+                <Check size={18} strokeWidth={2.2} class="mobile-turn-sheet-row-check" />
+              {/if}
+            </button>
+          {/each}
+        </div>
       </div>
     </div>
   </div>

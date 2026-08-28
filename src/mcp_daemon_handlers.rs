@@ -12,8 +12,10 @@ use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
 use crate::mcp_gateway_api::{
-    McpGatewayHealthResponse, McpPolicyEvaluateRequest, McpPolicyEvaluateResponse,
-    McpServerSummary, McpServersResponse, resolve_mcp_gateway_url,
+    BeginMcpOAuthRequest, BeginMcpOAuthResponse, CompleteMcpOAuthRequest, CompleteMcpOAuthResponse,
+    DisconnectMcpOAuthResponse, McpGatewayHealthResponse, McpOAuthStatusResponse,
+    McpPolicyEvaluateRequest, McpPolicyEvaluateResponse, McpServerSummary, McpServersResponse,
+    RefreshMcpOAuthRequest, resolve_mcp_gateway_url,
 };
 use crate::mcp_policy::evaluate_mcp_policy_with_identity;
 use crate::tools::TuiRuntime;
@@ -30,19 +32,56 @@ pub struct McpPolicyApiState {
 }
 
 pub fn gateway_status_surface() -> DeclaredRouter<CapabilityApiState> {
-    DeclaredRouter::default().route(
-        RoutePolicy {
-            method: axum::http::Method::GET,
-            path: "/v1/mcp/gateway/status",
-            group: RouteGroup::Administration,
-            required_capability: Some(crate::request_principal::Capability::AdminRuntime),
-            bootstrap_public: false,
-            browser_policy: BrowserPolicy::NativeOnly,
-            body_limit: 1024,
-            rate_limit_class: RateLimitClass::Administration,
-        },
-        get(mcp_gateway_status),
-    )
+    DeclaredRouter::default()
+        .route(
+            gateway_admin_policy(axum::http::Method::GET, "/v1/mcp/gateway/status", 1024),
+            get(mcp_gateway_status),
+        )
+        .route(
+            gateway_admin_policy(axum::http::Method::GET, "/v1/mcp/oauth/{server_id}", 1024),
+            get(mcp_oauth_status),
+        )
+        .route(
+            gateway_admin_policy(
+                axum::http::Method::DELETE,
+                "/v1/mcp/oauth/{server_id}",
+                1024,
+            ),
+            axum::routing::delete(disconnect_mcp_oauth),
+        )
+        .route(
+            gateway_admin_policy(axum::http::Method::POST, "/v1/mcp/oauth/begin", 64 * 1024),
+            post(begin_mcp_oauth),
+        )
+        .route(
+            gateway_admin_policy(
+                axum::http::Method::POST,
+                "/v1/mcp/oauth/complete",
+                64 * 1024,
+            ),
+            post(complete_mcp_oauth),
+        )
+        .route(
+            gateway_admin_policy(axum::http::Method::POST, "/v1/mcp/oauth/refresh", 16 * 1024),
+            post(refresh_mcp_oauth),
+        )
+}
+
+fn gateway_admin_policy(
+    method: axum::http::Method,
+    path: &'static str,
+    body_limit: usize,
+) -> RoutePolicy {
+    RoutePolicy {
+        method,
+        path,
+        group: RouteGroup::Administration,
+        required_capability: Some(crate::request_principal::Capability::AdminRuntime),
+        bootstrap_public: false,
+        browser_policy: BrowserPolicy::NativeOnly,
+        body_limit,
+        rate_limit_class: RateLimitClass::Administration,
+    }
 }
 
 pub fn capability_surface() -> DeclaredRouter<CapabilityApiState> {
@@ -210,6 +249,75 @@ pub async fn mcp_gateway_status(
     ))
 }
 
+pub async fn mcp_oauth_status(
+    State(state): State<CapabilityApiState>,
+    Path(server_id): Path<String>,
+) -> Result<Json<McpOAuthStatusResponse>, (StatusCode, String)> {
+    state
+        .agent_runtime
+        .mcp_gateway_client
+        .oauth_status(&server_id)
+        .await
+        .map(Json)
+        .map_err(gateway_proxy_error)
+}
+
+pub async fn begin_mcp_oauth(
+    State(state): State<CapabilityApiState>,
+    Json(request): Json<BeginMcpOAuthRequest>,
+) -> Result<Json<BeginMcpOAuthResponse>, (StatusCode, String)> {
+    state
+        .agent_runtime
+        .mcp_gateway_client
+        .begin_oauth(request)
+        .await
+        .map(Json)
+        .map_err(gateway_proxy_error)
+}
+
+pub async fn complete_mcp_oauth(
+    State(state): State<CapabilityApiState>,
+    Json(request): Json<CompleteMcpOAuthRequest>,
+) -> Result<Json<CompleteMcpOAuthResponse>, (StatusCode, String)> {
+    state
+        .agent_runtime
+        .mcp_gateway_client
+        .complete_oauth(request)
+        .await
+        .map(Json)
+        .map_err(gateway_proxy_error)
+}
+
+pub async fn refresh_mcp_oauth(
+    State(state): State<CapabilityApiState>,
+    Json(request): Json<RefreshMcpOAuthRequest>,
+) -> Result<Json<McpOAuthStatusResponse>, (StatusCode, String)> {
+    state
+        .agent_runtime
+        .mcp_gateway_client
+        .refresh_oauth(&request.server_id)
+        .await
+        .map(Json)
+        .map_err(gateway_proxy_error)
+}
+
+pub async fn disconnect_mcp_oauth(
+    State(state): State<CapabilityApiState>,
+    Path(server_id): Path<String>,
+) -> Result<Json<DisconnectMcpOAuthResponse>, (StatusCode, String)> {
+    state
+        .agent_runtime
+        .mcp_gateway_client
+        .disconnect_oauth(&server_id)
+        .await
+        .map(Json)
+        .map_err(gateway_proxy_error)
+}
+
+fn gateway_proxy_error(error: anyhow::Error) -> (StatusCode, String) {
+    (StatusCode::BAD_GATEWAY, error.to_string())
+}
+
 fn build_mcp_gateway_status_response(
     gateway_url: String,
     health_result: Result<McpGatewayHealthResponse, anyhow::Error>,
@@ -332,8 +440,12 @@ mod tests {
             .entries()
             .collect::<Vec<_>>();
         let policy = policy_surface().inventory().entries().collect::<Vec<_>>();
-        assert_eq!(gateway.len(), 1);
-        assert_eq!(gateway[0].required_capability, Some("admin.runtime"));
+        assert_eq!(gateway.len(), 6);
+        assert!(
+            gateway
+                .iter()
+                .all(|route| route.required_capability == Some("admin.runtime"))
+        );
         assert_eq!(policy.len(), 1);
         assert_eq!(policy[0].required_capability, Some("mcp.policy.evaluate"));
     }

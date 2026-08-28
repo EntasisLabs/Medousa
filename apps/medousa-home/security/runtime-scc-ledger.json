@@ -197,6 +197,10 @@
       "specifier": "$lib/styles/shell-tabs.postcss"
     },
     {
+      "from": "src/lib/components/shell/ShellWorkspaceControl.svelte",
+      "specifier": "$lib/styles/shell-tabs.postcss"
+    },
+    {
       "from": "src/lib/components/skills/SpecialistDetailEditor.svelte",
       "specifier": "./agentEditor.css"
     },

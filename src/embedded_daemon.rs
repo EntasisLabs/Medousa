@@ -385,11 +385,13 @@ impl EmbeddedChronologicalTurn {
     ) -> Result<(), medousa_engine::TurnPipelineError> {
         self.commit_active(false).await?;
         let input_summary = embedded_tool_input_summary(&event.tool_name, &event.tool_input);
+        let input_params = embedded_tool_input_params(&event.tool_input);
         if let Ok(mut parts) = self.parts.lock() {
-            parts.tool_started(
+            parts.tool_started_with_params(
                 &tool_run_id,
                 &event.tool_name,
                 &input_summary,
+                input_params.clone(),
                 event.tool_round,
             );
         }
@@ -397,7 +399,7 @@ impl EmbeddedChronologicalTurn {
             tool_run_id,
             tool_name: event.tool_name,
             input_summary,
-            input_params: embedded_tool_input_params(&event.tool_input),
+            input_params,
             tool_round: event.tool_round,
         })
         .await
@@ -767,6 +769,7 @@ pub struct EmbeddedDaemonConfig {
     credentialed_chat_client: Option<CredentialedAiChatClient>,
     routed_chat_client: Option<EmbeddedRoutedChatClient>,
     chatgpt_oauth: Option<Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>>,
+    mcp_oauth: Option<Arc<medousa_mcp_gateway::McpOAuthBroker>>,
     tool_registry_recipe: Arc<dyn EmbeddedToolRegistryRecipe>,
     foreground_turn_timeout: Duration,
     max_live_turns: usize,
@@ -841,6 +844,7 @@ impl EmbeddedDaemonConfig {
             credentialed_chat_client: None,
             routed_chat_client: None,
             chatgpt_oauth: None,
+            mcp_oauth: None,
             tool_registry_recipe: Arc::new(EmptyEmbeddedToolRegistryRecipe),
             foreground_turn_timeout: DEFAULT_FOREGROUND_TURN_TIMEOUT,
             max_live_turns: 1,
@@ -855,6 +859,11 @@ impl EmbeddedDaemonConfig {
         recipe: Arc<dyn EmbeddedToolRegistryRecipe>,
     ) -> Self {
         self.tool_registry_recipe = recipe;
+        self
+    }
+
+    pub fn with_mcp_oauth(mut self, oauth: Arc<medousa_mcp_gateway::McpOAuthBroker>) -> Self {
+        self.mcp_oauth = Some(oauth);
         self
     }
 
@@ -1090,6 +1099,7 @@ impl std::fmt::Debug for EmbeddedDaemonConfig {
             .field("provider", &self.provider)
             .field("model", &self.model)
             .field("chat_client", &"REDACTED")
+            .field("mcp_oauth", &self.mcp_oauth.is_some())
             .field("tool_registry", &"deployment-recipe")
             .field("foreground_turn_timeout", &self.foreground_turn_timeout)
             .field("max_live_turns", &self.max_live_turns)
@@ -1109,6 +1119,7 @@ pub struct EmbeddedDaemon {
     local_credential_id: Arc<str>,
     inference: EmbeddedInferenceBinding,
     chatgpt_oauth: Option<Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>>,
+    mcp_oauth: Option<Arc<medousa_mcp_gateway::McpOAuthBroker>>,
     chat_client: Arc<dyn AiChatClient>,
     mcp_gateway_client: Arc<crate::mcp_gateway_client::McpGatewayClient>,
     tool_registry: Arc<dyn ToolRegistry>,
@@ -1255,10 +1266,14 @@ impl EmbeddedDaemon {
             medousa_mcp_gateway::McpGatewayFullConfig::from_env_and_args(&[]).remote_only(),
         );
         let mcp_invokes_enabled = mcp_config.invokes_enabled;
-        let mcp_registry = Arc::new(medousa_mcp_gateway::ServerRegistry::with_policy_evaluator(
+        let mut mcp_registry = medousa_mcp_gateway::ServerRegistry::with_policy_evaluator(
             mcp_config,
             Arc::new(EmbeddedMcpPolicyEvaluator),
-        ));
+        );
+        if let Some(oauth) = config.mcp_oauth.clone() {
+            mcp_registry = mcp_registry.with_oauth(oauth);
+        }
+        let mcp_registry = Arc::new(mcp_registry);
         let mcp_gateway_client = Arc::new(crate::mcp_gateway_client::McpGatewayClient::in_process(
             mcp_registry,
             mcp_invokes_enabled,
@@ -1364,6 +1379,7 @@ impl EmbeddedDaemon {
             local_credential_id,
             inference,
             chatgpt_oauth: config.chatgpt_oauth,
+            mcp_oauth: config.mcp_oauth,
             chat_client: config.chat_client,
             mcp_gateway_client,
             tool_registry,
@@ -1946,6 +1962,52 @@ impl EmbeddedDaemonClient {
         Ok((health, servers))
     }
 
+    pub async fn mcp_oauth_status(
+        &self,
+        server_id: &str,
+    ) -> Result<medousa_types::mcp_gateway_api::McpOAuthStatusResponse> {
+        self.require(Capability::AdminRuntime)?;
+        self.daemon.mcp_gateway_client.oauth_status(server_id).await
+    }
+
+    pub async fn begin_mcp_oauth(
+        &self,
+        request: medousa_types::mcp_gateway_api::BeginMcpOAuthRequest,
+    ) -> Result<medousa_types::mcp_gateway_api::BeginMcpOAuthResponse> {
+        self.require(Capability::AdminRuntime)?;
+        self.daemon.mcp_gateway_client.begin_oauth(request).await
+    }
+
+    pub async fn complete_mcp_oauth(
+        &self,
+        request: medousa_types::mcp_gateway_api::CompleteMcpOAuthRequest,
+    ) -> Result<medousa_types::mcp_gateway_api::CompleteMcpOAuthResponse> {
+        self.require(Capability::AdminRuntime)?;
+        self.daemon.mcp_gateway_client.complete_oauth(request).await
+    }
+
+    pub async fn refresh_mcp_oauth(
+        &self,
+        server_id: &str,
+    ) -> Result<medousa_types::mcp_gateway_api::McpOAuthStatusResponse> {
+        self.require(Capability::AdminRuntime)?;
+        self.daemon
+            .mcp_gateway_client
+            .refresh_oauth(server_id)
+            .await
+    }
+
+    pub async fn disconnect_mcp_oauth(
+        &self,
+        server_id: &str,
+    ) -> Result<medousa_types::mcp_gateway_api::DisconnectMcpOAuthResponse> {
+        self.require(Capability::AdminRuntime)?;
+        self.daemon
+            .mcp_gateway_client
+            .disconnect_oauth(server_id)
+            .await
+    }
+
     pub async fn reconfigure_mcp_gateway(
         &self,
         config: medousa_mcp_gateway::McpGatewayFullConfig,
@@ -1953,10 +2015,14 @@ impl EmbeddedDaemonClient {
         self.require(Capability::AdminRuntime)?;
         let config = Arc::new(config.remote_only());
         let invokes_enabled = config.invokes_enabled;
-        let registry = Arc::new(medousa_mcp_gateway::ServerRegistry::with_policy_evaluator(
+        let mut registry = medousa_mcp_gateway::ServerRegistry::with_policy_evaluator(
             config,
             Arc::new(EmbeddedMcpPolicyEvaluator),
-        ));
+        );
+        if let Some(oauth) = self.daemon.mcp_oauth.clone() {
+            registry = registry.with_oauth(oauth);
+        }
+        let registry = Arc::new(registry);
         self.daemon
             .mcp_gateway_client
             .replace_in_process(registry, invokes_enabled)

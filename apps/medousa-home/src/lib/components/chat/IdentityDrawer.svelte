@@ -79,10 +79,10 @@
       >
         <header
           bind:this={headerEl}
-          class="mobile-sheet-header scripts-workbench-sheet-header mobile-chat-history-header"
+          class="mobile-sheet-stack-header mobile-chat-history-header"
         >
           <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
-          <div class="flex w-full items-start justify-between gap-2">
+          <div class="mobile-sheet-header-row items-start">
             <div class="min-w-0">
               <h2 class="text-sm font-semibold text-surface-50">Identity recall</h2>
               <p class="workshop-faint mt-0.5 truncate text-xs">

@@ -244,6 +244,38 @@
   background-color: rgb(var(--color-surface-950));
 }
 
+.mobile-top-chrome[data-settings-title="true"] {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+}
+
+.mobile-top-chrome[data-settings-title="true"] > :nth-child(2) {
+  min-width: 0;
+  justify-self: center;
+}
+
+.mobile-top-chrome[data-automations-mode="script-editor"] {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr) auto;
+}
+
+.mobile-script-title {
+  @apply flex min-w-0 items-center justify-center gap-1.5 rounded-full px-2 py-2 text-sm font-medium text-surface-100 transition active:bg-surface-800/70;
+}
+
+.mobile-script-dirty {
+  @apply h-1.5 w-1.5 shrink-0 rounded-full bg-primary-400;
+}
+
+.mobile-script-actions {
+  @apply max-w-none shrink-0 gap-1 overflow-visible;
+}
+
+.mobile-script-run {
+  @apply inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-full bg-surface-100 px-3 text-xs font-semibold transition active:bg-surface-300 disabled:pointer-events-none disabled:opacity-35;
+  color: rgb(var(--color-surface-950));
+}
+
 /*
  * Chat: one continuous room — title + thread + composer share the shell canvas.
  * Do not restyle message content; only dissolve chrome banding.
@@ -272,9 +304,12 @@
   @apply h-11 w-11 shrink-0;
 }
 
-.mobile-top-chrome[data-automations-mode="flow-editor"] .mobile-chrome-icon,
-.mobile-top-chrome[data-automations-mode="script-editor"] .mobile-chrome-icon {
+.mobile-top-chrome[data-automations-mode="flow-editor"] .mobile-chrome-icon {
   @apply h-11 w-11;
+}
+
+.mobile-top-chrome[data-automations-mode="script-editor"] .mobile-chrome-icon {
+  @apply h-10 w-10;
 }
 
 .mobile-chrome-workshop {
@@ -290,39 +325,46 @@
   @apply text-[11px] font-semibold tracking-wide text-surface-50;
 }
 
-.mobile-dest-menu-backdrop {
-  @apply fixed inset-0 z-[60] flex items-start justify-start p-3;
-  padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
-  background-color: rgb(var(--color-surface-950) / 0.55);
-}
-
 .mobile-dest-menu {
-  @apply flex max-h-[min(88dvh,44rem)] w-[min(100%,23rem)] flex-col overflow-hidden rounded-3xl border border-surface-500/40 shadow-2xl;
-  background-color: rgb(var(--color-surface-900) / 0.98);
+  height: min(88dvh, 52rem);
+  max-height: calc(100dvh - max(1rem, env(safe-area-inset-top, 0px)));
 }
 
 .mobile-dest-menu-head {
-  @apply flex items-center justify-between gap-2 border-b border-surface-700/40 px-4 py-2;
+  @apply grid shrink-0 grid-cols-[3.5rem_1fr_3.5rem] items-center px-5 pb-2 pt-1;
 }
 
 .mobile-dest-menu-title {
-  @apply text-[16px] font-semibold leading-5 text-surface-50;
+  @apply overflow-hidden text-center text-[15px] font-semibold text-surface-50;
+  letter-spacing: -0.01em;
 }
 
-.mobile-dest-menu-head-actions {
-  @apply flex items-center gap-1;
+.mobile-dest-menu-header-spacer {
+  @apply h-11 w-11;
+}
+
+.mobile-dest-menu-edit-toggle,
+.mobile-dest-menu-done {
+  @apply inline-flex min-h-11 items-center border-0 bg-transparent text-[13px] font-semibold disabled:opacity-40;
+  color: rgb(var(--theme-link));
 }
 
 .mobile-dest-menu-edit-toggle {
-  @apply inline-flex min-h-11 items-center rounded-full px-3 text-[13px] font-medium text-content-secondary transition active:bg-surface-800 disabled:opacity-40;
+  @apply justify-start;
+}
+
+.mobile-dest-menu-done {
+  @apply justify-end;
 }
 
 .mobile-dest-menu-switchers {
-  @apply flex flex-wrap items-center gap-2 border-b border-surface-700/30 px-4 py-2;
+  @apply mx-5 mb-2 flex flex-wrap items-center gap-1 rounded-2xl border p-1.5;
+  background: rgb(var(--color-surface-800) / 0.72);
+  border-color: rgb(var(--color-surface-600) / 0.28);
 }
 
 .mobile-dest-menu-switchers .mobile-profile-pill {
-  @apply min-h-11 max-w-[10rem] gap-2 border-surface-600/50 bg-surface-800/45 px-3 py-2;
+  @apply min-h-11 min-w-0 flex-1 gap-2 border-transparent bg-transparent px-2.5 py-2 active:bg-surface-800/70;
 }
 
 .mobile-dest-menu-switchers .mobile-profile-monogram {
@@ -330,16 +372,16 @@
 }
 
 .mobile-dest-menu-activity {
-  @apply inline-flex min-h-11 items-center rounded-full border border-surface-600/50 bg-surface-800/45 px-3 text-xs font-medium leading-none;
+  @apply inline-flex min-h-11 items-center gap-2 rounded-xl border border-transparent bg-transparent px-2.5 text-xs font-medium leading-none active:bg-surface-800/70;
   color: rgb(var(--theme-text-secondary));
 }
 
 .mobile-dest-menu-scroll {
-  @apply min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-1;
+  @apply pt-0;
 }
 
 .mobile-dest-menu-edit-intro {
-  @apply mx-1 mt-3 flex flex-col gap-1 rounded-2xl border border-surface-600/35 bg-surface-800/35 px-3 py-3 text-[12px] leading-4 text-content-tertiary;
+  @apply mt-2 flex flex-col gap-1 rounded-2xl border border-surface-600/35 bg-surface-800/35 px-4 py-3 text-[12px] leading-4 text-content-tertiary;
 }
 
 .mobile-dest-menu-edit-intro strong {
@@ -347,7 +389,7 @@
 }
 
 .mobile-dest-menu-section {
-  @apply px-1 pb-1 pt-3.5 text-[11px] font-semibold uppercase leading-[14px] tracking-[0.1em];
+  @apply px-1 pb-1 pt-3 text-[11px] font-semibold uppercase leading-[14px] tracking-[0.12em];
   color: rgb(var(--theme-text-quiet));
 }
 
@@ -356,27 +398,20 @@
 }
 
 .mobile-dest-menu-list--tail {
-  @apply mt-3 border-t border-surface-700/35 pt-2;
+  @apply mt-3;
 }
 
 .mobile-dest-menu-row {
-  @apply flex min-h-11 w-full items-center gap-3 rounded-xl px-1 py-2 text-left transition active:bg-surface-800/80;
+  min-height: 3.85rem;
 }
 
 .mobile-dest-menu-icon {
-  @apply h-5 w-5 shrink-0 text-content-tertiary;
-}
-
-.mobile-dest-menu-row-title {
-  @apply block text-[14px] font-medium leading-[18px] text-surface-50;
-}
-
-.mobile-dest-menu-row-hint {
-  @apply mt-0.5 block text-[12px] leading-4 text-content-tertiary;
+  @apply h-10 w-10 shrink-0 rounded-xl p-2.5 text-content-tertiary;
+  background: rgb(var(--color-surface-900) / 0.64);
 }
 
 .mobile-dest-menu-edit-row {
-  @apply pr-1.5;
+  @apply pr-4;
 }
 
 .mobile-dest-menu-edit-row-hidden .mobile-dest-menu-icon,
@@ -401,22 +436,77 @@
   color: rgb(var(--theme-text-secondary));
 }
 
-.mobile-notes-filter-seg {
-  @apply min-h-11 min-w-0 flex-1 rounded-lg px-3 py-2 text-sm font-medium transition;
+.mobile-notes-filter-sheet {
+  width: 100%;
+  max-height: min(82dvh, 44rem);
+}
+
+.mobile-notes-filter-body {
+  @apply space-y-5 px-5 pb-5 pt-2;
+}
+
+.mobile-notes-filter-section-title {
+  @apply mb-2 px-1 text-[11px] font-semibold uppercase leading-[14px] tracking-[0.12em];
+  color: rgb(var(--theme-text-quiet));
+}
+
+.mobile-notes-library-switch {
+  @apply flex gap-1 rounded-2xl border p-1;
+  border-color: rgb(var(--color-surface-600) / 0.28);
+  background: rgb(var(--color-surface-800) / 0.6);
+}
+
+.mobile-notes-library-option {
+  @apply min-h-11 min-w-0 flex-1 rounded-xl px-3 py-2 text-sm font-medium transition;
   color: rgb(var(--theme-text-tertiary));
 }
 
-.mobile-notes-filter-seg-active {
-  @apply bg-surface-800 text-surface-50;
+.mobile-notes-library-option-active {
+  @apply text-surface-50;
+  background: rgb(var(--color-surface-700) / 0.7);
+  box-shadow: inset 0 0 0 1px rgb(var(--color-surface-500) / 0.24);
 }
 
-.mobile-notes-filter-chip {
-  @apply inline-flex min-h-11 shrink-0 items-center gap-1 rounded-full border border-surface-500/40 bg-surface-800/60 px-3 text-xs font-medium transition;
+.mobile-notes-space-options {
+  @apply flex flex-wrap gap-2;
+}
+
+.mobile-notes-space-option {
+  @apply inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border px-3 text-[13px] font-medium transition active:bg-surface-700/70;
+  border-color: rgb(var(--color-surface-600) / 0.3);
+  background: rgb(var(--color-surface-800) / 0.58);
   color: rgb(var(--theme-text-secondary));
 }
 
-.mobile-notes-filter-chip-active {
-  @apply border-primary-500/50 bg-primary-500/15 text-primary-200;
+.mobile-notes-space-option-active {
+  border-color: rgb(var(--color-primary-500) / 0.42);
+  background: rgb(var(--color-primary-500) / 0.13);
+  color: rgb(var(--color-primary-200));
+}
+
+.mobile-notes-space-count {
+  @apply tabular-nums;
+  color: rgb(var(--theme-text-quiet));
+}
+
+.mobile-notes-space-check {
+  @apply shrink-0;
+  color: rgb(var(--color-primary-300));
+}
+
+.mobile-notes-view-row {
+  min-height: 3.85rem;
+  padding-inline: 1rem;
+  padding-block: 0.65rem;
+}
+
+.mobile-notes-view-row-active {
+  background: rgb(var(--color-surface-700) / 0.24);
+}
+
+.mobile-notes-view-icon {
+  @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-content-tertiary;
+  background: rgb(var(--color-surface-900) / 0.58);
 }
 
 .mobile-notes-filter-row {

@@ -27,7 +27,7 @@ describe("mobileDestinationSections", () => {
     const spec = defaultEnvironmentSpec();
     const preset = spec.layoutPresets![0]!;
     preset.surfaces = preset.surfaces.filter(
-      (id) => id !== "web" && id !== "automations",
+      (id) => id !== "web" && id !== "workshop" && id !== "automations",
     );
 
     const items = mobileDestinationSections(spec).flatMap((section) => section.items);
@@ -35,6 +35,7 @@ describe("mobileDestinationSections", () => {
     expect(items.some((item) => item.more === "automations")).toBe(false);
     expect(items.some((item) => item.id === "tab-home")).toBe(true);
     expect(items.some((item) => item.more === "profiles")).toBe(true);
+    expect(items.some((item) => item.more === "workshop")).toBe(true);
     expect(items.some((item) => item.more === "runtime")).toBe(true);
   });
 
@@ -65,6 +66,11 @@ describe("mobileDestinationSections", () => {
     ).toBe(true);
     expect(
       mobileEditableDestinationItems(spec).some((item) => item.surfaceId === "home"),
+    ).toBe(false);
+    expect(
+      mobileEditableDestinationItems(spec).some(
+        (item) => item.surfaceId === "workshop",
+      ),
     ).toBe(false);
   });
 });

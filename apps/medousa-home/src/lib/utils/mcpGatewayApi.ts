@@ -1,13 +1,37 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "$lib/window";
 import type {
+  CompleteMcpOAuthResult,
   McpGatewayConfigLoadResult,
   McpGatewayRestartResult,
   McpGatewayStatusResult,
   McpGatewayTestResult,
+  McpOAuthStatus,
   McpServerMutationResult,
   McpServerUpsertRequest,
 } from "$lib/types/mcpGateway";
+
+interface McpOAuthStatusWire {
+  server_id: string;
+  status: string;
+  connected: boolean;
+  issuer?: string | null;
+  scopes?: string[];
+}
+
+interface CompleteMcpOAuthWire {
+  connection: McpOAuthStatusWire;
+}
+
+function normalizeMcpOAuthStatus(status: McpOAuthStatusWire): McpOAuthStatus {
+  return {
+    serverId: status.server_id,
+    status: status.status,
+    connected: status.connected,
+    issuer: status.issuer ?? null,
+    scopes: status.scopes ?? [],
+  };
+}
 
 export type { McpServerUpsertRequest };
 
@@ -142,6 +166,20 @@ export async function applyMcpServer(
     };
   }
   return invoke<McpGatewayTestResult>("mcp_gateway_apply_server", { request });
+}
+
+export async function fetchMcpOAuthStatus(serverId: string): Promise<McpOAuthStatus> {
+  const status = await invoke<McpOAuthStatusWire>("mcp_oauth_status", { serverId });
+  return normalizeMcpOAuthStatus(status);
+}
+
+export async function authorizeMcpOAuth(serverId: string): Promise<CompleteMcpOAuthResult> {
+  const result = await invoke<CompleteMcpOAuthWire>("mcp_oauth_authorize", { serverId });
+  return { connection: normalizeMcpOAuthStatus(result.connection) };
+}
+
+export async function disconnectMcpOAuth(serverId: string): Promise<void> {
+  await invoke("mcp_oauth_disconnect", { serverId });
 }
 
 // Alias for clarity in UI

@@ -2051,7 +2051,13 @@ impl AgentStreamSink for IngestAgentStreamSink {
         tool_round: usize,
     ) {
         if let Ok(mut parts) = self.parts.lock() {
-            parts.tool_started(&tool_run_id, &tool_name, &input_summary, tool_round);
+            parts.tool_started_with_params(
+                &tool_run_id,
+                &tool_name,
+                &input_summary,
+                input_params.clone(),
+                tool_round,
+            );
         }
         publish_interactive_turn_event(
             &self.stream,

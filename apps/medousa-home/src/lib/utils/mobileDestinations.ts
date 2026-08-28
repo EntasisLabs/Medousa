@@ -91,6 +91,7 @@ const MORE_SURFACE_IDS: Partial<
 
 const PINNED_MORE_DESTINATIONS = new Set<Exclude<MoreDestination, "hub">>([
   "profiles",
+  "workshop",
   "settings",
   "runtime",
 ]);

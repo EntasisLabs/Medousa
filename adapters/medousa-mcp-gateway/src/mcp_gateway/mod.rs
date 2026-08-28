@@ -3,6 +3,7 @@
 mod auth;
 pub mod catalog;
 pub mod config;
+pub mod oauth;
 pub mod policy_client;
 pub mod registry;
 mod remote_client;
@@ -15,6 +16,10 @@ pub use catalog::{discover_from_catalog, mock_catalog_sync_response, mock_tool_c
 pub use config::{
     resolve_mcp_gateway_admin_token, resolve_mcp_gateway_token, resolve_mcp_policy_token,
 };
+pub use oauth::{
+    McpOAuthBeginRequest, McpOAuthBroker, McpOAuthBundleStore, McpOAuthError,
+    SecureMcpOAuthBundleStore,
+};
 pub use policy_client::McpPolicyEvaluator;
 pub use registry::ServerRegistry;
 pub use server_config::{McpGatewayFullConfig, gateway_config_path};
@@ -23,7 +28,7 @@ pub use starter_config::{STARTER_MCP_GATEWAY_TOML, install_starter_gateway_confi
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -31,8 +36,10 @@ use chrono::Utc;
 use tokio::sync::RwLock;
 
 use medousa_types::mcp_gateway_api::{
-    McpAdminStatusResponse, McpDiscoverRequest, McpDiscoverResponse, McpGatewayHealthResponse,
-    McpInvokeRequest, McpInvokeResponse, McpServersResponse,
+    BeginMcpOAuthRequest, BeginMcpOAuthResponse, CompleteMcpOAuthRequest, CompleteMcpOAuthResponse,
+    DisconnectMcpOAuthResponse, McpAdminStatusResponse, McpDiscoverRequest, McpDiscoverResponse,
+    McpGatewayHealthResponse, McpInvokeRequest, McpInvokeResponse, McpOAuthStatusResponse,
+    McpServersResponse, RefreshMcpOAuthRequest,
 };
 
 #[derive(Clone)]
@@ -49,6 +56,13 @@ pub fn build_router(state: GatewayState) -> Router {
         .route("/v1/mcp/catalog", get(catalog))
         .route("/v1/mcp/servers", get(list_servers))
         .route("/v1/mcp/invoke", post(invoke))
+        .route(
+            "/v1/mcp/oauth/{server_id}",
+            get(mcp_oauth_status).delete(disconnect_mcp_oauth),
+        )
+        .route("/v1/mcp/oauth/begin", post(begin_mcp_oauth))
+        .route("/v1/mcp/oauth/complete", post(complete_mcp_oauth))
+        .route("/v1/mcp/oauth/refresh", post(refresh_mcp_oauth))
         .route("/v1/admin/invokes/disable", post(admin_disable_invokes))
         .route("/v1/admin/invokes/enable", post(admin_enable_invokes))
         .route("/v1/admin/catalog/refresh", post(admin_refresh_catalog))
@@ -62,7 +76,19 @@ pub async fn serve(config: McpGatewayFullConfig) -> anyhow::Result<()> {
         .map_err(|error| anyhow::anyhow!("invalid MCP gateway bind {}: {error}", config.bind))?;
 
     let config = Arc::new(config);
-    let registry = Arc::new(ServerRegistry::new(config.clone()));
+    let data_dir = std::env::var("MEDOUSA_DATA_DIR")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            dirs::data_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join("medousa")
+        });
+    let oauth_store = SecureMcpOAuthBundleStore::new(data_dir).map_err(anyhow::Error::msg)?;
+    let oauth = Arc::new(McpOAuthBroker::new(Arc::new(oauth_store)));
+    let registry = Arc::new(ServerRegistry::new(config.clone()).with_oauth(oauth));
     registry.bootstrap().await;
     registry.clone().spawn_refresh_loop();
 
@@ -141,6 +167,89 @@ async fn invoke(
     authorize_gateway(&headers, &state)?;
     let invokes_enabled = *state.invokes_enabled.read().await;
     Ok(Json(state.registry.invoke(request, invokes_enabled).await))
+}
+
+async fn mcp_oauth_status(
+    State(state): State<GatewayState>,
+    Path(server_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<McpOAuthStatusResponse>, (StatusCode, String)> {
+    authorize_gateway(&headers, &state)?;
+    state
+        .registry
+        .oauth_status(&server_id)
+        .await
+        .map(Json)
+        .map_err(mcp_oauth_api_error)
+}
+
+async fn begin_mcp_oauth(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    Json(request): Json<BeginMcpOAuthRequest>,
+) -> Result<Json<BeginMcpOAuthResponse>, (StatusCode, String)> {
+    authorize_gateway(&headers, &state)?;
+    state
+        .registry
+        .begin_oauth(request)
+        .await
+        .map(Json)
+        .map_err(mcp_oauth_api_error)
+}
+
+async fn complete_mcp_oauth(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    Json(request): Json<CompleteMcpOAuthRequest>,
+) -> Result<Json<CompleteMcpOAuthResponse>, (StatusCode, String)> {
+    authorize_gateway(&headers, &state)?;
+    state
+        .registry
+        .complete_oauth(&request.login_id, &request.callback_url)
+        .await
+        .map(Json)
+        .map_err(mcp_oauth_api_error)
+}
+
+async fn refresh_mcp_oauth(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    Json(request): Json<RefreshMcpOAuthRequest>,
+) -> Result<Json<McpOAuthStatusResponse>, (StatusCode, String)> {
+    authorize_gateway(&headers, &state)?;
+    state
+        .registry
+        .refresh_oauth(&request.server_id)
+        .await
+        .map(Json)
+        .map_err(mcp_oauth_api_error)
+}
+
+async fn disconnect_mcp_oauth(
+    State(state): State<GatewayState>,
+    Path(server_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<DisconnectMcpOAuthResponse>, (StatusCode, String)> {
+    authorize_gateway(&headers, &state)?;
+    state
+        .registry
+        .disconnect_oauth(&server_id)
+        .await
+        .map(Json)
+        .map_err(mcp_oauth_api_error)
+}
+
+fn mcp_oauth_api_error(error: McpOAuthError) -> (StatusCode, String) {
+    let status = match error {
+        McpOAuthError::InvalidInput(_)
+        | McpOAuthError::ServerUrlMissing(_)
+        | McpOAuthError::ProtocolState => StatusCode::BAD_REQUEST,
+        McpOAuthError::ServerNotFound(_) | McpOAuthError::LoginNotFound => StatusCode::NOT_FOUND,
+        McpOAuthError::NotConnected => StatusCode::UNAUTHORIZED,
+        McpOAuthError::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
+        McpOAuthError::OAuth(_) => StatusCode::BAD_GATEWAY,
+    };
+    (status, error.to_string())
 }
 
 async fn admin_refresh_catalog(

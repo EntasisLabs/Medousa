@@ -18,6 +18,7 @@ import type {
   StageRoutingMatrix,
 } from "$lib/types/runtime";
 import type { InferenceProfiles } from "$lib/types/inferenceProfiles";
+import { applyMainInferenceSelection } from "$lib/types/inferenceProfiles";
 import { normalizeReasoningEffort } from "$lib/types/reasoningEffort";
 import { pollAllSettled } from "$lib/utils/poll";
 import { alignStageRoutingWithHost, defaultStageRouting } from "$lib/utils/stageRouting";
@@ -376,7 +377,7 @@ export class RuntimeStore {
     }
     try {
       const defaults = await getEngineTuiDefaults();
-      await putEngineTuiDefaults({
+      let nextDefaults = {
         ...defaults,
         ...(shouldApplySettings
           ? {
@@ -389,7 +390,18 @@ export class RuntimeStore {
         ...(shouldPersistReasoning
           ? { reasoningEffort: this.reasoningEffort }
           : {}),
-      });
+      };
+      if (shouldApplySettings) {
+        nextDefaults = applyMainInferenceSelection(
+          nextDefaults,
+          this.provider,
+          this.model,
+        );
+      }
+      await putEngineTuiDefaults(nextDefaults);
+      if (shouldApplySettings) {
+        this.inferenceProfiles = nextDefaults.inferenceProfiles ?? null;
+      }
     } catch (err) {
       this.controlsMessage =
         err instanceof Error ? err.message : String(err);

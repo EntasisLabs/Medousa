@@ -307,6 +307,21 @@ fn main() {
         McpGatewayStatusResponse,
         "McpGatewayStatusResponse"
     );
+    export_type!(schemas, McpOAuthStatusResponse, "McpOAuthStatusResponse");
+    export_type!(schemas, BeginMcpOAuthRequest, "BeginMcpOAuthRequest");
+    export_type!(schemas, BeginMcpOAuthResponse, "BeginMcpOAuthResponse");
+    export_type!(schemas, CompleteMcpOAuthRequest, "CompleteMcpOAuthRequest");
+    export_type!(
+        schemas,
+        CompleteMcpOAuthResponse,
+        "CompleteMcpOAuthResponse"
+    );
+    export_type!(schemas, RefreshMcpOAuthRequest, "RefreshMcpOAuthRequest");
+    export_type!(
+        schemas,
+        DisconnectMcpOAuthResponse,
+        "DisconnectMcpOAuthResponse"
+    );
 
     // Vault
     export_type!(schemas, VaultRootsResponse, "VaultRootsResponse");

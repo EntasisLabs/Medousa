@@ -38,6 +38,7 @@ function defaultSurfaces() {
     { id: "calendar", label: "Calendar", icon: "calendar-days", builtinId: "calendar" },
     { id: "web", label: "Web", icon: "globe", builtinId: "web", mobileTab: "web" },
     { id: "map", label: "Map", icon: "compass", builtinId: "map" },
+    { id: "workshop", label: "Capabilities", icon: "zap", builtinId: "workshop" },
     { id: "automations", label: "Automations", icon: "zap", builtinId: "automations" },
     { id: "messaging", label: "Messaging", icon: "radio", builtinId: "messaging" },
     {

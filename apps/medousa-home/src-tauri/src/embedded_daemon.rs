@@ -258,17 +258,24 @@ pub(crate) fn normalize_inference_defaults(
 
 #[cfg(target_os = "ios")]
 async fn boot_embedded_daemon() -> Result<Arc<EmbeddedDaemon>, String> {
-    let (installation_id, provider, model, base_url, root) = tokio::task::spawn_blocking(|| {
-        let installation_id = crate::integration_secrets::ensure_secrets_bootstrapped()?;
-        let defaults = crate::medousa_paths::load_tui_defaults();
-        let (provider, model, base_url) = inference_route_from_defaults(&defaults)?;
-        let root = crate::paths::medousa_data_dir().join("embedded-daemon");
-        Ok::<_, String>((installation_id, provider, model, base_url, root))
-    })
-    .await
-    .map_err(|_| "embedded daemon configuration task failed".to_string())??;
+    let (installation_id, provider, model, base_url, data_dir, root) =
+        tokio::task::spawn_blocking(|| {
+            let installation_id = crate::integration_secrets::ensure_secrets_bootstrapped()?;
+            let defaults = crate::medousa_paths::load_tui_defaults();
+            let (provider, model, base_url) = inference_route_from_defaults(&defaults)?;
+            let data_dir = crate::paths::medousa_data_dir();
+            let root = data_dir.join("embedded-daemon");
+            Ok::<_, String>((installation_id, provider, model, base_url, data_dir, root))
+        })
+        .await
+        .map_err(|_| "embedded daemon configuration task failed".to_string())??;
     let chatgpt_oauth = Arc::new(ChatGptOAuthBroker::new(Arc::new(
         HomeChatGptCredentialStore,
+    )));
+    let mcp_oauth_store = medousa_mcp_gateway::SecureMcpOAuthBundleStore::new(data_dir)
+        .map_err(|error| format!("initialize MCP OAuth storage: {error}"))?;
+    let mcp_oauth = Arc::new(medousa_mcp_gateway::McpOAuthBroker::new(Arc::new(
+        mcp_oauth_store,
     )));
     let config = EmbeddedDaemonConfig::credentialed_with_chatgpt(
         root,
@@ -280,6 +287,7 @@ async fn boot_embedded_daemon() -> Result<Arc<EmbeddedDaemon>, String> {
         chatgpt_oauth,
     )
     .map_err(|error| format!("configure embedded daemon inference: {error:#}"))?
+    .with_mcp_oauth(mcp_oauth)
     .with_tool_registry_recipe(Arc::new(
         medousa::mobile_tool_registry::PersonalMobileToolRegistryRecipe,
     ))

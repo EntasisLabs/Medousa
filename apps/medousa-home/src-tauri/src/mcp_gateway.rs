@@ -554,6 +554,7 @@ fn spawn_gateway_background(bind: &str) -> Result<(u32, PathBuf), String> {
     let mut command = Command::new(&gateway.program);
     command.args(&gateway.pre_args);
     command.arg("--bind").arg(bind);
+    command.env("MEDOUSA_DATA_DIR", medousa_data_dir());
     command.stdin(Stdio::null());
     command.stdout(Stdio::from(log_file));
     command.stderr(Stdio::from(log_file_err));
@@ -669,6 +670,140 @@ pub async fn mcp_gateway_status(
             config_path,
         }),
     }
+}
+
+#[tauri::command]
+pub async fn mcp_oauth_status(
+    state: tauri::State<'_, crate::daemon::DaemonState>,
+    _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
+    server_id: String,
+) -> Result<medousa_types::McpOAuthStatusResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .mcp_oauth_status(&server_id)
+            .await
+            .map_err(|error| format!("read MCP connection: {error:#}"));
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = _embedded_state;
+    crate::daemon::workshop_http::get_json(&state, &format!("/v1/mcp/oauth/{}", server_id.trim()))
+        .await
+}
+
+/// Run the host browser ceremony while the selected runtime remains the sole
+/// owner of OAuth discovery, state validation, token exchange, and storage.
+#[tauri::command]
+pub async fn mcp_oauth_authorize(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::daemon::DaemonState>,
+    embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
+    server_id: String,
+) -> Result<medousa_types::CompleteMcpOAuthResponse, String> {
+    let browser = crate::oauth_browser::OAuthBrowserSession::bind().await?;
+    let login = mcp_oauth_begin(
+        state.clone(),
+        embedded_state.clone(),
+        medousa_types::BeginMcpOAuthRequest {
+            server_id,
+            redirect_uri: browser.redirect_uri().to_string(),
+            scopes: Vec::new(),
+            client_metadata_url: None,
+            client_id: None,
+            client_secret: None,
+            challenge: None,
+        },
+    )
+    .await?;
+
+    let callback = browser.authorize(&app, &login.authorization_url).await?;
+    let result = mcp_oauth_complete(
+        state,
+        embedded_state,
+        medousa_types::CompleteMcpOAuthRequest {
+            login_id: login.login_id,
+            callback_url: callback.url().to_string(),
+        },
+    )
+    .await;
+    callback.finish(&app, result.is_ok()).await;
+    result
+}
+
+#[tauri::command]
+pub async fn mcp_oauth_begin(
+    state: tauri::State<'_, crate::daemon::DaemonState>,
+    _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
+    request: medousa_types::BeginMcpOAuthRequest,
+) -> Result<medousa_types::BeginMcpOAuthResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .begin_mcp_oauth(request)
+            .await
+            .map_err(|error| format!("begin MCP authorization: {error:#}"));
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = _embedded_state;
+    crate::daemon::workshop_http::post_json(&state, "/v1/mcp/oauth/begin", &request).await
+}
+
+#[tauri::command]
+pub async fn mcp_oauth_complete(
+    state: tauri::State<'_, crate::daemon::DaemonState>,
+    _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
+    request: medousa_types::CompleteMcpOAuthRequest,
+) -> Result<medousa_types::CompleteMcpOAuthResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .complete_mcp_oauth(request)
+            .await
+            .map_err(|error| format!("complete MCP authorization: {error:#}"));
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = _embedded_state;
+    crate::daemon::workshop_http::post_json(&state, "/v1/mcp/oauth/complete", &request).await
+}
+
+#[tauri::command]
+pub async fn mcp_oauth_refresh(
+    state: tauri::State<'_, crate::daemon::DaemonState>,
+    _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
+    request: medousa_types::RefreshMcpOAuthRequest,
+) -> Result<medousa_types::McpOAuthStatusResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .refresh_mcp_oauth(&request.server_id)
+            .await
+            .map_err(|error| format!("refresh MCP connection: {error:#}"));
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = _embedded_state;
+    crate::daemon::workshop_http::post_json(&state, "/v1/mcp/oauth/refresh", &request).await
+}
+
+#[tauri::command]
+pub async fn mcp_oauth_disconnect(
+    state: tauri::State<'_, crate::daemon::DaemonState>,
+    _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
+    server_id: String,
+) -> Result<medousa_types::DisconnectMcpOAuthResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .disconnect_mcp_oauth(&server_id)
+            .await
+            .map_err(|error| format!("disconnect MCP authorization: {error:#}"));
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = _embedded_state;
+    crate::daemon::workshop_http::delete_json(
+        &state,
+        &format!("/v1/mcp/oauth/{}", server_id.trim()),
+    )
+    .await
 }
 
 fn merge_daemon_gateway_status(

@@ -158,6 +158,74 @@ pub struct McpServersResponse {
     pub servers: Vec<McpServerSummary>,
 }
 
+/// Secret-free connection state for one remote MCP server's OAuth grant.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct McpOAuthStatusResponse {
+    pub server_id: String,
+    pub status: String,
+    pub connected: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issuer: Option<String>,
+    #[serde(default)]
+    pub scopes: Vec<String>,
+}
+
+/// Begin OAuth for one configured remote MCP server.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct BeginMcpOAuthRequest {
+    pub server_id: String,
+    pub redirect_uri: String,
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_metadata_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_secret: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub challenge: Option<String>,
+}
+
+/// Browser handoff produced when an MCP OAuth authorization begins.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct BeginMcpOAuthResponse {
+    pub server_id: String,
+    pub login_id: String,
+    pub authorization_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CompleteMcpOAuthRequest {
+    pub login_id: String,
+    pub callback_url: String,
+}
+
+/// Result of exchanging an MCP OAuth browser callback for credentials.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CompleteMcpOAuthResponse {
+    pub connection: McpOAuthStatusResponse,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct RefreshMcpOAuthRequest {
+    pub server_id: String,
+}
+
+/// Result of dropping one MCP server's locally held OAuth grant.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct DisconnectMcpOAuthResponse {
+    pub server_id: String,
+    pub disconnected: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpGatewayHealthResponse {
     pub status: String,

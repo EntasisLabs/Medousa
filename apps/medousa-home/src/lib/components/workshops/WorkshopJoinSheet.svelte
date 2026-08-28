@@ -1,6 +1,8 @@
 <script lang="ts">
   import { LoaderCircle, Plus } from "@lucide/svelte";
+  import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { workshops } from "$lib/stores/workshops.svelte";
+  import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
   import { parsePairQrUrl } from "$lib/utils/pairingUrl";
   import { isTauriMobilePlatform } from "$lib/platform";
   import { workshopQrScanHint } from "$lib/platformCopy";
@@ -23,6 +25,8 @@
 
   let pairLink = $state("");
   let daemonUrlOverride = $state("");
+  let sheetEl = $state<HTMLDivElement | null>(null);
+  let headerEl = $state<HTMLElement | null>(null);
 
   $effect(() => {
     if (open) {
@@ -53,6 +57,22 @@
   }
 
   const parsedPreview = $derived(parsePairQrUrl(pairLink.trim()));
+
+  $effect(() => {
+    if (!open) return;
+    return registerMobileBackHandler(() => {
+      onClose();
+      return true;
+    });
+  });
+
+  $effect(() => {
+    if (!open || !sheetEl) return;
+    return attachMobileSheetGestures(sheetEl, headerEl, {
+      onDismiss: onClose,
+      swipeBack: false,
+    });
+  });
 </script>
 
 {#if open}
@@ -64,23 +84,36 @@
     }}
   >
     <div
-      class="mobile-sheet {variant === 'rail' ? 'workshop-rail-sheet' : 'max-w-lg'}"
+      bind:this={sheetEl}
+      class="mobile-sheet {variant === 'rail'
+        ? 'workshop-rail-sheet'
+        : variant === 'mobile'
+          ? 'mobile-sheet-picker max-w-lg'
+          : 'max-w-lg'}"
       role="dialog"
       aria-label="Add workshop"
     >
-      <header class="mobile-sheet-header">
-        <div class="min-w-0">
-          <h2 class="text-sm font-semibold text-surface-50">Add workshop</h2>
-          <p class="workshop-faint mt-0.5 text-xs leading-relaxed">
-            Connect to another Medousa engine — scan or paste the invite link from your team.
-          </p>
+      <header
+        bind:this={headerEl}
+        class={variant === "mobile" ? "mobile-sheet-stack-header" : "mobile-sheet-header"}
+      >
+        {#if variant === "mobile"}
+          <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
+        {/if}
+        <div class={variant === "mobile" ? "mobile-sheet-header-row items-start" : "contents"}>
+          <div class="min-w-0">
+            <h2 class="text-sm font-semibold text-surface-50">Add workshop</h2>
+            <p class="workshop-faint mt-0.5 text-xs leading-relaxed">
+              Connect to another Medousa engine — scan or paste the invite link from your team.
+            </p>
+          </div>
+          <button type="button" class="btn btn-sm variant-ghost-surface shrink-0" onclick={onClose}>
+            Cancel
+          </button>
         </div>
-        <button type="button" class="btn btn-sm variant-ghost-surface shrink-0" onclick={onClose}>
-          Cancel
-        </button>
       </header>
 
-      <div class="mobile-you-scroll space-y-4 px-4 pb-6 pt-3">
+      <div class={variant === "mobile" ? "mobile-sheet-scroll space-y-4" : "mobile-you-scroll space-y-4 px-4 pb-6 pt-3"}>
         {#if workshops.atWorkshopLimit}
           <p class="rounded-lg border border-warning-500/35 bg-warning-500/10 px-3 py-2 text-xs text-content-warning">
             You have {workshops.workshops.length} workshops saved. Remove one in Settings before

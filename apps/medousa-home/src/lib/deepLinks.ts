@@ -1,4 +1,4 @@
-/** Parse `medousa://work/{cardId}` and `medousa://vault/{notePath}` deeplinks. */
+/** Parse app-owned `medousa://` navigation and callback links. */
 
 export type WorkDeepLink = {
   kind: "work";
@@ -18,7 +18,10 @@ export type UndertakingLocationDeepLink = {
   entityId: string | null;
 };
 
-export type DeepLink = WorkDeepLink | VaultDeepLink | UndertakingLocationDeepLink;
+export type DeepLink =
+  | WorkDeepLink
+  | VaultDeepLink
+  | UndertakingLocationDeepLink;
 
 const WORK_PATH = /^\/work\/([^/?#]+)\/?$/i;
 

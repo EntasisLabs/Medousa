@@ -40,9 +40,9 @@
     }}
   >
     <div bind:this={sheetEl} class="mobile-sheet mobile-sheet-tall" role="dialog" aria-label="Activity">
-      <header bind:this={headerEl} class="mobile-sheet-header mobile-activity-sheet-header scripts-workbench-sheet-header">
+      <header bind:this={headerEl} class="mobile-sheet-stack-header mobile-activity-sheet-header">
         <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
-        <div class="flex w-full items-start justify-between gap-2">
+        <div class="mobile-sheet-header-row items-start">
           <div class="min-w-0">
             <h2 class="text-sm font-semibold text-surface-50">Activity</h2>
             <p class="workshop-faint mt-0.5 text-xs">What Medousa has been doing</p>

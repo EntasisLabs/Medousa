@@ -232,6 +232,26 @@ pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
             request: None,
             response: "McpGatewayStatusResponse",
         },
+        "mcp.oauth.by_server_id.get" => WireBinding {
+            request: None,
+            response: "McpOAuthStatusResponse",
+        },
+        "mcp.oauth.by_server_id.delete" => WireBinding {
+            request: None,
+            response: "DisconnectMcpOAuthResponse",
+        },
+        "mcp.oauth.begin.post" => WireBinding {
+            request: Some("BeginMcpOAuthRequest"),
+            response: "BeginMcpOAuthResponse",
+        },
+        "mcp.oauth.complete.post" => WireBinding {
+            request: Some("CompleteMcpOAuthRequest"),
+            response: "CompleteMcpOAuthResponse",
+        },
+        "mcp.oauth.refresh.post" => WireBinding {
+            request: Some("RefreshMcpOAuthRequest"),
+            response: "McpOAuthStatusResponse",
+        },
         "turns.budget_requests.get" => WireBinding {
             request: None,
             response: "TurnBudgetRequestListResponse",

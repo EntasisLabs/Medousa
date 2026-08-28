@@ -55,9 +55,9 @@
       role="dialog"
       aria-label="Browser workshop"
     >
-      <header bind:this={headerEl} class="mobile-sheet-header scripts-workbench-sheet-header">
+      <header bind:this={headerEl} class="mobile-sheet-stack-header">
         <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
-        <div class="flex w-full items-center justify-between gap-2">
+        <div class="mobile-sheet-header-row">
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm font-semibold text-surface-50">Ask Medousa</p>
             <p class="text-content-tertiary truncate text-[11px]">{browserWorkshop.scopeLabel}</p>

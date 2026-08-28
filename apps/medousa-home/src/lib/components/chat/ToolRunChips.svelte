@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { ChevronDown, Route, Workflow } from "@lucide/svelte";
+  import { ChevronRight, Route, Workflow } from "@lucide/svelte";
+  import ToolActivitySheet from "$lib/components/chat/ToolActivitySheet.svelte";
+  import { haptic } from "$lib/haptics";
   import type { ToolRunState } from "$lib/types/chat";
   import type { ToolHistorySliceRef } from "$lib/types/toolHistory";
   import { sliceRefFromChatToolRun } from "$lib/types/toolHistory";
@@ -41,6 +43,12 @@
   );
   const isDone = $derived(!hasRunning && runs.every((run) => run.status !== "failed"));
   const footnote = $derived(inspectorCollapsed && isDone);
+  let activityOpen = $state(false);
+
+  function openActivity() {
+    haptic("light");
+    activityOpen = true;
+  }
 
   function segmentHasDetail(segment: ToolLineageSegment): boolean {
     if (segment.count > 1) return true;
@@ -189,16 +197,19 @@
 
 {#if runs.length > 0}
   {#if inspectorCollapsed}
-    <details
-      class="tool-trace group/inspector overflow-hidden transition-[border-color,background,box-shadow] duration-200 {footnote
+    <button
+      type="button"
+      class="tool-trace tool-trace-trigger w-full overflow-hidden text-left transition-[border-color,background,box-shadow] duration-200 {footnote
         ? 'chat-tool-footnote'
         : `rounded-lg border ${isDone
           ? 'border-primary-500/20 bg-gradient-to-r from-primary-500/[0.07] via-surface-900/40 to-surface-900/20'
           : 'border-primary-500/30 bg-gradient-to-r from-primary-500/[0.1] via-surface-900/50 to-surface-900/30 shadow-[inset_0_1px_0_rgba(167,139,250,0.08)]'}`}"
       title={fullTrace}
+      aria-haspopup="dialog"
+      onclick={openActivity}
     >
-      <summary
-        class="flex cursor-pointer list-none items-center gap-2 marker:content-none {footnote
+      <span
+        class="flex items-center gap-2 {footnote
           ? 'py-0.5 text-[10px] text-content-faint hover:text-content-tertiary'
           : 'px-2.5 py-1.5'}"
       >
@@ -216,20 +227,21 @@
         >
           {collapsed.primary}
         </span>
-        <ChevronDown
-          class="h-3 w-3 shrink-0 text-content-faint transition-transform duration-200 group-open/inspector:rotate-180"
+        <ChevronRight
+          class="h-3 w-3 shrink-0 text-content-faint"
           strokeWidth={2}
           aria-hidden="true"
         />
-      </summary>
-      <div
-        class="{footnote
-          ? 'mt-2 border-t border-surface-700/20 pt-2'
-          : 'border-t border-primary-500/10 px-2.5 pb-2 pt-2'}"
-      >
-        {@render lineageTimeline(lineage)}
-      </div>
-    </details>
+      </span>
+    </button>
+    <ToolActivitySheet
+      open={activityOpen}
+      {runs}
+      {sessionId}
+      {turnIndex}
+      {onPromoteToFlow}
+      onClose={() => (activityOpen = false)}
+    />
   {:else}
     <div
       class="tool-trace overflow-hidden rounded-lg border border-primary-500/25 bg-gradient-to-br from-primary-500/[0.08] to-surface-900/30 px-2.5 py-2"
@@ -255,7 +267,7 @@
     );
   }
 
-  .tool-trace.group\/inspector[open]:not(.footnote) {
-    box-shadow: inset 0 1px 0 rgb(167 139 250 / 0.12);
+  .tool-trace-trigger:active {
+    transform: scale(0.995);
   }
 </style>

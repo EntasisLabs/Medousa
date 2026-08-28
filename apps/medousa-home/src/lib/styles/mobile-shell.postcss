@@ -21,6 +21,19 @@
     overflow: hidden;
   }
 
+  html[data-mobile-script-editor-active="true"] .mobile-shell {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: calc(
+      var(--mobile-layout-height, 100dvh) - var(--mobile-keyboard-inset, 0px)
+    );
+    max-height: calc(
+      var(--mobile-layout-height, 100dvh) - var(--mobile-keyboard-inset, 0px)
+    );
+    overflow: hidden;
+  }
+
   .mobile-shell > main {
     padding-bottom: var(--mobile-bottom-chrome-height, 5.5rem);
   }
@@ -555,15 +568,60 @@
   .mobile-sheet-backdrop {
     @apply fixed inset-0 z-50 flex items-end justify-center p-0;
     background-color: rgb(var(--color-surface-950) / 0.7);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
   .mobile-sheet {
-    @apply flex w-full max-h-[85vh] flex-col rounded-t-2xl border border-surface-500/40 bg-surface-900 shadow-xl;
+    @apply flex w-full flex-col overflow-hidden rounded-t-2xl border border-surface-500/40 bg-surface-900 shadow-xl will-change-transform;
+    max-height: calc(100dvh - max(1rem, env(safe-area-inset-top, 0px)));
+    border-bottom-width: 0;
+  }
+
+  /* One entrance contract for every mobile bottom sheet. Rail/desktop
+     popovers reuse parts of the sheet markup but keep their anchored motion. */
+  .mobile-sheet-backdrop:not(.workshop-rail-sheet-backdrop) {
+    animation: mobile-sheet-backdrop-in 220ms ease-out;
+  }
+
+  .mobile-sheet:not(.workshop-rail-sheet) {
+    animation: mobile-sheet-rise-in 360ms cubic-bezier(0.22, 1, 0.36, 1);
+    transform-origin: bottom center;
+  }
+
+  @keyframes mobile-sheet-backdrop-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes mobile-sheet-rise-in {
+    from {
+      transform: translate3d(0, 100%, 0);
+    }
+    to {
+      transform: translate3d(0, 0, 0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mobile-sheet-backdrop,
+    .mobile-sheet {
+      animation: none !important;
+    }
+  }
+
+  .mobile-sheet-medium {
+    height: min(64dvh, 36rem);
+  }
+
+  .mobile-sheet-picker {
+    height: min(72dvh, 42rem);
   }
 
   .mobile-sheet-tall {
-    @apply max-h-[92vh];
+    height: min(88dvh, 52rem);
   }
 
   .mobile-browser-workshop-sheet {
@@ -609,6 +667,37 @@
 
   .mobile-sheet-header {
     @apply flex shrink-0 items-center justify-between border-b border-surface-500/40 px-4 py-3;
+  }
+
+  .mobile-sheet-stack-header {
+    @apply flex shrink-0 flex-col items-stretch gap-2 border-b border-surface-500/35 px-4 pb-3 pt-0;
+  }
+
+  .mobile-sheet-header-row {
+    @apply flex min-h-11 w-full items-center justify-between gap-3;
+  }
+
+  .mobile-sheet-scroll {
+    @apply min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 pb-6 pt-3;
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Settings + Automations sheets share one mobile rhythm. */
+  :is(.settings-nav-picker, .settings-sheet, .automations-sheet) {
+    --mobile-sheet-gutter: 1.25rem;
+    --mobile-sheet-row-inset: 1.25rem;
+    --mobile-sheet-row-min-height: 3.85rem;
+  }
+
+  :is(.settings-nav-picker, .settings-sheet, .automations-sheet)
+    :is(.mobile-sheet-stack-header, .mobile-turn-sheet-header) {
+    padding-inline: var(--mobile-sheet-gutter);
+  }
+
+  :is(.settings-nav-picker, .settings-sheet, .automations-sheet)
+    :is(.mobile-sheet-scroll, .mobile-turn-sheet-body, .automation-sheet-search) {
+    padding-inline: var(--mobile-sheet-gutter);
   }
 
   .workshop-switcher-mobile-sheet {
@@ -865,7 +954,8 @@
   }
 
   .mobile-turn-sheet {
-    @apply max-h-[min(78vh,640px)] will-change-transform;
+    @apply will-change-transform;
+    max-height: min(78dvh, 40rem);
     border-radius: 1.25rem 1.25rem 0 0;
     background: rgb(var(--color-surface-900) / 0.98);
     backdrop-filter: blur(24px);
@@ -875,7 +965,8 @@
     .mobile-turn-sheet {
       transition: none !important;
       animation: none !important;
-    }  }
+    }
+  }
 
 
   .mobile-turn-sheet-grabber {
@@ -898,6 +989,11 @@
 
   .mobile-turn-sheet-header-spacer {
     @apply h-9 w-9;
+  }
+
+  .mobile-sheet-done {
+    @apply inline-flex min-h-11 min-w-11 items-center justify-end border-0 bg-transparent text-[13px] font-semibold;
+    color: rgb(var(--theme-link));
   }
 
   .mobile-turn-sheet-icon-btn {
@@ -972,6 +1068,19 @@
 
   .mobile-turn-sheet-link-row {
     @apply flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition active:bg-surface-700/35;
+  }
+
+  .mobile-turn-sheet-link-row:disabled {
+    @apply pointer-events-none opacity-35;
+  }
+
+  /* Keep the shared sheet inset after the row utility shorthands so the
+     group edge and the row content always have separate breathing room. */
+  :is(.settings-nav-picker, .settings-sheet, .automations-sheet)
+    :is(.mobile-turn-sheet-row, .mobile-turn-sheet-link-row) {
+    min-height: var(--mobile-sheet-row-min-height);
+    padding-block: 0.7rem;
+    padding-inline: var(--mobile-sheet-row-inset);
   }
 
   .mobile-turn-sheet-link-label {

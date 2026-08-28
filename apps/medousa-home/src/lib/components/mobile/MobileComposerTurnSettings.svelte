@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { fade, fly } from "svelte/transition";
+  import { fade } from "svelte/transition";
   import { cubicIn, cubicOut } from "svelte/easing";
   import { Check, ChevronDown, ChevronLeft, ChevronRight, X } from "@lucide/svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
@@ -66,14 +66,6 @@
           ? "Stance"
           : "Reasoning",
   );
-  const backdropTransition = {
-    in: { duration: 260, easing: cubicOut },
-    out: { duration: 200, easing: cubicIn },
-  };
-  const sheetTransition = {
-    in: { y: 420, duration: 360, easing: cubicOut, opacity: 1 },
-    out: { y: 280, duration: 260, easing: cubicIn, opacity: 1 },
-  };
   const titleTransition = {
     in: { duration: 150, easing: cubicOut },
     out: { duration: 100, easing: cubicIn },
@@ -248,8 +240,6 @@
   <div
     class="mobile-sheet-backdrop mobile-turn-sheet-backdrop"
     role="presentation"
-    in:fade={backdropTransition.in}
-    out:fade={backdropTransition.out}
     onclick={(event) => {
       if (event.target === event.currentTarget) closeSheet();
     }}
@@ -260,8 +250,6 @@
         role="dialog"
         aria-label={sheetTitle}
         tabindex="-1"
-        in:fly={sheetTransition.in}
-        out:fly={sheetTransition.out}
         onclick={(event) => event.stopPropagation()}
         onkeydown={handleSheetKeydown}
       >

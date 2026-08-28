@@ -7,7 +7,7 @@ use medousa_types::session::ConversationTurn;
 
 pub use medousa_types::turn::{TurnArtifactRef, TurnPart};
 
-use crate::daemon_api::StreamToolArtifactRef;
+use crate::daemon_api::{StreamToolArtifactRef, ToolInputParam};
 
 /// Accumulates structured timeline parts for one persisted assistant turn.
 #[derive(Debug, Default)]
@@ -253,6 +253,17 @@ impl TurnPartsAccumulator {
         input_summary: &str,
         tool_round: usize,
     ) {
+        self.tool_started_with_params(run_id, tool_name, input_summary, Vec::new(), tool_round);
+    }
+
+    pub fn tool_started_with_params(
+        &mut self,
+        run_id: &str,
+        tool_name: &str,
+        input_summary: &str,
+        input_params: Vec<ToolInputParam>,
+        tool_round: usize,
+    ) {
         if self.tool_run_indexes.contains_key(run_id) {
             return;
         }
@@ -262,6 +273,7 @@ impl TurnPartsAccumulator {
             tool_name: tool_name.to_string(),
             status: "running".to_string(),
             input_summary: input_summary.to_string(),
+            input_params,
             output_summary: None,
             artifact_refs: Vec::new(),
             tool_round: Some(tool_round),
@@ -305,13 +317,20 @@ impl TurnPartsAccumulator {
         run_id: &str,
         tool_name: &str,
         input_summary: &str,
+        input_params: Vec<ToolInputParam>,
         tool_round: usize,
         status: &str,
         output_summary: Option<String>,
         artifact_refs: Vec<TurnArtifactRef>,
     ) {
         if !self.tool_run_indexes.contains_key(run_id) {
-            self.tool_started(run_id, tool_name, input_summary, tool_round);
+            self.tool_started_with_params(
+                run_id,
+                tool_name,
+                input_summary,
+                input_params,
+                tool_round,
+            );
         }
         self.tool_finished(run_id, status, output_summary, artifact_refs);
     }
@@ -769,6 +788,7 @@ mod tests {
             "run-gap",
             "search",
             "replayed suffix",
+            vec![],
             4,
             "failed",
             Some("offline".into()),
@@ -905,14 +925,29 @@ mod tests {
     #[test]
     fn accumulator_builds_tool_and_text_parts() {
         let mut acc = TurnPartsAccumulator::default();
-        acc.tool_started("tr-1", "search", "query=rust", 1);
+        acc.tool_started_with_params(
+            "tr-1",
+            "search",
+            "query=rust",
+            vec![ToolInputParam {
+                key: "query".into(),
+                value: "rust".into(),
+                truncated: false,
+            }],
+            1,
+        );
         acc.tool_finished("tr-1", "succeeded", Some("3 hits".into()), vec![]);
         acc.push_reasoning_delta("thinking…");
 
         let turn = acc.finalize_assistant_turn("Hello".into(), vec!["search".into()], None);
         let parts = turn.parts.expect("parts");
         assert_eq!(parts.len(), 3);
-        assert!(matches!(&parts[0], TurnPart::ToolRun { tool_name, .. } if tool_name == "search"));
+        assert!(matches!(
+            &parts[0],
+            TurnPart::ToolRun { tool_name, input_params, .. }
+                if tool_name == "search"
+                    && input_params.first().is_some_and(|param| param.key == "query" && param.value == "rust")
+        ));
         assert!(matches!(&parts[1], TurnPart::Reasoning { .. }));
         assert!(matches!(&parts[2], TurnPart::Text { markdown, .. } if markdown == "Hello"));
     }
@@ -942,6 +977,7 @@ mod tests {
                 tool_name: "search".into(),
                 status: "succeeded".into(),
                 input_summary: "query=test".into(),
+                input_params: vec![],
                 output_summary: Some("ok".into()),
                 artifact_refs: vec![],
                 tool_round: Some(1),
