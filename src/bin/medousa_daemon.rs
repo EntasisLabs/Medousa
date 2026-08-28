@@ -488,6 +488,42 @@ async fn main() -> Result<()> {
         }
     }
 
+    let work_environment =
+        match medousa::daemon::work_environment_host::DockerCliWorkEnvironmentPort::detect(
+            medousa::paths::medousa_data_dir().join("work-environments"),
+            Arc::clone(&forge_execution),
+        )
+        .await
+        {
+            Ok(Some(adapter)) => {
+                match adapter.reconcile().await {
+                    Ok(report) => {
+                        tracing::info!(
+                            recovered = report.recovered.len(),
+                            missing = report.missing.len(),
+                            corrupt_preserved = report.corrupt_preserved.len(),
+                            unknown_preserved = report.unknown_preserved.len(),
+                            "OCI work-environment adapter ready"
+                        );
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "OCI work-environment boot reconciliation failed");
+                    }
+                }
+                Some(adapter as Arc<dyn medousa_runtime::WorkEnvironmentPort>)
+            }
+            Ok(None) => {
+                tracing::info!(
+                    "OCI work-environment adapter unavailable; declining local OCI placement"
+                );
+                None
+            }
+            Err(error) => {
+                tracing::warn!(%error, "OCI work-environment adapter detection failed");
+                None
+            }
+        };
+
     let state = AppState {
         platform: platform.clone(),
         daemon_base_url: medousa::daemon_api::resolve_daemon_public_base_url(bind),
@@ -536,6 +572,7 @@ async fn main() -> Result<()> {
         client_registry: platform.client_registry(),
         forge,
         forge_execution,
+        work_environment,
         forge_events,
         coding_engine: Some(medousa::daemon::coding_engine_host::CodingEngineHost::new()),
         shell_sessions: Some(medousa::daemon::shell_session_host::ShellSessionHost::new()),

@@ -1,6 +1,6 @@
 # Daemon-owned OCI work environments
 
-> **Status:** Locked design — Phase 1 complete, ready for Phase 2
+> **Status:** Active implementation — Phase 2 complete, ready for Phase 3
 >
 > **Date:** 2026-08-28
 >
@@ -158,7 +158,7 @@ The initial contract contains:
 | `workspace_id` | Stable governed workspace/work identity |
 | `repository` | Repository identity and authorized origin, never ambient caller-controlled shell text |
 | `base_commit` | Exact immutable commit used to materialize the workspace |
-| `image` | OCI image digest plus declared platform; a mutable tag alone is invalid |
+| `image` | OCI registry/repository reference, immutable digest, and declared platform; a mutable tag alone is invalid |
 | `checkpoint_ref` | Optional immutable commit, bundle, snapshot, or artifact manifest used to resume |
 | `requirements` | OCI capability, OS/architecture, CPU, memory, disk, accelerator, and policy requirements |
 | `mounts` | Typed, least-privilege mounts; daemon database and host roots are never implicit |
@@ -435,6 +435,28 @@ using an existing OCI runtime.
 **Exit:** a daemon can execute a fenced command inside a reproducible OCI
 environment and safely reconcile it after restart.
 
+**Landed boundary:** the full daemon now detects a Docker-compatible CLI host,
+opens one `DockerCliWorkEnvironmentPort`, and advertises
+`work_environment.oci` only while that adapter is available. It materializes an
+exact Git commit on daemon-local storage, resolves the image as
+`reference@sha256:digest`, applies CPU/memory/disk admission, creates a
+deny-network container, and supports fenced create/start/inspect/exec/stop and
+release. Command execution is admitted by the existing Forge execution service
+with a one-hour timeout ceiling, a one-MiB combined output ceiling, and durable
+idempotency receipts scoped to the complete Stasis/Forge fence.
+
+Daemon boot reconciles only Medousa-labeled containers. Known records recover
+their observed state; missing or corrupt records and unknown labeled containers
+are reported and preserved. The adapter is absent from embedded composition,
+and a missing Docker engine makes the daemon decline OCI placement without
+changing its runtime or catalog. The real-engine conformance test proves pinned
+Git/image materialization, scoped execution, restart reconstruction, stale-fence
+rejection, unknown-container preservation, and explicit release. The initial
+adapter consumes prebuilt development images with `/bin/sh`, supports only
+deny-network policy and the workspace bind, and intentionally leaves PTY,
+checkpoint restoration/publication, artifact/cache mounts, and allow-list
+network enforcement to their named later phases.
+
 ### Phase 3 — Environment-aware tool adapters
 
 **Goal:** run real Medousa work through the same catalog and FSM.
@@ -593,7 +615,7 @@ These choices are intentionally deferred behind locked contracts:
 
 | Choice | Default until measured |
 |---|---|
-| Initial OCI backend | Existing OCI runtime behind `WorkEnvironmentPort`; choose after a cross-platform and privilege-model spike |
+| Initial OCI backend | Docker-compatible CLI behind the full-daemon `WorkEnvironmentPort`; other hosts remain adapter choices |
 | Image construction | Consume digest-pinned prebuilt images first; build service later |
 | Durable blob backend | Local durable adapter for single-daemon proof plus an object-store-capable port for federation |
 | Checkpoint form | Forge checkpoint commit/export bundle for source; typed artifact manifests for non-Git state |
@@ -624,7 +646,8 @@ Progress begins here:
 - [x] Phase 0a — upgrade Medousa and adopt optional structured provenance and placement.
 - [x] Phase 0b — map federation ownership and remove only coordination superseded by Stasis.
 - [x] Phase 1 — lock the runtime-neutral environment contract.
-- [ ] Phases 2–9 — implementation and qualification.
+- [x] Phase 2 — land and prove one local OCI lifecycle adapter.
+- [ ] Phases 3–9 — implementation and qualification.
 
 ## Definition of done
 

@@ -45,7 +45,13 @@ pub async fn health(
         "transport.http",
     ]
     .into_iter()
-    .chain(cfg!(feature = "iroh-transport").then_some("transport.iroh"));
+    .chain(cfg!(feature = "iroh-transport").then_some("transport.iroh"))
+    .chain(
+        state
+            .work_environment
+            .is_some()
+            .then_some(medousa_runtime::OCI_WORK_ENVIRONMENT_CAPABILITY),
+    );
 
     Ok(Json(crate::daemon_runtime::health_response(
         authority_id,

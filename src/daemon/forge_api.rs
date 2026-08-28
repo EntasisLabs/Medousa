@@ -535,7 +535,7 @@ fn map_err(err: ForgeError) -> ApiError {
         }
         ForgeError::BaseRefMissing { .. } => (StatusCode::CONFLICT, Some("base_ref_missing")),
         ForgeError::Git(_) => (StatusCode::BAD_REQUEST, Some("git")),
-        ForgeError::Store(_) | ForgeError::Io(_) | ForgeError::Json(_) => {
+        ForgeError::Command(_) | ForgeError::Store(_) | ForgeError::Io(_) | ForgeError::Json(_) => {
             (StatusCode::INTERNAL_SERVER_ERROR, Some("store"))
         }
         ForgeError::Overloaded(_) => (StatusCode::SERVICE_UNAVAILABLE, Some("overloaded")),

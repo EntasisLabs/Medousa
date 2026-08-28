@@ -88,6 +88,9 @@ pub struct WorkEnvironmentRepository {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WorkEnvironmentImage {
+    /// Registry/repository locator. The adapter always combines this with the
+    /// immutable digest below; a mutable tag is never executed by itself.
+    pub reference: String,
     pub digest: ContentDigest,
     pub platform: String,
 }
@@ -137,17 +140,14 @@ pub struct WorkEnvironmentMount {
     pub access: WorkEnvironmentMountAccess,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum WorkEnvironmentNetworkPolicy {
+    #[default]
     Deny,
-    AllowList { hosts: Vec<String> },
-}
-
-impl Default for WorkEnvironmentNetworkPolicy {
-    fn default() -> Self {
-        Self::Deny
-    }
+    AllowList {
+        hosts: Vec<String>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -281,6 +281,18 @@ fn validate_git_commit(value: &str) -> Result<(), WorkEnvironmentError> {
 }
 
 fn validate_image(image: &WorkEnvironmentImage) -> Result<(), WorkEnvironmentError> {
+    validate_reference("image reference", &image.reference)?;
+    if image.reference.starts_with('-')
+        || image.reference.contains('@')
+        || image.reference.chars().any(char::is_whitespace)
+        || !image.reference.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'/' | b':' | b'_' | b'-')
+        })
+    {
+        return Err(WorkEnvironmentError::InvalidSpec(
+            "image reference must not contain a digest or whitespace".to_string(),
+        ));
+    }
     if image.digest.algorithm != ContentDigest::SHA256
         || image.digest.hex.len() != 64
         || !image
@@ -898,6 +910,7 @@ mod tests {
             },
             base_commit: "a".repeat(40),
             image: WorkEnvironmentImage {
+                reference: "registry.example.invalid/medousa/dev".to_string(),
                 digest: ContentDigest::sha256_bytes(b"image"),
                 platform: "linux/arm64".to_string(),
             },
