@@ -1,6 +1,6 @@
 # Daemon-owned OCI work environments
 
-> **Status:** Locked design — Phase 0 complete, ready for Phase 1
+> **Status:** Locked design — Phase 1 complete, ready for Phase 2
 >
 > **Date:** 2026-08-28
 >
@@ -623,7 +623,7 @@ Progress begins here:
 - [x] Medousa daemon-to-daemon delegated turns proven on the current branch.
 - [x] Phase 0a — upgrade Medousa and adopt optional structured provenance and placement.
 - [x] Phase 0b — map federation ownership and remove only coordination superseded by Stasis.
-- [ ] Phase 1 — lock the runtime-neutral environment contract.
+- [x] Phase 1 — lock the runtime-neutral environment contract.
 - [ ] Phases 2–9 — implementation and qualification.
 
 ## Definition of done
