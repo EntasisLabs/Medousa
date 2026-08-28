@@ -213,7 +213,7 @@ The implementation upgrades to:
 
 - `locus-core-rs 0.5.1`;
 - `locus-sdk 0.3.1`; and
-- `stasis-rs 0.9.4`.
+- `stasis-rs 0.10.0`.
 
 All direct pins, the portable runtime, lockfiles, and the iOS dependency probe
 move together.

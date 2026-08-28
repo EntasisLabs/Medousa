@@ -186,7 +186,6 @@ async fn execute_editor_run_task(
         "workflow.grapheme.run",
         format!("grapheme:inline:{source}"),
         "medousa_tui.editor_run",
-        "sttp:in:cognition:grapheme:editor-run",
         now,
     )
     .build();

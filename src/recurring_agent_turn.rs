@@ -314,7 +314,7 @@ impl JobHandler for RecurringAgentTurnJobHandler {
         .to_string();
 
         Ok(JobExecutionOutcome::Success {
-            sttp_output_node_id: format!("sttp:out:recurring-agent:{}", job.id),
+            output_provenance: None,
             execution_id: None,
             diagnostics: Some(diagnostics),
         })

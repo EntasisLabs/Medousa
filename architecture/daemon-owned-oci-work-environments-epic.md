@@ -567,7 +567,7 @@ review. Backend selection within the port does not.
 
 | State | Evidence / starting seam |
 |---|---|
-| Upstream generic job foundation | `stasis-rs` 0.10.0 is published; Medousa still pins 0.9.4 and must upgrade in Phase 0 |
+| Upstream generic job foundation | `stasis-rs` 0.10.0 is published; the Phase 0 working tree upgrades every Medousa pin together |
 | Remote turn delegation | `src/delegation.rs` owns the current waitable Stasis job, binding, recovery, and result delivery path |
 | Signed bounded task transport | `src/delegated_task.rs` owns delegated request/result validation and execution provenance |
 | Runtime composition | `src/runtime/stasis_wire.rs` and `src/runtime/platform.rs` register the canonical handlers |
@@ -579,7 +579,8 @@ Progress begins here:
 
 - [x] Generic durable job/federation support published in Stasis 0.10.0.
 - [x] Medousa daemon-to-daemon delegated turns proven on the current branch.
-- [ ] Phase 0 — upgrade Medousa and remove superseded coordination code.
+- [x] Phase 0a — upgrade Medousa and adopt optional structured provenance and placement.
+- [ ] Phase 0b — map federation ownership and remove only coordination superseded by Stasis.
 - [ ] Phase 1 — lock the runtime-neutral environment contract.
 - [ ] Phases 2–9 — implementation and qualification.
 

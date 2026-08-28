@@ -27,4 +27,4 @@ locus-sdk = { version = "=0.3.1", default-features = false, optional = true }
 locus-surreal-adapter = { version = "=0.1.0", default-features = false, features = ["native"], optional = true }
 medousa-engine = { path = "../medousa-engine", optional = true }
 medousa-secrets = { path = "../medousa-secrets", optional = true }
-stasis-rs = { version = "=0.9.4", default-features = false, optional = true }
+stasis-rs = { version = "=0.10.0", default-features = false, optional = true }

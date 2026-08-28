@@ -2634,7 +2634,8 @@ mod tests {
             correlation_id: job_id.clone(),
             causation_id: "test".to_string(),
             trace_id: job_id.clone(),
-            sttp_input_node_id: "sttp:test".to_string(),
+            input_provenance: None,
+            placement: stasis::domain::runtime::placement::PlacementConstraints::unrestricted(),
             scheduled_at: Utc::now(),
             backoff_policy: BackoffPolicy::default(),
         })
@@ -2672,7 +2673,8 @@ mod tests {
             correlation_id: job_id.clone(),
             causation_id: "test".to_string(),
             trace_id: job_id.clone(),
-            sttp_input_node_id: "sttp:test".to_string(),
+            input_provenance: None,
+            placement: stasis::domain::runtime::placement::PlacementConstraints::unrestricted(),
             scheduled_at: Utc::now(),
             backoff_policy: BackoffPolicy::default(),
         })

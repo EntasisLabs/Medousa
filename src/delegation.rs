@@ -552,10 +552,10 @@ impl DelegationJobHandler {
         }
     }
 
-    fn terminal_outcome(job: &Job, record: TurnWaitRecord) -> JobExecutionOutcome {
+    fn terminal_outcome(record: TurnWaitRecord) -> JobExecutionOutcome {
         match record.status {
             TurnWaitStatus::Completed => JobExecutionOutcome::Success {
-                sttp_output_node_id: format!("sttp:medousa-delegation:{}", job.id),
+                output_provenance: None,
                 execution_id: Some(record.turn_id),
                 diagnostics: Some(
                     json!({
@@ -589,7 +589,6 @@ impl DelegationJobHandler {
 
     async fn complete_failure(
         &self,
-        job: &Job,
         payload: &DelegationJobPayload,
         turn_id: &str,
         status: TurnWaitStatus,
@@ -613,7 +612,7 @@ impl DelegationJobHandler {
         let record = self.waits.get(turn_id).await?.ok_or_else(|| {
             StasisError::PortFailure("delegation wait disappeared during completion".to_string())
         })?;
-        let mut outcome = Self::terminal_outcome(job, record);
+        let mut outcome = Self::terminal_outcome(record);
         if let JobExecutionOutcome::FatalFailure {
             message: outcome_message,
             ..
@@ -644,7 +643,7 @@ impl JobHandler for DelegationJobHandler {
         if let Some(record) = existing.as_ref()
             && record.status != TurnWaitStatus::Pending
         {
-            return Ok(Self::terminal_outcome(job, record.clone()));
+            return Ok(Self::terminal_outcome(record.clone()));
         }
         if existing.is_none() {
             self.waits
@@ -671,7 +670,6 @@ impl JobHandler for DelegationJobHandler {
         if now >= payload.deadline_at {
             return self
                 .complete_failure(
-                    job,
                     &payload,
                     turn_id,
                     TurnWaitStatus::TimedOut,
@@ -695,7 +693,6 @@ impl JobHandler for DelegationJobHandler {
         if !still_bound {
             return self
                 .complete_failure(
-                    job,
                     &payload,
                     turn_id,
                     TurnWaitStatus::Cancelled,
@@ -721,7 +718,6 @@ impl JobHandler for DelegationJobHandler {
         if let Err(error) = validate_task_observation(&payload.request, &observation) {
             return self
                 .complete_failure(
-                    job,
                     &payload,
                     turn_id,
                     TurnWaitStatus::Failed,
@@ -747,7 +743,6 @@ impl JobHandler for DelegationJobHandler {
         if ack.disposition == IngressDisposition::Rejected {
             return self
                 .complete_failure(
-                    job,
                     &payload,
                     turn_id,
                     TurnWaitStatus::Failed,
@@ -761,7 +756,7 @@ impl JobHandler for DelegationJobHandler {
                 "delegation wait disappeared after terminal ingress".to_string(),
             )
         })?;
-        Ok(Self::terminal_outcome(job, record))
+        Ok(Self::terminal_outcome(record))
     }
 }
 
@@ -921,7 +916,9 @@ impl DelegationService {
                     correlation_id: execution.correlation_id().to_string(),
                     causation_id: execution.turn_id().to_string(),
                     trace_id: execution.correlation_id().to_string(),
-                    sttp_input_node_id: format!("sttp:in:medousa:{job_id}"),
+                    input_provenance: None,
+                    placement:
+                        stasis::domain::runtime::placement::PlacementConstraints::unrestricted(),
                     scheduled_at: Utc::now(),
                     backoff_policy: BackoffPolicy::default(),
                 })
@@ -1597,7 +1594,8 @@ mod tests {
             correlation_id: "corr-1".to_string(),
             causation_id: "source-exec-1".to_string(),
             trace_id: "corr-1".to_string(),
-            sttp_input_node_id: "sttp:in:recovery".to_string(),
+            input_provenance: None,
+            placement: stasis::domain::runtime::placement::PlacementConstraints::unrestricted(),
             scheduled_at: Utc::now(),
             backoff_policy: BackoffPolicy::default(),
         }

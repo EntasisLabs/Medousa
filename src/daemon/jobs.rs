@@ -614,7 +614,6 @@ pub async fn enqueue_prompt(
         .map_err(internal_error)?
         .with_correlation_id(identity_context.user_id)
         .with_causation_id("medousa-daemon-api:interactive")
-        .with_sttp_input_node_id("sttp:in:medousa:daemon:interactive:prompt")
         .with_scheduled_at(now)
         .build();
 

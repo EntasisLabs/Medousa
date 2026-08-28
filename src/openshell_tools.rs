@@ -675,7 +675,6 @@ impl CognitionOpenshellSandboxRunTool {
             OPENSHELL_SANDBOX_RUN_JOB_TYPE,
             payload_ref,
             "cognition_openshell",
-            "sttp:in:openshell:sandbox_run",
             now,
         )
         .build();
