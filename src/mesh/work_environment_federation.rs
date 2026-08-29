@@ -36,7 +36,7 @@ use crate::mesh::{record_has_capability, registry};
 use crate::pairing::crypto::{base64url_encode, parse_verifying_key, sign_message, verify_message};
 use crate::pairing::{PairedDeviceRecord, PairingService};
 use crate::work_environment_federation::{
-    RemoteWorkEnvironmentResult, SignedFederatedTerminalDelivery,
+    RemoteWorkEnvironmentDispatcher, RemoteWorkEnvironmentResult, SignedFederatedTerminalDelivery,
     accept_remote_work_environment_job,
 };
 use crate::work_environment_job::WorkEnvironmentJobPayload;
@@ -506,7 +506,7 @@ fn internal(error: impl std::fmt::Display) -> (StatusCode, String) {
 /// Destination-side durable terminal sender. The origin peer is selected from
 /// the signed Stasis result, then resolved through the existing mesh registry.
 pub struct MeshSignedFederatedTerminalDelivery {
-    transport: MeshWorkEnvironmentFederationTransport,
+    transport: Arc<MeshWorkEnvironmentFederationTransport>,
 }
 
 /// Source-side sender used by coordinators. It moves the immutable input graph
@@ -832,10 +832,51 @@ async fn http_failure(operation: &str, response: reqwest::Response) -> StasisErr
 }
 
 impl MeshSignedFederatedTerminalDelivery {
-    pub fn new(pairing: Arc<PairingService>, blobs: Arc<dyn BlobTransferPort>) -> Self {
-        Self {
-            transport: MeshWorkEnvironmentFederationTransport::new(pairing, blobs),
+    pub fn new(transport: Arc<MeshWorkEnvironmentFederationTransport>) -> Self {
+        Self { transport }
+    }
+}
+
+#[async_trait]
+impl RemoteWorkEnvironmentDispatcher for MeshWorkEnvironmentFederationTransport {
+    fn origin_authority(&self) -> stasis::domain::runtime::remote_job_envelope::OriginAuthority {
+        let runtime_id = self.pairing.device_id().to_string();
+        stasis::domain::runtime::remote_job_envelope::OriginAuthority {
+            runtime_id: runtime_id.clone(),
+            authority_id: runtime_id,
+            realm: None,
         }
+    }
+
+    fn terminal_delivery(
+        &self,
+    ) -> stasis::domain::runtime::remote_job_envelope::TerminalDeliveryEndpoint {
+        let runtime_id = self.pairing.device_id().to_string();
+        stasis::domain::runtime::remote_job_envelope::TerminalDeliveryEndpoint {
+            endpoint_id: format!("{runtime_id}:work-environment-terminal"),
+            protocol: "medousa-mesh-v1".to_string(),
+            address: runtime_id,
+        }
+    }
+
+    async fn submit_remote_job(
+        &self,
+        target_runtime_id: &str,
+        envelope: RemoteJobEnvelope,
+    ) -> stasis::prelude::Result<String> {
+        let expected_envelope_id = envelope.envelope_id.clone();
+        let admission = MeshWorkEnvironmentFederationTransport::submit_remote_job(
+            self,
+            target_runtime_id,
+            envelope,
+        )
+        .await?;
+        if admission.envelope_id != expected_envelope_id {
+            return Err(StasisError::PortFailure(
+                "remote admission acknowledged a different envelope".to_string(),
+            ));
+        }
+        Ok(admission.job_id)
     }
 }
 

@@ -105,6 +105,22 @@ pub trait SignedFederatedTerminalDelivery: Send + Sync {
     async fn sign_and_deliver(&self, result: FederatedTerminalResult) -> StasisResult<()>;
 }
 
+/// Origin-side port used by durable proxy jobs. Pairing, signing, transport,
+/// and peer lookup remain adapter concerns; the proxy only owns stable work and
+/// envelope identities.
+#[async_trait]
+pub trait RemoteWorkEnvironmentDispatcher: Send + Sync {
+    fn origin_authority(&self) -> OriginAuthority;
+
+    fn terminal_delivery(&self) -> TerminalDeliveryEndpoint;
+
+    async fn submit_remote_job(
+        &self,
+        target_runtime_id: &str,
+        envelope: RemoteJobEnvelope,
+    ) -> StasisResult<String>;
+}
+
 #[derive(Clone)]
 pub struct WorkEnvironmentFederationServices {
     pub blobs: Arc<dyn BlobTransferPort>,

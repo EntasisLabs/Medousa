@@ -732,12 +732,20 @@ observe remote completion through local durable truth; it never polls the
 destination's mutable job state, and an acknowledged result is reconstructable
 after the destination disappears.
 
-Remote child submission and the fourth-daemon reconstruction proof remain. The
-durable graph currently enqueues through the canonical local Stasis store; the
-next slice binds targeted children to a remote proxy handler backed by the
-Phase 6 federation transport and this terminal record, without changing child
-identities or adding another coordinator. Capability-based automatic target
-selection follows the explicit-target path.
+**Fourth landed boundary:** a parallel child may now name an explicit target
+runtime. The coordinator preserves its deterministic child id but gives that
+child to a federation-backed proxy handler instead of the local work-environment
+handler. The proxy stages the ordinary work payload, submits one replay-stable
+Stasis envelope through the host transport adapter, and completes from the
+origin's durable terminal record. It projects the remote execution, checkpoint,
+publication, and failure into the same `WorkEnvironmentJobProgress` observed for
+local children, so fan-in and reconciliation contain no local-versus-remote
+branch. Daemons without a federation adapter fail targeted work explicitly;
+local work remains unchanged.
+
+Capability-based target selection and the fourth-daemon reconstruction proof
+remain. Automatic placement should choose a target and then enter this exact
+explicit-target path rather than inventing a second dispatch mechanism.
 
 ### Phase 8 — Attachments, UX, and operations
 

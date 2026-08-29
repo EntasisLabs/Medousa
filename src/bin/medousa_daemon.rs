@@ -746,10 +746,19 @@ async fn main() -> Result<()> {
         None
     };
 
+    let mut remote_work_environment_dispatcher: Option<
+        Arc<dyn medousa::work_environment_federation::RemoteWorkEnvironmentDispatcher>,
+    > = None;
     let work_environment_federation_state = if let Some(pairing) = share_api_state.pairing.as_ref()
     {
         let blobs: Arc<dyn stasis::ports::outbound::runtime::blob_transfer::BlobTransferPort> =
             work_environment_blobs.clone();
+        let transport = Arc::new(
+            medousa::mesh::work_environment_federation::MeshWorkEnvironmentFederationTransport::new(
+                Arc::clone(pairing),
+                Arc::clone(&blobs),
+            ),
+        );
         if let Some(adapter) = work_environment_adapter.as_ref() {
             medousa::work_environment_job::register_federated_work_environment_job_handlers(
                 platform.composition(),
@@ -758,8 +767,7 @@ async fn main() -> Result<()> {
                     blobs: Arc::clone(&blobs),
                     terminal_delivery: Arc::new(
                         medousa::mesh::work_environment_federation::MeshSignedFederatedTerminalDelivery::new(
-                            Arc::clone(pairing),
-                            Arc::clone(&blobs),
+                            Arc::clone(&transport),
                         ),
                     ),
                 },
@@ -767,6 +775,7 @@ async fn main() -> Result<()> {
             .await
             .context("register federated work-environment job handlers")?;
         }
+        remote_work_environment_dispatcher = Some(transport);
         Some(
             medousa::mesh::work_environment_federation::MeshWorkEnvironmentFederationState {
                 pairing: Arc::clone(pairing),
@@ -791,6 +800,7 @@ async fn main() -> Result<()> {
         platform.composition(),
         work_environment_blobs.clone()
             as Arc<dyn stasis::ports::outbound::runtime::blob_transfer::BlobTransferPort>,
+        remote_work_environment_dispatcher,
     )
     .await
     .context("register parallel work-environment job handlers")?;

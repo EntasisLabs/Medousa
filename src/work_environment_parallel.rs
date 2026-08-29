@@ -24,9 +24,18 @@ use stasis::ports::outbound::runtime::blob_transfer::BlobTransferPort;
 use stasis::ports::outbound::runtime::job_store::JobStore;
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 
-use crate::work_environment_job::{WorkEnvironmentJobPayload, WorkEnvironmentJobProgress};
+use crate::work_environment_federation::{
+    RemoteWorkEnvironmentDispatcher, build_remote_work_environment_envelope,
+    decode_remote_terminal_result, load_recorded_terminal_result,
+    stage_remote_work_environment_payload,
+};
+use crate::work_environment_job::{
+    WorkEnvironmentJobPayload, WorkEnvironmentJobProgress, WorkEnvironmentWorkflowPhase,
+};
 
 pub const PARALLEL_WORK_COORDINATOR_JOB_TYPE: &str = "workflow.medousa.parallel_work_environment";
+pub const REMOTE_WORK_ENVIRONMENT_PROXY_JOB_TYPE: &str =
+    "workflow.medousa.remote_work_environment_proxy";
 pub const PARALLEL_RECONCILIATION_JOB_TYPE: &str =
     "workflow.medousa.work_environment_reconciliation";
 pub const PARALLEL_WORK_PLAN_SCHEMA_VERSION: u32 = 1;
@@ -45,6 +54,8 @@ const COORDINATOR_DELAY_MILLIS: i64 = 10;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ParallelWorkChild {
     pub child_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_runtime_id: Option<String>,
     pub work: WorkEnvironmentJobPayload,
 }
 
@@ -104,6 +115,9 @@ impl ParallelWorkPlan {
         workspace_ids.insert(self.reconciliation.spec.workspace_id.as_str().to_string());
         for child in &self.children {
             validate_id("child_id", &child.child_id)?;
+            if let Some(target_runtime_id) = child.target_runtime_id.as_deref() {
+                validate_id("target_runtime_id", target_runtime_id)?;
+            }
             if !child_ids.insert(child.child_id.as_str()) {
                 return Err(invalid(format!(
                     "duplicate parallel child_id: {}",
@@ -259,8 +273,23 @@ struct ParallelReconciliationProgress {
     updated_at: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct RemoteWorkEnvironmentProxyPayload {
+    schema_version: u32,
+    target_runtime_id: String,
+    envelope_id: String,
+    deadline: DateTime<Utc>,
+    work: WorkEnvironmentJobPayload,
+}
+
 struct ParallelWorkCoordinatorJobHandler {
     jobs: Arc<dyn JobStore>,
+}
+
+struct RemoteWorkEnvironmentProxyJobHandler {
+    runtime: RuntimeComposition,
+    blobs: Arc<dyn BlobTransferPort>,
+    dispatcher: Option<Arc<dyn RemoteWorkEnvironmentDispatcher>>,
 }
 
 struct ParallelReconciliationJobHandler {
@@ -271,6 +300,7 @@ struct ParallelReconciliationJobHandler {
 pub async fn register_parallel_work_environment_job_handlers(
     composition: &RuntimeComposition,
     blobs: Arc<dyn BlobTransferPort>,
+    dispatcher: Option<Arc<dyn RemoteWorkEnvironmentDispatcher>>,
 ) -> anyhow::Result<()> {
     match composition {
         RuntimeComposition::InMemory(runtime) => {
@@ -278,12 +308,22 @@ pub async fn register_parallel_work_environment_job_handlers(
             runtime.register_handler(ParallelWorkCoordinatorJobHandler {
                 jobs: Arc::clone(&jobs),
             })?;
+            runtime.register_handler(RemoteWorkEnvironmentProxyJobHandler {
+                runtime: composition.clone(),
+                blobs: Arc::clone(&blobs),
+                dispatcher: dispatcher.clone(),
+            })?;
             runtime.register_handler(ParallelReconciliationJobHandler { jobs, blobs })?;
         }
         RuntimeComposition::Surreal(runtime) => {
             let jobs: Arc<dyn JobStore> = Arc::new(runtime.job_store.clone());
             runtime.register_handler(ParallelWorkCoordinatorJobHandler {
                 jobs: Arc::clone(&jobs),
+            })?;
+            runtime.register_handler(RemoteWorkEnvironmentProxyJobHandler {
+                runtime: composition.clone(),
+                blobs: Arc::clone(&blobs),
+                dispatcher: dispatcher.clone(),
             })?;
             runtime.register_handler(ParallelReconciliationJobHandler { jobs, blobs })?;
         }
@@ -304,6 +344,48 @@ pub fn parallel_reconciliation_job_id(parent_job_id: &str) -> StasisResult<Strin
         return Err(invalid("parallel parent job id is required"));
     }
     Ok(format!("{}:reconcile", parent_job_id.trim()))
+}
+
+pub fn remote_child_envelope_id(child_job_id: &str) -> StasisResult<String> {
+    if child_job_id.trim().is_empty() {
+        return Err(invalid("remote child job id is required"));
+    }
+    Ok(format!("{}:federated", child_job_id.trim()))
+}
+
+fn remote_proxy_job(
+    child: &ParallelWorkChild,
+    job_id: &str,
+    queue: &str,
+    parent: &Job,
+) -> StasisResult<NewJob> {
+    let target_runtime_id = child
+        .target_runtime_id
+        .as_deref()
+        .ok_or_else(|| invalid("remote proxy child has no target runtime"))?;
+    let scheduled_at = parent.started_at.unwrap_or(parent.scheduled_at);
+    let deadline = child
+        .work
+        .deadline_at
+        .unwrap_or(scheduled_at + chrono::Duration::hours(24));
+    let payload = RemoteWorkEnvironmentProxyPayload {
+        schema_version: 1,
+        target_runtime_id: target_runtime_id.to_string(),
+        envelope_id: remote_child_envelope_id(job_id)?,
+        deadline,
+        work: child.work.clone(),
+    };
+    let payload_ref = serde_json::to_string(&payload)
+        .map_err(|error| invalid(format!("encode remote work-environment proxy: {error}")))?;
+    let mut candidate = child.work.clone().into_job(
+        job_id.to_string(),
+        queue.to_string(),
+        parent.id.clone(),
+        Utc::now(),
+    )?;
+    candidate.job_type = REMOTE_WORK_ENVIRONMENT_PROXY_JOB_TYPE.to_string();
+    candidate.payload_ref = payload_ref;
+    Ok(candidate)
 }
 
 /// Assemble every child result into one portable checkpoint. The first child
@@ -474,11 +556,14 @@ impl JobHandler for ParallelWorkCoordinatorJobHandler {
 
         for child in &plan.children {
             let child_job_id = parallel_child_job_id(&job.id, &child.child_id)?;
-            let mut candidate =
+            let mut candidate = if child.target_runtime_id.is_some() {
+                remote_proxy_job(child, &child_job_id, &job.queue, job)?
+            } else {
                 child
                     .work
                     .clone()
-                    .into_job(&child_job_id, &job.queue, &job.id, Utc::now())?;
+                    .into_job(&child_job_id, &job.queue, &job.id, Utc::now())?
+            };
             candidate.correlation_id = job.correlation_id.clone();
             candidate.trace_id = job.trace_id.clone();
             ensure_job(&self.jobs, candidate).await?;
@@ -603,6 +688,141 @@ impl JobHandler for ParallelWorkCoordinatorJobHandler {
             )),
             _ => Ok(deferred(job, "waiting for parallel reconciliation")),
         }
+    }
+}
+
+#[async_trait]
+impl JobHandler for RemoteWorkEnvironmentProxyJobHandler {
+    fn job_type(&self) -> &'static str {
+        REMOTE_WORK_ENVIRONMENT_PROXY_JOB_TYPE
+    }
+
+    async fn execute(&self, _job: &Job) -> StasisResult<JobExecutionOutcome> {
+        Err(invalid(
+            "remote work-environment proxies require Stasis JobContext",
+        ))
+    }
+
+    async fn execute_with_context(
+        &self,
+        job: &Job,
+        ctx: JobContext,
+    ) -> StasisResult<JobExecutionOutcome> {
+        let payload: RemoteWorkEnvironmentProxyPayload = serde_json::from_str(&job.payload_ref)
+            .map_err(|error| invalid(format!("decode remote work-environment proxy: {error}")))?;
+        if payload.schema_version != 1 {
+            return Ok(fatal(
+                job,
+                "unsupported remote work-environment proxy payload".to_string(),
+                None,
+            ));
+        }
+        validate_id("target_runtime_id", &payload.target_runtime_id)?;
+        if payload.envelope_id != remote_child_envelope_id(&job.id)? {
+            return Ok(fatal(
+                job,
+                "remote work-environment proxy envelope identity changed".to_string(),
+                None,
+            ));
+        }
+
+        if let Some(result) =
+            load_recorded_terminal_result(&self.runtime, self.blobs.as_ref(), &payload.envelope_id)
+                .await?
+        {
+            return complete_remote_proxy(job, &ctx, &payload, result, self.blobs.as_ref()).await;
+        }
+        if payload.deadline <= Utc::now() {
+            return Ok(fatal(
+                job,
+                "remote work-environment deadline elapsed".to_string(),
+                None,
+            ));
+        }
+        let Some(dispatcher) = self.dispatcher.as_ref() else {
+            return Ok(fatal(
+                job,
+                "remote work-environment transport is unavailable on this daemon".to_string(),
+                None,
+            ));
+        };
+        let staged =
+            stage_remote_work_environment_payload(self.blobs.as_ref(), &payload.work).await?;
+        let envelope = build_remote_work_environment_envelope(
+            payload.envelope_id.clone(),
+            staged,
+            job.idempotency_key.clone(),
+            job.correlation_id.clone(),
+            job.id.clone(),
+            payload.deadline,
+            dispatcher.origin_authority(),
+            dispatcher.terminal_delivery(),
+            payload.work.spec.placement_constraints(),
+        )?;
+        dispatcher
+            .submit_remote_job(&payload.target_runtime_id, envelope)
+            .await?;
+
+        if let Some(result) =
+            load_recorded_terminal_result(&self.runtime, self.blobs.as_ref(), &payload.envelope_id)
+                .await?
+        {
+            return complete_remote_proxy(job, &ctx, &payload, result, self.blobs.as_ref()).await;
+        }
+        Ok(deferred(job, "waiting for remote work environment"))
+    }
+}
+
+async fn complete_remote_proxy(
+    job: &Job,
+    ctx: &JobContext,
+    payload: &RemoteWorkEnvironmentProxyPayload,
+    result: stasis::domain::runtime::federation::FederatedTerminalResult,
+    blobs: &dyn BlobTransferPort,
+) -> StasisResult<JobExecutionOutcome> {
+    if result.correlation_id != job.correlation_id || result.causation_id != job.id {
+        return Ok(fatal(
+            job,
+            "remote terminal result does not belong to this proxy job".to_string(),
+            None,
+        ));
+    }
+    let remote = decode_remote_terminal_result(blobs, &result).await?;
+    let progress = WorkEnvironmentJobProgress {
+        schema_version: 1,
+        phase: WorkEnvironmentWorkflowPhase::CleanupEnqueued,
+        attempt: ctx.attempt,
+        fence: payload.work.spec.fence.clone(),
+        environment_state: None,
+        execution_result: remote.execution_result.clone(),
+        checkpoint: remote.checkpoint.clone(),
+        publication: remote.publication.clone(),
+        cleanup_job_id: None,
+        updated_at: remote.finished_at,
+    };
+    ctx.progress(&progress).await?;
+    let diagnostics = Some(
+        json!({
+            "target_runtime_id": payload.target_runtime_id,
+            "remote_job_id": remote.remote_job_id,
+            "terminal_state": remote.terminal_state,
+        })
+        .to_string(),
+    );
+    if remote.succeeded {
+        Ok(JobExecutionOutcome::Success {
+            output_provenance: result.output_provenance,
+            execution_id: Some(remote.remote_job_id),
+            diagnostics,
+        })
+    } else {
+        Ok(fatal(
+            job,
+            remote
+                .error_message
+                .unwrap_or_else(|| "remote work environment failed".to_string()),
+            diagnostics,
+        ))
     }
 }
 
@@ -820,7 +1040,7 @@ fn invalid(message: impl Into<String>) -> StasisError {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration as StdDuration;
 
     use chrono::Duration;
@@ -833,12 +1053,51 @@ mod tests {
     use stasis::application::runtime::in_memory_runtime::InMemoryRuntime;
     use stasis::domain::runtime::placement::WorkerCapabilities;
     use stasis::domain::runtime::provenance::ContentDigest;
+    use stasis::domain::runtime::remote_job_envelope::{
+        OriginAuthority, RemoteJobEnvelope, TerminalDeliveryEndpoint,
+    };
     use stasis::domain::runtime::resource_lease::FencingToken;
     use stasis::infrastructure::runtime::in_memory_blob_transfer::InMemoryBlobTransfer;
 
     use super::*;
 
     const BASE: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    #[derive(Default)]
+    struct RecordingRemoteDispatcher {
+        submissions: Mutex<Vec<(String, RemoteJobEnvelope)>>,
+    }
+
+    #[async_trait]
+    impl RemoteWorkEnvironmentDispatcher for RecordingRemoteDispatcher {
+        fn origin_authority(&self) -> OriginAuthority {
+            OriginAuthority {
+                runtime_id: "origin-runtime".to_string(),
+                authority_id: "origin-runtime".to_string(),
+                realm: None,
+            }
+        }
+
+        fn terminal_delivery(&self) -> TerminalDeliveryEndpoint {
+            TerminalDeliveryEndpoint {
+                endpoint_id: "origin-runtime:terminal".to_string(),
+                protocol: "test".to_string(),
+                address: "origin-runtime".to_string(),
+            }
+        }
+
+        async fn submit_remote_job(
+            &self,
+            target_runtime_id: &str,
+            envelope: RemoteJobEnvelope,
+        ) -> StasisResult<String> {
+            self.submissions
+                .lock()
+                .unwrap()
+                .push((target_runtime_id.to_string(), envelope));
+            Ok("destination-job".to_string())
+        }
+    }
 
     fn payload(id: &str, publication: bool) -> WorkEnvironmentJobPayload {
         WorkEnvironmentJobPayload {
@@ -898,6 +1157,7 @@ mod tests {
                 .into_iter()
                 .map(|id| ParallelWorkChild {
                     child_id: id.to_string(),
+                    target_runtime_id: None,
                     work: payload(id, false),
                 })
                 .collect(),
@@ -1084,11 +1344,128 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn targeted_child_dispatches_once_and_completes_from_local_terminal_truth() {
+        let runtime = InMemoryRuntime::new();
+        let composition = RuntimeComposition::InMemory(runtime.clone());
+        let blobs = Arc::new(InMemoryBlobTransfer::new());
+        let dispatcher = Arc::new(RecordingRemoteDispatcher::default());
+        register_parallel_work_environment_job_handlers(
+            &composition,
+            blobs.clone(),
+            Some(dispatcher.clone()),
+        )
+        .await
+        .unwrap();
+        let mut plan = plan();
+        plan.children[0].target_runtime_id = Some("worker-runtime".to_string());
+        runtime
+            .job_store
+            .insert(
+                plan.clone()
+                    .into_job("targeted-parent", "default", "root", Utc::now())
+                    .unwrap()
+                    .into_job(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            process_once(&runtime).await.as_deref(),
+            Some("targeted-parent")
+        );
+        let child_job_id = parallel_child_job_id("targeted-parent", "alpha").unwrap();
+        let child = runtime.job_store.get(&child_job_id).await.unwrap().unwrap();
+        assert_eq!(child.job_type, REMOTE_WORK_ENVIRONMENT_PROXY_JOB_TYPE);
+        assert_eq!(
+            process_once(&runtime).await.as_deref(),
+            Some(child_job_id.as_str())
+        );
+        let submitted = dispatcher.submissions.lock().unwrap().clone();
+        assert_eq!(submitted.len(), 1);
+        assert_eq!(submitted[0].0, "worker-runtime");
+        assert_eq!(
+            submitted[0].1.envelope_id,
+            remote_child_envelope_id(&child_job_id).unwrap()
+        );
+
+        let child_result = child_result(&blobs, &plan.children[0], 7).await;
+        let remote = crate::work_environment_federation::RemoteWorkEnvironmentResult {
+            schema_version:
+                crate::work_environment_federation::WORK_ENVIRONMENT_RESULT_SCHEMA_VERSION,
+            envelope_id: submitted[0].1.envelope_id.clone(),
+            remote_job_id: "destination-job".to_string(),
+            succeeded: true,
+            terminal_state: "succeeded".to_string(),
+            execution_result: None,
+            checkpoint: Some(child_result.checkpoint.clone()),
+            publication: None,
+            error_message: None,
+            finished_at: Utc::now(),
+        };
+        let output = blobs
+            .put(
+                &serde_json::to_vec(&remote).unwrap(),
+                Some(crate::work_environment_federation::WORK_ENVIRONMENT_RESULT_MEDIA_TYPE),
+            )
+            .await
+            .unwrap();
+        let terminal = stasis::domain::runtime::federation::FederatedTerminalResult {
+            schema_version:
+                stasis::domain::runtime::federation::FEDERATED_TERMINAL_RESULT_SCHEMA_VERSION_V1,
+            result_id: format!("{}:terminal", remote.envelope_id),
+            envelope_id: remote.envelope_id.clone(),
+            job_id: remote.remote_job_id.clone(),
+            job_type: crate::work_environment_job::WORK_ENVIRONMENT_JOB_TYPE.to_string(),
+            succeeded: true,
+            output: Some(output),
+            output_provenance: Some(child_result.checkpoint.provenance.clone()),
+            error_message: None,
+            origin_authority: dispatcher.origin_authority(),
+            terminal_delivery: dispatcher.terminal_delivery(),
+            correlation_id: "targeted-parent".to_string(),
+            causation_id: child_job_id.clone(),
+            occurred_at: remote.finished_at,
+            signature: stasis::domain::runtime::remote_job_envelope::EnvelopeSignature {
+                algorithm: "test".to_string(),
+                key_id: "test".to_string(),
+                signature_hex: "test".to_string(),
+            },
+        };
+        let stored = blobs
+            .put(
+                &serde_json::to_vec(&terminal).unwrap(),
+                Some("application/vnd.stasis.federated-terminal-result+json"),
+            )
+            .await
+            .unwrap();
+        crate::work_environment_federation::record_remote_terminal_result(
+            &composition,
+            &terminal,
+            &stored,
+        )
+        .await
+        .unwrap();
+
+        for _ in 0..4 {
+            tokio::time::sleep(StdDuration::from_millis(12)).await;
+            let _ = process_once(&runtime).await;
+            let child = runtime.job_store.get(&child_job_id).await.unwrap().unwrap();
+            if child.state == JobState::Succeeded {
+                let progress = decode_work_progress(&child).unwrap().unwrap();
+                assert_eq!(progress.checkpoint, Some(child_result.checkpoint));
+                assert_eq!(dispatcher.submissions.lock().unwrap().len(), 1);
+                return;
+            }
+        }
+        panic!("targeted child did not consume its local terminal receipt");
+    }
+
+    #[tokio::test]
     async fn durable_parent_fans_out_and_waits_for_one_reconciliation_job() {
         let runtime = InMemoryRuntime::new();
         let composition = RuntimeComposition::InMemory(runtime.clone());
         let blobs = Arc::new(InMemoryBlobTransfer::new());
-        register_parallel_work_environment_job_handlers(&composition, blobs.clone())
+        register_parallel_work_environment_job_handlers(&composition, blobs.clone(), None)
             .await
             .unwrap();
         let plan = plan();
@@ -1210,7 +1587,7 @@ mod tests {
         let runtime = InMemoryRuntime::new();
         let composition = RuntimeComposition::InMemory(runtime.clone());
         let blobs = Arc::new(InMemoryBlobTransfer::new());
-        register_parallel_work_environment_job_handlers(&composition, blobs.clone())
+        register_parallel_work_environment_job_handlers(&composition, blobs.clone(), None)
             .await
             .unwrap();
         let plan = plan();
