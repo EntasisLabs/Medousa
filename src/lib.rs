@@ -130,6 +130,8 @@ pub mod work_environment_federation;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod work_environment_job;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod work_environment_parallel;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod workshop_api;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod workshop_authority;

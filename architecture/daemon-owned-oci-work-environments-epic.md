@@ -690,6 +690,26 @@ removed only in the slice that installs its complete terminal route.
 **Exit:** three daemons can complete independent changes, lose all local
 containers, and still reconcile the returned work on a fourth daemon.
 
+**First landed boundary:** a parallel plan now requires two to sixteen ordinary
+work-environment children with unique environment, workspace, and child
+identities. Every child shares the exact repository and base commit, and child
+publication is forbidden; only the reconciliation job may update the target
+ref, with its `expected_value` fixed to that base.
+
+Completed child checkpoints are assembled by digest into one portable
+reconciliation checkpoint. The first child supplies the restored Git worktree;
+every additional child bundle, every declared artifact, and a typed manifest
+of all child/job/commit identities are materialized below
+`.medousa/reconciliation/`. Input order, missing results, duplicates, and
+unknown children cannot silently select a winner. The output is a normal
+`WorkEnvironmentCheckpoint`, so reconstruction and execution reuse the same
+daemon/OCI/blob paths already proven in Phases 4–6.
+
+The next Phase 7 slice makes the fan-out and reconciliation coordinators
+durable Stasis handlers. Those handlers must enqueue deterministic child job
+identities, wait on durable terminal state, preserve every failed/conflicting
+result, and enqueue exactly one ordinary reconciliation work-environment job.
+
 ### Phase 8 — Attachments, UX, and operations
 
 **Goal:** make remote work observable and optionally interactive without moving

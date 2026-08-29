@@ -84,6 +84,7 @@ pub mod typed_tools;
 pub mod web_search_tool;
 pub mod work_environment_federation;
 pub mod work_environment_job;
+pub mod work_environment_parallel;
 pub(crate) mod work_environment_tools;
 pub mod workshop_authority;
 /// Re-export slim MCP gateway crate (binary lives in adapters/medousa-mcp-gateway).
