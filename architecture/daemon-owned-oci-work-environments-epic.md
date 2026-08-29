@@ -722,10 +722,22 @@ successful publication. A fixed creation timestamp is part of the durable
 reconciliation payload, so retries reproduce byte-identical child and work-job
 payloads instead of drifting under the same idempotency key.
 
-Remote dispatch and the fourth-daemon reconstruction proof remain. The durable
-graph currently enqueues through the canonical local Stasis store; the next
-slice must bind child placement to the Phase 6 federation transport without
-changing these job identities or adding another coordinator.
+**Third landed boundary:** remote terminal delivery now transfers the complete
+immutable result graph before acknowledging the signed result: the typed result
+body, checkpoint manifest, Git bundle, declared artifacts, and any distinct
+checkpoint preserved by a publication conflict. The origin then records the
+received outer result descriptor as an already-terminal, replay-stable Stasis
+record derived from the remote envelope identity. A coordinator can therefore
+observe remote completion through local durable truth; it never polls the
+destination's mutable job state, and an acknowledged result is reconstructable
+after the destination disappears.
+
+Remote child submission and the fourth-daemon reconstruction proof remain. The
+durable graph currently enqueues through the canonical local Stasis store; the
+next slice binds targeted children to a remote proxy handler backed by the
+Phase 6 federation transport and this terminal record, without changing child
+identities or adding another coordinator. Capability-based automatic target
+selection follows the explicit-target path.
 
 ### Phase 8 — Attachments, UX, and operations
 

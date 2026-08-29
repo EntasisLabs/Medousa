@@ -759,6 +759,7 @@ async fn main() -> Result<()> {
                     terminal_delivery: Arc::new(
                         medousa::mesh::work_environment_federation::MeshSignedFederatedTerminalDelivery::new(
                             Arc::clone(pairing),
+                            Arc::clone(&blobs),
                         ),
                     ),
                 },

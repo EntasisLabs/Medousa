@@ -36,7 +36,8 @@ use crate::mesh::{record_has_capability, registry};
 use crate::pairing::crypto::{base64url_encode, parse_verifying_key, sign_message, verify_message};
 use crate::pairing::{PairedDeviceRecord, PairingService};
 use crate::work_environment_federation::{
-    SignedFederatedTerminalDelivery, accept_remote_work_environment_job,
+    RemoteWorkEnvironmentResult, SignedFederatedTerminalDelivery,
+    accept_remote_work_environment_job,
 };
 use crate::work_environment_job::WorkEnvironmentJobPayload;
 use medousa_runtime::WorkEnvironmentCheckpointManifest;
@@ -267,6 +268,13 @@ async fn accept_terminal_result(
         .put(&bytes, Some(FEDERATED_TERMINAL_MEDIA_TYPE))
         .await
         .map_err(map_stasis)?;
+    crate::work_environment_federation::record_remote_terminal_result(
+        state.runtime.as_ref(),
+        &wrapped.payload,
+        &stored,
+    )
+    .await
+    .map_err(map_stasis)?;
     let local_ref = serde_json::to_string(&stored).map_err(internal)?;
     delivery::bind_delivery_local_ref(&receipt.inbox_id, &local_ref, &receipt.receipt.id)
         .map_err(internal)?;
@@ -498,8 +506,7 @@ fn internal(error: impl std::fmt::Display) -> (StatusCode, String) {
 /// Destination-side durable terminal sender. The origin peer is selected from
 /// the signed Stasis result, then resolved through the existing mesh registry.
 pub struct MeshSignedFederatedTerminalDelivery {
-    pairing: Arc<PairingService>,
-    client: reqwest::Client,
+    transport: MeshWorkEnvironmentFederationTransport,
 }
 
 /// Source-side sender used by coordinators. It moves the immutable input graph
@@ -623,6 +630,60 @@ impl MeshWorkEnvironmentFederationTransport {
         let manifest: WorkEnvironmentCheckpointManifest =
             serde_json::from_slice(&manifest_bytes)
                 .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+        manifest
+            .validate()
+            .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+        self.put_blob(target_runtime_id, &manifest.source_bundle)
+            .await?;
+        for artifact in &manifest.artifacts {
+            self.put_blob(target_runtime_id, &artifact.blob).await?;
+        }
+        Ok(())
+    }
+
+    async fn transfer_terminal_graph(
+        &self,
+        target_runtime_id: &str,
+        result: &FederatedTerminalResult,
+    ) -> stasis::prelude::Result<()> {
+        let Some(output) = result.output.as_ref() else {
+            return Ok(());
+        };
+        let bytes = self.blobs.get(output).await?;
+        let decoded: RemoteWorkEnvironmentResult = serde_json::from_slice(&bytes)
+            .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+        decoded
+            .validate()
+            .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+        if let Some(checkpoint) = decoded.checkpoint.as_ref() {
+            self.transfer_checkpoint_graph(target_runtime_id, checkpoint)
+                .await?;
+        }
+        if let Some(medousa_runtime::WorkEnvironmentPublicationResult::Conflict {
+            preserved_checkpoint,
+            ..
+        }) = decoded.publication.as_ref()
+            && decoded.checkpoint.as_ref() != Some(preserved_checkpoint)
+        {
+            self.transfer_checkpoint_graph(target_runtime_id, preserved_checkpoint)
+                .await?;
+        }
+        self.put_blob(target_runtime_id, output).await
+    }
+
+    async fn transfer_checkpoint_graph(
+        &self,
+        target_runtime_id: &str,
+        checkpoint: &medousa_runtime::WorkEnvironmentCheckpoint,
+    ) -> stasis::prelude::Result<()> {
+        checkpoint
+            .validate()
+            .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+        self.put_blob(target_runtime_id, &checkpoint.manifest)
+            .await?;
+        let bytes = self.blobs.get(&checkpoint.manifest).await?;
+        let manifest: WorkEnvironmentCheckpointManifest = serde_json::from_slice(&bytes)
+            .map_err(|error| StasisError::PortFailure(error.to_string()))?;
         manifest
             .validate()
             .map_err(|error| StasisError::PortFailure(error.to_string()))?;
@@ -771,10 +832,9 @@ async fn http_failure(operation: &str, response: reqwest::Response) -> StasisErr
 }
 
 impl MeshSignedFederatedTerminalDelivery {
-    pub fn new(pairing: Arc<PairingService>) -> Self {
+    pub fn new(pairing: Arc<PairingService>, blobs: Arc<dyn BlobTransferPort>) -> Self {
         Self {
-            pairing,
-            client: reqwest::Client::new(),
+            transport: MeshWorkEnvironmentFederationTransport::new(pairing, blobs),
         }
     }
 }
@@ -794,58 +854,28 @@ impl SignedFederatedTerminalDelivery for MeshSignedFederatedTerminalDelivery {
         }
         sign_terminal_result(
             &mut result,
-            self.pairing.device_id(),
-            self.pairing.identity().signing_key(),
+            self.transport.pairing.device_id(),
+            self.transport.pairing.identity().signing_key(),
         )
         .map_err(StasisError::PortFailure)?;
         let target = result.origin_authority.runtime_id.clone();
-        let peer = registry::get_peer(&target)
-            .map_err(|error| StasisError::PortFailure(error.to_string()))?
-            .ok_or_else(|| StasisError::PortFailure(format!("mesh peer not found: {target}")))?;
-        let base = peer
-            .endpoints
-            .lan_base_url
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| {
-                StasisError::PortFailure(format!("mesh peer has no LAN endpoint: {target}"))
-            })?;
-        let payload_hash = payload_hash_hex(&result)
-            .map_err(|error| StasisError::PortFailure(error.to_string()))?;
-        let seq = registry::allocate_outbound_seq(&target)
-            .map_err(|error| StasisError::PortFailure(error.to_string()))?;
-        let envelope = sign_envelope(
-            self.pairing.identity().signing_key(),
-            self.pairing.device_id(),
-            &target,
-            seq,
-            MeshCapability::TaskResult,
-            &payload_hash,
-            chrono::Duration::seconds(DEFAULT_ENVELOPE_TTL_SECS),
-        );
-        let header = encode_envelope_header(&envelope)
-            .map_err(|error| StasisError::PortFailure(error.to_string()))?;
-        let response = self
-            .client
-            .post(format!(
-                "{}/v1/mesh/federation/terminal-results",
-                base.trim_end_matches('/')
-            ))
-            .header(MESH_ENVELOPE_HEADER, header)
-            .json(&MeshEnvelopedRequest {
-                envelope,
-                payload: result,
-            })
-            .send()
-            .await
-            .map_err(|error| StasisError::PortFailure(error.to_string()))?;
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(StasisError::PortFailure(format!(
-                "terminal delivery HTTP {status}: {body}"
-            )));
+        self.transport
+            .transfer_terminal_graph(&target, &result)
+            .await?;
+        let expected_result_id = result.result_id.clone();
+        let admission: FederatedTerminalAdmission = self
+            .transport
+            .post_signed(
+                &target,
+                MeshCapability::TaskResult,
+                "/v1/mesh/federation/terminal-results",
+                result,
+            )
+            .await?;
+        if admission.result_id != expected_result_id {
+            return Err(StasisError::PortFailure(
+                "terminal admission acknowledged a different result".to_string(),
+            ));
         }
         Ok(())
     }

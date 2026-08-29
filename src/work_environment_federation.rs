@@ -17,7 +17,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use stasis::domain::runtime::blob_descriptor::BlobDescriptor;
 use stasis::domain::runtime::federation::FederatedTerminalResult;
-use stasis::domain::runtime::job::{Job, JobState};
+use stasis::domain::runtime::job::{BackoffPolicy, Job, JobState, NewJob};
+use stasis::domain::runtime::placement::PlacementConstraints;
+use stasis::domain::runtime::provenance::ProvenanceRef;
 use stasis::domain::runtime::remote_job_envelope::{
     EnvelopeSignature, OriginAuthority, REMOTE_JOB_ENVELOPE_SCHEMA_VERSION_V1, RemoteJobEnvelope,
     TerminalDeliveryEndpoint,
@@ -34,6 +36,8 @@ pub const WORK_ENVIRONMENT_JOB_PAYLOAD_MEDIA_TYPE: &str =
     "application/vnd.medousa.work-environment-job+json";
 pub const WORK_ENVIRONMENT_RESULT_MEDIA_TYPE: &str =
     "application/vnd.medousa.work-environment-result+json";
+pub const WORK_ENVIRONMENT_TERMINAL_RECORD_JOB_TYPE: &str =
+    "workflow.medousa.remote_work_environment_result";
 pub const WORK_ENVIRONMENT_RESULT_SCHEMA_VERSION: u32 = 1;
 const MAX_REMOTE_WORK_ENVIRONMENT_PAYLOAD_BYTES: usize = 1024 * 1024;
 
@@ -412,6 +416,95 @@ pub async fn decode_remote_terminal_result(
     Ok(decoded)
 }
 
+/// Persist terminal ingress as a terminal Stasis record. Remote proxy jobs can
+/// observe this local record without polling the destination daemon.
+pub async fn record_remote_terminal_result(
+    runtime: &RuntimeComposition,
+    result: &FederatedTerminalResult,
+    stored: &BlobDescriptor,
+) -> StasisResult<String> {
+    let record_id = terminal_result_record_id(&result.envelope_id);
+    let payload_ref = serde_json::to_string(stored).map_err(|error| {
+        StasisError::PortFailure(format!("encode terminal result descriptor: {error}"))
+    })?;
+    if let Some(existing) = runtime.get_job(&record_id).await? {
+        if existing.job_type != WORK_ENVIRONMENT_TERMINAL_RECORD_JOB_TYPE
+            || existing.payload_ref != payload_ref
+        {
+            return Err(StasisError::PortFailure(
+                "remote terminal result identity collided with different content".to_string(),
+            ));
+        }
+        return Ok(record_id);
+    }
+    let mut provenance = ProvenanceRef::cas(stored.digest.clone());
+    provenance.media_type = stored.media_type.clone();
+    let mut record = NewJob {
+        id: record_id.clone(),
+        queue: "federation-results".to_string(),
+        job_type: WORK_ENVIRONMENT_TERMINAL_RECORD_JOB_TYPE.to_string(),
+        payload_ref,
+        priority: 0,
+        max_attempts: 1,
+        idempotency_key: format!("idem-{record_id}"),
+        correlation_id: result.correlation_id.clone(),
+        causation_id: result.causation_id.clone(),
+        trace_id: result.correlation_id.clone(),
+        input_provenance: result.output_provenance.clone(),
+        placement: PlacementConstraints::unrestricted(),
+        scheduled_at: result.occurred_at,
+        backoff_policy: BackoffPolicy::default(),
+    }
+    .into_job();
+    record.state = JobState::Succeeded;
+    record.output_provenance = Some(provenance);
+    record.started_at = Some(result.occurred_at);
+    record.finished_at = Some(result.occurred_at);
+    runtime.save_job(record).await?;
+    Ok(record_id)
+}
+
+pub async fn load_recorded_terminal_result(
+    runtime: &RuntimeComposition,
+    blobs: &dyn BlobTransferPort,
+    envelope_id: &str,
+) -> StasisResult<Option<FederatedTerminalResult>> {
+    let Some(record) = runtime
+        .get_job(&terminal_result_record_id(envelope_id))
+        .await?
+    else {
+        return Ok(None);
+    };
+    if record.job_type != WORK_ENVIRONMENT_TERMINAL_RECORD_JOB_TYPE
+        || record.state != JobState::Succeeded
+    {
+        return Err(StasisError::PortFailure(
+            "remote terminal result record has invalid type or state".to_string(),
+        ));
+    }
+    let descriptor: BlobDescriptor =
+        serde_json::from_str(&record.payload_ref).map_err(|error| {
+            StasisError::PortFailure(format!("decode terminal result descriptor: {error}"))
+        })?;
+    let bytes = blobs.get(&descriptor).await?;
+    let result: FederatedTerminalResult = serde_json::from_slice(&bytes).map_err(|error| {
+        StasisError::PortFailure(format!("decode recorded terminal result: {error}"))
+    })?;
+    if result.envelope_id != envelope_id {
+        return Err(StasisError::PortFailure(
+            "recorded terminal result envelope identity changed".to_string(),
+        ));
+    }
+    Ok(Some(result))
+}
+
+pub fn terminal_result_record_id(envelope_id: &str) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"medousa/remote-work-environment-result/v1\0");
+    digest.update(envelope_id.trim().as_bytes());
+    format!("remote-work-result-{:x}", digest.finalize())
+}
+
 fn remote_job_id(envelope: &RemoteJobEnvelope) -> String {
     let mut digest = Sha256::new();
     digest.update(b"medousa/remote-work-environment/v1\0");
@@ -559,6 +652,80 @@ mod tests {
             tokio::time::sleep(StdDuration::from_millis(2)).await;
         }
         panic!("job {job_id} did not become terminal");
+    }
+
+    #[tokio::test]
+    async fn terminal_ingress_becomes_a_replay_stable_local_stasis_record() {
+        let runtime = RuntimeComposition::InMemory(InMemoryRuntime::new());
+        let blobs = InMemoryBlobTransfer::new();
+        let body = RemoteWorkEnvironmentResult {
+            schema_version: WORK_ENVIRONMENT_RESULT_SCHEMA_VERSION,
+            envelope_id: "remote-envelope".to_string(),
+            remote_job_id: "remote-job".to_string(),
+            succeeded: false,
+            terminal_state: "failed".to_string(),
+            execution_result: None,
+            checkpoint: None,
+            publication: None,
+            error_message: Some("expected failure".to_string()),
+            finished_at: Utc::now(),
+        };
+        let output = blobs
+            .put(
+                &serde_json::to_vec(&body).unwrap(),
+                Some(WORK_ENVIRONMENT_RESULT_MEDIA_TYPE),
+            )
+            .await
+            .unwrap();
+        let result = FederatedTerminalResult {
+            schema_version:
+                stasis::domain::runtime::federation::FEDERATED_TERMINAL_RESULT_SCHEMA_VERSION_V1,
+            result_id: "remote-result".to_string(),
+            envelope_id: body.envelope_id.clone(),
+            job_id: body.remote_job_id.clone(),
+            job_type: WORK_ENVIRONMENT_JOB_TYPE.to_string(),
+            succeeded: false,
+            output: Some(output),
+            output_provenance: None,
+            error_message: body.error_message.clone(),
+            origin_authority: origin(),
+            terminal_delivery: terminal_endpoint(),
+            correlation_id: "correlation".to_string(),
+            causation_id: "causation".to_string(),
+            occurred_at: body.finished_at,
+            signature: EnvelopeSignature {
+                algorithm: "test".to_string(),
+                key_id: "test".to_string(),
+                signature_hex: "test".to_string(),
+            },
+        };
+        let stored = blobs
+            .put(
+                &serde_json::to_vec(&result).unwrap(),
+                Some("application/vnd.stasis.federated-terminal-result+json"),
+            )
+            .await
+            .unwrap();
+
+        let first = record_remote_terminal_result(&runtime, &result, &stored)
+            .await
+            .unwrap();
+        let replay = record_remote_terminal_result(&runtime, &result, &stored)
+            .await
+            .unwrap();
+        assert_eq!(first, replay);
+        let loaded = load_recorded_terminal_result(&runtime, &blobs, &body.envelope_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.result_id, result.result_id);
+        assert_eq!(
+            decode_remote_terminal_result(&blobs, &loaded)
+                .await
+                .unwrap()
+                .error_message,
+            body.error_message
+        );
     }
 
     #[tokio::test]
