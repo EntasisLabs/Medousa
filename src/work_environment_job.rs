@@ -22,13 +22,21 @@ use serde_json::json;
 use stasis::application::runtime::in_memory_runtime::{JobExecutionOutcome, JobHandler};
 use stasis::application::runtime::job_context::JobContext;
 use stasis::application::runtime::job_lifecycle::JobLifecycleEvent;
-use stasis::domain::runtime::job::{BackoffPolicy, Job, NewJob};
+use stasis::domain::runtime::job::{BackoffPolicy, Job, JobState, NewJob};
 use stasis::domain::runtime::resource_lease::FencingToken;
+use stasis::ports::outbound::runtime::blob_transfer::BlobTransferPort;
 use stasis::ports::outbound::runtime::job_store::JobStore;
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 
+use crate::work_environment_federation::{
+    SignedFederatedTerminalDelivery, WorkEnvironmentFederationContext,
+    WorkEnvironmentFederationServices, encode_remote_terminal_result,
+};
+
 pub const WORK_ENVIRONMENT_JOB_TYPE: &str = "workflow.medousa.work_environment";
 pub const WORK_ENVIRONMENT_CLEANUP_JOB_TYPE: &str = "workflow.medousa.work_environment_cleanup";
+pub const WORK_ENVIRONMENT_TERMINAL_DELIVERY_JOB_TYPE: &str =
+    "workflow.medousa.work_environment_terminal_delivery";
 const WORK_ENVIRONMENT_PROGRESS_SCHEMA_VERSION: u32 = 1;
 const WORK_ENVIRONMENT_CLEANUP_SCHEMA_VERSION: u32 = 1;
 const BOUNDARY_DELAY_MILLIS: i64 = 1;
@@ -50,6 +58,8 @@ pub struct WorkEnvironmentJobPayload {
     pub deadline_at: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub federation: Option<WorkEnvironmentFederationContext>,
 }
 
 impl WorkEnvironmentJobPayload {
@@ -196,32 +206,78 @@ struct WorkEnvironmentCleanupPayload {
 struct WorkEnvironmentJobHandler {
     environment: Arc<dyn WorkEnvironmentPort>,
     jobs: Arc<dyn JobStore>,
+    federated_terminal_enabled: bool,
 }
 
 struct WorkEnvironmentCleanupJobHandler {
     environment: Arc<dyn WorkEnvironmentPort>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct WorkEnvironmentTerminalDeliveryPayload {
+    parent_job_id: String,
+    federation: WorkEnvironmentFederationContext,
+}
+
+struct WorkEnvironmentTerminalDeliveryJobHandler {
+    jobs: Arc<dyn JobStore>,
+    blobs: Arc<dyn BlobTransferPort>,
+    delivery: Arc<dyn SignedFederatedTerminalDelivery>,
+}
+
 pub async fn register_work_environment_job_handlers(
     composition: &RuntimeComposition,
     environment: Arc<dyn WorkEnvironmentPort>,
 ) -> anyhow::Result<()> {
+    register_work_environment_job_handlers_inner(composition, environment, None).await
+}
+
+pub async fn register_federated_work_environment_job_handlers(
+    composition: &RuntimeComposition,
+    environment: Arc<dyn WorkEnvironmentPort>,
+    federation: WorkEnvironmentFederationServices,
+) -> anyhow::Result<()> {
+    register_work_environment_job_handlers_inner(composition, environment, Some(federation)).await
+}
+
+async fn register_work_environment_job_handlers_inner(
+    composition: &RuntimeComposition,
+    environment: Arc<dyn WorkEnvironmentPort>,
+    federation: Option<WorkEnvironmentFederationServices>,
+) -> anyhow::Result<()> {
+    let federated_terminal_enabled = federation.is_some();
     match composition {
         RuntimeComposition::InMemory(runtime) => {
             let jobs: Arc<dyn JobStore> = Arc::new(runtime.job_store.clone());
             runtime.register_handler(WorkEnvironmentJobHandler {
                 environment: Arc::clone(&environment),
-                jobs,
+                jobs: Arc::clone(&jobs),
+                federated_terminal_enabled,
             })?;
             runtime.register_handler(WorkEnvironmentCleanupJobHandler { environment })?;
+            if let Some(federation) = federation {
+                runtime.register_handler(WorkEnvironmentTerminalDeliveryJobHandler {
+                    jobs,
+                    blobs: federation.blobs,
+                    delivery: federation.terminal_delivery,
+                })?;
+            }
         }
         RuntimeComposition::Surreal(runtime) => {
             let jobs: Arc<dyn JobStore> = Arc::new(runtime.job_store.clone());
             runtime.register_handler(WorkEnvironmentJobHandler {
                 environment: Arc::clone(&environment),
-                jobs,
+                jobs: Arc::clone(&jobs),
+                federated_terminal_enabled,
             })?;
             runtime.register_handler(WorkEnvironmentCleanupJobHandler { environment })?;
+            if let Some(federation) = federation {
+                runtime.register_handler(WorkEnvironmentTerminalDeliveryJobHandler {
+                    jobs,
+                    blobs: federation.blobs,
+                    delivery: federation.terminal_delivery,
+                })?;
+            }
         }
     }
     Ok(())
@@ -346,6 +402,62 @@ impl WorkEnvironmentJobHandler {
             )
             .await?;
         Ok(cleanup_id)
+    }
+
+    async fn enqueue_federated_terminal(
+        &self,
+        job: &Job,
+        payload: &WorkEnvironmentJobPayload,
+    ) -> StasisResult<Option<String>> {
+        let Some(federation) = payload.federation.as_ref() else {
+            return Ok(None);
+        };
+        if !self.federated_terminal_enabled {
+            return Err(StasisError::PortFailure(
+                "federated work-environment job was admitted without terminal delivery".to_string(),
+            ));
+        }
+        let delivery_id = format!("{}:federated-terminal", job.id);
+        let delivery_payload = WorkEnvironmentTerminalDeliveryPayload {
+            parent_job_id: job.id.clone(),
+            federation: federation.clone(),
+        };
+        let payload_ref = serde_json::to_string(&delivery_payload).map_err(|error| {
+            StasisError::PortFailure(format!("encode federated terminal delivery: {error}"))
+        })?;
+        if let Some(existing) = self.jobs.get(&delivery_id).await? {
+            if existing.job_type != WORK_ENVIRONMENT_TERMINAL_DELIVERY_JOB_TYPE
+                || existing.payload_ref != payload_ref
+            {
+                return Err(StasisError::PortFailure(
+                    "federated terminal delivery identity collided with different work".to_string(),
+                ));
+            }
+            return Ok(Some(delivery_id));
+        }
+        self.jobs
+            .insert(
+                NewJob {
+                    id: delivery_id.clone(),
+                    queue: job.queue.clone(),
+                    job_type: WORK_ENVIRONMENT_TERMINAL_DELIVERY_JOB_TYPE.to_string(),
+                    payload_ref,
+                    priority: job.priority,
+                    max_attempts: 10,
+                    idempotency_key: format!("idem-{delivery_id}"),
+                    correlation_id: job.correlation_id.clone(),
+                    causation_id: job.id.clone(),
+                    trace_id: job.trace_id.clone(),
+                    input_provenance: job.output_provenance.clone(),
+                    placement:
+                        stasis::domain::runtime::placement::PlacementConstraints::unrestricted(),
+                    scheduled_at: Utc::now(),
+                    backoff_policy: BackoffPolicy::default(),
+                }
+                .into_job(),
+            )
+            .await?;
+        Ok(Some(delivery_id))
     }
 
     async fn terminal_success(
@@ -611,6 +723,7 @@ impl JobHandler for WorkEnvironmentJobHandler {
         let progress = Self::progress(job, &payload, attempt)
             .unwrap_or_else(|_| WorkEnvironmentJobProgress::new(&payload.spec, attempt));
         self.enqueue_cleanup(job, &payload, &progress).await?;
+        self.enqueue_federated_terminal(job, &payload).await?;
         Ok(())
     }
 }
@@ -684,6 +797,96 @@ impl JobHandler for WorkEnvironmentCleanupJobHandler {
                 ),
             }),
         }
+    }
+}
+
+#[async_trait]
+impl JobHandler for WorkEnvironmentTerminalDeliveryJobHandler {
+    fn job_type(&self) -> &'static str {
+        WORK_ENVIRONMENT_TERMINAL_DELIVERY_JOB_TYPE
+    }
+
+    async fn execute(&self, _job: &Job) -> StasisResult<JobExecutionOutcome> {
+        Err(StasisError::PortFailure(
+            "federated terminal delivery requires Stasis JobContext".to_string(),
+        ))
+    }
+
+    async fn execute_with_context(
+        &self,
+        job: &Job,
+        ctx: JobContext,
+    ) -> StasisResult<JobExecutionOutcome> {
+        let payload: WorkEnvironmentTerminalDeliveryPayload =
+            match serde_json::from_str(&job.payload_ref) {
+                Ok(payload) => payload,
+                Err(error) => {
+                    return Ok(fatal(
+                        job,
+                        format!("invalid federated terminal payload: {error}"),
+                        None,
+                    ));
+                }
+            };
+        let Some(parent) = self.jobs.get(&payload.parent_job_id).await? else {
+            return Ok(JobExecutionOutcome::RetryableFailure {
+                message: "federated parent job is not visible yet".to_string(),
+                execution_id: Some(job.id.clone()),
+                diagnostics: None,
+            });
+        };
+        if !matches!(
+            parent.state,
+            JobState::Succeeded | JobState::Failed | JobState::DeadLetter | JobState::Canceled
+        ) {
+            return Ok(JobExecutionOutcome::RetryableFailure {
+                message: "federated parent job is not terminal yet".to_string(),
+                execution_id: Some(job.id.clone()),
+                diagnostics: None,
+            });
+        }
+        if ctx.is_cancelled() {
+            return Ok(fatal(
+                job,
+                "federated terminal delivery was canceled".to_string(),
+                None,
+            ));
+        }
+        ctx.heartbeat().await?;
+        let result =
+            match encode_remote_terminal_result(self.blobs.as_ref(), &parent, &payload.federation)
+                .await
+            {
+                Ok(result) => result,
+                Err(error) => {
+                    return Ok(JobExecutionOutcome::RetryableFailure {
+                        message: error.to_string(),
+                        execution_id: Some(job.id.clone()),
+                        diagnostics: None,
+                    });
+                }
+            };
+        let output_provenance = result.output_provenance.clone();
+        if let Err(error) = self.delivery.sign_and_deliver(result).await {
+            return Ok(JobExecutionOutcome::RetryableFailure {
+                message: error.to_string(),
+                execution_id: Some(job.id.clone()),
+                diagnostics: None,
+            });
+        }
+        ctx.heartbeat().await?;
+        Ok(JobExecutionOutcome::Success {
+            output_provenance,
+            execution_id: Some(job.id.clone()),
+            diagnostics: Some(
+                json!({
+                    "provider": "medousa-work-environment-federation",
+                    "envelope_id": payload.federation.envelope_id,
+                    "parent_job_id": payload.parent_job_id,
+                })
+                .to_string(),
+            ),
+        })
     }
 }
 
@@ -882,6 +1085,7 @@ mod tests {
             require_successful_exit: true,
             deadline_at: Some(Utc::now() + ChronoDuration::minutes(5)),
             display_name: Some("Phase 5 proof".to_string()),
+            federation: None,
         }
     }
 

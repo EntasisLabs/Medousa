@@ -1,6 +1,6 @@
 # Daemon-owned OCI work environments
 
-> **Status:** Active implementation — Phase 5 complete, ready for Phase 6
+> **Status:** Active implementation — Phase 5 complete, Phase 6 in progress
 >
 > **Date:** 2026-08-28
 >
@@ -623,6 +623,35 @@ one result, and the cleanup child removes the disposable environment.
 
 **Exit:** a destination with no project toolchain installed on the host can run
 and return the job using only its declared image and durable inputs.
+
+**First landed boundary:** Medousa now maps the existing durable
+work-environment payload onto Stasis's signed `RemoteJobEnvelope` without
+adding a second job identity. Payloads, checkpoint manifests, Git bundles, and
+artifacts move between independent `BlobTransferPort` stores with digest
+verification. Admission deterministically derives the destination job identity
+from the origin runtime and envelope, validates placement against the declared
+environment, clamps the local deadline to the signed deadline, and is
+idempotent on replay.
+
+Terminal delivery is a deterministic unrestricted Stasis child job rather than
+part of the OCI worker lease. It returns a typed result descriptor containing
+execution, checkpoint, publication, terminal state, and provenance; the host
+adapter signs and routes the outer `FederatedTerminalResult`. This lets result
+delivery retry after the OCI worker or destination process disappears without
+rerunning the environment workload.
+
+The independent-runtime contract proof admits the same signed envelope on a
+destination that disappears and on a fresh replacement with separate job and
+blob stores. The replacement reconstructs and completes the workload, returns
+one signed terminal result to the origin inbox, and preserves one result under
+admission and delivery replay. A separate graph test proves checkpoint transfer
+includes the manifest, source bundle, and every declared artifact.
+
+The production Medousa mesh/blob adapters and capability-based destination
+selection remain in this phase. The existing delegated-turn polling path stays
+unchanged until the production signed terminal route is installed; that later
+transport slice must remove polling at the same time, as required by the Phase
+0 federation audit.
 
 ### Phase 7 — Parallel development and reconciliation
 
