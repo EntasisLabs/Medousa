@@ -2,6 +2,7 @@
 
 use std::fmt;
 
+use base64::Engine as _;
 use chrono::{DateTime, Duration, Utc};
 use ed25519_dalek::SigningKey;
 use serde::de::DeserializeOwned;
@@ -12,6 +13,7 @@ use crate::pairing::crypto::{parse_verifying_key, sign_message, verify_message};
 
 pub const MESH_ENVELOPE_VERSION: u32 = 1;
 pub const DEFAULT_ENVELOPE_TTL_SECS: i64 = 15 * 60;
+pub const MESH_ENVELOPE_HEADER: &str = "x-medousa-mesh-envelope";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MeshCapability {
@@ -61,6 +63,19 @@ pub struct MeshEnvelope {
 pub struct MeshEnvelopedRequest<T> {
     pub envelope: MeshEnvelope,
     pub payload: T,
+}
+
+pub fn encode_envelope_header(envelope: &MeshEnvelope) -> Result<String, MeshEnvelopeError> {
+    let bytes = serde_json::to_vec(envelope)
+        .map_err(|error| MeshEnvelopeError::Serialize(error.to_string()))?;
+    Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes))
+}
+
+pub fn decode_envelope_header(raw: &str) -> Result<MeshEnvelope, MeshEnvelopeError> {
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(raw.trim())
+        .map_err(|error| MeshEnvelopeError::Serialize(error.to_string()))?;
+    serde_json::from_slice(&bytes).map_err(|error| MeshEnvelopeError::Serialize(error.to_string()))
 }
 
 #[derive(Debug)]
@@ -337,6 +352,22 @@ mod tests {
         let signing = SigningKey::generate(&mut OsRng);
         let verifying = signing.verifying_key();
         (signing, verifying)
+    }
+
+    #[test]
+    fn mesh_header_round_trips_without_changing_signed_bytes() {
+        let (signing, _) = keypair();
+        let envelope = sign_envelope(
+            &signing,
+            "sender",
+            "recipient",
+            7,
+            MeshCapability::TaskRequest,
+            "payload-digest",
+            Duration::minutes(5),
+        );
+        let encoded = encode_envelope_header(&envelope).unwrap();
+        assert_eq!(decode_envelope_header(&encoded).unwrap(), envelope);
     }
 
     #[test]

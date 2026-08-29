@@ -648,10 +648,32 @@ admission and delivery replay. A separate graph test proves checkpoint transfer
 includes the manifest, source bundle, and every declared artifact.
 
 The production Medousa mesh/blob adapters and capability-based destination
-selection remain in this phase. The existing delegated-turn polling path stays
-unchanged until the production signed terminal route is installed; that later
-transport slice must remove polling at the same time, as required by the Phase
-0 federation audit.
+selection remain in this phase.
+
+**Second landed boundary:** paired daemons can now exchange the immutable input
+graph, submit the signed Stasis envelope, and deliver the signed terminal result
+over production mesh HTTP routes. The existing daemon pairing identity signs
+both the inner Stasis object and the outer mesh delivery. A signed mesh request
+receives only `PeerExchange` authority; it cannot recover portal, member, or
+operator authority without that request's separate bearer credential. A
+`task.request` grant admits `task.result` returns but no unrelated mesh
+capability.
+
+The origin transfers the payload, checkpoint manifest, source bundle, and
+declared artifacts by digest before job admission. The destination verifies
+every descriptor and byte stream through its durable `BlobTransferPort`, and
+the origin persists terminal results into that same content-addressed store
+before binding the mesh inbox receipt. The durable blob host is constructed
+independently of Docker: any paired daemon can coordinate content and receive
+results, while only a daemon with the OCI adapter advertises and accepts remote
+work-environment execution.
+
+This first production transport resolves paired LAN endpoints. Iroh fallback,
+capability-based destination scoring, and coordinator consumption of the
+source-side transport remain in Phase 6. The existing conversational
+delegated-turn polling path also stays unchanged: work-environment federation
+does not yet replace that separate conversation transport, and polling must be
+removed only in the slice that installs its complete terminal route.
 
 ### Phase 7 — Parallel development and reconciliation
 

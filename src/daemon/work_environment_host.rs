@@ -110,6 +110,16 @@ impl DockerCliWorkEnvironmentPort {
         root: PathBuf,
         execution: Arc<ForgeExecutionService>,
     ) -> Result<Option<Arc<Self>>, WorkEnvironmentError> {
+        let blobs = FsBlobTransferPort::open(&root.join("durable/blobs"), execution.clone())
+            .map_err(|error| WorkEnvironmentError::Adapter(error.to_string()))?;
+        Self::detect_with_blobs(root, execution, blobs).await
+    }
+
+    pub async fn detect_with_blobs(
+        root: PathBuf,
+        execution: Arc<ForgeExecutionService>,
+        blobs: Arc<FsBlobTransferPort>,
+    ) -> Result<Option<Arc<Self>>, WorkEnvironmentError> {
         let (docker, git) = execution
             .run(ExecutionClass::StoreIo, 64, || {
                 let docker = medousa_host::find_command_in_path(if cfg!(windows) {
@@ -132,8 +142,6 @@ impl DockerCliWorkEnvironmentPort {
         let Some(git) = git else {
             return Ok(None);
         };
-        let blobs = FsBlobTransferPort::open(&root.join("durable/blobs"), execution.clone())
-            .map_err(|error| WorkEnvironmentError::Adapter(error.to_string()))?;
         let publications = FsWorkEnvironmentPublicationStore::open(
             &root.join("durable/publications"),
             execution.clone(),

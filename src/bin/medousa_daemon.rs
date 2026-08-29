@@ -488,10 +488,17 @@ async fn main() -> Result<()> {
         }
     }
 
-    let work_environment =
-        match medousa::daemon::work_environment_host::DockerCliWorkEnvironmentPort::detect(
-            medousa::paths::medousa_data_dir().join("work-environments"),
+    let work_environment_root = medousa::paths::medousa_data_dir().join("work-environments");
+    let work_environment_blobs = medousa::daemon::blob_transfer_host::FsBlobTransferPort::open(
+        &work_environment_root.join("durable/blobs"),
+        Arc::clone(&forge_execution),
+    )
+    .context("open durable work-environment blob store")?;
+    let work_environment_adapter =
+        match medousa::daemon::work_environment_host::DockerCliWorkEnvironmentPort::detect_with_blobs(
+            work_environment_root,
             Arc::clone(&forge_execution),
+            Arc::clone(&work_environment_blobs),
         )
         .await
         {
@@ -510,7 +517,7 @@ async fn main() -> Result<()> {
                         tracing::warn!(%error, "OCI work-environment boot reconciliation failed");
                     }
                 }
-                Some(adapter as Arc<dyn medousa_runtime::WorkEnvironmentPort>)
+                Some(adapter)
             }
             Ok(None) => {
                 tracing::info!(
@@ -523,15 +530,9 @@ async fn main() -> Result<()> {
                 None
             }
         };
-
-    if let Some(environment) = work_environment.as_ref() {
-        medousa::work_environment_job::register_work_environment_job_handlers(
-            platform.composition(),
-            Arc::clone(environment),
-        )
-        .await
-        .context("register durable work-environment job handlers")?;
-    }
+    let work_environment = work_environment_adapter
+        .as_ref()
+        .map(|adapter| Arc::clone(adapter) as Arc<dyn medousa_runtime::WorkEnvironmentPort>);
 
     let state = AppState {
         platform: platform.clone(),
@@ -745,6 +746,46 @@ async fn main() -> Result<()> {
         None
     };
 
+    let work_environment_federation_state = if let Some(pairing) = share_api_state.pairing.as_ref()
+    {
+        let blobs: Arc<dyn stasis::ports::outbound::runtime::blob_transfer::BlobTransferPort> =
+            work_environment_blobs.clone();
+        if let Some(adapter) = work_environment_adapter.as_ref() {
+            medousa::work_environment_job::register_federated_work_environment_job_handlers(
+                platform.composition(),
+                Arc::clone(adapter) as Arc<dyn medousa_runtime::WorkEnvironmentPort>,
+                medousa::work_environment_federation::WorkEnvironmentFederationServices {
+                    blobs: Arc::clone(&blobs),
+                    terminal_delivery: Arc::new(
+                        medousa::mesh::work_environment_federation::MeshSignedFederatedTerminalDelivery::new(
+                            Arc::clone(pairing),
+                        ),
+                    ),
+                },
+            )
+            .await
+            .context("register federated work-environment job handlers")?;
+        }
+        Some(
+            medousa::mesh::work_environment_federation::MeshWorkEnvironmentFederationState {
+                pairing: Arc::clone(pairing),
+                runtime: Arc::new(platform.composition().clone()),
+                blobs,
+                accept_remote_jobs: work_environment_adapter.is_some(),
+            },
+        )
+    } else {
+        if let Some(adapter) = work_environment_adapter.as_ref() {
+            medousa::work_environment_job::register_work_environment_job_handlers(
+                platform.composition(),
+                Arc::clone(adapter) as Arc<dyn medousa_runtime::WorkEnvironmentPort>,
+            )
+            .await
+            .context("register durable work-environment job handlers")?;
+        }
+        None
+    };
+
     let mut app = build_daemon_router(
         state.clone(),
         &dashboard_action_auth,
@@ -888,6 +929,11 @@ async fn main() -> Result<()> {
             medousa::peer_message_handlers::peer_message_surface().with_state(peer_message_state),
         )
         .merge(medousa::mesh::handlers::mesh_surface().with_state(mesh_api_state));
+    if let Some(federation_state) = work_environment_federation_state {
+        declared = declared.merge(
+            medousa::mesh::work_environment_federation::surface().with_state(federation_state),
+        );
+    }
     app = medousa::peer_scope::assemble_daemon_access_boundary_with_declared(
         app,
         declared,
