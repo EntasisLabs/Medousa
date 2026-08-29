@@ -786,6 +786,14 @@ async fn main() -> Result<()> {
         None
     };
 
+    medousa::work_environment_parallel::register_parallel_work_environment_job_handlers(
+        platform.composition(),
+        work_environment_blobs.clone()
+            as Arc<dyn stasis::ports::outbound::runtime::blob_transfer::BlobTransferPort>,
+    )
+    .await
+    .context("register parallel work-environment job handlers")?;
+
     let mut app = build_daemon_router(
         state.clone(),
         &dashboard_action_auth,

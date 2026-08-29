@@ -705,10 +705,27 @@ unknown children cannot silently select a winner. The output is a normal
 `WorkEnvironmentCheckpoint`, so reconstruction and execution reuse the same
 daemon/OCI/blob paths already proven in Phases 4–6.
 
-The next Phase 7 slice makes the fan-out and reconciliation coordinators
-durable Stasis handlers. Those handlers must enqueue deterministic child job
-identities, wait on durable terminal state, preserve every failed/conflicting
-result, and enqueue exactly one ordinary reconciliation work-environment job.
+**Second landed boundary:** fan-out and reconciliation are now durable Stasis
+handlers registered by the daemon independently of OCI availability. The
+parent inserts replay-stable ordinary child job identities, remains deferred
+while they run, and persists every child state, checkpoint, publication, and
+error observation. Any terminal child failure ends the parent without creating
+reconciliation, while leaving every successful child checkpoint addressable.
+
+When all children succeed, the parent inserts exactly one durable
+reconciliation coordinator. That job builds the portable checkpoint above and
+inserts exactly one ordinary work-environment job for combine, verification,
+checkpoint, and expected-base publication. The parent remains deferred until
+reconciliation is terminal. A CAS conflict becomes a typed terminal outcome
+whose diagnostics retain the preserved checkpoint; it is never reported as a
+successful publication. A fixed creation timestamp is part of the durable
+reconciliation payload, so retries reproduce byte-identical child and work-job
+payloads instead of drifting under the same idempotency key.
+
+Remote dispatch and the fourth-daemon reconstruction proof remain. The durable
+graph currently enqueues through the canonical local Stasis store; the next
+slice must bind child placement to the Phase 6 federation transport without
+changing these job identities or adding another coordinator.
 
 ### Phase 8 — Attachments, UX, and operations
 

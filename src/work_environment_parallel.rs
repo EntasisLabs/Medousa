@@ -5,19 +5,30 @@
 //! workspace path or container handle crosses this boundary.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use medousa_runtime::{
     WorkEnvironmentArtifact, WorkEnvironmentCheckpoint, WorkEnvironmentCheckpointManifest,
     WorkEnvironmentPublication,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use stasis::application::runtime::in_memory_runtime::{JobExecutionOutcome, JobHandler};
+use stasis::application::runtime::job_context::JobContext;
 use stasis::domain::runtime::blob_descriptor::BlobDescriptor;
+use stasis::domain::runtime::job::{BackoffPolicy, Job, JobState, NewJob};
+use stasis::domain::runtime::placement::PlacementConstraints;
 use stasis::ports::outbound::runtime::blob_transfer::BlobTransferPort;
-use stasis::prelude::{Result as StasisResult, StasisError};
+use stasis::ports::outbound::runtime::job_store::JobStore;
+use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 
-use crate::work_environment_job::WorkEnvironmentJobPayload;
+use crate::work_environment_job::{WorkEnvironmentJobPayload, WorkEnvironmentJobProgress};
 
+pub const PARALLEL_WORK_COORDINATOR_JOB_TYPE: &str = "workflow.medousa.parallel_work_environment";
+pub const PARALLEL_RECONCILIATION_JOB_TYPE: &str =
+    "workflow.medousa.work_environment_reconciliation";
 pub const PARALLEL_WORK_PLAN_SCHEMA_VERSION: u32 = 1;
 pub const RECONCILIATION_INPUT_SCHEMA_VERSION: u32 = 1;
 pub const RECONCILIATION_INPUT_MEDIA_TYPE: &str =
@@ -27,6 +38,9 @@ pub const RECONCILIATION_CHECKPOINT_MEDIA_TYPE: &str =
 const MIN_PARALLEL_CHILDREN: usize = 2;
 const MAX_PARALLEL_CHILDREN: usize = 16;
 const RECONCILIATION_ROOT: &str = ".medousa/reconciliation";
+const COORDINATOR_PROGRESS_SCHEMA_VERSION: u32 = 1;
+const RECONCILIATION_PAYLOAD_SCHEMA_VERSION: u32 = 1;
+const COORDINATOR_DELAY_MILLIS: i64 = 10;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ParallelWorkChild {
@@ -129,6 +143,35 @@ impl ParallelWorkPlan {
         }
         Ok(())
     }
+
+    pub fn into_job(
+        self,
+        job_id: impl Into<String>,
+        queue: impl Into<String>,
+        causation_id: impl Into<String>,
+        scheduled_at: DateTime<Utc>,
+    ) -> StasisResult<NewJob> {
+        self.validate(scheduled_at)?;
+        let job_id = job_id.into();
+        let payload_ref = serde_json::to_string(&self)
+            .map_err(|error| invalid(format!("encode parallel work plan: {error}")))?;
+        Ok(NewJob {
+            id: job_id.clone(),
+            queue: queue.into(),
+            job_type: PARALLEL_WORK_COORDINATOR_JOB_TYPE.to_string(),
+            payload_ref,
+            priority: 100,
+            max_attempts: 12,
+            idempotency_key: format!("idem-{job_id}"),
+            correlation_id: job_id.clone(),
+            causation_id: causation_id.into(),
+            trace_id: job_id,
+            input_provenance: None,
+            placement: PlacementConstraints::unrestricted(),
+            scheduled_at,
+            backoff_policy: BackoffPolicy::default(),
+        })
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -170,6 +213,82 @@ pub struct ReconciliationInputManifest {
 pub struct PreparedReconciliationInput {
     pub checkpoint: WorkEnvironmentCheckpoint,
     pub manifest: ReconciliationInputManifest,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ParallelChildObservation {
+    pub child_id: String,
+    pub job_id: String,
+    pub state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint: Option<WorkEnvironmentCheckpoint>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publication: Option<medousa_runtime::WorkEnvironmentPublicationResult>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ParallelCoordinatorProgress {
+    pub schema_version: u32,
+    pub children: Vec<ParallelChildObservation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reconciliation_job_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reconciliation_state: Option<String>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct ParallelReconciliationPayload {
+    schema_version: u32,
+    parent_job_id: String,
+    plan: ParallelWorkPlan,
+    children: Vec<ParallelWorkChildResult>,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct ParallelReconciliationProgress {
+    schema_version: u32,
+    work_job_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    checkpoint: Option<WorkEnvironmentCheckpoint>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    publication: Option<medousa_runtime::WorkEnvironmentPublicationResult>,
+    updated_at: DateTime<Utc>,
+}
+
+struct ParallelWorkCoordinatorJobHandler {
+    jobs: Arc<dyn JobStore>,
+}
+
+struct ParallelReconciliationJobHandler {
+    jobs: Arc<dyn JobStore>,
+    blobs: Arc<dyn BlobTransferPort>,
+}
+
+pub async fn register_parallel_work_environment_job_handlers(
+    composition: &RuntimeComposition,
+    blobs: Arc<dyn BlobTransferPort>,
+) -> anyhow::Result<()> {
+    match composition {
+        RuntimeComposition::InMemory(runtime) => {
+            let jobs: Arc<dyn JobStore> = Arc::new(runtime.job_store.clone());
+            runtime.register_handler(ParallelWorkCoordinatorJobHandler {
+                jobs: Arc::clone(&jobs),
+            })?;
+            runtime.register_handler(ParallelReconciliationJobHandler { jobs, blobs })?;
+        }
+        RuntimeComposition::Surreal(runtime) => {
+            let jobs: Arc<dyn JobStore> = Arc::new(runtime.job_store.clone());
+            runtime.register_handler(ParallelWorkCoordinatorJobHandler {
+                jobs: Arc::clone(&jobs),
+            })?;
+            runtime.register_handler(ParallelReconciliationJobHandler { jobs, blobs })?;
+        }
+    }
+    Ok(())
 }
 
 pub fn parallel_child_job_id(parent_job_id: &str, child_id: &str) -> StasisResult<String> {
@@ -331,6 +450,315 @@ pub fn reconciliation_work_payload(
     payload
 }
 
+#[async_trait]
+impl JobHandler for ParallelWorkCoordinatorJobHandler {
+    fn job_type(&self) -> &'static str {
+        PARALLEL_WORK_COORDINATOR_JOB_TYPE
+    }
+
+    async fn execute(&self, job: &Job) -> StasisResult<JobExecutionOutcome> {
+        let _ = job;
+        Err(invalid("parallel coordinators require Stasis JobContext"))
+    }
+
+    async fn execute_with_context(
+        &self,
+        job: &Job,
+        ctx: JobContext,
+    ) -> StasisResult<JobExecutionOutcome> {
+        let plan: ParallelWorkPlan = serde_json::from_str(&job.payload_ref)
+            .map_err(|error| invalid(format!("decode parallel work plan: {error}")))?;
+        if let Err(error) = plan.validate(Utc::now()) {
+            return Ok(fatal(job, error.to_string(), None));
+        }
+
+        for child in &plan.children {
+            let child_job_id = parallel_child_job_id(&job.id, &child.child_id)?;
+            let mut candidate =
+                child
+                    .work
+                    .clone()
+                    .into_job(&child_job_id, &job.queue, &job.id, Utc::now())?;
+            candidate.correlation_id = job.correlation_id.clone();
+            candidate.trace_id = job.trace_id.clone();
+            ensure_job(&self.jobs, candidate).await?;
+        }
+
+        let mut observations = Vec::with_capacity(plan.children.len());
+        let mut results = Vec::with_capacity(plan.children.len());
+        let mut all_terminal = true;
+        let mut failed = false;
+        for child in &plan.children {
+            let child_job_id = parallel_child_job_id(&job.id, &child.child_id)?;
+            let child_job =
+                self.jobs.get(&child_job_id).await?.ok_or_else(|| {
+                    invalid(format!("parallel child disappeared: {child_job_id}"))
+                })?;
+            let progress = decode_work_progress(&child_job)?;
+            let checkpoint = progress
+                .as_ref()
+                .and_then(|progress| progress.checkpoint.clone());
+            let publication = progress
+                .as_ref()
+                .and_then(|progress| progress.publication.clone());
+            let terminal = is_terminal(&child_job.state);
+            all_terminal &= terminal;
+            let mut error_message = child_job.last_error.clone();
+            if child_job.state == JobState::Succeeded && checkpoint.is_none() {
+                error_message = Some("successful parallel child has no checkpoint".to_string());
+                failed = true;
+            } else if terminal && child_job.state != JobState::Succeeded {
+                failed = true;
+            }
+            if child_job.state == JobState::Succeeded
+                && let Some(checkpoint) = checkpoint.clone()
+            {
+                results.push(ParallelWorkChildResult {
+                    child_id: child.child_id.clone(),
+                    job_id: child_job_id.clone(),
+                    checkpoint,
+                });
+            }
+            observations.push(ParallelChildObservation {
+                child_id: child.child_id.clone(),
+                job_id: child_job_id,
+                state: state_name(&child_job.state),
+                checkpoint,
+                publication,
+                error_message,
+            });
+        }
+
+        let mut progress = ParallelCoordinatorProgress {
+            schema_version: COORDINATOR_PROGRESS_SCHEMA_VERSION,
+            children: observations,
+            reconciliation_job_id: None,
+            reconciliation_state: None,
+            updated_at: Utc::now(),
+        };
+        if !all_terminal {
+            ctx.progress(&progress).await?;
+            return Ok(deferred(job, "waiting for parallel children"));
+        }
+        if failed {
+            ctx.progress(&progress).await?;
+            return Ok(fatal(
+                job,
+                "one or more parallel children failed; every result was preserved".to_string(),
+                Some(json!({ "children": progress.children }).to_string()),
+            ));
+        }
+
+        let reconciliation_job_id = parallel_reconciliation_job_id(&job.id)?;
+        let payload = ParallelReconciliationPayload {
+            schema_version: RECONCILIATION_PAYLOAD_SCHEMA_VERSION,
+            parent_job_id: job.id.clone(),
+            plan,
+            children: results,
+            created_at: job.started_at.unwrap_or(job.scheduled_at),
+        };
+        let payload_ref = serde_json::to_string(&payload)
+            .map_err(|error| invalid(format!("encode parallel reconciliation: {error}")))?;
+        ensure_job(
+            &self.jobs,
+            NewJob {
+                id: reconciliation_job_id.clone(),
+                queue: job.queue.clone(),
+                job_type: PARALLEL_RECONCILIATION_JOB_TYPE.to_string(),
+                payload_ref,
+                priority: job.priority,
+                max_attempts: 12,
+                idempotency_key: format!("idem-{reconciliation_job_id}"),
+                correlation_id: job.correlation_id.clone(),
+                causation_id: job.id.clone(),
+                trace_id: job.trace_id.clone(),
+                input_provenance: None,
+                placement: PlacementConstraints::unrestricted(),
+                scheduled_at: Utc::now(),
+                backoff_policy: BackoffPolicy::default(),
+            },
+        )
+        .await?;
+        let reconciliation = self
+            .jobs
+            .get(&reconciliation_job_id)
+            .await?
+            .ok_or_else(|| invalid("parallel reconciliation job disappeared"))?;
+        progress.reconciliation_job_id = Some(reconciliation_job_id);
+        progress.reconciliation_state = Some(state_name(&reconciliation.state));
+        progress.updated_at = Utc::now();
+        ctx.progress(&progress).await?;
+        match reconciliation.state {
+            JobState::Succeeded => Ok(JobExecutionOutcome::Success {
+                output_provenance: reconciliation.output_provenance,
+                execution_id: Some(job.id.clone()),
+                diagnostics: Some(json!({ "reconciliation": progress }).to_string()),
+            }),
+            state if is_terminal(&state) => Ok(fatal(
+                job,
+                reconciliation.last_error.unwrap_or_else(|| {
+                    format!("parallel reconciliation ended as {}", state_name(&state))
+                }),
+                Some(json!({ "reconciliation": progress }).to_string()),
+            )),
+            _ => Ok(deferred(job, "waiting for parallel reconciliation")),
+        }
+    }
+}
+
+#[async_trait]
+impl JobHandler for ParallelReconciliationJobHandler {
+    fn job_type(&self) -> &'static str {
+        PARALLEL_RECONCILIATION_JOB_TYPE
+    }
+
+    async fn execute(&self, job: &Job) -> StasisResult<JobExecutionOutcome> {
+        let _ = job;
+        Err(invalid(
+            "parallel reconciliation requires Stasis JobContext",
+        ))
+    }
+
+    async fn execute_with_context(
+        &self,
+        job: &Job,
+        ctx: JobContext,
+    ) -> StasisResult<JobExecutionOutcome> {
+        let payload: ParallelReconciliationPayload = serde_json::from_str(&job.payload_ref)
+            .map_err(|error| invalid(format!("decode parallel reconciliation: {error}")))?;
+        if payload.schema_version != RECONCILIATION_PAYLOAD_SCHEMA_VERSION {
+            return Ok(fatal(
+                job,
+                "unsupported parallel reconciliation payload".to_string(),
+                None,
+            ));
+        }
+        let prepared = match prepare_reconciliation_input(
+            self.blobs.as_ref(),
+            &payload.plan,
+            &payload.children,
+            payload.created_at,
+        )
+        .await
+        {
+            Ok(prepared) => prepared,
+            Err(error) => return Ok(fatal(job, error.to_string(), None)),
+        };
+        let work_payload = reconciliation_work_payload(&payload.plan, &prepared);
+        let work_job_id = format!("{}:work", job.id);
+        let mut candidate = work_payload.into_job(&work_job_id, &job.queue, &job.id, Utc::now())?;
+        candidate.correlation_id = job.correlation_id.clone();
+        candidate.trace_id = job.trace_id.clone();
+        ensure_job(&self.jobs, candidate).await?;
+        let work = self
+            .jobs
+            .get(&work_job_id)
+            .await?
+            .ok_or_else(|| invalid("reconciliation work job disappeared"))?;
+        let work_progress = decode_work_progress(&work)?;
+        let progress = ParallelReconciliationProgress {
+            schema_version: COORDINATOR_PROGRESS_SCHEMA_VERSION,
+            work_job_id,
+            checkpoint: work_progress
+                .as_ref()
+                .and_then(|progress| progress.checkpoint.clone()),
+            publication: work_progress
+                .as_ref()
+                .and_then(|progress| progress.publication.clone()),
+            updated_at: Utc::now(),
+        };
+        ctx.progress(&progress).await?;
+        match work.state {
+            JobState::Succeeded => Ok(completed_reconciliation_outcome(job, &work, &progress)),
+            state if is_terminal(&state) => Ok(fatal(
+                job,
+                work.last_error.unwrap_or_else(|| {
+                    format!("reconciliation work ended as {}", state_name(&state))
+                }),
+                Some(json!({ "reconciliation": progress }).to_string()),
+            )),
+            _ => Ok(deferred(job, "waiting for reconciliation work environment")),
+        }
+    }
+}
+
+fn completed_reconciliation_outcome(
+    coordinator: &Job,
+    work: &Job,
+    progress: &ParallelReconciliationProgress,
+) -> JobExecutionOutcome {
+    match progress.publication.as_ref() {
+        Some(medousa_runtime::WorkEnvironmentPublicationResult::Published { .. })
+        | Some(medousa_runtime::WorkEnvironmentPublicationResult::AlreadyPublished { .. }) => {
+            JobExecutionOutcome::Success {
+                output_provenance: work.output_provenance.clone(),
+                execution_id: Some(coordinator.id.clone()),
+                diagnostics: Some(json!({ "reconciliation": progress }).to_string()),
+            }
+        }
+        Some(medousa_runtime::WorkEnvironmentPublicationResult::Conflict { .. }) => fatal(
+            coordinator,
+            "reconciliation publication conflicted; all child results remain preserved".to_string(),
+            Some(json!({ "reconciliation": progress }).to_string()),
+        ),
+        None => fatal(
+            coordinator,
+            "successful reconciliation work has no publication result".to_string(),
+            Some(json!({ "reconciliation": progress }).to_string()),
+        ),
+    }
+}
+
+async fn ensure_job(jobs: &Arc<dyn JobStore>, candidate: NewJob) -> StasisResult<()> {
+    if let Some(existing) = jobs.get(&candidate.id).await? {
+        if existing.job_type != candidate.job_type || existing.payload_ref != candidate.payload_ref
+        {
+            return Err(invalid(format!(
+                "durable parallel job identity collided with different work: {}",
+                candidate.id
+            )));
+        }
+        return Ok(());
+    }
+    jobs.insert(candidate.into_job()).await
+}
+
+fn decode_work_progress(job: &Job) -> StasisResult<Option<WorkEnvironmentJobProgress>> {
+    job.progress_json
+        .as_deref()
+        .map(serde_json::from_str)
+        .transpose()
+        .map_err(|error| invalid(format!("decode work-environment progress: {error}")))
+}
+
+fn is_terminal(state: &JobState) -> bool {
+    matches!(
+        state,
+        &JobState::Succeeded | &JobState::Failed | &JobState::DeadLetter | &JobState::Canceled
+    )
+}
+
+fn state_name(state: &JobState) -> String {
+    format!("{state:?}").to_lowercase()
+}
+
+fn deferred(job: &Job, message: &str) -> JobExecutionOutcome {
+    JobExecutionOutcome::Deferred {
+        scheduled_at: Utc::now() + chrono::Duration::milliseconds(COORDINATOR_DELAY_MILLIS),
+        message: message.to_string(),
+        execution_id: Some(job.id.clone()),
+        diagnostics: None,
+    }
+}
+
+fn fatal(job: &Job, message: String, diagnostics: Option<String>) -> JobExecutionOutcome {
+    JobExecutionOutcome::FatalFailure {
+        message,
+        execution_id: Some(job.id.clone()),
+        diagnostics,
+    }
+}
+
 fn exact_results<'a>(
     plan: &ParallelWorkPlan,
     results: &'a [ParallelWorkChildResult],
@@ -392,6 +820,8 @@ fn invalid(message: impl Into<String>) -> StasisError {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::sync::Arc;
+    use std::time::Duration as StdDuration;
 
     use chrono::Duration;
     use medousa_runtime::{
@@ -400,6 +830,8 @@ mod tests {
         WorkEnvironmentPublication, WorkEnvironmentRepository, WorkEnvironmentRequirements,
         WorkEnvironmentRetention, WorkEnvironmentSpec, WorkspaceId,
     };
+    use stasis::application::runtime::in_memory_runtime::InMemoryRuntime;
+    use stasis::domain::runtime::placement::WorkerCapabilities;
     use stasis::domain::runtime::provenance::ContentDigest;
     use stasis::domain::runtime::resource_lease::FencingToken;
     use stasis::infrastructure::runtime::in_memory_blob_transfer::InMemoryBlobTransfer;
@@ -473,6 +905,10 @@ mod tests {
         }
     }
 
+    fn capabilities() -> WorkerCapabilities {
+        WorkerCapabilities::any().with_capability(medousa_runtime::OCI_WORK_ENVIRONMENT_CAPABILITY)
+    }
+
     async fn child_result(
         blobs: &InMemoryBlobTransfer,
         child: &ParallelWorkChild,
@@ -508,6 +944,52 @@ mod tests {
             job_id: format!("job-{}", child.child_id),
             checkpoint: WorkEnvironmentCheckpoint::from_manifest(descriptor),
         }
+    }
+
+    async fn mark_child_terminal(
+        runtime: &InMemoryRuntime,
+        parent_job_id: &str,
+        child: &ParallelWorkChild,
+        result: Option<&ParallelWorkChildResult>,
+        state: JobState,
+    ) {
+        let job_id = parallel_child_job_id(parent_job_id, &child.child_id).unwrap();
+        let mut job = runtime.job_store.get(&job_id).await.unwrap().unwrap();
+        let checkpoint = result.map(|result| result.checkpoint.clone());
+        job.state = state.clone();
+        job.finished_at = Some(Utc::now());
+        job.last_error = (state != JobState::Succeeded).then(|| "child failed".to_string());
+        job.output_provenance = checkpoint
+            .as_ref()
+            .map(|checkpoint| checkpoint.provenance.clone());
+        job.progress_json = Some(
+            serde_json::to_string(&WorkEnvironmentJobProgress {
+                schema_version: 1,
+                phase: crate::work_environment_job::WorkEnvironmentWorkflowPhase::CleanupEnqueued,
+                attempt: 1,
+                fence: child.work.spec.fence.clone(),
+                environment_state: None,
+                execution_result: None,
+                checkpoint,
+                publication: None,
+                cleanup_job_id: Some(format!("{job_id}:cleanup")),
+                updated_at: Utc::now(),
+            })
+            .unwrap(),
+        );
+        runtime.job_store.save(job).await.unwrap();
+    }
+
+    async fn process_once(runtime: &InMemoryRuntime) -> Option<String> {
+        runtime
+            .process_once_with_capabilities(
+                "default",
+                "phase-7-worker",
+                Utc::now(),
+                &capabilities(),
+            )
+            .await
+            .unwrap()
     }
 
     #[tokio::test]
@@ -599,5 +1081,227 @@ mod tests {
             parallel_reconciliation_job_id("parent-job").unwrap(),
             "parent-job:reconcile"
         );
+    }
+
+    #[tokio::test]
+    async fn durable_parent_fans_out_and_waits_for_one_reconciliation_job() {
+        let runtime = InMemoryRuntime::new();
+        let composition = RuntimeComposition::InMemory(runtime.clone());
+        let blobs = Arc::new(InMemoryBlobTransfer::new());
+        register_parallel_work_environment_job_handlers(&composition, blobs.clone())
+            .await
+            .unwrap();
+        let plan = plan();
+        runtime
+            .job_store
+            .insert(
+                plan.clone()
+                    .into_job("parallel-parent", "default", "root", Utc::now())
+                    .unwrap()
+                    .into_job(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            process_once(&runtime).await.as_deref(),
+            Some("parallel-parent")
+        );
+        let mut results = Vec::new();
+        for (index, child) in plan.children.iter().enumerate() {
+            let result = child_result(&blobs, child, (index + 1) as u8).await;
+            mark_child_terminal(
+                &runtime,
+                "parallel-parent",
+                child,
+                Some(&result),
+                JobState::Succeeded,
+            )
+            .await;
+            results.push(result);
+        }
+
+        tokio::time::sleep(StdDuration::from_millis(12)).await;
+        assert_eq!(
+            process_once(&runtime).await.as_deref(),
+            Some("parallel-parent")
+        );
+        let reconciliation_id = parallel_reconciliation_job_id("parallel-parent").unwrap();
+        assert!(
+            runtime
+                .job_store
+                .get(&reconciliation_id)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(
+            process_once(&runtime).await.as_deref(),
+            Some(reconciliation_id.as_str())
+        );
+
+        let work_id = format!("{reconciliation_id}:work");
+        let mut work = runtime.job_store.get(&work_id).await.unwrap().unwrap();
+        let work_payload: WorkEnvironmentJobPayload =
+            serde_json::from_str(&work.payload_ref).unwrap();
+        let checkpoint = work_payload.spec.checkpoint_ref.unwrap();
+        let value = checkpoint.provenance.compact();
+        work.state = JobState::Succeeded;
+        work.finished_at = Some(Utc::now());
+        work.output_provenance = Some(checkpoint.provenance.clone());
+        work.progress_json = Some(
+            serde_json::to_string(&WorkEnvironmentJobProgress {
+                schema_version: 1,
+                phase: crate::work_environment_job::WorkEnvironmentWorkflowPhase::CleanupEnqueued,
+                attempt: 1,
+                fence: plan.reconciliation.spec.fence.clone(),
+                environment_state: None,
+                execution_result: None,
+                checkpoint: Some(checkpoint),
+                publication: Some(
+                    medousa_runtime::WorkEnvironmentPublicationResult::Published {
+                        target_ref: "refs/heads/main".to_string(),
+                        value,
+                        previous: Some(BASE.to_string()),
+                    },
+                ),
+                cleanup_job_id: Some(format!("{work_id}:cleanup")),
+                updated_at: Utc::now(),
+            })
+            .unwrap(),
+        );
+        runtime.job_store.save(work).await.unwrap();
+
+        for _ in 0..8 {
+            tokio::time::sleep(StdDuration::from_millis(12)).await;
+            let _ = process_once(&runtime).await;
+            let parent = runtime
+                .job_store
+                .get("parallel-parent")
+                .await
+                .unwrap()
+                .unwrap();
+            if parent.state == JobState::Succeeded {
+                let progress: ParallelCoordinatorProgress =
+                    serde_json::from_str(parent.progress_json.as_deref().unwrap()).unwrap();
+                assert_eq!(progress.children.len(), 3);
+                assert_eq!(
+                    progress.reconciliation_job_id.as_deref(),
+                    Some(reconciliation_id.as_str())
+                );
+                assert_eq!(
+                    runtime
+                        .job_store
+                        .get(&reconciliation_id)
+                        .await
+                        .unwrap()
+                        .unwrap()
+                        .state,
+                    JobState::Succeeded
+                );
+                return;
+            }
+        }
+        panic!("parallel parent did not observe reconciliation completion");
+    }
+
+    #[tokio::test]
+    async fn failed_child_is_preserved_and_never_enqueues_reconciliation() {
+        let runtime = InMemoryRuntime::new();
+        let composition = RuntimeComposition::InMemory(runtime.clone());
+        let blobs = Arc::new(InMemoryBlobTransfer::new());
+        register_parallel_work_environment_job_handlers(&composition, blobs.clone())
+            .await
+            .unwrap();
+        let plan = plan();
+        runtime
+            .job_store
+            .insert(
+                plan.clone()
+                    .into_job("failed-parent", "default", "root", Utc::now())
+                    .unwrap()
+                    .into_job(),
+            )
+            .await
+            .unwrap();
+        let _ = process_once(&runtime).await;
+        for (index, child) in plan.children.iter().enumerate() {
+            let result = child_result(&blobs, child, (index + 1) as u8).await;
+            let state = if index == 1 {
+                JobState::Failed
+            } else {
+                JobState::Succeeded
+            };
+            mark_child_terminal(&runtime, "failed-parent", child, Some(&result), state).await;
+        }
+        tokio::time::sleep(StdDuration::from_millis(12)).await;
+        let _ = process_once(&runtime).await;
+        let parent = runtime
+            .job_store
+            .get("failed-parent")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(parent.state, JobState::DeadLetter);
+        let progress: ParallelCoordinatorProgress =
+            serde_json::from_str(parent.progress_json.as_deref().unwrap()).unwrap();
+        assert_eq!(progress.children.len(), 3);
+        assert_eq!(progress.children[1].state, "failed");
+        assert!(progress.children[1].error_message.is_some());
+        assert!(
+            runtime
+                .job_store
+                .get(&parallel_reconciliation_job_id("failed-parent").unwrap())
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn reconciliation_cas_conflict_is_terminal_and_keeps_the_preserved_checkpoint() {
+        let plan = plan();
+        let coordinator = plan
+            .clone()
+            .into_job("parent", "default", "root", Utc::now())
+            .unwrap()
+            .into_job();
+        let mut work = plan
+            .reconciliation
+            .clone()
+            .into_job("parent:reconcile:work", "default", "parent", Utc::now())
+            .unwrap()
+            .into_job();
+        let checkpoint = WorkEnvironmentCheckpoint::from_manifest(
+            BlobDescriptor::from_bytes(b"preserved-conflict")
+                .with_media_type(RECONCILIATION_CHECKPOINT_MEDIA_TYPE),
+        );
+        work.output_provenance = Some(checkpoint.provenance.clone());
+        let progress = ParallelReconciliationProgress {
+            schema_version: COORDINATOR_PROGRESS_SCHEMA_VERSION,
+            work_job_id: work.id.clone(),
+            checkpoint: Some(checkpoint.clone()),
+            publication: Some(
+                medousa_runtime::WorkEnvironmentPublicationResult::Conflict {
+                    target_ref: "refs/heads/main".to_string(),
+                    expected: Some(BASE.to_string()),
+                    found: Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string()),
+                    preserved_checkpoint: checkpoint,
+                },
+            ),
+            updated_at: Utc::now(),
+        };
+        match completed_reconciliation_outcome(&coordinator, &work, &progress) {
+            JobExecutionOutcome::FatalFailure {
+                message,
+                diagnostics: Some(diagnostics),
+                ..
+            } => {
+                assert!(message.contains("publication conflicted"));
+                assert!(diagnostics.contains("preserved_checkpoint"));
+                assert!(diagnostics.contains("conflict"));
+            }
+            other => panic!("CAS conflict must be terminal, got {other:?}"),
+        }
     }
 }
