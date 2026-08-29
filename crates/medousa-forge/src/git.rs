@@ -990,6 +990,56 @@ impl GitEngine {
         Ok(GitOid::new(out.trim()))
     }
 
+    /// Export one exact checkpoint and all reachable Git objects as a portable
+    /// bundle. The caller persists and content-addresses the resulting file.
+    pub fn export_checkpoint_bundle(
+        &self,
+        cwd: &Path,
+        checkpoint: &GitOid,
+        destination: &Path,
+    ) -> Result<()> {
+        if self.head_oid(cwd)? != *checkpoint {
+            return Err(ForgeError::EnvironmentDrift(
+                "checkpoint bundle head moved before export".to_string(),
+            ));
+        }
+        if let Some(parent) = destination.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let destination = destination.to_str().ok_or_else(|| {
+            ForgeError::Store("checkpoint bundle path is not valid UTF-8".to_string())
+        })?;
+        let _ = std::fs::remove_file(destination);
+        if let Err(error) = self.run(cwd, &["bundle", "create", destination, "HEAD"]) {
+            let _ = std::fs::remove_file(destination);
+            return Err(error);
+        }
+        self.run(cwd, &["bundle", "verify", destination])?;
+        Ok(())
+    }
+
+    /// Import a previously verified checkpoint bundle and detach the worktree
+    /// at the exact manifest commit.
+    pub fn import_checkpoint_bundle(
+        &self,
+        cwd: &Path,
+        bundle: &Path,
+        checkpoint: &GitOid,
+    ) -> Result<()> {
+        let bundle = bundle.to_str().ok_or_else(|| {
+            ForgeError::Store("checkpoint bundle path is not valid UTF-8".to_string())
+        })?;
+        self.run(cwd, &["bundle", "verify", bundle])?;
+        self.run(cwd, &["fetch", "--no-tags", bundle, "HEAD"])?;
+        self.run(cwd, &["checkout", "--detach", checkpoint.as_str()])?;
+        if self.head_oid(cwd)? != *checkpoint {
+            return Err(ForgeError::EnvironmentDrift(
+                "restored checkpoint head does not match its manifest".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Stage everything (respecting .gitignore) and create a checkpoint commit
     /// with explicit env-var identity. Returns the new head OID, or the
     /// unchanged head when the tree was already clean.
@@ -1861,6 +1911,29 @@ summary second
         assert!(text.contains("added.txt"));
         let commits = git.commit_list(tmp.path(), &base, &head).unwrap();
         assert_eq!(commits, vec![head.clone()]);
+    }
+
+    #[test]
+    fn checkpoint_bundle_restores_exact_commit_without_source_worktree() {
+        let (source, git, _) = init_repo();
+        fs::write(source.path().join("portable.txt"), "portable\n").unwrap();
+        let checkpoint = git
+            .commit_checkpoint(source.path(), "portable", &CheckpointAuthor::default())
+            .unwrap();
+        let durable = TempDir::new().unwrap();
+        let bundle = durable.path().join("checkpoint.bundle");
+        git.export_checkpoint_bundle(source.path(), &checkpoint, &bundle)
+            .unwrap();
+
+        let restored = TempDir::new().unwrap();
+        git.run(restored.path(), &["init", "--quiet"]).unwrap();
+        git.import_checkpoint_bundle(restored.path(), &bundle, &checkpoint)
+            .unwrap();
+        assert_eq!(git.head_oid(restored.path()).unwrap(), checkpoint);
+        assert_eq!(
+            fs::read_to_string(restored.path().join("portable.txt")).unwrap(),
+            "portable\n"
+        );
     }
 
     #[test]

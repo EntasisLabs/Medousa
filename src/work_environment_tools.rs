@@ -537,12 +537,12 @@ mod tests {
     use async_trait::async_trait;
     use chrono::Utc;
     use medousa_runtime::{
-        WorkEnvironmentCheckpointPolicy, WorkEnvironmentError, WorkEnvironmentFence,
-        WorkEnvironmentHandle, WorkEnvironmentId, WorkEnvironmentPort, WorkEnvironmentPtyHandle,
-        WorkEnvironmentPtyRequest, WorkEnvironmentRetention, WorkEnvironmentSpec,
-        WorkEnvironmentState, WorkEnvironmentStopReason,
+        WorkEnvironmentCheckpoint, WorkEnvironmentCheckpointPolicy, WorkEnvironmentError,
+        WorkEnvironmentFence, WorkEnvironmentHandle, WorkEnvironmentId, WorkEnvironmentPort,
+        WorkEnvironmentPtyHandle, WorkEnvironmentPtyRequest, WorkEnvironmentPublicationResult,
+        WorkEnvironmentRetention, WorkEnvironmentSpec, WorkEnvironmentState,
+        WorkEnvironmentStopReason,
     };
-    use stasis::domain::runtime::provenance::ProvenanceRef;
     use stasis::domain::runtime::resource_lease::FencingToken;
 
     use super::*;
@@ -623,7 +623,16 @@ mod tests {
             _handle: &WorkEnvironmentHandle,
             _policy: WorkEnvironmentCheckpointPolicy,
             _fence: &WorkEnvironmentFence,
-        ) -> Result<ProvenanceRef, WorkEnvironmentError> {
+        ) -> Result<WorkEnvironmentCheckpoint, WorkEnvironmentError> {
+            Err(WorkEnvironmentError::Unsupported("test".into()))
+        }
+
+        async fn publish(
+            &self,
+            _handle: &WorkEnvironmentHandle,
+            _checkpoint: &WorkEnvironmentCheckpoint,
+            _fence: &WorkEnvironmentFence,
+        ) -> Result<WorkEnvironmentPublicationResult, WorkEnvironmentError> {
             Err(WorkEnvironmentError::Unsupported("test".into()))
         }
 

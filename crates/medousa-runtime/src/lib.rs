@@ -64,14 +64,18 @@ pub use tool_loop::MedousaToolLoopPipeline;
 pub use turn_context::{HostTurnContext, ToolLaneState, ToolRoundContextProvider};
 pub use turn_presentation::append_voice_preset_hint;
 pub use work_environment::{
-    InMemoryWorkEnvironmentPort, MAX_WORK_ENVIRONMENT_RETENTION, MAX_WORK_ENVIRONMENT_STDIN_BYTES,
-    OCI_WORK_ENVIRONMENT_CAPABILITY, WORK_ENVIRONMENT_WORKSPACE_ROOT, WorkEnvironmentBinding,
+    InMemoryWorkEnvironmentPort, MAX_WORK_ENVIRONMENT_ARTIFACT_BYTES,
+    MAX_WORK_ENVIRONMENT_ARTIFACT_TOTAL_BYTES, MAX_WORK_ENVIRONMENT_ARTIFACTS,
+    MAX_WORK_ENVIRONMENT_RETENTION, MAX_WORK_ENVIRONMENT_STDIN_BYTES,
+    OCI_WORK_ENVIRONMENT_CAPABILITY, WORK_ENVIRONMENT_CHECKPOINT_SCHEMA_VERSION,
+    WORK_ENVIRONMENT_WORKSPACE_ROOT, WorkEnvironmentArtifact, WorkEnvironmentArtifactRequest,
+    WorkEnvironmentBinding, WorkEnvironmentCheckpoint, WorkEnvironmentCheckpointManifest,
     WorkEnvironmentCheckpointPolicy, WorkEnvironmentError, WorkEnvironmentExecRequest,
     WorkEnvironmentExecResult, WorkEnvironmentFence, WorkEnvironmentHandle, WorkEnvironmentId,
     WorkEnvironmentImage, WorkEnvironmentMount, WorkEnvironmentMountAccess,
     WorkEnvironmentMountKind, WorkEnvironmentNetworkPolicy, WorkEnvironmentPhase,
     WorkEnvironmentPort, WorkEnvironmentPtyHandle, WorkEnvironmentPtyRequest,
-    WorkEnvironmentPublication, WorkEnvironmentRepository, WorkEnvironmentRequirements,
-    WorkEnvironmentRetention, WorkEnvironmentSpec, WorkEnvironmentState, WorkEnvironmentStopReason,
-    WorkspaceId,
+    WorkEnvironmentPublication, WorkEnvironmentPublicationResult, WorkEnvironmentRepository,
+    WorkEnvironmentRequirements, WorkEnvironmentRetention, WorkEnvironmentSpec,
+    WorkEnvironmentState, WorkEnvironmentStopReason, WorkspaceId,
 };

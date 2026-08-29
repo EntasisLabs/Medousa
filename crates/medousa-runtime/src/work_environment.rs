@@ -11,8 +11,9 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
+use stasis::domain::runtime::blob_descriptor::BlobDescriptor;
 use stasis::domain::runtime::placement::PlacementConstraints;
-use stasis::domain::runtime::provenance::{ContentDigest, ProvenanceRef};
+use stasis::domain::runtime::provenance::{ContentDigest, ProvenanceRef, ProvenanceScheme};
 use stasis::domain::runtime::resource_lease::FencingToken;
 use thiserror::Error;
 
@@ -20,6 +21,10 @@ pub const OCI_WORK_ENVIRONMENT_CAPABILITY: &str = "work_environment.oci";
 pub const MAX_WORK_ENVIRONMENT_RETENTION: Duration = Duration::days(7);
 pub const WORK_ENVIRONMENT_WORKSPACE_ROOT: &str = "/workspace";
 pub const MAX_WORK_ENVIRONMENT_STDIN_BYTES: usize = 4 * 1024 * 1024;
+pub const WORK_ENVIRONMENT_CHECKPOINT_SCHEMA_VERSION: u32 = 1;
+pub const MAX_WORK_ENVIRONMENT_ARTIFACTS: usize = 64;
+pub const MAX_WORK_ENVIRONMENT_ARTIFACT_BYTES: u64 = 64 * 1024 * 1024;
+pub const MAX_WORK_ENVIRONMENT_ARTIFACT_TOTAL_BYTES: u64 = 256 * 1024 * 1024;
 
 fn validate_identifier(name: &str, value: &str) -> Result<(), WorkEnvironmentError> {
     let value = value.trim();
@@ -184,7 +189,7 @@ pub struct WorkEnvironmentSpec {
     pub base_commit: String,
     pub image: WorkEnvironmentImage,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub checkpoint_ref: Option<ProvenanceRef>,
+    pub checkpoint_ref: Option<WorkEnvironmentCheckpoint>,
     #[serde(default)]
     pub requirements: WorkEnvironmentRequirements,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -221,7 +226,7 @@ impl WorkEnvironmentSpec {
             ));
         }
         if let Some(checkpoint) = self.checkpoint_ref.as_ref() {
-            validate_reference("checkpoint locator", &checkpoint.locator)?;
+            checkpoint.validate()?;
         }
 
         let mut targets = BTreeSet::new();
@@ -310,6 +315,44 @@ fn validate_image(image: &WorkEnvironmentImage) -> Result<(), WorkEnvironmentErr
     validate_reference("image platform", &image.platform)
 }
 
+fn validate_blob_descriptor(
+    name: &str,
+    descriptor: &BlobDescriptor,
+) -> Result<(), WorkEnvironmentError> {
+    if descriptor.digest.algorithm != ContentDigest::SHA256
+        || descriptor.digest.hex.len() != 64
+        || !descriptor
+            .digest
+            .hex
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(WorkEnvironmentError::InvalidSpec(format!(
+            "{name} must use a sha256 digest"
+        )));
+    }
+    if descriptor.size_bytes == 0 {
+        return Err(WorkEnvironmentError::InvalidSpec(format!(
+            "{name} must not be empty"
+        )));
+    }
+    if let Some(media_type) = descriptor.media_type.as_deref() {
+        validate_reference(&format!("{name} media_type"), media_type)?;
+    }
+    if let Some(transfer_hint) = descriptor.transfer_hint.as_deref() {
+        validate_reference(&format!("{name} transfer_hint"), transfer_hint)?;
+    }
+    Ok(())
+}
+
+const fn default_max_artifact_bytes() -> u64 {
+    MAX_WORK_ENVIRONMENT_ARTIFACT_BYTES
+}
+
+const fn default_max_artifact_total_bytes() -> u64 {
+    MAX_WORK_ENVIRONMENT_ARTIFACT_TOTAL_BYTES
+}
+
 fn validate_requirements(
     requirements: &WorkEnvironmentRequirements,
 ) -> Result<(), WorkEnvironmentError> {
@@ -343,6 +386,24 @@ fn validate_container_path(value: &str) -> Result<(), WorkEnvironmentError> {
     {
         return Err(WorkEnvironmentError::InvalidSpec(format!(
             "mount target must be a normalized absolute container path: {value}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_workspace_relative_path(value: &str) -> Result<(), WorkEnvironmentError> {
+    if value.is_empty()
+        || value.len() > 1_024
+        || !value.is_ascii()
+        || value.starts_with(['/', '\\'])
+        || value.contains('\\')
+        || value
+            .split('/')
+            .any(|segment| segment.is_empty() || matches!(segment, "." | ".."))
+        || value.chars().any(char::is_control)
+    {
+        return Err(WorkEnvironmentError::InvalidSpec(format!(
+            "artifact path must be normalized and relative to /workspace: {value}"
         )));
     }
     Ok(())
@@ -489,12 +550,215 @@ impl WorkEnvironmentPtyHandle {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WorkEnvironmentArtifactRequest {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media_type: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WorkEnvironmentArtifact {
+    pub path: String,
+    pub blob: BlobDescriptor,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WorkEnvironmentCheckpointManifest {
+    pub schema_version: u32,
+    pub environment_id: WorkEnvironmentId,
+    pub workspace_id: WorkspaceId,
+    pub base_commit: String,
+    pub checkpoint_commit: String,
+    pub source_bundle: BlobDescriptor,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub artifacts: Vec<WorkEnvironmentArtifact>,
+    pub fence: WorkEnvironmentFence,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WorkEnvironmentCheckpoint {
+    pub manifest: BlobDescriptor,
+    pub provenance: ProvenanceRef,
+}
+
+impl WorkEnvironmentCheckpoint {
+    pub fn from_manifest(manifest: BlobDescriptor) -> Self {
+        let mut provenance = ProvenanceRef::cas(manifest.digest.clone());
+        provenance.media_type = manifest.media_type.clone();
+        Self {
+            manifest,
+            provenance,
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), WorkEnvironmentError> {
+        validate_blob_descriptor("checkpoint manifest", &self.manifest)?;
+        if self.provenance.scheme != ProvenanceScheme::Cas
+            || self.provenance.digest.as_ref() != Some(&self.manifest.digest)
+        {
+            return Err(WorkEnvironmentError::InvalidSpec(
+                "checkpoint provenance must identify its manifest digest".to_string(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl WorkEnvironmentCheckpointManifest {
+    pub fn validate(&self) -> Result<(), WorkEnvironmentError> {
+        if self.schema_version != WORK_ENVIRONMENT_CHECKPOINT_SCHEMA_VERSION {
+            return Err(WorkEnvironmentError::InvalidSpec(format!(
+                "unsupported checkpoint manifest schema_version={}",
+                self.schema_version
+            )));
+        }
+        validate_identifier("checkpoint environment_id", self.environment_id.as_str())?;
+        validate_identifier("checkpoint workspace_id", self.workspace_id.as_str())?;
+        validate_git_commit(&self.base_commit)?;
+        validate_git_commit(&self.checkpoint_commit)?;
+        validate_blob_descriptor("checkpoint source bundle", &self.source_bundle)?;
+        if self.fence.stasis_attempt.0 == 0 {
+            return Err(WorkEnvironmentError::InvalidSpec(
+                "checkpoint stasis fence must be non-zero".to_string(),
+            ));
+        }
+        if let Some(label) = self.label.as_deref() {
+            validate_reference("checkpoint label", label)?;
+        }
+        if self.artifacts.len() > MAX_WORK_ENVIRONMENT_ARTIFACTS {
+            return Err(WorkEnvironmentError::InvalidSpec(format!(
+                "checkpoint has more than {MAX_WORK_ENVIRONMENT_ARTIFACTS} artifacts"
+            )));
+        }
+        let mut paths = BTreeSet::new();
+        let mut total = 0_u64;
+        for artifact in &self.artifacts {
+            validate_workspace_relative_path(&artifact.path)?;
+            validate_blob_descriptor("checkpoint artifact", &artifact.blob)?;
+            if !paths.insert(artifact.path.as_str()) {
+                return Err(WorkEnvironmentError::InvalidSpec(format!(
+                    "duplicate checkpoint artifact path: {}",
+                    artifact.path
+                )));
+            }
+            total = total.checked_add(artifact.blob.size_bytes).ok_or_else(|| {
+                WorkEnvironmentError::InvalidSpec(
+                    "checkpoint artifact byte total overflowed".to_string(),
+                )
+            })?;
+        }
+        if total > MAX_WORK_ENVIRONMENT_ARTIFACT_TOTAL_BYTES {
+            return Err(WorkEnvironmentError::InvalidSpec(format!(
+                "checkpoint artifacts exceed {MAX_WORK_ENVIRONMENT_ARTIFACT_TOTAL_BYTES} bytes"
+            )));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum WorkEnvironmentPublicationResult {
+    Published {
+        target_ref: String,
+        value: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        previous: Option<String>,
+    },
+    AlreadyPublished {
+        target_ref: String,
+        value: String,
+    },
+    Conflict {
+        target_ref: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        found: Option<String>,
+        preserved_checkpoint: WorkEnvironmentCheckpoint,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WorkEnvironmentCheckpointPolicy {
     #[serde(default)]
     pub include_untracked: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub artifacts: Vec<WorkEnvironmentArtifactRequest>,
+    #[serde(default = "default_max_artifact_bytes")]
+    pub max_artifact_bytes: u64,
+    #[serde(default = "default_max_artifact_total_bytes")]
+    pub max_artifact_total_bytes: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retain_until: Option<DateTime<Utc>>,
+}
+
+impl Default for WorkEnvironmentCheckpointPolicy {
+    fn default() -> Self {
+        Self {
+            include_untracked: false,
+            label: None,
+            artifacts: Vec::new(),
+            max_artifact_bytes: MAX_WORK_ENVIRONMENT_ARTIFACT_BYTES,
+            max_artifact_total_bytes: MAX_WORK_ENVIRONMENT_ARTIFACT_TOTAL_BYTES,
+            retain_until: None,
+        }
+    }
+}
+
+impl WorkEnvironmentCheckpointPolicy {
+    pub fn validate(&self) -> Result<(), WorkEnvironmentError> {
+        if let Some(label) = self.label.as_deref() {
+            validate_reference("checkpoint label", label)?;
+        }
+        if self.artifacts.len() > MAX_WORK_ENVIRONMENT_ARTIFACTS {
+            return Err(WorkEnvironmentError::InvalidSpec(format!(
+                "checkpoint policy has more than {MAX_WORK_ENVIRONMENT_ARTIFACTS} artifacts"
+            )));
+        }
+        if self.max_artifact_bytes == 0
+            || self.max_artifact_bytes > MAX_WORK_ENVIRONMENT_ARTIFACT_BYTES
+        {
+            return Err(WorkEnvironmentError::InvalidSpec(format!(
+                "max_artifact_bytes must be between one and {MAX_WORK_ENVIRONMENT_ARTIFACT_BYTES}"
+            )));
+        }
+        if self.max_artifact_total_bytes == 0
+            || self.max_artifact_total_bytes > MAX_WORK_ENVIRONMENT_ARTIFACT_TOTAL_BYTES
+        {
+            return Err(WorkEnvironmentError::InvalidSpec(format!(
+                "max_artifact_total_bytes must be between one and {MAX_WORK_ENVIRONMENT_ARTIFACT_TOTAL_BYTES}"
+            )));
+        }
+        if let Some(until) = self.retain_until
+            && (until <= Utc::now() || until > Utc::now() + MAX_WORK_ENVIRONMENT_RETENTION)
+        {
+            return Err(WorkEnvironmentError::InvalidSpec(
+                "checkpoint retention must be in the future and no more than seven days away"
+                    .to_string(),
+            ));
+        }
+        let mut paths = BTreeSet::new();
+        for artifact in &self.artifacts {
+            validate_workspace_relative_path(&artifact.path)?;
+            if let Some(media_type) = artifact.media_type.as_deref() {
+                validate_reference("artifact media_type", media_type)?;
+            }
+            if !paths.insert(artifact.path.as_str()) {
+                return Err(WorkEnvironmentError::InvalidSpec(format!(
+                    "duplicate artifact path: {}",
+                    artifact.path
+                )));
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -563,7 +827,13 @@ pub trait WorkEnvironmentPort: Send + Sync {
         handle: &WorkEnvironmentHandle,
         policy: WorkEnvironmentCheckpointPolicy,
         fence: &WorkEnvironmentFence,
-    ) -> Result<ProvenanceRef, WorkEnvironmentError>;
+    ) -> Result<WorkEnvironmentCheckpoint, WorkEnvironmentError>;
+    async fn publish(
+        &self,
+        handle: &WorkEnvironmentHandle,
+        checkpoint: &WorkEnvironmentCheckpoint,
+        fence: &WorkEnvironmentFence,
+    ) -> Result<WorkEnvironmentPublicationResult, WorkEnvironmentError>;
     async fn stop(
         &self,
         handle: &WorkEnvironmentHandle,
@@ -610,6 +880,7 @@ struct InMemoryEntry {
 #[derive(Default)]
 pub struct InMemoryWorkEnvironmentPort {
     entries: Mutex<HashMap<WorkEnvironmentId, InMemoryEntry>>,
+    publications: Mutex<HashMap<String, String>>,
 }
 
 impl InMemoryWorkEnvironmentPort {
@@ -676,7 +947,10 @@ impl WorkEnvironmentPort for InMemoryWorkEnvironmentPort {
         let state = WorkEnvironmentState {
             environment_id: spec.environment_id.clone(),
             phase: WorkEnvironmentPhase::Ready,
-            checkpoint_ref: spec.checkpoint_ref.clone(),
+            checkpoint_ref: spec
+                .checkpoint_ref
+                .as_ref()
+                .map(|checkpoint| checkpoint.provenance.clone()),
             message: None,
             updated_at: now,
         };
@@ -836,9 +1110,10 @@ impl WorkEnvironmentPort for InMemoryWorkEnvironmentPort {
         handle: &WorkEnvironmentHandle,
         policy: WorkEnvironmentCheckpointPolicy,
         fence: &WorkEnvironmentFence,
-    ) -> Result<ProvenanceRef, WorkEnvironmentError> {
+    ) -> Result<WorkEnvironmentCheckpoint, WorkEnvironmentError> {
         self.with_entry(handle, |entry| {
             Self::ensure_fence(entry, fence)?;
+            policy.validate()?;
             if !matches!(
                 entry.state.phase,
                 WorkEnvironmentPhase::Ready
@@ -854,10 +1129,60 @@ impl WorkEnvironmentPort for InMemoryWorkEnvironmentPort {
             let bytes =
                 serde_json::to_vec(&(&entry.spec.environment_id, entry.checkpoint_count, &policy))
                     .map_err(|error| WorkEnvironmentError::Adapter(error.to_string()))?;
-            let checkpoint = ProvenanceRef::cas(ContentDigest::sha256_bytes(&bytes));
-            entry.state.checkpoint_ref = Some(checkpoint.clone());
+            let manifest = BlobDescriptor::from_bytes(&bytes)
+                .with_media_type("application/vnd.medousa.work-environment-checkpoint+json");
+            let checkpoint = WorkEnvironmentCheckpoint::from_manifest(manifest);
+            entry.state.checkpoint_ref = Some(checkpoint.provenance.clone());
             entry.state.updated_at = Utc::now();
             Ok(checkpoint)
+        })
+    }
+
+    async fn publish(
+        &self,
+        handle: &WorkEnvironmentHandle,
+        checkpoint: &WorkEnvironmentCheckpoint,
+        fence: &WorkEnvironmentFence,
+    ) -> Result<WorkEnvironmentPublicationResult, WorkEnvironmentError> {
+        checkpoint.validate()?;
+        let publication = self.with_entry(handle, |entry| {
+            Self::ensure_fence(entry, fence)?;
+            if entry.state.checkpoint_ref.as_ref() != Some(&checkpoint.provenance) {
+                return Err(WorkEnvironmentError::CheckpointMissing(
+                    checkpoint.provenance.compact(),
+                ));
+            }
+            entry.spec.publication.clone().ok_or_else(|| {
+                WorkEnvironmentError::Unsupported(
+                    "environment has no publication target".to_string(),
+                )
+            })
+        })?;
+        let value = checkpoint.provenance.compact();
+        let mut publications = self
+            .publications
+            .lock()
+            .map_err(|_| WorkEnvironmentError::Adapter("publication lock poisoned".to_string()))?;
+        let found = publications.get(&publication.target_ref).cloned();
+        if found.as_deref() == Some(value.as_str()) {
+            return Ok(WorkEnvironmentPublicationResult::AlreadyPublished {
+                target_ref: publication.target_ref,
+                value,
+            });
+        }
+        if found != publication.expected_value {
+            return Ok(WorkEnvironmentPublicationResult::Conflict {
+                target_ref: publication.target_ref,
+                expected: publication.expected_value,
+                found,
+                preserved_checkpoint: checkpoint.clone(),
+            });
+        }
+        publications.insert(publication.target_ref.clone(), value.clone());
+        Ok(WorkEnvironmentPublicationResult::Published {
+            target_ref: publication.target_ref,
+            value,
+            previous: found,
         })
     }
 
@@ -1007,8 +1332,17 @@ mod tests {
             .unwrap();
         assert_eq!(
             adapter.inspect(&handle).await.unwrap().checkpoint_ref,
-            Some(checkpoint)
+            Some(checkpoint.provenance.clone())
         );
+        let published = adapter.publish(&handle, &checkpoint, &fence).await.unwrap();
+        assert!(matches!(
+            published,
+            WorkEnvironmentPublicationResult::Conflict {
+                expected: Some(_),
+                found: None,
+                ..
+            }
+        ));
         assert_eq!(
             adapter
                 .stop(

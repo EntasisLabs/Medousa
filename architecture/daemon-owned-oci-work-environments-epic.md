@@ -1,6 +1,6 @@
 # Daemon-owned OCI work environments
 
-> **Status:** Active implementation — Phase 3 complete, ready for Phase 4
+> **Status:** Active implementation — Phase 4 complete, ready for Phase 5
 >
 > **Date:** 2026-08-28
 >
@@ -520,6 +520,42 @@ and embedded-daemon feature profile both compile and pass independently.
 **Exit:** after acknowledgment, deleting every source container and local
 workspace still leaves enough durable data to inspect, resume, or reconcile the
 job.
+
+**Landed boundary:** the environment contract now carries a validated immutable
+checkpoint descriptor rather than a loose provenance pointer. A checkpoint is
+a small typed manifest that names its exact workspace/base/checkpoint commits,
+complete Stasis/Forge fence, Forge-exported Git bundle, explicit non-Git
+artifacts, creation time, and provenance. Forge creates a real checkpoint
+commit and portable bundle; restore imports that bundle and checks out the
+exact commit without requiring the original worktree or container.
+
+The full daemon provides the first production Stasis `BlobTransferPort` over a
+confined filesystem CAS. Bundles and artifacts stream through `StoreRoot`
+capabilities, are addressed by SHA-256, and are re-read and digest-verified
+before their descriptors can enter a manifest. Duplicate content compacts to
+one object. Named checkpoint and publication roots carry bounded retention;
+startup mark-and-sweep removes expired roots and old unreferenced objects while
+preserving recent crash orphans. Environment release still owns disposable
+container/worktree cleanup, while the digest-pinned image and authorized Git
+origin remain independently reconstructible inputs rather than checkpoint
+payloads.
+
+Publication is a locked, atomic expected-value update in a separate confined
+control store. Replaying the same checkpoint is idempotent; a different current
+value returns a typed conflict containing the preserved losing checkpoint and
+never overwrites the winner. Immutable content is rooted before acknowledgment,
+and a retry after pointer publication repairs the permanent publication root
+before returning the same result identity.
+
+The real-engine conformance test checkpoints tracked and untracked source plus
+an explicitly requested ignored artifact, publishes it, proves idempotent
+replay and typed conflict, reopens the adapter, deletes the original container
+and workspace, and reconstructs a fresh runnable environment from the losing
+checkpoint. Focused contracts also prove portable Forge bundle restoration,
+streamed CAS round-trips and deduplication, root-based garbage collection, and
+cross-process-safe publication CAS. This phase intentionally lands a local
+durable backend behind Stasis's public blob port; cross-daemon blob transport
+is Phase 6, and Stasis-owned lifecycle sequencing is Phase 5.
 
 ### Phase 5 — Durable environment workflow
 

@@ -14,17 +14,27 @@ use medousa_forge::execution::{
     ExecutionClass, ForgeExecutionService, MAX_CAPTURE_BYTES, supervise_command,
     supervise_command_with_input, supervise_git,
 };
+use medousa_forge::git::{CheckpointAuthor, GitEngine};
 use medousa_runtime::{
-    MAX_WORK_ENVIRONMENT_STDIN_BYTES, WORK_ENVIRONMENT_WORKSPACE_ROOT,
+    MAX_WORK_ENVIRONMENT_ARTIFACT_BYTES, MAX_WORK_ENVIRONMENT_STDIN_BYTES,
+    WORK_ENVIRONMENT_CHECKPOINT_SCHEMA_VERSION, WORK_ENVIRONMENT_WORKSPACE_ROOT,
+    WorkEnvironmentArtifact, WorkEnvironmentCheckpoint, WorkEnvironmentCheckpointManifest,
     WorkEnvironmentCheckpointPolicy, WorkEnvironmentError, WorkEnvironmentExecRequest,
     WorkEnvironmentExecResult, WorkEnvironmentFence, WorkEnvironmentHandle, WorkEnvironmentId,
     WorkEnvironmentMountAccess, WorkEnvironmentMountKind, WorkEnvironmentNetworkPolicy,
     WorkEnvironmentPhase, WorkEnvironmentPort, WorkEnvironmentPtyHandle, WorkEnvironmentPtyRequest,
-    WorkEnvironmentRetention, WorkEnvironmentSpec, WorkEnvironmentState, WorkEnvironmentStopReason,
+    WorkEnvironmentPublicationResult, WorkEnvironmentRetention, WorkEnvironmentSpec,
+    WorkEnvironmentState, WorkEnvironmentStopReason,
 };
+use medousa_store::{StorePath, StoreRoot};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
-use stasis::domain::runtime::provenance::ProvenanceRef;
+use stasis::ports::outbound::runtime::blob_transfer::BlobTransferPort;
+
+use super::blob_transfer_host::FsBlobTransferPort;
+use super::work_environment_publication_host::{
+    FsWorkEnvironmentPublicationStore, PublicationCasOutcome,
+};
 
 const MANAGED_LABEL: &str = "io.medousa.work_environment.managed";
 const ENVIRONMENT_LABEL: &str = "io.medousa.work_environment.id";
@@ -38,6 +48,9 @@ const MAX_EXEC_TIMEOUT_SECONDS: u64 = 60 * 60;
 const MAX_EXEC_OUTPUT_BYTES: usize = 1024 * 1024;
 const MAX_EXECUTION_RECORD_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_MANIFEST_BYTES: u64 = 256 * 1024;
+const MAX_CHECKPOINT_MANIFEST_BYTES: u64 = 1024 * 1024;
+const MAX_CHECKPOINT_BUNDLE_BYTES: u64 = 512 * 1024 * 1024;
+const CHECKPOINT_GIT_ADMISSION_BYTES: usize = 1024 * 1024;
 const WORKSPACE_TARGET: &str = WORK_ENVIRONMENT_WORKSPACE_ROOT;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -75,6 +88,8 @@ pub struct DockerCliWorkEnvironmentPort {
     git: PathBuf,
     root: PathBuf,
     execution: Arc<ForgeExecutionService>,
+    blobs: Arc<FsBlobTransferPort>,
+    publications: Arc<FsWorkEnvironmentPublicationStore>,
     lifecycle: tokio::sync::Mutex<()>,
 }
 
@@ -107,14 +122,35 @@ impl DockerCliWorkEnvironmentPort {
         let Some(git) = git else {
             return Ok(None);
         };
+        let blobs = FsBlobTransferPort::open(&root.join("durable/blobs"), execution.clone())
+            .map_err(|error| WorkEnvironmentError::Adapter(error.to_string()))?;
+        let publications = FsWorkEnvironmentPublicationStore::open(
+            &root.join("durable/publications"),
+            execution.clone(),
+        )?;
         let adapter = Arc::new(Self {
             docker,
             git,
             root,
             execution,
+            blobs,
+            publications,
             lifecycle: tokio::sync::Mutex::new(()),
         });
         adapter.ensure_root().await?;
+        let garbage = adapter
+            .blobs
+            .collect_garbage(Utc::now(), Duration::from_secs(60 * 60))
+            .await
+            .map_err(|error| WorkEnvironmentError::Adapter(error.to_string()))?;
+        if garbage.deleted_objects > 0 || garbage.expired_roots > 0 {
+            tracing::info!(
+                deleted_objects = garbage.deleted_objects,
+                expired_roots = garbage.expired_roots,
+                active_roots = garbage.active_roots,
+                "collected unreferenced work-environment content"
+            );
+        }
         let probe = adapter
             .run_docker(
                 vec![
@@ -400,11 +436,6 @@ impl DockerCliWorkEnvironmentPort {
         &self,
         spec: &WorkEnvironmentSpec,
     ) -> Result<(), WorkEnvironmentError> {
-        if spec.checkpoint_ref.is_some() {
-            return Err(WorkEnvironmentError::Unsupported(
-                "OCI checkpoint restoration lands with durable content transfer".into(),
-            ));
-        }
         if !matches!(spec.network_policy, WorkEnvironmentNetworkPolicy::Deny) {
             return Err(WorkEnvironmentError::Unsupported(
                 "the Docker CLI adapter currently supports deny-network environments only".into(),
@@ -484,10 +515,163 @@ impl DockerCliWorkEnvironmentPort {
         Ok(image)
     }
 
+    async fn load_checkpoint_manifest(
+        &self,
+        checkpoint: &WorkEnvironmentCheckpoint,
+    ) -> Result<WorkEnvironmentCheckpointManifest, WorkEnvironmentError> {
+        checkpoint.validate()?;
+        if checkpoint.manifest.size_bytes > MAX_CHECKPOINT_MANIFEST_BYTES {
+            return Err(WorkEnvironmentError::CheckpointMissing(format!(
+                "manifest exceeds {MAX_CHECKPOINT_MANIFEST_BYTES} bytes"
+            )));
+        }
+        let bytes = self
+            .blobs
+            .get(&checkpoint.manifest)
+            .await
+            .map_err(|error| WorkEnvironmentError::CheckpointMissing(error.to_string()))?;
+        let manifest: WorkEnvironmentCheckpointManifest =
+            serde_json::from_slice(&bytes).map_err(|error| {
+                WorkEnvironmentError::CheckpointMissing(format!(
+                    "decode checkpoint manifest: {error}"
+                ))
+            })?;
+        manifest.validate()?;
+        Ok(manifest)
+    }
+
+    async fn verify_checkpoint_content(
+        &self,
+        checkpoint: &WorkEnvironmentCheckpoint,
+    ) -> Result<WorkEnvironmentCheckpointManifest, WorkEnvironmentError> {
+        let manifest = self.load_checkpoint_manifest(checkpoint).await?;
+        let descriptors = std::iter::once(&manifest.source_bundle)
+            .chain(manifest.artifacts.iter().map(|artifact| &artifact.blob));
+        for descriptor in descriptors {
+            let exists = self
+                .blobs
+                .exists(descriptor)
+                .await
+                .map_err(|error| WorkEnvironmentError::CheckpointMissing(error.to_string()))?;
+            if !exists {
+                return Err(WorkEnvironmentError::CheckpointMissing(format!(
+                    "{}:{}",
+                    descriptor.digest.algorithm, descriptor.digest.hex
+                )));
+            }
+        }
+        Ok(manifest)
+    }
+
+    async fn restore_checkpoint(
+        &self,
+        workspace: &Path,
+        spec: &WorkEnvironmentSpec,
+        manifest: &WorkEnvironmentCheckpointManifest,
+    ) -> Result<(), WorkEnvironmentError> {
+        if manifest.workspace_id != spec.workspace_id || manifest.base_commit != spec.base_commit {
+            return Err(WorkEnvironmentError::CheckpointMissing(
+                "checkpoint workspace or base does not match the environment spec".to_string(),
+            ));
+        }
+        if manifest.source_bundle.size_bytes > MAX_CHECKPOINT_BUNDLE_BYTES {
+            return Err(WorkEnvironmentError::CheckpointMissing(format!(
+                "source bundle exceeds {MAX_CHECKPOINT_BUNDLE_BYTES} bytes"
+            )));
+        }
+        let environment_root = self.environment_root(&spec.environment_id);
+        let environment_store = Arc::new(StoreRoot::open_nofollow(&environment_root).map_err(
+            |error| {
+                WorkEnvironmentError::CheckpointMissing(format!(
+                    "open environment for checkpoint restore: {error}"
+                ))
+            },
+        )?);
+        let staging_name = format!("restore-{}.bundle", uuid::Uuid::new_v4().simple());
+        let staging_path = StorePath::parse(&staging_name).map_err(|error| {
+            WorkEnvironmentError::CheckpointMissing(format!("restore bundle path: {error}"))
+        })?;
+        self.blobs
+            .materialize_file(
+                &manifest.source_bundle,
+                Arc::clone(&environment_store),
+                staging_path.clone(),
+                MAX_CHECKPOINT_BUNDLE_BYTES,
+            )
+            .await
+            .map_err(|error| WorkEnvironmentError::CheckpointMissing(error.to_string()))?;
+        let staging = environment_root.join(&staging_name);
+        let git = GitEngine::with_binary(self.git.clone());
+        let workspace_for_git = workspace.to_path_buf();
+        let staging_for_git = staging.clone();
+        let checkpoint = medousa_forge::model::GitOid::new(&manifest.checkpoint_commit);
+        let repo_key = workspace.display().to_string();
+        let import_result = self
+            .execution
+            .run_on_repo(
+                ExecutionClass::LocalMutation,
+                CHECKPOINT_GIT_ADMISSION_BYTES,
+                Some(repo_key),
+                move || {
+                    git.import_checkpoint_bundle(&workspace_for_git, &staging_for_git, &checkpoint)
+                },
+            )
+            .await
+            .map_err(map_forge_error);
+        let _ = environment_store.remove_file(&staging_path);
+        import_result?;
+
+        let workspace_store = Arc::new(StoreRoot::open_nofollow(workspace).map_err(|error| {
+            WorkEnvironmentError::CheckpointMissing(format!("open restored workspace: {error}"))
+        })?);
+        for artifact in &manifest.artifacts {
+            let path = StorePath::parse(&artifact.path).map_err(|error| {
+                WorkEnvironmentError::CheckpointMissing(format!(
+                    "invalid checkpoint artifact path: {error}"
+                ))
+            })?;
+            self.blobs
+                .materialize_file(
+                    &artifact.blob,
+                    Arc::clone(&workspace_store),
+                    path,
+                    MAX_WORK_ENVIRONMENT_ARTIFACT_BYTES,
+                )
+                .await
+                .map_err(|error| WorkEnvironmentError::CheckpointMissing(error.to_string()))?;
+        }
+        if let Some(checkpoint) = spec.checkpoint_ref.as_ref() {
+            let mut roots = vec![checkpoint.manifest.clone(), manifest.source_bundle.clone()];
+            roots.extend(
+                manifest
+                    .artifacts
+                    .iter()
+                    .map(|artifact| artifact.blob.clone()),
+            );
+            self.blobs
+                .pin_root(
+                    &format!("checkpoint:{}", checkpoint.manifest.digest.hex),
+                    roots,
+                    None,
+                )
+                .await
+                .map_err(|error| WorkEnvironmentError::Adapter(error.to_string()))?;
+        }
+        Ok(())
+    }
+
     async fn materialize_repository(
         &self,
         spec: &WorkEnvironmentSpec,
     ) -> Result<PathBuf, WorkEnvironmentError> {
+        let checkpoint_manifest = match spec.checkpoint_ref.as_ref() {
+            Some(checkpoint) => Some(self.load_checkpoint_manifest(checkpoint).await?),
+            None => None,
+        };
+        let expected_head = checkpoint_manifest
+            .as_ref()
+            .map(|manifest| manifest.checkpoint_commit.as_str())
+            .unwrap_or(spec.base_commit.as_str());
         let workspace = self.workspace_path(&spec.environment_id);
         let workspace_for_check = workspace.clone();
         let (is_repository, workspace_exists) = self
@@ -504,7 +688,7 @@ impl DockerCliWorkEnvironmentPort {
             let head = self
                 .run_git(workspace.clone(), vec!["rev-parse".into(), "HEAD".into()])
                 .await?;
-            if String::from_utf8_lossy(&head).trim() != spec.base_commit {
+            if String::from_utf8_lossy(&head).trim() != expected_head {
                 return Err(WorkEnvironmentError::AdmissionDenied(
                     "preserved workspace is at a different commit".into(),
                 ));
@@ -541,7 +725,185 @@ impl DockerCliWorkEnvironmentPort {
             ],
         )
         .await?;
+        if let Some(manifest) = checkpoint_manifest.as_ref() {
+            self.restore_checkpoint(&workspace, spec, manifest).await?;
+        }
         Ok(workspace)
+    }
+
+    async fn create_durable_checkpoint(
+        &self,
+        record: &LocalEnvironmentRecord,
+        policy: &WorkEnvironmentCheckpointPolicy,
+    ) -> Result<WorkEnvironmentCheckpoint, WorkEnvironmentError> {
+        policy.validate()?;
+        let workspace = self.workspace_path(&record.spec.environment_id);
+        let environment_root = self.environment_root(&record.spec.environment_id);
+        let staging_name = format!("checkpoint-{}.bundle", uuid::Uuid::new_v4().simple());
+        let staging = environment_root.join(&staging_name);
+        let git = GitEngine::with_binary(self.git.clone());
+        let workspace_for_git = workspace.clone();
+        let staging_for_git = staging.clone();
+        let include_untracked = policy.include_untracked;
+        let label = policy.label.clone();
+        let repo_key = workspace.display().to_string();
+        let checkpoint_commit = self
+            .execution
+            .run_on_repo(
+                ExecutionClass::LocalMutation,
+                CHECKPOINT_GIT_ADMISSION_BYTES,
+                Some(repo_key),
+                move || {
+                    let exclusions = if include_untracked {
+                        Vec::new()
+                    } else {
+                        git.status_porcelain(&workspace_for_git)?
+                            .into_iter()
+                            .filter(|entry| {
+                                entry.kind == medousa_forge::git::PorcelainKind::Untracked
+                            })
+                            .map(|entry| entry.path)
+                            .collect()
+                    };
+                    let message = label
+                        .map(|label| format!("forge: checkpoint {label}"))
+                        .unwrap_or_else(|| "forge: work environment checkpoint".to_string());
+                    let commit = git.commit_checkpoint_with_exclusions(
+                        &workspace_for_git,
+                        &message,
+                        &CheckpointAuthor::default(),
+                        &exclusions,
+                    )?;
+                    git.export_checkpoint_bundle(&workspace_for_git, &commit, &staging_for_git)?;
+                    Ok(commit)
+                },
+            )
+            .await
+            .map_err(map_forge_error)?;
+        let environment_store = Arc::new(StoreRoot::open_nofollow(&environment_root).map_err(
+            |error| WorkEnvironmentError::Adapter(format!("open checkpoint staging: {error}")),
+        )?);
+        let staging_path = StorePath::parse(&staging_name).map_err(|error| {
+            WorkEnvironmentError::Adapter(format!("checkpoint bundle path: {error}"))
+        })?;
+        let source_bundle = self
+            .blobs
+            .put_file(
+                Arc::clone(&environment_store),
+                staging_path.clone(),
+                Some("application/vnd.git.bundle"),
+                MAX_CHECKPOINT_BUNDLE_BYTES,
+            )
+            .await;
+        let _ = environment_store.remove_file(&staging_path);
+        let source_bundle =
+            source_bundle.map_err(|error| WorkEnvironmentError::Adapter(error.to_string()))?;
+
+        let mut artifacts = Vec::with_capacity(policy.artifacts.len());
+        let mut artifact_total = 0_u64;
+        let workspace_store = Arc::new(StoreRoot::open_nofollow(&workspace).map_err(|error| {
+            WorkEnvironmentError::Adapter(format!("open checkpoint workspace: {error}"))
+        })?);
+        for request in &policy.artifacts {
+            let path = StorePath::parse(&request.path).map_err(|error| {
+                WorkEnvironmentError::InvalidSpec(format!("artifact path: {error}"))
+            })?;
+            let blob = self
+                .blobs
+                .put_file(
+                    Arc::clone(&workspace_store),
+                    path,
+                    request.media_type.as_deref(),
+                    policy.max_artifact_bytes,
+                )
+                .await
+                .map_err(|error| WorkEnvironmentError::Adapter(error.to_string()))?;
+            artifact_total = artifact_total.checked_add(blob.size_bytes).ok_or_else(|| {
+                WorkEnvironmentError::InvalidSpec(
+                    "checkpoint artifact byte total overflowed".to_string(),
+                )
+            })?;
+            if artifact_total > policy.max_artifact_total_bytes {
+                return Err(WorkEnvironmentError::InvalidSpec(format!(
+                    "checkpoint artifacts exceed {} bytes",
+                    policy.max_artifact_total_bytes
+                )));
+            }
+            artifacts.push(WorkEnvironmentArtifact {
+                path: request.path.clone(),
+                blob,
+            });
+        }
+
+        let manifest = WorkEnvironmentCheckpointManifest {
+            schema_version: WORK_ENVIRONMENT_CHECKPOINT_SCHEMA_VERSION,
+            environment_id: record.spec.environment_id.clone(),
+            workspace_id: record.spec.workspace_id.clone(),
+            base_commit: record.spec.base_commit.clone(),
+            checkpoint_commit: checkpoint_commit.as_str().to_string(),
+            source_bundle,
+            artifacts,
+            fence: record.spec.fence.clone(),
+            label: policy.label.clone(),
+            created_at: Utc::now(),
+        };
+        manifest.validate()?;
+        let manifest_bytes = serde_json::to_vec(&manifest)
+            .map_err(|error| WorkEnvironmentError::Adapter(error.to_string()))?;
+        if manifest_bytes.len() as u64 > MAX_CHECKPOINT_MANIFEST_BYTES {
+            return Err(WorkEnvironmentError::Adapter(format!(
+                "checkpoint manifest exceeds {MAX_CHECKPOINT_MANIFEST_BYTES} bytes"
+            )));
+        }
+        let manifest_blob = self
+            .blobs
+            .put(
+                &manifest_bytes,
+                Some("application/vnd.medousa.work-environment-checkpoint+json"),
+            )
+            .await
+            .map_err(|error| WorkEnvironmentError::Adapter(error.to_string()))?;
+        let persisted_manifest = self
+            .blobs
+            .get(&manifest_blob)
+            .await
+            .map_err(|error| WorkEnvironmentError::Adapter(error.to_string()))?;
+        if persisted_manifest != manifest_bytes {
+            return Err(WorkEnvironmentError::Adapter(
+                "checkpoint manifest verification failed".to_string(),
+            ));
+        }
+        let checkpoint = WorkEnvironmentCheckpoint::from_manifest(manifest_blob);
+        let mut roots = vec![checkpoint.manifest.clone(), manifest.source_bundle.clone()];
+        roots.extend(
+            manifest
+                .artifacts
+                .iter()
+                .map(|artifact| artifact.blob.clone()),
+        );
+        self.blobs
+            .pin_root(
+                &format!("checkpoint:{}", checkpoint.manifest.digest.hex),
+                roots,
+                policy.retain_until,
+            )
+            .await
+            .map_err(|error| WorkEnvironmentError::Adapter(error.to_string()))?;
+        Ok(checkpoint)
+    }
+
+    async fn pin_publication_root(
+        &self,
+        target_ref: &str,
+        checkpoint: &WorkEnvironmentCheckpoint,
+    ) -> Result<(), WorkEnvironmentError> {
+        let manifest = self.load_checkpoint_manifest(checkpoint).await?;
+        let mut roots = vec![checkpoint.manifest.clone(), manifest.source_bundle];
+        roots.extend(manifest.artifacts.into_iter().map(|artifact| artifact.blob));
+        self.blobs
+            .pin_root(&format!("publication:{target_ref}"), roots, None)
+            .await
+            .map_err(|error| WorkEnvironmentError::Adapter(error.to_string()))
     }
 
     async fn create_container(
@@ -790,7 +1152,10 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
                 state: WorkEnvironmentState {
                     environment_id: spec.environment_id.clone(),
                     phase: WorkEnvironmentPhase::Materializing,
-                    checkpoint_ref: spec.checkpoint_ref.clone(),
+                    checkpoint_ref: spec
+                        .checkpoint_ref
+                        .as_ref()
+                        .map(|checkpoint| checkpoint.provenance.clone()),
                     message: None,
                     updated_at: Utc::now(),
                 },
@@ -977,13 +1342,110 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
 
     async fn checkpoint(
         &self,
-        _handle: &WorkEnvironmentHandle,
-        _policy: WorkEnvironmentCheckpointPolicy,
-        _fence: &WorkEnvironmentFence,
-    ) -> Result<ProvenanceRef, WorkEnvironmentError> {
-        Err(WorkEnvironmentError::Unsupported(
-            "durable checkpoint publication lands with content transfer".into(),
-        ))
+        handle: &WorkEnvironmentHandle,
+        policy: WorkEnvironmentCheckpointPolicy,
+        fence: &WorkEnvironmentFence,
+    ) -> Result<WorkEnvironmentCheckpoint, WorkEnvironmentError> {
+        let _guard = self.lifecycle.lock().await;
+        let mut record = self
+            .load_record(handle.environment_id())
+            .await?
+            .ok_or_else(|| WorkEnvironmentError::NotFound(handle.environment_id().to_string()))?;
+        Self::ensure_handle(&record, handle)?;
+        Self::ensure_fence(&record, fence)?;
+        let phase = self.inspect_phase(&record.container_name).await?;
+        if !matches!(
+            phase,
+            WorkEnvironmentPhase::Ready
+                | WorkEnvironmentPhase::Running
+                | WorkEnvironmentPhase::Stopped
+        ) {
+            return Err(WorkEnvironmentError::InvalidState {
+                operation: "checkpoint",
+                phase,
+            });
+        }
+        record.state.phase = WorkEnvironmentPhase::Checkpointing;
+        record.state.message = None;
+        record.state.updated_at = Utc::now();
+        self.save_record(&record).await?;
+        match self.create_durable_checkpoint(&record, &policy).await {
+            Ok(checkpoint) => {
+                record.state.phase = phase;
+                record.state.checkpoint_ref = Some(checkpoint.provenance.clone());
+                record.state.updated_at = Utc::now();
+                self.save_record(&record).await?;
+                Ok(checkpoint)
+            }
+            Err(error) => {
+                record.state.phase = phase;
+                record.state.message = Some(format!("checkpoint failed: {error}"));
+                record.state.updated_at = Utc::now();
+                let _ = self.save_record(&record).await;
+                Err(error)
+            }
+        }
+    }
+
+    async fn publish(
+        &self,
+        handle: &WorkEnvironmentHandle,
+        checkpoint: &WorkEnvironmentCheckpoint,
+        fence: &WorkEnvironmentFence,
+    ) -> Result<WorkEnvironmentPublicationResult, WorkEnvironmentError> {
+        let _guard = self.lifecycle.lock().await;
+        let record = self
+            .load_record(handle.environment_id())
+            .await?
+            .ok_or_else(|| WorkEnvironmentError::NotFound(handle.environment_id().to_string()))?;
+        Self::ensure_handle(&record, handle)?;
+        Self::ensure_fence(&record, fence)?;
+        checkpoint.validate()?;
+        if record.state.checkpoint_ref.as_ref() != Some(&checkpoint.provenance) {
+            return Err(WorkEnvironmentError::CheckpointMissing(
+                checkpoint.provenance.compact(),
+            ));
+        }
+        let publication = record.spec.publication.as_ref().ok_or_else(|| {
+            WorkEnvironmentError::Unsupported("environment has no publication target".to_string())
+        })?;
+        self.verify_checkpoint_content(checkpoint).await?;
+        let value = checkpoint.provenance.compact();
+        let outcome = self
+            .publications
+            .compare_and_swap(
+                &publication.target_ref,
+                publication.expected_value.as_deref(),
+                &value,
+            )
+            .await?;
+        match outcome {
+            PublicationCasOutcome::Published { previous } => {
+                self.pin_publication_root(&publication.target_ref, checkpoint)
+                    .await?;
+                Ok(WorkEnvironmentPublicationResult::Published {
+                    target_ref: publication.target_ref.clone(),
+                    value,
+                    previous,
+                })
+            }
+            PublicationCasOutcome::AlreadyPublished => {
+                self.pin_publication_root(&publication.target_ref, checkpoint)
+                    .await?;
+                Ok(WorkEnvironmentPublicationResult::AlreadyPublished {
+                    target_ref: publication.target_ref.clone(),
+                    value,
+                })
+            }
+            PublicationCasOutcome::Conflict { found } => {
+                Ok(WorkEnvironmentPublicationResult::Conflict {
+                    target_ref: publication.target_ref.clone(),
+                    expected: publication.expected_value.clone(),
+                    found,
+                    preserved_checkpoint: checkpoint.clone(),
+                })
+            }
+        }
     }
 
     async fn stop(
@@ -1291,8 +1753,8 @@ fn bound_combined_output(
 mod tests {
     use super::*;
     use medousa_runtime::{
-        WorkEnvironmentBinding, WorkEnvironmentImage, WorkEnvironmentRepository,
-        WorkEnvironmentRequirements, WorkspaceId,
+        WorkEnvironmentBinding, WorkEnvironmentImage, WorkEnvironmentPublication,
+        WorkEnvironmentRepository, WorkEnvironmentRequirements, WorkspaceId,
     };
     use stasis::domain::runtime::provenance::ContentDigest;
     use stasis::domain::runtime::resource_lease::FencingToken;
@@ -1360,11 +1822,13 @@ mod tests {
             .expect("set MEDOUSA_TEST_OCI_PLATFORM to the image OS/architecture");
         let pinned_image = format!("{image_reference}@sha256:{image_digest}");
         let temp = tempfile::tempdir().unwrap();
-        let repository = temp.path().join("origin");
+        let test_root = std::fs::canonicalize(temp.path()).unwrap();
+        let repository = test_root.join("origin");
         std::fs::create_dir_all(&repository).unwrap();
         run_test_git(&repository, &["init", "--quiet"]);
         std::fs::write(repository.join("README.md"), "pinned input\n").unwrap();
-        run_test_git(&repository, &["add", "README.md"]);
+        std::fs::write(repository.join(".gitignore"), "dist/\n").unwrap();
+        run_test_git(&repository, &["add", "README.md", ".gitignore"]);
         run_test_git(
             &repository,
             &[
@@ -1413,17 +1877,20 @@ mod tests {
             network_policy: WorkEnvironmentNetworkPolicy::Deny,
             secret_refs: Vec::new(),
             fence: fence.clone(),
-            publication: None,
+            publication: Some(WorkEnvironmentPublication {
+                target_ref: format!("work-environment/{environment_id}"),
+                expected_value: None,
+            }),
             retention: WorkEnvironmentRetention::Delete,
         };
         let execution = Arc::new(ForgeExecutionService::new());
         let adapter =
-            DockerCliWorkEnvironmentPort::detect(temp.path().join("environments"), execution)
+            DockerCliWorkEnvironmentPort::detect(test_root.join("environments"), execution)
                 .await
                 .unwrap()
                 .expect("Docker adapter should be available");
 
-        let handle = adapter.materialize(spec).await.unwrap();
+        let handle = adapter.materialize(spec.clone()).await.unwrap();
         assert_eq!(
             adapter.inspect(&handle).await.unwrap().phase,
             WorkEnvironmentPhase::Ready
@@ -1533,6 +2000,89 @@ mod tests {
         assert_eq!(verify.exit_code, Some(0));
         assert_eq!(verify.stdout, "verified");
 
+        let artifact_write = adapter
+            .exec(
+                &handle,
+                WorkEnvironmentExecRequest {
+                    idempotency_key: "write-ignored-artifact".into(),
+                    program: "/bin/sh".into(),
+                    args: vec![
+                        "-c".into(),
+                        "mkdir -p dist && printf 'durable artifact v1' > dist/result.txt".into(),
+                    ],
+                    working_directory: Some(WORKSPACE_TARGET.into()),
+                    environment: BTreeMap::new(),
+                    stdin: None,
+                    timeout_seconds: 30,
+                    max_output_bytes: 64 * 1024,
+                },
+                &fence,
+            )
+            .await
+            .unwrap();
+        assert_eq!(artifact_write.exit_code, Some(0));
+        let checkpoint_policy = WorkEnvironmentCheckpointPolicy {
+            include_untracked: true,
+            label: Some("phase-4-live-proof".into()),
+            artifacts: vec![medousa_runtime::WorkEnvironmentArtifactRequest {
+                path: "dist/result.txt".into(),
+                media_type: Some("text/plain".into()),
+            }],
+            ..WorkEnvironmentCheckpointPolicy::default()
+        };
+        let published_checkpoint = adapter
+            .checkpoint(&handle, checkpoint_policy.clone(), &fence)
+            .await
+            .unwrap();
+        assert!(matches!(
+            adapter
+                .publish(&handle, &published_checkpoint, &fence)
+                .await
+                .unwrap(),
+            WorkEnvironmentPublicationResult::Published { .. }
+        ));
+        assert!(matches!(
+            adapter
+                .publish(&handle, &published_checkpoint, &fence)
+                .await
+                .unwrap(),
+            WorkEnvironmentPublicationResult::AlreadyPublished { .. }
+        ));
+
+        let later_work = adapter
+            .exec(
+                &handle,
+                WorkEnvironmentExecRequest {
+                    idempotency_key: "write-conflicting-checkpoint".into(),
+                    program: "/bin/sh".into(),
+                    args: vec![
+                        "-c".into(),
+                        "printf 'checkpoint after publication\n' > README.md && printf 'durable artifact v2' > dist/result.txt"
+                            .into(),
+                    ],
+                    working_directory: Some(WORKSPACE_TARGET.into()),
+                    environment: BTreeMap::new(),
+                    stdin: None,
+                    timeout_seconds: 30,
+                    max_output_bytes: 64 * 1024,
+                },
+                &fence,
+            )
+            .await
+            .unwrap();
+        assert_eq!(later_work.exit_code, Some(0));
+        let preserved_checkpoint = adapter
+            .checkpoint(&handle, checkpoint_policy, &fence)
+            .await
+            .unwrap();
+        assert!(matches!(
+            adapter
+                .publish(&handle, &preserved_checkpoint, &fence)
+                .await
+                .unwrap(),
+            WorkEnvironmentPublicationResult::Conflict { found: Some(_), .. }
+        ));
+
         let unknown_name = format!("medousa-unknown-{}", uuid::Uuid::new_v4().simple());
         adapter
             .docker_success(
@@ -1548,7 +2098,7 @@ mod tests {
                     format!("{FENCE_LABEL}=unknown"),
                     "--entrypoint".into(),
                     "/bin/sh".into(),
-                    pinned_image,
+                    pinned_image.clone(),
                     "-c".into(),
                     "while :; do sleep 3600; done".into(),
                 ],
@@ -1605,6 +2155,46 @@ mod tests {
             restarted.inspect(&handle).await.unwrap().phase,
             WorkEnvironmentPhase::Absent
         );
+
+        let restored_environment_id =
+            WorkEnvironmentId::parse(format!("oci-restored-{}", uuid::Uuid::new_v4().simple()))
+                .unwrap();
+        let mut restored_spec = spec;
+        restored_spec.environment_id = restored_environment_id;
+        restored_spec.checkpoint_ref = Some(preserved_checkpoint);
+        restored_spec.publication = None;
+        let restored_handle = restarted.materialize(restored_spec).await.unwrap();
+        restarted.start(&restored_handle, &fence).await.unwrap();
+        let restored = restarted
+            .exec(
+                &restored_handle,
+                WorkEnvironmentExecRequest {
+                    idempotency_key: "verify-restored-checkpoint".into(),
+                    program: "/bin/sh".into(),
+                    args: vec![
+                        "-c".into(),
+                        "printf 'source:' && cat README.md && printf 'artifact:' && cat dist/result.txt"
+                            .into(),
+                    ],
+                    working_directory: Some(WORKSPACE_TARGET.into()),
+                    environment: BTreeMap::new(),
+                    stdin: None,
+                    timeout_seconds: 30,
+                    max_output_bytes: 64 * 1024,
+                },
+                &fence,
+            )
+            .await
+            .unwrap();
+        assert_eq!(restored.exit_code, Some(0));
+        assert_eq!(
+            restored.stdout,
+            "source:checkpoint after publication\nartifact:durable artifact v2"
+        );
+        restarted
+            .release(&restored_handle, WorkEnvironmentRetention::Delete, &fence)
+            .await
+            .unwrap();
     }
 
     fn run_test_git(cwd: &Path, args: &[&str]) {
