@@ -56,6 +56,21 @@ const OUTBOX_DEDUP_CAPACITY: usize = 10_000;
 /// streams). Bounds growth even if a finalize path misses its cleanup.
 const CANCELLED_MARKER_CAPACITY: usize = 4_096;
 
+fn work_environment_worker_capabilities(
+    node_id: impl Into<String>,
+    oci_available: bool,
+) -> stasis::domain::runtime::placement::WorkerCapabilities {
+    let capabilities = stasis::domain::runtime::placement::WorkerCapabilities::any()
+        .node_id(node_id)
+        .platform(std::env::consts::OS)
+        .architecture(std::env::consts::ARCH);
+    if oci_available {
+        capabilities.with_capability(medousa_runtime::OCI_WORK_ENVIRONMENT_CAPABILITY)
+    } else {
+        capabilities
+    }
+}
+
 struct DaemonSchedulerSideEffects {
     state: AppState,
 }
@@ -753,10 +768,15 @@ async fn main() -> Result<()> {
     {
         let blobs: Arc<dyn stasis::ports::outbound::runtime::blob_transfer::BlobTransferPort> =
             work_environment_blobs.clone();
+        let worker_capabilities = work_environment_worker_capabilities(
+            pairing.device_id().to_string(),
+            work_environment_adapter.is_some(),
+        );
         let transport = Arc::new(
             medousa::mesh::work_environment_federation::MeshWorkEnvironmentFederationTransport::new(
                 Arc::clone(pairing),
                 Arc::clone(&blobs),
+                worker_capabilities.clone(),
             ),
         );
         if let Some(adapter) = work_environment_adapter.as_ref() {
@@ -781,7 +801,7 @@ async fn main() -> Result<()> {
                 pairing: Arc::clone(pairing),
                 runtime: Arc::new(platform.composition().clone()),
                 blobs,
-                accept_remote_jobs: work_environment_adapter.is_some(),
+                worker_capabilities,
             },
         )
     } else {
@@ -795,6 +815,11 @@ async fn main() -> Result<()> {
         }
         None
     };
+    let local_runtime_node_id = share_api_state
+        .pairing
+        .as_ref()
+        .map(|pairing| pairing.device_id().to_string())
+        .unwrap_or_else(|| worker_id.clone());
 
     medousa::work_environment_parallel::register_parallel_work_environment_job_handlers(
         platform.composition(),
@@ -997,12 +1022,10 @@ async fn main() -> Result<()> {
 
     let worker_runtime = state.platform.composition().clone();
     let worker_host_id = worker_id.clone();
-    let worker_capabilities = if state.work_environment.is_some() {
-        stasis::domain::runtime::placement::WorkerCapabilities::any()
-            .with_capability(medousa_runtime::OCI_WORK_ENVIRONMENT_CAPABILITY)
-    } else {
-        stasis::domain::runtime::placement::WorkerCapabilities::any()
-    };
+    let worker_capabilities = work_environment_worker_capabilities(
+        local_runtime_node_id,
+        state.work_environment.is_some(),
+    );
     let worker_shutdown_rx = shutdown_rx.clone();
     tokio::spawn(async move {
         run_worker_host(

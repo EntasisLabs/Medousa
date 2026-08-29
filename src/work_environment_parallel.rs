@@ -54,8 +54,6 @@ const COORDINATOR_DELAY_MILLIS: i64 = 10;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ParallelWorkChild {
     pub child_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target_runtime_id: Option<String>,
     pub work: WorkEnvironmentJobPayload,
 }
 
@@ -115,9 +113,6 @@ impl ParallelWorkPlan {
         workspace_ids.insert(self.reconciliation.spec.workspace_id.as_str().to_string());
         for child in &self.children {
             validate_id("child_id", &child.child_id)?;
-            if let Some(target_runtime_id) = child.target_runtime_id.as_deref() {
-                validate_id("target_runtime_id", target_runtime_id)?;
-            }
             if !child_ids.insert(child.child_id.as_str()) {
                 return Err(invalid(format!(
                     "duplicate parallel child_id: {}",
@@ -284,6 +279,7 @@ struct RemoteWorkEnvironmentProxyPayload {
 
 struct ParallelWorkCoordinatorJobHandler {
     jobs: Arc<dyn JobStore>,
+    dispatcher: Option<Arc<dyn RemoteWorkEnvironmentDispatcher>>,
 }
 
 struct RemoteWorkEnvironmentProxyJobHandler {
@@ -307,6 +303,7 @@ pub async fn register_parallel_work_environment_job_handlers(
             let jobs: Arc<dyn JobStore> = Arc::new(runtime.job_store.clone());
             runtime.register_handler(ParallelWorkCoordinatorJobHandler {
                 jobs: Arc::clone(&jobs),
+                dispatcher: dispatcher.clone(),
             })?;
             runtime.register_handler(RemoteWorkEnvironmentProxyJobHandler {
                 runtime: composition.clone(),
@@ -319,6 +316,7 @@ pub async fn register_parallel_work_environment_job_handlers(
             let jobs: Arc<dyn JobStore> = Arc::new(runtime.job_store.clone());
             runtime.register_handler(ParallelWorkCoordinatorJobHandler {
                 jobs: Arc::clone(&jobs),
+                dispatcher: dispatcher.clone(),
             })?;
             runtime.register_handler(RemoteWorkEnvironmentProxyJobHandler {
                 runtime: composition.clone(),
@@ -355,29 +353,29 @@ pub fn remote_child_envelope_id(child_job_id: &str) -> StasisResult<String> {
 
 fn remote_proxy_job(
     child: &ParallelWorkChild,
+    target_runtime_id: &str,
     job_id: &str,
     queue: &str,
     parent: &Job,
 ) -> StasisResult<NewJob> {
-    let target_runtime_id = child
-        .target_runtime_id
-        .as_deref()
-        .ok_or_else(|| invalid("remote proxy child has no target runtime"))?;
+    validate_id("target_runtime_id", target_runtime_id)?;
     let scheduled_at = parent.started_at.unwrap_or(parent.scheduled_at);
     let deadline = child
         .work
         .deadline_at
         .unwrap_or(scheduled_at + chrono::Duration::hours(24));
+    let mut work = child.work.clone();
+    work.spec.requirements.placement.target_node = Some(target_runtime_id.to_string());
     let payload = RemoteWorkEnvironmentProxyPayload {
         schema_version: 1,
         target_runtime_id: target_runtime_id.to_string(),
         envelope_id: remote_child_envelope_id(job_id)?,
         deadline,
-        work: child.work.clone(),
+        work: work.clone(),
     };
     let payload_ref = serde_json::to_string(&payload)
         .map_err(|error| invalid(format!("encode remote work-environment proxy: {error}")))?;
-    let mut candidate = child.work.clone().into_job(
+    let mut candidate = work.into_job(
         job_id.to_string(),
         queue.to_string(),
         parent.id.clone(),
@@ -385,6 +383,9 @@ fn remote_proxy_job(
     )?;
     candidate.job_type = REMOTE_WORK_ENVIRONMENT_PROXY_JOB_TYPE.to_string();
     candidate.payload_ref = payload_ref;
+    // This durable proxy executes on the origin. Only its signed remote
+    // envelope carries the destination's OCI placement constraints.
+    candidate.placement = PlacementConstraints::unrestricted();
     Ok(candidate)
 }
 
@@ -556,8 +557,17 @@ impl JobHandler for ParallelWorkCoordinatorJobHandler {
 
         for child in &plan.children {
             let child_job_id = parallel_child_job_id(&job.id, &child.child_id)?;
-            let mut candidate = if child.target_runtime_id.is_some() {
-                remote_proxy_job(child, &child_job_id, &job.queue, job)?
+            if self.jobs.get(&child_job_id).await?.is_some() {
+                continue;
+            }
+            let placement = child.work.spec.placement_constraints();
+            let selected_target = if let Some(dispatcher) = self.dispatcher.as_ref() {
+                dispatcher.select_target(&child_job_id, &placement).await?
+            } else {
+                placement.target_node.clone()
+            };
+            let mut candidate = if let Some(target_runtime_id) = selected_target.as_deref() {
+                remote_proxy_job(child, target_runtime_id, &child_job_id, &job.queue, job)?
             } else {
                 child
                     .work
@@ -1066,6 +1076,7 @@ mod tests {
     #[derive(Default)]
     struct RecordingRemoteDispatcher {
         submissions: Mutex<Vec<(String, RemoteJobEnvelope)>>,
+        automatic_target: Mutex<Option<String>>,
     }
 
     #[async_trait]
@@ -1084,6 +1095,17 @@ mod tests {
                 protocol: "test".to_string(),
                 address: "origin-runtime".to_string(),
             }
+        }
+
+        async fn select_target(
+            &self,
+            _selection_key: &str,
+            placement: &PlacementConstraints,
+        ) -> StasisResult<Option<String>> {
+            Ok(placement
+                .target_node
+                .clone()
+                .or_else(|| self.automatic_target.lock().unwrap().clone()))
         }
 
         async fn submit_remote_job(
@@ -1157,7 +1179,6 @@ mod tests {
                 .into_iter()
                 .map(|id| ParallelWorkChild {
                     child_id: id.to_string(),
-                    target_runtime_id: None,
                     work: payload(id, false),
                 })
                 .collect(),
@@ -1344,6 +1365,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn automatic_selection_enters_the_same_replay_stable_proxy_path() {
+        let runtime = InMemoryRuntime::new();
+        let composition = RuntimeComposition::InMemory(runtime.clone());
+        let blobs = Arc::new(InMemoryBlobTransfer::new());
+        let dispatcher = Arc::new(RecordingRemoteDispatcher::default());
+        *dispatcher.automatic_target.lock().unwrap() = Some("worker-runtime".to_string());
+        register_parallel_work_environment_job_handlers(&composition, blobs, Some(dispatcher))
+            .await
+            .unwrap();
+        let plan = plan();
+        runtime
+            .job_store
+            .insert(
+                plan.into_job("automatic-parent", "default", "root", Utc::now())
+                    .unwrap()
+                    .into_job(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            process_once(&runtime).await.as_deref(),
+            Some("automatic-parent")
+        );
+        for child_id in ["alpha", "beta", "gamma"] {
+            let child_job_id = parallel_child_job_id("automatic-parent", child_id).unwrap();
+            let child = runtime.job_store.get(&child_job_id).await.unwrap().unwrap();
+            assert_eq!(child.job_type, REMOTE_WORK_ENVIRONMENT_PROXY_JOB_TYPE);
+            assert!(child.placement.is_unrestricted());
+            let proxy: RemoteWorkEnvironmentProxyPayload =
+                serde_json::from_str(&child.payload_ref).unwrap();
+            assert_eq!(proxy.target_runtime_id, "worker-runtime");
+            assert_eq!(
+                proxy
+                    .work
+                    .spec
+                    .placement_constraints()
+                    .target_node
+                    .as_deref(),
+                Some("worker-runtime")
+            );
+            assert_eq!(
+                proxy.envelope_id,
+                remote_child_envelope_id(&child_job_id).unwrap()
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn targeted_child_dispatches_once_and_completes_from_local_terminal_truth() {
         let runtime = InMemoryRuntime::new();
         let composition = RuntimeComposition::InMemory(runtime.clone());
@@ -1357,7 +1427,12 @@ mod tests {
         .await
         .unwrap();
         let mut plan = plan();
-        plan.children[0].target_runtime_id = Some("worker-runtime".to_string());
+        plan.children[0]
+            .work
+            .spec
+            .requirements
+            .placement
+            .target_node = Some("worker-runtime".to_string());
         runtime
             .job_store
             .insert(

@@ -743,9 +743,23 @@ local children, so fan-in and reconciliation contain no local-versus-remote
 branch. Daemons without a federation adapter fail targeted work explicitly;
 local work remains unchanged.
 
-Capability-based target selection and the fourth-daemon reconstruction proof
-remain. Automatic placement should choose a target and then enter this exact
-explicit-target path rather than inventing a second dispatch mechanism.
+**Fifth landed boundary:** automatic placement now consumes Stasis
+`PlacementConstraints` directly. Every paired daemon exposes signed, live
+`WorkerCapabilities` derived from its actual work-environment adapter and
+worker identity; no second persisted capability catalog exists. The origin
+matches local and reachable peer workers against the same constraints used by
+Stasis lease acquisition, orders candidates deterministically, and chooses by
+a stable child-identity hash. Once chosen, the target is persisted inside the
+existing replay-stable proxy payload and envelope, so retries and coordinator
+reconstruction do not re-place already-created work.
+
+`PlacementConstraints.target_node` is the sole explicit target identity. A
+remote proxy is unrestricted for leasing on its origin because it performs no
+OCI work itself; the signed destination payload and envelope alone carry the
+selected node and OCI requirements. This preserves one placement contract
+without making the origin impersonate the destination worker.
+
+The fourth-daemon reconstruction proof remains.
 
 ### Phase 8 — Attachments, UX, and operations
 

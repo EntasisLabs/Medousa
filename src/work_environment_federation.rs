@@ -114,6 +114,14 @@ pub trait RemoteWorkEnvironmentDispatcher: Send + Sync {
 
     fn terminal_delivery(&self) -> TerminalDeliveryEndpoint;
 
+    /// Return `None` when the local runtime is the selected worker, otherwise
+    /// the remote runtime id that should receive the replay-stable envelope.
+    async fn select_target(
+        &self,
+        selection_key: &str,
+        placement: &PlacementConstraints,
+    ) -> StasisResult<Option<String>>;
+
     async fn submit_remote_job(
         &self,
         target_runtime_id: &str,

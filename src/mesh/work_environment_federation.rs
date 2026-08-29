@@ -17,8 +17,10 @@ use axum::routing::{get, post, put};
 use base64::Engine as _;
 use ed25519_dalek::SigningKey;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest as _, Sha256};
 use stasis::domain::runtime::blob_descriptor::BlobDescriptor;
 use stasis::domain::runtime::federation::FederatedTerminalResult;
+use stasis::domain::runtime::placement::{PlacementConstraints, WorkerCapabilities};
 use stasis::domain::runtime::remote_job_envelope::{EnvelopeSignature, RemoteJobEnvelope};
 use stasis::ports::outbound::runtime::blob_transfer::BlobTransferPort;
 use stasis::prelude::{RuntimeComposition, StasisError};
@@ -52,7 +54,7 @@ pub struct MeshWorkEnvironmentFederationState {
     pub pairing: Arc<PairingService>,
     pub runtime: Arc<RuntimeComposition>,
     pub blobs: Arc<dyn BlobTransferPort>,
-    pub accept_remote_jobs: bool,
+    pub worker_capabilities: WorkerCapabilities,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -67,6 +69,20 @@ pub struct RemoteWorkEnvironmentAdmission {
 pub struct FederatedTerminalAdmission {
     pub result_id: String,
     pub stored: BlobDescriptor,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FederatedCapabilitiesRequest {
+    schema_version: u32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FederatedCapabilitiesResponse {
+    schema_version: u32,
+    runtime_id: String,
+    capabilities: WorkerCapabilities,
 }
 
 pub fn surface() -> DeclaredRouter<MeshWorkEnvironmentFederationState> {
@@ -86,6 +102,14 @@ pub fn surface() -> DeclaredRouter<MeshWorkEnvironmentFederationState> {
                 1024 * 1024,
             ),
             post(accept_terminal_result),
+        )
+        .route(
+            peer_policy(
+                axum::http::Method::POST,
+                "/v1/mesh/federation/work-environment-capabilities",
+                1024,
+            ),
+            post(work_environment_capabilities),
         )
         .methods([
             (
@@ -211,7 +235,11 @@ async fn accept_remote_job(
     State(state): State<MeshWorkEnvironmentFederationState>,
     Json(wrapped): Json<MeshEnvelopedRequest<RemoteJobEnvelope>>,
 ) -> Result<Response, (StatusCode, String)> {
-    if !state.accept_remote_jobs {
+    if !state
+        .worker_capabilities
+        .capabilities
+        .contains(medousa_runtime::OCI_WORK_ENVIRONMENT_CAPABILITY)
+    {
         return Err((
             StatusCode::SERVICE_UNAVAILABLE,
             "this daemon does not advertise OCI work-environment execution".to_string(),
@@ -243,6 +271,31 @@ async fn accept_remote_job(
         RemoteWorkEnvironmentAdmission {
             envelope_id: wrapped.payload.envelope_id,
             job_id,
+        },
+        &receipt.receipt,
+    )
+}
+
+async fn work_environment_capabilities(
+    State(state): State<MeshWorkEnvironmentFederationState>,
+    Json(wrapped): Json<MeshEnvelopedRequest<FederatedCapabilitiesRequest>>,
+) -> Result<Response, (StatusCode, String)> {
+    let (record, receipt) =
+        authenticate_delivery(&state.pairing, &wrapped, MeshCapability::TaskRequest)?;
+    if wrapped.payload.schema_version != 1 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "unsupported work-environment capability schema".to_string(),
+        ));
+    }
+    signed_json_response(
+        &state.pairing,
+        &record,
+        MeshCapability::TaskResult,
+        FederatedCapabilitiesResponse {
+            schema_version: 1,
+            runtime_id: state.pairing.device_id().to_string(),
+            capabilities: state.worker_capabilities,
         },
         &receipt.receipt,
     )
@@ -515,16 +568,45 @@ pub struct MeshSignedFederatedTerminalDelivery {
 pub struct MeshWorkEnvironmentFederationTransport {
     pairing: Arc<PairingService>,
     blobs: Arc<dyn BlobTransferPort>,
+    local_capabilities: WorkerCapabilities,
     client: reqwest::Client,
 }
 
 impl MeshWorkEnvironmentFederationTransport {
-    pub fn new(pairing: Arc<PairingService>, blobs: Arc<dyn BlobTransferPort>) -> Self {
+    pub fn new(
+        pairing: Arc<PairingService>,
+        blobs: Arc<dyn BlobTransferPort>,
+        local_capabilities: WorkerCapabilities,
+    ) -> Self {
         Self {
             pairing,
             blobs,
+            local_capabilities,
             client: reqwest::Client::new(),
         }
+    }
+
+    async fn peer_capabilities(
+        &self,
+        target_runtime_id: &str,
+    ) -> stasis::prelude::Result<WorkerCapabilities> {
+        let response: FederatedCapabilitiesResponse = self
+            .post_signed(
+                target_runtime_id,
+                MeshCapability::TaskRequest,
+                "/v1/mesh/federation/work-environment-capabilities",
+                FederatedCapabilitiesRequest { schema_version: 1 },
+            )
+            .await?;
+        if response.schema_version != 1
+            || response.runtime_id.trim() != target_runtime_id.trim()
+            || response.capabilities.node_id.as_deref() != Some(target_runtime_id.trim())
+        {
+            return Err(StasisError::PortFailure(
+                "peer returned mismatched work-environment capabilities".to_string(),
+            ));
+        }
+        Ok(response.capabilities)
     }
 
     pub async fn submit_remote_job(
@@ -859,6 +941,48 @@ impl RemoteWorkEnvironmentDispatcher for MeshWorkEnvironmentFederationTransport 
         }
     }
 
+    async fn select_target(
+        &self,
+        selection_key: &str,
+        placement: &PlacementConstraints,
+    ) -> stasis::prelude::Result<Option<String>> {
+        let mut candidates = Vec::new();
+        if placement.matches(&self.local_capabilities) {
+            candidates.push((self.pairing.device_id().to_string(), true));
+        }
+        let mut peers =
+            registry::list_peers().map_err(|error| StasisError::PortFailure(error.to_string()))?;
+        peers.sort_by(|left, right| left.device_id.cmp(&right.device_id));
+        for peer in peers {
+            if !peer.mesh_enabled
+                || peer.endpoints.lan_base_url.is_none()
+                || !peer
+                    .mesh_grants
+                    .iter()
+                    .any(|grant| grant == MeshCapability::TaskRequest.as_str())
+                || placement
+                    .target_node
+                    .as_deref()
+                    .is_some_and(|target| target != peer.device_id)
+            {
+                continue;
+            }
+            let Ok(capabilities) = self.peer_capabilities(&peer.device_id).await else {
+                continue;
+            };
+            if placement.matches(&capabilities) {
+                candidates.push((peer.device_id, false));
+            }
+        }
+        candidates.sort_by(|left, right| left.0.cmp(&right.0));
+        if candidates.is_empty() {
+            return Err(StasisError::PortFailure(
+                "no reachable runtime matches work-environment placement".to_string(),
+            ));
+        }
+        Ok(choose_work_environment_target(selection_key, &candidates))
+    }
+
     async fn submit_remote_job(
         &self,
         target_runtime_id: &str,
@@ -878,6 +1002,20 @@ impl RemoteWorkEnvironmentDispatcher for MeshWorkEnvironmentFederationTransport 
         }
         Ok(admission.job_id)
     }
+}
+
+fn choose_work_environment_target(
+    selection_key: &str,
+    candidates: &[(String, bool)],
+) -> Option<String> {
+    let mut digest = Sha256::new();
+    digest.update(b"medousa/work-environment-placement/v1\0");
+    digest.update(selection_key.trim().as_bytes());
+    let bytes = digest.finalize();
+    let index = u64::from_be_bytes(bytes[..8].try_into().expect("sha256 prefix")) as usize
+        % candidates.len();
+    let (runtime_id, local) = &candidates[index];
+    (!local).then(|| runtime_id.clone())
 }
 
 #[async_trait]
@@ -962,6 +1100,29 @@ mod tests {
             key_id: String::new(),
             signature_hex: String::new(),
         }
+    }
+
+    #[test]
+    fn capability_selection_is_stable_and_preserves_local_as_no_proxy() {
+        let candidates = vec![
+            ("origin".to_string(), true),
+            ("worker-a".to_string(), false),
+            ("worker-b".to_string(), false),
+        ];
+        let selected =
+            choose_work_environment_target("parallel-parent:parallel:alpha", &candidates);
+        assert_eq!(
+            selected,
+            choose_work_environment_target("parallel-parent:parallel:alpha", &candidates)
+        );
+        assert!(
+            selected.is_none()
+                || matches!(selected.as_deref(), Some("worker-a") | Some("worker-b"))
+        );
+        assert_eq!(
+            choose_work_environment_target("anything", &[("origin".to_string(), true)]),
+            None
+        );
     }
 
     #[test]
