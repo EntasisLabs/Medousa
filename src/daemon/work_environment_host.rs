@@ -58,10 +58,20 @@ struct LocalEnvironmentRecord {
     spec: WorkEnvironmentSpec,
     container_name: String,
     state: WorkEnvironmentState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    checkpoint_receipt: Option<LocalCheckpointReceipt>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct LocalCheckpointReceipt {
+    policy: WorkEnvironmentCheckpointPolicy,
+    checkpoint: WorkEnvironmentCheckpoint,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct StoredExecution {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fence: Option<WorkEnvironmentFence>,
     request: WorkEnvironmentExecRequest,
     result: Option<WorkEnvironmentExecResult>,
 }
@@ -188,16 +198,11 @@ impl DockerCliWorkEnvironmentPort {
         self.environment_root(environment_id).join("workspace")
     }
 
-    fn execution_path(
-        &self,
-        environment_id: &WorkEnvironmentId,
-        fence: &WorkEnvironmentFence,
-        key: &str,
-    ) -> PathBuf {
+    fn execution_path(&self, environment_id: &WorkEnvironmentId, key: &str) -> PathBuf {
         let digest = Sha256::digest(key.as_bytes());
         self.environment_root(environment_id)
             .join("executions")
-            .join(format!("{}-{digest:x}.json", fence_fingerprint(fence)))
+            .join(format!("{digest:x}.json"))
     }
 
     async fn ensure_root(&self) -> Result<(), WorkEnvironmentError> {
@@ -250,10 +255,9 @@ impl DockerCliWorkEnvironmentPort {
     async fn load_execution(
         &self,
         environment_id: &WorkEnvironmentId,
-        fence: &WorkEnvironmentFence,
         key: &str,
     ) -> Result<Option<StoredExecution>, WorkEnvironmentError> {
-        let path = self.execution_path(environment_id, fence, key);
+        let path = self.execution_path(environment_id, key);
         self.execution
             .run(
                 ExecutionClass::WorkEnvironment,
@@ -276,11 +280,10 @@ impl DockerCliWorkEnvironmentPort {
     async fn save_execution(
         &self,
         environment_id: &WorkEnvironmentId,
-        fence: &WorkEnvironmentFence,
         key: &str,
         execution_record: &StoredExecution,
     ) -> Result<(), WorkEnvironmentError> {
-        let path = self.execution_path(environment_id, fence, key);
+        let path = self.execution_path(environment_id, key);
         let directory = path
             .parent()
             .expect("execution path always has a parent")
@@ -663,8 +666,10 @@ impl DockerCliWorkEnvironmentPort {
     async fn materialize_repository(
         &self,
         spec: &WorkEnvironmentSpec,
+        recovered_checkpoint: Option<&WorkEnvironmentCheckpoint>,
     ) -> Result<PathBuf, WorkEnvironmentError> {
-        let checkpoint_manifest = match spec.checkpoint_ref.as_ref() {
+        let checkpoint = spec.checkpoint_ref.as_ref().or(recovered_checkpoint);
+        let checkpoint_manifest = match checkpoint {
             Some(checkpoint) => Some(self.load_checkpoint_manifest(checkpoint).await?),
             None => None,
         };
@@ -1161,10 +1166,19 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
                 },
                 spec,
                 container_name,
+                checkpoint_receipt: None,
             }
         };
         self.save_record(&record).await?;
-        let workspace = self.materialize_repository(&record.spec).await?;
+        let workspace = self
+            .materialize_repository(
+                &record.spec,
+                record
+                    .checkpoint_receipt
+                    .as_ref()
+                    .map(|receipt| &receipt.checkpoint),
+            )
+            .await?;
         self.create_container(&record.spec, &record.container_name, &workspace, &image)
             .await?;
         record.state.phase = WorkEnvironmentPhase::Ready;
@@ -1248,7 +1262,7 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
             });
         }
         if let Some(stored) = self
-            .load_execution(handle.environment_id(), fence, &request.idempotency_key)
+            .load_execution(handle.environment_id(), &request.idempotency_key)
             .await?
         {
             if stored.request != request {
@@ -1260,9 +1274,9 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
         }
         self.save_execution(
             handle.environment_id(),
-            fence,
             &request.idempotency_key,
             &StoredExecution {
+                fence: Some(fence.clone()),
                 request: request.clone(),
                 result: None,
             },
@@ -1318,9 +1332,9 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
         let idempotency_key = request.idempotency_key.clone();
         self.save_execution(
             handle.environment_id(),
-            fence,
             &idempotency_key,
             &StoredExecution {
+                fence: Some(fence.clone()),
                 request,
                 result: Some(result.clone()),
             },
@@ -1353,6 +1367,18 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
             .ok_or_else(|| WorkEnvironmentError::NotFound(handle.environment_id().to_string()))?;
         Self::ensure_handle(&record, handle)?;
         Self::ensure_fence(&record, fence)?;
+        policy.validate()?;
+        if let Some(key) = policy.idempotency_key.as_deref()
+            && let Some(receipt) = record.checkpoint_receipt.as_ref()
+            && receipt.policy.idempotency_key.as_deref() == Some(key)
+        {
+            if receipt.policy != policy {
+                return Err(WorkEnvironmentError::InvalidSpec(
+                    "checkpoint idempotency key was reused with a different policy".to_string(),
+                ));
+            }
+            return Ok(receipt.checkpoint.clone());
+        }
         let phase = self.inspect_phase(&record.container_name).await?;
         if !matches!(
             phase,
@@ -1374,6 +1400,12 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
                 record.state.phase = phase;
                 record.state.checkpoint_ref = Some(checkpoint.provenance.clone());
                 record.state.updated_at = Utc::now();
+                if policy.idempotency_key.is_some() {
+                    record.checkpoint_receipt = Some(LocalCheckpointReceipt {
+                        policy,
+                        checkpoint: checkpoint.clone(),
+                    });
+                }
                 self.save_record(&record).await?;
                 Ok(checkpoint)
             }
@@ -1555,6 +1587,86 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
             }
         }
         Ok(record.state)
+    }
+
+    async fn cleanup(
+        &self,
+        environment_id: &WorkEnvironmentId,
+        retention: WorkEnvironmentRetention,
+        fence: &WorkEnvironmentFence,
+    ) -> Result<WorkEnvironmentState, WorkEnvironmentError> {
+        let _guard = self.lifecycle.lock().await;
+        let Some(mut record) = self.load_record(environment_id).await? else {
+            return Ok(WorkEnvironmentState {
+                environment_id: environment_id.clone(),
+                phase: WorkEnvironmentPhase::Released,
+                checkpoint_ref: None,
+                message: None,
+                updated_at: Utc::now(),
+            });
+        };
+        Self::ensure_fence(&record, fence)?;
+        match retention {
+            WorkEnvironmentRetention::Delete => {
+                let phase = self.inspect_phase(&record.container_name).await?;
+                if phase != WorkEnvironmentPhase::Absent {
+                    self.docker_success(
+                        vec!["rm".into(), "--force".into(), record.container_name.clone()],
+                        CONTROL_TIMEOUT,
+                        CONTROL_OUTPUT_BYTES,
+                    )
+                    .await?;
+                }
+                let root = self.environment_root(environment_id);
+                self.execution
+                    .run(ExecutionClass::StoreIo, 64 * 1024, move || {
+                        if root.exists() {
+                            std::fs::remove_dir_all(root)?;
+                        }
+                        Ok(())
+                    })
+                    .await
+                    .map_err(map_forge_error)?;
+                Ok(WorkEnvironmentState {
+                    environment_id: environment_id.clone(),
+                    phase: WorkEnvironmentPhase::Released,
+                    checkpoint_ref: record.state.checkpoint_ref,
+                    message: None,
+                    updated_at: Utc::now(),
+                })
+            }
+            WorkEnvironmentRetention::RetainWarmUntil(until)
+            | WorkEnvironmentRetention::PreserveForDebugUntil(until) => {
+                if until <= Utc::now()
+                    || until > Utc::now() + medousa_runtime::MAX_WORK_ENVIRONMENT_RETENTION
+                {
+                    return Err(WorkEnvironmentError::InvalidSpec(
+                        "retention deadline must be in the future and no more than seven days away"
+                            .into(),
+                    ));
+                }
+                if self.inspect_phase(&record.container_name).await?
+                    == WorkEnvironmentPhase::Running
+                {
+                    self.docker_success(
+                        vec![
+                            "stop".into(),
+                            "--time".into(),
+                            "10".into(),
+                            record.container_name.clone(),
+                        ],
+                        Duration::from_secs(20),
+                        CONTROL_OUTPUT_BYTES,
+                    )
+                    .await?;
+                }
+                record.spec.retention = retention;
+                record.state.phase = WorkEnvironmentPhase::Stopped;
+                record.state.updated_at = Utc::now();
+                self.save_record(&record).await?;
+                Ok(record.state)
+            }
+        }
     }
 }
 
@@ -2021,7 +2133,8 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(artifact_write.exit_code, Some(0));
-        let checkpoint_policy = WorkEnvironmentCheckpointPolicy {
+        let checkpoint_policy_v1 = WorkEnvironmentCheckpointPolicy {
+            idempotency_key: Some("phase-4-live-checkpoint-v1".into()),
             include_untracked: true,
             label: Some("phase-4-live-proof".into()),
             artifacts: vec![medousa_runtime::WorkEnvironmentArtifactRequest {
@@ -2031,9 +2144,16 @@ mod tests {
             ..WorkEnvironmentCheckpointPolicy::default()
         };
         let published_checkpoint = adapter
-            .checkpoint(&handle, checkpoint_policy.clone(), &fence)
+            .checkpoint(&handle, checkpoint_policy_v1.clone(), &fence)
             .await
             .unwrap();
+        assert_eq!(
+            adapter
+                .checkpoint(&handle, checkpoint_policy_v1.clone(), &fence)
+                .await
+                .unwrap(),
+            published_checkpoint
+        );
         assert!(matches!(
             adapter
                 .publish(&handle, &published_checkpoint, &fence)
@@ -2071,8 +2191,12 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(later_work.exit_code, Some(0));
+        let checkpoint_policy_v2 = WorkEnvironmentCheckpointPolicy {
+            idempotency_key: Some("phase-4-live-checkpoint-v2".into()),
+            ..checkpoint_policy_v1
+        };
         let preserved_checkpoint = adapter
-            .checkpoint(&handle, checkpoint_policy, &fence)
+            .checkpoint(&handle, checkpoint_policy_v2, &fence)
             .await
             .unwrap();
         assert!(matches!(

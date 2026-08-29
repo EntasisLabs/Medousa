@@ -524,6 +524,15 @@ async fn main() -> Result<()> {
             }
         };
 
+    if let Some(environment) = work_environment.as_ref() {
+        medousa::work_environment_job::register_work_environment_job_handlers(
+            platform.composition(),
+            Arc::clone(environment),
+        )
+        .await
+        .context("register durable work-environment job handlers")?;
+    }
+
     let state = AppState {
         platform: platform.clone(),
         daemon_base_url: medousa::daemon_api::resolve_daemon_public_base_url(bind),
@@ -923,11 +932,18 @@ async fn main() -> Result<()> {
 
     let worker_runtime = state.platform.composition().clone();
     let worker_host_id = worker_id.clone();
+    let worker_capabilities = if state.work_environment.is_some() {
+        stasis::domain::runtime::placement::WorkerCapabilities::any()
+            .with_capability(medousa_runtime::OCI_WORK_ENVIRONMENT_CAPABILITY)
+    } else {
+        stasis::domain::runtime::placement::WorkerCapabilities::any()
+    };
     let worker_shutdown_rx = shutdown_rx.clone();
     tokio::spawn(async move {
         run_worker_host(
             worker_runtime,
             worker_host_id,
+            worker_capabilities,
             worker_config,
             worker_shutdown_rx,
             worker_side_effects,

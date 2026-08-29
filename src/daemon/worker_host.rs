@@ -3,12 +3,13 @@ use std::time::Duration;
 
 use anyhow::Result;
 use futures_util::FutureExt;
+use stasis::domain::runtime::placement::WorkerCapabilities;
 use stasis::prelude::{RuntimeComposition, RuntimeSdk};
 use tokio::sync::watch;
 use tokio::task::JoinSet;
 
 use crate::daemon::heartbeat::{
-    SchedulerTickSideEffects, safe_materialize_recurring_now, safe_process_once,
+    SchedulerTickSideEffects, safe_materialize_recurring_now, safe_process_once_with_capabilities,
     safe_publish_pending_events,
 };
 use crate::product_config::RuntimeWorkerConfig;
@@ -55,6 +56,7 @@ impl SlotKind {
 pub async fn run_worker_host(
     runtime: RuntimeComposition,
     worker_id: String,
+    capabilities: WorkerCapabilities,
     config: RuntimeWorkerConfig,
     mut shutdown_rx: watch::Receiver<bool>,
     side_effects: Arc<dyn SchedulerTickSideEffects>,
@@ -68,6 +70,7 @@ pub async fn run_worker_host(
             &worker_id,
             index,
             kind,
+            capabilities.clone(),
             shutdown_rx.clone(),
             side_effects.clone(),
         );
@@ -97,13 +100,13 @@ pub async fn run_worker_host(
                     Ok((index, kind)) => {
                         if !*shutdown_rx.borrow() {
                             tracing::warn!(slot = index, kind = kind.label(), "runtime worker exited; restarting");
-                            spawn_slot(&mut workers, runtime.clone(), &worker_id, index, kind, shutdown_rx.clone(), side_effects.clone());
+                            spawn_slot(&mut workers, runtime.clone(), &worker_id, index, kind, capabilities.clone(), shutdown_rx.clone(), side_effects.clone());
                         }
                     }
                     Err(err) => {
                         tracing::error!(error = %err, "runtime worker task failed; restoring flexible capacity");
                         let index = config.max_in_flight + workers.len();
-                        spawn_slot(&mut workers, runtime.clone(), &worker_id, index, SlotKind::Flexible, shutdown_rx.clone(), side_effects.clone());
+                        spawn_slot(&mut workers, runtime.clone(), &worker_id, index, SlotKind::Flexible, capabilities.clone(), shutdown_rx.clone(), side_effects.clone());
                     }
                 }
             }
@@ -153,6 +156,7 @@ fn spawn_slot(
     worker_id: &str,
     index: usize,
     kind: SlotKind,
+    capabilities: WorkerCapabilities,
     shutdown_rx: watch::Receiver<bool>,
     side_effects: Arc<dyn SchedulerTickSideEffects>,
 ) {
@@ -162,6 +166,7 @@ fn spawn_slot(
             runtime,
             worker_id,
             kind,
+            capabilities,
             shutdown_rx,
             side_effects,
         ))
@@ -178,13 +183,14 @@ async fn run_slot(
     runtime: RuntimeComposition,
     worker_id: String,
     kind: SlotKind,
+    capabilities: WorkerCapabilities,
     mut shutdown_rx: watch::Receiver<bool>,
     side_effects: Arc<dyn SchedulerTickSideEffects>,
 ) {
     let sdk = RuntimeSdk::new(runtime);
     let mut idle_backoff = IDLE_BACKOFF_MIN;
     loop {
-        let result = run_one(&sdk, &worker_id, kind).await;
+        let result = run_one(&sdk, &worker_id, kind, &capabilities).await;
         let delay = match result {
             Ok(SlotOutcome::Processed(job_id)) => {
                 side_effects.on_processed_job(&job_id).await;
@@ -219,7 +225,12 @@ enum SlotOutcome {
     Processed(String),
 }
 
-async fn run_one(sdk: &RuntimeSdk, worker_id: &str, kind: SlotKind) -> Result<SlotOutcome> {
+async fn run_one(
+    sdk: &RuntimeSdk,
+    worker_id: &str,
+    kind: SlotKind,
+    capabilities: &WorkerCapabilities,
+) -> Result<SlotOutcome> {
     if matches!(kind, SlotKind::Delivery) {
         let published = safe_publish_pending_events(sdk, DELIVERY_BATCH_SIZE).await?;
         if published > 0 {
@@ -227,7 +238,9 @@ async fn run_one(sdk: &RuntimeSdk, worker_id: &str, kind: SlotKind) -> Result<Sl
         }
     }
     for queue in kind.queues() {
-        if let Some(job_id) = safe_process_once(sdk, queue, worker_id).await? {
+        if let Some(job_id) =
+            safe_process_once_with_capabilities(sdk, queue, worker_id, capabilities).await?
+        {
             return Ok(SlotOutcome::Processed(job_id));
         }
     }

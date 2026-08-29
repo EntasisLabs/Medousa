@@ -685,6 +685,10 @@ pub enum WorkEnvironmentPublicationResult {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WorkEnvironmentCheckpointPolicy {
+    /// Stable operation identity used to replay a checkpoint boundary after a
+    /// worker crash without creating a second manifest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
     #[serde(default)]
     pub include_untracked: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -702,6 +706,7 @@ pub struct WorkEnvironmentCheckpointPolicy {
 impl Default for WorkEnvironmentCheckpointPolicy {
     fn default() -> Self {
         Self {
+            idempotency_key: None,
             include_untracked: false,
             label: None,
             artifacts: Vec::new(),
@@ -714,6 +719,9 @@ impl Default for WorkEnvironmentCheckpointPolicy {
 
 impl WorkEnvironmentCheckpointPolicy {
     pub fn validate(&self) -> Result<(), WorkEnvironmentError> {
+        if let Some(key) = self.idempotency_key.as_deref() {
+            validate_identifier("checkpoint idempotency_key", key)?;
+        }
         if let Some(label) = self.label.as_deref() {
             validate_reference("checkpoint label", label)?;
         }
@@ -846,6 +854,15 @@ pub trait WorkEnvironmentPort: Send + Sync {
         retention: WorkEnvironmentRetention,
         fence: &WorkEnvironmentFence,
     ) -> Result<WorkEnvironmentState, WorkEnvironmentError>;
+    /// Idempotent terminal cleanup by portable logical identity. Unlike a
+    /// handle, this operation can be retried by a separate durable cleanup job
+    /// after the process-local adapter capability has been lost.
+    async fn cleanup(
+        &self,
+        environment_id: &WorkEnvironmentId,
+        retention: WorkEnvironmentRetention,
+        fence: &WorkEnvironmentFence,
+    ) -> Result<WorkEnvironmentState, WorkEnvironmentError>;
 }
 
 /// Per-execution environment binding. The daemon chooses it during admission;
@@ -874,6 +891,13 @@ struct InMemoryEntry {
     state: WorkEnvironmentState,
     executions: HashMap<String, (WorkEnvironmentExecRequest, WorkEnvironmentExecResult)>,
     checkpoint_count: u64,
+    checkpoint_receipt: Option<InMemoryCheckpointReceipt>,
+}
+
+#[derive(Clone)]
+struct InMemoryCheckpointReceipt {
+    policy: WorkEnvironmentCheckpointPolicy,
+    checkpoint: WorkEnvironmentCheckpoint,
 }
 
 /// Deterministic lifecycle adapter used for contract and composition tests.
@@ -931,8 +955,30 @@ impl WorkEnvironmentPort for InMemoryWorkEnvironmentPort {
             .entries
             .lock()
             .map_err(|_| WorkEnvironmentError::Adapter("in-memory lock poisoned".to_string()))?;
-        if let Some(existing) = entries.get(&spec.environment_id) {
+        if let Some(existing) = entries.get_mut(&spec.environment_id) {
             if existing.spec == spec {
+                return Ok(existing.handle.clone());
+            }
+            let mut prior = existing.spec.clone();
+            prior.fence = spec.fence.clone();
+            if prior == spec
+                && (
+                    spec.fence.stasis_attempt.0,
+                    spec.fence.forge_environment_generation.unwrap_or(0),
+                    spec.fence.forge_execution_generation.unwrap_or(0),
+                ) > (
+                    existing.spec.fence.stasis_attempt.0,
+                    existing
+                        .spec
+                        .fence
+                        .forge_environment_generation
+                        .unwrap_or(0),
+                    existing.spec.fence.forge_execution_generation.unwrap_or(0),
+                )
+            {
+                existing.spec = spec;
+                existing.state.phase = WorkEnvironmentPhase::Ready;
+                existing.state.updated_at = now;
                 return Ok(existing.handle.clone());
             }
             return Err(WorkEnvironmentError::AdmissionDenied(format!(
@@ -962,6 +1008,7 @@ impl WorkEnvironmentPort for InMemoryWorkEnvironmentPort {
                 state,
                 executions: HashMap::new(),
                 checkpoint_count: 0,
+                checkpoint_receipt: None,
             },
         );
         Ok(handle)
@@ -1114,6 +1161,17 @@ impl WorkEnvironmentPort for InMemoryWorkEnvironmentPort {
         self.with_entry(handle, |entry| {
             Self::ensure_fence(entry, fence)?;
             policy.validate()?;
+            if let Some(key) = policy.idempotency_key.as_deref()
+                && let Some(receipt) = entry.checkpoint_receipt.as_ref()
+                && receipt.policy.idempotency_key.as_deref() == Some(key)
+            {
+                if receipt.policy != policy {
+                    return Err(WorkEnvironmentError::InvalidSpec(
+                        "checkpoint idempotency key was reused with a different policy".to_string(),
+                    ));
+                }
+                return Ok(receipt.checkpoint.clone());
+            }
             if !matches!(
                 entry.state.phase,
                 WorkEnvironmentPhase::Ready
@@ -1134,6 +1192,12 @@ impl WorkEnvironmentPort for InMemoryWorkEnvironmentPort {
             let checkpoint = WorkEnvironmentCheckpoint::from_manifest(manifest);
             entry.state.checkpoint_ref = Some(checkpoint.provenance.clone());
             entry.state.updated_at = Utc::now();
+            if policy.idempotency_key.is_some() {
+                entry.checkpoint_receipt = Some(InMemoryCheckpointReceipt {
+                    policy,
+                    checkpoint: checkpoint.clone(),
+                });
+            }
             Ok(checkpoint)
         })
     }
@@ -1232,6 +1296,45 @@ impl WorkEnvironmentPort for InMemoryWorkEnvironmentPort {
             Ok(entry.state.clone())
         })
     }
+
+    async fn cleanup(
+        &self,
+        environment_id: &WorkEnvironmentId,
+        retention: WorkEnvironmentRetention,
+        fence: &WorkEnvironmentFence,
+    ) -> Result<WorkEnvironmentState, WorkEnvironmentError> {
+        validate_retention(&retention, Utc::now())?;
+        let mut entries = self
+            .entries
+            .lock()
+            .map_err(|_| WorkEnvironmentError::Adapter("in-memory lock poisoned".to_string()))?;
+        let Some(entry) = entries.get(environment_id) else {
+            return Ok(WorkEnvironmentState {
+                environment_id: environment_id.clone(),
+                phase: WorkEnvironmentPhase::Released,
+                checkpoint_ref: None,
+                message: None,
+                updated_at: Utc::now(),
+            });
+        };
+        Self::ensure_fence(entry, fence)?;
+        if retention == WorkEnvironmentRetention::Delete {
+            entries.remove(environment_id);
+            return Ok(WorkEnvironmentState {
+                environment_id: environment_id.clone(),
+                phase: WorkEnvironmentPhase::Released,
+                checkpoint_ref: None,
+                message: None,
+                updated_at: Utc::now(),
+            });
+        }
+        let entry = entries
+            .get_mut(environment_id)
+            .expect("validated environment remains present");
+        entry.state.phase = WorkEnvironmentPhase::Stopped;
+        entry.state.updated_at = Utc::now();
+        Ok(entry.state.clone())
+    }
 }
 
 #[cfg(test)]
@@ -1326,10 +1429,22 @@ mod tests {
         let first = adapter.exec(&handle, exec_request(), &fence).await.unwrap();
         let replay = adapter.exec(&handle, exec_request(), &fence).await.unwrap();
         assert_eq!(first, replay);
+        let checkpoint_policy = WorkEnvironmentCheckpointPolicy {
+            idempotency_key: Some("checkpoint-run-tests".to_string()),
+            ..WorkEnvironmentCheckpointPolicy::default()
+        };
         let checkpoint = adapter
-            .checkpoint(&handle, WorkEnvironmentCheckpointPolicy::default(), &fence)
+            .checkpoint(&handle, checkpoint_policy.clone(), &fence)
             .await
             .unwrap();
+        assert_eq!(
+            adapter
+                .checkpoint(&handle, checkpoint_policy, &fence)
+                .await
+                .unwrap(),
+            checkpoint,
+            "checkpoint replay must preserve one immutable identity"
+        );
         assert_eq!(
             adapter.inspect(&handle).await.unwrap().checkpoint_ref,
             Some(checkpoint.provenance.clone())

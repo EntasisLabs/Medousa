@@ -1,6 +1,6 @@
 # Daemon-owned OCI work environments
 
-> **Status:** Active implementation — Phase 4 complete, ready for Phase 5
+> **Status:** Active implementation — Phase 5 complete, ready for Phase 6
 >
 > **Date:** 2026-08-28
 >
@@ -572,6 +572,43 @@ is Phase 6, and Stasis-owned lifecycle sequencing is Phase 5.
 **Exit:** killing either daemon at every lifecycle boundary produces one
 recoverable job and at most one published result.
 
+**Landed boundary:** the daemon now registers one Stasis parent handler for the
+portable work-environment workflow and one independently retryable cleanup
+handler when an OCI adapter is present. The existing worker host leases through
+Stasis placement capabilities; a daemon advertises `work_environment.oci` only
+when its local adapter was successfully detected, so incapable daemons never
+accept the job. Embedded and full builds share the workflow business logic;
+only the full host currently supplies the Docker adapter and registers the
+handlers.
+
+The parent advances exactly one durable phase at a time through materialize,
+start, execute, checkpoint, publish, and cleanup enqueue. Its payload and
+progress preserve the immutable environment spec, attempt-derived complete
+fence, logical environment state, execution result, checkpoint, publication
+outcome, cleanup identity, timestamps, and provenance. No Docker container id
+or adapter handle enters Stasis. Long adapter calls heartbeat their Stasis
+lease and observe cancellation and job deadlines. A twelve-attempt budget is
+large enough to lose a lease at every phase without changing the logical job
+identity.
+
+Execution and checkpoint receipts use stable parent-job operation identities,
+so a newer Stasis fence can reconstruct the container and replay a completed
+boundary without rerunning the command or creating another checkpoint.
+Publication replay returns the already-published immutable winner instead of
+moving the pointer again. A replacement container idempotently reconciles the
+completed start boundary before execution resumes. Success, cancellation,
+deadline failure, and dead-letter lifecycle hooks all enqueue the same
+deterministic cleanup child; cleanup retries cannot change the parent's terminal
+state or result provenance.
+
+Focused contracts prove placement refusal, phase-by-phase progress, expired
+lease takeover with a newer fence, cancellation, deadline expiry, independent
+cleanup, and publication replay after deliberately losing post-publication
+progress. The real Docker workflow additionally rewinds execution and
+publication across two lease takeovers. Its run-once shell command proves the
+execution receipt was replayed rather than invoked twice, the publication keeps
+one result, and the cleanup child removes the disposable environment.
+
 ### Phase 6 — Remote placement, handoff, and reconstruction
 
 **Goal:** run the same environment-backed job on another paired daemon.
@@ -716,7 +753,9 @@ Progress begins here:
 - [x] Phase 1 — lock the runtime-neutral environment contract.
 - [x] Phase 2 — land and prove one local OCI lifecycle adapter.
 - [x] Phase 3 — route the existing tool catalog through bound environments.
-- [ ] Phases 4–9 — implementation and qualification.
+- [x] Phase 4 — persist portable checkpoints and publish with atomic CAS.
+- [x] Phase 5 — coordinate the resumable environment workflow through Stasis.
+- [ ] Phases 6–9 — implementation and qualification.
 
 ## Definition of done
 

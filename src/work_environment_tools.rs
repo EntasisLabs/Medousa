@@ -653,6 +653,21 @@ mod tests {
         ) -> Result<WorkEnvironmentState, WorkEnvironmentError> {
             self.inspect(handle).await
         }
+
+        async fn cleanup(
+            &self,
+            environment_id: &WorkEnvironmentId,
+            _retention: WorkEnvironmentRetention,
+            _fence: &WorkEnvironmentFence,
+        ) -> Result<WorkEnvironmentState, WorkEnvironmentError> {
+            Ok(WorkEnvironmentState {
+                environment_id: environment_id.clone(),
+                phase: WorkEnvironmentPhase::Released,
+                checkpoint_ref: None,
+                message: None,
+                updated_at: Utc::now(),
+            })
+        }
     }
 
     fn result(stdout: &str, exit_code: i32) -> WorkEnvironmentExecResult {
