@@ -34,7 +34,6 @@
   let editor = $state<{
     getValue: () => string;
     flushChanges: () => void;
-    revealLine: (line: number) => void;
     getView: () => EditorView | undefined;
   } | null>(null);
   let saving = $state(false);
@@ -88,12 +87,6 @@
       mobileCodeWorkspaceState.fileSwitcherOpen = false;
       return true;
     });
-  });
-
-  $effect(() => {
-    const line = tab?.line;
-    if (!editor || !line || line < 1) return;
-    editor.revealLine(line);
   });
 
   function view(): EditorView | undefined {
@@ -304,7 +297,7 @@
     </p>
   {/if}
 
-  <div class="relative min-h-0 flex-1 overflow-hidden">
+  <div class="mobile-code-editor-canvas relative min-h-0 flex-1 overflow-hidden">
     {#if tab}
       {#key `${tab.tabId}:${tab.syncKey}`}
         <CodeMirrorHost
@@ -316,6 +309,7 @@
           contentSyncKey={tab.syncKey}
           wordWrap={true}
           showFoldGutter={false}
+          initialLine={tab.line}
           onFindRequested={openFindBar}
           onchange={(value) => void onDraftChanged(value)}
           onCursorChanged={(cursor) => {
@@ -365,3 +359,11 @@
     </div>
   </div>
 {/if}
+
+<style>
+  .mobile-code-editor-canvas {
+    /* iOS zooms focused contenteditable text below 16px. CodeMirror measures
+       before that zoom, which can separate wrapped lines from their gutters. */
+    --code-editor-min-font-size: 16px;
+  }
+</style>

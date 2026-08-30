@@ -23,6 +23,8 @@
 
   interface Props {
     disabled?: boolean;
+    /** Use touch-sized menu geometry in the mobile composer. */
+    mobile?: boolean;
     /** Optional workshop entry for mobile. */
     showWorkshop?: boolean;
     /** Keep drafts in the compact add menu on mobile layouts. */
@@ -36,6 +38,7 @@
 
   let {
     disabled = false,
+    mobile = false,
     showWorkshop = false,
     showStashes = true,
     onProfile,
@@ -225,11 +228,14 @@
     <div
       bind:this={menuEl}
       class="composer-anchored-menu composer-plus-menu-panel"
+      class:composer-plus-menu-panel-mobile={mobile}
       role="menu"
       aria-label="Composer actions"
     >
       <button type="button" class="composer-plus-menu-item" role="menuitem" onclick={attach}>
-        <Paperclip size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
+        <span class="composer-plus-menu-icon" aria-hidden="true">
+          <Paperclip size={15} strokeWidth={1.75} />
+        </span>
         <span>Attach</span>
       </button>
       {#if showStashes}
@@ -240,11 +246,13 @@
           disabled={!canStash || stashSaving}
           onclick={() => void stashDraft()}
         >
-          {#if stashSaving}
-            <LoaderCircle size={15} class="shrink-0 animate-spin opacity-70" />
-          {:else}
-            <BookmarkPlus size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
-          {/if}
+          <span class="composer-plus-menu-icon" aria-hidden="true">
+            {#if stashSaving}
+              <LoaderCircle size={15} class="animate-spin" />
+            {:else}
+              <BookmarkPlus size={15} strokeWidth={1.75} />
+            {/if}
+          </span>
           <span>Stash draft</span>
         </button>
       {/if}
@@ -255,16 +263,22 @@
           role="menuitem"
           onclick={pickWorkshop}
         >
-          <span class="composer-plus-menu-dot" aria-hidden="true"></span>
+          <span class="composer-plus-menu-icon" aria-hidden="true">
+            <span class="composer-plus-menu-dot"></span>
+          </span>
           <span>Workshop</span>
         </button>
       {/if}
       <button type="button" class="composer-plus-menu-item" role="menuitem" onclick={pickProfile}>
-        <UserRound size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
+        <span class="composer-plus-menu-icon" aria-hidden="true">
+          <UserRound size={15} strokeWidth={1.75} />
+        </span>
         <span>Profile</span>
       </button>
       <button type="button" class="composer-plus-menu-item" role="menuitem" onclick={pickAgent}>
-        <Bot size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
+        <span class="composer-plus-menu-icon" aria-hidden="true">
+          <Bot size={15} strokeWidth={1.75} />
+        </span>
         <span>Agent</span>
       </button>
 
@@ -285,7 +299,9 @@
               role="menuitem"
               onclick={() => applyStash(stash)}
             >
-              <ArchiveRestore size={14} strokeWidth={1.75} class="shrink-0 opacity-65" />
+              <span class="composer-stash-icon" aria-hidden="true">
+                <ArchiveRestore size={14} strokeWidth={1.75} />
+              </span>
               <span class="composer-stash-copy">
                 <span class="composer-stash-label">{stash.label || "Untitled draft"}</span>
                 <span class="composer-stash-meta">

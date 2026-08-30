@@ -292,7 +292,9 @@
                     disabled={editBusyId !== null}
                     onclick={() => void toggleSurface(item.surfaceId!)}
                   >
-                    <Icon size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
+                    <span class="mobile-dest-menu-icon" aria-hidden="true">
+                      <Icon size={19} strokeWidth={1.75} />
+                    </span>
                     <span class="mobile-turn-sheet-row-title min-w-0 flex-1 text-left">
                       {item.label}
                     </span>
@@ -332,7 +334,9 @@
                     disabled={editBusyId !== null}
                     onclick={() => void toggleSurface(view.id)}
                   >
-                    <Sparkles size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
+                    <span class="mobile-dest-menu-icon" aria-hidden="true">
+                      <Sparkles size={19} strokeWidth={1.75} />
+                    </span>
                     <span class="mobile-turn-sheet-row-title min-w-0 flex-1 text-left">
                       {view.label}
                     </span>
@@ -373,7 +377,9 @@
                     aria-current={isActive(item) ? "page" : undefined}
                     onclick={() => pick(item)}
                   >
-                    <Icon size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
+                    <span class="mobile-dest-menu-icon" aria-hidden="true">
+                      <Icon size={19} strokeWidth={1.75} />
+                    </span>
                     <span class="mobile-turn-sheet-row-copy text-left">
                       <span class="mobile-turn-sheet-row-title">{item.label}</span>
                       {#if item.hint}
@@ -402,7 +408,9 @@
                     aria-current={isCustomViewActive(view.id) ? "page" : undefined}
                     onclick={() => pickCustom(view.id)}
                   >
-                    <Sparkles size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
+                    <span class="mobile-dest-menu-icon" aria-hidden="true">
+                      <Sparkles size={19} strokeWidth={1.75} />
+                    </span>
                     <span class="mobile-turn-sheet-row-copy text-left">
                       <span class="mobile-turn-sheet-row-title">{view.label}</span>
                     </span>
@@ -429,7 +437,9 @@
                     aria-current={isActive(item) ? "page" : undefined}
                     onclick={() => pick(item)}
                   >
-                    <Icon size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
+                    <span class="mobile-dest-menu-icon" aria-hidden="true">
+                      <Icon size={19} strokeWidth={1.75} />
+                    </span>
                     <span class="mobile-turn-sheet-row-copy text-left">
                       <span class="mobile-turn-sheet-row-title">{item.label}</span>
                       {#if item.hint}
@@ -453,7 +463,9 @@
                 aria-current={isActive(settingsItem) ? "page" : undefined}
                 onclick={() => pick(settingsItem)}
               >
-                <Settings size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
+                <span class="mobile-dest-menu-icon" aria-hidden="true">
+                  <Settings size={19} strokeWidth={1.75} />
+                </span>
                 <span class="mobile-turn-sheet-row-copy text-left">
                   <span class="mobile-turn-sheet-row-title">
                     {settingsItem.label}

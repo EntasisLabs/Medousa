@@ -498,8 +498,8 @@
             align="right"
             label="Sessions"
             title="Sessions"
-            panelWidth={12.5 * 16}
-            panelClass="w-[12.5rem] rounded-xl border border-surface-500/40 bg-surface-900/95 p-1 shadow-xl backdrop-blur"
+            panelWidth={17 * 16}
+            panelClass="mobile-sessions-menu w-[17rem] max-w-[calc(100vw-1rem)] rounded-2xl border border-surface-500/40 bg-surface-900/95 p-1.5 shadow-xl backdrop-blur"
             onOpenChange={(open) => {
               if (open) haptic("light");
             }}
@@ -521,20 +521,24 @@
             <button
               type="button"
               role="menuitem"
-              class="vault-menu-item rounded-lg"
+              class="mobile-sessions-menu-item"
               onclick={() => void createNewChat()}
             >
-              <Plus size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
-              New chat
+              <span class="mobile-sessions-menu-icon" aria-hidden="true">
+                <Plus size={18} strokeWidth={1.75} />
+              </span>
+              <span>New chat</span>
             </button>
             <button
               type="button"
               role="menuitem"
-              class="vault-menu-item rounded-lg"
+              class="mobile-sessions-menu-item"
               onclick={openPreviousSessions}
             >
-              <History size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
-              Previous sessions
+              <span class="mobile-sessions-menu-icon" aria-hidden="true">
+                <History size={18} strokeWidth={1.75} />
+              </span>
+              <span>Previous sessions</span>
             </button>
           </OverflowMenu>
         {:else if action === "workshop"}

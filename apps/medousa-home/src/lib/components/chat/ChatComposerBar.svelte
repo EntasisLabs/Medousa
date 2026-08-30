@@ -424,6 +424,7 @@
       <div class="mobile-composer-dock-toolbar">
         <div bind:this={plusAnchorEl} class="composer-plus-anchor relative shrink-0">
           <ComposerPlusMenu
+            {mobile}
             disabled={blocked}
             showWorkshop={true}
             showStashes={mobile}
@@ -560,6 +561,7 @@
     <div class="composer-bar-footer">
       <div bind:this={plusAnchorEl} class="composer-plus-anchor relative shrink-0">
         <ComposerPlusMenu
+          {mobile}
           disabled={blocked}
           showStashes={mobile}
           mode={agentRuntime}
