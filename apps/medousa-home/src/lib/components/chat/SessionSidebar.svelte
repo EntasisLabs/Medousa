@@ -237,7 +237,7 @@
         >
           <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
           <div class="mobile-sheet-header-row">
-            <h2 class="text-sm font-semibold text-surface-50">Sessions</h2>
+            <h2 class="text-base font-semibold text-surface-50">Sessions</h2>
             <button
               type="button"
               class="btn btn-sm variant-ghost-surface"

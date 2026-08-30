@@ -212,8 +212,22 @@
         return bTime.localeCompare(aTime) || a.label.localeCompare(b.label);
       });
   });
-  const activeProjectGroups = $derived(projectGroups.filter((group) => !group.archived));
-  const archivedProjectGroups = $derived(projectGroups.filter((group) => group.archived));
+  const projectSearchQuery = $derived(
+    onOpenProject ? fileQuery.trim().toLocaleLowerCase() : "",
+  );
+
+  function projectMatchesSearch(group: ProjectGroup): boolean {
+    if (!projectSearchQuery) return true;
+    return [group.label, group.path ?? "", ...group.threads.map((thread) => thread.title)]
+      .some((value) => value.toLocaleLowerCase().includes(projectSearchQuery));
+  }
+
+  const activeProjectGroups = $derived(
+    projectGroups.filter((group) => !group.archived && projectMatchesSearch(group)),
+  );
+  const archivedProjectGroups = $derived(
+    projectGroups.filter((group) => group.archived && projectMatchesSearch(group)),
+  );
   const selectedItem = $derived(
     undertakings.selectedId
       ? undertakings.items.find((item) => item.id === undertakings.selectedId) ??
@@ -562,7 +576,7 @@
   });
 
   $effect(() => {
-    if (showTreeChrome) return;
+    if (showTreeChrome || onOpenProject) return;
     if (!searchExpanded && !fileQuery) return;
     searchExpanded = false;
     fileQuery = "";
@@ -570,18 +584,37 @@
 
   async function openSearch() {
     closeMenus();
-    await ensureRailPopoverOpen();
+    if (!onOpenProject) await ensureRailPopoverOpen();
     searchExpanded = true;
     await tick();
     searchInputEl?.focus();
     searchInputEl?.select();
   }
 
+  function openMobileProjectCreation() {
+    closeMenus();
+    closeSearch();
+    creationRepoPath = null;
+    creating = true;
+  }
+
+  async function refreshMobileProjects() {
+    await Promise.all([undertakings.refreshList(), loadRepositoryCatalog()]);
+  }
+
   $effect(() => {
     if (!onOpenProject) return;
     const onSearch = () => void openSearch();
+    const onNew = () => openMobileProjectCreation();
+    const onRefresh = () => void refreshMobileProjects();
     window.addEventListener("medousa-mobile-code-search", onSearch);
-    return () => window.removeEventListener("medousa-mobile-code-search", onSearch);
+    window.addEventListener("medousa-mobile-code-new", onNew);
+    window.addEventListener("medousa-mobile-code-refresh", onRefresh);
+    return () => {
+      window.removeEventListener("medousa-mobile-code-search", onSearch);
+      window.removeEventListener("medousa-mobile-code-new", onNew);
+      window.removeEventListener("medousa-mobile-code-refresh", onRefresh);
+    };
   });
 
   function closeSearch() {
@@ -598,7 +631,7 @@
       closeSearch();
       return;
     }
-    if (event.key === "Enter") {
+    if (event.key === "Enter" && !onOpenProject) {
       event.preventDefault();
       treeRef?.searchInFiles();
     }
@@ -606,30 +639,45 @@
 
 </script>
 
-<aside class="flex h-full min-h-0 w-full flex-col" aria-label="Code">
-  <header class="lme-side-rail-dock lme-code-dock" use:portLmeDock>
-    {#if searchExpanded && showTreeChrome}
-      <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
-        <Search size={14} strokeWidth={1.75} class="shrink-0 text-content-quiet" aria-hidden="true" />
-        <input
-          bind:this={searchInputEl}
-          class="lme-code-dock-search min-w-0 flex-1 border-0 bg-transparent placeholder:text-content-quiet focus:outline-none focus:ring-0"
-          type="search"
-          placeholder="Find a file…"
-          bind:value={fileQuery}
-          onkeydown={handleSearchKeydown}
-        />
-        <button
-          type="button"
-          class="vault-dock-icon-btn"
-          aria-label="Close search"
-          title="Close search"
-          onclick={closeSearch}
-        >
-          <X size={14} strokeWidth={1.75} />
-        </button>
-      </div>
-    {:else}
+{#snippet searchDock(placeholder: string)}
+  <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
+    <Search size={14} strokeWidth={1.75} class="shrink-0 text-content-quiet" aria-hidden="true" />
+    <input
+      bind:this={searchInputEl}
+      class="lme-code-dock-search min-w-0 flex-1 border-0 bg-transparent placeholder:text-content-quiet focus:outline-none focus:ring-0"
+      type="search"
+      {placeholder}
+      bind:value={fileQuery}
+      onkeydown={handleSearchKeydown}
+    />
+    <button
+      type="button"
+      class="vault-dock-icon-btn"
+      aria-label="Close search"
+      title="Close search"
+      onclick={closeSearch}
+    >
+      <X size={14} strokeWidth={1.75} />
+    </button>
+  </div>
+{/snippet}
+
+<aside
+  class="flex h-full min-h-0 w-full flex-col"
+  class:code-explorer-mobile={Boolean(onOpenProject)}
+  aria-label="Code"
+>
+  {#if onOpenProject}
+    {#if searchExpanded}
+      <header class="lme-side-rail-dock lme-code-dock">
+        {@render searchDock("Search projects…")}
+      </header>
+    {/if}
+  {:else}
+    <header class="lme-side-rail-dock lme-code-dock" use:portLmeDock>
+      {#if searchExpanded && showTreeChrome}
+        {@render searchDock("Find a file…")}
+      {:else}
       <div
         class="lme-dock-chrome-secondary lme-dock-chrome-secondary--crumb flex min-w-0 items-center gap-0.5"
       >
@@ -780,8 +828,9 @@
           <Search size={15} strokeWidth={1.75} />
         </button>
       {/if}
-    {/if}
-  </header>
+      {/if}
+    </header>
+  {/if}
 
   {#if creating}
     <CodeProjectCreationFlow
@@ -1025,6 +1074,9 @@
         {#each activeProjectGroups as group (group.id)}
           {@render projectGroup(group)}
         {/each}
+        {#if projectSearchQuery && activeProjectGroups.length === 0 && archivedProjectGroups.length === 0}
+          <p class="px-3 py-8 text-center text-xs text-content-quiet">No projects found.</p>
+        {/if}
         {#if archivedProjectGroups.length}
           <button
             type="button"
@@ -1372,6 +1424,105 @@
     background: rgb(var(--theme-pane-muted) / 0.72);
     color: rgb(var(--theme-text-tertiary));
     font-size: 0.5625rem;
+  }
+
+  /* The shared explorer is a dense desktop rail by default. Mobile needs
+     native reading sizes and full touch rows without changing desktop Code. */
+  .code-explorer-mobile :global(.lme-code-dock .lme-code-dock-search) {
+    font-size: 1rem;
+  }
+
+  .code-explorer-mobile .code-project-section-label {
+    padding: 0.5rem 1rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  .code-explorer-mobile .code-project-group + .code-project-group {
+    margin-top: 0.5rem;
+  }
+
+  .code-explorer-mobile .code-project-heading {
+    padding: 0 0.75rem 0 0.5rem;
+  }
+
+  .code-explorer-mobile .code-project-toggle {
+    min-height: 3rem;
+    gap: 0.5rem;
+    padding: 0.625rem 0.25rem;
+  }
+
+  .code-explorer-mobile .code-project-toggle :global(.code-project-chevron) {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+
+  .code-explorer-mobile .code-project-toggle :global(.code-project-folder) {
+    width: 1.125rem;
+    height: 1.125rem;
+  }
+
+  .code-explorer-mobile .code-project-name {
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  .code-explorer-mobile .code-project-storage {
+    max-width: 7.5rem;
+    font-size: 0.75rem;
+    line-height: 1.2;
+  }
+
+  .code-explorer-mobile .code-project-threads {
+    padding: 0 0.75rem 0.5rem 1.75rem;
+  }
+
+  .code-explorer-mobile .code-thread-open {
+    min-height: 2.75rem;
+    gap: 0.5rem;
+    padding: 0.625rem 0.25rem 0.625rem 0.625rem;
+  }
+
+  .code-explorer-mobile .code-thread-open :global(.is-active),
+  .code-explorer-mobile .code-thread-open :global(.is-finished) {
+    width: 0.75rem;
+    height: 0.75rem;
+  }
+
+  .code-explorer-mobile .code-thread-copy {
+    gap: 0.625rem;
+  }
+
+  .code-explorer-mobile .code-thread-title {
+    font-size: 0.9375rem;
+    line-height: 1.25;
+  }
+
+  .code-explorer-mobile .code-thread-status {
+    max-width: 6.5rem;
+    font-size: 0.75rem;
+    line-height: 1.2;
+  }
+
+  .code-explorer-mobile .code-project-show-more {
+    min-height: 2.75rem;
+    padding: 0.625rem 0.5rem 0.625rem 1.125rem;
+    font-size: 0.875rem;
+  }
+
+  .code-explorer-mobile .code-archived-heading {
+    min-height: 3rem;
+    margin-top: 1rem;
+    padding: 0.75rem 0.5rem 0.375rem;
+    font-size: 0.875rem;
+  }
+
+  .code-explorer-mobile .code-archived-count {
+    min-width: 1.25rem;
+    height: 1.25rem;
+    font-size: 0.6875rem;
   }
 
 </style>

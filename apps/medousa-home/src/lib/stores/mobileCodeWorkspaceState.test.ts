@@ -14,6 +14,15 @@ describe("mobileCodeWorkspaceState", () => {
     expect(mobileCodeWorkspaceState.chromeMode).toBe("files");
   });
 
+  it("leaves the project list as soon as a project starts opening", () => {
+    mobileCodeWorkspaceState.beginProjectOpen("work-1");
+    expect(mobileCodeWorkspaceState.selectedWorkId).toBe("work-1");
+    expect(mobileCodeWorkspaceState.presentation).toBeNull();
+
+    mobileCodeWorkspaceState.enterProject("work-1", "editor");
+    expect(mobileCodeWorkspaceState.surface).toBe("editor");
+  });
+
   it("restores the last room on re-enter unless attention lands on Changes", () => {
     mobileCodeWorkspaceState.enterProject("work-1", "files");
     mobileCodeWorkspaceState.switchRoom("editor");

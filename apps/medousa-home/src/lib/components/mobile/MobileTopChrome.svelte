@@ -44,6 +44,7 @@
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
+  import { undertakings } from "$lib/stores/undertakings.svelte";
   import { mobileCodeWorkspaceState } from "$lib/stores/mobileCodeWorkspaceState.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
@@ -147,6 +148,8 @@
     browserReload: RefreshCw,
     runtimeRefresh: RefreshCw,
     activity: Activity,
+    codeNew: Plus,
+    codeRefresh: RefreshCw,
     codeSearch: Search,
     codeSave: Save,
     codeFind: Search,
@@ -313,6 +316,12 @@
       case "activity":
         layout.toggleActivitySheet();
         return;
+      case "codeNew":
+        window.dispatchEvent(new CustomEvent("medousa-mobile-code-new"));
+        return;
+      case "codeRefresh":
+        window.dispatchEvent(new CustomEvent("medousa-mobile-code-refresh"));
+        return;
       case "codeSearch":
         window.dispatchEvent(new CustomEvent("medousa-mobile-code-search"));
         return;
@@ -404,6 +413,10 @@
         return runtime.loading ? "Refreshing Workshop" : "Refresh Workshop";
       case "activity":
         return "Activity";
+      case "codeNew":
+        return "New code thread";
+      case "codeRefresh":
+        return undertakings.loading ? "Refreshing projects" : "Refresh projects";
       case "codeSearch":
         return mobileCodeWorkspaceState.inProject ? "Search files" : "Search projects";
       case "codeSave":
@@ -426,6 +439,8 @@
         return !humanBrowser.canGoForward;
       case "runtimeRefresh":
         return runtime.loading;
+      case "codeRefresh":
+        return undertakings.loading;
       case "scriptSave":
         return (
           graphemeScriptEditor.saveBusy ||
@@ -654,7 +669,10 @@
               <Icon
                 size={action === "browserReload" && humanBrowser.loading ? 12 : 18}
                 strokeWidth={action === "browserReload" && humanBrowser.loading ? 2.25 : 1.75}
-                class={action === "runtimeRefresh" && runtime.loading ? "animate-spin" : ""}
+                class={(action === "runtimeRefresh" && runtime.loading) ||
+                (action === "codeRefresh" && undertakings.loading)
+                  ? "animate-spin"
+                  : ""}
               />
             {/if}
           </button>

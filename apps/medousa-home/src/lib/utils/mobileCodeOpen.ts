@@ -16,9 +16,11 @@ import {
 export async function enterMobileCodeProject(workId: string): Promise<void> {
   const id = workId.trim();
   if (!id) return;
+  mobileCodeWorkspaceState.beginProjectOpen(id);
   if (undertakings.detail?.id !== id) {
     await undertakings.select(id);
   }
+  if (mobileCodeWorkspaceState.selectedWorkId !== id) return;
   await codeWorkspace.hydrate(id);
 
   const detail = undertakings.detail?.id === id ? undertakings.detail : null;
@@ -31,6 +33,8 @@ export async function enterMobileCodeProject(workId: string): Promise<void> {
   } catch {
     // Tree may be unavailable before provision; landing still works from buffers.
   }
+
+  if (mobileCodeWorkspaceState.selectedWorkId !== id) return;
 
   const landing: MobileCodeSurface = resolveMobileCodeLanding({
     hasAttention: projectHasAttention({

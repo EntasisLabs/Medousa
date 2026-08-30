@@ -21,6 +21,8 @@ describe("mobile Code chrome", () => {
 
   it("exposes project-mode trailing actions without Activity", () => {
     expect(mobileChromeTrailing("code", "scripts", "browse", "projects")).toEqual([
+      "codeNew",
+      "codeRefresh",
       "codeSearch",
     ]);
     expect(mobileChromeTrailing("code", "scripts", "browse", "files")).toEqual([

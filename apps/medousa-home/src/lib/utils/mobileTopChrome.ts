@@ -38,6 +38,8 @@ export type MobileChromeActionId =
   | "browserReload"
   | "runtimeRefresh"
   | "activity"
+  | "codeNew"
+  | "codeRefresh"
   | "codeSearch"
   | "codeSave"
   | "codeFind"
@@ -131,7 +133,7 @@ export function mobileChromeTrailing(
     case "code":
       switch (codeMode) {
         case "projects":
-          return ["codeSearch"];
+          return ["codeNew", "codeRefresh", "codeSearch"];
         case "files":
           return ["codeSearch", "codeThread"];
         case "editor":
