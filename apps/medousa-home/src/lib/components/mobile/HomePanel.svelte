@@ -6,16 +6,12 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { calendar } from "$lib/stores/calendar.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import type { DaemonHealth } from "$lib/daemon";
-  import { retryWorkspaceCard } from "$lib/daemon";
+  import { listCalendarEvents, retryWorkspaceCard } from "$lib/daemon";
   import { buildMotionSummary, motionColumnCounts } from "$lib/utils/mobilePulse";
-  import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { dailyNotePath } from "$lib/utils/vaultTemplates";
-  import {
-    resolveJournalDailyHeroPath,
-    resolveLastEditedNote,
-  } from "$lib/utils/vaultNoteBridge";
   import { partitionWorkHub } from "$lib/utils/workHub";
   import {
     fetchPeerHomePreview,
@@ -25,22 +21,18 @@
     homeContinueRows,
     homeNotesDateParts,
     homeProjectRows,
-    peerInitials,
     type HomeProjectRow,
   } from "$lib/utils/homeContinue";
+  import { homeTodayAgenda } from "$lib/utils/homeToday";
+  import type { CalendarEvent } from "$lib/types/calendar";
   import {
     listForgeRepositories,
     type RepositoryCatalogEntry,
   } from "$lib/forge";
   import { isTauri } from "$lib/window";
   import { haptic } from "$lib/haptics";
-  import { workshops } from "$lib/stores/workshops.svelte";
   import { enterMobileCodeProject } from "$lib/utils/mobileCodeOpen";
-  import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
-  import { Building2, Home, Radio, Users } from "@lucide/svelte";
-  import {
-    workshopBrandCssVars,
-  } from "$lib/types/workshopRegistry";
+  import { Radio, Users } from "@lucide/svelte";
 
   interface Props {
     health: DaemonHealth | null;
@@ -58,30 +50,10 @@
     onOpenSettings,
   }: Props = $props();
 
-  let workshopSheetOpen = $state(false);
-
-  const workshopBrandStyle = $derived(
-    workshopBrandCssVars(workshops.activeWorkshop?.brandColor),
-  );
-
-  const WorkshopMarkIcon = $derived.by(() => {
-    const icon = workshops.activeWorkshop?.icon;
-    if (icon === "building") return Building2;
-    if (icon === "team") return Users;
-    if (
-      workshops.activeWorkshop?.kind === "portal" ||
-      workshops.activeWorkshop?.kind === "paired"
-    ) {
-      return Building2;
-    }
-    return Home;
-  });
-
   const blocked = $derived(workspace.needsAttentionCount());
   const inMotion = $derived(workspace.inMotionCount());
-  const journalDailyPath = $derived(resolveJournalDailyHeroPath(vault.notes));
-  const todayDailyPath = $derived(dailyNotePath());
-  const lastEditedNote = $derived(resolveLastEditedNote(vault.notes));
+  let now = $state(new Date());
+  const todayDailyPath = $derived(dailyNotePath(now));
   const partition = $derived(partitionWorkHub(workspace.cards));
   const living = $derived(partition.living);
 
@@ -92,7 +64,10 @@
     latestThread: null,
   });
   let peerPollTimer: ReturnType<typeof setInterval> | undefined;
+  let clockTimer: ReturnType<typeof setInterval> | undefined;
+  let todayCalendarEvents = $state<CalendarEvent[]>([]);
   let sessionsHydrated = $state(false);
+  let calendarHydrated = $state(false);
 
   const isOffline = $derived(health !== null && !health.ok);
   const isConnecting = $derived(health === null);
@@ -102,7 +77,7 @@
   );
 
   const greeting = $derived.by(() => {
-    const hour = new Date().getHours();
+    const hour = now.getHours();
     if (hour < 5) return "Late night";
     if (hour < 12) return "Good morning";
     if (hour < 18) return "Good afternoon";
@@ -118,29 +93,24 @@
     if (living.length > 0) {
       return motionSummary ?? `${inMotion} in motion`;
     }
-    if (peerPreview.unreadTotal > 0) {
-      return peerPreview.unreadTotal === 1
-        ? "1 message"
-        : `${peerPreview.unreadTotal} messages`;
-    }
-    return "All clear";
+    return null;
   });
 
   const statusTone = $derived.by((): "alive" | "warn" | "idle" => {
     if (!health) return "idle";
-    if (!health.ok) return "warn";
+    if (!health.ok || blocked > 0) return "warn";
     return "alive";
   });
 
-  const notesDate = $derived(homeNotesDateParts());
-  const notesWhisper = $derived.by(() => {
-    if (lastEditedNote) {
-      return vaultDisplayTitle(lastEditedNote.title ?? "", lastEditedNote.path);
-    }
-    if (vault.notes.some((note) => note.path === todayDailyPath)) return "Today’s journal";
-    if (journalDailyPath) return "Recent journal";
-    return "Start today";
-  });
+  const notesDate = $derived(homeNotesDateParts(now));
+  const notesWhisper = $derived(
+    vault.notes.some((note) => note.path === todayDailyPath)
+      ? "Open today’s note"
+      : "Start today’s note",
+  );
+  const todayAgenda = $derived(
+    homeTodayAgenda(todayCalendarEvents, now, 3),
+  );
 
   const continueRows = $derived(homeContinueRows(chat.sessions, 3));
   const continueLead = $derived(continueRows[0] ?? null);
@@ -152,10 +122,6 @@
   const projectWhispers = $derived(projectRows.slice(1));
   let projectsHydrated = $state(false);
 
-  const peerAvatarLabels = $derived(
-    peerPreview.stripThreads.slice(0, 3).map((thread) => thread.label),
-  );
-
   const firstBlockedCardId = $derived.by(() => {
     const blockedCard =
       workspace.cards.find((card) => card.column === "blocked") ??
@@ -165,12 +131,11 @@
   });
 
   const peersHaveSignal = $derived(peerPreview.unreadTotal > 0);
-  const peersQuietLabel = $derived.by(() => {
-    if (peerPreview.peerCount <= 0) return null;
-    return peerPreview.peerCount === 1
-      ? "1 peer · quiet"
-      : `${peerPreview.peerCount} peers · quiet`;
-  });
+  const peerSignalLabel = $derived(
+    peerPreview.unreadTotal === 1
+      ? "1 new message"
+      : `${peerPreview.unreadTotal} new messages`,
+  );
 
   let scrollEl: HTMLDivElement | undefined = $state();
   let pullY = $state(0);
@@ -197,6 +162,13 @@
   });
 
   $effect(() => {
+    if (calendarHydrated) return;
+    if (!health?.ok) return;
+    calendarHydrated = true;
+    void refreshTodayCalendar();
+  });
+
+  $effect(() => {
     // Optional work detail — never contend with first paint.
     const run = () => void workspace.prefetchCardDetails();
     let idleId: number | undefined;
@@ -215,9 +187,16 @@
   });
 
   onMount(() => {
+    clockTimer = setInterval(() => {
+      const next = new Date();
+      const crossedDay = dailyNotePath(next) !== dailyNotePath(now);
+      now = next;
+      if (crossedDay) void refreshTodayCalendar();
+    }, 60_000);
     if (!isTauri()) {
       void chat.refreshSessions();
       void refreshProjects();
+      void refreshTodayCalendar();
       return;
     }
     void refreshPeerPreview();
@@ -229,6 +208,7 @@
 
   onDestroy(() => {
     if (peerPollTimer) clearInterval(peerPollTimer);
+    if (clockTimer) clearInterval(clockTimer);
   });
 
   async function refreshPeerPreview() {
@@ -241,6 +221,27 @@
     } catch {
       // Forge may be unavailable — Home just omits the projects block.
       projectCatalog = [];
+    }
+  }
+
+  async function refreshTodayCalendar() {
+    const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
+    const from = new Date(dayStart);
+    from.setDate(from.getDate() - 1);
+    const to = new Date(dayStart);
+    to.setDate(to.getDate() + 2);
+
+    try {
+      const response = await listCalendarEvents({
+        from: from.toISOString(),
+        to: to.toISOString(),
+        path: calendar.calendarPath,
+      });
+      todayCalendarEvents = response.events;
+    } catch {
+      // Calendar is optional on Home — no error tile and no empty-state copy.
+      todayCalendarEvents = [];
     }
   }
 
@@ -274,6 +275,13 @@
     layout.openMore("peers");
   }
 
+  function openCalendar(event?: CalendarEvent) {
+    haptic("light");
+    calendar.selectDay(now);
+    if (event) calendar.openEdit(event);
+    layout.openMore("calendar");
+  }
+
   async function openContinue(sessionId: string) {
     haptic("light");
     await onOpenChat(sessionId);
@@ -293,6 +301,7 @@
       refreshPeerPreview(),
       chat.refreshSessions(),
       refreshProjects(),
+      refreshTodayCalendar(),
       vault.notes.length === 0 ? vault.refreshNotes() : Promise.resolve(),
     ]);
   }
@@ -372,46 +381,79 @@
     {/if}
 
     <div class="px-5 pb-8 pt-3">
-      <div class="mobile-home-brand mobile-home-rise" style="--home-rise-delay: 0ms">
-        <h1 class="mobile-home-greeting">{greeting}</h1>
-        <div class="mobile-home-meta">
-          <button
-            type="button"
-            class="mobile-home-meta-row"
-            onclick={onStatusTap}
-          >
-            <span class="mobile-home-meta-lead" aria-hidden="true">
-              <span
-                class="mobile-home-meta-mark mobile-home-meta-mark--status"
-                class:mobile-home-meta-mark--alive={statusTone === "alive"}
-                class:mobile-home-meta-mark--warn={statusTone === "warn"}
-                class:mobile-home-meta-mark--idle={statusTone === "idle"}
+      <section
+        class="mobile-home-today mobile-home-rise"
+        style="--home-rise-delay: 0ms"
+        aria-labelledby="mobile-home-today-heading"
+      >
+        <h1
+          id="mobile-home-today-heading"
+          class="mobile-home-today-kicker"
+        >{greeting}</h1>
+        <button
+          type="button"
+          class="mobile-home-today-note"
+          onclick={() => void openDailyNote()}
+        >
+          <span class="mobile-home-today-date">
+            <span class="mobile-home-today-weekday">{notesDate.weekday}</span>
+            <span class="mobile-home-today-day">{notesDate.day}</span>
+          </span>
+          <span class="mobile-home-today-note-label">{notesWhisper}</span>
+        </button>
+
+        {#if todayAgenda.rows.length > 0}
+          <div class="mobile-home-today-events" aria-label="Remaining events today">
+            {#each todayAgenda.rows as row (`${row.event.uid}:${row.event.recurrence_id ?? row.event.dtstart}`)}
+              <button
+                type="button"
+                class="mobile-home-today-event"
+                onclick={() => openCalendar(row.event)}
               >
-                <Radio size={13} strokeWidth={1.75} />
+                <span
+                  class="mobile-home-today-event-time"
+                  class:mobile-home-today-event-time--now={row.timing === "now"}
+                >{row.timeLabel}</span>
+                <span class="mobile-home-today-event-title">{row.title}</span>
+              </button>
+            {/each}
+            {#if todayAgenda.hiddenCount > 0}
+              <button
+                type="button"
+                class="mobile-home-today-more"
+                onclick={() => openCalendar()}
+              >See {todayAgenda.hiddenCount} more</button>
+            {/if}
+          </div>
+        {/if}
+      </section>
+
+      {#if statusLine || peersHaveSignal}
+        <div
+          class="mobile-home-meta mobile-home-signals mobile-home-rise"
+          style="--home-rise-delay: 40ms"
+          aria-label="Workspace activity"
+        >
+          {#if statusLine}
+            <button
+              type="button"
+              class="mobile-home-meta-row"
+              onclick={onStatusTap}
+            >
+              <span class="mobile-home-meta-lead" aria-hidden="true">
+                <span
+                  class="mobile-home-meta-mark mobile-home-meta-mark--status"
+                  class:mobile-home-meta-mark--alive={statusTone === "alive"}
+                  class:mobile-home-meta-mark--warn={statusTone === "warn"}
+                  class:mobile-home-meta-mark--idle={statusTone === "idle"}
+                >
+                  <Radio size={13} strokeWidth={1.75} />
+                </span>
               </span>
-            </span>
-            <span class="mobile-home-meta-label">{statusLine}</span>
-          </button>
-          <button
-            type="button"
-            class="mobile-home-meta-row"
-            style={workshopBrandStyle}
-            aria-label="Workshop — {workshops.activeLabel}"
-            aria-haspopup="menu"
-            aria-expanded={workshopSheetOpen}
-            onclick={() => {
-              haptic("light");
-              workshopSheetOpen = true;
-            }}
-          >
-            <span class="mobile-home-meta-lead" aria-hidden="true">
-              <span class="mobile-home-meta-mark">
-                <WorkshopMarkIcon size={13} strokeWidth={1.75} />
-              </span>
-            </span>
-            <span class="mobile-home-meta-label">{workshops.activeLabel}</span>
-          </button>
-          {#if !peersHaveSignal && peersQuietLabel}
+              <span class="mobile-home-meta-label">{statusLine}</span>
+            </button>
+          {/if}
+          {#if peersHaveSignal}
             <button
               type="button"
               class="mobile-home-meta-row"
@@ -422,62 +464,10 @@
                   <Users size={13} strokeWidth={1.75} />
                 </span>
               </span>
-              <span class="mobile-home-meta-label">{peersQuietLabel}</span>
+              <span class="mobile-home-meta-label">{peerSignalLabel}</span>
             </button>
           {/if}
         </div>
-      </div>
-
-      <WorkshopSwitcherCompact
-        showTrigger={false}
-        hideWhenSingle={false}
-        bind:sheetOpen={workshopSheetOpen}
-      />
-
-      {#if peersHaveSignal}
-        <div class="mobile-home-glance mobile-home-rise" style="--home-rise-delay: 40ms">
-          <button type="button" class="mobile-home-glance-tile" onclick={openPeers}>
-            <span class="mobile-home-glance-kicker">Peers</span>
-            <span class="mobile-home-glance-hero">{peerPreview.unreadTotal}</span>
-            <span class="mobile-home-glance-sub">unread</span>
-            {#if peerAvatarLabels.length > 0}
-              <div class="mobile-home-peer-avatars">
-                {#each peerAvatarLabels as label (label)}
-                  <span class="mobile-home-peer-avatar-chip">{peerInitials(label)}</span>
-                {/each}
-              </div>
-            {/if}
-          </button>
-
-          <button
-            type="button"
-            class="mobile-home-glance-tile"
-            onclick={() => void openDailyNote()}
-          >
-            <span class="mobile-home-glance-kicker mobile-home-glance-kicker-accent">
-              Daily note
-            </span>
-            <span class="mobile-home-glance-title">{notesDate.weekday}</span>
-            <span class="mobile-home-glance-day">{notesDate.day}</span>
-            <span class="mobile-home-glance-whisper">{notesWhisper}</span>
-          </button>
-        </div>
-      {:else}
-        <button
-          type="button"
-          class="mobile-home-glance-tile mobile-home-glance-tile--daily mobile-home-rise"
-          style="--home-rise-delay: 40ms"
-          onclick={() => void openDailyNote()}
-        >
-          <span class="mobile-home-glance-kicker mobile-home-glance-kicker-accent">
-            Daily note
-          </span>
-          <span class="mobile-home-glance-daily-row">
-            <span class="mobile-home-glance-title">{notesDate.weekday}</span>
-            <span class="mobile-home-glance-day">{notesDate.day}</span>
-          </span>
-          <span class="mobile-home-glance-whisper">{notesWhisper}</span>
-        </button>
       {/if}
 
       {#if continueLead}

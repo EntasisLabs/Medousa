@@ -3,11 +3,13 @@
     Activity,
     ArrowLeft,
     ArrowRight,
+    Building2,
     CalendarClock,
     ChevronDown,
     ChevronLeft,
     Eye,
     History,
+    Home,
     Layers,
     ListFilter,
     Menu,
@@ -25,11 +27,13 @@
     Square,
     Upload,
     UserRound,
+    Users,
     Wrench,
   } from "@lucide/svelte";
   import type { Component } from "svelte";
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
   import SettingsNav from "$lib/components/settings/SettingsNav.svelte";
+  import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { vault } from "$lib/stores/vault.svelte";
@@ -58,6 +62,7 @@
   } from "$lib/types/workshopRegistry";
 
   let sessionsMenuOpen = $state(false);
+  let homeWorkshopSheetOpen = $state(false);
 
   const surface = $derived(
     resolveMobileChromeSurface(
@@ -70,6 +75,9 @@
   $effect(() => {
     if (surface !== "chat" && sessionsMenuOpen) {
       sessionsMenuOpen = false;
+    }
+    if (surface !== "home" && homeWorkshopSheetOpen) {
+      homeWorkshopSheetOpen = false;
     }
   });
 
@@ -90,6 +98,18 @@
     ),
   );
   const brandStyle = $derived(workshopBrandCssVars(workshops.activeWorkshop?.brandColor));
+  const HomeWorkshopIcon = $derived.by(() => {
+    const icon = workshops.activeWorkshop?.icon;
+    if (icon === "building") return Building2;
+    if (icon === "team") return Users;
+    if (
+      workshops.activeWorkshop?.kind === "portal" ||
+      workshops.activeWorkshop?.kind === "paired"
+    ) {
+      return Building2;
+    }
+    return Home;
+  });
   const notesFilterActive = $derived(
     vault.activeSpaceFilter !== null || vault.libraryBrowseMode !== "folders",
   );
@@ -134,6 +154,12 @@
   function openMenu() {
     haptic("light");
     layout.openMobileDestinationsMenu();
+  }
+
+  function openHomeWorkshop() {
+    if (workshops.switching) return;
+    haptic("light");
+    homeWorkshopSheetOpen = true;
   }
 
   async function run(id: MobileChromeActionId, button?: HTMLButtonElement | null) {
@@ -450,7 +476,46 @@
     <span class="mobile-chrome-leading-spacer" aria-hidden="true"></span>
   {/if}
 
-  {#if settingsTitle}
+  {#if surface === "home"}
+    <div class="mobile-home-workshop-switcher">
+      <button
+        type="button"
+        class="mobile-home-workshop-title"
+        style={brandStyle}
+        aria-label="Switch workshop — {workshops.activeLabel}"
+        aria-haspopup="menu"
+        aria-expanded={homeWorkshopSheetOpen}
+        disabled={workshops.switching}
+        onclick={openHomeWorkshop}
+      >
+        <span class="mobile-home-workshop-mark" aria-hidden="true">
+          <HomeWorkshopIcon size={13} strokeWidth={1.75} />
+        </span>
+        <span class="mobile-home-workshop-label">{workshops.activeLabel}</span>
+        <ChevronDown
+          size={12}
+          strokeWidth={1.75}
+          class="mobile-home-workshop-chevron"
+          aria-hidden="true"
+        />
+      </button>
+      <WorkshopSwitcherCompact
+        showTrigger={false}
+        hideWhenSingle={false}
+        bind:sheetOpen={homeWorkshopSheetOpen}
+      />
+    </div>
+    <button
+      type="button"
+      class="mobile-chrome-icon"
+      class:mobile-chrome-icon-active={layout.activitySheetOpen}
+      aria-label={labelFor("activity")}
+      aria-expanded={layout.activitySheetOpen}
+      onclick={() => void run("activity")}
+    >
+      <Activity size={18} strokeWidth={1.75} />
+    </button>
+  {:else if settingsTitle}
     <SettingsNav
       active={settingsNav.activeSection}
       mobile={true}

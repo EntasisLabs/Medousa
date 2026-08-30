@@ -66,6 +66,28 @@ describe("homeContinueRows", () => {
   it("returns empty when there are no sessions", () => {
     expect(homeContinueRows([])).toEqual([]);
   });
+
+  it("omits cancelled and throwaway conversations", () => {
+    const rows = homeContinueRows([
+      session("a", "work-cancel-test (Cancelled)", "Cancelled"),
+      session("b", "hi", "hi"),
+      session("c", "Heeeey", "Heeeey"),
+      session("d", "Plan mom's birthday", "Make the reservation"),
+    ]);
+
+    expect(rows.map((row) => row.title)).toEqual(["Plan mom's birthday"]);
+  });
+
+  it("deduplicates repeated titles and drops redundant previews", () => {
+    const rows = homeContinueRows([
+      session("new", "Garden plans", "Garden plans"),
+      session("old", "garden-plans", "Earlier version"),
+      session("other", "Dinner", "Book a table"),
+    ]);
+
+    expect(rows.map((row) => row.sessionId)).toEqual(["new", "other"]);
+    expect(rows[0].preview).toBe("");
+  });
 });
 
 describe("homeProjectRows", () => {
@@ -159,6 +181,19 @@ describe("homeProjectRows", () => {
     ]);
     expect(rows[0].workId).toBe("work-1");
     expect(rows[0].preview).toBe("Home projects");
+  });
+
+  it("keeps branch names off Home", () => {
+    const rows = homeProjectRows([
+      repo({
+        path: "/medousa",
+        display_name: "Medousa",
+        last_used_at: new Date().toISOString(),
+        current_branch: "feat/calendar-agenda",
+      }),
+    ]);
+
+    expect(rows[0].preview).toBe("Open project");
   });
 });
 

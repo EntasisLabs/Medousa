@@ -18,10 +18,10 @@
     Users,
     Zap,
   } from "@lucide/svelte";
-  import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import ProfileSwitcherCompact from "$lib/components/mobile/ProfileSwitcherCompact.svelte";
   import { registerMobileBackHandler, switchMobileTab } from "$lib/mobileNavigation";
   import { environment } from "$lib/stores/environment.svelte";
+  import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { haptic } from "$lib/haptics";
   import {
@@ -246,21 +246,9 @@
         <button type="button" class="mobile-dest-menu-done" onclick={finishOrClose}>Done</button>
       </header>
 
-      {#if !editing}
+      {#if !editing && userProfiles.hasMultipleProfiles}
         <div class="mobile-dest-menu-switchers">
-          <WorkshopSwitcherCompact />
           <ProfileSwitcherCompact />
-          <button
-            type="button"
-            class="mobile-dest-menu-activity"
-            onclick={() => {
-              onClose();
-              layout.toggleActivitySheet();
-            }}
-          >
-            <Activity size={16} strokeWidth={1.75} aria-hidden="true" />
-            <span>Activity</span>
-          </button>
         </div>
       {/if}
 

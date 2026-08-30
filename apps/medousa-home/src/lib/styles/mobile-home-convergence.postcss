@@ -6,14 +6,6 @@
 
 @layer features {
 
-.mobile-home-brand {
-  @apply mt-5;
-}
-
-.mobile-home-greeting {
-  @apply text-[1.85rem] font-semibold leading-tight tracking-[-0.03em] text-surface-50;
-}
-
 .mobile-home-meta {
   @apply mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5;
 }
@@ -91,69 +83,61 @@
   color: rgb(var(--theme-text-quiet));
 }
 
-.mobile-home-glance {
-  @apply mt-5 grid grid-cols-2 gap-2.5;
+.mobile-home-today {
+  @apply mt-5 text-left;
 }
 
-.mobile-home-glance-tile {
-  @apply flex min-h-[8.75rem] flex-col rounded-[20px] border border-surface-500/30 bg-surface-900/55 p-3.5 text-left transition active:bg-surface-800/70;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
-}
-
-.mobile-home-glance-tile--daily {
-  @apply mt-5 min-h-0 w-full;
-}
-
-.mobile-home-glance-kicker {
+.mobile-home-today-kicker {
   @apply text-[10px] font-medium uppercase tracking-[0.12em];
-  color: rgb(var(--theme-text-faint));
-}
-
-.mobile-home-glance-kicker-accent {
   color: rgb(var(--theme-warning) / 0.85);
 }
 
-.mobile-home-glance-hero {
-  @apply mt-2 text-[2.35rem] font-semibold tabular-nums leading-none tracking-[-0.04em] text-surface-50;
+.mobile-home-today-note {
+  @apply flex min-h-20 w-full flex-col rounded-xl py-2 text-left transition active:bg-surface-900/50;
 }
 
-.mobile-home-glance-sub {
-  @apply mt-1 text-xs;
+.mobile-home-today-date {
+  @apply flex w-full items-baseline justify-between gap-3;
+}
+
+.mobile-home-today-weekday {
+  @apply text-[16px] font-semibold leading-snug tracking-[-0.015em] text-surface-50;
+}
+
+.mobile-home-today-day {
+  @apply text-[1.65rem] font-semibold tabular-nums leading-none tracking-[-0.03em] text-surface-50;
+}
+
+.mobile-home-today-note-label {
+  @apply mt-auto pt-2 text-[12px];
   color: rgb(var(--theme-text-quiet));
 }
 
-.mobile-home-glance-title {
-  @apply mt-2.5 text-[15px] font-semibold leading-snug tracking-tight text-surface-100;
+.mobile-home-today-events {
+  @apply mt-1 border-t border-surface-700/35 pt-1;
 }
 
-.mobile-home-glance-day {
-  @apply mt-0.5 text-[1.65rem] font-semibold tabular-nums leading-none tracking-[-0.03em] text-surface-50;
+.mobile-home-today-event {
+  @apply grid min-h-11 w-full grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-2 rounded-xl text-left transition active:bg-surface-900/50;
 }
 
-.mobile-home-glance-daily-row {
-  @apply mt-2.5 flex items-baseline justify-between gap-3;
+.mobile-home-today-event-time {
+  @apply text-[11px] font-medium tabular-nums;
+  color: rgb(var(--theme-text-faint));
 }
 
-.mobile-home-glance-daily-row .mobile-home-glance-title {
-  @apply mt-0;
+.mobile-home-today-event-time--now {
+  color: rgb(var(--theme-success));
 }
 
-.mobile-home-glance-daily-row .mobile-home-glance-day {
-  @apply mt-0;
-}
-
-.mobile-home-glance-whisper {
-  @apply mt-auto pt-3 line-clamp-1 text-[11px];
-  color: rgb(var(--theme-text-quiet));
-}
-
-.mobile-home-peer-avatars {
-  @apply mt-3 flex items-center gap-1.5;
-}
-
-.mobile-home-peer-avatar-chip {
-  @apply inline-flex h-7 w-7 items-center justify-center rounded-full border border-surface-600/50 bg-surface-800 text-[9px] font-semibold;
+.mobile-home-today-event-title {
+  @apply min-w-0 truncate text-[13px] font-medium;
   color: rgb(var(--theme-text-secondary));
+}
+
+.mobile-home-today-more {
+  @apply min-h-10 w-full rounded-xl text-left text-[11px] font-medium transition active:bg-surface-900/50;
+  color: rgb(var(--theme-text-quiet));
 }
 
 .mobile-home-continue {
@@ -242,6 +226,38 @@
   /* Sole owner of top safe-area — shell no longer pads, so icons sit under the notch once. */
   padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
   background-color: rgb(var(--color-surface-950));
+}
+
+.mobile-top-chrome[data-chrome-surface="home"] {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+}
+
+.mobile-home-workshop-switcher {
+  @apply min-w-0 justify-self-center;
+}
+
+.mobile-home-workshop-title {
+  @apply inline-flex min-h-11 max-w-[11rem] items-center justify-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition active:bg-surface-900/65 disabled:opacity-45;
+  color: rgb(var(--theme-text-tertiary));
+}
+
+.mobile-home-workshop-mark {
+  @apply inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-surface-600/35 bg-surface-900/60 text-content-quiet;
+}
+
+.mobile-home-workshop-title[style*="--workshop-brand"] .mobile-home-workshop-mark {
+  color: color-mix(in srgb, var(--workshop-brand) 62%, rgb(var(--color-surface-400)));
+  border-color: color-mix(in srgb, var(--workshop-brand) 24%, transparent);
+  background: color-mix(in srgb, var(--workshop-brand) 10%, rgb(var(--color-surface-900)));
+}
+
+.mobile-home-workshop-label {
+  @apply min-w-0 truncate;
+}
+
+.mobile-home-workshop-chevron {
+  @apply shrink-0 opacity-45;
 }
 
 .mobile-top-chrome[data-settings-title="true"] {
@@ -388,11 +404,6 @@
 
 .mobile-dest-menu-switchers .mobile-profile-monogram {
   @apply h-6 w-6;
-}
-
-.mobile-dest-menu-activity {
-  @apply inline-flex min-h-11 items-center gap-2 rounded-xl border border-transparent bg-transparent px-2.5 text-xs font-medium leading-none active:bg-surface-800/70;
-  color: rgb(var(--theme-text-secondary));
 }
 
 .mobile-dest-menu-scroll {

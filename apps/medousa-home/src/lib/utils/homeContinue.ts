@@ -38,16 +38,51 @@ export function homeContinueRows(
   sessions: SessionSummary[],
   limit = 3,
 ): HomeContinueRow[] {
-  return sessions.slice(0, Math.max(0, limit)).map((session) => {
+  const rows: HomeContinueRow[] = [];
+  const seenTitles = new Set<string>();
+
+  for (const session of sessions) {
+    if (rows.length >= Math.max(0, limit)) break;
+
+    const title = stripMarkdownPreview(
+      session.display_name?.trim() || formatSessionLabel(session),
+    );
+    if (!isUsefulContinueTitle(title)) continue;
+
+    const titleKey = normalizeContinueText(title);
+    if (seenTitles.has(titleKey)) continue;
+    seenTitles.add(titleKey);
+
     const preview = session.preview?.trim() ?? "";
     const firstLine = preview.split("\n")[0]?.trim() ?? "";
-    return {
+    const cleanPreview = stripMarkdownPreview(firstLine);
+    rows.push({
       sessionId: session.session_id,
-      title: session.display_name?.trim() || formatSessionLabel(session),
-      preview: stripMarkdownPreview(firstLine),
+      title,
+      preview:
+        normalizeContinueText(cleanPreview) === titleKey ? "" : cleanPreview,
       relativeTime: relativeSessionTime(session.last_timestamp),
-    };
-  });
+    });
+  }
+
+  return rows;
+}
+
+const CANCELLED_TITLE_SUFFIX =
+  /(?:\s*\((?:cancelled|canceled)\)|\s+[-–—:]\s*(?:cancelled|canceled))\s*$/i;
+const LOW_SIGNAL_TITLE = /^(?:new conversation|new chat|untitled|test(?:ing)?|h(?:i+|e+y+)|hello+|yo+)(?:\s+\d+)?$/i;
+
+function isUsefulContinueTitle(title: string): boolean {
+  const trimmed = title.trim();
+  if (!trimmed || CANCELLED_TITLE_SUFFIX.test(trimmed)) return false;
+  return !LOW_SIGNAL_TITLE.test(normalizeContinueText(trimmed));
+}
+
+function normalizeContinueText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 const ACTIVE_PROJECT_PHASES = new Set(["work", "prepare", "review"]);
@@ -88,10 +123,7 @@ export function homeProjectRows(
         "";
       const preview =
         work?.title?.trim() ||
-        branch ||
-        (entry.dirty
-          ? `${entry.changed_files || 0} changed`
-          : "Repository");
+        (entry.dirty ? "Recently edited" : branch ? "Open project" : "Project");
       return {
         path: entry.path,
         title: entry.display_name?.trim() || entry.path,
