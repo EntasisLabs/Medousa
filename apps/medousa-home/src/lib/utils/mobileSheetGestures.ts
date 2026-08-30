@@ -1,10 +1,14 @@
 import { haptic } from "$lib/haptics";
 
 const DISMISS_THRESHOLD_PX = 64;
+const EXPAND_THRESHOLD_PX = 48;
 const BACK_THRESHOLD_PX = 56;
 const DISMISS_MAX_HORIZONTAL_PX = 48;
 const BACK_MAX_VERTICAL_PX = 64;
 const DIRECTION_LOCK_PX = 10;
+const SHEET_SETTLE_MS = 220;
+const EXPANDED_HEIGHT_CSS =
+  "calc(100dvh - max(1rem, env(safe-area-inset-top, 0px)))";
 
 const INTERACTIVE_SELECTOR = [
   "a",
@@ -26,8 +30,11 @@ export interface MobileSheetGestureOptions {
   onDismiss: () => void;
   /** Return true when a nested screen handled swipe-back. False dismisses the sheet. */
   onSwipeBack?: () => boolean;
-  /** When false, only header swipe-down dismiss is attached. Default true. */
+  /** When false, horizontal edge-swipe navigation is disabled. Default true. */
   swipeBack?: boolean;
+  /** Swipe up on the header to fill the safe viewport. Default true. */
+  expandable?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 }
 
 function eventTargetElement(target: EventTarget | null): Element | null {
@@ -46,44 +53,124 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-function attachSwipeDownDismiss(
+function attachVerticalSheetGestures(
   headerEl: HTMLElement,
   sheetEl: HTMLElement,
-  onDismiss: () => void,
+  options: MobileSheetGestureOptions,
 ): () => void {
   let startX = 0;
   let startY = 0;
+  let startHeight = 0;
+  let collapsedHeight = sheetEl.getBoundingClientRect().height;
   let tracking = false;
+  let vertical = false;
+  let expanded = sheetEl.dataset.sheetExpanded === "true";
+  let settleTimer: number | null = null;
+  const expandable = options.expandable !== false;
 
-  function resetTransform() {
+  function clearSettleTimer() {
+    if (settleTimer === null) return;
+    window.clearTimeout(settleTimer);
+    settleTimer = null;
+  }
+
+  function setExpandedState(next: boolean) {
+    if (expanded === next) return;
+    expanded = next;
+    sheetEl.classList.toggle("mobile-sheet-expanded", next);
+    if (next) sheetEl.dataset.sheetExpanded = "true";
+    else delete sheetEl.dataset.sheetExpanded;
+    options.onExpandedChange?.(next);
+  }
+
+  function resetMotionStyles() {
     sheetEl.style.transform = "";
     sheetEl.style.transition = "";
+    if (expanded) {
+      sheetEl.style.height = EXPANDED_HEIGHT_CSS;
+      sheetEl.style.maxHeight = EXPANDED_HEIGHT_CSS;
+    } else {
+      sheetEl.style.height = "";
+      sheetEl.style.maxHeight = "";
+    }
+  }
+
+  function settle(nextExpanded: boolean) {
+    clearSettleTimer();
+    const currentHeight = sheetEl.getBoundingClientRect().height;
+    sheetEl.style.transform = "";
+    sheetEl.style.transition = "none";
+    sheetEl.style.height = `${currentHeight}px`;
+    sheetEl.style.maxHeight = `${currentHeight}px`;
+    setExpandedState(nextExpanded);
+
+    if (prefersReducedMotion()) {
+      resetMotionStyles();
+      return;
+    }
+
+    // Commit the current frame before animating to the selected resting height.
+    void sheetEl.offsetHeight;
+    sheetEl.style.transition = `height ${SHEET_SETTLE_MS}ms cubic-bezier(0.22, 1, 0.36, 1), max-height ${SHEET_SETTLE_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`;
+    const targetHeight = nextExpanded
+      ? EXPANDED_HEIGHT_CSS
+      : `${collapsedHeight}px`;
+    sheetEl.style.height = targetHeight;
+    sheetEl.style.maxHeight = targetHeight;
+    settleTimer = window.setTimeout(() => {
+      settleTimer = null;
+      resetMotionStyles();
+    }, SHEET_SETTLE_MS);
   }
 
   function onTouchStart(event: TouchEvent) {
     if (event.touches.length !== 1) {
       tracking = false;
+      vertical = false;
       return;
     }
     if (shouldIgnoreGestureTarget(event.target)) return;
+    clearSettleTimer();
     startX = event.touches[0].clientX;
     startY = event.touches[0].clientY;
+    startHeight = sheetEl.getBoundingClientRect().height;
+    if (!expanded) collapsedHeight = startHeight;
     tracking = true;
+    vertical = false;
   }
 
   function onTouchMove(event: TouchEvent) {
     if (!tracking || event.touches.length !== 1) return;
     const dx = event.touches[0].clientX - startX;
     const dy = event.touches[0].clientY - startY;
-    if (dy <= 0 || Math.abs(dx) > Math.abs(dy)) {
-      if (dy <= 0) resetTransform();
-      return;
+    if (!vertical) {
+      if (Math.abs(dx) < DIRECTION_LOCK_PX && Math.abs(dy) < DIRECTION_LOCK_PX) return;
+      if (Math.abs(dx) > Math.abs(dy)) {
+        tracking = false;
+        return;
+      }
+      vertical = true;
     }
-    if (!prefersReducedMotion()) {
+
+    if (dy < 0 && !expanded && expandable) {
+      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+      const fullHeight = Math.max(collapsedHeight, viewportHeight - 16);
+      const height = Math.min(fullHeight, startHeight + Math.abs(dy) * 0.9);
+      sheetEl.style.transition = "none";
+      sheetEl.style.transform = "";
+      sheetEl.style.height = `${height}px`;
+      sheetEl.style.maxHeight = `${height}px`;
+    } else if (dy > 0 && expanded) {
+      const height = Math.max(collapsedHeight, startHeight - dy * 0.85);
+      sheetEl.style.transition = "none";
+      sheetEl.style.transform = "";
+      sheetEl.style.height = `${height}px`;
+      sheetEl.style.maxHeight = `${height}px`;
+    } else if (dy > 0 && !prefersReducedMotion()) {
       sheetEl.style.transition = "none";
       sheetEl.style.transform = `translateY(${Math.min(dy * 0.85, 140)}px)`;
     }
-    if (dy > DIRECTION_LOCK_PX) {
+    if (Math.abs(dy) > DIRECTION_LOCK_PX) {
       event.preventDefault();
     }
   }
@@ -91,19 +178,40 @@ function attachSwipeDownDismiss(
   function onTouchEnd(event: TouchEvent) {
     if (!tracking) return;
     tracking = false;
+    vertical = false;
     const touch = event.changedTouches[0];
-    resetTransform();
-    if (!touch) return;
+    if (!touch) {
+      settle(expanded);
+      return;
+    }
     const dx = touch.clientX - startX;
     const dy = touch.clientY - startY;
-    if (dy < DISMISS_THRESHOLD_PX) return;
-    if (Math.abs(dx) > DISMISS_MAX_HORIZONTAL_PX) return;
-    onDismiss();
+    if (Math.abs(dx) > DISMISS_MAX_HORIZONTAL_PX) {
+      settle(expanded);
+      return;
+    }
+    if (!expanded && expandable && dy <= -EXPAND_THRESHOLD_PX) {
+      settle(true);
+      haptic("light");
+      return;
+    }
+    if (expanded && dy >= EXPAND_THRESHOLD_PX) {
+      settle(false);
+      haptic("light");
+      return;
+    }
+    if (!expanded && dy >= DISMISS_THRESHOLD_PX) {
+      resetMotionStyles();
+      options.onDismiss();
+      return;
+    }
+    settle(expanded);
   }
 
   function onTouchCancel() {
     tracking = false;
-    resetTransform();
+    vertical = false;
+    settle(expanded);
   }
 
   headerEl.addEventListener("touchstart", onTouchStart, { passive: true });
@@ -112,10 +220,15 @@ function attachSwipeDownDismiss(
   headerEl.addEventListener("touchcancel", onTouchCancel, { passive: true });
 
   return () => {
+    clearSettleTimer();
     headerEl.removeEventListener("touchstart", onTouchStart);
     headerEl.removeEventListener("touchmove", onTouchMove);
     headerEl.removeEventListener("touchend", onTouchEnd);
     headerEl.removeEventListener("touchcancel", onTouchCancel);
+    expanded = false;
+    sheetEl.classList.remove("mobile-sheet-expanded");
+    delete sheetEl.dataset.sheetExpanded;
+    resetMotionStyles();
   };
 }
 
@@ -201,7 +314,7 @@ function attachSwipeRightNavigation(
   };
 }
 
-/** Swipe down on the sheet header to dismiss; swipe right on the sheet to go back or dismiss. */
+/** Swipe up/down on the header to expand/collapse/dismiss; edge-swipe right to go back. */
 export function attachMobileSheetGestures(
   sheetEl: HTMLElement,
   headerEl: HTMLElement | null,
@@ -212,7 +325,7 @@ export function attachMobileSheetGestures(
     cleanups.push(attachSwipeRightNavigation(sheetEl, options));
   }
   if (headerEl) {
-    cleanups.push(attachSwipeDownDismiss(headerEl, sheetEl, options.onDismiss));
+    cleanups.push(attachVerticalSheetGestures(headerEl, sheetEl, options));
   }
   return () => {
     for (const cleanup of cleanups) cleanup();

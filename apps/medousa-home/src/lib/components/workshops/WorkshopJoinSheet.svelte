@@ -71,6 +71,7 @@
     return attachMobileSheetGestures(sheetEl, headerEl, {
       onDismiss: onClose,
       swipeBack: false,
+      expandable: variant === "mobile",
     });
   });
 </script>

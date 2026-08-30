@@ -51,8 +51,9 @@
       query = "";
       chat.sessionListQuery = "";
       void chat.refreshSessions({ force: true, q: "" });
-      // Autofocus so the drawer feels interactive immediately.
-      if (showBuiltInToolbar) {
+      // Desktop drawers can take focus immediately; mobile sheets should open
+      // without summoning the keyboard over the session list.
+      if (showBuiltInToolbar && variant !== "sheet") {
         queueMicrotask(() => searchInputEl?.focus());
       }
     });

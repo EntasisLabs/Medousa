@@ -25,6 +25,7 @@
     announceStatusPopoverOpen,
     closeOnOtherStatusPopover,
   } from "$lib/utils/statusPopoverCoordination";
+  import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
   import { onMount, tick } from "svelte";
 
   interface Props {
@@ -47,6 +48,7 @@
   let joinOpen = $state(false);
   let railTriggerEl = $state<HTMLButtonElement | null>(null);
   let railMenuEl = $state<HTMLDivElement | null>(null);
+  let mobileSheetHeaderEl = $state<HTMLElement | null>(null);
 
   const showPill = $derived(
     showTrigger &&
@@ -119,6 +121,17 @@
       window.visualViewport?.removeEventListener("resize", place);
       window.visualViewport?.removeEventListener("scroll", place);
     };
+  });
+
+  $effect(() => {
+    if (!sheetOpen || isFloatingMenu || !railMenuEl) return;
+    return attachMobileSheetGestures(railMenuEl, mobileSheetHeaderEl, {
+      onDismiss: () => {
+        haptic("light");
+        sheetOpen = false;
+      },
+      swipeBack: false,
+    });
   });
 
   const activeBrandStyle = $derived(workshopBrandCssVars(workshops.activeWorkshop?.brandColor));
@@ -359,27 +372,37 @@
         role="menu"
         aria-label="Switch workshop"
       >
-      <header class="{isFloatingMenu ? 'workshop-switcher-header' : 'mobile-sheet-header'}">
-        <div class="min-w-0">
-          <h2 class="{isFloatingMenu ? 'workshop-switcher-title' : 'workshop-switcher-mobile-title'}">
-            Workshops
-          </h2>
+        <header
+          bind:this={mobileSheetHeaderEl}
+          class={isFloatingMenu
+            ? "workshop-switcher-header"
+            : "mobile-sheet-stack-header"}
+        >
           {#if !isFloatingMenu}
-            <p class="workshop-switcher-mobile-subtitle">Switch between your workshops</p>
+            <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
           {/if}
-        </div>
-        {#if !isFloatingMenu}
-          <button
-            type="button"
-            class="btn btn-sm variant-ghost-surface shrink-0"
-            onclick={() => {
-              sheetOpen = false;
-            }}
-          >
-            Done
-          </button>
-        {/if}
-      </header>
+          <div class={isFloatingMenu ? "contents" : "mobile-sheet-header-row items-start"}>
+            <div class="min-w-0">
+              <h2 class="{isFloatingMenu ? 'workshop-switcher-title' : 'workshop-switcher-mobile-title'}">
+                Workshops
+              </h2>
+              {#if !isFloatingMenu}
+                <p class="workshop-switcher-mobile-subtitle">Switch between your workshops</p>
+              {/if}
+            </div>
+            {#if !isFloatingMenu}
+              <button
+                type="button"
+                class="btn btn-sm variant-ghost-surface shrink-0"
+                onclick={() => {
+                  sheetOpen = false;
+                }}
+              >
+                Done
+              </button>
+            {/if}
+          </div>
+        </header>
 
       <div
         class="{isFloatingMenu
