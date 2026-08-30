@@ -48,6 +48,18 @@ describe("mobile Workshop chrome", () => {
   });
 });
 
+describe("mobile Calendar chrome", () => {
+  it("uses calendar actions instead of generic Activity chrome", () => {
+    expect(resolveMobileChromeSurface("more", "list", "calendar")).toBe("calendar");
+    expect(mobileChromeLeading("calendar")).toBe("back");
+    expect(mobileChromeTrailing("calendar")).toEqual([
+      "calendarView",
+      "calendarSearch",
+      "calendarNew",
+    ]);
+  });
+});
+
 describe("mobile Scripts chrome", () => {
   it("keeps only document actions in the editor chrome", () => {
     expect(mobileChromeTrailing("automations", "scripts", "script-editor")).toEqual([

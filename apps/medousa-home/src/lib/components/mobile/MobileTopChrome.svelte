@@ -4,6 +4,7 @@
     ArrowLeft,
     ArrowRight,
     Building2,
+    CalendarDays,
     CalendarClock,
     ChevronDown,
     ChevronLeft,
@@ -12,6 +13,7 @@
     Home,
     Layers,
     ListFilter,
+    List,
     Menu,
     MessageCircle,
     MessagesSquare,
@@ -48,6 +50,7 @@
   import { mobileCodeWorkspaceState } from "$lib/stores/mobileCodeWorkspaceState.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
+  import { calendar } from "$lib/stores/calendar.svelte";
   import { haptic } from "$lib/haptics";
   import { prepareTalkAboutNote } from "$lib/utils/vaultNoteBridge";
   import { openMobileCodeThread } from "$lib/utils/mobileCodeOpen";
@@ -118,6 +121,14 @@
   const settingsTitle = $derived(
     surface === "more-nested" && layout.moreDestination === "settings",
   );
+  const calendarChromeTitle = $derived(
+    calendar.viewMode === "month"
+      ? calendar.anchor.toLocaleDateString(undefined, {
+          month: "short",
+          year: "numeric",
+        })
+      : "Schedule",
+  );
 
   const icons: Partial<Record<MobileChromeActionId, Component>> = {
     menu: Menu,
@@ -154,6 +165,8 @@
     codeSave: Save,
     codeFind: Search,
     codeThread: MessageCircle,
+    calendarSearch: Search,
+    calendarNew: Plus,
   };
 
   function openMenu() {
@@ -183,6 +196,11 @@
         }
         if (surface === "code") {
           if (mobileCodeWorkspaceState.handleBack()) return;
+          layout.backToMoreHub();
+          return;
+        }
+        if (surface === "calendar") {
+          calendar.closeMobileSearch({ clear: true });
           layout.backToMoreHub();
           return;
         }
@@ -334,6 +352,21 @@
       case "codeThread":
         await openMobileCodeThread();
         return;
+      case "calendarView":
+        calendar.closeMobileSearch({ clear: true });
+        calendar.setViewMode(calendar.viewMode === "month" ? "schedule" : "month");
+        return;
+      case "calendarSearch":
+        if (calendar.mobileSearchOpen) {
+          calendar.closeMobileSearch({ clear: true });
+          return;
+        }
+        if (calendar.viewMode !== "schedule") calendar.setViewMode("schedule");
+        calendar.openMobileSearch();
+        return;
+      case "calendarNew":
+        calendar.openCreate(calendar.selectedDay);
+        return;
     }
   }
 
@@ -350,7 +383,8 @@
         return surface === "more-nested" ||
           surface === "automations" ||
           surface === "agents" ||
-          surface === "runtime"
+          surface === "runtime" ||
+          surface === "calendar"
           ? "Back to Home"
           : "Back to notes";
       case "workshop":
@@ -425,6 +459,12 @@
         return "Find in file";
       case "codeThread":
         return "Open project thread";
+      case "calendarView":
+        return calendar.viewMode === "month" ? "Show schedule" : "Show month";
+      case "calendarSearch":
+        return calendar.mobileSearchOpen ? "Close calendar search" : "Search calendar";
+      case "calendarNew":
+        return "New event or reminder";
     }
   }
 
@@ -580,6 +620,31 @@
           {/if}
           {#if action === "scriptRun"}
             <span>Run</span>
+          {/if}
+        </button>
+      {/each}
+    </div>
+  {:else if surface === "calendar"}
+    <p class="mobile-calendar-chrome-title" aria-live="polite">{calendarChromeTitle}</p>
+    <div class="mobile-chrome-actions mobile-calendar-chrome-actions">
+      {#each trailing as action (action)}
+        {@const Icon =
+          action === "calendarView"
+            ? calendar.viewMode === "month"
+              ? List
+              : CalendarDays
+            : icons[action]}
+        <button
+          type="button"
+          class="mobile-chrome-icon"
+          class:mobile-chrome-icon-active={action === "calendarSearch" &&
+            calendar.mobileSearchOpen}
+          aria-label={labelFor(action)}
+          aria-pressed={action === "calendarSearch" ? calendar.mobileSearchOpen : undefined}
+          onclick={(event) => void run(action, event.currentTarget)}
+        >
+          {#if Icon}
+            <Icon size={18} strokeWidth={1.75} />
           {/if}
         </button>
       {/each}

@@ -8,7 +8,7 @@ const BACK_MAX_VERTICAL_PX = 64;
 const DIRECTION_LOCK_PX = 10;
 const SHEET_SETTLE_MS = 220;
 const EXPANDED_HEIGHT_CSS =
-  "calc(100dvh - max(1rem, env(safe-area-inset-top, 0px)))";
+  "calc(var(--mobile-layout-height, 100dvh) - var(--mobile-keyboard-inset, 0px) - max(1rem, env(safe-area-inset-top, 0px)))";
 
 const INTERACTIVE_SELECTOR = [
   "a",

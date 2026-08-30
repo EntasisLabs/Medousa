@@ -275,6 +275,21 @@
   grid-template-columns: 2.75rem minmax(0, 1fr) auto;
 }
 
+.mobile-top-chrome[data-chrome-surface="calendar"] {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr) auto;
+}
+
+.mobile-calendar-chrome-title {
+  @apply min-w-0 truncate text-sm font-semibold text-surface-100;
+  margin: 0;
+  letter-spacing: -0.012em;
+}
+
+.mobile-calendar-chrome-actions {
+  @apply max-w-none shrink-0 gap-1 overflow-visible;
+}
+
 .mobile-script-title {
   @apply flex min-w-0 items-center justify-center gap-1.5 rounded-full px-2 py-2 text-sm font-medium text-surface-100 transition active:bg-surface-800/70;
 }

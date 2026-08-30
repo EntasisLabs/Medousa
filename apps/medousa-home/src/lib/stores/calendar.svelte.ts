@@ -18,8 +18,10 @@ import {
   toggleCalendarReminder,
 } from "$lib/utils/calendarReminders";
 
-export type CalendarViewMode = "month" | "week" | "day";
+export type CalendarViewMode = "month" | "week" | "day" | "schedule";
 export type CalendarCreateKind = "event" | "reminder";
+
+export const MOBILE_CALENDAR_SCHEDULE_DAYS = 92;
 
 function startOfDay(date: Date): Date {
   const next = new Date(date);
@@ -89,6 +91,7 @@ class CalendarStore {
   notice = $state<string | null>(null);
   /** Side-rail list filter (toolbar search). */
   railQuery = $state("");
+  mobileSearchOpen = $state(false);
   editorOpen = $state(false);
   editing = $state<CalendarEvent | null>(null);
   createKind = $state<CalendarCreateKind>("event");
@@ -96,6 +99,10 @@ class CalendarStore {
   reminderComposerOpen = $state(false);
 
   rangeForView(): { from: Date; to: Date } {
+    if (this.viewMode === "schedule") {
+      const from = startOfDay(this.selectedDay);
+      return { from, to: addDays(from, MOBILE_CALENDAR_SCHEDULE_DAYS) };
+    }
     if (this.viewMode === "day") {
       const from = startOfDay(this.selectedDay);
       return { from, to: addDays(from, 1) };
@@ -152,8 +159,11 @@ class CalendarStore {
     } else if (this.viewMode === "week") {
       this.selectedDay = addDays(this.selectedDay, delta * 7);
       this.anchor = this.selectedDay;
-    } else {
+    } else if (this.viewMode === "day") {
       this.selectedDay = addDays(this.selectedDay, delta);
+      this.anchor = this.selectedDay;
+    } else {
+      this.selectedDay = addDays(this.selectedDay, delta * 30);
       this.anchor = this.selectedDay;
     }
     void this.refresh();
@@ -168,6 +178,15 @@ class CalendarStore {
 
   setRailQuery(query: string) {
     this.railQuery = query;
+  }
+
+  openMobileSearch() {
+    this.mobileSearchOpen = true;
+  }
+
+  closeMobileSearch(options: { clear?: boolean } = {}) {
+    this.mobileSearchOpen = false;
+    if (options.clear) this.railQuery = "";
   }
 
   eventsForDay(date: Date): CalendarEvent[] {

@@ -43,7 +43,10 @@ export type MobileChromeActionId =
   | "codeSearch"
   | "codeSave"
   | "codeFind"
-  | "codeThread";
+  | "codeThread"
+  | "calendarView"
+  | "calendarSearch"
+  | "calendarNew";
 
 export type MobileChromeSurface =
   | "home"
@@ -56,7 +59,8 @@ export type MobileChromeSurface =
   | "automations"
   | "agents"
   | "runtime"
-  | "code";
+  | "code"
+  | "calendar";
 
 export function resolveMobileChromeSurface(
   tab: MobileTab,
@@ -72,6 +76,7 @@ export function resolveMobileChromeSurface(
     if (moreDestination === "automations") return "automations";
     if (moreDestination === "workshop") return "agents";
     if (moreDestination === "code") return "code";
+    if (moreDestination === "calendar") return "calendar";
     if (moreDestination === "runtime") return "runtime";
     return moreDestination !== "hub" ? "more-nested" : "more";
   }
@@ -87,7 +92,8 @@ export function mobileChromeLeading(
     surface === "automations" ||
     surface === "agents" ||
     surface === "runtime" ||
-    surface === "code"
+    surface === "code" ||
+    surface === "calendar"
     ? "back"
     : "menu";
 }
@@ -145,6 +151,8 @@ export function mobileChromeTrailing(
       return ["codeThread"];
     case "runtime":
       return ["runtimeRefresh", "activity"];
+    case "calendar":
+      return ["calendarView", "calendarSearch", "calendarNew"];
     case "more":
     case "more-nested":
       return ["activity"];
