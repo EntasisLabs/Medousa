@@ -36,6 +36,7 @@ export type MobileChromeActionId =
   | "browserBack"
   | "browserForward"
   | "browserReload"
+  | "runtimeRefresh"
   | "activity"
   | "codeSearch"
   | "codeSave"
@@ -52,6 +53,7 @@ export type MobileChromeSurface =
   | "more-nested"
   | "automations"
   | "agents"
+  | "runtime"
   | "code";
 
 export function resolveMobileChromeSurface(
@@ -68,6 +70,7 @@ export function resolveMobileChromeSurface(
     if (moreDestination === "automations") return "automations";
     if (moreDestination === "workshop") return "agents";
     if (moreDestination === "code") return "code";
+    if (moreDestination === "runtime") return "runtime";
     return moreDestination !== "hub" ? "more-nested" : "more";
   }
   return "more";
@@ -81,6 +84,7 @@ export function mobileChromeLeading(
     surface === "more-nested" ||
     surface === "automations" ||
     surface === "agents" ||
+    surface === "runtime" ||
     surface === "code"
     ? "back"
     : "menu";
@@ -137,6 +141,8 @@ export function mobileChromeTrailing(
           return ["codeThread"];
       }
       return ["codeThread"];
+    case "runtime":
+      return ["runtimeRefresh", "activity"];
     case "more":
     case "more-nested":
       return ["activity"];

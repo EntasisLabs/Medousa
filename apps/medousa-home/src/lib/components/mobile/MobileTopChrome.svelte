@@ -46,6 +46,7 @@
   import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
   import { mobileCodeWorkspaceState } from "$lib/stores/mobileCodeWorkspaceState.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
+  import { runtime } from "$lib/stores/runtime.svelte";
   import { haptic } from "$lib/haptics";
   import { prepareTalkAboutNote } from "$lib/utils/vaultNoteBridge";
   import { openMobileCodeThread } from "$lib/utils/mobileCodeOpen";
@@ -144,6 +145,7 @@
     browserBack: ArrowLeft,
     browserForward: ArrowRight,
     browserReload: RefreshCw,
+    runtimeRefresh: RefreshCw,
     activity: Activity,
     codeSearch: Search,
     codeSave: Save,
@@ -184,7 +186,8 @@
         if (
           surface === "more-nested" ||
           surface === "automations" ||
-          surface === "agents"
+          surface === "agents" ||
+          surface === "runtime"
         ) {
           layout.backToMoreHub();
           return;
@@ -304,6 +307,9 @@
           await humanBrowser.reload();
         }
         return;
+      case "runtimeRefresh":
+        await runtime.refresh();
+        return;
       case "activity":
         layout.toggleActivitySheet();
         return;
@@ -334,7 +340,8 @@
         if (surface === "code") return "Back to Home";
         return surface === "more-nested" ||
           surface === "automations" ||
-          surface === "agents"
+          surface === "agents" ||
+          surface === "runtime"
           ? "Back to Home"
           : "Back to notes";
       case "workshop":
@@ -393,6 +400,8 @@
         return "Forward";
       case "browserReload":
         return humanBrowser.loading ? "Stop loading" : "Reload";
+      case "runtimeRefresh":
+        return runtime.loading ? "Refreshing Workshop" : "Refresh Workshop";
       case "activity":
         return "Activity";
       case "codeSearch":
@@ -415,6 +424,8 @@
         return !humanBrowser.canGoBack;
       case "browserForward":
         return !humanBrowser.canGoForward;
+      case "runtimeRefresh":
+        return runtime.loading;
       case "scriptSave":
         return (
           graphemeScriptEditor.saveBusy ||
@@ -643,6 +654,7 @@
               <Icon
                 size={action === "browserReload" && humanBrowser.loading ? 12 : 18}
                 strokeWidth={action === "browserReload" && humanBrowser.loading ? 2.25 : 1.75}
+                class={action === "runtimeRefresh" && runtime.loading ? "animate-spin" : ""}
               />
             {/if}
           </button>

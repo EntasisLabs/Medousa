@@ -38,6 +38,14 @@ describe("mobile Code chrome", () => {
   });
 });
 
+describe("mobile Workshop chrome", () => {
+  it("keeps refresh beside Activity in the top chrome", () => {
+    expect(resolveMobileChromeSurface("more", "list", "runtime")).toBe("runtime");
+    expect(mobileChromeLeading("runtime")).toBe("back");
+    expect(mobileChromeTrailing("runtime")).toEqual(["runtimeRefresh", "activity"]);
+  });
+});
+
 describe("mobile Scripts chrome", () => {
   it("keeps only document actions in the editor chrome", () => {
     expect(mobileChromeTrailing("automations", "scripts", "script-editor")).toEqual([
