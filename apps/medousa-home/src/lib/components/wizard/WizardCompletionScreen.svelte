@@ -52,7 +52,7 @@
     class="wizard-beat mt-8 text-3xl font-semibold tracking-tight text-surface-50"
   >
     {#if isTauriMobilePlatform()}
-      You're set
+      {spaceLabel} is ready
     {:else if workspaceOnly}
       {spaceLabel} is waiting
     {:else}
@@ -62,7 +62,17 @@
 
   <p class="wizard-beat mt-3 max-w-md text-base leading-relaxed text-content-secondary">
     {#if isTauriMobilePlatform()}
-      Open chat when you're linked to your computer.
+      {#if workspaceOnly}
+        Your Personal workspace lives on this device. Start with Home, Notes, or Calendar — add a
+        model provider whenever you want.
+      {:else if principal}
+        Personal is ready, {principal}. Open Home or start a conversation with {assistant}.
+      {:else}
+        Your Personal workspace and Medousa Agent are ready on this device.
+      {/if}
+      <span class="mt-2 block text-sm text-content-quiet">
+        Want more power later? Pair a computer from Settings → Connection.
+      </span>
     {:else if workspaceOnly}
       {#if principal}
         Go write something, {principal}. The desk is yours.
@@ -109,7 +119,11 @@
       disabled={wizard.busy}
       onclick={() => void wizard.finish()}
     >
-      {isTauriMobilePlatform() ? "Open chat →" : "Open your desk →"}
+      {isTauriMobilePlatform()
+        ? workspaceOnly
+          ? "Open Home →"
+          : "Open chat →"
+        : "Open your desk →"}
     </button>
   </div>
 </div>

@@ -1,9 +1,11 @@
 # Phone pairing
 
-**Audience:** people who want iOS or Android to connect to another Medousa
-workshop.
+**Audience:** people who want a mobile Personal workshop to connect to another
+Medousa workshop.
 
-The phone's Personal workshop remains its own brain. Pairing adds a separate
+On iPhone, first-run setup creates the embedded Personal workshop and can
+configure its own model provider. Pairing is not part of that critical path.
+Pairing later adds a separate
 portal you may switch to; it does not replace Personal or merge their data.
 
 ---
@@ -23,7 +25,8 @@ portal you may switch to; it does not replace Personal or merge their data.
 
 1. On desktop: **Settings → Phone**.
 2. Show the QR / invite.
-3. On the phone: scan the QR or paste the invite link.
+3. On the phone: open **Settings → Connection**, choose to add a workshop, then
+   scan the QR or paste the invite link.
 4. Accept — the phone joins as a **portal** to that workshop.
 
 After pairing, you can leave the LAN pairing window off. Already-paired clients

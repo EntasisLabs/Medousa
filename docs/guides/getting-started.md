@@ -21,9 +21,11 @@ curl -fsSL https://raw.githubusercontent.com/EntasisLabs/Medousa/main/scripts/in
    — the bootstrap picks the right build for your platform.
 2. Install and open **Medousa**.
 
-On first launch the app starts a local **engine** for you. Desktop onboarding
-happens inside Home: choose what you want nearby, shape the first layout, and
-pick a Medousa mark and matching color theme.
+On first launch the app starts your **Personal** workshop for you. Desktop
+onboarding happens inside Home: choose what you want nearby, shape the first
+layout, and pick a Medousa mark and matching color theme. On iPhone, Personal
+runs as an embedded engine: name your Home, pick its look, and optionally
+connect a model provider. Pairing a computer is not required.
 
 > Prefer a terminal / headless engine? See
 > [Install & self-host](../cookbook/install-and-self-host.md).
@@ -32,7 +34,7 @@ pick a Medousa mark and matching color theme.
 
 ## 2. Shape Home, then choose how she thinks
 
-Choose one or more focus areas. Code prepares the coding engine, language
+On desktop, choose one or more focus areas. Code prepares the coding engine, language
 servers, and shell session. Messages installs only the channel adapters you
 explicitly select. Notes and planning need no optional download. Pick a focused,
 side-by-side, or dashboard layout; it becomes your actual first desktop.
@@ -56,6 +58,14 @@ If offline brain isn’t installed yet, the wizard points you to
 
 Enter Home whenever you are ready. Optional package downloads continue in the
 background and do not block the workspace.
+
+On iPhone, choose **Workspace with a brain**, then sign in with ChatGPT to use
+your subscription or search the providers and models supported by embedded
+Personal and enter an API key on-device.
+Choose **Just the workspace** to start with Home, Notes, Calendar, and
+Automations and add a model later. The wizard does not open the keyboard until
+you choose a field, and computer pairing stays optional under **Settings →
+Connection**.
 
 ---
 
@@ -107,7 +117,7 @@ ordinary per-conversation draft recovery remains private to the app.
 | **Workshop / Automations** | Scripts, flows, schedules |
 | **Settings** | Room, models, memory, phone, packages, connection |
 
-Mobile uses a compact shell with the same engine behind it. Its menu button
+Mobile uses a compact shell with its own embedded Personal engine. Its menu button
 stays on the left. Open the menu and choose **Edit** to show or hide supported
 destinations for the active layout. That edits the same workshop-owned layout
 preset used by the desktop rail; it does not create a separate phone profile or
