@@ -30,10 +30,11 @@ export async function resolveModelsForProvider(
   entry: ProviderCatalogEntry,
   options?: ResolveProviderModelsOptions,
 ): Promise<ModelCapabilityRecord[]> {
-  const runtimeId = await resolveRuntimeProviderId(entry.id);
+  const runtimeId = await resolveRuntimeProviderId(entry.id).catch(() => entry.id);
+  const savedBaseUrl = await resolveProviderBaseUrl(entry).catch(() => null);
   const baseUrl =
     options?.baseUrl?.trim() ||
-    (await resolveProviderBaseUrl(entry)) ||
+    savedBaseUrl ||
     entry.defaultBaseUrl?.trim() ||
     undefined;
 
