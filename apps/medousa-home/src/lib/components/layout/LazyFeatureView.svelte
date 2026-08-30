@@ -5,6 +5,7 @@
   let {
     loader,
     overlay = false,
+    onSettled,
     ...rest
   }: {
     loader: (signal?: AbortSignal) => Promise<{
@@ -12,6 +13,7 @@
       release?: () => void;
     }>;
     overlay?: boolean;
+    onSettled?: () => void;
     [key: string]: unknown;
   } = $props();
 
@@ -20,9 +22,13 @@
   let pending = $state(load());
 
   async function load() {
-    const result = await loader(controller.signal);
-    loaded = result;
-    return result;
+    try {
+      const result = await loader(controller.signal);
+      loaded = result;
+      return result;
+    } finally {
+      onSettled?.();
+    }
   }
 
   function retry() {

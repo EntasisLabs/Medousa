@@ -5,6 +5,7 @@
   import { initializeStores } from "@skeletonlabs/skeleton";
   import { settings } from "$lib/stores/settings.svelte";
   import { installCspViolationDiagnostics } from "$lib/security/cspDiagnostics";
+  import { dismissBootstrapSplash } from "$lib/runtime/bootstrapSplash";
 
   initializeStores();
   settings.applyTheme();
@@ -13,10 +14,9 @@
 
   onMount(() => {
     installCspViolationDiagnostics();
-    const bootstrapSplash = document.getElementById("medousa-bootstrap-splash");
-    if (!bootstrapSplash) return;
-    bootstrapSplash.setAttribute("data-exiting", "true");
-    window.setTimeout(() => bootstrapSplash.remove(), 300);
+    // AppShell dismisses the root splash only once its destination has mounted.
+    // Utility/pop-out routes do not mount AppShell, so hand those off here.
+    if (window.location.pathname !== "/") dismissBootstrapSplash();
   });
 
   let { children } = $props();
