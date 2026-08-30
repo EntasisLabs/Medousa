@@ -30,7 +30,6 @@ pub async fn run_grapheme_via_runtime(
         "workflow.grapheme.run",
         format!("grapheme:inline:{source}"),
         causation,
-        "sttp:in:cognition:grapheme:runtime",
         Utc::now(),
     )
     .build();

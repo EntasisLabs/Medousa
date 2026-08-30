@@ -214,7 +214,8 @@ mod tests {
             correlation_id: "corr-job-ext-test".to_string(),
             causation_id: "test".to_string(),
             trace_id: "trace-job-ext-test".to_string(),
-            sttp_input_node_id: "sttp:in:test".to_string(),
+            input_provenance: None,
+            placement: stasis::domain::runtime::placement::PlacementConstraints::unrestricted(),
             scheduled_at: Utc::now(),
             backoff_policy: BackoffPolicy::default(),
         };

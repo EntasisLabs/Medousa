@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use axum::http::StatusCode;
 use chrono::{DateTime, Timelike, Utc};
 use serde::Serialize;
+use stasis::domain::runtime::placement::WorkerCapabilities;
 use stasis::prelude::RuntimeComposition;
 use stasis::sdk::runtime_sdk::{RuntimeSdk, RuntimeStatsSnapshot};
 use tokio::fs::OpenOptions;
@@ -941,6 +942,27 @@ pub async fn safe_process_once(
     worker_id: &str,
 ) -> Result<Option<String>> {
     match sdk.process_once(queue, worker_id).await {
+        Ok(processed_job) => Ok(processed_job),
+        Err(err) => {
+            if is_missing_runtime_table_error(&err.to_string()) {
+                Ok(None)
+            } else {
+                Err(err.into())
+            }
+        }
+    }
+}
+
+pub async fn safe_process_once_with_capabilities(
+    sdk: &RuntimeSdk,
+    queue: &str,
+    worker_id: &str,
+    capabilities: &WorkerCapabilities,
+) -> Result<Option<String>> {
+    match sdk
+        .process_once_with_capabilities(queue, worker_id, capabilities)
+        .await
+    {
         Ok(processed_job) => Ok(processed_job),
         Err(err) => {
             if is_missing_runtime_table_error(&err.to_string()) {

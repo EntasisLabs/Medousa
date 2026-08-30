@@ -59,6 +59,21 @@ fn worker_canvas_lane_enabled(is_bound_workshop: bool, record: &TurnWorkRecord) 
     is_bound_workshop || record.supports_ui_artifacts
 }
 
+/// Catalog visibility is read authority for user-facing sessions, not the
+/// execution grant for an internal delegated session. Delegated work is
+/// authorized by the identity-bound durable record admitted from the signed
+/// mesh grant; projecting that derived session into the visible catalog would
+/// violate its intentionally private lifecycle.
+fn worker_session_execution_authorized(record: &TurnWorkRecord, identity_user_id: &str) -> bool {
+    if record.disposition == TurnWorkDisposition::Delegated {
+        return record
+            .identity_user_id
+            .as_deref()
+            .is_some_and(|bound| bound.trim() == identity_user_id);
+    }
+    crate::session_catalog::session_visible_to_profile(&record.session_id, identity_user_id)
+}
+
 fn worker_turn_scope(record: &TurnWorkRecord) -> TurnContinuationScope {
     let canvas_lane =
         worker_canvas_lane_enabled(record.disposition == TurnWorkDisposition::Bound, record);
@@ -806,7 +821,7 @@ pub async fn run_worker_turn(
         .await;
         return;
     };
-    if !crate::session_catalog::session_visible_to_profile(&record.session_id, &identity_user_id) {
+    if !worker_session_execution_authorized(&record, &identity_user_id) {
         store.update(&work_id, |record| {
             record.status = TurnWorkStatus::Failed;
             record.error = Some("worker session authority was revoked".to_string());
@@ -1793,6 +1808,20 @@ mod tests {
         assert_eq!(scope.identity_user_id.as_deref(), Some("user:alice"));
         assert_eq!(scope.provider, "worker-provider");
         assert_eq!(scope.model, "worker-model");
+    }
+
+    #[test]
+    fn delegated_worker_uses_its_durable_identity_binding_not_catalog_visibility() {
+        let mut record = sample_record(None, None);
+        record.disposition = TurnWorkDisposition::Delegated;
+        record.session_id = "ses_internal_delegated".to_string();
+        record.identity_user_id = Some("peer:phone-a".to_string());
+
+        assert!(worker_session_execution_authorized(&record, "peer:phone-a"));
+        assert!(!worker_session_execution_authorized(
+            &record,
+            "peer:phone-b"
+        ));
     }
 
     #[tokio::test]

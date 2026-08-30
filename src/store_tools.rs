@@ -658,6 +658,22 @@ impl ArtifactsSearch {
 
 impl CodeRead {
     async fn execute(self) -> stasis::prelude::Result<Value> {
+        #[cfg(feature = "full-daemon")]
+        if let Some(invocation) = crate::work_environment_tools::EnvironmentToolInvocation::active(
+            COGNITION_STORE_READ,
+        ) {
+            return crate::work_environment_tools::code_read(
+                &invocation,
+                crate::work_environment_tools::EnvironmentCodeReadRequest {
+                    path: self.path,
+                    line_start: self.line_start.map(|value| value as u64),
+                    line_end: self.line_end.map(|value| value as u64),
+                    byte_start: self.byte_start,
+                    byte_end: self.byte_end,
+                },
+            )
+            .await;
+        }
         #[cfg(not(feature = "full-daemon"))]
         return Err(stasis::prelude::StasisError::PortFailure(
             "code.read requires a desktop worktree adapter".to_string(),
@@ -677,6 +693,17 @@ impl CodeRead {
 
 impl CodeSearch {
     async fn execute(self) -> stasis::prelude::Result<Value> {
+        #[cfg(feature = "full-daemon")]
+        if let Some(invocation) = crate::work_environment_tools::EnvironmentToolInvocation::active(
+            COGNITION_STORE_READ,
+        ) {
+            return crate::work_environment_tools::code_search(
+                &invocation,
+                &self.query,
+                self.max_results,
+            )
+            .await;
+        }
         #[cfg(not(feature = "full-daemon"))]
         return Err(stasis::prelude::StasisError::PortFailure(
             "code.search requires a desktop worktree adapter".to_string(),
@@ -804,6 +831,22 @@ impl ArtifactsDelete {
 
 impl CodeWrite {
     async fn execute(self) -> stasis::prelude::Result<Value> {
+        #[cfg(feature = "full-daemon")]
+        if let Some(invocation) = crate::work_environment_tools::EnvironmentToolInvocation::active(
+            COGNITION_STORE_WRITE,
+        ) {
+            return crate::work_environment_tools::code_write(
+                &invocation,
+                crate::work_environment_tools::EnvironmentCodeWriteRequest {
+                    path: self.path,
+                    expected_sha256: self.expected_sha256,
+                    content: self.content,
+                    find: self.find,
+                    replace: self.replace,
+                },
+            )
+            .await;
+        }
         #[cfg(not(feature = "full-daemon"))]
         return Err(stasis::prelude::StasisError::PortFailure(
             "code.write requires a desktop worktree adapter".to_string(),

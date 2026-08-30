@@ -19,6 +19,7 @@ pub mod tool_loop;
 pub mod turn_context;
 pub mod turn_control;
 pub mod turn_presentation;
+pub mod work_environment;
 
 /// Maximum user prompt admitted to one foreground production turn.
 pub const MAX_REQUEST_PROMPT_CHARS: usize = 48_000;
@@ -62,3 +63,19 @@ pub use ports::{
 pub use tool_loop::MedousaToolLoopPipeline;
 pub use turn_context::{HostTurnContext, ToolLaneState, ToolRoundContextProvider};
 pub use turn_presentation::append_voice_preset_hint;
+pub use work_environment::{
+    InMemoryWorkEnvironmentPort, MAX_WORK_ENVIRONMENT_ARTIFACT_BYTES,
+    MAX_WORK_ENVIRONMENT_ARTIFACT_TOTAL_BYTES, MAX_WORK_ENVIRONMENT_ARTIFACTS,
+    MAX_WORK_ENVIRONMENT_RETENTION, MAX_WORK_ENVIRONMENT_STDIN_BYTES,
+    OCI_WORK_ENVIRONMENT_CAPABILITY, WORK_ENVIRONMENT_CHECKPOINT_SCHEMA_VERSION,
+    WORK_ENVIRONMENT_WORKSPACE_ROOT, WorkEnvironmentArtifact, WorkEnvironmentArtifactRequest,
+    WorkEnvironmentBinding, WorkEnvironmentCheckpoint, WorkEnvironmentCheckpointManifest,
+    WorkEnvironmentCheckpointPolicy, WorkEnvironmentError, WorkEnvironmentExecRequest,
+    WorkEnvironmentExecResult, WorkEnvironmentFence, WorkEnvironmentHandle, WorkEnvironmentId,
+    WorkEnvironmentImage, WorkEnvironmentMount, WorkEnvironmentMountAccess,
+    WorkEnvironmentMountKind, WorkEnvironmentNetworkPolicy, WorkEnvironmentPhase,
+    WorkEnvironmentPort, WorkEnvironmentPtyHandle, WorkEnvironmentPtyRequest,
+    WorkEnvironmentPublication, WorkEnvironmentPublicationResult, WorkEnvironmentRepository,
+    WorkEnvironmentRequirements, WorkEnvironmentRetention, WorkEnvironmentSpec,
+    WorkEnvironmentState, WorkEnvironmentStopReason, WorkspaceId,
+};

@@ -64,7 +64,6 @@ pub async fn enqueue_turn_worker_job(
         TURN_WORKER_JOB_TYPE,
         payload_ref,
         crate::public_api::COGNITION_WORKSHOP_MUTATE,
-        "sttp:in:medousa:turn_worker",
         now,
     )
     .max_attempts(3)
@@ -205,10 +204,10 @@ impl JobHandler for TurnWorkerJobHandler {
         };
 
         if record.synthesis_delivered {
-            return Ok(success_outcome(
-                &payload.work_id,
-                format!("work_id={} already completed", payload.work_id),
-            ));
+            return Ok(success_outcome(format!(
+                "work_id={} already completed",
+                payload.work_id
+            )));
         }
 
         let ctx = WorkerRuntimeContext::from_tui_runtime(self.agent.as_ref());
@@ -226,10 +225,10 @@ impl JobHandler for TurnWorkerJobHandler {
                 Some(self.agent.as_ref()),
             )
             .await;
-            return Ok(success_outcome(
-                &payload.work_id,
-                format!("work_id={} synthesis resumed", payload.work_id),
-            ));
+            return Ok(success_outcome(format!(
+                "work_id={} synthesis resumed",
+                payload.work_id
+            )));
         }
 
         eprintln!(
@@ -249,19 +248,19 @@ impl JobHandler for TurnWorkerJobHandler {
 
         let final_record = turn_worker_store().get(&payload.work_id);
         match final_record.as_ref().map(|record| record.status) {
-            Some(TurnWorkStatus::Completed) => Ok(success_outcome(
-                &payload.work_id,
-                format!("work_id={} completed", payload.work_id),
-            )),
+            Some(TurnWorkStatus::Completed) => Ok(success_outcome(format!(
+                "work_id={} completed",
+                payload.work_id
+            ))),
             Some(TurnWorkStatus::Failed) => Ok(fatal_outcome(
                 final_record
                     .and_then(|record| record.error)
                     .unwrap_or_else(|| "worker failed".to_string()),
             )),
-            Some(TurnWorkStatus::Cancelled) => Ok(success_outcome(
-                &payload.work_id,
-                format!("work_id={} cancelled during run", payload.work_id),
-            )),
+            Some(TurnWorkStatus::Cancelled) => Ok(success_outcome(format!(
+                "work_id={} cancelled during run",
+                payload.work_id
+            ))),
             _ => Ok(fatal_outcome(format!(
                 "work_id={} ended in unexpected state",
                 payload.work_id
@@ -619,9 +618,9 @@ fn truncate_line(value: &str, max: usize) -> String {
     trimmed.chars().take(max).collect::<String>() + "…"
 }
 
-fn success_outcome(work_id: &str, summary: String) -> JobExecutionOutcome {
+fn success_outcome(summary: String) -> JobExecutionOutcome {
     JobExecutionOutcome::Success {
-        sttp_output_node_id: format!("sttp:out:turn-worker:{work_id}"),
+        output_provenance: None,
         execution_id: None,
         diagnostics: Some(summary),
     }

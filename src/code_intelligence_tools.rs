@@ -40,6 +40,23 @@ async fn proxy(
     work_id: Option<&str>,
     attempt_id: Option<&str>,
 ) -> StasisResult<Value> {
+    if let Some(invocation) = crate::work_environment_tools::EnvironmentToolInvocation::active(
+        path.trim_start_matches("/v1/code/"),
+    ) {
+        let mut input = serde_json::json!({ "uri": uri });
+        if let Some(line) = line {
+            input["line"] = Value::from(line);
+        }
+        if let Some(character) = character {
+            input["character"] = Value::from(character);
+        }
+        return crate::work_environment_tools::code_intelligence(
+            &invocation,
+            path.trim_start_matches("/v1/code/"),
+            &input,
+        )
+        .await;
+    }
     let client = reqwest::Client::new();
     let mut url = reqwest::Url::parse(&format!("{}{path}", daemon_base().trim_end_matches('/')))
         .map_err(|e| StasisError::PortFailure(e.to_string()))?;

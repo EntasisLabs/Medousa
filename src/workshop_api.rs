@@ -5,12 +5,15 @@
 
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use schemars::JsonSchema;
 use schemars::schema::Schema;
 use serde::Deserialize;
 use serde_json::Value;
 
+#[cfg(feature = "full-daemon")]
 use crate::agent_runtime::turn_worker::TurnWorkerScheduler;
+#[cfg(feature = "full-daemon")]
 use crate::agent_runtime::turn_worker_tools::{
     CognitionSpawnTurnWorkerTool, CognitionTurnWorkerCancelTool, CognitionTurnWorkerStatusTool,
     CognitionWorkshopSteerTool, SpawnTurnWorkerInput, TurnWorkerCancelInput, TurnWorkerStatusInput,
@@ -20,9 +23,10 @@ use crate::public_api::{COGNITION_WORKSHOP_MUTATE, COGNITION_WORKSHOP_QUERY};
 use crate::schema_api::{
     TypedActionSchema, advertised_object_schema, string_enum_schema, typed_action_schema,
 };
-use crate::typed_tools::{
-    CompatOption, ExternalJson, ToolId, TypedTool, medousa_tool, serialize_output,
-};
+#[cfg(feature = "full-daemon")]
+use crate::typed_tools::{CompatOption, TypedTool, serialize_output};
+use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
+use crate::workshop_contract::{WorkshopSpawn, workshop_spawn_type_schema};
 
 const WORKSHOP_QUERY_ID: ToolId = ToolId::new(COGNITION_WORKSHOP_QUERY);
 const WORKSHOP_MUTATE_ID: ToolId = ToolId::new(COGNITION_WORKSHOP_MUTATE);
@@ -48,42 +52,22 @@ pub enum WorkshopMutateAction {
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 pub struct WorkshopStatus {
     #[serde(default)]
-    work_id: Option<String>,
+    pub(crate) work_id: Option<String>,
     #[serde(default)]
-    session_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct WorkshopSpawn {
-    /// Worker profile: memory.avec_calibrate | memory.context | research | general
-    #[serde(default)]
-    intent: Option<String>,
-    /// Focused task for the worker
-    task: String,
-    /// Short message for the user while the worker runs
-    user_ack: String,
-    /// Optional YAML specialty
-    #[serde(default)]
-    manuscript_id: Option<String>,
-    /// Optional StageRoutingMatrix role
-    #[serde(default)]
-    stage_role: Option<String>,
-    /// Prefer omit or auto; only set provider:model when explicitly requested
-    #[serde(default)]
-    model_hint: Option<String>,
+    pub(crate) session_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct WorkshopCancel {
-    work_id: String,
+    pub(crate) work_id: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct WorkshopSteer {
     /// Exact bound-workshop generation returned by begin-work
-    work_id: String,
+    pub(crate) work_id: String,
     /// Steer text for the bound workshop
-    message: String,
+    pub(crate) message: String,
 }
 
 impl JsonSchema for WorkshopQueryAction {
@@ -117,11 +101,7 @@ pub fn workshop_type_schemas() -> Vec<TypedActionSchema> {
             "workshop.status",
             "List or fetch status of background turn workers / bound workshop",
         ),
-        typed_action_schema::<WorkshopSpawn>(
-            WORKSHOP_MUTATE_ID,
-            "workshop.spawn",
-            "Delegate heavy work to a background turn worker",
-        ),
+        workshop_spawn_type_schema(),
         typed_action_schema::<WorkshopCancel>(
             WORKSHOP_MUTATE_ID,
             "workshop.cancel",
@@ -135,23 +115,91 @@ pub fn workshop_type_schemas() -> Vec<TypedActionSchema> {
     ]
 }
 
+#[async_trait]
+pub trait WorkshopExecution: Send + Sync {
+    async fn status(&self, input: WorkshopStatus) -> stasis::prelude::Result<Value>;
+    async fn spawn(&self, input: WorkshopSpawn) -> stasis::prelude::Result<Value>;
+    async fn cancel(&self, input: WorkshopCancel) -> stasis::prelude::Result<Value>;
+    async fn steer(&self, input: WorkshopSteer) -> stasis::prelude::Result<Value>;
+}
+
 pub struct CognitionWorkshopQueryTool {
-    scheduler: Arc<TurnWorkerScheduler>,
+    execution: Arc<dyn WorkshopExecution>,
 }
 
 pub struct CognitionWorkshopMutateTool {
+    execution: Arc<dyn WorkshopExecution>,
+}
+
+pub fn register_workshop_execution_tools(
+    registry: &mut impl crate::typed_tools::ToolRegistration,
+    execution: Arc<dyn WorkshopExecution>,
+) -> stasis::prelude::Result<()> {
+    registry.register_typed_tool(CognitionWorkshopQueryTool {
+        execution: execution.clone(),
+    })?;
+    registry.register_typed_tool(CognitionWorkshopMutateTool { execution })?;
+    Ok(())
+}
+
+#[cfg(feature = "full-daemon")]
+struct LocalWorkshopExecution {
     scheduler: Arc<TurnWorkerScheduler>,
 }
 
+#[cfg(feature = "full-daemon")]
+#[async_trait]
+impl WorkshopExecution for LocalWorkshopExecution {
+    async fn status(&self, input: WorkshopStatus) -> stasis::prelude::Result<Value> {
+        let output = CognitionTurnWorkerStatusTool::new(self.scheduler.clone())
+            .invoke_typed(TurnWorkerStatusInput {
+                work_id: CompatOption::from(input.work_id),
+                session_id: CompatOption::from(input.session_id),
+            })
+            .await?;
+        serialize_output(CognitionTurnWorkerStatusTool::tool_id(), output)
+    }
+
+    async fn spawn(&self, input: WorkshopSpawn) -> stasis::prelude::Result<Value> {
+        let output = CognitionSpawnTurnWorkerTool::new(self.scheduler.clone())
+            .invoke_typed(SpawnTurnWorkerInput {
+                intent: CompatOption::from(input.intent),
+                task: CompatOption::from(Some(input.task)),
+                user_ack: CompatOption::from(Some(input.user_ack)),
+                manuscript_id: CompatOption::from(input.manuscript_id),
+                stage_role: CompatOption::from(input.stage_role),
+                model_hint: CompatOption::from(input.model_hint),
+            })
+            .await?;
+        serialize_output(CognitionSpawnTurnWorkerTool::tool_id(), output)
+    }
+
+    async fn cancel(&self, input: WorkshopCancel) -> stasis::prelude::Result<Value> {
+        let output = CognitionTurnWorkerCancelTool::new(self.scheduler.clone())
+            .invoke_typed(TurnWorkerCancelInput {
+                work_id: input.work_id,
+            })
+            .await?;
+        serialize_output(CognitionTurnWorkerCancelTool::tool_id(), output)
+    }
+
+    async fn steer(&self, input: WorkshopSteer) -> stasis::prelude::Result<Value> {
+        let output = CognitionWorkshopSteerTool::new(self.scheduler.clone())
+            .invoke_typed(WorkshopSteerInput {
+                work_id: input.work_id,
+                message: input.message,
+            })
+            .await?;
+        serialize_output(CognitionWorkshopSteerTool::tool_id(), output)
+    }
+}
+
+#[cfg(feature = "full-daemon")]
 pub fn register_workshop_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
     scheduler: Arc<TurnWorkerScheduler>,
 ) -> stasis::prelude::Result<()> {
-    registry.register_typed_tool(CognitionWorkshopQueryTool {
-        scheduler: scheduler.clone(),
-    })?;
-    registry.register_typed_tool(CognitionWorkshopMutateTool { scheduler })?;
-    Ok(())
+    register_workshop_execution_tools(registry, Arc::new(LocalWorkshopExecution { scheduler }))
 }
 
 #[medousa_tool(id = WORKSHOP_QUERY_ID)]
@@ -198,52 +246,25 @@ async fn dispatch_mutate(
 
 impl WorkshopStatus {
     async fn execute(self, tool: &CognitionWorkshopQueryTool) -> stasis::prelude::Result<Value> {
-        let output = CognitionTurnWorkerStatusTool::new(tool.scheduler.clone())
-            .invoke_typed(TurnWorkerStatusInput {
-                work_id: CompatOption::from(self.work_id),
-                session_id: CompatOption::from(self.session_id),
-            })
-            .await?;
-        serialize_output(CognitionTurnWorkerStatusTool::tool_id(), output)
+        tool.execution.status(self).await
     }
 }
 
 impl WorkshopSpawn {
     async fn execute(self, tool: &CognitionWorkshopMutateTool) -> stasis::prelude::Result<Value> {
-        let output = CognitionSpawnTurnWorkerTool::new(tool.scheduler.clone())
-            .invoke_typed(SpawnTurnWorkerInput {
-                intent: CompatOption::from(self.intent),
-                task: CompatOption::from(Some(self.task)),
-                user_ack: CompatOption::from(Some(self.user_ack)),
-                manuscript_id: CompatOption::from(self.manuscript_id),
-                stage_role: CompatOption::from(self.stage_role),
-                model_hint: CompatOption::from(self.model_hint),
-            })
-            .await?;
-        serialize_output(CognitionSpawnTurnWorkerTool::tool_id(), output)
+        tool.execution.spawn(self).await
     }
 }
 
 impl WorkshopCancel {
     async fn execute(self, tool: &CognitionWorkshopMutateTool) -> stasis::prelude::Result<Value> {
-        let output = CognitionTurnWorkerCancelTool::new(tool.scheduler.clone())
-            .invoke_typed(TurnWorkerCancelInput {
-                work_id: self.work_id,
-            })
-            .await?;
-        serialize_output(CognitionTurnWorkerCancelTool::tool_id(), output)
+        tool.execution.cancel(self).await
     }
 }
 
 impl WorkshopSteer {
     async fn execute(self, tool: &CognitionWorkshopMutateTool) -> stasis::prelude::Result<Value> {
-        let output = CognitionWorkshopSteerTool::new(tool.scheduler.clone())
-            .invoke_typed(WorkshopSteerInput {
-                work_id: self.work_id,
-                message: self.message,
-            })
-            .await?;
-        serialize_output(CognitionWorkshopSteerTool::tool_id(), output)
+        tool.execution.steer(self).await
     }
 }
 

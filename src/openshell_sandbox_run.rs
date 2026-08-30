@@ -268,7 +268,7 @@ impl JobHandler for OpenshellSandboxRunJobHandler {
 
         if exec_result.status_code == Some(0) {
             Ok(JobExecutionOutcome::Success {
-                sttp_output_node_id: format!("sttp:out:openshell-sandbox:{}", job.id),
+                output_provenance: None,
                 execution_id: Some(sandbox_name),
                 diagnostics: Some(diagnostics),
             })

@@ -99,7 +99,7 @@ impl JobHandler for ArtifactMaintenanceJobHandler {
         .to_string();
 
         Ok(JobExecutionOutcome::Success {
-            sttp_output_node_id: format!("sttp:out:artifact-maintenance:{}", job.id),
+            output_provenance: None,
             execution_id: Some(job.id.clone()),
             diagnostics: Some(diagnostics),
         })

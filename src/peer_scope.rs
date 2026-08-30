@@ -221,8 +221,23 @@ pub async fn enforce_daemon_access(
             .as_ref()
             .and_then(|pairing| pairing.resolve_bearer_record(token).ok().flatten()),
     };
+    let signed_mesh_principal = if matches!(credential, BearerCredential::Missing) {
+        match signed_mesh_principal(&state, request.headers(), transport) {
+            Ok(principal) => principal,
+            Err(()) => {
+                return deny(
+                    &state.credential_lifecycle,
+                    AccessDenial::InvalidCredential,
+                    request.headers(),
+                );
+            }
+        }
+    } else {
+        None
+    };
     let mcp_policy_authenticated = trusted_local
         && record.is_none()
+        && signed_mesh_principal.is_none()
         && local_credential.is_none()
         && state.mcp_policy_token.is_some()
         && matches!(credential, BearerCredential::Valid(_))
@@ -254,6 +269,7 @@ pub async fn enforce_daemon_access(
             .map(|(credential_id, generation)| {
                 RequestPrincipal::local_app_with_generation(credential_id, transport, generation)
             })
+            .or(signed_mesh_principal.clone())
             .or_else(|| {
                 record.map(|record| {
                     RequestPrincipal::from_pairing_record(record, transport, shared_mode)
@@ -266,7 +282,11 @@ pub async fn enforce_daemon_access(
         return run_with_principal(&state.credential_lifecycle, principal, request, next).await;
     }
 
-    if record.is_none() && local_credential.is_none() && !mcp_policy_authenticated {
+    if record.is_none()
+        && signed_mesh_principal.is_none()
+        && local_credential.is_none()
+        && !mcp_policy_authenticated
+    {
         return deny(
             &state.credential_lifecycle,
             AccessDenial::AuthenticationRequired,
@@ -275,15 +295,18 @@ pub async fn enforce_daemon_access(
     }
 
     let shared_mode = crate::shared_mode::is_shared_mode();
-    let principal = match (local_credential, record) {
-        (Some((credential_id, generation)), _) => {
+    let principal = match (local_credential, record, signed_mesh_principal) {
+        (Some((credential_id, generation)), _, _) => {
             RequestPrincipal::local_app_with_generation(credential_id, transport, generation)
         }
-        (None, Some(record)) => {
+        (None, Some(record), _) => {
             RequestPrincipal::from_pairing_record(record, transport, shared_mode)
         }
-        (None, None) if mcp_policy_authenticated => RequestPrincipal::mcp_policy_service(transport),
-        (None, None) => RequestPrincipal::anonymous(transport),
+        (None, None, Some(principal)) => principal,
+        (None, None, None) if mcp_policy_authenticated => {
+            RequestPrincipal::mcp_policy_service(transport)
+        }
+        (None, None, None) => RequestPrincipal::anonymous(transport),
     };
     if matches!(state.surface, AccessSurface::Declared) {
         return run_with_principal(&state.credential_lifecycle, principal, request, next).await;
@@ -303,6 +326,38 @@ pub async fn enforce_daemon_access(
             request.headers(),
         )
     }
+}
+
+fn signed_mesh_principal(
+    state: &DaemonAccessState,
+    headers: &axum::http::HeaderMap,
+    transport: TransportClass,
+) -> Result<Option<RequestPrincipal>, ()> {
+    let Some(raw) = headers.get(crate::mesh::MESH_ENVELOPE_HEADER) else {
+        return Ok(None);
+    };
+    let raw = raw.to_str().map_err(|_| ())?;
+    let envelope = crate::mesh::decode_envelope_header(raw).map_err(|_| ())?;
+    let capability = crate::mesh::MeshCapability::parse(&envelope.capability).ok_or(())?;
+    let pairing = state.pairing.as_ref().ok_or(())?;
+    let record = pairing
+        .find_by_phone_id(&envelope.sender_device_id)
+        .map_err(|_| ())?
+        .ok_or(())?;
+    crate::mesh::envelope::verify_envelope(crate::mesh::envelope::VerifyEnvelopeParams {
+        envelope: &envelope,
+        payload_hash: &envelope.payload_hash,
+        sender_public_key_b64: &record.phone_public_key,
+        expected_sender_device_id: &record.phone_id,
+        expected_recipient_device_id: pairing.device_id(),
+        required_capability: capability,
+        capability_granted: crate::mesh::record_has_capability(&record, capability.as_str()),
+        now: chrono::Utc::now(),
+    })
+    .map_err(|_| ())?;
+    Ok(Some(RequestPrincipal::from_signed_mesh_record(
+        record, transport,
+    )))
 }
 
 fn deny(

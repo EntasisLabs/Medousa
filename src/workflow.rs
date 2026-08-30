@@ -477,7 +477,7 @@ impl WorkflowExecutor {
             })
         } else {
             Ok(JobExecutionOutcome::Success {
-                sttp_output_node_id: format!("sttp:workflow:{}", payload.workflow_id),
+                output_provenance: None,
                 execution_id: Some(payload.workflow_id.clone()),
                 diagnostics: Some(diagnostics),
             })
@@ -883,7 +883,6 @@ pub async fn enqueue_workflow_job(
         job_type,
         encode_workflow_payload(payload)?,
         "cognition_runtime_workflow",
-        format!("sttp:in:workflow:{}", payload.workflow_id),
         now,
     )
     .correlation_id(payload.workflow_id.clone())

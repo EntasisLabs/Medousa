@@ -1554,7 +1554,6 @@ async fn run_llm(
     let new_job = RuntimeWorkflowJobBuilder::for_prompt(job_id.clone(), &payload)?
         .with_correlation_id(identity_user_id)
         .with_causation_id("medousa-cli:interactive")
-        .with_sttp_input_node_id("sttp:in:medousa:cli:interactive:llm")
         .with_scheduled_at(now)
         .build();
 
@@ -1622,7 +1621,6 @@ async fn run_ask(runtime: &RuntimeComposition, prompt: &str) -> Result<()> {
     let new_job = RuntimeWorkflowJobBuilder::for_agent_session(job_id.clone(), &payload)?
         .with_correlation_id(identity_user_id)
         .with_causation_id("medousa-cli:interactive")
-        .with_sttp_input_node_id("sttp:in:medousa:cli:interactive:ask")
         .with_scheduled_at(now)
         .build();
 

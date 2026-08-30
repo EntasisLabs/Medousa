@@ -740,6 +740,46 @@ impl StoreRoot {
             .map_err(|error| StoreRootError::io("remove_dir_all", error))
     }
 
+    /// Open a confined regular file suitable for an advisory cross-process
+    /// lock. The returned handle carries no authority beyond this validated
+    /// leaf and rejects symlink and hard-link substitution before exposure.
+    pub fn open_lock_file(
+        &self,
+        path: &impl StoreRootPath,
+    ) -> Result<std::fs::File, StoreRootError> {
+        let (parent, leaf) = self.open_parent(path, true, "open_lock_file")?;
+        reject_symlink(&parent, leaf, "open_lock_file")?;
+        let mut options = OpenOptions::new();
+        options
+            .read(true)
+            .write(true)
+            .create(true)
+            .follow(FollowSymlinks::No);
+        let file = parent
+            .open_with(leaf, &options)
+            .map_err(|error| StoreRootError::io("open_lock_file", error))?;
+        let metadata = file
+            .metadata()
+            .map_err(|error| StoreRootError::io("open_lock_file_metadata", error))?;
+        if file_has_multiple_links(&metadata) {
+            return Err(StoreRootError::Confinement {
+                operation: "open_lock_file",
+                reason: ConfinementReason::HardLink,
+            });
+        }
+        Ok(file.into_std())
+    }
+
+    /// Open a confined regular file for bounded streaming reads. Symlink and
+    /// hard-link substitution are rejected by the same held-root boundary as
+    /// ordinary store reads.
+    pub fn open_read_file(
+        &self,
+        path: &impl StoreRootPath,
+    ) -> Result<std::fs::File, StoreRootError> {
+        self.open_file(path, false, false).map(File::into_std)
+    }
+
     pub fn rename(
         &self,
         from: &impl StoreRootPath,

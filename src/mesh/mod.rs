@@ -18,10 +18,12 @@ pub mod receipts;
 pub mod registry;
 mod store_io;
 pub mod task;
+pub mod work_environment_federation;
 
 pub use envelope::{
-    DEFAULT_ENVELOPE_TTL_SECS, MeshCapability, MeshEnvelope, MeshEnvelopeError,
-    MeshEnvelopedRequest, MeshInboundBody, payload_hash_hex, require_remote_envelope,
+    DEFAULT_ENVELOPE_TTL_SECS, MESH_ENVELOPE_HEADER, MeshCapability, MeshEnvelope,
+    MeshEnvelopeError, MeshEnvelopedRequest, MeshInboundBody, decode_envelope_header,
+    encode_envelope_header, payload_hash_hex, require_remote_envelope,
     require_remote_envelope_json, sign_envelope, verify_enveloped_payload,
 };
 pub use grants::{

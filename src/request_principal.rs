@@ -239,6 +239,24 @@ impl RequestPrincipal {
         }
     }
 
+    /// A peer authenticated by a signed mesh request header receives only the
+    /// peer-exchange surface. Possessing the pairing key must never recover
+    /// portal/member/operator authority without the bearer credential.
+    #[cfg(feature = "full-daemon")]
+    pub fn from_signed_mesh_record(record: PairedDeviceRecord, transport: TransportClass) -> Self {
+        Self {
+            kind: PrincipalKind::Peer,
+            credential_id: Some(CredentialId(Arc::from(record.pairing_id))),
+            profile_id: record
+                .profile_id
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            capabilities: CapabilitySet::peer(),
+            transport,
+            revocation_generation: record.credential_generation,
+        }
+    }
+
     pub fn kind(&self) -> PrincipalKind {
         self.kind
     }
@@ -321,6 +339,18 @@ mod tests {
                 .capabilities()
                 .contains(Capability::WorkshopInteract)
         );
+        assert!(!principal.capabilities().contains(Capability::AdminRuntime));
+    }
+
+    #[test]
+    fn signed_mesh_portal_is_confined_to_peer_exchange() {
+        let principal = RequestPrincipal::from_signed_mesh_record(
+            record(PairingRole::Portal, Some("user:alice")),
+            TransportClass::Direct,
+        );
+        assert_eq!(principal.kind(), PrincipalKind::Peer);
+        assert!(principal.capabilities().contains(Capability::PeerExchange));
+        assert!(!principal.capabilities().contains(Capability::WorkshopRead));
         assert!(!principal.capabilities().contains(Capability::AdminRuntime));
     }
 

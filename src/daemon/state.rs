@@ -98,6 +98,9 @@ pub struct AppState {
     pub forge: Arc<medousa_forge::forge::Forge>,
     /// Bounded Forge/Git admission (H06.1).
     pub forge_execution: Arc<medousa_forge::execution::ForgeExecutionService>,
+    /// Optional host OCI boundary. Absence means this daemon declines OCI work;
+    /// it does not change the runtime, agents, or tool catalog.
+    pub work_environment: Option<Arc<dyn medousa_runtime::WorkEnvironmentPort>>,
     /// Forge freshness bus for Home SSE invalidation.
     pub forge_events: crate::daemon::forge_events::ForgeEventBus,
     /// LSP Interoperability Orchestrator host (medousa-code sidecar).

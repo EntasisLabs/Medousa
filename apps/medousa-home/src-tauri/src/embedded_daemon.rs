@@ -7,7 +7,8 @@ use std::sync::Arc;
 use medousa::chatgpt_oauth::{ChatGptCredentialStore, ChatGptOAuthBroker};
 #[cfg(target_os = "ios")]
 use medousa::delegated_task::{
-    DelegatedTaskError, DelegatedTaskRequest, DelegatedTaskResult, DelegatedTaskTransport,
+    delegated_work_id, DelegatedTaskError, DelegatedTaskObservation, DelegatedTaskRequest,
+    DelegatedTaskTransport,
 };
 #[cfg(target_os = "ios")]
 use medousa::embedded_daemon::{
@@ -306,11 +307,11 @@ struct HomeDelegatedTaskTransport;
 #[cfg(target_os = "ios")]
 #[async_trait::async_trait]
 impl DelegatedTaskTransport for HomeDelegatedTaskTransport {
-    async fn dispatch(
+    async fn submit_or_observe(
         &self,
         target: &medousa::delegation::DelegationTarget,
         request: DelegatedTaskRequest,
-    ) -> Result<DelegatedTaskResult, DelegatedTaskError> {
+    ) -> Result<DelegatedTaskObservation, DelegatedTaskError> {
         let target = target.clone();
         let config = tokio::task::spawn_blocking(move || delegation_transport_for(&target))
             .await
@@ -319,29 +320,40 @@ impl DelegatedTaskTransport for HomeDelegatedTaskTransport {
         let wrapped = crate::mesh_envelope::wrap_payload_for_workshop(
             &config,
             crate::mesh_envelope::CAP_TASK_REQUEST,
-            request,
+            request.clone(),
         )
         .map_err(DelegatedTaskError::transport)?;
-        let response: crate::mesh_envelope::MeshEnvelopedRequest<DelegatedTaskResult> =
-            crate::workshop_transport::workshop_post_json(
-                &config,
-                "/v1/mesh/tasks",
-                &wrapped,
-            )
-            .await
-            .map_err(DelegatedTaskError::transport)?;
+        let response: crate::mesh_envelope::MeshEnvelopedRequest<DelegatedTaskObservation> =
+            crate::workshop_transport::workshop_post_json(&config, "/v1/mesh/tasks", &wrapped)
+                .await
+                .map_err(DelegatedTaskError::transport)?;
         crate::mesh_envelope::verify_payload_from_workshop(
             &config,
             &response,
             crate::mesh_envelope::CAP_TASK_RESULT,
         )
         .map_err(DelegatedTaskError::transport)?;
-        if response.payload.terminal.participant_id.as_deref().map(str::trim)
-            != Some(config.workshop_device_id.trim())
-        {
+        let expected_work_id = delegated_work_id(
+            &config.phone_id,
+            request
+                .grant
+                .turn_id
+                .as_deref()
+                .ok_or_else(|| DelegatedTaskError::invalid("delegated turn id is missing"))?,
+        );
+        if response.payload.work_id != expected_work_id {
             return Err(DelegatedTaskError::transport(
-                "delegated terminal participant does not match the authenticated workshop",
+                "delegated observation does not match the authenticated source identity",
             ));
+        }
+        if let Some(result) = response.payload.result.as_ref() {
+            if result.terminal.participant_id.as_deref().map(str::trim)
+                != Some(config.workshop_device_id.trim())
+            {
+                return Err(DelegatedTaskError::transport(
+                    "delegated terminal participant does not match the authenticated workshop",
+                ));
+            }
         }
         Ok(response.payload)
     }

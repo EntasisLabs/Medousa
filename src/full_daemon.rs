@@ -82,6 +82,10 @@ pub mod turn_stream_registry;
 pub mod turn_worker_notify;
 pub mod typed_tools;
 pub mod web_search_tool;
+pub mod work_environment_federation;
+pub mod work_environment_job;
+pub mod work_environment_parallel;
+pub(crate) mod work_environment_tools;
 pub mod workshop_authority;
 /// Re-export slim MCP gateway crate (binary lives in adapters/medousa-mcp-gateway).
 pub use medousa_mcp_gateway::mcp_gateway;
@@ -268,6 +272,7 @@ pub mod workflow;
 pub mod workflow_handlers;
 pub mod workflow_plan;
 pub mod workshop_api;
+pub mod workshop_contract;
 pub mod workshop_env;
 
 use std::sync::Arc;

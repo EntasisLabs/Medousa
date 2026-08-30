@@ -1,0 +1,43 @@
+# syntax=docker/dockerfile:1
+
+# The final Medousa image is always consumed by digest. Keep this parent pinned
+# as well so rebuilding the same source does not silently change its substrate.
+ARG DEBIAN_IMAGE=debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
+FROM ${DEBIAN_IMAGE}
+
+LABEL org.opencontainers.image.title="Medousa development environment base" \
+      org.opencontainers.image.description="Portable bootstrap image for daemon-owned Medousa work environments" \
+      org.opencontainers.image.source="https://github.com/entasislabs/medousa" \
+      io.medousa.work-environment="base"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+# Language/toolchain profiles derive from this image. Their package managers
+# and installers run during the derived image build, never on the daemon host.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        bash \
+        build-essential \
+        ca-certificates \
+        curl \
+        file \
+        git \
+        gnupg \
+        jq \
+        less \
+        openssh-client \
+        patch \
+        pkg-config \
+        unzip \
+        xz-utils \
+        zip \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+# The daemon overrides the entrypoint with its fenced keepalive and executes
+# scoped commands through WorkEnvironmentPort. This default remains useful for
+# direct inspection of the published image.
+CMD ["/bin/bash"]

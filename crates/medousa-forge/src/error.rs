@@ -62,6 +62,9 @@ pub enum ForgeError {
     #[error("git error: {0}")]
     Git(String),
 
+    #[error("command error: {0}")]
+    Command(String),
+
     #[error("repository {} has no commits; create an initial commit before starting a project", .0.display())]
     RepositoryEmpty(PathBuf),
 

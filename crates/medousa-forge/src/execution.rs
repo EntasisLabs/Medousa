@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use tokio::io::AsyncWriteExt;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::error::{ForgeError, Result};
@@ -25,6 +26,7 @@ pub const MAX_QUEUED_COMMANDS: usize = 64;
 pub const MAX_BLOCKING_JOBS: usize = 8;
 pub const MAX_NETWORK_GIT: usize = 2;
 pub const MAX_OBSERVATION_JOBS: usize = 2;
+pub const MAX_WORK_ENVIRONMENT_JOBS: usize = 4;
 pub const MAX_QUEUED_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_METADATA_BYTES: usize = 256 * 1024;
 pub const MAX_STORE_PAYLOAD_BYTES: usize = 1024 * 1024;
@@ -51,6 +53,7 @@ pub enum ExecutionClass {
     NetworkGit,
     Observation,
     Compaction,
+    WorkEnvironment,
 }
 
 impl ExecutionClass {
@@ -59,7 +62,7 @@ impl ExecutionClass {
             Self::StoreIo => MAX_STORE_PAYLOAD_BYTES,
             Self::RepositoryMetadata => MAX_METADATA_BYTES,
             Self::LocalMutation => MAX_STORE_PAYLOAD_BYTES,
-            Self::NetworkGit | Self::Observation => MAX_CAPTURE_BYTES,
+            Self::NetworkGit | Self::Observation | Self::WorkEnvironment => MAX_CAPTURE_BYTES,
             Self::Compaction => MAX_COMPACTION_BUFFER_BYTES,
         }
     }
@@ -84,6 +87,7 @@ pub struct ForgeExecutionService {
     blocking: Arc<Semaphore>,
     network_git: Arc<Semaphore>,
     observation: Arc<Semaphore>,
+    work_environment: Arc<Semaphore>,
     repo_lanes: Mutex<HashMap<String, RepoLane>>,
     metrics: Arc<ExecutionMetrics>,
     queued_command_count: Arc<AtomicUsize>,
@@ -104,6 +108,7 @@ impl ForgeExecutionService {
             blocking: Arc::new(Semaphore::new(MAX_BLOCKING_JOBS)),
             network_git: Arc::new(Semaphore::new(MAX_NETWORK_GIT)),
             observation: Arc::new(Semaphore::new(MAX_OBSERVATION_JOBS)),
+            work_environment: Arc::new(Semaphore::new(MAX_WORK_ENVIRONMENT_JOBS)),
             repo_lanes: Mutex::new(HashMap::new()),
             metrics: Arc::new(ExecutionMetrics::default()),
             queued_command_count: Arc::new(AtomicUsize::new(0)),
@@ -131,6 +136,7 @@ impl ForgeExecutionService {
         match class {
             ExecutionClass::NetworkGit => Arc::clone(&self.network_git),
             ExecutionClass::Observation => Arc::clone(&self.observation),
+            ExecutionClass::WorkEnvironment => Arc::clone(&self.work_environment),
             ExecutionClass::StoreIo
             | ExecutionClass::RepositoryMetadata
             | ExecutionClass::LocalMutation
@@ -588,7 +594,7 @@ fn format_git_failure(args: &[String], stderr: &[u8]) -> String {
 
 async fn drain_capped_output(
     mut reader: impl tokio::io::AsyncReadExt + Unpin,
-    max_output: usize,
+    remaining: Arc<AtomicUsize>,
 ) -> (Vec<u8>, bool) {
     let mut buf = Vec::new();
     let mut chunk = [0u8; 8192];
@@ -598,20 +604,31 @@ async fn drain_capped_output(
         if read == 0 {
             break;
         }
-        if buf.len() < max_output {
-            let take = (max_output - buf.len()).min(read);
-            buf.extend_from_slice(&chunk[..take]);
-            if take < read {
-                truncated = true;
+        let mut available = remaining.load(Ordering::Acquire);
+        let take = loop {
+            if available == 0 {
+                break 0;
             }
-        } else {
+            let take = available.min(read);
+            match remaining.compare_exchange_weak(
+                available,
+                available - take,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break take,
+                Err(actual) => available = actual,
+            }
+        };
+        buf.extend_from_slice(&chunk[..take]);
+        if take < read {
             truncated = true;
         }
     }
     (buf, truncated)
 }
 
-fn configure_supervised_git(command: &mut tokio::process::Command) {
+fn configure_supervised_command(command: &mut tokio::process::Command) {
     // Windows: CREATE_NO_WINDOW via host helper (same flag as detach_new_session).
     medousa_host::hide_tokio_subprocess_window(command);
     #[cfg(unix)]
@@ -627,6 +644,126 @@ async fn terminate_and_reap(child: &mut tokio::process::Child) {
     }
     let _ = child.start_kill();
     let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+}
+
+async fn supervise_child_with_input(
+    command: &mut tokio::process::Command,
+    input: Option<Vec<u8>>,
+    timeout: Duration,
+    max_output: usize,
+) -> Result<(Vec<u8>, Vec<u8>, bool, std::process::ExitStatus)> {
+    command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    if input.is_some() {
+        command.stdin(std::process::Stdio::piped());
+    }
+    configure_supervised_command(command);
+    let mut child = command
+        .spawn()
+        .map_err(|err| ForgeError::Command(format!("failed to spawn command: {err}")))?;
+    let stdin_task = match input {
+        Some(input) => {
+            let mut stdin = child
+                .stdin
+                .take()
+                .ok_or_else(|| ForgeError::Command("command stdin was unavailable".to_string()))?;
+            Some(tokio::spawn(async move {
+                stdin.write_all(&input).await?;
+                stdin.shutdown().await
+            }))
+        }
+        None => None,
+    };
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| ForgeError::Command("command stdout was unavailable".into()))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| ForgeError::Command("command stderr was unavailable".into()))?;
+    let remaining = Arc::new(AtomicUsize::new(max_output.max(1)));
+    let stdout_task = tokio::spawn(drain_capped_output(stdout, Arc::clone(&remaining)));
+    let stderr_task = tokio::spawn(drain_capped_output(stderr, remaining));
+
+    let status = match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(Ok(status)) => status,
+        Ok(Err(err)) => {
+            if let Some(stdin_task) = stdin_task {
+                let _ = stdin_task.await;
+            }
+            let _ = stdout_task.await;
+            let _ = stderr_task.await;
+            return Err(ForgeError::Command(format!("command wait failed: {err}")));
+        }
+        Err(_) => {
+            terminate_and_reap(&mut child).await;
+            if let Some(stdin_task) = stdin_task {
+                let _ = stdin_task.await;
+            }
+            let _ = stdout_task.await;
+            let _ = stderr_task.await;
+            return Err(ForgeError::Command("command timed out".into()));
+        }
+    };
+    if let Some(stdin_task) = stdin_task {
+        stdin_task
+            .await
+            .map_err(|err| ForgeError::Command(format!("command stdin task failed: {err}")))?
+            .map_err(|err| ForgeError::Command(format!("command stdin write failed: {err}")))?;
+    }
+    let (stdout, stdout_trunc) = stdout_task.await.unwrap_or_else(|_| (Vec::new(), false));
+    let (stderr, stderr_trunc) = stderr_task.await.unwrap_or_else(|_| (Vec::new(), false));
+    Ok((stdout, stderr, stdout_trunc || stderr_trunc, status))
+}
+
+async fn supervise_child(
+    command: &mut tokio::process::Command,
+    timeout: Duration,
+    max_output: usize,
+) -> Result<(Vec<u8>, Vec<u8>, bool, std::process::ExitStatus)> {
+    supervise_child_with_input(command, None, timeout, max_output).await
+}
+
+/// Supervise a non-interactive child with timeout, bounded output, and
+/// process-tree termination. Non-zero exit statuses are returned to the caller.
+pub async fn supervise_command(
+    program: impl AsRef<Path>,
+    cwd: Option<std::path::PathBuf>,
+    args: Vec<String>,
+    environment: Vec<(String, String)>,
+    timeout: Duration,
+    max_output: usize,
+) -> Result<(Vec<u8>, Vec<u8>, bool, std::process::ExitStatus)> {
+    let mut command = tokio::process::Command::new(program.as_ref());
+    command.args(args);
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
+    command.envs(environment);
+    supervise_child(&mut command, timeout, max_output).await
+}
+
+/// Supervise a non-interactive child with bounded stdin, timeout, output caps,
+/// and process-tree termination.
+pub async fn supervise_command_with_input(
+    program: impl AsRef<Path>,
+    cwd: Option<std::path::PathBuf>,
+    args: Vec<String>,
+    environment: Vec<(String, String)>,
+    input: Vec<u8>,
+    timeout: Duration,
+    max_output: usize,
+) -> Result<(Vec<u8>, Vec<u8>, bool, std::process::ExitStatus)> {
+    let mut command = tokio::process::Command::new(program.as_ref());
+    command.args(args);
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
+    command.envs(environment);
+    supervise_child_with_input(&mut command, Some(input), timeout, max_output).await
 }
 
 /// Capture stdout/stderr from a spawned child with a hard byte bound.
@@ -712,43 +849,10 @@ pub async fn supervise_git(
         .current_dir(cwd.as_ref())
         .env_remove("GIT_DIR")
         .env_remove("GIT_WORK_TREE")
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
-    configure_supervised_git(&mut command);
-    let mut child = command
-        .spawn()
-        .map_err(|err| crate::error::ForgeError::Git(format!("failed to spawn git: {err}")))?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| ForgeError::Git("git stdout was unavailable".into()))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| ForgeError::Git("git stderr was unavailable".into()))?;
-    let stdout_task = tokio::spawn(drain_capped_output(stdout, max_output));
-    let stderr_task = tokio::spawn(drain_capped_output(stderr, max_output));
-
-    let wait = tokio::time::timeout(timeout, child.wait());
-    let status = match wait.await {
-        Ok(Ok(status)) => status,
-        Ok(Err(err)) => {
-            let _ = stdout_task.await;
-            let _ = stderr_task.await;
-            return Err(ForgeError::Git(format!("git wait failed: {err}")));
-        }
-        Err(_) => {
-            terminate_and_reap(&mut child).await;
-            let _ = stdout_task.await;
-            let _ = stderr_task.await;
-            return Err(ForgeError::Git("git operation timed out".into()));
-        }
-    };
-    let (stdout, stdout_trunc) = stdout_task.await.unwrap_or_else(|_| (Vec::new(), false));
-    let (stderr, stderr_trunc) = stderr_task.await.unwrap_or_else(|_| (Vec::new(), false));
-    let truncated = stdout_trunc || stderr_trunc;
+        .env("GIT_TERMINAL_PROMPT", "0");
+    let (stdout, stderr, truncated, status) = supervise_child(&mut command, timeout, max_output)
+        .await
+        .map_err(|err| ForgeError::Git(err.to_string()))?;
     if !status.success() {
         return Err(ForgeError::Git(format_git_failure(&args, &stderr)));
     }
@@ -894,6 +998,26 @@ mod tests {
         assert_eq!(value, 7);
         assert_eq!(service.queued_commands(), 0);
         assert_eq!(service.running_commands(), 0);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn supervised_command_streams_bounded_stdin() {
+        let (stdout, stderr, truncated, status) = supervise_command_with_input(
+            "/bin/sh",
+            None,
+            vec!["-c".into(), "cat".into()],
+            Vec::new(),
+            b"fenced input\n".to_vec(),
+            Duration::from_secs(5),
+            1024,
+        )
+        .await
+        .expect("supervised stdin");
+        assert!(status.success());
+        assert_eq!(stdout, b"fenced input\n");
+        assert!(stderr.is_empty());
+        assert!(!truncated);
     }
 
     #[tokio::test]

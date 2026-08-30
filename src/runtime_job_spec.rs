@@ -2,6 +2,8 @@
 
 use chrono::{DateTime, Utc};
 use stasis::domain::runtime::job::{BackoffPolicy, NewJob};
+use stasis::domain::runtime::placement::PlacementConstraints;
+use stasis::domain::runtime::provenance::ProvenanceRef;
 
 pub fn manuscript_id_from_recurring_payload(
     job_type: &str,
@@ -35,7 +37,8 @@ pub struct ToolJobSpec {
     correlation_id: String,
     causation_id: String,
     trace_id: String,
-    sttp_input_node_id: String,
+    input_provenance: Option<ProvenanceRef>,
+    placement: PlacementConstraints,
     scheduled_at: DateTime<Utc>,
     backoff_policy: BackoffPolicy,
 }
@@ -47,7 +50,6 @@ impl ToolJobSpec {
         job_type: impl Into<String>,
         payload_ref: impl Into<String>,
         causation_id: impl Into<String>,
-        sttp_input_node_id: impl Into<String>,
         scheduled_at: DateTime<Utc>,
     ) -> Self {
         let id = id.into();
@@ -62,7 +64,8 @@ impl ToolJobSpec {
             priority: 100,
             max_attempts: 1,
             causation_id: causation_id.into(),
-            sttp_input_node_id: sttp_input_node_id.into(),
+            input_provenance: None,
+            placement: PlacementConstraints::unrestricted(),
             scheduled_at,
             backoff_policy: BackoffPolicy::default(),
         }
@@ -93,6 +96,16 @@ impl ToolJobSpec {
         self
     }
 
+    pub fn input_provenance(mut self, value: Option<ProvenanceRef>) -> Self {
+        self.input_provenance = value;
+        self
+    }
+
+    pub fn placement(mut self, value: PlacementConstraints) -> Self {
+        self.placement = value;
+        self
+    }
+
     pub fn build(self) -> NewJob {
         NewJob {
             id: self.id,
@@ -105,7 +118,8 @@ impl ToolJobSpec {
             correlation_id: self.correlation_id,
             causation_id: self.causation_id,
             trace_id: self.trace_id,
-            sttp_input_node_id: self.sttp_input_node_id,
+            input_provenance: self.input_provenance,
+            placement: self.placement,
             scheduled_at: self.scheduled_at,
             backoff_policy: self.backoff_policy,
         }
@@ -116,7 +130,7 @@ impl ToolJobSpec {
 mod tests {
     use chrono::{TimeZone, Utc};
 
-    use super::ToolJobSpec;
+    use super::{PlacementConstraints, ProvenanceRef, ToolJobSpec};
 
     #[test]
     fn defaults_correlate_job_identity_and_keep_injected_time() {
@@ -130,7 +144,6 @@ mod tests {
             "workflow.test",
             "payload",
             "tool.test",
-            "sttp:in:test",
             now,
         )
         .build();
@@ -152,18 +165,26 @@ mod tests {
             "workflow.test",
             "payload",
             "tool.test",
-            "sttp:in:test",
             Utc::now(),
         )
         .priority(7)
         .max_attempts(3)
         .correlation_id("workflow-2")
         .trace_id("trace-2")
+        .input_provenance(Some(ProvenanceRef::sttp("sttp:in:test")))
+        .placement(PlacementConstraints::unrestricted().require_capability("test.runner"))
         .build();
 
         assert_eq!(job.priority, 7);
         assert_eq!(job.max_attempts, 3);
         assert_eq!(job.correlation_id, "workflow-2");
         assert_eq!(job.trace_id, "trace-2");
+        assert_eq!(
+            job.input_provenance
+                .as_ref()
+                .map(|provenance| provenance.locator.as_str()),
+            Some("sttp:in:test")
+        );
+        assert!(job.placement.required_capabilities.contains("test.runner"));
     }
 }

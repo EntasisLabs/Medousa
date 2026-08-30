@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -87,6 +88,8 @@ pub struct TurnExecutionContext {
     cancellation: CancellationToken,
     deadline: Instant,
     legacy_scope: Arc<TurnContinuationScope>,
+    work_environment: Option<medousa_runtime::WorkEnvironmentBinding>,
+    work_environment_operation_sequence: AtomicU64,
     last_grapheme_source: Mutex<Option<Arc<str>>>,
     tasks: Arc<TurnTaskGroup>,
 }
@@ -116,6 +119,8 @@ impl TurnExecutionContext {
             cancellation,
             deadline,
             legacy_scope: Arc::new(legacy_scope),
+            work_environment: None,
+            work_environment_operation_sequence: AtomicU64::new(0),
             last_grapheme_source: Mutex::new(None),
             tasks,
         }
@@ -190,6 +195,26 @@ impl TurnExecutionContext {
 
     pub fn legacy_scope(&self) -> &TurnContinuationScope {
         &self.legacy_scope
+    }
+
+    pub fn with_work_environment(
+        mut self,
+        binding: medousa_runtime::WorkEnvironmentBinding,
+    ) -> Self {
+        self.work_environment = Some(binding);
+        self
+    }
+
+    pub fn work_environment(&self) -> Option<&medousa_runtime::WorkEnvironmentBinding> {
+        self.work_environment.as_ref()
+    }
+
+    pub fn next_work_environment_operation_id(&self, tool_name: &str) -> String {
+        let sequence = self
+            .work_environment_operation_sequence
+            .fetch_add(1, Ordering::Relaxed)
+            .saturating_add(1);
+        format!("{}:{tool_name}:{sequence}", self.handle)
     }
 
     pub fn remember_grapheme_source(&self, source: &str) {
@@ -588,6 +613,36 @@ mod tests {
                 scope,
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn admission_carries_optional_work_environment_without_changing_turn_identity() {
+        let original = context("session-a", "provider-a");
+        assert!(original.work_environment().is_none());
+        let expected_turn = original.turn_id().to_string();
+        let expected_session = original.session_id().clone();
+        let environment_id = medousa_runtime::WorkEnvironmentId::parse("env-1").unwrap();
+        let binding = medousa_runtime::WorkEnvironmentBinding {
+            port: Arc::new(medousa_runtime::InMemoryWorkEnvironmentPort::new()),
+            handle: medousa_runtime::WorkEnvironmentHandle::new_local(
+                environment_id.clone(),
+                "test-adapter-token",
+            ),
+            fence: medousa_runtime::WorkEnvironmentFence {
+                stasis_attempt: stasis::domain::runtime::resource_lease::FencingToken(1),
+                forge_environment_generation: None,
+                forge_execution_generation: None,
+            },
+        };
+
+        let admitted = original.with_work_environment(binding);
+
+        assert_eq!(admitted.turn_id(), expected_turn);
+        assert_eq!(admitted.session_id(), &expected_session);
+        assert_eq!(
+            admitted.work_environment().unwrap().handle.environment_id(),
+            &environment_id
         );
     }
 

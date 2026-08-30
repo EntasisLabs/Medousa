@@ -3,8 +3,8 @@ use std::process::Command;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use chrono::{DateTime, Datelike, Local, NaiveDate, Utc};
 use chrono::Duration;
+use chrono::{DateTime, Datelike, Local, NaiveDate, Utc};
 #[cfg(feature = "full-daemon")]
 use locus_core_rs::NodeStore;
 #[cfg(feature = "full-daemon")]
@@ -20,9 +20,9 @@ use stasis::application::orchestration::tool_registry::ToolRegistry;
 use stasis::domain::runtime::job_attempt::JobAttemptOutcome;
 #[cfg(feature = "full-daemon")]
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
-use stasis::prelude::{RuntimeComposition, StasisError};
 #[cfg(feature = "full-daemon")]
 use stasis::prelude::RuntimeBackend;
+use stasis::prelude::{RuntimeComposition, StasisError};
 #[cfg(feature = "full-daemon")]
 use stasis::prelude_ext::{MemoryContextReader, MemoryContextWriter};
 
@@ -40,7 +40,6 @@ use crate::grapheme_sttp_compaction::{
 use crate::mcp_gateway_api::{McpDiscoverRequest, McpInvokeRequest, McpTurnContext, McpTurnLane};
 use crate::mcp_gateway_client::McpGatewayClient;
 use crate::mcp_turn_token::mint_mcp_turn_token;
-use crate::runtime_composition_ext::process_once;
 use crate::recurring_delivery::{
     DeliveryResolveContext, RecurringDeliverySpec, ambient_from_turn_scope,
     bind_recurring_delivery_spec_for_registration,
@@ -48,6 +47,7 @@ use crate::recurring_delivery::{
 use crate::recurring_feed::{RecurringFeedSpec, bind_recurring_feed_spec_for_registration};
 use crate::recurring_schedule::RecurringScheduleSpec;
 use crate::runtime_composition_ext::RuntimeCompositionExt;
+use crate::runtime_composition_ext::process_once;
 use crate::runtime_job_spec::ToolJobSpec;
 #[cfg(feature = "full-daemon")]
 use crate::tui::runtime_services::{
@@ -321,7 +321,6 @@ impl CognitionJobEnqueueTool {
             job_type,
             payload_ref,
             "cognition_tui",
-            "sttp:in:cognition:enqueue",
             now,
         )
         .build();
@@ -478,7 +477,6 @@ impl CognitionGraphemeRunTool {
             "workflow.grapheme.run",
             payload_ref,
             "cognition_tui",
-            "sttp:in:cognition:grapheme",
             now,
         )
         .build();
@@ -1188,7 +1186,6 @@ impl CognitionGraphemePromoteToJobTool {
             "workflow.grapheme.run",
             format!("grapheme:inline:{source}"),
             "cognition_tui.promote",
-            "sttp:in:cognition:grapheme:promote",
             now,
         )
         .priority(input.priority as i32)

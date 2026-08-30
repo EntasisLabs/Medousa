@@ -56,6 +56,21 @@ const OUTBOX_DEDUP_CAPACITY: usize = 10_000;
 /// streams). Bounds growth even if a finalize path misses its cleanup.
 const CANCELLED_MARKER_CAPACITY: usize = 4_096;
 
+fn work_environment_worker_capabilities(
+    node_id: impl Into<String>,
+    oci_available: bool,
+) -> stasis::domain::runtime::placement::WorkerCapabilities {
+    let capabilities = stasis::domain::runtime::placement::WorkerCapabilities::any()
+        .node_id(node_id)
+        .platform(std::env::consts::OS)
+        .architecture(std::env::consts::ARCH);
+    if oci_available {
+        capabilities.with_capability(medousa_runtime::OCI_WORK_ENVIRONMENT_CAPABILITY)
+    } else {
+        capabilities
+    }
+}
+
 struct DaemonSchedulerSideEffects {
     state: AppState,
 }
@@ -488,6 +503,53 @@ async fn main() -> Result<()> {
         }
     }
 
+    let work_environment_root = medousa::paths::medousa_data_dir().join("work-environments");
+    let work_environment_blobs = medousa::daemon::blob_transfer_host::FsBlobTransferPort::open(
+        &work_environment_root.join("durable/blobs"),
+        Arc::clone(&forge_execution),
+    )
+    .context("open durable work-environment blob store")?;
+    let work_environment_adapter =
+        match medousa::daemon::work_environment_host::OciCliWorkEnvironmentPort::detect_with_blobs(
+            work_environment_root,
+            Arc::clone(&forge_execution),
+            Arc::clone(&work_environment_blobs),
+        )
+        .await
+        {
+            Ok(Some(adapter)) => {
+                match adapter.reconcile().await {
+                    Ok(report) => {
+                        tracing::info!(
+                            runtime = adapter.runtime_name(),
+                            recovered = report.recovered.len(),
+                            missing = report.missing.len(),
+                            corrupt_preserved = report.corrupt_preserved.len(),
+                            unknown_preserved = report.unknown_preserved.len(),
+                            "OCI work-environment adapter ready"
+                        );
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "OCI work-environment boot reconciliation failed");
+                    }
+                }
+                Some(adapter)
+            }
+            Ok(None) => {
+                tracing::info!(
+                    "OCI work-environment adapter unavailable; declining local OCI placement"
+                );
+                None
+            }
+            Err(error) => {
+                tracing::warn!(%error, "OCI work-environment adapter detection failed");
+                None
+            }
+        };
+    let work_environment = work_environment_adapter
+        .as_ref()
+        .map(|adapter| Arc::clone(adapter) as Arc<dyn medousa_runtime::WorkEnvironmentPort>);
+
     let state = AppState {
         platform: platform.clone(),
         daemon_base_url: medousa::daemon_api::resolve_daemon_public_base_url(bind),
@@ -536,6 +598,7 @@ async fn main() -> Result<()> {
         client_registry: platform.client_registry(),
         forge,
         forge_execution,
+        work_environment,
         forge_events,
         coding_engine: Some(medousa::daemon::coding_engine_host::CodingEngineHost::new()),
         shell_sessions: Some(medousa::daemon::shell_session_host::ShellSessionHost::new()),
@@ -699,6 +762,75 @@ async fn main() -> Result<()> {
         None
     };
 
+    let mut remote_work_environment_dispatcher: Option<
+        Arc<dyn medousa::work_environment_federation::RemoteWorkEnvironmentDispatcher>,
+    > = None;
+    let work_environment_federation_state = if let Some(pairing) = share_api_state.pairing.as_ref()
+    {
+        let blobs: Arc<dyn stasis::ports::outbound::runtime::blob_transfer::BlobTransferPort> =
+            work_environment_blobs.clone();
+        let worker_capabilities = work_environment_worker_capabilities(
+            pairing.device_id().to_string(),
+            work_environment_adapter.is_some(),
+        );
+        let transport = Arc::new(
+            medousa::mesh::work_environment_federation::MeshWorkEnvironmentFederationTransport::new(
+                Arc::clone(pairing),
+                Arc::clone(&blobs),
+                worker_capabilities.clone(),
+            ),
+        );
+        if let Some(adapter) = work_environment_adapter.as_ref() {
+            medousa::work_environment_job::register_federated_work_environment_job_handlers(
+                platform.composition(),
+                Arc::clone(adapter) as Arc<dyn medousa_runtime::WorkEnvironmentPort>,
+                medousa::work_environment_federation::WorkEnvironmentFederationServices {
+                    blobs: Arc::clone(&blobs),
+                    terminal_delivery: Arc::new(
+                        medousa::mesh::work_environment_federation::MeshSignedFederatedTerminalDelivery::new(
+                            Arc::clone(&transport),
+                        ),
+                    ),
+                },
+            )
+            .await
+            .context("register federated work-environment job handlers")?;
+        }
+        remote_work_environment_dispatcher = Some(transport);
+        Some(
+            medousa::mesh::work_environment_federation::MeshWorkEnvironmentFederationState {
+                pairing: Arc::clone(pairing),
+                runtime: Arc::new(platform.composition().clone()),
+                blobs,
+                worker_capabilities,
+            },
+        )
+    } else {
+        if let Some(adapter) = work_environment_adapter.as_ref() {
+            medousa::work_environment_job::register_work_environment_job_handlers(
+                platform.composition(),
+                Arc::clone(adapter) as Arc<dyn medousa_runtime::WorkEnvironmentPort>,
+            )
+            .await
+            .context("register durable work-environment job handlers")?;
+        }
+        None
+    };
+    let local_runtime_node_id = share_api_state
+        .pairing
+        .as_ref()
+        .map(|pairing| pairing.device_id().to_string())
+        .unwrap_or_else(|| worker_id.clone());
+
+    medousa::work_environment_parallel::register_parallel_work_environment_job_handlers(
+        platform.composition(),
+        work_environment_blobs.clone()
+            as Arc<dyn stasis::ports::outbound::runtime::blob_transfer::BlobTransferPort>,
+        remote_work_environment_dispatcher,
+    )
+    .await
+    .context("register parallel work-environment job handlers")?;
+
     let mut app = build_daemon_router(
         state.clone(),
         &dashboard_action_auth,
@@ -842,6 +974,11 @@ async fn main() -> Result<()> {
             medousa::peer_message_handlers::peer_message_surface().with_state(peer_message_state),
         )
         .merge(medousa::mesh::handlers::mesh_surface().with_state(mesh_api_state));
+    if let Some(federation_state) = work_environment_federation_state {
+        declared = declared.merge(
+            medousa::mesh::work_environment_federation::surface().with_state(federation_state),
+        );
+    }
     app = medousa::peer_scope::assemble_daemon_access_boundary_with_declared(
         app,
         declared,
@@ -886,11 +1023,16 @@ async fn main() -> Result<()> {
 
     let worker_runtime = state.platform.composition().clone();
     let worker_host_id = worker_id.clone();
+    let worker_capabilities = work_environment_worker_capabilities(
+        local_runtime_node_id,
+        state.work_environment.is_some(),
+    );
     let worker_shutdown_rx = shutdown_rx.clone();
     tokio::spawn(async move {
         run_worker_host(
             worker_runtime,
             worker_host_id,
+            worker_capabilities,
             worker_config,
             worker_shutdown_rx,
             worker_side_effects,

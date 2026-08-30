@@ -7,11 +7,11 @@ use std::sync::Arc;
 use chrono::Utc;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use stasis::prelude::StasisError;
 #[cfg(feature = "full-daemon")]
 use stasis::prelude::Result as StasisResult;
 #[cfg(feature = "full-daemon")]
 use stasis::prelude::RuntimeComposition;
+use stasis::prelude::StasisError;
 #[cfg(feature = "full-daemon")]
 use tokio::sync::mpsc;
 #[cfg(feature = "full-daemon")]
@@ -650,7 +650,6 @@ async fn enqueue_openshell_job(
         OPENSHELL_SANDBOX_RUN_JOB_TYPE,
         payload_ref,
         causation,
-        "sttp:in:skill:probe",
         now,
     )
     .build();

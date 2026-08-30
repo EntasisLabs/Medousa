@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 
 use crate::shell_grapheme::synthesize_shell_run_source;
@@ -60,6 +60,21 @@ impl CognitionShellStatusTool {
         _input: ShellStatusInput,
     ) -> stasis::prelude::Result<ShellSandboxStatus> {
         ensure_shell_agent_tools_enabled()?;
+        if let Some(invocation) = crate::work_environment_tools::EnvironmentToolInvocation::active(
+            COGNITION_SHELL_STATUS,
+        ) {
+            let (ready, phase) = crate::work_environment_tools::status(&invocation).await?;
+            return Ok(ShellSandboxStatus {
+                os: "oci".to_string(),
+                backend: "work_environment".to_string(),
+                ready,
+                sandboxed: true,
+                detail: format!(
+                    "daemon-owned environment {} is {phase:?}",
+                    invocation.binding().handle.environment_id()
+                ),
+            });
+        }
         let status = tokio::task::spawn_blocking(probe_shell_sandbox)
             .await
             .map_err(|err| StasisError::PortFailure(format!("shell status join error: {err}")))?;
@@ -223,6 +238,77 @@ impl CognitionShellRunTool {
     /// Run a command in Medousa's OS-native sandbox via the Grapheme shell.run module. Prefer argv or a short command; network is denied by default. Power users can call shell.run directly inside Grapheme scripts.
     async fn invoke_typed(&self, input: ShellRunInput) -> stasis::prelude::Result<ShellRunOutput> {
         ensure_shell_agent_tools_enabled()?;
+        if let Some(invocation) = crate::work_environment_tools::EnvironmentToolInvocation::active(
+            COGNITION_SHELL_RUN,
+        ) {
+            if input.network == Some(true) {
+                return Err(StasisError::PortFailure(
+                    "the bound work environment denies network access".to_string(),
+                ));
+            }
+            for root in input
+                .writable_roots
+                .iter()
+                .flatten()
+                .chain(input.readonly_roots.iter().flatten())
+            {
+                crate::work_environment_tools::workspace_directory(Some(root))?;
+            }
+            let (program, args) = match (input.argv.as_ref(), input.command.as_ref()) {
+                (Some(argv), _) if !argv.is_empty() => {
+                    (argv[0].clone(), argv[1..].to_vec())
+                }
+                (_, Some(command)) if !command.trim().is_empty() => (
+                    "/bin/sh".to_string(),
+                    vec!["-lc".to_string(), command.clone()],
+                ),
+                _ => {
+                    return Err(StasisError::PortFailure(
+                        "provide command or a non-empty argv".to_string(),
+                    ));
+                }
+            };
+            if let Some(allowed) = input.allowed_binaries.as_ref()
+                && !allowed.is_empty()
+            {
+                let basename = std::path::Path::new(&program)
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or(program.as_str());
+                if !allowed.iter().any(|allowed| allowed == basename) {
+                    return Err(StasisError::PortFailure(format!(
+                        "program is outside allowed_binaries: {basename}"
+                    )));
+                }
+            }
+            let result = crate::work_environment_tools::shell_exec(
+                &invocation,
+                program,
+                args,
+                input.cwd.as_deref(),
+                None,
+                input.timeout_ms.unwrap_or(30_000),
+                input.max_output_bytes.unwrap_or(256 * 1024),
+            )
+            .await?;
+            let shell = json!({
+                "execution_id": result.execution_id,
+                "exit_code": result.exit_code,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "succeeded": result.exit_code == Some(0),
+                "output_truncated": result.output_truncated,
+            });
+            return Ok(ShellRunOutput {
+                mode: "work_environment_exec".to_string(),
+                source: String::new(),
+                runtime: ExternalJson::new(json!({
+                    "environment_id": invocation.binding().handle.environment_id(),
+                    "fenced": true,
+                })),
+                shell: ExternalJson::new(shell),
+            });
+        }
         let args = input.into_grapheme_args();
         let source = synthesize_shell_run_source(&args).map_err(StasisError::PortFailure)?;
         let result = run_grapheme_via_runtime(&self.runtime, &source, COGNITION_SHELL_RUN).await?;

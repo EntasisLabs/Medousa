@@ -66,6 +66,7 @@ Shipped product features: [artifacts](../docs/engine/artifacts.md), [mobile shel
 | [sttp-native-prompt-and-chronological-turn-plan.md](sttp-native-prompt-and-chronological-turn-plan.md) | **STTP + chronological turns** — compact compiled policy, explicit completion, ordered streaming/persistence/client presentation |
 | [agent-runtime-modes-plan.md](agent-runtime-modes-plan.md) | **Agent runtime modes** — General parity, mode transitions, and Medousa Coder |
 | [ios-embedded-daemon-plan.md](ios-embedded-daemon-plan.md) | **iOS embedded daemon** — daemon-owned mobile work, local-root client access, and authenticated daemon peers |
+| [daemon-owned-oci-work-environments-epic.md](daemon-owned-oci-work-environments-epic.md) | **Delegated OCI work environments** — Stasis placement, daemon-owned execution locality, durable checkpoints, and cross-daemon reconciliation |
 | [ios-embedded-phase0-baseline.md](ios-embedded-phase0-baseline.md) | **iOS embedded daemon Phase 0** — target/link gate, pre-embedding size/startup baseline, and Keychain proof |
 | [typed-tool-contract-runtime-plan.md](typed-tool-contract-runtime-plan.md) | **Typed tool contracts** — stateful macro, catalog/policy split, mode metadata, and Stasis upstream path |
 | [conversation-context-addressing-and-derivation-plan.md](conversation-context-addressing-and-derivation-plan.md) | **Conversation context** — durable entry coordinates, derivation/fork, remote materialization, and replication |

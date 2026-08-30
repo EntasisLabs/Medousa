@@ -1,6 +1,7 @@
 pub mod acp_forge_adapter;
 pub mod acp_turn_persist;
 pub mod agents;
+pub mod blob_transfer_host;
 pub mod bounded_set;
 pub mod chatgpt_oauth;
 pub mod coding_engine_host;
@@ -31,5 +32,7 @@ pub mod state;
 pub mod storage_governor;
 pub mod turn_event_channel;
 pub mod turn_stream_registry;
+pub mod work_environment_host;
+pub mod work_environment_publication_host;
 pub mod worker_host;
 pub mod workshop_steer;

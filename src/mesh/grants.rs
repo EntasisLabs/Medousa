@@ -40,9 +40,14 @@ pub fn record_has_capability(record: &PairedDeviceRecord, capability: &str) -> b
     if wanted.is_empty() {
         return false;
     }
-    effective_mesh_grants(record)
+    let grants = effective_mesh_grants(record);
+    grants
         .iter()
         .any(|grant| grant.eq_ignore_ascii_case(wanted))
+        || (wanted.eq_ignore_ascii_case(CAP_TASK_RESULT)
+            && grants
+                .iter()
+                .any(|grant| grant.eq_ignore_ascii_case(CAP_TASK_REQUEST)))
 }
 
 #[cfg(test)]
@@ -86,5 +91,13 @@ mod tests {
         let peer = sample(PairingRole::Peer, vec![CAP_MESH_MESSAGE]);
         assert!(record_has_capability(&peer, CAP_MESH_MESSAGE));
         assert!(!record_has_capability(&peer, CAP_MESH_BUNDLE_PUSH));
+    }
+
+    #[test]
+    fn task_request_implies_terminal_result_but_no_other_capability() {
+        let peer = sample(PairingRole::Peer, vec![CAP_TASK_REQUEST]);
+        assert!(record_has_capability(&peer, CAP_TASK_REQUEST));
+        assert!(record_has_capability(&peer, CAP_TASK_RESULT));
+        assert!(!record_has_capability(&peer, CAP_MESH_MESSAGE));
     }
 }
