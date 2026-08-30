@@ -1422,8 +1422,8 @@ mod tests {
 
     #[cfg(feature = "full-daemon")]
     #[tokio::test]
-    #[ignore = "requires a running Docker engine and an explicitly selected local image"]
-    async fn docker_workflow_survives_every_deferred_boundary_and_cleans_up() {
+    #[ignore = "requires a running OCI engine and an explicitly selected local image"]
+    async fn oci_workflow_survives_every_deferred_boundary_and_cleans_up() {
         use medousa_forge::execution::ForgeExecutionService;
 
         let image_reference = std::env::var("MEDOUSA_TEST_OCI_IMAGE")
@@ -1470,13 +1470,13 @@ mod tests {
         payload.checkpoint.include_untracked = true;
 
         let adapter_root = test_root.join("work-environments");
-        let adapter = crate::daemon::work_environment_host::DockerCliWorkEnvironmentPort::detect(
+        let adapter = crate::daemon::work_environment_host::OciCliWorkEnvironmentPort::detect(
             adapter_root.clone(),
             Arc::new(ForgeExecutionService::new()),
         )
         .await
         .unwrap()
-        .expect("Docker adapter should be available");
+        .expect("OCI adapter should be available");
         let runtime = InMemoryRuntime::new();
         register_work_environment_job_handlers(
             &RuntimeComposition::InMemory(runtime.clone()),

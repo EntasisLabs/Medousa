@@ -1,7 +1,8 @@
-//! Full-daemon Docker/OCI work-environment adapter.
+//! Full-daemon OCI CLI work-environment adapter.
 //!
-//! The daemon remains the authority. Docker owns only the disposable process
-//! and filesystem locality described by the runtime-neutral environment port.
+//! The daemon remains the authority. Podman or Docker owns only the disposable
+//! process and filesystem locality described by the runtime-neutral environment
+//! port.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -92,9 +93,76 @@ struct CommandOutput {
     status: std::process::ExitStatus,
 }
 
-/// Initial OCI adapter: Docker-compatible CLI, local Git, prebuilt images.
-pub struct DockerCliWorkEnvironmentPort {
-    docker: PathBuf,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OciCliBackend {
+    Podman,
+    Docker,
+}
+
+impl OciCliBackend {
+    fn executable(self) -> &'static str {
+        match self {
+            Self::Podman => {
+                if cfg!(windows) {
+                    "podman.exe"
+                } else {
+                    "podman"
+                }
+            }
+            Self::Docker => {
+                if cfg!(windows) {
+                    "docker.exe"
+                } else {
+                    "docker"
+                }
+            }
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Podman => "podman",
+            Self::Docker => "docker",
+        }
+    }
+}
+
+fn detect_oci_cli_runtimes() -> medousa_forge::Result<Vec<OciCliRuntime>> {
+    let preference = std::env::var("MEDOUSA_OCI_RUNTIME")
+        .unwrap_or_else(|_| "auto".to_string())
+        .to_ascii_lowercase();
+    let candidates: &[OciCliBackend] = match preference.as_str() {
+        "auto" => &[OciCliBackend::Podman, OciCliBackend::Docker],
+        "podman" => &[OciCliBackend::Podman],
+        "docker" => &[OciCliBackend::Docker],
+        value => {
+            return Err(medousa_forge::ForgeError::Command(format!(
+                "MEDOUSA_OCI_RUNTIME must be auto, podman, or docker; got {value}"
+            )));
+        }
+    };
+    Ok(candidates
+        .iter()
+        .filter_map(|backend| {
+            medousa_host::find_command_in_path(backend.executable()).map(|executable| {
+                OciCliRuntime {
+                    backend: *backend,
+                    executable,
+                }
+            })
+        })
+        .collect())
+}
+
+#[derive(Clone, Debug)]
+struct OciCliRuntime {
+    backend: OciCliBackend,
+    executable: PathBuf,
+}
+
+/// OCI CLI adapter with Podman preferred and Docker retained as a host fallback.
+pub struct OciCliWorkEnvironmentPort {
+    runtime: OciCliRuntime,
     git: PathBuf,
     root: PathBuf,
     execution: Arc<ForgeExecutionService>,
@@ -103,7 +171,7 @@ pub struct DockerCliWorkEnvironmentPort {
     lifecycle: tokio::sync::Mutex<()>,
 }
 
-impl DockerCliWorkEnvironmentPort {
+impl OciCliWorkEnvironmentPort {
     /// Detect the host boundary without making daemon startup depend on it.
     /// `Ok(None)` means this daemon must decline OCI placement.
     pub async fn detect(
@@ -120,25 +188,21 @@ impl DockerCliWorkEnvironmentPort {
         execution: Arc<ForgeExecutionService>,
         blobs: Arc<FsBlobTransferPort>,
     ) -> Result<Option<Arc<Self>>, WorkEnvironmentError> {
-        let (docker, git) = execution
+        let (runtimes, git) = execution
             .run(ExecutionClass::StoreIo, 64, || {
-                let docker = medousa_host::find_command_in_path(if cfg!(windows) {
-                    "docker.exe"
-                } else {
-                    "docker"
-                });
+                let runtimes = detect_oci_cli_runtimes()?;
                 let git = medousa_host::find_command_in_path(if cfg!(windows) {
                     "git.exe"
                 } else {
                     "git"
                 });
-                Ok((docker, git))
+                Ok((runtimes, git))
             })
             .await
             .map_err(map_forge_error)?;
-        let Some(docker) = docker else {
+        if runtimes.is_empty() {
             return Ok(None);
-        };
+        }
         let Some(git) = git else {
             return Ok(None);
         };
@@ -146,48 +210,66 @@ impl DockerCliWorkEnvironmentPort {
             &root.join("durable/publications"),
             execution.clone(),
         )?;
-        let adapter = Arc::new(Self {
-            docker,
-            git,
-            root,
-            execution,
-            blobs,
-            publications,
-            lifecycle: tokio::sync::Mutex::new(()),
-        });
-        adapter.ensure_root().await?;
-        let garbage = adapter
-            .blobs
-            .collect_garbage(Utc::now(), Duration::from_secs(60 * 60))
-            .await
-            .map_err(|error| WorkEnvironmentError::Adapter(error.to_string()))?;
-        if garbage.deleted_objects > 0 || garbage.expired_roots > 0 {
-            tracing::info!(
-                deleted_objects = garbage.deleted_objects,
-                expired_roots = garbage.expired_roots,
-                active_roots = garbage.active_roots,
-                "collected unreferenced work-environment content"
-            );
+        for runtime in runtimes {
+            let adapter = Arc::new(Self {
+                runtime,
+                git: git.clone(),
+                root: root.clone(),
+                execution: Arc::clone(&execution),
+                blobs: Arc::clone(&blobs),
+                publications: Arc::clone(&publications),
+                lifecycle: tokio::sync::Mutex::new(()),
+            });
+            let probe = adapter
+                .run_runtime(
+                    vec!["version".into()],
+                    RUNTIME_PROBE_TIMEOUT,
+                    CONTROL_OUTPUT_BYTES,
+                )
+                .await;
+            match probe {
+                Ok(output) if output.status.success() => {
+                    adapter.ensure_root().await?;
+                    let garbage = adapter
+                        .blobs
+                        .collect_garbage(Utc::now(), Duration::from_secs(60 * 60))
+                        .await
+                        .map_err(|error| WorkEnvironmentError::Adapter(error.to_string()))?;
+                    if garbage.deleted_objects > 0 || garbage.expired_roots > 0 {
+                        tracing::info!(
+                            deleted_objects = garbage.deleted_objects,
+                            expired_roots = garbage.expired_roots,
+                            active_roots = garbage.active_roots,
+                            "collected unreferenced work-environment content"
+                        );
+                    }
+                    return Ok(Some(adapter));
+                }
+                Ok(output) => {
+                    tracing::debug!(
+                        runtime = adapter.runtime_name(),
+                        error = %command_failure(&output),
+                        "OCI runtime probe declined"
+                    );
+                }
+                Err(error) => {
+                    tracing::debug!(
+                        runtime = adapter.runtime_name(),
+                        %error,
+                        "OCI runtime probe failed"
+                    );
+                }
+            }
         }
-        let probe = adapter
-            .run_docker(
-                vec![
-                    "version".into(),
-                    "--format".into(),
-                    "{{.Server.Version}}".into(),
-                ],
-                RUNTIME_PROBE_TIMEOUT,
-                CONTROL_OUTPUT_BYTES,
-            )
-            .await?;
-        if !probe.status.success() {
-            return Ok(None);
-        }
-        Ok(Some(adapter))
+        Ok(None)
     }
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    pub fn runtime_name(&self) -> &'static str {
+        self.runtime.backend.name()
     }
 
     fn environments_root(&self) -> PathBuf {
@@ -313,17 +395,17 @@ impl DockerCliWorkEnvironmentPort {
             .map_err(map_forge_error)
     }
 
-    async fn run_docker(
+    async fn run_runtime(
         &self,
         args: Vec<String>,
         timeout: Duration,
         max_output: usize,
     ) -> Result<CommandOutput, WorkEnvironmentError> {
-        self.run_docker_with_environment(args, Vec::new(), None, timeout, max_output)
+        self.run_runtime_with_environment(args, Vec::new(), None, timeout, max_output)
             .await
     }
 
-    async fn run_docker_with_environment(
+    async fn run_runtime_with_environment(
         &self,
         args: Vec<String>,
         environment: Vec<(String, String)>,
@@ -331,7 +413,7 @@ impl DockerCliWorkEnvironmentPort {
         timeout: Duration,
         max_output: usize,
     ) -> Result<CommandOutput, WorkEnvironmentError> {
-        let docker = self.docker.clone();
+        let runtime = self.runtime.executable.clone();
         let result = self
             .execution
             .run_async(
@@ -342,7 +424,7 @@ impl DockerCliWorkEnvironmentPort {
                     match stdin {
                         Some(stdin) => {
                             supervise_command_with_input(
-                                docker,
+                                runtime,
                                 None,
                                 args,
                                 environment,
@@ -353,7 +435,7 @@ impl DockerCliWorkEnvironmentPort {
                             .await
                         }
                         None => {
-                            supervise_command(docker, None, args, environment, timeout, max_output)
+                            supervise_command(runtime, None, args, environment, timeout, max_output)
                                 .await
                         }
                     }
@@ -369,13 +451,13 @@ impl DockerCliWorkEnvironmentPort {
         })
     }
 
-    async fn docker_success(
+    async fn runtime_success(
         &self,
         args: Vec<String>,
         timeout: Duration,
         max_output: usize,
     ) -> Result<CommandOutput, WorkEnvironmentError> {
-        let output = self.run_docker(args, timeout, max_output).await?;
+        let output = self.run_runtime(args, timeout, max_output).await?;
         if output.truncated {
             return Err(WorkEnvironmentError::Adapter(
                 "OCI runtime control output exceeded its bound".into(),
@@ -412,19 +494,32 @@ impl DockerCliWorkEnvironmentPort {
         Ok(stdout)
     }
 
-    fn handle_for(record: &LocalEnvironmentRecord) -> WorkEnvironmentHandle {
+    fn handle_for(&self, record: &LocalEnvironmentRecord) -> WorkEnvironmentHandle {
         WorkEnvironmentHandle::new_local(
             record.spec.environment_id.clone(),
-            format!("docker:{}", record.container_name),
+            format!(
+                "oci-cli:{}:{}",
+                self.runtime.backend.name(),
+                record.container_name
+            ),
         )
     }
 
     fn ensure_handle(
+        &self,
         record: &LocalEnvironmentRecord,
         handle: &WorkEnvironmentHandle,
     ) -> Result<(), WorkEnvironmentError> {
+        let expected = format!(
+            "oci-cli:{}:{}",
+            self.runtime.backend.name(),
+            record.container_name
+        );
+        let legacy_docker = format!("docker:{}", record.container_name);
         if handle.environment_id() != &record.spec.environment_id
-            || handle.adapter_token() != format!("docker:{}", record.container_name)
+            || (handle.adapter_token() != expected
+                && !(self.runtime.backend == OciCliBackend::Docker
+                    && handle.adapter_token() == legacy_docker))
         {
             return Err(WorkEnvironmentError::NotFound(
                 handle.environment_id().to_string(),
@@ -449,12 +544,12 @@ impl DockerCliWorkEnvironmentPort {
     ) -> Result<(), WorkEnvironmentError> {
         if !matches!(spec.network_policy, WorkEnvironmentNetworkPolicy::Deny) {
             return Err(WorkEnvironmentError::Unsupported(
-                "the Docker CLI adapter currently supports deny-network environments only".into(),
+                "the OCI CLI adapter currently supports deny-network environments only".into(),
             ));
         }
         if spec.requirements.accelerator.is_some() {
             return Err(WorkEnvironmentError::AdmissionDenied(
-                "the initial Docker CLI adapter does not advertise an accelerator".into(),
+                "the initial OCI CLI adapter does not advertise an accelerator".into(),
             ));
         }
         for mount in &spec.mounts {
@@ -499,7 +594,7 @@ impl DockerCliWorkEnvironmentPort {
             spec.image.reference, spec.image.digest.algorithm, spec.image.digest.hex
         );
         let output = self
-            .run_docker(
+            .run_runtime(
                 vec![
                     "image".into(),
                     "inspect".into(),
@@ -966,7 +1061,7 @@ impl DockerCliWorkEnvironmentPort {
             "-c".into(),
             "while :; do sleep 3600; done".into(),
         ]);
-        self.docker_success(args, Duration::from_secs(2 * 60), CONTROL_OUTPUT_BYTES)
+        self.runtime_success(args, Duration::from_secs(2 * 60), CONTROL_OUTPUT_BYTES)
             .await?;
         Ok(())
     }
@@ -976,7 +1071,7 @@ impl DockerCliWorkEnvironmentPort {
         container_name: &str,
     ) -> Result<WorkEnvironmentPhase, WorkEnvironmentError> {
         let output = self
-            .run_docker(
+            .run_runtime(
                 vec![
                     "inspect".into(),
                     "--format".into(),
@@ -1001,7 +1096,7 @@ impl DockerCliWorkEnvironmentPort {
     pub async fn reconcile(&self) -> Result<WorkEnvironmentReconcileReport, WorkEnvironmentError> {
         let _guard = self.lifecycle.lock().await;
         let output = self
-            .docker_success(
+            .runtime_success(
                 vec![
                     "ps".into(),
                     "--all".into(),
@@ -1090,7 +1185,7 @@ impl DockerCliWorkEnvironmentPort {
                     if environment_id == record.spec.environment_id.as_str()
                         && fence == &fence_fingerprint(&record.spec.fence) =>
                 {
-                    record.state.phase = docker_state_phase(state);
+                    record.state.phase = oci_state_phase(state);
                     record.state.updated_at = Utc::now();
                     self.save_record(&record).await?;
                     report
@@ -1119,7 +1214,7 @@ impl DockerCliWorkEnvironmentPort {
 }
 
 #[async_trait]
-impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
+impl WorkEnvironmentPort for OciCliWorkEnvironmentPort {
     async fn materialize(
         &self,
         spec: WorkEnvironmentSpec,
@@ -1134,7 +1229,7 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
         let mut record = if let Some(mut record) = existing {
             let phase = self.inspect_phase(&record.container_name).await?;
             if record.spec == spec && phase != WorkEnvironmentPhase::Absent {
-                return Ok(Self::handle_for(&record));
+                return Ok(self.handle_for(&record));
             }
             if record.spec != spec {
                 if !same_spec_except_fence(&record.spec, &spec) {
@@ -1147,7 +1242,7 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
                     return Err(WorkEnvironmentError::StaleFence);
                 }
                 if phase != WorkEnvironmentPhase::Absent {
-                    self.docker_success(
+                    self.runtime_success(
                         vec!["rm".into(), "--force".into(), record.container_name.clone()],
                         CONTROL_TIMEOUT,
                         CONTROL_OUTPUT_BYTES,
@@ -1192,7 +1287,7 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
         record.state.phase = WorkEnvironmentPhase::Ready;
         record.state.updated_at = Utc::now();
         self.save_record(&record).await?;
-        Ok(Self::handle_for(&record))
+        Ok(self.handle_for(&record))
     }
 
     async fn inspect(
@@ -1209,7 +1304,7 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
                 updated_at: Utc::now(),
             });
         };
-        Self::ensure_handle(&record, handle)?;
+        self.ensure_handle(&record, handle)?;
         record.state.phase = self.inspect_phase(&record.container_name).await?;
         record.state.updated_at = Utc::now();
         self.save_record(&record).await?;
@@ -1226,7 +1321,7 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
             .load_record(handle.environment_id())
             .await?
             .ok_or_else(|| WorkEnvironmentError::NotFound(handle.environment_id().to_string()))?;
-        Self::ensure_handle(&record, handle)?;
+        self.ensure_handle(&record, handle)?;
         Self::ensure_fence(&record, fence)?;
         let phase = self.inspect_phase(&record.container_name).await?;
         if phase == WorkEnvironmentPhase::Absent {
@@ -1236,7 +1331,7 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
             });
         }
         if phase != WorkEnvironmentPhase::Running {
-            self.docker_success(
+            self.runtime_success(
                 vec!["start".into(), record.container_name.clone()],
                 CONTROL_TIMEOUT,
                 CONTROL_OUTPUT_BYTES,
@@ -1260,7 +1355,7 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
             .load_record(handle.environment_id())
             .await?
             .ok_or_else(|| WorkEnvironmentError::NotFound(handle.environment_id().to_string()))?;
-        Self::ensure_handle(&record, handle)?;
+        self.ensure_handle(&record, handle)?;
         Self::ensure_fence(&record, fence)?;
         validate_exec_request(&request)?;
         if self.inspect_phase(&record.container_name).await? != WorkEnvironmentPhase::Running {
@@ -1315,7 +1410,7 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
         args.extend(request.args.clone());
         let environment = request.environment.clone().into_iter().collect();
         let output = self
-            .run_docker_with_environment(
+            .run_runtime_with_environment(
                 args,
                 environment,
                 stdin,
@@ -1373,7 +1468,7 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
             .load_record(handle.environment_id())
             .await?
             .ok_or_else(|| WorkEnvironmentError::NotFound(handle.environment_id().to_string()))?;
-        Self::ensure_handle(&record, handle)?;
+        self.ensure_handle(&record, handle)?;
         Self::ensure_fence(&record, fence)?;
         policy.validate()?;
         if let Some(key) = policy.idempotency_key.as_deref()
@@ -1438,7 +1533,7 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
             .load_record(handle.environment_id())
             .await?
             .ok_or_else(|| WorkEnvironmentError::NotFound(handle.environment_id().to_string()))?;
-        Self::ensure_handle(&record, handle)?;
+        self.ensure_handle(&record, handle)?;
         Self::ensure_fence(&record, fence)?;
         checkpoint.validate()?;
         if record.state.checkpoint_ref.as_ref() != Some(&checkpoint.provenance) {
@@ -1499,11 +1594,11 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
             .load_record(handle.environment_id())
             .await?
             .ok_or_else(|| WorkEnvironmentError::NotFound(handle.environment_id().to_string()))?;
-        Self::ensure_handle(&record, handle)?;
+        self.ensure_handle(&record, handle)?;
         Self::ensure_fence(&record, fence)?;
         let phase = self.inspect_phase(&record.container_name).await?;
         if phase == WorkEnvironmentPhase::Running {
-            self.docker_success(
+            self.runtime_success(
                 vec![
                     "stop".into(),
                     "--time".into(),
@@ -1538,13 +1633,13 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
             .load_record(handle.environment_id())
             .await?
             .ok_or_else(|| WorkEnvironmentError::NotFound(handle.environment_id().to_string()))?;
-        Self::ensure_handle(&record, handle)?;
+        self.ensure_handle(&record, handle)?;
         Self::ensure_fence(&record, fence)?;
         match retention {
             WorkEnvironmentRetention::Delete => {
                 let phase = self.inspect_phase(&record.container_name).await?;
                 if phase != WorkEnvironmentPhase::Absent {
-                    self.docker_success(
+                    self.runtime_success(
                         vec!["rm".into(), "--force".into(), record.container_name.clone()],
                         CONTROL_TIMEOUT,
                         CONTROL_OUTPUT_BYTES,
@@ -1577,7 +1672,7 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
                 if self.inspect_phase(&record.container_name).await?
                     == WorkEnvironmentPhase::Running
                 {
-                    self.docker_success(
+                    self.runtime_success(
                         vec![
                             "stop".into(),
                             "--time".into(),
@@ -1618,7 +1713,7 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
             WorkEnvironmentRetention::Delete => {
                 let phase = self.inspect_phase(&record.container_name).await?;
                 if phase != WorkEnvironmentPhase::Absent {
-                    self.docker_success(
+                    self.runtime_success(
                         vec!["rm".into(), "--force".into(), record.container_name.clone()],
                         CONTROL_TIMEOUT,
                         CONTROL_OUTPUT_BYTES,
@@ -1656,7 +1751,7 @@ impl WorkEnvironmentPort for DockerCliWorkEnvironmentPort {
                 if self.inspect_phase(&record.container_name).await?
                     == WorkEnvironmentPhase::Running
                 {
-                    self.docker_success(
+                    self.runtime_success(
                         vec![
                             "stop".into(),
                             "--time".into(),
@@ -1762,7 +1857,7 @@ fn container_name(environment_id: &WorkEnvironmentId) -> String {
     format!("medousa-{safe}-{}", short_hash(environment_id.as_str()))
 }
 
-fn docker_state_phase(state: &str) -> WorkEnvironmentPhase {
+fn oci_state_phase(state: &str) -> WorkEnvironmentPhase {
     match state {
         "created" => WorkEnvironmentPhase::Ready,
         "running" | "paused" | "restarting" => WorkEnvironmentPhase::Running,
@@ -1898,11 +1993,11 @@ mod tests {
     }
 
     #[test]
-    fn docker_states_map_to_domain_states() {
-        assert_eq!(docker_state_phase("created"), WorkEnvironmentPhase::Ready);
-        assert_eq!(docker_state_phase("running"), WorkEnvironmentPhase::Running);
-        assert_eq!(docker_state_phase("exited"), WorkEnvironmentPhase::Stopped);
-        assert_eq!(docker_state_phase("dead"), WorkEnvironmentPhase::Failed);
+    fn oci_states_map_to_domain_states() {
+        assert_eq!(oci_state_phase("created"), WorkEnvironmentPhase::Ready);
+        assert_eq!(oci_state_phase("running"), WorkEnvironmentPhase::Running);
+        assert_eq!(oci_state_phase("exited"), WorkEnvironmentPhase::Stopped);
+        assert_eq!(oci_state_phase("dead"), WorkEnvironmentPhase::Failed);
     }
 
     #[test]
@@ -1932,8 +2027,8 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires a running Docker engine and an explicitly selected local image"]
-    async fn docker_lifecycle_exec_and_restart_reconcile() {
+    #[ignore = "requires a running OCI engine and an explicitly selected local image"]
+    async fn oci_lifecycle_exec_and_restart_reconcile() {
         let image_reference = std::env::var("MEDOUSA_TEST_OCI_IMAGE")
             .expect("set MEDOUSA_TEST_OCI_IMAGE to a locally cached image repository");
         let image_digest = std::env::var("MEDOUSA_TEST_OCI_DIGEST")
@@ -2004,11 +2099,10 @@ mod tests {
             retention: WorkEnvironmentRetention::Delete,
         };
         let execution = Arc::new(ForgeExecutionService::new());
-        let adapter =
-            DockerCliWorkEnvironmentPort::detect(test_root.join("environments"), execution)
-                .await
-                .unwrap()
-                .expect("Docker adapter should be available");
+        let adapter = OciCliWorkEnvironmentPort::detect(test_root.join("environments"), execution)
+            .await
+            .unwrap()
+            .expect("OCI adapter should be available");
 
         let handle = adapter.materialize(spec.clone()).await.unwrap();
         assert_eq!(
@@ -2217,7 +2311,7 @@ mod tests {
 
         let unknown_name = format!("medousa-unknown-{}", uuid::Uuid::new_v4().simple());
         adapter
-            .docker_success(
+            .runtime_success(
                 vec![
                     "create".into(),
                     "--name".into(),
@@ -2239,16 +2333,16 @@ mod tests {
             )
             .await
             .unwrap();
-        let restarted = DockerCliWorkEnvironmentPort::detect(
+        let restarted = OciCliWorkEnvironmentPort::detect(
             adapter.root().to_path_buf(),
             Arc::new(ForgeExecutionService::new()),
         )
         .await
         .unwrap()
-        .expect("Docker adapter should reopen after restart");
+        .expect("OCI adapter should reopen after restart");
         let report = restarted.reconcile().await.unwrap();
         restarted
-            .docker_success(
+            .runtime_success(
                 vec!["rm".into(), "--force".into(), unknown_name.clone()],
                 CONTROL_TIMEOUT,
                 CONTROL_OUTPUT_BYTES,

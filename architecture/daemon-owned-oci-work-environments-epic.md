@@ -92,7 +92,9 @@ These are acceptance rules, not implementation suggestions.
    not tool identity, descriptions, policy, or registration lists.
 4. **No host dependency assumption.** Placement may depend on OCI support,
    architecture, accelerator, disk, memory, and policy. Project compilers,
-   package managers, and libraries belong in the pinned image.
+   package managers, and libraries belong in the pinned image. Installing or
+   updating them runs inside an image build or work environment, never on the
+   daemon host.
 5. **No shared database or filesystem.** A destination daemon reconstructs
    from durable identifiers and content. Correctness never depends on mounting
    another daemon's workspace or database.
@@ -336,6 +338,32 @@ The initial OCI adapter must default to:
 OCI isolation is a containment layer, not proof that produced code or artifacts
 are safe. Forge governance and review remain in force.
 
+## Development image contract
+
+The default Medousa development image is a product execution substrate, not a
+test-only fixture and not another daemon distribution.
+
+- The published base is multi-architecture, digest-addressed, and contains the
+  portable bootstrap surface needed to build a development environment: a POSIX
+  shell, Git, CA roots, transfer/archive utilities, and native build essentials.
+- Node, Rust, Python, system packages, global CLIs, and other selected toolchains
+  are installed while building a derived image. The resulting immutable digest
+  becomes the `WorkEnvironmentSpec.image`; the host is never mutated.
+- Project package operations execute inside the running environment. Lockfiles
+  and manifests are authoritative; dependency and compiler caches may be
+  daemon-managed for speed but remain disposable.
+- An acknowledged result never depends on a mutable container layer. Source,
+  artifacts, checkpoints, and image digests remain independently durable.
+- The image contains no Medousa daemon, Stasis store, host OCI socket, user
+  vault, or ambient host credentials.
+
+Podman is the preferred initial host backend because rootless, daemonless
+execution matches the worker-daemon boundary. Docker remains a compatibility
+fallback behind the same `WorkEnvironmentPort`. Backend selection changes only
+the host adapter: jobs, tools, placement, checkpoints, and handles remain
+runtime-neutral. `MEDOUSA_OCI_RUNTIME=podman|docker|auto` may pin a host for
+qualification; `auto` prefers Podman.
+
 ## Phase 0 federation fit audit
 
 Stasis 0.10 supplies the runtime-neutral federation vocabulary. Medousa's
@@ -435,8 +463,9 @@ using an existing OCI runtime.
 **Exit:** a daemon can execute a fenced command inside a reproducible OCI
 environment and safely reconcile it after restart.
 
-**Landed boundary:** the full daemon now detects a Docker-compatible CLI host,
-opens one `DockerCliWorkEnvironmentPort`, and advertises
+**Landed boundary:** the full daemon now detects an OCI-compatible CLI host,
+prefers Podman with Docker as a fallback, opens one
+`OciCliWorkEnvironmentPort`, and advertises
 `work_environment.oci` only while that adapter is available. It materializes an
 exact Git commit on daemon-local storage, resolves the image as
 `reference@sha256:digest`, applies CPU/memory/disk admission, creates a
@@ -448,7 +477,7 @@ idempotency receipts scoped to the complete Stasis/Forge fence.
 Daemon boot reconciles only Medousa-labeled containers. Known records recover
 their observed state; missing or corrupt records and unknown labeled containers
 are reported and preserved. The adapter is absent from embedded composition,
-and a missing Docker engine makes the daemon decline OCI placement without
+and a missing OCI engine makes the daemon decline OCI placement without
 changing its runtime or catalog. The real-engine conformance test proves pinned
 Git/image materialization, scoped execution, restart reconstruction, stale-fence
 rejection, unknown-container preservation, and explicit release. The initial
@@ -842,8 +871,8 @@ These choices are intentionally deferred behind locked contracts:
 
 | Choice | Default until measured |
 |---|---|
-| Initial OCI backend | Docker-compatible CLI behind the full-daemon `WorkEnvironmentPort`; other hosts remain adapter choices |
-| Image construction | Consume digest-pinned prebuilt images first; build service later |
+| Initial OCI backend | Podman-first OCI CLI behind the full-daemon `WorkEnvironmentPort`; Docker is a compatibility fallback |
+| Image construction | Publish a small multi-arch bootstrap image; build selected toolchains into derived digest-pinned images inside OCI |
 | Durable blob backend | Local durable adapter for single-daemon proof plus an object-store-capable port for federation |
 | Checkpoint form | Forge checkpoint commit/export bundle for source; typed artifact manifests for non-Git state |
 | Warm retention | Bounded TTL and disk-pressure eviction; never part of correctness |
@@ -877,7 +906,9 @@ Progress begins here:
 - [x] Phase 3 — route the existing tool catalog through bound environments.
 - [x] Phase 4 — persist portable checkpoints and publish with atomic CAS.
 - [x] Phase 5 — coordinate the resumable environment workflow through Stasis.
-- [ ] Phases 6–9 — implementation and qualification.
+- [x] Phase 6 — deliver signed portable work results without destination polling.
+- [ ] Phase 7 — close the fourth-daemon loss-and-reconstruction proof.
+- [ ] Phases 8–9 — UX, operations, hardening, and additional host adapters.
 
 ## Definition of done
 

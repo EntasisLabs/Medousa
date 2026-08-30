@@ -510,7 +510,7 @@ async fn main() -> Result<()> {
     )
     .context("open durable work-environment blob store")?;
     let work_environment_adapter =
-        match medousa::daemon::work_environment_host::DockerCliWorkEnvironmentPort::detect_with_blobs(
+        match medousa::daemon::work_environment_host::OciCliWorkEnvironmentPort::detect_with_blobs(
             work_environment_root,
             Arc::clone(&forge_execution),
             Arc::clone(&work_environment_blobs),
@@ -521,6 +521,7 @@ async fn main() -> Result<()> {
                 match adapter.reconcile().await {
                     Ok(report) => {
                         tracing::info!(
+                            runtime = adapter.runtime_name(),
                             recovered = report.recovered.len(),
                             missing = report.missing.len(),
                             corrupt_preserved = report.corrupt_preserved.len(),
