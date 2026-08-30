@@ -3,8 +3,10 @@
 use axum::Json;
 use axum::extract::Query;
 use axum::http::StatusCode;
+#[cfg(feature = "full-daemon")]
 use axum::routing::{get, post};
 
+#[cfg(feature = "full-daemon")]
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
@@ -112,6 +114,7 @@ pub async fn workflow_from_slice(
     }))
 }
 
+#[cfg(feature = "full-daemon")]
 pub fn tool_history_surface() -> DeclaredRouter<WorkflowApiState> {
     use crate::request_principal::Capability;
 
@@ -138,6 +141,7 @@ pub fn tool_history_surface() -> DeclaredRouter<WorkflowApiState> {
         )
 }
 
+#[cfg(feature = "full-daemon")]
 fn tool_history_policy(
     method: axum::http::Method,
     path: &'static str,

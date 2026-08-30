@@ -796,6 +796,14 @@ pub fn configured() -> bool {
     broker().status().connected
 }
 
+// Embedded hosts own their OAuth broker instance so credentials never pass
+// through a process-global desktop singleton. Portable inference profiles use
+// API-key/local targets; direct ChatGPT turns are routed by the embedded host.
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub fn configured() -> bool {
+    false
+}
+
 #[cfg(feature = "full-daemon")]
 pub fn status() -> ChatGptOAuthStatusResponse {
     broker().status()

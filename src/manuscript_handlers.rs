@@ -4,8 +4,10 @@ use axum::Json;
 use axum::extract::Path;
 use axum::extract::Query;
 use axum::http::StatusCode;
+#[cfg(feature = "full-daemon")]
 use axum::routing::get;
 
+#[cfg(feature = "full-daemon")]
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
@@ -337,6 +339,7 @@ fn parse_preset(raw: &str) -> Result<SkillImportPreset, (StatusCode, String)> {
     }
 }
 
+#[cfg(feature = "full-daemon")]
 pub fn manuscript_surface() -> DeclaredRouter {
     use axum::routing::{patch, post};
 
@@ -379,6 +382,7 @@ pub fn manuscript_surface() -> DeclaredRouter {
         ])
 }
 
+#[cfg(feature = "full-daemon")]
 fn manuscript_read_policy(path: &'static str) -> RoutePolicy {
     manuscript_policy(
         axum::http::Method::GET,
@@ -389,6 +393,7 @@ fn manuscript_read_policy(path: &'static str) -> RoutePolicy {
     )
 }
 
+#[cfg(feature = "full-daemon")]
 fn manuscript_write_policy(
     method: axum::http::Method,
     path: &'static str,
@@ -403,6 +408,7 @@ fn manuscript_write_policy(
     )
 }
 
+#[cfg(feature = "full-daemon")]
 fn manuscript_policy(
     method: axum::http::Method,
     path: &'static str,

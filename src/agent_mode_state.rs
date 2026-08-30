@@ -1,7 +1,8 @@
 //! Persisted session selections and task-scoped agent-mode leases.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::path::PathBuf;
+use std::sync::{Mutex, RwLock};
 
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
@@ -20,6 +21,26 @@ const MAX_PROPOSALS_PER_SESSION: usize = 100;
 pub const MIN_PROPOSAL_TTL_SECONDS: u64 = 5;
 pub const MAX_PROPOSAL_TTL_SECONDS: u64 = 86_400;
 static MODE_STATE_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+static MODE_STATE_PATH: Lazy<RwLock<Option<PathBuf>>> = Lazy::new(|| RwLock::new(None));
+
+fn validate_agent_mode(mode: AgentModeId) -> Result<(), String> {
+    #[cfg(feature = "full-daemon")]
+    {
+        crate::agent_runtime::resolve_agent_mode(mode)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+    #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+    {
+        match mode {
+            AgentModeId::General => Ok(()),
+            AgentModeId::Coder => Err(
+                "Coder mode requires a workshop host with project, Forge, and shell authority"
+                    .to_string(),
+            ),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TaskModeLease {
@@ -95,7 +116,24 @@ pub struct AgentModeSelection {
 }
 
 fn index_path() -> std::path::PathBuf {
+    if let Some(path) = MODE_STATE_PATH
+        .read()
+        .ok()
+        .and_then(|path| path.as_ref().cloned())
+    {
+        return path;
+    }
     crate::session::medousa_data_dir().join("agent_mode_state.json")
+}
+
+pub fn configure_agent_mode_state_path(path: impl Into<PathBuf>) -> Result<(), String> {
+    let _guard = MODE_STATE_LOCK
+        .lock()
+        .map_err(|_| "agent mode state lock poisoned".to_string())?;
+    *MODE_STATE_PATH
+        .write()
+        .map_err(|_| "agent mode state path lock poisoned".to_string())? = Some(path.into());
+    Ok(())
 }
 
 fn read_index() -> ModeStateIndex {
@@ -205,7 +243,7 @@ pub fn set_session_mode(
         return Err("session_id is required".to_string());
     }
     let (_session, _mutation) = crate::session_deletion::acquire_mutation_for_str(session_id)?;
-    crate::agent_runtime::resolve_agent_mode(request.mode).map_err(|err| err.to_string())?;
+    validate_agent_mode(request.mode)?;
     if request
         .expires_at_utc
         .is_some_and(|expires| expires <= Utc::now())
@@ -359,7 +397,7 @@ pub fn propose_mode_transition(
         return Err("reason is required".to_string());
     }
     let (_session, _mutation) = crate::session_deletion::acquire_mutation_for_str(session_id)?;
-    crate::agent_runtime::resolve_agent_mode(to_mode).map_err(|err| err.to_string())?;
+    validate_agent_mode(to_mode)?;
     let task_id = normalize_task_id(scope, task_id)?;
 
     let _guard = MODE_STATE_LOCK.lock().unwrap();

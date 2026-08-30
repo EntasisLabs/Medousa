@@ -145,6 +145,12 @@ impl ProviderCredential {
     fn expose_secret(&self) -> &str {
         self.0.as_str()
     }
+
+    /// Use this credential for one scoped operation without returning or
+    /// persisting another owned copy of the secret.
+    pub fn with_secret<T>(&self, operation: impl FnOnce(&str) -> T) -> T {
+        operation(self.expose_secret())
+    }
 }
 
 impl fmt::Debug for ProviderCredential {

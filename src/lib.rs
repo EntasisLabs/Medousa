@@ -142,5 +142,64 @@ include!("embedded_tool_modules.rs");
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub use product_config::load_product_config;
 
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub fn resolve_llm_model(explicit_model: Option<&str>) -> String {
+    explicit_model
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| std::env::var("MEDOUSA_LLM_MODEL").ok())
+        .or_else(|| std::env::var("STASIS_LLM_MODEL").ok())
+        .unwrap_or_else(|| "gpt-4o-mini".to_string())
+}
+
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub fn resolve_llm_provider(explicit_provider: Option<&str>) -> String {
+    explicit_provider
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| std::env::var("MEDOUSA_LLM_PROVIDER").ok())
+        .or_else(|| std::env::var("STASIS_LLM_PROVIDER").ok())
+        .unwrap_or_else(|| "openai".to_string())
+}
+
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub fn resolve_llm_base_url(
+    explicit_provider: Option<&str>,
+    explicit_base_url: Option<&str>,
+) -> Option<String> {
+    if let Some(explicit) = explicit_base_url
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Some(explicit.to_string());
+    }
+
+    let provider = resolve_llm_provider(explicit_provider);
+    let normalized = provider.trim().to_ascii_uppercase().replace('-', "_");
+    let medousa_provider_key = format!("MEDOUSA_{normalized}_BASE_URL");
+    let stasis_provider_key = format!("STASIS_{normalized}_BASE_URL");
+    if provider.eq_ignore_ascii_case("medousa-local") {
+        return std::env::var(&medousa_provider_key)
+            .ok()
+            .or_else(|| std::env::var(&stasis_provider_key).ok())
+            .or_else(|| std::env::var("MEDOUSA_LOCAL_ENGINE_BASE_URL").ok())
+            .or_else(|| Some("http://127.0.0.1:7421/v1".to_string()));
+    }
+
+    std::env::var(&medousa_provider_key)
+        .ok()
+        .or_else(|| std::env::var(&stasis_provider_key).ok())
+        .or_else(|| {
+            provider
+                .eq_ignore_ascii_case("ollama")
+                .then(|| std::env::var("OLLAMA_HOST").ok())
+                .flatten()
+        })
+        .or_else(|| std::env::var("MEDOUSA_LLM_BASE_URL").ok())
+        .or_else(|| std::env::var("STASIS_LLM_BASE_URL").ok())
+}
+
 #[cfg(not(any(feature = "full-daemon", feature = "embedded-daemon")))]
 compile_error!("enable either the `full-daemon` or `embedded-daemon` feature");

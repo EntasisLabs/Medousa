@@ -499,6 +499,20 @@ fn feed_event_seq(id: &str) -> Option<u64> {
 
 static FEED_STORE: std::sync::OnceLock<FeedStore> = std::sync::OnceLock::new();
 
+pub fn configure_feed_store_root(root: impl Into<PathBuf>) -> Result<(), String> {
+    let root = root.into();
+    if let Some(store) = FEED_STORE.get() {
+        return if store.root_path == root {
+            Ok(())
+        } else {
+            Err("feed store root was already configured for another daemon deployment".to_string())
+        };
+    }
+    FEED_STORE
+        .set(FeedStore::new_in(root))
+        .map_err(|_| "feed store root configuration raced with initialization".to_string())
+}
+
 pub fn feed_store() -> &'static FeedStore {
     FEED_STORE.get_or_init(FeedStore::new)
 }

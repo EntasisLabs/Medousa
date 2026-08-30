@@ -15,7 +15,6 @@ use crate::daemon_api::{
     RecurringListQuery, RecurringListResponse, RecurringRunEntry, RecurringRunsQuery,
     RecurringRunsResponse, UpdateRecurringRequest, UpdateRecurringResponse,
 };
-use crate::recurring_agent_turn;
 use crate::recurring_delivery;
 use crate::recurring_feed;
 use crate::runtime_composition_ext::RuntimeCompositionExt;
@@ -23,6 +22,9 @@ use crate::turn_continuation::StoredDeliveryTarget;
 
 static IN_MEMORY_DELETED_RECURRING: LazyLock<RwLock<HashSet<String>>> =
     LazyLock::new(|| RwLock::new(HashSet::new()));
+
+const LEGACY_RECURRING_AGENT_TURN_JOB_TYPE: &str = "workflow.medousa.recurring_agent_turn";
+const PORTABLE_AGENT_SESSION_JOB_TYPE: &str = "workflow.stasis.agent_session";
 
 fn tombstoned_recurring_ids() -> HashSet<String> {
     IN_MEMORY_DELETED_RECURRING
@@ -95,11 +97,37 @@ pub fn inject_display_name_into_payload(payload_ref: &str, display_name: Option<
 }
 
 pub fn execution_mode_from_definition(definition: &RecurringDefinition) -> String {
-    if definition.job_type == recurring_agent_turn::RECURRING_AGENT_TURN_JOB_TYPE {
+    if matches!(
+        definition.job_type.as_str(),
+        LEGACY_RECURRING_AGENT_TURN_JOB_TYPE | PORTABLE_AGENT_SESSION_JOB_TYPE
+    ) {
         "agent_turn".to_string()
     } else {
         "prompt".to_string()
     }
+}
+
+fn manuscript_id_from_recurring_payload(definition: &RecurringDefinition) -> Option<String> {
+    let payload =
+        serde_json::from_str::<serde_json::Value>(&definition.payload_template_ref).ok()?;
+    if definition.job_type == LEGACY_RECURRING_AGENT_TURN_JOB_TYPE {
+        return payload
+            .get("manuscript_id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+    }
+    if definition.job_type == PORTABLE_AGENT_SESSION_JOB_TYPE {
+        return payload
+            .get("thread_id")
+            .and_then(serde_json::Value::as_str)
+            .and_then(|value| value.strip_prefix("manuscript:"))
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+    }
+    None
 }
 
 pub fn delivery_label_for_target(target: Option<&StoredDeliveryTarget>) -> String {
@@ -159,10 +187,7 @@ async fn definition_to_entry(
         enabled: definition.enabled,
         next_run_at_utc: definition.next_run_at,
         last_run_at_utc: definition.last_run_at,
-        manuscript_id: recurring_agent_turn::manuscript_id_from_recurring_payload(
-            &definition.job_type,
-            &definition.payload_template_ref,
-        ),
+        manuscript_id: manuscript_id_from_recurring_payload(&definition),
         prompt_excerpt: prompt_excerpt_from_recurring(&definition),
         display_name,
         execution_mode: Some(execution_mode_from_definition(&definition)),

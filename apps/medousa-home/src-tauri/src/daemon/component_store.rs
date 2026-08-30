@@ -5,12 +5,15 @@ use medousa_types::component_store::{
 use serde_json::Value;
 use tauri::State;
 
+use crate::embedded_daemon::EmbeddedDaemonState;
+
 use super::DaemonState;
 use super::sdk::{client, sdk_error};
 
 #[tauri::command]
 pub async fn component_store_get(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     component_id: String,
     key: Option<String>,
     profile_id: Option<String>,
@@ -18,6 +21,14 @@ pub async fn component_store_get(
     let component_id = component_id.trim();
     if component_id.is_empty() {
         return Err("component_id is required".to_string());
+    }
+
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .component_store_get(component_id.to_string(), key, profile_id)
+            .await
+            .map_err(|error| error.to_string());
     }
 
     client(&state)?
@@ -34,6 +45,7 @@ pub async fn component_store_get(
 #[tauri::command]
 pub async fn component_store_set(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     component_id: String,
     key: String,
     value: Value,
@@ -46,6 +58,14 @@ pub async fn component_store_set(
     }
     if key.is_empty() {
         return Err("key is required".to_string());
+    }
+
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .component_store_set(component_id.to_string(), key.to_string(), value, profile_id)
+            .await
+            .map_err(|error| error.to_string());
     }
 
     let request = ComponentStoreSetRequest {
@@ -62,6 +82,7 @@ pub async fn component_store_set(
 #[tauri::command]
 pub async fn component_store_delete(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     component_id: String,
     key: String,
     profile_id: Option<String>,
@@ -70,6 +91,14 @@ pub async fn component_store_delete(
     let key = key.trim();
     if component_id.is_empty() || key.is_empty() {
         return Err("component_id and key are required".to_string());
+    }
+
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .component_store_delete(component_id.to_string(), key.to_string(), profile_id)
+            .await
+            .map_err(|error| error.to_string());
     }
 
     client(&state)?
@@ -86,12 +115,21 @@ pub async fn component_store_delete(
 #[tauri::command]
 pub async fn component_store_list_keys(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     component_id: String,
     profile_id: Option<String>,
 ) -> Result<ComponentStoreListResponse, String> {
     let component_id = component_id.trim();
     if component_id.is_empty() {
         return Err("component_id is required".to_string());
+    }
+
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .component_store_list_keys(component_id.to_string(), profile_id)
+            .await
+            .map_err(|error| error.to_string());
     }
 
     client(&state)?

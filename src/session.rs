@@ -280,7 +280,11 @@ pub fn load_slack_bot_token() -> Option<String> {
 }
 
 pub fn save_slack_bot_token(token: Option<&str>) {
-    crate::integration_connection::save_kind_secret("slack", IntegrationSecretSlot::BotToken, token);
+    crate::integration_connection::save_kind_secret(
+        "slack",
+        IntegrationSecretSlot::BotToken,
+        token,
+    );
 }
 
 pub fn load_slack_app_token() -> Option<String> {
@@ -288,7 +292,11 @@ pub fn load_slack_app_token() -> Option<String> {
 }
 
 pub fn save_slack_app_token(token: Option<&str>) {
-    crate::integration_connection::save_kind_secret("slack", IntegrationSecretSlot::AppToken, token);
+    crate::integration_connection::save_kind_secret(
+        "slack",
+        IntegrationSecretSlot::AppToken,
+        token,
+    );
 }
 
 pub(crate) fn file_load_history(
@@ -405,7 +413,7 @@ pub async fn append_turn(
 pub async fn append_turn_with_scratch(
     session_id: &str,
     turn: &ConversationTurn,
-    scratch: Option<&crate::agent_runtime::turn_context::TurnScratchpad>,
+    scratch: Option<&medousa_engine::TurnScratchpad>,
 ) -> Result<crate::session_store::CommitReceipt, crate::session_store::StoreError> {
     try_append_turn_with_scratch(session_id, turn, scratch).await
 }
@@ -413,7 +421,7 @@ pub async fn append_turn_with_scratch(
 pub async fn try_append_turn_with_scratch(
     session_id: &str,
     turn: &ConversationTurn,
-    scratch: Option<&crate::agent_runtime::turn_context::TurnScratchpad>,
+    scratch: Option<&medousa_engine::TurnScratchpad>,
 ) -> Result<crate::session_store::CommitReceipt, crate::session_store::StoreError> {
     try_append_turn_batch_with_scratch(session_id, &[(turn.clone(), scratch.cloned())]).await
 }
@@ -422,7 +430,7 @@ pub async fn try_append_turn_batch_with_scratch(
     session_id: &str,
     turns: &[(
         ConversationTurn,
-        Option<crate::agent_runtime::turn_context::TurnScratchpad>,
+        Option<medousa_engine::TurnScratchpad>,
     )],
 ) -> Result<crate::session_store::CommitReceipt, crate::session_store::StoreError> {
     let entries = turns
@@ -436,7 +444,7 @@ pub async fn try_append_transcript_batch_with_scratch(
     session_id: &str,
     turns: &[(
         ConversationTurn,
-        Option<crate::agent_runtime::turn_context::TurnScratchpad>,
+        Option<medousa_engine::TurnScratchpad>,
         Option<medousa_types::session::ExecutionRef>,
     )],
 ) -> Result<crate::session_store::CommitReceipt, crate::session_store::StoreError> {
@@ -633,10 +641,8 @@ mod provider_authority_tests {
 
     #[test]
     fn provider_secret_paths_are_opaque_and_reject_traversal() {
-        let installation =
-            InstallationId::parse("550e8400-e29b-41d4-a716-446655440000").unwrap();
-        let connection =
-            ConnectionId::parse("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
+        let installation = InstallationId::parse("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let connection = ConnectionId::parse("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let path = DaemonSecretPath::Integration {
             installation_id: installation,
             connection_id: connection,

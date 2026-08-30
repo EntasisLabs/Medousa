@@ -1,9 +1,12 @@
 //! Operator settings + Stasis recurring schedule for artifact index maintenance.
 
 use chrono::Utc;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use stasis::domain::runtime::recurring::RecurringDefinition;
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
+use std::path::PathBuf;
+use std::sync::RwLock;
 
 use crate::artifact_maintenance_job::{
     ARTIFACT_MAINTENANCE_JOB_TYPE, ArtifactMaintenanceJobPayload, DEFAULT_MAX_AGE_DAYS,
@@ -18,8 +21,18 @@ use crate::recurring_schedule::RecurringScheduleSpec;
 use crate::runtime_composition_ext::RuntimeCompositionExt;
 
 pub const ARTIFACT_MAINTENANCE_RECURRING_ID: &str = "system-artifact-maintenance";
+const ARTIFACT_MAINTENANCE_QUEUE: &str = "maintenance";
 /// Weekly Sunday 03:00 UTC — sec min hour dom month dow year
-pub const DEFAULT_MAINTENANCE_CRON: &str = "0 0 3 * * 0 * *";
+pub const DEFAULT_MAINTENANCE_CRON: &str = "0 0 3 * * Sun *";
+static SETTINGS_PATH: Lazy<RwLock<Option<PathBuf>>> = Lazy::new(|| RwLock::new(None));
+
+pub fn configure_artifact_retention_settings_path(path: impl Into<PathBuf>) -> Result<(), String> {
+    *SETTINGS_PATH
+        .write()
+        .map_err(|_| "artifact retention settings path lock poisoned".to_string())? =
+        Some(path.into());
+    Ok(())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArtifactRetentionSettings {
@@ -54,6 +67,13 @@ impl Default for ArtifactRetentionSettings {
 }
 
 fn settings_path() -> std::path::PathBuf {
+    if let Some(path) = SETTINGS_PATH
+        .read()
+        .ok()
+        .and_then(|path| path.as_ref().cloned())
+    {
+        return path;
+    }
     crate::session::medousa_data_dir().join("artifact_retention.json")
 }
 
@@ -92,7 +112,7 @@ pub async fn sync_recurring_schedule(
     } else {
         RecurringScheduleSpec::new(
             ARTIFACT_MAINTENANCE_RECURRING_ID,
-            crate::daemon::worker_host::MAINTENANCE_QUEUE,
+            ARTIFACT_MAINTENANCE_QUEUE,
             ARTIFACT_MAINTENANCE_JOB_TYPE,
             payload_template_ref.clone(),
             DEFAULT_MAINTENANCE_CRON,
@@ -104,16 +124,29 @@ pub async fn sync_recurring_schedule(
     };
 
     definition.job_type = ARTIFACT_MAINTENANCE_JOB_TYPE.to_string();
-    definition.queue = crate::daemon::worker_host::MAINTENANCE_QUEUE.to_string();
+    definition.queue = ARTIFACT_MAINTENANCE_QUEUE.to_string();
     definition.payload_template_ref = payload_template_ref;
     definition.enabled = settings.enabled;
-    if definition.cron_expr.trim().is_empty() {
-        definition.cron_expr = DEFAULT_MAINTENANCE_CRON.to_string();
-    }
+    // This is a system-owned schedule rather than an operator-defined cron.
+    // Reasserting the canonical value also repairs the legacy eight-field
+    // expression that could have been persisted by older builds.
+    definition.cron_expr = DEFAULT_MAINTENANCE_CRON.to_string();
+    definition.timezone = "UTC".to_string();
     definition.next_run_at = definition.compute_next_run_at(now)?;
 
     runtime.register_recurring(definition.clone()).await?;
     Ok(definition)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DEFAULT_MAINTENANCE_CRON;
+
+    #[test]
+    fn default_maintenance_cron_is_a_valid_weekly_schedule() {
+        crate::recurring_delivery::validate_recurring_cron(DEFAULT_MAINTENANCE_CRON, "UTC")
+            .expect("artifact maintenance cron must remain valid");
+    }
 }
 
 pub async fn ensure_schedule_on_startup(runtime: &RuntimeComposition) -> StasisResult<()> {

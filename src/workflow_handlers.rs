@@ -5,12 +5,14 @@ use std::sync::Arc;
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
+#[cfg(feature = "full-daemon")]
 use axum::routing::{get, post};
 use chrono::Utc;
 use stasis::application::runtime::runtime_factory::RuntimeComposition;
 use stasis::domain::runtime::job::{Job, JobState};
 use uuid::Uuid;
 
+#[cfg(feature = "full-daemon")]
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
@@ -456,6 +458,7 @@ async fn job_to_run_entry(
     })
 }
 
+#[cfg(feature = "full-daemon")]
 pub fn workflow_surface() -> DeclaredRouter<WorkflowApiState> {
     use crate::request_principal::Capability;
 
@@ -503,6 +506,7 @@ pub fn workflow_surface() -> DeclaredRouter<WorkflowApiState> {
         )
 }
 
+#[cfg(feature = "full-daemon")]
 fn workflow_read_policy(path: &'static str) -> RoutePolicy {
     workflow_policy(
         axum::http::Method::GET,
@@ -513,6 +517,7 @@ fn workflow_read_policy(path: &'static str) -> RoutePolicy {
     )
 }
 
+#[cfg(feature = "full-daemon")]
 fn workflow_policy(
     method: axum::http::Method,
     path: &'static str,

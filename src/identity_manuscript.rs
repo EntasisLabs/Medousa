@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, RwLock};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -320,7 +321,31 @@ pub enum ManuscriptScope {
     User,
 }
 
+static MANUSCRIPT_ROOTS: LazyLock<RwLock<Option<(PathBuf, PathBuf)>>> =
+    LazyLock::new(|| RwLock::new(None));
+
+pub fn configure_manuscript_roots(
+    user_root: impl Into<PathBuf>,
+    project_root: impl Into<PathBuf>,
+) -> Result<(), String> {
+    *MANUSCRIPT_ROOTS
+        .write()
+        .map_err(|_| "manuscript roots lock poisoned".to_string())? =
+        Some((user_root.into(), project_root.into()));
+    Ok(())
+}
+
+fn configured_manuscript_roots() -> Option<(PathBuf, PathBuf)> {
+    MANUSCRIPT_ROOTS
+        .read()
+        .ok()
+        .and_then(|roots| roots.as_ref().cloned())
+}
+
 pub fn project_manuscripts_dir() -> PathBuf {
+    if let Some((_, project)) = configured_manuscript_roots() {
+        return project;
+    }
     std::env::current_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
         .join(".medousa")
@@ -328,6 +353,9 @@ pub fn project_manuscripts_dir() -> PathBuf {
 }
 
 pub fn user_manuscripts_dir() -> PathBuf {
+    if let Some((user, _)) = configured_manuscript_roots() {
+        return user;
+    }
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("medousa")

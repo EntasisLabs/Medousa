@@ -1,4 +1,3 @@
-#[cfg(feature = "full-daemon")]
 use crate::stage_routing::StageRoute;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -293,7 +292,6 @@ pub fn evaluate_heartbeat_significance(
     }
 }
 
-#[cfg(feature = "full-daemon")]
 #[derive(Debug, Clone)]
 pub struct ContextCompilerInput<'a> {
     pub lane: EngineExecutionLane,
@@ -303,7 +301,6 @@ pub struct ContextCompilerInput<'a> {
     pub recall_readiness: RecallReadiness,
 }
 
-#[cfg(feature = "full-daemon")]
 #[derive(Debug, Clone)]
 pub struct ContextCompilerOutput {
     pub compiled_prompt: String,
@@ -312,7 +309,6 @@ pub struct ContextCompilerOutput {
     pub compiler_summary: String,
 }
 
-#[cfg(feature = "full-daemon")]
 pub fn compile_context_prompt(input: ContextCompilerInput<'_>) -> ContextCompilerOutput {
     let lane_policy_profile = default_policy_profile_for_lane(input.lane);
     let allow_no_tools_fallback = input.recall_readiness == RecallReadiness::Verified;
@@ -365,7 +361,6 @@ pub fn compile_context_prompt(input: ContextCompilerInput<'_>) -> ContextCompile
     }
 }
 
-#[cfg(feature = "full-daemon")]
 pub fn compile_default_lane_prompt(lane: EngineExecutionLane, user_prompt: &str) -> String {
     compile_context_prompt(ContextCompilerInput {
         lane,

@@ -3,6 +3,7 @@
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
+#[cfg(feature = "full-daemon")]
 use axum::routing::get;
 use medousa_types::component_store::{
     ComponentStoreDeleteResponse, ComponentStoreGetResponse, ComponentStoreListResponse,
@@ -10,6 +11,7 @@ use medousa_types::component_store::{
 };
 
 use crate::component_store::{component_exists_in_profile, component_store_service};
+#[cfg(feature = "full-daemon")]
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
@@ -18,6 +20,7 @@ use crate::environment_store::resolve_profile_id;
 #[derive(Clone)]
 pub struct ComponentStoreApiState;
 
+#[cfg(feature = "full-daemon")]
 pub fn component_store_surface() -> DeclaredRouter<ComponentStoreApiState> {
     use axum::routing::{delete, put};
 
@@ -64,6 +67,7 @@ pub fn component_store_surface() -> DeclaredRouter<ComponentStoreApiState> {
         ])
 }
 
+#[cfg(feature = "full-daemon")]
 fn component_store_read_policy(path: &'static str) -> RoutePolicy {
     component_store_policy(
         axum::http::Method::GET,
@@ -74,6 +78,7 @@ fn component_store_read_policy(path: &'static str) -> RoutePolicy {
     )
 }
 
+#[cfg(feature = "full-daemon")]
 fn component_store_write_policy(
     method: axum::http::Method,
     path: &'static str,
@@ -88,6 +93,7 @@ fn component_store_write_policy(
     )
 }
 
+#[cfg(feature = "full-daemon")]
 fn component_store_policy(
     method: axum::http::Method,
     path: &'static str,
@@ -120,7 +126,7 @@ async fn ensure_component_allowed(
     Ok(())
 }
 
-async fn get_store(
+pub async fn get_store(
     State(_state): State<ComponentStoreApiState>,
     Path(component_id): Path<String>,
     Query(query): Query<ComponentStoreQuery>,
@@ -140,7 +146,7 @@ async fn get_store(
         .map_err(internal_error)
 }
 
-async fn get_store_key(
+pub async fn get_store_key(
     State(_state): State<ComponentStoreApiState>,
     Path((component_id, key)): Path<(String, String)>,
     Query(query): Query<ComponentStoreQuery>,
@@ -156,7 +162,7 @@ async fn get_store_key(
         .map_err(internal_error)
 }
 
-async fn put_store_entry(
+pub async fn put_store_entry(
     State(_state): State<ComponentStoreApiState>,
     Path(component_id): Path<String>,
     Query(query): Query<ComponentStoreQuery>,
@@ -183,7 +189,7 @@ async fn put_store_entry(
         .map_err(internal_error)
 }
 
-async fn put_store_key(
+pub async fn put_store_key(
     State(_state): State<ComponentStoreApiState>,
     Path((component_id, key)): Path<(String, String)>,
     Json(body): Json<ComponentStoreSetRequest>,
@@ -199,7 +205,7 @@ async fn put_store_key(
         .map_err(internal_error)
 }
 
-async fn delete_store_key(
+pub async fn delete_store_key(
     State(_state): State<ComponentStoreApiState>,
     Path((component_id, key)): Path<(String, String)>,
     Query(query): Query<ComponentStoreQuery>,
@@ -215,7 +221,7 @@ async fn delete_store_key(
         .map_err(internal_error)
 }
 
-async fn list_store_keys(
+pub async fn list_store_keys(
     State(_state): State<ComponentStoreApiState>,
     Path(component_id): Path<String>,
     Query(query): Query<ComponentStoreQuery>,

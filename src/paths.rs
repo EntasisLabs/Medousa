@@ -7,6 +7,7 @@ use std::sync::OnceLock;
 use std::cell::RefCell;
 
 static RESOLVED_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+static DEPLOYMENT_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 #[cfg(test)]
 thread_local! {
@@ -79,9 +80,34 @@ pub fn medousa_data_dir() -> PathBuf {
     if let Some(path) = TEST_DATA_DIR.with(|slot| slot.borrow().clone()) {
         return path;
     }
+    if let Some(path) = DEPLOYMENT_DATA_DIR.get() {
+        return path.clone();
+    }
     RESOLVED_DATA_DIR
         .get_or_init(resolve_medousa_data_dir)
         .clone()
+}
+
+/// Pin portable daemon stores to the deployment root selected by their host.
+///
+/// Embedded deployments call this after creating their app-sandbox root. A
+/// process owns at most one such deployment, and repeat configuration of the
+/// same root is accepted for lifecycle restarts.
+pub fn configure_deployment_data_dir(path: impl Into<PathBuf>) -> Result<(), String> {
+    let path = path.into();
+    if let Some(existing) = DEPLOYMENT_DATA_DIR.get() {
+        return if existing == &path {
+            Ok(())
+        } else {
+            Err(format!(
+                "daemon data root is already configured as {}",
+                existing.display()
+            ))
+        };
+    }
+    DEPLOYMENT_DATA_DIR
+        .set(path)
+        .map_err(|_| "daemon data root configuration raced".to_string())
 }
 
 /// Config directory (`MEDOUSA_CONFIG_DIR` or `{config_dir}/medousa`).

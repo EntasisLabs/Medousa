@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use chrono::Utc;
+use medousa_runtime::ProviderCredential;
 use reqwest::Client;
 use serde_json::Value;
 
@@ -23,7 +24,7 @@ pub fn http_client() -> Result<Client, String> {
 pub async fn fetch_provider_catalog(
     client: &Client,
     provider: &str,
-    api_key: Option<&str>,
+    credential: Option<&ProviderCredential>,
     base_url: Option<&str>,
     openrouter_overlay: Option<&[ModelCapabilityRecord]>,
 ) -> ProviderCatalogSnapshot {
@@ -31,12 +32,12 @@ pub async fn fetch_provider_catalog(
     let fetched_at = Utc::now();
     let result = match provider.as_str() {
         "openrouter" => fetch_openrouter(client).await,
-        "anthropic" => fetch_anthropic(client, api_key).await,
-        "google" | "gemini" | "google-gemini" => fetch_google(client, api_key).await,
-        "mistral" => fetch_mistral(client, api_key).await,
+        "anthropic" => fetch_anthropic(client, credential).await,
+        "google" | "gemini" | "google-gemini" => fetch_google(client, credential).await,
+        "mistral" => fetch_mistral(client, credential).await,
         "ollama" | "local" => fetch_ollama(client).await,
         other => {
-            fetch_openai_compatible(client, other, api_key, base_url, openrouter_overlay).await
+            fetch_openai_compatible(client, other, credential, base_url, openrouter_overlay).await
         }
     };
 
@@ -149,15 +150,15 @@ fn parse_openrouter_model(entry: &Value) -> Option<ModelCapabilityRecord> {
 
 async fn fetch_anthropic(
     client: &Client,
-    api_key: Option<&str>,
+    credential: Option<&ProviderCredential>,
 ) -> Result<(String, Vec<ModelCapabilityRecord>), String> {
-    let api_key = api_key
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| "Anthropic API key required".to_string())?;
-    let response = client
-        .get(ANTHROPIC_MODELS_URL)
-        .header("x-api-key", api_key)
+    let credential = credential.ok_or_else(|| "Anthropic API key required".to_string())?;
+    let request = credential.with_secret(|api_key| {
+        client
+            .get(ANTHROPIC_MODELS_URL)
+            .header("x-api-key", api_key)
+    });
+    let response = request
         .header("anthropic-version", "2023-06-01")
         .send()
         .await
@@ -222,16 +223,15 @@ fn parse_anthropic_model(entry: &Value) -> Option<ModelCapabilityRecord> {
 
 async fn fetch_google(
     client: &Client,
-    api_key: Option<&str>,
+    credential: Option<&ProviderCredential>,
 ) -> Result<(String, Vec<ModelCapabilityRecord>), String> {
-    let api_key = api_key
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| "Google API key required".to_string())?;
-    let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models?key={}",
-        urlencoding::encode(api_key)
-    );
+    let credential = credential.ok_or_else(|| "Google API key required".to_string())?;
+    let url = credential.with_secret(|api_key| {
+        format!(
+            "https://generativelanguage.googleapis.com/v1beta/models?key={}",
+            urlencoding::encode(api_key)
+        )
+    });
     let response = client
         .get(url)
         .send()
@@ -302,18 +302,12 @@ fn parse_google_model(entry: &Value) -> Option<ModelCapabilityRecord> {
 
 async fn fetch_mistral(
     client: &Client,
-    api_key: Option<&str>,
+    credential: Option<&ProviderCredential>,
 ) -> Result<(String, Vec<ModelCapabilityRecord>), String> {
-    let api_key = api_key
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| "Mistral API key required".to_string())?;
-    let response = client
-        .get(MISTRAL_MODELS_URL)
-        .bearer_auth(api_key)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
+    let credential = credential.ok_or_else(|| "Mistral API key required".to_string())?;
+    let request =
+        credential.with_secret(|api_key| client.get(MISTRAL_MODELS_URL).bearer_auth(api_key));
+    let response = request.send().await.map_err(|err| err.to_string())?;
     if !response.status().is_success() {
         return Err(format!("Mistral returned HTTP {}", response.status()));
     }
@@ -414,7 +408,7 @@ async fn fetch_ollama(client: &Client) -> Result<(String, Vec<ModelCapabilityRec
 async fn fetch_openai_compatible(
     client: &Client,
     provider: &str,
-    api_key: Option<&str>,
+    credential: Option<&ProviderCredential>,
     base_url: Option<&str>,
     openrouter_overlay: Option<&[ModelCapabilityRecord]>,
 ) -> Result<(String, Vec<ModelCapabilityRecord>), String> {
@@ -430,8 +424,8 @@ async fn fetch_openai_compatible(
     };
     let url = models_url(&base);
     let mut request = client.get(url);
-    if let Some(key) = api_key.map(str::trim).filter(|value| !value.is_empty()) {
-        request = request.bearer_auth(key);
+    if let Some(credential) = credential {
+        request = credential.with_secret(|api_key| request.bearer_auth(api_key));
     }
     let response = request.send().await.map_err(|err| err.to_string())?;
     if !response.status().is_success() {

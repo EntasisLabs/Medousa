@@ -1,5 +1,6 @@
 pub mod adapters;
 pub mod cache;
+#[cfg(feature = "full-daemon")]
 pub mod handlers;
 pub mod heuristic;
 pub mod types;
@@ -8,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{OnceLock, RwLock};
 
 use chrono::{Duration, Utc};
+use medousa_runtime::{CredentialProvider, ProviderCredential};
 
 use self::adapters::{fetch_provider_catalog, http_client, openrouter_slug_for};
 use self::cache::{load_all_snapshots, load_index, save_index, save_provider_snapshot};
@@ -154,6 +156,22 @@ impl ModelCapabilityRegistry {
     }
 
     pub async fn refresh(&self, providers: Option<Vec<String>>) -> ModelCatalogRefreshResponse {
+        self.refresh_using(providers, None).await
+    }
+
+    pub async fn refresh_with_credentials(
+        &self,
+        providers: Option<Vec<String>>,
+        credentials: &dyn CredentialProvider,
+    ) -> ModelCatalogRefreshResponse {
+        self.refresh_using(providers, Some(credentials)).await
+    }
+
+    async fn refresh_using(
+        &self,
+        providers: Option<Vec<String>>,
+        credentials: Option<&dyn CredentialProvider>,
+    ) -> ModelCatalogRefreshResponse {
         let targets = normalize_provider_list(providers);
         let client = match http_client() {
             Ok(client) => client,
@@ -195,16 +213,42 @@ impl ModelCapabilityRegistry {
             if provider == "openrouter" {
                 continue;
             }
-            let api_key = provider_api_key(&provider);
             let base_url = provider_base_url(&provider);
-            let snapshot = fetch_provider_catalog(
-                &client,
-                &provider,
-                api_key.as_deref(),
-                base_url.as_deref(),
-                overlay,
-            )
-            .await;
+            let snapshot = if let Some(credentials) = credentials {
+                match credentials.credential_for(&provider).await {
+                    Ok(credential) => {
+                        fetch_provider_catalog(
+                            &client,
+                            &provider,
+                            Some(&credential),
+                            base_url.as_deref(),
+                            overlay,
+                        )
+                        .await
+                    }
+                    Err(_) => {
+                        fetch_provider_catalog(
+                            &client,
+                            &provider,
+                            None,
+                            base_url.as_deref(),
+                            overlay,
+                        )
+                        .await
+                    }
+                }
+            } else {
+                let credential = provider_api_key(&provider)
+                    .and_then(|api_key| ProviderCredential::new(api_key).ok());
+                fetch_provider_catalog(
+                    &client,
+                    &provider,
+                    credential.as_ref(),
+                    base_url.as_deref(),
+                    overlay,
+                )
+                .await
+            };
             if let Some(err) = snapshot.error.clone() {
                 failures.push(ModelCatalogRefreshFailure {
                     provider: provider.clone(),
