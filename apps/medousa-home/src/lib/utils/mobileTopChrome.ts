@@ -20,7 +20,6 @@ export type MobileChromeActionId =
   | "noteEdit"
   | "noteChat"
   | "noteMore"
-  | "automationsFilter"
   | "newAutomation"
   | "scriptTools"
   | "scriptSave"
@@ -113,14 +112,16 @@ export function mobileChromeTrailing(
       }
       switch (automationsSection) {
         case "scripts":
-          return ["search", "automationsFilter", "scriptTools"];
+          return ["search", "scriptTools"];
         case "flows":
         case "schedules":
-          return ["search", "automationsFilter", "newAutomation"];
+          return ["search", "newAutomation"];
+        case "agents":
+          return ["search", "agentsFilter", "agentsImport"];
         case "history":
-          return ["search", "automationsFilter"];
+          return ["search"];
       }
-      return ["search", "automationsFilter"];
+      return ["search"];
     case "agents":
       return ["search", "agentsFilter", "agentsImport"];
     case "code":

@@ -1,4 +1,9 @@
-export type AutomationsSection = "scripts" | "schedules" | "flows" | "history";
+export type AutomationsSection =
+  | "scripts"
+  | "agents"
+  | "flows"
+  | "schedules"
+  | "history";
 
 export type AutomationsChromeMode = "browse" | "flow-editor" | "script-editor";
 

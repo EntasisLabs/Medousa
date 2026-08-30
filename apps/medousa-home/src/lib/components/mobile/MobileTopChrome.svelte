@@ -108,7 +108,6 @@
     noteEdit: Pencil,
     noteChat: MessageCircle,
     noteMore: MoreHorizontal,
-    automationsFilter: ListFilter,
     newAutomation: Plus,
     scriptTools: Wrench,
     scriptSave: Save,
@@ -176,7 +175,13 @@
         return;
       case "search":
         if (surface === "automations") {
-          window.dispatchEvent(new CustomEvent("medousa-mobile-automations-search-focus"));
+          window.dispatchEvent(
+            new CustomEvent(
+              automationsNav.currentSection === "agents"
+                ? "medousa-mobile-agents-search-focus"
+                : "medousa-mobile-automations-search-focus",
+            ),
+          );
           return;
         }
         if (surface === "agents") {
@@ -214,9 +219,6 @@
       }
       case "noteMore":
         vault.openNoteActions();
-        return;
-      case "automationsFilter":
-        window.dispatchEvent(new CustomEvent("medousa-mobile-automations-filter"));
         return;
       case "newAutomation":
         window.dispatchEvent(new CustomEvent("medousa-mobile-automations-new"));
@@ -316,7 +318,11 @@
       case "identity":
         return "Open identity";
       case "search":
-        if (surface === "automations") return "Search automations";
+        if (surface === "automations") {
+          return automationsNav.currentSection === "agents"
+            ? "Search agents"
+            : "Search automations";
+        }
         if (surface === "agents") return "Search agents";
         return "Search notes";
       case "notesFilter":
@@ -329,8 +335,6 @@
         return "Talk about this note";
       case "noteMore":
         return "Note actions";
-      case "automationsFilter":
-        return "Automations section";
       case "newAutomation":
         return automationsNav.currentSection === "flows" ? "New flow" : "New schedule";
       case "scriptTools":

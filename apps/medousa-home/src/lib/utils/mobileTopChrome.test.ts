@@ -46,4 +46,26 @@ describe("mobile Scripts chrome", () => {
       "scriptMore",
     ]);
   });
+
+  it("leaves section switching to the persistent bottom dock", () => {
+    expect(mobileChromeTrailing("automations", "scripts", "browse")).toEqual([
+      "search",
+      "scriptTools",
+    ]);
+    expect(mobileChromeTrailing("automations", "flows", "browse")).toEqual([
+      "search",
+      "newAutomation",
+    ]);
+    expect(mobileChromeTrailing("automations", "history", "browse")).toEqual([
+      "search",
+    ]);
+  });
+
+  it("uses agent actions when Agents is selected inside Automations", () => {
+    expect(mobileChromeTrailing("automations", "agents", "browse")).toEqual([
+      "search",
+      "agentsFilter",
+      "agentsImport",
+    ]);
+  });
 });
