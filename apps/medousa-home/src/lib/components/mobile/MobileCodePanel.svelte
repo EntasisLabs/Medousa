@@ -4,7 +4,6 @@
   import "$lib/styles/vault-workshop.postcss";
   import LmeCodeExplorer from "$lib/components/lme/explorers/LmeCodeExplorer.svelte";
   import MobileCodeWorkspace from "$lib/components/mobile/code/MobileCodeWorkspace.svelte";
-  import { Code2 } from "@lucide/svelte";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { mobileCodeWorkspaceState } from "$lib/stores/mobileCodeWorkspaceState.svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
@@ -18,7 +17,7 @@
   });
 </script>
 
-{#if workId && undertakings.detail?.id === workId}
+{#if workId && undertakings.detail?.id === workId && mobileCodeWorkspaceState.presentation}
   <MobileCodeWorkspace {workId} />
 {:else if workId}
   <section class="flex h-full min-h-0 flex-col bg-surface-950">
@@ -26,13 +25,6 @@
   </section>
 {:else}
   <section class="flex h-full min-h-0 flex-col bg-surface-950" aria-label="Code projects">
-    <header class="flex shrink-0 items-center gap-2 border-b border-surface-500/30 px-4 py-3">
-      <Code2 size={17} class="text-content-link" />
-      <div>
-        <h1 class="text-base font-semibold text-surface-50">Code</h1>
-        <p class="text-content-quiet text-[10px]">Make changes without losing your place</p>
-      </div>
-    </header>
     <div class="min-h-0 flex-1 overflow-hidden">
       <LmeCodeExplorer
         onOpenProject={async (id) => {

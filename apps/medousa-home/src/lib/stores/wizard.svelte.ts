@@ -27,6 +27,7 @@ import {
   loadWizardPowersDone,
   loadWizardSpaceDone,
   loadWizardTrustDone,
+  isWorkspaceOnlyMode,
   markWizardPowersDone,
   markWizardSpaceDone,
   markWizardTourDone,
@@ -65,7 +66,7 @@ class WizardStore {
   existingProvider = $state<string | null>(null);
   existingModel = $state<string | null>(null);
   error = $state<string | null>(null);
-  /** Desktop relationship flow; mobile stays on Rust screens. */
+  /** Relationship flow layered on top of the persisted Rust lifecycle. */
   uiPhase = $state<WizardUiPhase>("arrive");
   preferredMode = $state<PreferredMode | null>(loadPreferredMode());
   /** Engine warms in the background — never surface status in the wizard. */
@@ -136,23 +137,21 @@ class WizardStore {
   }
 
   async back() {
-    if (!isTauriMobilePlatform()) {
-      if (this.uiPhase === "space") {
-        this.uiPhase = "arrive";
-        return;
-      }
-      if (this.uiPhase === "mode") {
-        this.uiPhase = "space";
-        return;
-      }
-      if (this.uiPhase === "brain") {
-        this.uiPhase = "mode";
-        return;
-      }
-      if (this.uiPhase === "ready") {
-        this.uiPhase = this.preferredMode === "workspace-ai" ? "brain" : "mode";
-        return;
-      }
+    if (this.uiPhase === "space") {
+      this.uiPhase = "arrive";
+      return;
+    }
+    if (this.uiPhase === "mode") {
+      this.uiPhase = "space";
+      return;
+    }
+    if (this.uiPhase === "brain") {
+      this.uiPhase = "mode";
+      return;
+    }
+    if (this.uiPhase === "ready") {
+      this.uiPhase = this.preferredMode === "workspace-ai" ? "brain" : "mode";
+      return;
     }
     await this.advance({ action: "back" });
   }
@@ -167,8 +166,9 @@ class WizardStore {
       markWizardTourDone();
       this.seedPrincipalNameSilently();
       if (isTauriMobilePlatform()) {
-        layout.setMobileTab("chat");
-        saveLastSurface("chat");
+        const surface = isWorkspaceOnlyMode() ? "home" : "chat";
+        layout.setMobileTab(surface);
+        saveLastSurface(surface);
       } else {
         // MCP / messaging packages only make sense after the +brain path.
         if (this.preferredMode === "workspace-ai") {
@@ -194,10 +194,8 @@ class WizardStore {
         return result;
       }
       await this.continue(request.path);
-      if (!isTauriMobilePlatform()) {
-        this.markPathComplete();
-        this.uiPhase = "ready";
-      }
+      this.markPathComplete();
+      this.uiPhase = "ready";
       return result;
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
@@ -399,9 +397,7 @@ class WizardStore {
     try {
       const result = await advanceWizard(request);
       this.applyBootstrap(result);
-      if (!isTauriMobilePlatform()) {
-        this.syncUiPhaseAfterAdvance(request.action);
-      }
+      this.syncUiPhaseAfterAdvance(request.action);
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -419,15 +415,6 @@ class WizardStore {
 
   private syncUiPhaseFromState() {
     if (!this.visible) return;
-    if (isTauriMobilePlatform()) {
-      this.uiPhase =
-        this.screen === "completion"
-          ? "ready"
-          : this.screen === "screen3"
-            ? "phone"
-            : "brain";
-      return;
-    }
 
     if (this.screen === "migration") {
       this.uiPhase = "ready";

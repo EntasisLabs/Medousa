@@ -11,7 +11,6 @@
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import type { IdentityRememberRequest, IdentityRememberResponse } from "$lib/types/identity";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
-  import { isTauriMobilePlatform } from "$lib/platform";
   import { blobForShelfEntry, buildIdentityFieldLayout } from "$lib/utils/identityField";
   import {
     buildProfileShelfEntries,
@@ -40,7 +39,7 @@
   let shelfNotice = $state<string | null>(null);
   let teachPrefill = $state("");
 
-  const readOnly = $derived(mobile && isTauriMobilePlatform());
+  const readOnly = false;
 
   const fieldLayout = $derived(
     buildIdentityFieldLayout(

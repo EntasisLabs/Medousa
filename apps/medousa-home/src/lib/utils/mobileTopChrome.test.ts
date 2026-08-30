@@ -21,6 +21,8 @@ describe("mobile Code chrome", () => {
 
   it("exposes project-mode trailing actions without Activity", () => {
     expect(mobileChromeTrailing("code", "scripts", "browse", "projects")).toEqual([
+      "codeNew",
+      "codeRefresh",
       "codeSearch",
     ]);
     expect(mobileChromeTrailing("code", "scripts", "browse", "files")).toEqual([
@@ -38,12 +40,54 @@ describe("mobile Code chrome", () => {
   });
 });
 
+describe("mobile Workshop chrome", () => {
+  it("keeps refresh beside Activity in the top chrome", () => {
+    expect(resolveMobileChromeSurface("more", "list", "runtime")).toBe("runtime");
+    expect(mobileChromeLeading("runtime")).toBe("back");
+    expect(mobileChromeTrailing("runtime")).toEqual(["runtimeRefresh", "activity"]);
+  });
+});
+
+describe("mobile Calendar chrome", () => {
+  it("uses calendar actions instead of generic Activity chrome", () => {
+    expect(resolveMobileChromeSurface("more", "list", "calendar")).toBe("calendar");
+    expect(mobileChromeLeading("calendar")).toBe("back");
+    expect(mobileChromeTrailing("calendar")).toEqual([
+      "calendarView",
+      "calendarSearch",
+      "calendarNew",
+    ]);
+  });
+});
+
 describe("mobile Scripts chrome", () => {
   it("keeps only document actions in the editor chrome", () => {
     expect(mobileChromeTrailing("automations", "scripts", "script-editor")).toEqual([
       "scriptSave",
       "scriptRun",
       "scriptMore",
+    ]);
+  });
+
+  it("leaves section switching to the persistent bottom dock", () => {
+    expect(mobileChromeTrailing("automations", "scripts", "browse")).toEqual([
+      "search",
+      "scriptTools",
+    ]);
+    expect(mobileChromeTrailing("automations", "flows", "browse")).toEqual([
+      "search",
+      "newAutomation",
+    ]);
+    expect(mobileChromeTrailing("automations", "history", "browse")).toEqual([
+      "search",
+    ]);
+  });
+
+  it("uses agent actions when Agents is selected inside Automations", () => {
+    expect(mobileChromeTrailing("automations", "agents", "browse")).toEqual([
+      "search",
+      "agentsFilter",
+      "agentsImport",
     ]);
   });
 });

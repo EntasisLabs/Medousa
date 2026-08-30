@@ -21,28 +21,55 @@ use medousa_runtime::{
     ModelResponseEventPort, RuntimePortFuture, RuntimePorts, ToolLoopCompletionGate,
     ToolRunEventPort, ToolRunFinish, ToolRunStart, TurnPresentationPort,
 };
+use medousa_types::component_runtime::{
+    ComponentRuntimeEventsQuery, ComponentRuntimeEventsRequest, ComponentRuntimeEventsResponse,
+    ComponentRuntimeEventsTailResponse, ComponentRuntimeProbeResult,
+};
+use medousa_types::component_store::{
+    ComponentStoreDeleteResponse, ComponentStoreGetResponse, ComponentStoreListResponse,
+    ComponentStoreQuery, ComponentStoreSetRequest, ComponentStoreSetResponse,
+};
 use medousa_types::daemon_api::{
-    AgentModeId, AgentModeSource, BeginChatGptOAuthResponse, CancelActiveSessionTurnResponse,
-    ChatGptModelListResponse, ChatGptOAuthStatusResponse, CompleteChatGptOAuthResponse,
-    ContinuationStatusResponse, CreateSessionResponse, CreateUserProfileResponse,
-    DaemonStatsResponse, DeliveryHealthResponse, DisconnectChatGptOAuthResponse,
-    GraphemeModuleDetailResponse, GraphemeModuleOpsResponse, GraphemeModulesListResponse,
-    GraphemeRunResponse, GraphemeScriptDetailResponse, GraphemeScriptsListQuery,
-    GraphemeScriptsListResponse, HealthResponse, InteractiveTurnResponse, ListUserProfilesResponse,
-    LocusNodeDetailResponse, LocusNodesListResponse, LocusNodesQuery, LocusTagsListResponse,
-    LocusTagsQuery, RecurringDefinitionEntry, RecurringListResponse, RegisterRecurringResponse,
-    SessionAgentModeResponse, SessionCodeBindingResponse, SetActiveUserProfileResponse,
-    VaultBacklinksResponse, VaultChangesQuery, VaultChangesResponse, VaultDeleteResponse,
-    VaultFileContentResponse, VaultNoteContentResponse, VaultNotesListResponse, VaultNotesQuery,
-    VaultRootsResponse, VaultSearchQuery, VaultSearchResponse, VaultTagsListResponse,
-    VaultTagsQuery, VaultTrashListResponse, VaultTrashRestoreResponse, VaultWriteRequest,
-    VaultWriteResponse,
+    AgentModeListResponse, AgentModeProposalListResponse, AgentModeProposalResponse,
+    AgentModeTransitionPolicy, ArtifactCommandRequest, ArtifactCommandResponse,
+    ArtifactDeleteRequest, ArtifactDeleteResponse, ArtifactFetchRequest, ArtifactFetchResponse,
+    ArtifactListUiRequest, ArtifactListUiResponse, ArtifactRetentionStatusResponse,
+    ArtifactWriteRequest, ArtifactWriteResponse, BeginChatGptOAuthResponse,
+    CancelActiveSessionTurnResponse, ChatGptModelListResponse, ChatGptOAuthStatusResponse,
+    CompleteChatGptOAuthResponse, ContinuationStatusResponse, CreateManuscriptRequest,
+    CreateSessionRequest, CreateSessionResponse, CreateUserProfileResponse, DaemonStatsResponse,
+    DeleteRecurringResponse, DeliveryHealthResponse, DisconnectChatGptOAuthResponse,
+    ExportUserProfileRequest, ExportUserProfileResponse, GraphemeModuleDetailResponse,
+    GraphemeModuleOpsResponse, GraphemeModulesListResponse, GraphemeRunResponse,
+    GraphemeScriptDetailResponse, GraphemeScriptsListQuery, GraphemeScriptsListResponse,
+    HealthResponse, IdentityContextRequest, IdentityDigestPreviewResponse,
+    IdentityExportMarkdownRequest, IdentityExportMarkdownResponse, IdentityRememberRequest,
+    IdentityRememberResponse, ImportUserProfileRequest, ImportUserProfileResponse,
+    InteractiveTurnResponse, ListUserProfilesResponse, LocusNodeDetailResponse,
+    LocusNodesListResponse, LocusNodesQuery, LocusTagsListResponse, LocusTagsQuery,
+    ManuscriptCatalogQuery, ManuscriptCatalogResponse, ManuscriptDetailResponse,
+    ManuscriptImportRequest, ManuscriptImportResponse, MediaUploadResponse,
+    RecurringDeliveryResponse, RecurringListQuery, RecurringListResponse, RecurringRunsQuery,
+    RecurringRunsResponse, RegisterRecurringPromptRequest, RegisterRecurringResponse,
+    SessionAgentModeResponse, SessionCodeBindingResponse, SessionDeleteResponse,
+    SessionHistoryListResponse, SessionSetDisplayNameResponse, SetActiveUserProfileResponse,
+    SetSessionAgentModeRequest, ToolHistoryListQuery, ToolHistoryListResponse,
+    UpdateArtifactRetentionRequest, UpdateArtifactRetentionResponse, UpdateManuscriptRequest,
+    UpdateRecurringRequest, UpdateRecurringResponse, VaultBacklinksResponse, VaultChangesQuery,
+    VaultChangesResponse, VaultDeleteResponse, VaultFileContentResponse, VaultNoteContentResponse,
+    VaultNotesListResponse, VaultNotesQuery, VaultRootsResponse, VaultSearchQuery,
+    VaultSearchResponse, VaultTagsListResponse, VaultTagsQuery, VaultTrashListResponse,
+    VaultTrashRestoreResponse, VaultWriteRequest, VaultWriteResponse, WorkflowDetailResponse,
+    WorkflowFromSliceRequest, WorkflowFromSliceResponse, WorkflowPlanRequest, WorkflowPlanResponse,
+    WorkflowRunRequest, WorkflowRunResponse, WorkflowRunsQuery, WorkflowRunsResponse,
+    WorkflowScheduleRequest, WorkflowScheduleResponse, WorkflowsListQuery, WorkflowsListResponse,
 };
 use medousa_types::environment::{
     CustomViewComponentStatus, CustomViewSurfaceStatus, EnvironmentPendingResponse,
     EnvironmentSpecPutRequest, EnvironmentSpecResponse, EnvironmentStatusResponse, SurfaceKind,
 };
 use medousa_types::environment_validate::validate_environment_spec;
+use medousa_types::feed::{FeedLatestGoodResponse, FeedTailResponse};
 use medousa_types::secrets::InstallationId;
 use medousa_types::session::{ConversationTurn, SessionHistorySummary, TranscriptEntry};
 #[cfg(test)]
@@ -53,15 +80,17 @@ use medousa_types::turn_stream::{
 };
 use medousa_types::turn_ticket::{TurnTicket, TurnTicketMode, TurnTicketPhase};
 use medousa_types::{
-    GraphemeAllowlistResponse, GraphemeAllowlistUpdateRequest, GraphemeCompileRequest,
-    GraphemeCompileResponse, GraphemeLifecycleResponse, GraphemeModuleLoadRequest,
-    GraphemeModuleLoadResponse, GraphemeScriptDeleteResponse, GraphemeScriptSaveRequest,
-    GraphemeScriptSaveResponse,
+    CalendarDeleteResponse, CalendarExportResponse, CalendarImportRequest, CalendarImportResponse,
+    CalendarListQuery, CalendarListResponse, CalendarWriteRequest, CalendarWriteResponse,
+    CreatePromptStashRequest, DeletePromptStashResponse, DeriveSessionRequest,
+    DeriveSessionResponse, GraphemeAllowlistResponse, GraphemeAllowlistUpdateRequest,
+    GraphemeCompileRequest, GraphemeCompileResponse, GraphemeLifecycleResponse,
+    GraphemeModuleLoadRequest, GraphemeModuleLoadResponse, GraphemeScriptDeleteResponse,
+    GraphemeScriptSaveRequest, GraphemeScriptSaveResponse, PromptStash, PromptStashId,
+    PromptStashListResponse,
 };
 use serde_json::{Value, json};
-use stasis::application::orchestration::prompt_pipeline::{
-    PromptExecutionContext, PromptExecutionPipeline,
-};
+use stasis::application::orchestration::prompt_pipeline::PromptExecutionPipeline;
 use stasis::application::orchestration::tool_loop_pipeline::{
     ToolCallMode, ToolLoopExecutionRequest,
 };
@@ -71,6 +100,7 @@ use stasis::domain::runtime::cluster_node::{
     ClusterNode, ClusterNodeHeartbeat, ClusterNodeRole, NewClusterNode,
 };
 use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta};
+use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 use stasis::ports::outbound::memory::memory_context_reader::MemoryContextReader;
 use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
 use stasis::ports::outbound::memory::memory_operations::MemoryOperations;
@@ -846,14 +876,16 @@ impl EmbeddedToolRegistryRecipe for EmptyEmbeddedToolRegistryRecipe {
 
 /// Deployment configuration assembled by the native host.
 ///
-/// The chat client already owns its credential-provider boundary; secret
-/// material is never retained here or accepted from the UI request.
+/// The configuration retains only the host credential-provider boundary;
+/// secret material is never retained here or accepted from the UI request.
 pub struct EmbeddedDaemonConfig {
     root: PathBuf,
     installation_id: InstallationId,
     provider: String,
     model: String,
     chat_client: Arc<dyn AiChatClient>,
+    credential_provider: Option<Arc<dyn CredentialProvider>>,
+    tui_defaults: Option<crate::session::TuiDefaults>,
     credentialed_chat_client: Option<CredentialedAiChatClient>,
     routed_chat_client: Option<EmbeddedRoutedChatClient>,
     chatgpt_oauth: Option<Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>>,
@@ -878,12 +910,14 @@ impl EmbeddedDaemonConfig {
         let model = model.into();
         let ai_config = CredentialedAiChatConfig::new(provider.clone(), model.clone(), base_url)
             .context("invalid embedded inference configuration")?;
-        let credentialed_chat_client = CredentialedAiChatClient::new(ai_config, credentials)
-            .context("initialize embedded inference client")?;
+        let credentialed_chat_client =
+            CredentialedAiChatClient::new(ai_config, credentials.clone())
+                .context("initialize embedded inference client")?;
         let chat_client: Arc<dyn AiChatClient> = Arc::new(credentialed_chat_client.clone());
         let mut config =
             Self::with_chat_client(root, installation_id, provider, model, chat_client);
         config.credentialed_chat_client = Some(credentialed_chat_client);
+        config.credential_provider = Some(credentials);
         Ok(config)
     }
 
@@ -902,7 +936,7 @@ impl EmbeddedDaemonConfig {
             provider.into(),
             model.into(),
             base_url,
-            credentials,
+            credentials.clone(),
             chatgpt_oauth.clone(),
         )?;
         let (provider, model) = routed_chat_client.route();
@@ -910,6 +944,7 @@ impl EmbeddedDaemonConfig {
         let mut config =
             Self::with_chat_client(root, installation_id, provider, model, chat_client);
         config.routed_chat_client = Some(routed_chat_client);
+        config.credential_provider = Some(credentials);
         config.chatgpt_oauth = Some(chatgpt_oauth);
         Ok(config)
     }
@@ -929,6 +964,8 @@ impl EmbeddedDaemonConfig {
             provider: provider.into(),
             model: model.into(),
             chat_client,
+            credential_provider: None,
+            tui_defaults: None,
             credentialed_chat_client: None,
             routed_chat_client: None,
             chatgpt_oauth: None,
@@ -952,6 +989,12 @@ impl EmbeddedDaemonConfig {
 
     pub fn with_mcp_oauth(mut self, oauth: Arc<medousa_mcp_gateway::McpOAuthBroker>) -> Self {
         self.mcp_oauth = Some(oauth);
+        self
+    }
+
+    /// Supply the non-secret runtime preferences owned by the native host.
+    pub fn with_tui_defaults(mut self, defaults: crate::session::TuiDefaults) -> Self {
+        self.tui_defaults = Some(defaults);
         self
     }
 
@@ -1187,6 +1230,8 @@ impl std::fmt::Debug for EmbeddedDaemonConfig {
             .field("provider", &self.provider)
             .field("model", &self.model)
             .field("chat_client", &"REDACTED")
+            .field("credential_provider", &self.credential_provider.is_some())
+            .field("tui_defaults", &self.tui_defaults.is_some())
             .field("mcp_oauth", &self.mcp_oauth.is_some())
             .field("tool_registry", &"deployment-recipe")
             .field("foreground_turn_timeout", &self.foreground_turn_timeout)
@@ -1206,6 +1251,7 @@ pub struct EmbeddedDaemon {
     authority_id: medousa_types::session::AuthorityId,
     local_credential_id: Arc<str>,
     inference: EmbeddedInferenceBinding,
+    credential_provider: Option<Arc<dyn CredentialProvider>>,
     chatgpt_oauth: Option<Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>>,
     mcp_oauth: Option<Arc<medousa_mcp_gateway::McpOAuthBroker>>,
     chat_client: Arc<dyn AiChatClient>,
@@ -1215,6 +1261,8 @@ pub struct EmbeddedDaemon {
     profile_registry: Arc<std::sync::RwLock<crate::user_profiles::UserProfileRegistry>>,
     locus_service: crate::locus_service::LocusService,
     memory_writer: Arc<dyn MemoryContextWriter>,
+    memory_operations: Arc<dyn MemoryOperations>,
+    identity_store: Arc<crate::identity_store_ext::MedousaIdentityMemoryStore>,
     runtime: Arc<RuntimeComposition>,
     _locus_memory: Arc<stasis::infrastructure::memory::locus_node_store_factory::LocusMemoryStore>,
     cluster_node_store: Arc<dyn ClusterNodeStore>,
@@ -1234,6 +1282,10 @@ impl EmbeddedDaemon {
     /// Boot the daemon against one app-sandbox root.
     pub async fn boot(config: EmbeddedDaemonConfig) -> Result<Arc<Self>> {
         let root = prepare_root(&config.root).await?;
+        crate::paths::configure_deployment_data_dir(root.clone()).map_err(anyhow::Error::msg)?;
+        if let Some(defaults) = config.tui_defaults.as_ref() {
+            crate::session::save_tui_defaults(defaults);
+        }
         configure_file_session_root(root.join("history")).map_err(|error| anyhow!(error))?;
         crate::capability_catalog::configure_capabilities_manifest_path(
             root.join("capabilities.toml"),
@@ -1241,6 +1293,23 @@ impl EmbeddedDaemon {
         .map_err(|error| anyhow!(error))?;
         crate::grapheme_script::configure_grapheme_script_root(root.join("grapheme-scripts"))
             .map_err(|error| anyhow!(error))?;
+        crate::agent_mode_state::configure_agent_mode_state_path(
+            root.join("agent_mode_state.json"),
+        )
+        .map_err(anyhow::Error::msg)?;
+        crate::media_store::configure_media_store_root(root.join("media"))
+            .map_err(anyhow::Error::msg)?;
+        crate::feed_store::configure_feed_store_root(root.join("feeds"))
+            .map_err(anyhow::Error::msg)?;
+        crate::identity_manuscript::configure_manuscript_roots(
+            root.join("manuscripts/user"),
+            root.join("manuscripts/project"),
+        )
+        .map_err(anyhow::Error::msg)?;
+        crate::artifact_retention::configure_artifact_retention_settings_path(
+            root.join("artifact_retention.json"),
+        )
+        .map_err(anyhow::Error::msg)?;
         let sandbox_files = crate::store_root::StoreRoot::open(&root)
             .context("open embedded daemon root capability")?;
         let environment_path = crate::store_root::StorePath::parse("environment")
@@ -1302,6 +1371,17 @@ impl EmbeddedDaemon {
         crate::session_store::init_session_store_with_runtime(&runtime)
             .await
             .context("initialize embedded session schema")?;
+        crate::session_meta_store::init_session_meta_store_with_runtime(&runtime).await;
+        crate::verification_store::init_verification_store_with_runtime(&runtime).await;
+        crate::session_catalog::init_session_catalog_with_runtime(&runtime).await;
+        crate::channel_session_store::init_channel_session_store_with_runtime(&runtime).await;
+        crate::artifact_store::init_artifact_store_with_runtime(&runtime).await;
+        crate::component_store::init_component_store_with_runtime(&runtime).await;
+        crate::integration_connection::init_integration_connection_from_runtime(&runtime).await;
+        crate::component_runtime_store::init_component_runtime_with_runtime(&runtime).await;
+        crate::turn_continuation::init_turn_continuation_store_with_runtime(&runtime).await;
+        crate::recurring_delivery::init_recurring_delivery_store_with_runtime(&runtime).await;
+        crate::recurring_feed::init_recurring_feed_store_with_runtime(&runtime).await;
 
         let session_store: Arc<dyn SessionStore> = match &runtime {
             RuntimeComposition::Surreal(_) => get_session_store(),
@@ -1331,6 +1411,7 @@ impl EmbeddedDaemon {
         let memory_reader = memory.memory_reader.clone();
         let memory_writer = memory.memory_writer.clone();
         let memory_operations = memory.memory_operations.clone();
+        let identity_store = memory.identity_store.clone();
         let locus_service = crate::locus_service::LocusService::new(
             locus_memory.node_store.clone(),
             locus_memory.semantic_index.clone(),
@@ -1401,8 +1482,8 @@ impl EmbeddedDaemon {
         let workflow_engine = RuntimeFactory::default_workflow_engine();
         let memory_reader = Some(memory_reader);
         let memory_writer_for_runtime = Some(memory_writer.clone());
-        let memory_operations = Some(memory_operations);
-        let identity_store = Some(memory.identity_store_dyn());
+        let memory_operations_for_runtime = Some(memory_operations.clone());
+        let identity_store_for_runtime = Some(memory.identity_store_dyn());
         match runtime.as_ref() {
             RuntimeComposition::InMemory(runtime) => {
                 crate::daemon_runtime_handlers::register_daemon_runtime_handlers(
@@ -1412,8 +1493,8 @@ impl EmbeddedDaemon {
                     &workflow_engine,
                     &memory_reader,
                     &memory_writer_for_runtime,
-                    &identity_store,
-                    &memory_operations,
+                    &identity_store_for_runtime,
+                    &memory_operations_for_runtime,
                     &thread_store,
                     &cluster_node_store,
                 )?;
@@ -1426,12 +1507,23 @@ impl EmbeddedDaemon {
                     &workflow_engine,
                     &memory_reader,
                     &memory_writer_for_runtime,
-                    &identity_store,
-                    &memory_operations,
+                    &identity_store_for_runtime,
+                    &memory_operations_for_runtime,
                     &thread_store,
                     &cluster_node_store,
                 )?;
             }
+        }
+        crate::artifact_maintenance_job::register_artifact_maintenance_handler(runtime.as_ref())
+            .await
+            .context("register embedded artifact maintenance handler")?;
+        if let Err(error) =
+            crate::artifact_retention::ensure_schedule_on_startup(runtime.as_ref()).await
+        {
+            // Retention is optional maintenance. A corrupt legacy schedule or
+            // temporary persistence failure must never prevent Personal from
+            // opening; the next boot/settings update can repair it.
+            tracing::warn!(%error, "embedded artifact retention schedule unavailable");
         }
         let cluster_node = register_or_heartbeat_node(
             cluster_node_store.as_ref(),
@@ -1474,6 +1566,7 @@ impl EmbeddedDaemon {
             authority_id,
             local_credential_id,
             inference,
+            credential_provider: config.credential_provider,
             chatgpt_oauth: config.chatgpt_oauth,
             mcp_oauth: config.mcp_oauth,
             chat_client: config.chat_client,
@@ -1483,6 +1576,8 @@ impl EmbeddedDaemon {
             profile_registry,
             locus_service,
             memory_writer,
+            memory_operations,
+            identity_store,
             runtime,
             _locus_memory: locus_memory,
             cluster_node_store,
@@ -1628,6 +1723,9 @@ impl EmbeddedDaemon {
         lease: crate::execution_context::TurnExecutionLease,
         prompt: String,
         inference_prompt: String,
+        current_turn_user_message: ChatMessage,
+        media_refs: Vec<medousa_types::daemon_api::MediaRef>,
+        reasoning_effort: String,
         prior_messages: Vec<ChatMessage>,
         stream: TurnStreamEntry,
     ) {
@@ -1680,8 +1778,11 @@ impl EmbeddedDaemon {
                     return;
                 }
             };
-        let user_turn =
-            ConversationTurn::plain("user", prompt.clone(), Utc::now(), Vec::new(), None);
+        let user_turn = crate::turn_parts::user_conversation_turn_with_media_and_speaker(
+            prompt.clone(),
+            &media_refs,
+            context.legacy_scope().identity_user_id.as_deref(),
+        );
         if let Err(error) = self
             .session_store
             .append_transcript_batch(
@@ -1706,14 +1807,15 @@ impl EmbeddedDaemon {
 
         let prompt_pipeline = PromptExecutionPipeline::new(self.chat_client.clone());
         let tool_loop = MedousaToolLoopPipeline::new(prompt_pipeline, self.tool_registry.clone());
+        let mut prompt_context = crate::reasoning_effort::prompt_execution_context(
+            context.route().model(),
+            Some(&reasoning_effort),
+        );
+        prompt_context.correlation_id = Some(context.correlation_id().to_string());
         let request = ToolLoopExecutionRequest {
             user_prompt: inference_prompt,
             system_prompt: Some(embedded_system_prompt()),
-            context: PromptExecutionContext {
-                correlation_id: Some(context.correlation_id().to_string()),
-                model_hint: Some(context.route().model().to_string()),
-                ..PromptExecutionContext::default()
-            },
+            context: prompt_context,
             tool_name: String::new(),
             tool_input: json!({}),
             tool_call_mode: ToolCallMode::Auto,
@@ -1744,7 +1846,7 @@ impl EmbeddedDaemon {
                     Some(&delta_tx),
                     DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS,
                     Some(&mut completion_gate),
-                    None,
+                    Some(current_turn_user_message),
                 ),
             );
             tokio::pin!(execution);
@@ -2045,6 +2147,12 @@ impl EmbeddedDaemonClient {
     ) -> Result<()> {
         self.require(Capability::AdminRuntime)?;
         self.daemon.inference.reconfigure(provider, model, base_url)
+    }
+
+    pub fn sync_tui_defaults(&self, defaults: crate::session::TuiDefaults) -> Result<()> {
+        self.require(Capability::AdminRuntime)?;
+        crate::session::save_tui_defaults(&defaults);
+        Ok(())
     }
 
     fn chatgpt_oauth(&self) -> Result<&Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>> {
@@ -2582,22 +2690,307 @@ impl EmbeddedDaemonClient {
         })
     }
 
-    pub fn create_profile(
+    pub async fn create_profile(
         &self,
         slug: &str,
         display_name: &str,
     ) -> Result<CreateUserProfileResponse> {
         self.require(Capability::AdminRuntime)?;
-        let mut registry = self
+        let profile = {
+            let mut registry = self
+                .daemon
+                .profile_registry
+                .write()
+                .map_err(|_| anyhow!("profile registry lock poisoned"))?;
+            registry.create_profile(slug, display_name)?
+        };
+        crate::identity_memory::seed_workshop_profile_user(
+            self.daemon.identity_store.as_ref(),
+            &profile.profile_id,
+        )
+        .await?;
+        let registry = self
             .daemon
             .profile_registry
-            .write()
+            .read()
             .map_err(|_| anyhow!("profile registry lock poisoned"))?;
-        let profile = registry.create_profile(slug, display_name)?;
         Ok(CreateUserProfileResponse {
             profile: profile.to_dto(),
             active_profile_id: registry.active_profile_id().to_string(),
             resolved_user_id: registry.resolve_active_user_id(),
+        })
+    }
+
+    pub async fn identity_context(&self, request: IdentityContextRequest) -> Result<Value> {
+        self.require(Capability::ProfileSelf)?;
+        let user_id = request
+            .user_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or(self.active_profile_id()?);
+        let persona_id = request
+            .persona_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(crate::identity_memory::resolve_identity_persona_id);
+        let channel_id = request
+            .channel_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                crate::identity_memory::resolve_identity_channel_id(
+                    request.policy_profile.as_deref(),
+                )
+            });
+        let relationship_limit = request.relationship_limit.unwrap_or(8).clamp(1, 64);
+        let mode =
+            crate::identity_memory::parse_identity_context_mode_label(request.mode.as_deref());
+        let service =
+            stasis::application::use_cases::identity_memory_service::IdentityMemoryService::new(
+                self.daemon.identity_store.clone() as Arc<dyn IdentityMemoryStore>,
+            );
+        let response = service
+            .get_identity_context(&crate::identity_memory::build_identity_context_request(
+                user_id,
+                persona_id,
+                channel_id,
+                relationship_limit,
+                mode,
+            ))
+            .await
+            .map_err(anyhow::Error::new)?;
+        serde_json::to_value(response).map_err(anyhow::Error::new)
+    }
+
+    pub async fn identity_remember(
+        &self,
+        request: IdentityRememberRequest,
+    ) -> Result<IdentityRememberResponse> {
+        self.require(Capability::ProfileSelf)?;
+        let user_id = request
+            .user_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or(self.active_profile_id()?);
+        let subject = request.subject.trim();
+        let statement = request.statement.trim();
+        if subject.is_empty() || statement.is_empty() {
+            bail!("subject and statement are required");
+        }
+        let source = crate::identity_write_policy::parse_update_source(
+            request.source.as_deref().or(Some("user_direct")),
+        )
+        .map_err(anyhow::Error::msg)?;
+        let writer = crate::cognitive_identity_writer::CognitiveIdentityWriter::new(
+            self.daemon.identity_store.clone(),
+            Some(self.daemon.memory_writer.clone()),
+        );
+        let result = match request.fact_kind.trim().to_ascii_lowercase().as_str() {
+            "preference" => {
+                writer
+                    .remember_preference(
+                        &user_id,
+                        subject,
+                        Value::String(statement.to_string()),
+                        source,
+                        1.0,
+                        "home teach medousa",
+                    )
+                    .await
+            }
+            "person" => {
+                writer
+                    .remember_contact(
+                        &user_id,
+                        subject,
+                        statement,
+                        &request.attributes,
+                        &[],
+                        source,
+                        1.0,
+                        "home teach medousa",
+                    )
+                    .await
+            }
+            "note" => {
+                writer
+                    .remember_note(
+                        &user_id,
+                        subject,
+                        statement,
+                        source,
+                        1.0,
+                        "home teach medousa",
+                    )
+                    .await
+            }
+            other => bail!("unsupported fact_kind '{other}', expected preference|person|note"),
+        }
+        .map_err(anyhow::Error::new)?;
+        let message = if result.committed {
+            format!("Remembered {subject}")
+        } else if result.requires_confirmation {
+            "Saved as a proposal — confirmation may be required".to_string()
+        } else {
+            "Could not commit this fact".to_string()
+        };
+        Ok(IdentityRememberResponse {
+            committed: result.committed,
+            requires_confirmation: result.requires_confirmation,
+            proposal_ids: result.proposal_ids,
+            digest_preview: result.digest_preview,
+            message,
+        })
+    }
+
+    pub async fn identity_digest_preview(
+        &self,
+        request: IdentityContextRequest,
+    ) -> Result<IdentityDigestPreviewResponse> {
+        self.require(Capability::ProfileSelf)?;
+        let user_id = request
+            .user_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or(self.active_profile_id()?);
+        let context = self
+            .identity_context(IdentityContextRequest {
+                user_id: Some(user_id.clone()),
+                relationship_limit: Some(request.relationship_limit.unwrap_or(32).clamp(1, 64)),
+                ..request
+            })
+            .await?;
+        let context = serde_json::from_value::<
+            stasis::ports::outbound::memory::identity_memory_models::GetIdentityContextResponse,
+        >(context)?;
+        let ranked = crate::identity_markdown::compile_identity_digest_preview(
+            self.daemon.identity_store.as_ref(),
+            Some(user_id.as_str()),
+        )
+        .await?;
+        Ok(IdentityDigestPreviewResponse {
+            digest_text: ranked.text,
+            preference_count: context
+                .user
+                .as_ref()
+                .map(|user| user.preferences.len())
+                .unwrap_or(0),
+            contact_count: context.contacts.len(),
+            relationship_count: context.relationships.len(),
+            claim_count: context.flattened_claims.len(),
+        })
+    }
+
+    pub async fn identity_export_markdown(
+        &self,
+        request: IdentityExportMarkdownRequest,
+    ) -> Result<IdentityExportMarkdownResponse> {
+        self.require(Capability::ProfileSelf)?;
+        let user_id = request
+            .user_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or(self.active_profile_id()?);
+        let dir = self.daemon.root.join("identity-markdown");
+        let written = crate::identity_markdown::write_identity_markdown_export(
+            self.daemon.identity_store.as_ref(),
+            Some(user_id.as_str()),
+            &dir,
+        )
+        .await?;
+        Ok(IdentityExportMarkdownResponse {
+            export_dir: written.display().to_string(),
+            files: vec![
+                "SOUL.md".to_string(),
+                "USER.md".to_string(),
+                "PEOPLE.md".to_string(),
+                "IDENTITY.md".to_string(),
+            ],
+        })
+    }
+
+    pub async fn export_profile(
+        &self,
+        request: ExportUserProfileRequest,
+    ) -> Result<ExportUserProfileResponse> {
+        self.require(Capability::ProfileSelf)?;
+        let registry = self
+            .daemon
+            .profile_registry
+            .read()
+            .map_err(|_| anyhow!("profile registry lock poisoned"))?
+            .clone();
+        let bundle = crate::profile_portability::export_profile_bundle(
+            &registry,
+            self.daemon.identity_store.as_ref(),
+            self.daemon._locus_memory.node_store.clone(),
+            &request.profile_id,
+            request.session_limit,
+            request.node_limit_per_session,
+        )
+        .await?;
+        Ok(ExportUserProfileResponse { bundle })
+    }
+
+    pub async fn import_profile(
+        &self,
+        request: ImportUserProfileRequest,
+    ) -> Result<ImportUserProfileResponse> {
+        self.require(Capability::AdminRuntime)?;
+        let mut registry = self
+            .daemon
+            .profile_registry
+            .read()
+            .map_err(|_| anyhow!("profile registry lock poisoned"))?
+            .clone();
+        let summary = crate::profile_portability::import_profile_bundle(
+            &mut registry,
+            self.daemon.identity_store.as_ref(),
+            self.daemon._locus_memory.node_store.clone(),
+            &request.bundle,
+            request.dry_run,
+        )
+        .await?;
+        if !request.dry_run && summary.created_profile {
+            *self
+                .daemon
+                .profile_registry
+                .write()
+                .map_err(|_| anyhow!("profile registry lock poisoned"))? = registry;
+        }
+        let message = if summary.dry_run {
+            format!(
+                "dry-run: would import {} locus nodes across {} sessions for {}",
+                summary.locus_nodes_imported, summary.locus_sessions_touched, summary.profile_id
+            )
+        } else {
+            format!(
+                "imported {} locus nodes across {} sessions for {}",
+                summary.locus_nodes_imported, summary.locus_sessions_touched, summary.profile_id
+            )
+        };
+        Ok(ImportUserProfileResponse {
+            dry_run: summary.dry_run,
+            profile_id: summary.profile_id,
+            created_profile: summary.created_profile,
+            identity_user_imported: summary.identity_user_imported,
+            contacts_imported: summary.contacts_imported,
+            relationships_imported: summary.relationships_imported,
+            locus_nodes_imported: summary.locus_nodes_imported,
+            locus_sessions_touched: summary.locus_sessions_touched,
+            message,
         })
     }
 
@@ -2613,6 +3006,515 @@ impl EmbeddedDaemonClient {
             active_profile_id: registry.active_profile_id().to_string(),
             resolved_user_id,
         })
+    }
+
+    fn active_profile_id(&self) -> Result<String> {
+        if let Some(profile_id) = self.principal.profile_id() {
+            return Ok(profile_id.to_string());
+        }
+        let registry = self
+            .daemon
+            .profile_registry
+            .read()
+            .map_err(|_| anyhow!("profile registry lock poisoned"))?;
+        Ok(registry.resolve_active_user_id())
+    }
+
+    fn prompt_stash_store(&self) -> crate::prompt_stash::PromptStashStore {
+        crate::prompt_stash::PromptStashStore::at(self.daemon.root.join("prompt_stashes.json"))
+    }
+
+    pub fn list_prompt_stashes(&self) -> Result<PromptStashListResponse> {
+        self.require(Capability::ContentRead)?;
+        let profile_id = self.active_profile_id()?;
+        let stashes = self
+            .prompt_stash_store()
+            .list(&profile_id)
+            .map_err(anyhow::Error::msg)?;
+        Ok(PromptStashListResponse { stashes })
+    }
+
+    pub fn create_prompt_stash(&self, request: CreatePromptStashRequest) -> Result<PromptStash> {
+        self.require(Capability::ContentWrite)?;
+        if request
+            .source_session
+            .as_ref()
+            .is_some_and(|source| source.authority_id != self.daemon.authority_id)
+        {
+            bail!("source session is not available");
+        }
+        let profile_id = self.active_profile_id()?;
+        self.prompt_stash_store()
+            .create(&profile_id, request)
+            .map_err(anyhow::Error::msg)
+    }
+
+    pub fn delete_prompt_stash(&self, stash_id: &str) -> Result<DeletePromptStashResponse> {
+        self.require(Capability::ContentWrite)?;
+        let stash_id = PromptStashId::parse(stash_id).map_err(anyhow::Error::new)?;
+        let profile_id = self.active_profile_id()?;
+        self.prompt_stash_store()
+            .delete(&profile_id, &stash_id)
+            .map_err(anyhow::Error::msg)
+    }
+
+    pub fn list_calendar_events(&self, query: CalendarListQuery) -> Result<CalendarListResponse> {
+        self.require(Capability::ContentRead)?;
+        crate::calendar::CalendarService::list_events(query.path.as_deref(), query.from, query.to)
+    }
+
+    pub fn create_calendar_event(
+        &self,
+        request: &CalendarWriteRequest,
+    ) -> Result<CalendarWriteResponse> {
+        self.require(Capability::ContentWrite)?;
+        crate::calendar::CalendarService::create_event(request)
+    }
+
+    pub fn update_calendar_event(
+        &self,
+        uid: &str,
+        request: &CalendarWriteRequest,
+    ) -> Result<CalendarWriteResponse> {
+        self.require(Capability::ContentWrite)?;
+        crate::calendar::CalendarService::update_event(uid, request)
+    }
+
+    pub fn delete_calendar_event(
+        &self,
+        uid: &str,
+        path: Option<&str>,
+    ) -> Result<CalendarDeleteResponse> {
+        self.require(Capability::ContentWrite)?;
+        crate::calendar::CalendarService::delete_event(uid, path)
+    }
+
+    pub fn import_calendar(
+        &self,
+        request: &CalendarImportRequest,
+    ) -> Result<CalendarImportResponse> {
+        self.require(Capability::ContentWrite)?;
+        crate::calendar::CalendarService::import(request)
+    }
+
+    pub fn export_calendar(&self, path: Option<&str>) -> Result<CalendarExportResponse> {
+        self.require(Capability::ContentRead)?;
+        crate::calendar::CalendarService::export(path)
+    }
+
+    pub fn artifact_command(
+        &self,
+        request: ArtifactCommandRequest,
+    ) -> Result<ArtifactCommandResponse> {
+        self.require(Capability::ContentRead)?;
+        crate::session_storage::validate_session_id(&request.session_id)
+            .map_err(anyhow::Error::new)?;
+        crate::artifact_command_runtime::execute_artifact_command(request)
+    }
+
+    pub fn artifact_fetch(&self, request: ArtifactFetchRequest) -> Result<ArtifactFetchResponse> {
+        self.require(Capability::ContentRead)?;
+        crate::session_storage::validate_session_id(&request.session_id)
+            .map_err(anyhow::Error::new)?;
+        crate::artifact_command_runtime::execute_artifact_fetch(request)
+    }
+
+    pub fn artifact_list_ui(
+        &self,
+        request: ArtifactListUiRequest,
+    ) -> Result<ArtifactListUiResponse> {
+        self.require(Capability::ContentRead)?;
+        if let Some(session_id) = request.session_id.as_deref() {
+            crate::session_storage::validate_session_id(session_id).map_err(anyhow::Error::new)?;
+        }
+        crate::artifact_command_runtime::execute_artifact_list_ui(request)
+    }
+
+    pub fn artifact_write(&self, request: ArtifactWriteRequest) -> Result<ArtifactWriteResponse> {
+        self.require(Capability::ContentWrite)?;
+        crate::session_storage::validate_session_id(&request.session_id)
+            .map_err(anyhow::Error::new)?;
+        crate::artifact_command_runtime::execute_artifact_write(request)
+    }
+
+    pub fn artifact_delete(
+        &self,
+        request: ArtifactDeleteRequest,
+    ) -> Result<ArtifactDeleteResponse> {
+        self.require(Capability::ContentWrite)?;
+        crate::session_storage::validate_session_id(&request.session_id)
+            .map_err(anyhow::Error::new)?;
+        crate::artifact_command_runtime::execute_artifact_delete(request)
+    }
+
+    pub async fn artifact_retention_status(&self) -> Result<ArtifactRetentionStatusResponse> {
+        self.require(Capability::WorkshopRead)?;
+        crate::artifact_retention::get_status(self.daemon.runtime.as_ref())
+            .await
+            .map_err(anyhow::Error::new)
+    }
+
+    pub async fn update_artifact_retention(
+        &self,
+        request: UpdateArtifactRetentionRequest,
+    ) -> Result<UpdateArtifactRetentionResponse> {
+        self.require(Capability::AdminRuntime)?;
+        crate::artifact_retention::update_settings(self.daemon.runtime.as_ref(), request)
+            .await
+            .map_err(anyhow::Error::new)
+    }
+
+    pub fn upload_media(
+        &self,
+        session_id: &str,
+        bytes: &[u8],
+        mime: &str,
+        label: Option<&str>,
+    ) -> Result<MediaUploadResponse> {
+        self.require(Capability::ContentWrite)?;
+        let session_id = SessionId::parse(session_id).map_err(anyhow::Error::new)?;
+        crate::media_store::persist_user_media(session_id.as_str(), bytes, mime, label)
+            .map_err(anyhow::Error::msg)
+    }
+
+    pub async fn stt_status(&self) -> Result<crate::stt::SttStatusResponse> {
+        self.require(Capability::WorkshopRead)?;
+        Ok(match self.daemon.credential_provider.as_deref() {
+            Some(credentials) => crate::stt::stt_status_with_credentials(credentials).await,
+            None => crate::stt::stt_status(),
+        })
+    }
+
+    pub async fn transcribe_audio(
+        &self,
+        audio_bytes: &[u8],
+        mime_type: &str,
+    ) -> Result<crate::stt::SttTranscribeResponse> {
+        self.require(Capability::WorkshopInteract)?;
+        let result = match self.daemon.credential_provider.as_ref() {
+            Some(credentials) => {
+                crate::stt::transcribe_audio_with_credentials(
+                    audio_bytes,
+                    mime_type,
+                    credentials.clone(),
+                )
+                .await
+            }
+            None => crate::stt::transcribe_audio(audio_bytes, mime_type).await,
+        };
+        result.map_err(|failure| anyhow!(failure.operator_message))
+    }
+
+    pub async fn component_store_get(
+        &self,
+        component_id: String,
+        key: Option<String>,
+        profile_id: Option<String>,
+    ) -> Result<ComponentStoreGetResponse> {
+        self.require(Capability::ContentRead)?;
+        crate::component_store_handlers::get_store(
+            axum::extract::State(crate::component_store_handlers::ComponentStoreApiState),
+            axum::extract::Path(component_id),
+            axum::extract::Query(ComponentStoreQuery { profile_id, key }),
+        )
+        .await
+        .map(|axum::Json(response)| response)
+        .map_err(|(_, message)| anyhow!(message))
+    }
+
+    pub async fn component_store_set(
+        &self,
+        component_id: String,
+        key: String,
+        value: Value,
+        profile_id: Option<String>,
+    ) -> Result<ComponentStoreSetResponse> {
+        self.require(Capability::ContentWrite)?;
+        crate::component_store_handlers::put_store_key(
+            axum::extract::State(crate::component_store_handlers::ComponentStoreApiState),
+            axum::extract::Path((component_id, key)),
+            axum::Json(ComponentStoreSetRequest { value, profile_id }),
+        )
+        .await
+        .map(|axum::Json(response)| response)
+        .map_err(|(_, message)| anyhow!(message))
+    }
+
+    pub async fn component_store_delete(
+        &self,
+        component_id: String,
+        key: String,
+        profile_id: Option<String>,
+    ) -> Result<ComponentStoreDeleteResponse> {
+        self.require(Capability::ContentWrite)?;
+        crate::component_store_handlers::delete_store_key(
+            axum::extract::State(crate::component_store_handlers::ComponentStoreApiState),
+            axum::extract::Path((component_id, key)),
+            axum::extract::Query(ComponentStoreQuery {
+                profile_id,
+                key: None,
+            }),
+        )
+        .await
+        .map(|axum::Json(response)| response)
+        .map_err(|(_, message)| anyhow!(message))
+    }
+
+    pub async fn component_store_list_keys(
+        &self,
+        component_id: String,
+        profile_id: Option<String>,
+    ) -> Result<ComponentStoreListResponse> {
+        self.require(Capability::ContentRead)?;
+        crate::component_store_handlers::list_store_keys(
+            axum::extract::State(crate::component_store_handlers::ComponentStoreApiState),
+            axum::extract::Path(component_id),
+            axum::extract::Query(ComponentStoreQuery {
+                profile_id,
+                key: None,
+            }),
+        )
+        .await
+        .map(|axum::Json(response)| response)
+        .map_err(|(_, message)| anyhow!(message))
+    }
+
+    pub async fn component_runtime_append_events(
+        &self,
+        component_id: String,
+        request: ComponentRuntimeEventsRequest,
+    ) -> Result<ComponentRuntimeEventsResponse> {
+        self.require(Capability::ContentWrite)?;
+        crate::component_runtime_handlers::append_runtime_events(
+            axum::extract::State(crate::component_runtime_handlers::ComponentRuntimeApiState),
+            axum::extract::Path(component_id),
+            axum::Json(request),
+        )
+        .await
+        .map(|axum::Json(response)| response)
+        .map_err(|(_, message)| anyhow!(message))
+    }
+
+    pub async fn component_runtime_tail_events(
+        &self,
+        component_id: String,
+        profile_id: Option<String>,
+        limit: Option<usize>,
+    ) -> Result<ComponentRuntimeEventsTailResponse> {
+        self.require(Capability::ContentRead)?;
+        crate::component_runtime_handlers::tail_runtime_events(
+            axum::extract::State(crate::component_runtime_handlers::ComponentRuntimeApiState),
+            axum::extract::Path(component_id),
+            axum::extract::Query(ComponentRuntimeEventsQuery { profile_id, limit }),
+        )
+        .await
+        .map(|axum::Json(response)| response)
+        .map_err(|(_, message)| anyhow!(message))
+    }
+
+    pub async fn component_runtime_complete_probe(
+        &self,
+        component_id: String,
+        probe_id: String,
+        result: ComponentRuntimeProbeResult,
+    ) -> Result<bool> {
+        self.require(Capability::ContentWrite)?;
+        crate::component_runtime_handlers::complete_probe(
+            axum::extract::State(crate::component_runtime_handlers::ComponentRuntimeApiState),
+            axum::extract::Path((component_id, probe_id)),
+            axum::Json(result),
+        )
+        .await
+        .map(|axum::Json(response)| response.get("ok").and_then(Value::as_bool).unwrap_or(true))
+        .map_err(|(_, message)| anyhow!(message))
+    }
+
+    pub async fn feed_tail(
+        &self,
+        feed_id: &str,
+        profile_id: Option<String>,
+        limit: Option<usize>,
+    ) -> Result<FeedTailResponse> {
+        self.require(Capability::ContentRead)?;
+        let profile_id = crate::environment_store::resolve_profile_id(profile_id.as_deref());
+        medousa_types::authority_id::EnvironmentProfileId::parse(&profile_id)
+            .map_err(anyhow::Error::new)?;
+        let feed_id =
+            medousa_types::authority_id::FeedId::parse(feed_id).map_err(anyhow::Error::new)?;
+        let events = crate::feed_store::feed_store()
+            .tail(
+                &profile_id,
+                feed_id.as_str(),
+                limit.unwrap_or(20).clamp(1, 100),
+            )
+            .await;
+        Ok(FeedTailResponse {
+            feed_id: feed_id.to_string(),
+            events,
+        })
+    }
+
+    pub async fn feed_latest_good(
+        &self,
+        feed_id: &str,
+        profile_id: Option<String>,
+    ) -> Result<FeedLatestGoodResponse> {
+        self.require(Capability::ContentRead)?;
+        let profile_id = crate::environment_store::resolve_profile_id(profile_id.as_deref());
+        medousa_types::authority_id::EnvironmentProfileId::parse(&profile_id)
+            .map_err(anyhow::Error::new)?;
+        let feed_id =
+            medousa_types::authority_id::FeedId::parse(feed_id).map_err(anyhow::Error::new)?;
+        crate::feed_store::feed_store()
+            .latest_good(&profile_id, feed_id.as_str())
+            .await
+            .ok_or_else(|| anyhow!("no latest good result for feed '{feed_id}'"))
+    }
+
+    pub fn model_catalog_list(
+        &self,
+        provider: Option<String>,
+        capability: Option<String>,
+        q: Option<String>,
+    ) -> Result<Value> {
+        self.require(Capability::AdminRuntime)?;
+        serde_json::to_value(crate::model_capability_registry::registry().list_catalog(
+            crate::model_capability_registry::types::ModelCatalogListQuery {
+                provider,
+                capability,
+                q,
+            },
+        ))
+        .map_err(anyhow::Error::new)
+    }
+
+    pub fn model_capabilities(&self, provider: &str, model: &str) -> Result<Value> {
+        self.require(Capability::AdminRuntime)?;
+        serde_json::to_value(crate::model_capability_registry::registry().resolve(provider, model))
+            .map_err(anyhow::Error::new)
+    }
+
+    pub async fn refresh_model_catalog(&self, providers: Option<Vec<String>>) -> Result<Value> {
+        self.require(Capability::AdminRuntime)?;
+        let registry = crate::model_capability_registry::registry();
+        let response = match self.daemon.credential_provider.as_deref() {
+            Some(credentials) => {
+                registry
+                    .refresh_with_credentials(providers, credentials)
+                    .await
+            }
+            None => registry.refresh(providers).await,
+        };
+        serde_json::to_value(response).map_err(anyhow::Error::new)
+    }
+
+    pub async fn list_manuscripts(
+        &self,
+        query: ManuscriptCatalogQuery,
+    ) -> Result<ManuscriptCatalogResponse> {
+        self.require(Capability::WorkshopRead)?;
+        crate::manuscript_handlers::list_manuscripts_catalog(axum::extract::Query(query))
+            .await
+            .map(|axum::Json(response)| response)
+            .map_err(|(_, message)| anyhow!(message))
+    }
+
+    pub async fn get_manuscript(&self, manuscript_id: String) -> Result<ManuscriptDetailResponse> {
+        self.require(Capability::WorkshopRead)?;
+        crate::manuscript_handlers::get_manuscript_detail(axum::extract::Path(manuscript_id))
+            .await
+            .map(|axum::Json(response)| response)
+            .map_err(|(_, message)| anyhow!(message))
+    }
+
+    pub async fn create_manuscript(
+        &self,
+        request: CreateManuscriptRequest,
+    ) -> Result<ManuscriptDetailResponse> {
+        self.require(Capability::ContentWrite)?;
+        crate::manuscript_handlers::create_manuscript(axum::Json(request))
+            .await
+            .map(|axum::Json(response)| response)
+            .map_err(|(_, message)| anyhow!(message))
+    }
+
+    pub async fn update_manuscript(
+        &self,
+        manuscript_id: String,
+        request: UpdateManuscriptRequest,
+    ) -> Result<ManuscriptDetailResponse> {
+        self.require(Capability::ContentWrite)?;
+        crate::manuscript_handlers::patch_manuscript_detail(
+            axum::extract::Path(manuscript_id),
+            axum::Json(request),
+        )
+        .await
+        .map(|axum::Json(response)| response)
+        .map_err(|(_, message)| anyhow!(message))
+    }
+
+    pub async fn import_manuscripts(
+        &self,
+        request: ManuscriptImportRequest,
+    ) -> Result<ManuscriptImportResponse> {
+        self.require(Capability::ContentWrite)?;
+        crate::manuscript_handlers::import_manuscripts(axum::Json(request))
+            .await
+            .map(|axum::Json(response)| response)
+            .map_err(|(_, message)| anyhow!(message))
+    }
+
+    async fn capability_registry(&self) -> crate::capability_catalog::CapabilityRegistry {
+        let mut registry = crate::capability_catalog::CapabilityRegistry::with_loaded_manifest();
+        if let Ok(catalog) = self.daemon.mcp_gateway_client.fetch_catalog().await {
+            registry.apply_mcp_catalog_sync(&catalog);
+        }
+        registry
+    }
+
+    pub async fn list_capabilities(&self) -> Result<Value> {
+        self.require(Capability::WorkshopRead)?;
+        serde_json::to_value(self.capability_registry().await.list()).map_err(anyhow::Error::new)
+    }
+
+    pub async fn get_capability(&self, capability_id: &str) -> Result<Value> {
+        self.require(Capability::WorkshopRead)?;
+        let capability_id = capability_id.trim();
+        if capability_id.is_empty() {
+            bail!("capability_id is required");
+        }
+        let registry = self.capability_registry().await;
+        let response = registry
+            .resolve(capability_id)
+            .ok_or_else(|| anyhow!("unknown capability '{capability_id}'"))?;
+        serde_json::to_value(response).map_err(anyhow::Error::new)
+    }
+
+    pub async fn reindex_capabilities(&self) -> Result<Value> {
+        self.require(Capability::AdminRuntime)?;
+        let (manifest, manifest_loaded_from_file) =
+            crate::capability_catalog::load_capability_manifest();
+        let mut registry = crate::capability_catalog::CapabilityRegistry::from_manifest(&manifest);
+        let gateway_synced =
+            if let Ok(catalog) = self.daemon.mcp_gateway_client.fetch_catalog().await {
+                registry.apply_mcp_catalog_sync(&catalog);
+                true
+            } else {
+                false
+            };
+        serde_json::to_value(crate::capability_catalog::CapabilityReindexResponse {
+            capability_count: registry.list().capabilities.len(),
+            binding_count: registry.binding_count(),
+            manifest_path: Some(
+                crate::capability_catalog::capabilities_manifest_path()
+                    .display()
+                    .to_string(),
+            ),
+            manifest_loaded_from_file,
+            gateway_synced,
+            now_utc: Utc::now(),
+        })
+        .map_err(anyhow::Error::new)
     }
 
     pub async fn list_locus_nodes(&self, query: LocusNodesQuery) -> Result<LocusNodesListResponse> {
@@ -2662,36 +3564,375 @@ impl EmbeddedDaemonClient {
     }
 
     pub async fn list_recurring_schedules(&self) -> Result<RecurringListResponse> {
-        self.require(Capability::WorkshopRead)?;
-        let recurring = self
-            .daemon
-            .runtime
-            .list_recurring()
+        self.list_recurring_schedules_filtered(RecurringListQuery::default())
             .await
-            .map_err(anyhow::Error::new)?
-            .into_iter()
-            .map(|definition| RecurringDefinitionEntry {
-                recurring_id: definition.id,
-                queue: definition.queue,
-                job_type: definition.job_type.clone(),
-                cron_expr: definition.cron_expr,
-                timezone: definition.timezone,
-                enabled: definition.enabled,
-                next_run_at_utc: definition.next_run_at,
-                last_run_at_utc: definition.last_run_at,
-                manuscript_id: None,
-                prompt_excerpt: None,
-                display_name: None,
-                execution_mode: (definition.job_type == "workflow.grapheme.run")
-                    .then_some("grapheme".to_string()),
-                delivery_label: None,
-                last_run_status: None,
-            })
-            .collect::<Vec<_>>();
-        Ok(RecurringListResponse {
-            count: recurring.len(),
-            recurring,
+    }
+
+    pub async fn list_recurring_schedules_filtered(
+        &self,
+        query: RecurringListQuery,
+    ) -> Result<RecurringListResponse> {
+        self.require(Capability::WorkshopRead)?;
+        crate::recurring_handlers::list_recurring(self.daemon.runtime.as_ref(), query)
+            .await
+            .map_err(anyhow::Error::new)
+    }
+
+    pub async fn register_prompt_schedule(
+        &self,
+        request: RegisterRecurringPromptRequest,
+    ) -> Result<RegisterRecurringResponse> {
+        self.require(Capability::AdminExecute)?;
+        let manuscript_id = request
+            .manuscript_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let manuscript = manuscript_id
+            .as_deref()
+            .map(crate::identity_manuscript::build_manuscript_context)
+            .transpose()?;
+        if let Some(context) = manuscript.as_ref() {
+            crate::identity_manuscript::validate_manuscript_for_scheduled_lane(context)?;
+        }
+        let prompt = if let Some(context) = manuscript.as_ref() {
+            crate::identity_manuscript::render_manuscript_task_prompt(
+                context,
+                Some(request.prompt.as_str()),
+            )?
+        } else {
+            let prompt = request.prompt.trim();
+            if prompt.is_empty() {
+                bail!("prompt is required");
+            }
+            prompt.to_string()
+        };
+        let cron_expr = if request.cron_expr.trim().is_empty() {
+            manuscript
+                .as_ref()
+                .and_then(|context| context.schedule_cron.clone())
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| anyhow!("cron_expr is required"))?
+        } else {
+            request.cron_expr.trim().to_string()
+        };
+        let timezone = request.timezone.as_deref().unwrap_or("UTC").trim();
+        crate::recurring_delivery::validate_recurring_cron(&cron_expr, timezone)?;
+        crate::engine_context::validate_lane_action(
+            crate::engine_context::EngineExecutionLane::Scheduled,
+            crate::engine_context::LaneSafetyActionClass::RecurringRegistration,
+        )
+        .map_err(anyhow::Error::msg)?;
+        crate::engine_context::validate_lane_policy_profile(
+            crate::engine_context::EngineExecutionLane::Scheduled,
+            request.policy_profile.as_deref(),
+        )
+        .map_err(anyhow::Error::msg)?;
+
+        let now = Utc::now();
+        let recurring_id = request
+            .id
+            .unwrap_or_else(|| format!("medousa-recurring-{}", Uuid::new_v4().simple()));
+        let queue = request.queue.unwrap_or_else(|| "default".to_string());
+        let fallback_session_id = request
+            .session_id
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| format!("recurring-{recurring_id}"));
+        let execution_mode = request
+            .execution_mode
+            .as_deref()
+            .unwrap_or("agent_turn")
+            .trim()
+            .to_ascii_lowercase();
+
+        let (job_type, payload_template_ref) = match execution_mode.as_str() {
+            "prompt" => {
+                let payload =
+                    stasis::application::orchestration::runtime_job_payloads::PromptJobPayload {
+                        user_prompt: crate::engine_context::compile_default_lane_prompt(
+                            crate::engine_context::EngineExecutionLane::Scheduled,
+                            &prompt,
+                        ),
+                        system_prompt: request.system_prompt.clone(),
+                        policy_profile: request.policy_profile.clone().or_else(|| {
+                            Some(
+                                crate::engine_context::default_policy_profile_for_lane(
+                                    crate::engine_context::EngineExecutionLane::Scheduled,
+                                )
+                                .to_string(),
+                            )
+                        }),
+                        model_hint: request.model_hint.clone(),
+                        reasoning_effort: None,
+                        memory_policy: None,
+                    };
+                (
+                    "workflow.stasis.prompt".to_string(),
+                    payload.to_payload_ref()?,
+                )
+            }
+            "agent_turn" | "agent-turn" => {
+                let max_turns = manuscript
+                    .as_ref()
+                    .and_then(|context| context.max_tool_rounds);
+                let payload = stasis::application::orchestration::runtime_job_payloads::AgentSessionJobPayload {
+                    thread_id: Some(
+                        manuscript_id
+                            .as_deref()
+                            .map(|id| format!("manuscript:{id}"))
+                            .unwrap_or(fallback_session_id.clone()),
+                    ),
+                    initial_user_prompt: crate::engine_context::compile_default_lane_prompt(
+                        crate::engine_context::EngineExecutionLane::Scheduled,
+                        &prompt,
+                    ),
+                    participants: vec![stasis::application::orchestration::runtime_job_payloads::AgentSessionParticipantPayload {
+                        agent_id: manuscript_id.clone().unwrap_or_else(|| "medousa".to_string()),
+                        kind: stasis::application::orchestration::runtime_job_payloads::AgentParticipantKindPayload::LocalToolLoop,
+                        system_prompt: request.system_prompt.clone(),
+                        tool_name: "cognition_capability".to_string(),
+                        tool_input: None,
+                        endpoint_ref: None,
+                        mcp_gateway_ref: None,
+                        timeout_seconds: None,
+                        poll_interval_seconds: None,
+                    }],
+                    policy_profile: request.policy_profile.clone().or_else(|| {
+                        Some(crate::engine_context::default_policy_profile_for_lane(
+                            crate::engine_context::EngineExecutionLane::Scheduled,
+                        ).to_string())
+                    }),
+                    model_hint: request.model_hint.clone(),
+                    reasoning_effort: None,
+                    max_turns: Some(max_turns.unwrap_or(6).clamp(1, 10)),
+                    tool_call_mode: Some(stasis::application::orchestration::runtime_job_payloads::AgentToolCallMode::Auto),
+                    memory_policy: None,
+                };
+                (
+                    "workflow.stasis.agent_session".to_string(),
+                    payload.to_payload_ref()?,
+                )
+            }
+            other => bail!("execution_mode={other} is invalid; use agent_turn or prompt"),
+        };
+        let payload_template_ref = crate::recurring_handlers::inject_display_name_into_payload(
+            &payload_template_ref,
+            request.display_name.as_deref(),
+        );
+        let definition = crate::recurring_schedule::RecurringScheduleSpec::new(
+            recurring_id.clone(),
+            queue.clone(),
+            job_type,
+            payload_template_ref,
+            cron_expr,
+            timezone.to_string(),
+        )
+        .jitter_seconds(request.jitter_seconds.unwrap_or(0))
+        .enabled(request.enabled.unwrap_or(true))
+        .max_attempts(request.max_attempts.unwrap_or(1))
+        .build(now)?;
+        crate::recurring_delivery::persist_recurring_delivery_binding(
+            &recurring_id,
+            &json!({ "delivery": request.delivery }),
+            crate::recurring_delivery::DeliveryResolveContext {
+                ambient: None,
+                fallback_session_id,
+            },
+        )
+        .await?;
+        crate::recurring_feed::persist_recurring_feed_binding(
+            &recurring_id,
+            &json!({ "feeds": request.feeds }),
+        )
+        .await?;
+        self.daemon
+            .runtime
+            .register_recurring(definition.clone())
+            .await?;
+        Ok(RegisterRecurringResponse {
+            recurring_id,
+            queue,
+            next_run_at_utc: definition.next_run_at,
+            cron_expr: definition.cron_expr,
+            timezone: definition.timezone,
         })
+    }
+
+    pub async fn update_recurring_schedule(
+        &self,
+        recurring_id: &str,
+        request: UpdateRecurringRequest,
+    ) -> Result<UpdateRecurringResponse> {
+        self.require(Capability::AdminExecute)?;
+        crate::recurring_handlers::update_recurring(
+            self.daemon.runtime.as_ref(),
+            recurring_id,
+            request,
+        )
+        .await
+        .map_err(anyhow::Error::new)
+    }
+
+    pub async fn delete_recurring_schedule(
+        &self,
+        recurring_id: &str,
+    ) -> Result<DeleteRecurringResponse> {
+        self.require(Capability::AdminExecute)?;
+        crate::recurring_handlers::delete_recurring(self.daemon.runtime.as_ref(), recurring_id)
+            .await
+            .map_err(anyhow::Error::new)
+    }
+
+    pub async fn list_recurring_runs(
+        &self,
+        recurring_id: &str,
+        query: RecurringRunsQuery,
+    ) -> Result<RecurringRunsResponse> {
+        self.require(Capability::WorkshopRead)?;
+        crate::recurring_handlers::list_recurring_runs(
+            self.daemon.runtime.as_ref(),
+            recurring_id,
+            query,
+        )
+        .await
+        .map_err(anyhow::Error::new)
+    }
+
+    pub async fn recurring_delivery(
+        &self,
+        recurring_id: &str,
+    ) -> Result<RecurringDeliveryResponse> {
+        self.require(Capability::WorkshopRead)?;
+        crate::recurring_handlers::get_recurring_delivery(recurring_id)
+            .await
+            .map_err(anyhow::Error::new)
+    }
+
+    pub async fn list_workflows(&self, limit: Option<usize>) -> Result<WorkflowsListResponse> {
+        self.require(Capability::WorkshopRead)?;
+        crate::workflow_handlers::list_workflows(
+            axum::extract::State(crate::workflow_handlers::WorkflowApiState {
+                composition: self.daemon.runtime.clone(),
+            }),
+            axum::extract::Query(WorkflowsListQuery { limit }),
+        )
+        .await
+        .map(|axum::Json(response)| response)
+        .map_err(|(_, message)| anyhow!(message))
+    }
+
+    pub async fn get_workflow(&self, workflow_id: String) -> Result<WorkflowDetailResponse> {
+        self.require(Capability::WorkshopRead)?;
+        crate::workflow_handlers::get_workflow_detail(
+            axum::extract::State(crate::workflow_handlers::WorkflowApiState {
+                composition: self.daemon.runtime.clone(),
+            }),
+            axum::extract::Path(workflow_id),
+        )
+        .await
+        .map(|axum::Json(response)| response)
+        .map_err(|(_, message)| anyhow!(message))
+    }
+
+    pub async fn run_workflow(&self, request: WorkflowRunRequest) -> Result<WorkflowRunResponse> {
+        self.require(Capability::AdminExecute)?;
+        let response = crate::workflow_handlers::run_workflow(
+            axum::extract::State(crate::workflow_handlers::WorkflowApiState {
+                composition: self.daemon.runtime.clone(),
+            }),
+            axum::Json(request),
+        )
+        .await
+        .map(|axum::Json(response)| response)
+        .map_err(|(_, message)| anyhow!(message))?;
+        let _ = reconcile_after_unavailability(
+            self.daemon.runtime.as_ref(),
+            &format!("{}:workflow", self.daemon.cluster_node.node_id),
+            &self.daemon.cluster_node.node_id,
+            EMBEDDED_RECOVERY_MAX_JOBS,
+        )
+        .await
+        .context("start embedded workflow")?;
+        Ok(response)
+    }
+
+    pub fn plan_workflow(&self, request: WorkflowPlanRequest) -> Result<WorkflowPlanResponse> {
+        self.require(Capability::WorkshopInteract)?;
+        Ok(crate::workflow_plan::plan_workflow_from_goal(&request))
+    }
+
+    pub async fn schedule_workflow(
+        &self,
+        request: WorkflowScheduleRequest,
+    ) -> Result<WorkflowScheduleResponse> {
+        self.require(Capability::AdminExecute)?;
+        crate::workflow_handlers::schedule_workflow(
+            axum::extract::State(crate::workflow_handlers::WorkflowApiState {
+                composition: self.daemon.runtime.clone(),
+            }),
+            axum::Json(request),
+        )
+        .await
+        .map(|axum::Json(response)| response)
+        .map_err(|(_, message)| anyhow!(message))
+    }
+
+    pub async fn list_workflow_runs(
+        &self,
+        workflow_id: String,
+        limit: Option<usize>,
+    ) -> Result<WorkflowRunsResponse> {
+        self.require(Capability::WorkshopRead)?;
+        crate::workflow_handlers::list_workflow_runs(
+            axum::extract::State(crate::workflow_handlers::WorkflowApiState {
+                composition: self.daemon.runtime.clone(),
+            }),
+            axum::extract::Path(workflow_id),
+            axum::extract::Query(WorkflowRunsQuery { limit }),
+        )
+        .await
+        .map(|axum::Json(response)| response)
+        .map_err(|(_, message)| anyhow!(message))
+    }
+
+    pub fn list_tool_history(
+        &self,
+        query: ToolHistoryListQuery,
+    ) -> Result<ToolHistoryListResponse> {
+        self.require(Capability::WorkshopRead)?;
+        Ok(crate::tool_history_index::list_tool_history_runs(&query))
+    }
+
+    pub async fn workflow_from_slice(
+        &self,
+        request: WorkflowFromSliceRequest,
+    ) -> Result<WorkflowFromSliceResponse> {
+        self.require(if request.run {
+            Capability::AdminExecute
+        } else {
+            Capability::WorkshopInteract
+        })?;
+        let response = crate::tool_history_handlers::workflow_from_slice(
+            axum::extract::State(crate::workflow_handlers::WorkflowApiState {
+                composition: self.daemon.runtime.clone(),
+            }),
+            axum::Json(request),
+        )
+        .await
+        .map(|axum::Json(response)| response)
+        .map_err(|(_, message)| anyhow!(message))?;
+        if response.workflow_id.is_some() {
+            let _ = reconcile_after_unavailability(
+                self.daemon.runtime.as_ref(),
+                &format!("{}:workflow", self.daemon.cluster_node.node_id),
+                &self.daemon.cluster_node.node_id,
+                EMBEDDED_RECOVERY_MAX_JOBS,
+            )
+            .await
+            .context("start promoted embedded workflow")?;
+        }
+        Ok(response)
     }
 
     /// Persist a portable Grapheme schedule in Stasis. Mobile lifecycle catch-up
@@ -2906,13 +4147,55 @@ impl EmbeddedDaemonClient {
     }
 
     pub fn create_session(&self) -> Result<CreateSessionResponse> {
+        self.create_session_with_request(CreateSessionRequest {
+            session_id: None,
+            catalog: None,
+            member_profile_ids: None,
+            agent_profile_id: None,
+            display_name: None,
+        })
+    }
+
+    pub fn create_session_with_request(
+        &self,
+        request: CreateSessionRequest,
+    ) -> Result<CreateSessionResponse> {
         self.require(Capability::WorkshopInteract)?;
+        if request.session_id.is_some() {
+            bail!("caller-supplied session_id is no longer supported");
+        }
+        if request
+            .catalog
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|catalog| !catalog.is_empty() && catalog != "single")
+        {
+            bail!("shared sessions require a Shared workshop");
+        }
+        if request
+            .member_profile_ids
+            .as_ref()
+            .is_some_and(|members| !members.is_empty())
+            || request
+                .agent_profile_id
+                .as_deref()
+                .is_some_and(|profile| !profile.trim().is_empty())
+        {
+            bail!("member and agent profiles require a shared session");
+        }
         let session_id = new_session_id();
+        let display_name = request
+            .display_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        crate::session_catalog::ensure_named_session(session_id.as_str(), display_name.clone());
         Ok(CreateSessionResponse {
             authority_id: self.daemon.authority_id.clone(),
             session_id: session_id.to_string(),
             catalog: "single".to_string(),
-            display_name: None,
+            display_name,
             member_profile_ids: Vec::new(),
             agent_profile_id: None,
         })
@@ -2924,6 +4207,80 @@ impl EmbeddedDaemonClient {
             .daemon
             .session_store
             .list_history_sessions(limit.clamp(1, 1000)))
+    }
+
+    pub fn list_sessions_page(
+        &self,
+        limit: usize,
+        query: Option<&str>,
+        cursor: Option<&str>,
+    ) -> Result<SessionHistoryListResponse> {
+        self.require(Capability::ContentRead)?;
+        let profile_id = self.active_profile_id()?;
+        let page = crate::session::list_history_sessions_page_for_profile(
+            Some(&profile_id),
+            limit.clamp(1, 1000),
+            query.map(str::trim).filter(|value| !value.is_empty()),
+            cursor.map(str::trim).filter(|value| !value.is_empty()),
+        );
+        Ok(SessionHistoryListResponse {
+            sessions: page.sessions,
+            next_cursor: page.next_cursor,
+        })
+    }
+
+    pub fn set_session_display_name(
+        &self,
+        session_id: &str,
+        display_name: &str,
+    ) -> Result<SessionSetDisplayNameResponse> {
+        self.require(Capability::ContentWrite)?;
+        let session_id = SessionId::parse(session_id).map_err(anyhow::Error::new)?;
+        crate::session::set_session_display_name(session_id.as_str(), display_name)
+            .map_err(anyhow::Error::msg)?;
+        Ok(SessionSetDisplayNameResponse {
+            session_id: session_id.to_string(),
+            display_name: crate::session::get_session_display_name(session_id.as_str())
+                .unwrap_or_else(|| display_name.trim().to_string()),
+        })
+    }
+
+    pub async fn derive_session(
+        &self,
+        request: DeriveSessionRequest,
+        idempotency_key: &str,
+    ) -> Result<DeriveSessionResponse> {
+        self.require(Capability::ContentWrite)?;
+        crate::context_derivation::derive_session(&self.principal, request, idempotency_key)
+            .await
+            .map_err(|error| anyhow!(error.message))
+    }
+
+    pub async fn delete_session(
+        &self,
+        session_id: &str,
+        purge_memory: bool,
+    ) -> Result<SessionDeleteResponse> {
+        self.require(Capability::ContentWrite)?;
+        let summary = crate::session_lifecycle::delete_session(
+            session_id,
+            Some(self.daemon.memory_operations.clone()),
+            &self.daemon.turn_tickets,
+            Some(&self.daemon.turn_streams),
+            purge_memory,
+        )
+        .await
+        .map_err(anyhow::Error::msg)?;
+        Ok(SessionDeleteResponse {
+            session_id: summary.session_id,
+            deletion_id: summary.deletion_id,
+            status: summary.status,
+            deleted: summary.deleted,
+            locus_purged: summary.locus_purged,
+            locus_nodes_deleted: summary.locus_nodes_deleted,
+            cancelled_active_turn: summary.cancelled_active_turn,
+            surfaces: summary.surfaces,
+        })
     }
 
     pub fn load_history(&self, session_id: &str) -> Result<Vec<ConversationTurn>> {
@@ -2941,20 +4298,81 @@ impl EmbeddedDaemonClient {
             .load_transcript_entries(&session_id))
     }
 
-    /// Fresh embedded sessions use the daemon's canonical general-mode
-    /// selection until the persisted mode-state service joins this profile.
     pub fn session_agent_mode(&self, session_id: &str) -> Result<SessionAgentModeResponse> {
         self.require(Capability::WorkshopRead)?;
         let session_id = SessionId::parse(session_id).map_err(|error| anyhow!(error))?;
-        Ok(SessionAgentModeResponse {
-            session_id: session_id.to_string(),
-            selected_mode: None,
-            task_lease: None,
-            effective_mode: AgentModeId::General,
-            effective_source: AgentModeSource::Default,
-            revision: 0,
-            updated_at_utc: None,
+        crate::agent_mode_state::get_session_mode(session_id.as_str()).map_err(anyhow::Error::msg)
+    }
+
+    pub fn list_agent_modes(&self) -> Result<AgentModeListResponse> {
+        self.require(Capability::WorkshopRead)?;
+        Ok(AgentModeListResponse {
+            modes: vec![
+                medousa_types::daemon_api::AgentModeAvailability {
+                    mode: medousa_types::daemon_api::AgentModeId::General,
+                    label: "General".to_string(),
+                    available: true,
+                    contract_revision: Some("general-v1".to_string()),
+                    unavailable_reason: None,
+                },
+                medousa_types::daemon_api::AgentModeAvailability {
+                    mode: medousa_types::daemon_api::AgentModeId::Coder,
+                    label: "Coder".to_string(),
+                    available: false,
+                    contract_revision: None,
+                    unavailable_reason: Some(
+                        "Code work needs a Shared workshop host with Forge, a shell, and project filesystem authority."
+                            .to_string(),
+                    ),
+                },
+            ],
         })
+    }
+
+    pub fn agent_mode_transition_policy(&self) -> Result<AgentModeTransitionPolicy> {
+        self.require(Capability::WorkshopRead)?;
+        Ok(crate::agent_mode_state::get_transition_policy())
+    }
+
+    pub fn set_agent_mode_transition_policy(
+        &self,
+        policy: AgentModeTransitionPolicy,
+    ) -> Result<AgentModeTransitionPolicy> {
+        self.require(Capability::AdminRuntime)?;
+        crate::agent_mode_state::set_transition_policy(policy).map_err(anyhow::Error::msg)
+    }
+
+    pub fn set_session_agent_mode(
+        &self,
+        session_id: &str,
+        request: SetSessionAgentModeRequest,
+    ) -> Result<SessionAgentModeResponse> {
+        self.require(Capability::ContentWrite)?;
+        let session_id = SessionId::parse(session_id).map_err(anyhow::Error::new)?;
+        crate::agent_mode_state::set_session_mode(session_id.as_str(), request)
+            .map_err(anyhow::Error::msg)
+    }
+
+    pub fn list_agent_mode_proposals(
+        &self,
+        session_id: &str,
+    ) -> Result<AgentModeProposalListResponse> {
+        self.require(Capability::ContentRead)?;
+        let session_id = SessionId::parse(session_id).map_err(anyhow::Error::new)?;
+        crate::agent_mode_state::list_mode_proposals(session_id.as_str())
+            .map_err(anyhow::Error::msg)
+    }
+
+    pub fn decide_agent_mode_proposal(
+        &self,
+        session_id: &str,
+        proposal_id: &str,
+        accept: bool,
+    ) -> Result<AgentModeProposalResponse> {
+        self.require(Capability::ContentWrite)?;
+        let session_id = SessionId::parse(session_id).map_err(anyhow::Error::new)?;
+        crate::agent_mode_state::decide_mode_proposal(session_id.as_str(), proposal_id, accept)
+            .map_err(anyhow::Error::msg)
     }
 
     /// Code work is outside the first mobile capability ceiling, so a fresh
@@ -3005,23 +4423,80 @@ impl EmbeddedDaemonClient {
         voice_preset_id: Option<String>,
         voice_appendix: Option<String>,
     ) -> Result<InteractiveTurnResponse> {
+        self.start_turn_with_options(
+            session_id,
+            prompt,
+            identity_user_id,
+            channel_surface,
+            voice_preset_id,
+            voice_appendix,
+            "standard".to_string(),
+            "default".to_string(),
+            Vec::new(),
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn start_turn_with_options(
+        &self,
+        session_id: &str,
+        prompt: impl Into<String>,
+        identity_user_id: Option<String>,
+        channel_surface: Option<String>,
+        voice_preset_id: Option<String>,
+        voice_appendix: Option<String>,
+        response_depth_mode: String,
+        reasoning_effort: String,
+        media_refs: Vec<medousa_types::daemon_api::MediaRef>,
+    ) -> Result<InteractiveTurnResponse> {
         self.require(Capability::WorkshopInteract)?;
         if self.daemon.backgrounded.load(Ordering::Acquire) {
             bail!("embedded daemon is backgrounded");
         }
         let session_id = SessionId::parse(session_id).map_err(|error| anyhow!(error))?;
         let prompt = prompt.into();
-        if prompt.trim().is_empty() {
+        if prompt.trim().is_empty() && media_refs.is_empty() {
             bail!("turn prompt cannot be empty");
         }
         if prompt.chars().count() > MAX_REQUEST_PROMPT_CHARS {
             bail!("turn prompt exceeds the foreground prompt limit");
         }
-        let inference_prompt = medousa_runtime::append_voice_preset_hint(
+        crate::media_store::validate_media_refs(session_id.as_str(), &media_refs)
+            .map_err(anyhow::Error::msg)?;
+        let (provider, model) = self.daemon.inference.route();
+        let vision_plan = crate::media_vision::plan_turn_media(
+            session_id.as_str(),
+            &media_refs,
+            &provider,
+            &model,
+        )
+        .map_err(anyhow::Error::msg)?;
+        let effective_prompt = crate::media_store::merge_media_refs_into_prompt(
             &prompt,
+            session_id.as_str(),
+            &media_refs,
+            &vision_plan.merge_options,
+        );
+        let compiled_prompt = crate::engine_context::compile_context_prompt(
+            crate::engine_context::ContextCompilerInput {
+                lane: crate::engine_context::EngineExecutionLane::Interactive,
+                user_prompt: &effective_prompt,
+                response_depth_mode: &response_depth_mode,
+                stage_route: None,
+                recall_readiness: crate::engine_context::RecallReadiness::Missing,
+            },
+        )
+        .compiled_prompt;
+        let inference_prompt = medousa_runtime::append_voice_preset_hint(
+            &crate::text_budget::truncate_text_for_budget(
+                &compiled_prompt,
+                MAX_REQUEST_PROMPT_CHARS,
+            ),
             voice_preset_id.as_deref(),
             voice_appendix.as_deref(),
         );
+        let current_turn_user_message = vision_plan.build_user_message(&inference_prompt);
         let identity_user_id = {
             let registry = self
                 .daemon
@@ -3085,7 +4560,6 @@ impl EmbeddedDaemonClient {
             }
         };
         let cancellation = CancellationToken::new();
-        let (provider, model) = self.daemon.inference.route();
         let scope = TurnContinuationScope {
             turn_correlation_id: turn_id.clone(),
             session_id: session_id.to_string(),
@@ -3094,7 +4568,7 @@ impl EmbeddedDaemonClient {
             delivery_target: None,
             provider: provider.clone(),
             model: model.clone(),
-            response_depth_mode: "standard".to_string(),
+            response_depth_mode: response_depth_mode.clone(),
             supports_ui_artifacts: true,
             supports_liquid_markdown: true,
             supports_browser_host: false,
@@ -3126,7 +4600,16 @@ impl EmbeddedDaemonClient {
         let daemon = self.daemon.clone();
         tokio::spawn(async move {
             daemon
-                .execute_foreground_turn(lease, prompt, inference_prompt, prior_messages, stream)
+                .execute_foreground_turn(
+                    lease,
+                    prompt,
+                    inference_prompt,
+                    current_turn_user_message,
+                    media_refs,
+                    reasoning_effort,
+                    prior_messages,
+                    stream,
+                )
                 .await;
         });
 
@@ -3990,6 +5473,7 @@ query MobileProbe {
         );
         let mobile_profile = client
             .create_profile("mobile", "Mobile")
+            .await
             .expect("create embedded profile");
         client
             .set_active_profile(&mobile_profile.profile.profile_id)

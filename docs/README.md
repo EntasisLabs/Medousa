@@ -26,7 +26,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | [Models and agent sources](guides/models-and-agent-sources.md) | Choose Medousa, ChatGPT, Cursor, providers, and models in chat |
 | [Packages](guides/packages.md) | Offline brain, adapters, CLI, MCP from Settings |
 | [Workshop & Automations](guides/workshop-and-automations.md) | Flows, schedules, specialists |
-| [Phone pairing](guides/phone-pairing.md) | iOS / Android portal |
+| [Phone pairing](guides/phone-pairing.md) | Add another computer as an optional mobile portal |
 | [Peers & Nearby](guides/peers-and-nearby.md) | LAN / tunnel workshops |
 | [Memory & identity](guides/memory-and-identity.md) | Teach who you are |
 | [Channels](guides/channels.md) | Telegram, Discord, Slack, WhatsApp |

@@ -9,6 +9,10 @@
     Upload,
   } from "@lucide/svelte";
   import EventEditor from "$lib/components/calendar/EventEditor.svelte";
+  import MobileCalendarMonth from "$lib/components/calendar/MobileCalendarMonth.svelte";
+  import MobileCalendarSchedule from "$lib/components/calendar/MobileCalendarSchedule.svelte";
+  import MobileCalendarSearchBar from "$lib/components/calendar/MobileCalendarSearchBar.svelte";
+  import MobileCalendarTodayButton from "$lib/components/calendar/MobileCalendarTodayButton.svelte";
   import ReminderComposer from "$lib/components/calendar/ReminderComposer.svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
@@ -41,21 +45,36 @@
     if (visible) void calendar.refresh();
   });
 
-  // Phones default to Day — month grid is too cramped for event titles.
+  // Mobile exposes only Month and Schedule. Normalize any desktop-only mode
+  // when this shared store crosses into the phone shell.
   $effect(() => {
     if (!mobile || !visible || mobileDefaulted) return;
     mobileDefaulted = true;
-    if (calendar.viewMode === "month") {
-      calendar.setViewMode("day");
+    if (calendar.viewMode === "day" || calendar.viewMode === "week") {
+      calendar.setViewMode("schedule");
     }
   });
 
   $effect(() => {
     if (!mobile || !visible) return;
     return registerMobileBackHandler(() => {
-      if (!calendar.editorOpen) return false;
-      calendar.closeEditor();
-      return true;
+      if (calendar.editorOpen) {
+        calendar.closeEditor();
+        return true;
+      }
+      if (calendar.reminderComposerOpen) {
+        calendar.closeReminderComposer();
+        return true;
+      }
+      if (calendar.createMenuOpen) {
+        calendar.closeCreateMenu();
+        return true;
+      }
+      if (calendar.mobileSearchOpen) {
+        calendar.closeMobileSearch({ clear: true });
+        return true;
+      }
+      return false;
     });
   });
 
@@ -84,6 +103,7 @@
   );
 
   const rangeTitle = $derived.by(() => {
+    if (calendar.viewMode === "schedule") return "Schedule";
     if (calendar.viewMode === "week") {
       const start = startOfWeek(calendar.selectedDay);
       const end = addDays(start, 6);
@@ -153,7 +173,8 @@
   class:calendar-surface-mobile={mobile}
   class:calendar-surface-embedded={embedded}
 >
-  <header class="calendar-chrome">
+  {#if !mobile}
+    <header class="calendar-chrome">
     <div class="calendar-chrome-left">
       {#if !mobile}
         <ShellSidebarExpandButton label="Show rail" />
@@ -264,7 +285,8 @@
         e.currentTarget.value = "";
       }}
     />
-  </header>
+    </header>
+  {/if}
 
   {#if calendar.error}
     <p class="calendar-error">{calendar.error}</p>
@@ -272,9 +294,17 @@
     <p class="calendar-notice">{calendar.notice}</p>
   {/if}
 
+  {#if mobile && calendar.mobileSearchOpen}
+    <MobileCalendarSearchBar />
+  {/if}
+
   <div class="calendar-body">
     {#if calendar.loading && calendar.events.length === 0}
       <p class="calendar-loading">Loading…</p>
+    {:else if mobile && calendar.viewMode === "month"}
+      <MobileCalendarMonth />
+    {:else if mobile}
+      <MobileCalendarSchedule />
     {:else if calendar.viewMode === "month"}
       <div class="calendar-month">
         <div class="calendar-weekdays">
@@ -539,7 +569,11 @@
     {/if}
   </div>
 
-  {#if calendar.createMenuOpen}
+  {#if mobile && !calendar.editorOpen && !calendar.reminderComposerOpen}
+    <MobileCalendarTodayButton />
+  {/if}
+
+  {#if calendar.createMenuOpen && !mobile}
     <button
       type="button"
       class="calendar-create-scrim"
@@ -553,6 +587,11 @@
       event={calendar.editing}
       defaultDay={calendar.selectedDay}
       {mobile}
+      onSwitchKind={(kind) => {
+        if (kind !== "reminder") return;
+        calendar.closeEditor();
+        calendar.openCreateReminder(calendar.selectedDay);
+      }}
       onClose={() => calendar.closeEditor()}
       onSave={async (payload) => {
         await calendar.saveEvent({
@@ -578,6 +617,11 @@
   {#if calendar.reminderComposerOpen}
     <ReminderComposer
       {mobile}
+      onSwitchKind={(kind) => {
+        if (kind !== "event") return;
+        calendar.closeReminderComposer();
+        calendar.openCreate(calendar.selectedDay);
+      }}
       onClose={() => calendar.closeReminderComposer()}
     />
   {/if}
@@ -1231,8 +1275,10 @@
   }
 
   .calendar-surface-mobile .calendar-body {
-    padding: 0.25rem 0.65rem 0.85rem;
+    padding: 0;
     overflow: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .calendar-surface-mobile .calendar-cell {

@@ -3,13 +3,17 @@
     Activity,
     ArrowLeft,
     ArrowRight,
+    Building2,
+    CalendarDays,
     CalendarClock,
     ChevronDown,
     ChevronLeft,
     Eye,
     History,
+    Home,
     Layers,
     ListFilter,
+    List,
     Menu,
     MessageCircle,
     MessagesSquare,
@@ -25,11 +29,13 @@
     Square,
     Upload,
     UserRound,
+    Users,
     Wrench,
   } from "@lucide/svelte";
   import type { Component } from "svelte";
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
   import SettingsNav from "$lib/components/settings/SettingsNav.svelte";
+  import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { vault } from "$lib/stores/vault.svelte";
@@ -40,8 +46,11 @@
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
+  import { undertakings } from "$lib/stores/undertakings.svelte";
   import { mobileCodeWorkspaceState } from "$lib/stores/mobileCodeWorkspaceState.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
+  import { runtime } from "$lib/stores/runtime.svelte";
+  import { calendar } from "$lib/stores/calendar.svelte";
   import { haptic } from "$lib/haptics";
   import { prepareTalkAboutNote } from "$lib/utils/vaultNoteBridge";
   import { openMobileCodeThread } from "$lib/utils/mobileCodeOpen";
@@ -58,6 +67,7 @@
   } from "$lib/types/workshopRegistry";
 
   let sessionsMenuOpen = $state(false);
+  let homeWorkshopSheetOpen = $state(false);
 
   const surface = $derived(
     resolveMobileChromeSurface(
@@ -70,6 +80,9 @@
   $effect(() => {
     if (surface !== "chat" && sessionsMenuOpen) {
       sessionsMenuOpen = false;
+    }
+    if (surface !== "home" && homeWorkshopSheetOpen) {
+      homeWorkshopSheetOpen = false;
     }
   });
 
@@ -90,11 +103,31 @@
     ),
   );
   const brandStyle = $derived(workshopBrandCssVars(workshops.activeWorkshop?.brandColor));
+  const HomeWorkshopIcon = $derived.by(() => {
+    const icon = workshops.activeWorkshop?.icon;
+    if (icon === "building") return Building2;
+    if (icon === "team") return Users;
+    if (
+      workshops.activeWorkshop?.kind === "portal" ||
+      workshops.activeWorkshop?.kind === "paired"
+    ) {
+      return Building2;
+    }
+    return Home;
+  });
   const notesFilterActive = $derived(
     vault.activeSpaceFilter !== null || vault.libraryBrowseMode !== "folders",
   );
   const settingsTitle = $derived(
     surface === "more-nested" && layout.moreDestination === "settings",
+  );
+  const calendarChromeTitle = $derived(
+    calendar.viewMode === "month"
+      ? calendar.anchor.toLocaleDateString(undefined, {
+          month: "short",
+          year: "numeric",
+        })
+      : "Schedule",
   );
 
   const icons: Partial<Record<MobileChromeActionId, Component>> = {
@@ -108,7 +141,6 @@
     noteEdit: Pencil,
     noteChat: MessageCircle,
     noteMore: MoreHorizontal,
-    automationsFilter: ListFilter,
     newAutomation: Plus,
     scriptTools: Wrench,
     scriptSave: Save,
@@ -125,16 +157,27 @@
     browserBack: ArrowLeft,
     browserForward: ArrowRight,
     browserReload: RefreshCw,
+    runtimeRefresh: RefreshCw,
     activity: Activity,
+    codeNew: Plus,
+    codeRefresh: RefreshCw,
     codeSearch: Search,
     codeSave: Save,
     codeFind: Search,
     codeThread: MessageCircle,
+    calendarSearch: Search,
+    calendarNew: Plus,
   };
 
   function openMenu() {
     haptic("light");
     layout.openMobileDestinationsMenu();
+  }
+
+  function openHomeWorkshop() {
+    if (workshops.switching) return;
+    haptic("light");
+    homeWorkshopSheetOpen = true;
   }
 
   async function run(id: MobileChromeActionId, button?: HTMLButtonElement | null) {
@@ -156,10 +199,16 @@
           layout.backToMoreHub();
           return;
         }
+        if (surface === "calendar") {
+          calendar.closeMobileSearch({ clear: true });
+          layout.backToMoreHub();
+          return;
+        }
         if (
           surface === "more-nested" ||
           surface === "automations" ||
-          surface === "agents"
+          surface === "agents" ||
+          surface === "runtime"
         ) {
           layout.backToMoreHub();
           return;
@@ -176,7 +225,13 @@
         return;
       case "search":
         if (surface === "automations") {
-          window.dispatchEvent(new CustomEvent("medousa-mobile-automations-search-focus"));
+          window.dispatchEvent(
+            new CustomEvent(
+              automationsNav.currentSection === "agents"
+                ? "medousa-mobile-agents-search-focus"
+                : "medousa-mobile-automations-search-focus",
+            ),
+          );
           return;
         }
         if (surface === "agents") {
@@ -214,9 +269,6 @@
       }
       case "noteMore":
         vault.openNoteActions();
-        return;
-      case "automationsFilter":
-        window.dispatchEvent(new CustomEvent("medousa-mobile-automations-filter"));
         return;
       case "newAutomation":
         window.dispatchEvent(new CustomEvent("medousa-mobile-automations-new"));
@@ -276,8 +328,17 @@
           await humanBrowser.reload();
         }
         return;
+      case "runtimeRefresh":
+        await runtime.refresh();
+        return;
       case "activity":
         layout.toggleActivitySheet();
+        return;
+      case "codeNew":
+        window.dispatchEvent(new CustomEvent("medousa-mobile-code-new"));
+        return;
+      case "codeRefresh":
+        window.dispatchEvent(new CustomEvent("medousa-mobile-code-refresh"));
         return;
       case "codeSearch":
         window.dispatchEvent(new CustomEvent("medousa-mobile-code-search"));
@@ -290,6 +351,21 @@
         return;
       case "codeThread":
         await openMobileCodeThread();
+        return;
+      case "calendarView":
+        calendar.closeMobileSearch({ clear: true });
+        calendar.setViewMode(calendar.viewMode === "month" ? "schedule" : "month");
+        return;
+      case "calendarSearch":
+        if (calendar.mobileSearchOpen) {
+          calendar.closeMobileSearch({ clear: true });
+          return;
+        }
+        if (calendar.viewMode !== "schedule") calendar.setViewMode("schedule");
+        calendar.openMobileSearch();
+        return;
+      case "calendarNew":
+        calendar.openCreate(calendar.selectedDay);
         return;
     }
   }
@@ -306,7 +382,9 @@
         if (surface === "code") return "Back to Home";
         return surface === "more-nested" ||
           surface === "automations" ||
-          surface === "agents"
+          surface === "agents" ||
+          surface === "runtime" ||
+          surface === "calendar"
           ? "Back to Home"
           : "Back to notes";
       case "workshop":
@@ -316,7 +394,11 @@
       case "identity":
         return "Open identity";
       case "search":
-        if (surface === "automations") return "Search automations";
+        if (surface === "automations") {
+          return automationsNav.currentSection === "agents"
+            ? "Search agents"
+            : "Search automations";
+        }
         if (surface === "agents") return "Search agents";
         return "Search notes";
       case "notesFilter":
@@ -329,8 +411,6 @@
         return "Talk about this note";
       case "noteMore":
         return "Note actions";
-      case "automationsFilter":
-        return "Automations section";
       case "newAutomation":
         return automationsNav.currentSection === "flows" ? "New flow" : "New schedule";
       case "scriptTools":
@@ -363,8 +443,14 @@
         return "Forward";
       case "browserReload":
         return humanBrowser.loading ? "Stop loading" : "Reload";
+      case "runtimeRefresh":
+        return runtime.loading ? "Refreshing Workshop" : "Refresh Workshop";
       case "activity":
         return "Activity";
+      case "codeNew":
+        return "New code thread";
+      case "codeRefresh":
+        return undertakings.loading ? "Refreshing projects" : "Refresh projects";
       case "codeSearch":
         return mobileCodeWorkspaceState.inProject ? "Search files" : "Search projects";
       case "codeSave":
@@ -373,6 +459,12 @@
         return "Find in file";
       case "codeThread":
         return "Open project thread";
+      case "calendarView":
+        return calendar.viewMode === "month" ? "Show schedule" : "Show month";
+      case "calendarSearch":
+        return calendar.mobileSearchOpen ? "Close calendar search" : "Search calendar";
+      case "calendarNew":
+        return "New event or reminder";
     }
   }
 
@@ -385,6 +477,10 @@
         return !humanBrowser.canGoBack;
       case "browserForward":
         return !humanBrowser.canGoForward;
+      case "runtimeRefresh":
+        return runtime.loading;
+      case "codeRefresh":
+        return undertakings.loading;
       case "scriptSave":
         return (
           graphemeScriptEditor.saveBusy ||
@@ -446,7 +542,46 @@
     <span class="mobile-chrome-leading-spacer" aria-hidden="true"></span>
   {/if}
 
-  {#if settingsTitle}
+  {#if surface === "home"}
+    <div class="mobile-home-workshop-switcher">
+      <button
+        type="button"
+        class="mobile-home-workshop-title"
+        style={brandStyle}
+        aria-label="Switch workshop — {workshops.activeLabel}"
+        aria-haspopup="menu"
+        aria-expanded={homeWorkshopSheetOpen}
+        disabled={workshops.switching}
+        onclick={openHomeWorkshop}
+      >
+        <span class="mobile-home-workshop-mark" aria-hidden="true">
+          <HomeWorkshopIcon size={13} strokeWidth={1.75} />
+        </span>
+        <span class="mobile-home-workshop-label">{workshops.activeLabel}</span>
+        <ChevronDown
+          size={12}
+          strokeWidth={1.75}
+          class="mobile-home-workshop-chevron"
+          aria-hidden="true"
+        />
+      </button>
+      <WorkshopSwitcherCompact
+        showTrigger={false}
+        hideWhenSingle={false}
+        bind:sheetOpen={homeWorkshopSheetOpen}
+      />
+    </div>
+    <button
+      type="button"
+      class="mobile-chrome-icon"
+      class:mobile-chrome-icon-active={layout.activitySheetOpen}
+      aria-label={labelFor("activity")}
+      aria-expanded={layout.activitySheetOpen}
+      onclick={() => void run("activity")}
+    >
+      <Activity size={18} strokeWidth={1.75} />
+    </button>
+  {:else if settingsTitle}
     <SettingsNav
       active={settingsNav.activeSection}
       mobile={true}
@@ -489,6 +624,31 @@
         </button>
       {/each}
     </div>
+  {:else if surface === "calendar"}
+    <p class="mobile-calendar-chrome-title" aria-live="polite">{calendarChromeTitle}</p>
+    <div class="mobile-chrome-actions mobile-calendar-chrome-actions">
+      {#each trailing as action (action)}
+        {@const Icon =
+          action === "calendarView"
+            ? calendar.viewMode === "month"
+              ? List
+              : CalendarDays
+            : icons[action]}
+        <button
+          type="button"
+          class="mobile-chrome-icon"
+          class:mobile-chrome-icon-active={action === "calendarSearch" &&
+            calendar.mobileSearchOpen}
+          aria-label={labelFor(action)}
+          aria-pressed={action === "calendarSearch" ? calendar.mobileSearchOpen : undefined}
+          onclick={(event) => void run(action, event.currentTarget)}
+        >
+          {#if Icon}
+            <Icon size={18} strokeWidth={1.75} />
+          {/if}
+        </button>
+      {/each}
+    </div>
   {:else}
     <div class="mobile-chrome-actions">
       {#each trailing as action (action)}
@@ -498,8 +658,8 @@
             align="right"
             label="Sessions"
             title="Sessions"
-            panelWidth={12.5 * 16}
-            panelClass="w-[12.5rem] rounded-xl border border-surface-500/40 bg-surface-900/95 p-1 shadow-xl backdrop-blur"
+            panelWidth={17 * 16}
+            panelClass="mobile-sessions-menu w-[17rem] max-w-[calc(100vw-1rem)] rounded-2xl border border-surface-500/40 bg-surface-900/95 p-1.5 shadow-xl backdrop-blur"
             onOpenChange={(open) => {
               if (open) haptic("light");
             }}
@@ -521,20 +681,24 @@
             <button
               type="button"
               role="menuitem"
-              class="vault-menu-item rounded-lg"
+              class="mobile-sessions-menu-item"
               onclick={() => void createNewChat()}
             >
-              <Plus size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
-              New chat
+              <span class="mobile-sessions-menu-icon" aria-hidden="true">
+                <Plus size={18} strokeWidth={1.75} />
+              </span>
+              <span>New chat</span>
             </button>
             <button
               type="button"
               role="menuitem"
-              class="vault-menu-item rounded-lg"
+              class="mobile-sessions-menu-item"
               onclick={openPreviousSessions}
             >
-              <History size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
-              Previous sessions
+              <span class="mobile-sessions-menu-icon" aria-hidden="true">
+                <History size={18} strokeWidth={1.75} />
+              </span>
+              <span>Previous sessions</span>
             </button>
           </OverflowMenu>
         {:else if action === "workshop"}
@@ -570,6 +734,10 @@
               <Icon
                 size={action === "browserReload" && humanBrowser.loading ? 12 : 18}
                 strokeWidth={action === "browserReload" && humanBrowser.loading ? 2.25 : 1.75}
+                class={(action === "runtimeRefresh" && runtime.loading) ||
+                (action === "codeRefresh" && undertakings.loading)
+                  ? "animate-spin"
+                  : ""}
               />
             {/if}
           </button>

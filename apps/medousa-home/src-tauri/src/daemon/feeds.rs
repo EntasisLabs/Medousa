@@ -3,12 +3,15 @@ use medousa_types::feed::{
 };
 use tauri::State;
 
+use crate::embedded_daemon::EmbeddedDaemonState;
+
 use super::DaemonState;
 use super::sdk::{client, sdk_error};
 
 #[tauri::command]
 pub async fn feed_tail(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     feed_id: String,
     profile_id: Option<String>,
     limit: Option<usize>,
@@ -19,6 +22,14 @@ pub async fn feed_tail(
     }
     if !medousa_types::feed::is_valid_feed_id(feed_id) {
         return Err(format!("invalid feed_id '{feed_id}'"));
+    }
+
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .feed_tail(feed_id, profile_id, limit)
+            .await
+            .map_err(|error| error.to_string());
     }
 
     let query = FeedTailQuery {
@@ -35,6 +46,7 @@ pub async fn feed_tail(
 #[tauri::command]
 pub async fn feed_latest_good(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     feed_id: String,
     profile_id: Option<String>,
 ) -> Result<FeedLatestGoodResponse, String> {
@@ -44,6 +56,14 @@ pub async fn feed_latest_good(
     }
     if !medousa_types::feed::is_valid_feed_id(feed_id) {
         return Err(format!("invalid feed_id '{feed_id}'"));
+    }
+
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .feed_latest_good(feed_id, profile_id)
+            .await
+            .map_err(|error| error.to_string());
     }
 
     let query = FeedLatestGoodQuery {

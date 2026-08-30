@@ -45,7 +45,7 @@ pub async fn delete_session(
     session_id: &str,
     memory_operations: Option<Arc<dyn MemoryOperations>>,
     turn_tickets: &TurnTicketRegistry,
-    turn_streams: Option<&crate::daemon::turn_stream_registry::TurnStreamRegistry>,
+    turn_streams: Option<&crate::turn_stream_registry::TurnStreamRegistry>,
     purge_locus: bool,
 ) -> Result<SessionDeleteSummary, String> {
     let session_id =
@@ -71,7 +71,7 @@ pub async fn delete_session(
     };
     let mut active_result = if let Some(ticket) = cancelled_ticket.as_ref() {
         let result = if let Some(streams) = turn_streams {
-            crate::daemon::turn_stream_registry::delete_turn_stream(streams, &ticket.turn_id).await
+            crate::turn_stream_registry::delete_turn_stream(streams, &ticket.turn_id).await
         } else {
             Err("turn stream registry unavailable".to_string())
         };
@@ -138,32 +138,34 @@ pub async fn delete_session(
         deletion.record_surface(surface_result(surface.name(), result))?;
     }
 
-    // Deletion also runs from repair/fresh-process entry points that do not
-    // perform normal daemon startup. Establish the sole workspace writer before
-    // asking the turn-worker store to persist its retention mutation.
-    let writer_result = crate::workspace::persist::init_persist_writer();
-    let turn_workers = crate::agent_runtime::turn_worker::turn_worker_store();
-    let mut turn_worker_result = writer_result
-        .map_err(|error| error.to_string())
-        .and_then(|()| turn_workers.delete_session(session_id_text));
-    if turn_worker_result.is_ok() {
-        turn_worker_result = crate::workspace::persist::flush_persist_writer()
-            .await
-            .map(|_| ())
-            .map_err(|error| error.to_string());
+    #[cfg(feature = "full-daemon")]
+    {
+        // Host workspaces own persistent turn workers. Embedded runtimes do not
+        // create that surface, so there is nothing to clean up on mobile.
+        let writer_result = crate::workspace::persist::init_persist_writer();
+        let turn_workers = crate::agent_runtime::turn_worker::turn_worker_store();
+        let mut turn_worker_result = writer_result
+            .map_err(|error| error.to_string())
+            .and_then(|()| turn_workers.delete_session(session_id_text));
+        if turn_worker_result.is_ok() {
+            turn_worker_result = crate::workspace::persist::flush_persist_writer()
+                .await
+                .map(|_| ())
+                .map_err(|error| error.to_string());
+        }
+        if turn_worker_result.is_ok() {
+            turn_worker_result =
+                crate::agent_runtime::turn_worker::TurnWorkerStore::session_absent_on_disk(
+                    session_id_text,
+                )
+                .and_then(|absent| {
+                    absent
+                        .then_some(())
+                        .ok_or_else(|| "turn-worker references remain after deletion".to_string())
+                });
+        }
+        deletion.record_surface(surface_result("workspace_turn_workers", turn_worker_result))?;
     }
-    if turn_worker_result.is_ok() {
-        turn_worker_result =
-            crate::agent_runtime::turn_worker::TurnWorkerStore::session_absent_on_disk(
-                session_id_text,
-            )
-            .and_then(|absent| {
-                absent
-                    .then_some(())
-                    .ok_or_else(|| "turn-worker references remain after deletion".to_string())
-            });
-    }
-    deletion.record_surface(surface_result("workspace_turn_workers", turn_worker_result))?;
 
     let channel_result =
         crate::channel_session_store::purge_session_references(session_id_text).await;
@@ -204,11 +206,14 @@ enum LocalSessionSurface {
     Verifications,
     ContextPacks,
     ToolSurface,
+    #[cfg(feature = "full-daemon")]
     TurnLedger,
+    #[cfg(feature = "full-daemon")]
     CoderTurnCheckpoints,
 }
 
 impl LocalSessionSurface {
+    #[cfg(feature = "full-daemon")]
     const ALL: [Self; 13] = [
         Self::Transcript,
         Self::Catalog,
@@ -225,6 +230,21 @@ impl LocalSessionSurface {
         Self::CoderTurnCheckpoints,
     ];
 
+    #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+    const ALL: [Self; 11] = [
+        Self::Transcript,
+        Self::Catalog,
+        Self::SharedCatalog,
+        Self::SessionMetadata,
+        Self::AgentMode,
+        Self::Artifacts,
+        Self::Media,
+        Self::Extractions,
+        Self::Verifications,
+        Self::ContextPacks,
+        Self::ToolSurface,
+    ];
+
     fn name(self) -> &'static str {
         match self {
             Self::Transcript => "transcript",
@@ -238,7 +258,9 @@ impl LocalSessionSurface {
             Self::Verifications => "verifications",
             Self::ContextPacks => "context_packs",
             Self::ToolSurface => "tool_surface",
+            #[cfg(feature = "full-daemon")]
             Self::TurnLedger => "turn_ledger",
+            #[cfg(feature = "full-daemon")]
             Self::CoderTurnCheckpoints => "coder_turn_checkpoints",
         }
     }
@@ -259,7 +281,9 @@ impl LocalSessionSurface {
             }
             Self::ContextPacks => crate::context_pack::delete_context_packs_for_session(text),
             Self::ToolSurface => crate::tool_bootstrap::delete_session_tool_surface(text),
+            #[cfg(feature = "full-daemon")]
             Self::TurnLedger => crate::agent_runtime::turn_ledger::delete_turn_ledger(session_id),
+            #[cfg(feature = "full-daemon")]
             Self::CoderTurnCheckpoints => {
                 crate::agent_runtime::coder_turn_checkpoint::coder_turn_checkpoint_store()
                     .delete_session(session_id)

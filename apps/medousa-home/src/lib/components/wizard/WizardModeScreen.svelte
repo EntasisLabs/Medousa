@@ -1,10 +1,12 @@
 <script lang="ts">
   import { Brain, PanelsTopLeft } from "@lucide/svelte";
+  import { isTauriMobilePlatform } from "$lib/platform";
   import { wizard } from "$lib/stores/wizard.svelte";
   import type { PreferredMode } from "$lib/utils/preferredMode";
 
   /** Recommended default — still one tap to workspace-only. */
   let selected = $state<PreferredMode>("workspace-ai");
+  const mobile = isTauriMobilePlatform();
 
   async function continueWithMode() {
     if (!selected) return;
@@ -49,7 +51,9 @@
               </span>
             </div>
             <p class="mt-1 text-sm leading-relaxed text-content-secondary">
-              Notes, files, and decks plus Medousa Agent (private model or bring your API key).
+              {mobile
+                ? "Your Personal workspace plus Medousa Agent using the model provider you choose."
+                : "Notes, files, and decks plus Medousa Agent (private model or bring your API key)."}
             </p>
           </div>
         </div>
@@ -66,7 +70,9 @@
           <div class="min-w-0">
             <p class="font-semibold text-surface-50">Just the workspace</p>
             <p class="mt-1 text-sm leading-relaxed text-content-secondary">
-              Notes, files, and decks — add AI when you are ready.
+              {mobile
+                ? "Notes, calendar, and automations — add AI whenever you are ready."
+                : "Notes, files, and decks — add AI when you are ready."}
             </p>
           </div>
         </div>

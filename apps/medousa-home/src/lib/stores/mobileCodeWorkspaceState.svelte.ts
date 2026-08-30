@@ -74,6 +74,14 @@ class MobileCodeWorkspaceStore {
     this.closeDetails();
   }
 
+  beginProjectOpen(workId: string) {
+    const id = workId.trim();
+    if (!id) return;
+    this.closeDetails();
+    this.filesQuery = "";
+    this.selectedWorkId = id;
+  }
+
   closeDetails() {
     this.ancestorSheetOpen = false;
     this.fileSwitcherOpen = false;

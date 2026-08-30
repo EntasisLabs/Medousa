@@ -20,7 +20,6 @@ export type MobileChromeActionId =
   | "noteEdit"
   | "noteChat"
   | "noteMore"
-  | "automationsFilter"
   | "newAutomation"
   | "scriptTools"
   | "scriptSave"
@@ -37,11 +36,17 @@ export type MobileChromeActionId =
   | "browserBack"
   | "browserForward"
   | "browserReload"
+  | "runtimeRefresh"
   | "activity"
+  | "codeNew"
+  | "codeRefresh"
   | "codeSearch"
   | "codeSave"
   | "codeFind"
-  | "codeThread";
+  | "codeThread"
+  | "calendarView"
+  | "calendarSearch"
+  | "calendarNew";
 
 export type MobileChromeSurface =
   | "home"
@@ -53,7 +58,9 @@ export type MobileChromeSurface =
   | "more-nested"
   | "automations"
   | "agents"
-  | "code";
+  | "runtime"
+  | "code"
+  | "calendar";
 
 export function resolveMobileChromeSurface(
   tab: MobileTab,
@@ -69,6 +76,8 @@ export function resolveMobileChromeSurface(
     if (moreDestination === "automations") return "automations";
     if (moreDestination === "workshop") return "agents";
     if (moreDestination === "code") return "code";
+    if (moreDestination === "calendar") return "calendar";
+    if (moreDestination === "runtime") return "runtime";
     return moreDestination !== "hub" ? "more-nested" : "more";
   }
   return "more";
@@ -82,7 +91,9 @@ export function mobileChromeLeading(
     surface === "more-nested" ||
     surface === "automations" ||
     surface === "agents" ||
-    surface === "code"
+    surface === "runtime" ||
+    surface === "code" ||
+    surface === "calendar"
     ? "back"
     : "menu";
 }
@@ -113,20 +124,22 @@ export function mobileChromeTrailing(
       }
       switch (automationsSection) {
         case "scripts":
-          return ["search", "automationsFilter", "scriptTools"];
+          return ["search", "scriptTools"];
         case "flows":
         case "schedules":
-          return ["search", "automationsFilter", "newAutomation"];
+          return ["search", "newAutomation"];
+        case "agents":
+          return ["search", "agentsFilter", "agentsImport"];
         case "history":
-          return ["search", "automationsFilter"];
+          return ["search"];
       }
-      return ["search", "automationsFilter"];
+      return ["search"];
     case "agents":
       return ["search", "agentsFilter", "agentsImport"];
     case "code":
       switch (codeMode) {
         case "projects":
-          return ["codeSearch"];
+          return ["codeNew", "codeRefresh", "codeSearch"];
         case "files":
           return ["codeSearch", "codeThread"];
         case "editor":
@@ -136,6 +149,10 @@ export function mobileChromeTrailing(
           return ["codeThread"];
       }
       return ["codeThread"];
+    case "runtime":
+      return ["runtimeRefresh", "activity"];
+    case "calendar":
+      return ["calendarView", "calendarSearch", "calendarNew"];
     case "more":
     case "more-nested":
       return ["activity"];

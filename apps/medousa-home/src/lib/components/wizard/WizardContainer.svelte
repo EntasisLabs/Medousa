@@ -18,21 +18,18 @@
   const mobileShell = isTauriMobilePlatform();
 
   const phaseKey = $derived(
-    mobileShell
-      ? wizard.screen
-      : wizard.screen === "migration"
-        ? "migration"
-        : wizard.uiPhase,
+    wizard.screen === "migration" ? "migration" : wizard.uiPhase,
   );
 
   const stepIndex = $derived.by(() => {
-    if (mobileShell || wizard.screen === "migration") {
+    if (wizard.screen === "migration") {
       return { idx: -1, total: 0 };
     }
     const phase = wizard.uiPhase;
     // Packages are post-entry — rail is arrive → space → mode → [brain] → ready.
-    const steps =
-      wizard.preferredMode === "workspace"
+    const steps = mobileShell
+      ? (["arrive", "space", "mode", "brain", "ready"] as const)
+      : wizard.preferredMode === "workspace"
         ? (["arrive", "space", "mode", "ready"] as const)
         : wizard.preferredMode === "workspace-ai"
           ? (["arrive", "space", "mode", "brain", "ready"] as const)
@@ -42,12 +39,17 @@
   });
 </script>
 
-<div class="wizard-backdrop fixed inset-0 z-[100] flex items-center justify-center p-4" role="presentation">
+<div
+  class="wizard-backdrop fixed inset-0 z-[100] flex items-center justify-center {mobileShell
+    ? 'p-0'
+    : 'p-4'}"
+  role="presentation"
+>
   <div class="wizard-backdrop-wash" aria-hidden="true"></div>
 
   <div
     class="wizard-panel relative flex flex-col overflow-hidden {mobileShell
-      ? 'h-full w-full rounded-none border-0'
+      ? 'wizard-panel-mobile h-full w-full rounded-none border-0'
       : 'h-[min(720px,92vh)] w-full max-w-[640px] rounded-2xl'}"
     role="dialog"
     aria-modal="true"
@@ -59,7 +61,7 @@
       </div>
     {/if}
 
-    {#if !mobileShell && stepIndex.idx >= 0 && wizard.uiPhase !== "phone"}
+    {#if stepIndex.idx >= 0 && wizard.uiPhase !== "phone"}
       <div class="wizard-progress px-6 pt-5" aria-hidden="true">
         <div class="flex items-center gap-1.5">
           {#each Array(stepIndex.total) as _, i}
@@ -80,14 +82,6 @@
       {#key phaseKey}
         {#if wizard.screen === "migration"}
           <WizardMigrationScreen />
-        {:else if mobileShell}
-          {#if wizard.screen === "screen1"}
-            <WizardWelcomeScreenMobile />
-          {:else if wizard.screen === "screen3"}
-            <WizardPhoneScreen />
-          {:else}
-            <WizardCompletionScreen />
-          {/if}
         {:else if wizard.uiPhase === "arrive"}
           <WizardArriveScreen />
         {:else if wizard.uiPhase === "space"}
@@ -95,7 +89,11 @@
         {:else if wizard.uiPhase === "mode"}
           <WizardModeScreen />
         {:else if wizard.uiPhase === "brain"}
-          <WizardWelcomeScreen />
+          {#if mobileShell}
+            <WizardWelcomeScreenMobile />
+          {:else}
+            <WizardWelcomeScreen />
+          {/if}
         {:else if wizard.uiPhase === "phone" || wizard.screen === "screen3"}
           <WizardPhoneScreen />
         {:else}
@@ -135,6 +133,11 @@
     box-shadow:
       0 1px 0 rgb(var(--color-surface-50) / 0.04) inset,
       0 40px 80px -40px rgb(0 0 0 / 0.65);
+  }
+
+  .wizard-panel-mobile {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
   .wizard-progress-dot {

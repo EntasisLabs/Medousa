@@ -649,6 +649,11 @@
     max-height: min(68vh, 30rem);
   }
 
+  .mobile-sheet-expanded {
+    height: calc(100dvh - max(1rem, env(safe-area-inset-top, 0px)));
+    max-height: calc(100dvh - max(1rem, env(safe-area-inset-top, 0px)));
+  }
+
   .mobile-chat-history-header {
     @apply border-b border-surface-500/35 py-2;
   }
@@ -659,6 +664,87 @@
 
   .mobile-chat-history-list {
     @apply min-h-0 flex-1 space-y-2 overflow-y-auto p-2;
+  }
+
+  /* The desktop session rail is intentionally dense. The touch sheet needs a
+     calmer reading size and real tap targets without turning into a card list. */
+  .session-sidebar-toolbar--sheet {
+    @apply gap-2 py-2.5;
+  }
+
+  .session-sidebar-toolbar--sheet .session-sidebar-search {
+    display: flex !important;
+    align-items: center;
+    height: 2.75rem;
+    min-height: 2.75rem;
+    padding-inline: 0.75rem;
+  }
+
+  .session-sidebar-toolbar--sheet .session-sidebar-search-input {
+    height: auto;
+    padding: 0 !important;
+    font-size: 1rem;
+    line-height: 1.35;
+  }
+
+  .session-sidebar-toolbar--sheet .session-sidebar-search-icon {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  .session-sidebar-toolbar--sheet .session-sidebar-new {
+    min-width: 2.5rem;
+    height: 2.5rem;
+    justify-content: center;
+    padding-inline: 0.625rem;
+  }
+
+  .session-sidebar-toolbar--sheet .session-sidebar-new > :where(svg) {
+    width: 1.125rem;
+    height: 1.125rem;
+  }
+
+  .mobile-chat-history-list .session-sidebar-section-heading {
+    height: 2rem;
+  }
+
+  .mobile-chat-history-list .session-sidebar-section-title {
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
+
+  .mobile-chat-history-list .session-sidebar-section-count {
+    font-size: 0.6875rem;
+  }
+
+  .mobile-chat-history-list .session-sidebar-section-heading__trailing > :where(svg) {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+
+  .mobile-chat-history-list .session-row {
+    min-height: 2.75rem;
+  }
+
+  .mobile-chat-history-list .session-row-main {
+    gap: 0.5rem;
+    padding: 0.625rem 0.5rem !important;
+  }
+
+  .mobile-chat-history-list .session-row-title {
+    font-size: 0.9375rem;
+    line-height: 1.25rem;
+    letter-spacing: -0.008em;
+  }
+
+  .mobile-chat-history-list .session-row-action {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+
+  .mobile-chat-history-list .session-row-action > :where(svg) {
+    width: 0.9375rem;
+    height: 0.9375rem;
   }
 
   .mobile-chat-history-new-btn {
@@ -1021,6 +1107,26 @@
     color: rgb(var(--theme-text-quiet));
   }
 
+  .mobile-turn-sheet-search {
+    @apply mb-3 flex min-h-11 items-center gap-2.5 rounded-2xl px-3.5;
+    background: rgb(var(--color-surface-800) / 0.72);
+    border: 1px solid rgb(var(--color-surface-600) / 0.34);
+  }
+
+  .mobile-turn-sheet-search:focus-within {
+    border-color: rgb(var(--color-primary-500) / 0.46);
+    box-shadow: 0 0 0 1px rgb(var(--color-primary-500) / 0.14);
+  }
+
+  .mobile-turn-sheet-search-icon {
+    @apply shrink-0;
+    color: rgb(var(--theme-text-quiet));
+  }
+
+  .mobile-turn-sheet-search-input {
+    @apply min-w-0 flex-1 border-0 bg-transparent p-0 text-[15px] text-surface-50 placeholder:text-content-quiet focus:border-0 focus:outline-none focus:ring-0;
+  }
+
   .mobile-turn-sheet-group {
     @apply overflow-hidden rounded-2xl;
     background: rgb(var(--color-surface-800) / 0.72);
@@ -1030,6 +1136,14 @@
   .mobile-turn-sheet-section-label {
     @apply px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-[0.12em];
     color: rgb(var(--theme-text-quiet));
+  }
+
+  .mobile-turn-sheet-list-section {
+    @apply mt-3;
+  }
+
+  .mobile-turn-sheet-list-section > .mobile-turn-sheet-section-label {
+    @apply px-1 pb-1.5 pt-1;
   }
 
   .mobile-turn-sheet-section-gap {
@@ -1066,6 +1180,82 @@
     @apply shrink-0 text-primary-400;
   }
 
+  .mobile-turn-sheet-provider-badge {
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-surface-200;
+    background: rgb(var(--color-surface-700) / 0.72);
+    border: 1px solid rgb(var(--color-surface-600) / 0.28);
+  }
+
+  .mobile-turn-sheet-row-tail {
+    @apply inline-flex shrink-0 items-center gap-1.5;
+  }
+
+  .mobile-turn-sheet-model-list {
+    @apply min-h-0;
+  }
+
+  .mobile-turn-sheet-model-slug {
+    @apply truncate font-mono text-[12px];
+  }
+
+  .mobile-turn-sheet-inline-error {
+    @apply mb-3 rounded-xl px-3 py-2 text-[13px] leading-snug text-content-warning;
+    background: rgb(var(--color-warning-500) / 0.08);
+    border: 1px solid rgb(var(--color-warning-500) / 0.2);
+  }
+
+  .mobile-turn-sheet-manual {
+    @apply sticky bottom-0 mt-3 rounded-2xl p-3.5;
+    background: rgb(var(--color-surface-900) / 0.98);
+    border: 1px solid rgb(var(--color-surface-600) / 0.34);
+    box-shadow: 0 -10px 30px rgb(var(--color-surface-950) / 0.36);
+  }
+
+  .mobile-turn-sheet-manual-label {
+    @apply mb-2 block text-[13px] font-medium text-surface-200;
+  }
+
+  .mobile-turn-sheet-manual-row {
+    @apply flex items-stretch gap-2;
+  }
+
+  .mobile-turn-sheet-manual-input {
+    @apply min-h-11 min-w-0 flex-1 rounded-xl border px-3 font-mono text-[14px] text-surface-50 placeholder:text-content-quiet focus:outline-none focus:ring-0;
+    border-color: rgb(var(--color-surface-600) / 0.42);
+    background: rgb(var(--color-surface-800) / 0.68);
+  }
+
+  .mobile-turn-sheet-manual-input:focus {
+    border-color: rgb(var(--color-primary-500) / 0.48);
+  }
+
+  .mobile-turn-sheet-manual-action {
+    @apply min-h-11 shrink-0 rounded-xl px-4 text-[14px] font-semibold text-surface-50 transition active:scale-[0.98] disabled:opacity-35;
+    background: rgb(var(--color-primary-500) / 0.2);
+    border: 1px solid rgb(var(--color-primary-500) / 0.34);
+  }
+
+  .mobile-turn-sheet-manual-hint {
+    @apply mt-2 text-[12px] leading-snug;
+    color: rgb(var(--theme-text-quiet));
+  }
+
+  .mobile-turn-sheet-setup {
+    @apply flex flex-col items-start rounded-2xl p-4;
+    background: rgb(var(--color-surface-800) / 0.72);
+    border: 1px solid rgb(var(--color-surface-600) / 0.3);
+  }
+
+  .mobile-turn-sheet-setup-copy {
+    @apply mt-3;
+  }
+
+  .mobile-turn-sheet-setup-action {
+    @apply mt-4 min-h-11 w-full rounded-xl px-4 text-[14px] font-semibold text-surface-50 transition active:scale-[0.99];
+    background: rgb(var(--color-primary-500) / 0.18);
+    border: 1px solid rgb(var(--color-primary-500) / 0.32);
+  }
+
   .mobile-turn-sheet-link-row {
     @apply flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition active:bg-surface-700/35;
   }
@@ -1088,8 +1278,12 @@
   }
 
   .mobile-turn-sheet-link-value {
-    @apply inline-flex items-center gap-0.5 text-[15px];
+    @apply inline-flex min-w-0 max-w-[68%] items-center justify-end gap-0.5 text-[15px];
     color: rgb(var(--theme-text-quiet));
+  }
+
+  .mobile-turn-sheet-link-value-text {
+    @apply truncate;
   }
 
   .mobile-turn-sheet-link-chevron {

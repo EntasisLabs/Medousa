@@ -288,6 +288,30 @@ where
     F: Fn(InferenceTarget) -> Fut,
     Fut: Future<Output = Result<T, String>>,
 {
+    execute_with_fallbacks_and_eligibility(
+        profile,
+        required,
+        &mut on_notice,
+        |target, required| target_ineligibility_reason(target, required),
+        operation,
+    )
+    .await
+}
+
+/// Execute an inference profile while allowing a deployment adapter to supply
+/// credential eligibility from its own secure authority.
+pub async fn execute_with_fallbacks_and_eligibility<T, F, Fut, E>(
+    profile: InferenceProfileKind,
+    required: CapabilityRequirement,
+    mut on_notice: impl FnMut(String),
+    eligibility: E,
+    operation: F,
+) -> Result<InferenceExecution<T>, TurnFailure>
+where
+    F: Fn(InferenceTarget) -> Fut,
+    Fut: Future<Output = Result<T, String>>,
+    E: Fn(&InferenceTarget, CapabilityRequirement) -> Option<&'static str>,
+{
     let targets = profile_targets(profile);
     if targets.is_empty() {
         return Err(TurnFailure::validation(
@@ -300,7 +324,7 @@ where
     let mut last_failure = unknown_failure("all inference targets failed");
 
     for (attempt_index, target) in targets.into_iter().enumerate() {
-        if let Some(reason) = target_ineligibility_reason(&target, required) {
+        if let Some(reason) = eligibility(&target, required) {
             on_notice(telemetry_line(
                 profile,
                 attempt_index,
@@ -311,6 +335,7 @@ where
             continue;
         }
 
+        #[cfg(feature = "full-daemon")]
         crate::workshop_env::apply_provider_llm_env(&target.provider);
         on_notice(telemetry_line(
             profile,

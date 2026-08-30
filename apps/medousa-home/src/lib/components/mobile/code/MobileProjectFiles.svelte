@@ -13,6 +13,7 @@
   import { humanizeForgeMessage, type ForgeSourceTree } from "$lib/forge";
   import { openMobileCodeFile } from "$lib/utils/mobileCodeOpen";
   import type { MobileCodeFilesFilter } from "$lib/utils/mobileCodeLanding";
+  import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
 
   interface Props {
     workId: string;
@@ -27,6 +28,8 @@
   let searchFocused = $state(false);
   let searchInput = $state<HTMLInputElement | null>(null);
   let listEl = $state<HTMLDivElement | null>(null);
+  let ancestorSheetEl = $state<HTMLDivElement | null>(null);
+  let ancestorSheetHeaderEl = $state<HTMLElement | null>(null);
 
   const query = $derived(mobileCodeWorkspaceState.filesQuery);
   const directory = $derived(mobileCodeWorkspaceState.presentation?.filesDirectory ?? "");
@@ -155,6 +158,23 @@
       return true;
     });
   });
+
+  $effect(() => {
+    if (!mobileCodeWorkspaceState.ancestorSheetOpen || !ancestorSheetEl) return;
+    return attachMobileSheetGestures(ancestorSheetEl, ancestorSheetHeaderEl, {
+      onDismiss: dismissAncestorSheet,
+      swipeBack: false,
+    });
+  });
+
+  function closeAncestorSheet() {
+    mobileCodeWorkspaceState.ancestorSheetOpen = false;
+  }
+
+  function dismissAncestorSheet() {
+    haptic("light");
+    closeAncestorSheet();
+  }
 
   $effect(() => {
     const path = mobileCodeWorkspaceState.presentation?.lastOpenedPath;
@@ -292,19 +312,32 @@
 </div>
 
 {#if mobileCodeWorkspaceState.ancestorSheetOpen}
-  <div class="mobile-sheet-backdrop" role="presentation">
-    <div class="mobile-sheet" role="dialog" aria-label="Ancestors" tabindex="-1">
-      <div class="mobile-sheet-header">
-        <p class="text-sm font-medium">Go to folder</p>
-        <button
-          type="button"
-          class="mobile-icon-btn"
-          aria-label="Close"
-          onclick={() => {
-            mobileCodeWorkspaceState.ancestorSheetOpen = false;
-          }}
-        ><X size={16} /></button>
-      </div>
+  <div
+    class="mobile-sheet-backdrop"
+    role="presentation"
+    onclick={(event) => {
+      if (event.target === event.currentTarget) closeAncestorSheet();
+    }}
+  >
+    <div
+      bind:this={ancestorSheetEl}
+      class="mobile-sheet"
+      role="dialog"
+      aria-label="Ancestors"
+      tabindex="-1"
+    >
+      <header bind:this={ancestorSheetHeaderEl} class="mobile-sheet-stack-header">
+        <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
+        <div class="mobile-sheet-header-row">
+          <p class="text-sm font-medium">Go to folder</p>
+          <button
+            type="button"
+            class="mobile-icon-btn"
+            aria-label="Close"
+            onclick={closeAncestorSheet}
+          ><X size={16} /></button>
+        </div>
+      </header>
       <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto p-2">
         <button
           type="button"

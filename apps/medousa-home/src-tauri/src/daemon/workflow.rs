@@ -5,14 +5,24 @@ use crate::daemon::types::{
 };
 use tauri::State;
 
+use crate::embedded_daemon::EmbeddedDaemonState;
+
 use super::DaemonState;
 use super::workshop_http;
 
 #[tauri::command]
 pub async fn workflow_list(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     limit: Option<usize>,
 ) -> Result<WorkflowsListResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .list_workflows(limit)
+            .await
+            .map_err(|error| error.to_string());
+    }
     let path = if let Some(limit) = limit {
         format!("/v1/workflows?limit={limit}")
     } else {
@@ -24,8 +34,16 @@ pub async fn workflow_list(
 #[tauri::command]
 pub async fn workflow_get(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     workflow_id: String,
 ) -> Result<WorkflowDetailResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .get_workflow(workflow_id)
+            .await
+            .map_err(|error| error.to_string());
+    }
     let id = urlencoding::encode(workflow_id.trim());
     workshop_http::get_json(&state, &format!("/v1/workflows/{id}")).await
 }
@@ -33,33 +51,64 @@ pub async fn workflow_get(
 #[tauri::command]
 pub async fn workflow_run(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     request: WorkflowRunRequest,
 ) -> Result<WorkflowRunResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .run_workflow(request)
+            .await
+            .map_err(|error| error.to_string());
+    }
     workshop_http::post_json(&state, "/v1/workflows", &request).await
 }
 
 #[tauri::command]
 pub async fn workflow_plan(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     request: WorkflowPlanRequest,
 ) -> Result<WorkflowPlanResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .plan_workflow(request)
+            .map_err(|error| error.to_string());
+    }
     workshop_http::post_json(&state, "/v1/workflows/plan", &request).await
 }
 
 #[tauri::command]
 pub async fn workflow_schedule(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     request: WorkflowScheduleRequest,
 ) -> Result<WorkflowScheduleResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .schedule_workflow(request)
+            .await
+            .map_err(|error| error.to_string());
+    }
     workshop_http::post_json(&state, "/v1/workflows/schedule", &request).await
 }
 
 #[tauri::command]
 pub async fn workflow_list_runs(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     workflow_id: String,
     limit: Option<usize>,
 ) -> Result<WorkflowRunsResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .list_workflow_runs(workflow_id, limit)
+            .await
+            .map_err(|error| error.to_string());
+    }
     let id = urlencoding::encode(workflow_id.trim());
     let path = if let Some(limit) = limit {
         format!("/v1/workflows/{id}/runs?limit={limit}")

@@ -82,6 +82,8 @@ describe("eager AppShell graph freeze", () => {
     expect(source).not.toMatch(/from ["']\$lib\/stores\/workspace/);
     expect(source).toContain("startShellRootResources");
     expect(source).toContain("ShellChunkError");
+    expect(source).toContain("BootstrapSplashHandoff");
+    expect(source).not.toContain("HomeSplash");
     expect(source).not.toMatch(/void import\(/);
   });
 

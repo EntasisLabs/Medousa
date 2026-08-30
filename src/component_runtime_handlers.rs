@@ -3,6 +3,7 @@
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
+#[cfg(feature = "full-daemon")]
 use axum::routing::{get, post};
 use medousa_types::component_runtime::{
     ComponentRuntimeEventsQuery, ComponentRuntimeEventsRequest, ComponentRuntimeEventsResponse,
@@ -11,6 +12,7 @@ use medousa_types::component_runtime::{
 
 use crate::component_runtime_store::{component_runtime_hub, default_tail_limit};
 use crate::component_store::component_exists_in_profile;
+#[cfg(feature = "full-daemon")]
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
@@ -19,6 +21,7 @@ use crate::environment_store::resolve_profile_id;
 #[derive(Clone)]
 pub struct ComponentRuntimeApiState;
 
+#[cfg(feature = "full-daemon")]
 pub fn component_runtime_surface() -> DeclaredRouter<ComponentRuntimeApiState> {
     DeclaredRouter::default()
         .methods([
@@ -55,6 +58,7 @@ pub fn component_runtime_surface() -> DeclaredRouter<ComponentRuntimeApiState> {
         )
 }
 
+#[cfg(feature = "full-daemon")]
 fn component_runtime_policy(
     method: axum::http::Method,
     path: &'static str,
@@ -87,7 +91,7 @@ async fn ensure_component_allowed(
     Ok(())
 }
 
-async fn append_runtime_events(
+pub async fn append_runtime_events(
     State(_state): State<ComponentRuntimeApiState>,
     Path(component_id): Path<String>,
     Json(body): Json<ComponentRuntimeEventsRequest>,
@@ -103,7 +107,7 @@ async fn append_runtime_events(
     Ok(Json(ComponentRuntimeEventsResponse { ok: true, accepted }))
 }
 
-async fn tail_runtime_events(
+pub async fn tail_runtime_events(
     State(_state): State<ComponentRuntimeApiState>,
     Path(component_id): Path<String>,
     Query(query): Query<ComponentRuntimeEventsQuery>,
@@ -122,7 +126,7 @@ async fn tail_runtime_events(
     }))
 }
 
-async fn complete_probe(
+pub async fn complete_probe(
     State(_state): State<ComponentRuntimeApiState>,
     Path((component_id, probe_id)): Path<(String, String)>,
     Json(body): Json<ComponentRuntimeProbeResult>,

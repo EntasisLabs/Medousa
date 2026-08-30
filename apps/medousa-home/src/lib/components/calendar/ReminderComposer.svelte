@@ -1,14 +1,16 @@
 <script lang="ts">
-  import { ListTodo, X } from "@lucide/svelte";
+  import { Check, ListTodo, X } from "@lucide/svelte";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { calendar, calendarDateUtils } from "$lib/stores/calendar.svelte";
+  import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
 
   interface Props {
     mobile?: boolean;
     onClose: () => void;
+    onSwitchKind?: (kind: "event" | "reminder") => void;
   }
 
-  let { mobile = false, onClose }: Props = $props();
+  let { mobile = false, onClose, onSwitchKind }: Props = $props();
 
   const { isoDay } = calendarDateUtils;
 
@@ -16,14 +18,11 @@
   let dueDay = $state(isoDay(calendar.selectedDay));
   let saving = $state(false);
   let error = $state<string | null>(null);
-  let titleEl: HTMLInputElement | undefined = $state();
+  let sheetEl = $state<HTMLDivElement | null>(null);
+  let headerEl = $state<HTMLElement | null>(null);
 
   $effect(() => {
     dueDay = isoDay(calendar.selectedDay);
-  });
-
-  $effect(() => {
-    queueMicrotask(() => titleEl?.focus());
   });
 
   async function submit() {
@@ -58,20 +57,31 @@
       return true;
     });
   });
+
+  $effect(() => {
+    if (!mobile || !sheetEl || !headerEl) return;
+    return attachMobileSheetGestures(sheetEl, headerEl, {
+      onDismiss: onClose,
+    });
+  });
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
   class="cal-pop-backdrop"
   class:cal-pop-backdrop-mobile={mobile}
+  class:mobile-sheet-backdrop={mobile}
   role="presentation"
   onclick={onClose}
   onkeydown={onKeydown}
 >
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
+    bind:this={sheetEl}
     class="cal-pop"
     class:cal-pop-mobile={mobile}
+    class:mobile-sheet={mobile}
+    class:calendar-editor-sheet={mobile}
     role="dialog"
     tabindex="-1"
     aria-modal="true"
@@ -79,56 +89,107 @@
     onclick={(e) => e.stopPropagation()}
     onkeydown={onKeydown}
   >
-    <div class="cal-pop-grab" aria-hidden="true"></div>
-    <header class="cal-pop-head">
-      <div class="cal-pop-mode">
-        <span class="cal-pop-mode-active">New Reminder</span>
+    {#if mobile}
+      <div bind:this={headerEl} class="cal-pop-mobile-sheet-head">
+        <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
+        <header class="cal-pop-mobile-head">
+          <button type="button" class="cal-pop-x" aria-label="Close" onclick={onClose}>
+            <X size={21} strokeWidth={1.75} />
+          </button>
+          <h2>New</h2>
+          <button
+            type="button"
+            class="cal-pop-mobile-save"
+            aria-label="Add reminder"
+            disabled={saving}
+            onclick={() => void submit()}
+          >
+            <Check size={22} strokeWidth={2} />
+          </button>
+        </header>
+        <div class="cal-pop-kind" role="tablist" aria-label="Create type">
+          <button
+            type="button"
+            role="tab"
+            aria-selected="false"
+            onclick={() => onSwitchKind?.("event")}
+          >
+            Event
+          </button>
+          <button type="button" role="tab" aria-selected="true" class="cal-pop-kind-active">
+            Reminder
+          </button>
+        </div>
       </div>
-      <button type="button" class="cal-pop-x" aria-label="Close" onclick={onClose}>
-        <X size={15} strokeWidth={1.75} />
-      </button>
-    </header>
-
-    <div class="cal-pop-card cal-pop-card-title">
-      <ListTodo size={16} strokeWidth={1.75} class="cal-pop-row-icon" />
-      <input
-        bind:this={titleEl}
-        class="cal-pop-title"
-        bind:value={title}
-        placeholder="Reminder"
-        maxlength={200}
-      />
-    </div>
-
-    <div class="cal-pop-card">
-      <label class="cal-pop-hint" for="cal-reminder-due">Due</label>
-      <input
-        id="cal-reminder-due"
-        class="cal-pop-field"
-        type="date"
-        bind:value={dueDay}
-      />
-      <p class="cal-pop-hint">Stored as a vault checkbox in calendar/reminders.md</p>
-    </div>
-
-    {#if error}
-      <p class="cal-pop-error">{error}</p>
+    {:else}
+      <div class="cal-pop-grab" aria-hidden="true"></div>
+      <header class="cal-pop-head">
+        <div class="cal-pop-mode">
+          <span class="cal-pop-mode-active">New Reminder</span>
+        </div>
+        <button type="button" class="cal-pop-x" aria-label="Close" onclick={onClose}>
+          <X size={15} strokeWidth={1.75} />
+        </button>
+      </header>
     {/if}
 
-    <footer class="cal-pop-foot">
-      <span></span>
-      <div class="cal-pop-foot-right">
-        <button type="button" class="cal-pop-text" onclick={onClose}>Cancel</button>
-        <button
-          type="button"
-          class="cal-pop-save"
-          disabled={saving}
-          onclick={() => void submit()}
-        >
-          {saving ? "Saving…" : "Add"}
-        </button>
+    <div class="cal-pop-scroll">
+      <div class="cal-pop-card cal-pop-card-title">
+        {#if !mobile}
+          <ListTodo size={16} strokeWidth={1.75} class="cal-pop-row-icon" />
+        {/if}
+        <input
+          class="cal-pop-title"
+          bind:value={title}
+          placeholder="Reminder"
+          maxlength={200}
+        />
       </div>
-    </footer>
+
+      <div class="cal-pop-card">
+        {#if mobile}
+          <label class="cal-pop-mobile-field-row" for="cal-reminder-due">
+            <span>Due</span>
+            <input
+              id="cal-reminder-due"
+              class="cal-pop-field"
+              type="date"
+              bind:value={dueDay}
+            />
+          </label>
+        {:else}
+          <label class="cal-pop-hint" for="cal-reminder-due">Due</label>
+          <input
+            id="cal-reminder-due"
+            class="cal-pop-field"
+            type="date"
+            bind:value={dueDay}
+          />
+        {/if}
+        <p class="cal-pop-hint">Stored as a vault checkbox in calendar/reminders.md</p>
+      </div>
+
+      {#if error}
+        <p class="cal-pop-error">{error}</p>
+      {/if}
+    </div>
+
+    {#if !mobile}
+      <footer class="cal-pop-foot">
+        <span></span>
+        <div class="cal-pop-foot-right">
+          <button type="button" class="cal-pop-text" onclick={onClose}>Cancel</button>
+          <button
+            type="button"
+            class="cal-pop-save"
+            disabled={saving}
+            onclick={() => void submit()}
+          >
+            {saving ? "Saving…" : "Add"}
+          </button>
+        </div>
+      </footer>
+    {/if}
   </div>
 </div>
 
@@ -147,12 +208,17 @@
 
   .cal-pop-backdrop-mobile {
     position: fixed;
-    z-index: 50;
+    inset: 0;
+    bottom: auto;
+    z-index: 70;
+    height: calc(
+      var(--mobile-layout-height, 100dvh) - var(--mobile-keyboard-inset, 0px)
+    );
     align-items: flex-end;
-    justify-content: stretch;
+    justify-content: center;
     padding: 0;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    background: rgb(var(--color-surface-950) / 0.45);
+    background: rgb(var(--color-surface-950) / 0.7);
+    backdrop-filter: none;
   }
 
   .cal-pop {
@@ -168,8 +234,146 @@
   }
 
   .cal-pop-mobile {
+    display: flex;
+    height: min(52dvh, 28rem);
     width: 100%;
-    border-radius: 1rem 1rem 0 0;
+    max-height: calc(
+      var(--mobile-layout-height, 100dvh) - var(--mobile-keyboard-inset, 0px) -
+        max(1rem, env(safe-area-inset-top, 0px))
+    );
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid rgb(var(--shell-border) / 0.62);
+    border-bottom: 0;
+    border-radius: 1.5rem 1.5rem 0 0;
+    background: rgb(var(--shell-pane-bg));
+    padding: 0;
+    box-shadow: 0 -18px 52px rgb(var(--theme-shadow) / 0.32);
+    backdrop-filter: none;
+  }
+
+  .cal-pop-mobile-sheet-head {
+    flex-shrink: 0;
+  }
+
+  .cal-pop-scroll {
+    display: contents;
+  }
+
+  .cal-pop-mobile .cal-pop-scroll {
+    display: block;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0.75rem 1rem calc(2rem + env(safe-area-inset-bottom, 0px));
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .cal-pop-mobile-head {
+    display: grid;
+    flex-shrink: 0;
+    grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.1rem 1rem 0.45rem;
+  }
+
+  .cal-pop-mobile-head h2 {
+    margin: 0;
+    text-align: center;
+    font-size: 1.0625rem;
+    font-weight: 650;
+    letter-spacing: -0.018em;
+    color: rgb(var(--theme-text));
+  }
+
+  .cal-pop-mobile .cal-pop-x,
+  .cal-pop-mobile-save {
+    display: inline-flex;
+    width: 2.75rem;
+    height: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgb(var(--shell-border) / 0.72);
+    border-radius: 9999px;
+    background: rgb(var(--color-surface-800) / 0.62);
+    color: rgb(var(--theme-text));
+  }
+
+  .cal-pop-mobile-save {
+    background: rgb(var(--color-secondary-500));
+    color: rgb(var(--color-surface-50));
+  }
+
+  .cal-pop-mobile-save:disabled {
+    opacity: 0.45;
+  }
+
+  .cal-pop-kind {
+    display: grid;
+    flex-shrink: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.15rem;
+    margin: 0.15rem 1rem 0.55rem;
+    border-radius: 0.8rem;
+    background: rgb(var(--color-surface-800) / 0.72);
+    padding: 0.16rem;
+  }
+
+  .cal-pop-kind button {
+    min-height: 2.6rem;
+    border-radius: 0.65rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  .cal-pop-kind button.cal-pop-kind-active {
+    background: rgb(var(--color-surface-600) / 0.82);
+    color: rgb(var(--theme-text));
+    box-shadow: 0 1px 2px rgb(var(--theme-shadow) / 0.18);
+  }
+
+  .cal-pop-mobile .cal-pop-card {
+    margin-bottom: 0.75rem;
+    border: 0;
+    border-radius: 1rem;
+    background: rgb(var(--color-surface-800) / 0.58);
+    padding: 0.8rem 0.9rem;
+  }
+
+  .cal-pop-mobile .cal-pop-card-title {
+    min-height: 4.25rem;
+    padding: 0.55rem 0.9rem;
+  }
+
+  .cal-pop-mobile .cal-pop-title {
+    padding: 0.65rem 0.15rem !important;
+    font-size: 1.1875rem;
+    line-height: 1.35;
+  }
+
+  .cal-pop-mobile-field-row {
+    display: flex;
+    min-height: 3.35rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    font-size: 0.9375rem;
+    color: rgb(var(--theme-text));
+  }
+
+  .cal-pop-mobile .cal-pop-field {
+    width: auto;
+    min-width: 9.5rem;
+    min-height: 2.5rem;
+    margin-top: 0;
+    border-radius: 9999px;
+    background: rgb(var(--color-surface-700) / 0.72);
+    padding: 0.35rem 0.7rem;
+    font-size: 1rem;
+    text-align: right;
   }
 
   .cal-pop-grab {

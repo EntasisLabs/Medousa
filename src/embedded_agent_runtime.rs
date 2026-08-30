@@ -21,6 +21,8 @@ pub mod stream_sink {
 
 #[path = "agent_runtime/ambient_context.rs"]
 pub mod ambient_context;
+#[path = "agent_runtime/host_context.rs"]
+pub mod host_context;
 #[path = "agent_runtime/vibe_signature.rs"]
 pub mod vibe_signature;
 pub use vibe_signature::{default_handoff_model_avec, derive_vibe_signature};

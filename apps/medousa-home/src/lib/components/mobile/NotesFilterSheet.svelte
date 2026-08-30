@@ -122,10 +122,10 @@
                   : ''}"
                 onclick={() => selectSpace(null)}
               >
-                <LayoutGrid size={14} strokeWidth={1.8} />
+                <LayoutGrid size={13} strokeWidth={1.8} />
                 <span>All</span>
                 {#if vault.activeSpaceFilter === null}
-                  <Check size={14} strokeWidth={2.2} class="mobile-notes-space-check" />
+                  <Check size={12} strokeWidth={2.2} class="mobile-notes-space-check" />
                 {/if}
               </button>
               {#each visibleSpaces as space (space.id)}
@@ -140,13 +140,13 @@
                     : ''}"
                   onclick={() => selectSpace(space.id)}
                 >
-                  <Icon size={14} strokeWidth={1.8} />
+                  <Icon size={13} strokeWidth={1.8} />
                   <span>{space.label}</span>
                   {#if count > 0}
                     <span class="mobile-notes-space-count">{count}</span>
                   {/if}
                   {#if vault.activeSpaceFilter === space.id}
-                    <Check size={14} strokeWidth={2.2} class="mobile-notes-space-check" />
+                    <Check size={12} strokeWidth={2.2} class="mobile-notes-space-check" />
                   {/if}
                 </button>
               {/each}
@@ -155,7 +155,11 @@
 
           <section>
             <h3 class="mobile-notes-filter-section-title">View</h3>
-            <div class="mobile-turn-sheet-group" role="listbox" aria-label="Library view">
+            <div
+              class="mobile-turn-sheet-group mobile-notes-view-group"
+              role="listbox"
+              aria-label="Library view"
+            >
               {#each browseModes as mode, index (mode.id)}
                 {@const Icon = mode.Icon}
                 <button
@@ -170,13 +174,13 @@
                   onclick={() => selectMode(mode.id)}
                 >
                   <span class="mobile-notes-view-icon">
-                    <Icon size={17} strokeWidth={1.75} />
+                    <Icon size={15} strokeWidth={1.75} />
                   </span>
                   <span class="mobile-turn-sheet-row-copy">
                     <span class="mobile-turn-sheet-row-title">{mode.label}</span>
                   </span>
                   {#if vault.libraryBrowseMode === mode.id}
-                    <Check size={18} strokeWidth={2.2} class="mobile-turn-sheet-row-check" />
+                    <Check size={16} strokeWidth={2.2} class="mobile-turn-sheet-row-check" />
                   {/if}
                 </button>
               {/each}

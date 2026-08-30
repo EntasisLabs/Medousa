@@ -10,14 +10,22 @@ use tauri::State;
 
 use crate::embedded_daemon::EmbeddedDaemonState;
 
-use super::workshop_http;
 use super::DaemonState;
+use super::workshop_http;
 
 #[tauri::command]
 pub async fn identity_get_context(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     request: IdentityContextRequest,
 ) -> Result<Value, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .identity_context(request)
+            .await
+            .map_err(|error| error.to_string());
+    }
     workshop_http::post_json(&state, "/v1/identity/context", &request).await
 }
 
@@ -44,6 +52,7 @@ pub async fn identity_create_profile(
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .create_profile(&slug, &display_name)
+            .await
             .map_err(|error| error.to_string());
     }
     workshop_http::post_json(
@@ -77,60 +86,92 @@ pub async fn identity_set_active_profile(
 #[tauri::command]
 pub async fn identity_remember(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     request: IdentityRememberRequest,
 ) -> Result<IdentityRememberResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .identity_remember(request)
+            .await
+            .map_err(|error| error.to_string());
+    }
     workshop_http::post_json(&state, "/v1/identity/remember", &request).await
 }
 
 #[tauri::command]
 pub async fn identity_digest_preview(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     request: IdentityContextRequest,
 ) -> Result<IdentityDigestPreviewResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .identity_digest_preview(request)
+            .await
+            .map_err(|error| error.to_string());
+    }
     workshop_http::post_json(&state, "/v1/identity/digest-preview", &request).await
 }
 
 #[tauri::command]
 pub async fn identity_export_markdown(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     request: IdentityExportMarkdownRequest,
 ) -> Result<IdentityExportMarkdownResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .identity_export_markdown(request)
+            .await
+            .map_err(|error| error.to_string());
+    }
     workshop_http::post_json(&state, "/v1/identity/export-markdown", &request).await
 }
 
 #[tauri::command]
 pub async fn identity_export_profile(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     profile_id: String,
     session_limit: Option<usize>,
     node_limit_per_session: Option<usize>,
 ) -> Result<ExportUserProfileResponse, String> {
-    workshop_http::post_json(
-        &state,
-        "/v1/identity/profiles/export",
-        &ExportUserProfileRequest {
-            profile_id,
-            session_limit: session_limit.unwrap_or(500),
-            node_limit_per_session: node_limit_per_session.unwrap_or(500),
-        },
-    )
-    .await
+    let request = ExportUserProfileRequest {
+        profile_id,
+        session_limit: session_limit.unwrap_or(500),
+        node_limit_per_session: node_limit_per_session.unwrap_or(500),
+    };
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .export_profile(request)
+            .await
+            .map_err(|error| error.to_string());
+    }
+    workshop_http::post_json(&state, "/v1/identity/profiles/export", &request).await
 }
 
 #[tauri::command]
 pub async fn identity_import_profile(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     bundle: Value,
     dry_run: Option<bool>,
 ) -> Result<ImportUserProfileResponse, String> {
-    workshop_http::post_json(
-        &state,
-        "/v1/identity/profiles/import",
-        &ImportUserProfileRequest {
-            bundle: serde_json::from_value(bundle)
-                .map_err(|err| format!("invalid profile bundle: {err}"))?,
-            dry_run: dry_run.unwrap_or(false),
-        },
-    )
-    .await
+    let request = ImportUserProfileRequest {
+        bundle: serde_json::from_value(bundle)
+            .map_err(|err| format!("invalid profile bundle: {err}"))?,
+        dry_run: dry_run.unwrap_or(false),
+    };
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .import_profile(request)
+            .await
+            .map_err(|error| error.to_string());
+    }
+    workshop_http::post_json(&state, "/v1/identity/profiles/import", &request).await
 }

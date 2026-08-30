@@ -2,6 +2,8 @@ use crate::workshop_transport::MultipartField;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use crate::embedded_daemon::EmbeddedDaemonState;
+
 use super::DaemonState;
 use super::workshop_http;
 
@@ -28,7 +30,19 @@ pub struct ComposerSttResult {
 #[tauri::command]
 pub async fn composer_stt_status(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<ComposerSttStatus, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .stt_status()
+            .await
+            .map(|status| ComposerSttStatus {
+                available: status.available,
+                reason: status.reason,
+            })
+            .map_err(|error| error.to_string());
+    }
     match workshop_http::get_json(&state, "/v1/stt/status").await {
         Ok(status) => Ok(status),
         Err(err) if err.contains("404") => Ok(ComposerSttStatus {
@@ -45,6 +59,7 @@ pub async fn composer_stt_status(
 #[tauri::command]
 pub async fn composer_stt_transcribe(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     request: ComposerSttRequest,
 ) -> Result<ComposerSttResult, String> {
     if request.audio_bytes.is_empty() {
@@ -59,6 +74,15 @@ pub async fn composer_stt_transcribe(
     };
     let extension = extension_for_mime(&mime_type);
     let filename = format!("composer-voice.{extension}");
+
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .transcribe_audio(&request.audio_bytes, &mime_type)
+            .await
+            .map(|result| ComposerSttResult { text: result.text })
+            .map_err(|error| error.to_string());
+    }
 
     workshop_http::post_multipart(
         &state,

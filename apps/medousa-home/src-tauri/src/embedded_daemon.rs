@@ -7,8 +7,8 @@ use std::sync::Arc;
 use medousa::chatgpt_oauth::{ChatGptCredentialStore, ChatGptOAuthBroker};
 #[cfg(target_os = "ios")]
 use medousa::delegated_task::{
-    delegated_work_id, DelegatedTaskError, DelegatedTaskObservation, DelegatedTaskRequest,
-    DelegatedTaskTransport,
+    DelegatedTaskError, DelegatedTaskObservation, DelegatedTaskRequest, DelegatedTaskTransport,
+    delegated_work_id,
 };
 #[cfg(target_os = "ios")]
 use medousa::embedded_daemon::{
@@ -95,12 +95,16 @@ impl EmbeddedDaemonState {
         defaults: &crate::medousa_paths::TuiDefaultsDto,
     ) -> Result<(), String> {
         let (provider, model, base_url) = inference_route_from_defaults(defaults)?;
+        let portable_defaults = portable_tui_defaults(defaults)?;
         let Some(client) = self.client_if_active().await? else {
             return Err("Embedded Personal is no longer the selected workshop".to_string());
         };
         client
             .reconfigure_inference(provider, model, base_url)
             .map_err(|error| format!("reconfigure embedded daemon inference: {error:#}"))?;
+        client
+            .sync_tui_defaults(portable_defaults)
+            .map_err(|error| format!("sync embedded daemon settings: {error:#}"))?;
         Ok(())
     }
 
@@ -258,15 +262,32 @@ pub(crate) fn normalize_inference_defaults(
 }
 
 #[cfg(target_os = "ios")]
+fn portable_tui_defaults(
+    defaults: &crate::medousa_paths::TuiDefaultsDto,
+) -> Result<medousa_types::session::TuiDefaults, String> {
+    serde_json::from_value(crate::medousa_paths::tui_defaults_value_from_dto(defaults))
+        .map_err(|error| format!("normalize Personal runtime settings: {error}"))
+}
+
+#[cfg(target_os = "ios")]
 async fn boot_embedded_daemon() -> Result<Arc<EmbeddedDaemon>, String> {
-    let (installation_id, provider, model, base_url, data_dir, root) =
+    let (installation_id, provider, model, base_url, defaults, data_dir, root) =
         tokio::task::spawn_blocking(|| {
             let installation_id = crate::integration_secrets::ensure_secrets_bootstrapped()?;
             let defaults = crate::medousa_paths::load_tui_defaults();
             let (provider, model, base_url) = inference_route_from_defaults(&defaults)?;
+            let defaults = portable_tui_defaults(&defaults)?;
             let data_dir = crate::paths::medousa_data_dir();
             let root = data_dir.join("embedded-daemon");
-            Ok::<_, String>((installation_id, provider, model, base_url, data_dir, root))
+            Ok::<_, String>((
+                installation_id,
+                provider,
+                model,
+                base_url,
+                defaults,
+                data_dir,
+                root,
+            ))
         })
         .await
         .map_err(|_| "embedded daemon configuration task failed".to_string())??;
@@ -288,6 +309,7 @@ async fn boot_embedded_daemon() -> Result<Arc<EmbeddedDaemon>, String> {
         chatgpt_oauth,
     )
     .map_err(|error| format!("configure embedded daemon inference: {error:#}"))?
+    .with_tui_defaults(defaults)
     .with_mcp_oauth(mcp_oauth)
     .with_tool_registry_recipe(Arc::new(
         medousa::mobile_tool_registry::PersonalMobileToolRegistryRecipe,
@@ -379,11 +401,9 @@ fn delegation_transport_for(
     if pairing.workshop_device_id.trim() != target.peer_device_id.trim() {
         return Err("Bound delegation identity no longer matches the paired workshop".to_string());
     }
-    let config = crate::pairing_client::load_workshop_transport_config_for_id(
-        &workshop.id,
-        &workshop.url,
-    )
-    .ok_or_else(|| "Bound workshop transport credentials are unavailable".to_string())?;
+    let config =
+        crate::pairing_client::load_workshop_transport_config_for_id(&workshop.id, &workshop.url)
+            .ok_or_else(|| "Bound workshop transport credentials are unavailable".to_string())?;
     if config.workshop_device_id.trim() != target.peer_device_id.trim() {
         return Err("Stored transport identity does not match the delegation binding".to_string());
     }
@@ -418,11 +438,9 @@ fn delegation_target_for(
         .pairing
         .as_ref()
         .ok_or_else(|| "Delegation workshop is not paired".to_string())?;
-    let config = crate::pairing_client::load_workshop_transport_config_for_id(
-        &workshop.id,
-        &workshop.url,
-    )
-    .ok_or_else(|| "Delegation workshop credentials are unavailable".to_string())?;
+    let config =
+        crate::pairing_client::load_workshop_transport_config_for_id(&workshop.id, &workshop.url)
+            .ok_or_else(|| "Delegation workshop credentials are unavailable".to_string())?;
     if config.session_token.is_none() || config.daemon_public_key.is_none() {
         return Err(
             "Reconnect this workshop before delegation so its bearer and identity are pinned"

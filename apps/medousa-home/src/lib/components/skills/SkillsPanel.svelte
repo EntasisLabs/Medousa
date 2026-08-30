@@ -22,6 +22,7 @@
     onUseInAutomation: (entry: ManuscriptCatalogEntry) => void;
     mobile?: boolean;
     embedded?: boolean;
+    hideMobileHeader?: boolean;
   }
 
   let {
@@ -31,6 +32,7 @@
     onUseInAutomation,
     mobile = false,
     embedded = false,
+    hideMobileHeader = false,
   }: Props = $props();
 
   let importWizardOpen = $state(false);
@@ -127,18 +129,20 @@
 
 <section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
   {#if !mobileDetailOpen && calmMobile}
-    <header class="mobile-notes-header px-4 pb-2">
-      <h1 class="text-lg font-semibold tracking-tight text-surface-50">Agents</h1>
-      {#if filterChipLabel}
-        <button
-          type="button"
-          class="mobile-notes-active-filter"
-          onclick={() => (filterSheetOpen = true)}
-        >
-          {filterChipLabel}
-        </button>
-      {/if}
-    </header>
+    {#if !hideMobileHeader}
+      <header class="mobile-notes-header px-4 pb-2">
+        <h1 class="text-lg font-semibold tracking-tight text-surface-50">Agents</h1>
+        {#if filterChipLabel}
+          <button
+            type="button"
+            class="mobile-notes-active-filter"
+            onclick={() => (filterSheetOpen = true)}
+          >
+            {filterChipLabel}
+          </button>
+        {/if}
+      </header>
+    {/if}
 
     {#if showSearchField}
       <div class="shrink-0 border-b border-surface-500/30 px-3 pb-3">

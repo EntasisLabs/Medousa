@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
+  import MobileRuntimePanel from "$lib/components/mobile/MobileRuntimePanel.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import { settings } from "$lib/stores/settings.svelte";
@@ -58,7 +59,7 @@
       didInitialLoad = true;
       untrack(() => {
         void runtime.refresh();
-        void runtime.refreshStageRoutes();
+        if (!mobile) void runtime.refreshStageRoutes();
       });
     }
   });
@@ -71,6 +72,11 @@
   }
 </script>
 
+{#if mobile}
+  <section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
+    <MobileRuntimePanel {inMotionCount} />
+  </section>
+{:else}
 <section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
   <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
     <div class="flex items-start justify-between gap-4">
@@ -304,3 +310,4 @@
     {/if}
   </div>
 </section>
+{/if}

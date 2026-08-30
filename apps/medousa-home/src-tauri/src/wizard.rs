@@ -4,9 +4,9 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::State;
 
-use crate::daemon_service::{DaemonWaitHealthRequest, daemon_start, daemon_wait_healthy};
+use crate::daemon_service::{daemon_start, daemon_wait_healthy, DaemonWaitHealthRequest};
 use crate::medousa_paths::{
-    TuiDefaultsDto, load_tui_defaults_summary, persist_tui_defaults, tui_defaults_path,
+    load_tui_defaults_summary, persist_tui_defaults, tui_defaults_path, TuiDefaultsDto,
 };
 use crate::messaging::messaging_save_secret;
 
@@ -107,6 +107,7 @@ fn wizard_path() -> PathBuf {
     medousa_data_dir().join("wizard.json")
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn product_config_path() -> PathBuf {
     medousa_data_dir().join("product_config.json")
 }
@@ -126,6 +127,7 @@ fn write_wizard_file(file: &WizardFile) -> Result<(), String> {
     fs::write(path, json).map_err(|err| err.to_string())
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn legacy_install_detected() -> bool {
     if tui_defaults_path().is_file() {
         let summary = load_tui_defaults_summary();
@@ -194,6 +196,7 @@ fn ensure_fresh_wizard() -> Result<WizardFile, String> {
     Ok(file)
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn ensure_migration_wizard() -> Result<WizardFile, String> {
     let file = WizardFile {
         state: Some(WizardLifecycleState::Active),
@@ -211,7 +214,7 @@ fn ensure_migration_wizard() -> Result<WizardFile, String> {
 
 #[tauri::command]
 pub fn wizard_bootstrap() -> Result<WizardBootstrap, String> {
-    #[cfg(any(target_os = "ios", target_os = "android"))]
+    #[cfg(target_os = "android")]
     {
         return Ok(WizardBootstrap {
             visible: false,
@@ -222,17 +225,33 @@ pub fn wizard_bootstrap() -> Result<WizardBootstrap, String> {
         });
     }
 
-    if let Some(file) = read_wizard_file() {
+    #[cfg(target_os = "ios")]
+    {
+        if let Some(file) = read_wizard_file() {
+            return Ok(bootstrap_from_file(&file));
+        }
+
+        // Personal is a real in-process workshop on iOS. New installs should
+        // receive the same first-run relationship setup as desktop instead of
+        // being treated as a companion that must pair before it can work.
+        let file = ensure_fresh_wizard()?;
         return Ok(bootstrap_from_file(&file));
     }
 
-    if legacy_install_detected() {
-        let file = ensure_migration_wizard()?;
-        return Ok(bootstrap_from_file(&file));
-    }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        if let Some(file) = read_wizard_file() {
+            return Ok(bootstrap_from_file(&file));
+        }
 
-    let file = ensure_fresh_wizard()?;
-    Ok(bootstrap_from_file(&file))
+        if legacy_install_detected() {
+            let file = ensure_migration_wizard()?;
+            return Ok(bootstrap_from_file(&file));
+        }
+
+        let file = ensure_fresh_wizard()?;
+        Ok(bootstrap_from_file(&file))
+    }
 }
 
 #[tauri::command]
@@ -363,6 +382,12 @@ pub async fn wizard_apply_screen1(
 
     if let Ok(raw) = std::fs::read_to_string(tui_defaults_path()) {
         if let Ok(existing) = serde_json::from_str::<TuiDefaultsDto>(&raw) {
+            let retained_base_url = existing
+                .provider
+                .as_deref()
+                .is_some_and(|value| value.eq_ignore_ascii_case(&provider))
+                .then_some(existing.base_url)
+                .flatten();
             dto = TuiDefaultsDto {
                 backend: existing.backend.or(dto.backend),
                 theme_id: existing.theme_id,
@@ -404,7 +429,7 @@ pub async fn wizard_apply_screen1(
                 env_overrides: existing.env_overrides,
                 provider: Some(provider.clone()),
                 model: Some(model.clone()),
-                base_url: base_url.or(existing.base_url),
+                base_url: base_url.clone().or(retained_base_url),
                 response_depth_mode: existing.response_depth_mode.or(dto.response_depth_mode),
                 reasoning_effort: existing.reasoning_effort.or(dto.reasoning_effort),
                 work_card_hide_after_hours: existing.work_card_hide_after_hours,
@@ -424,7 +449,7 @@ pub async fn wizard_apply_screen1(
         }
     }
 
-    persist_tui_defaults(dto)?;
+    persist_tui_defaults(dto.clone())?;
 
     if provider != "ollama" {
         if let Some(key) = request
@@ -433,9 +458,27 @@ pub async fn wizard_apply_screen1(
             .map(str::trim)
             .filter(|value| !value.is_empty())
         {
-            messaging_save_secret(embedded_state, "api_key".to_string(), Some(key.to_string()))
-                .await?;
+            messaging_save_secret(
+                embedded_state.clone(),
+                format!("api_key_{provider}"),
+                Some(key.to_string()),
+            )
+            .await?;
         }
+    }
+
+    #[cfg(target_os = "ios")]
+    if matches!(
+        crate::active_workshop::resolve()?,
+        crate::active_workshop::ActiveWorkshopTarget::EmbeddedPersonal
+    ) {
+        embedded_state.reconfigure_active(&dto).await?;
+        return Ok(WizardApplyScreen1Result {
+            core_ready: true,
+            core_message: "Personal is ready".to_string(),
+            provider,
+            model,
+        });
     }
 
     let mut core_ready = true;

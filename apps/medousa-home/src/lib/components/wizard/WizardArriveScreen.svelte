@@ -1,8 +1,10 @@
 <script lang="ts">
   import { wizard } from "$lib/stores/wizard.svelte";
+  import { isTauriMobilePlatform } from "$lib/platform";
   import { hostComputerPhrase } from "$lib/platformCopy";
 
   const hostPhrase = hostComputerPhrase();
+  const mobile = isTauriMobilePlatform();
 </script>
 
 <div class="wizard-step wizard-stagger items-center justify-center text-center">
@@ -21,10 +23,12 @@
   </h1>
 
   <p class="wizard-beat mt-4 max-w-sm text-lg leading-snug text-surface-200">
-    Your permanent workspace on {hostPhrase}.
+    {mobile ? "Your workspace, right here on this device." : `Your permanent workspace on ${hostPhrase}.`}
   </p>
   <p class="wizard-beat mt-2 max-w-sm text-sm leading-relaxed text-content-quiet">
-    Notes and files stay here. No account.
+    {mobile
+      ? "Notes, calendar, automations, and chat belong to your Personal workshop. Pairing a computer is optional."
+      : "Notes and files stay here. No account."}
   </p>
 
   <div class="wizard-beat mt-12">

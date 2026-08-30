@@ -94,7 +94,7 @@
           }}
         />
       {:else if layout.moreDestination === "automations"}
-        <AutomationsPanel visible={true} embedded={true} mobile={true} />
+        <AutomationsPanel visible={true} embedded={true} mobile={true} {onOpenChat} />
       {:else if layout.moreDestination === "code"}
         <MobileCodePanel />
       {:else if layout.moreDestination === "calendar"}

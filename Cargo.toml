@@ -250,7 +250,9 @@ full-daemon = [
 ]
 embedded-daemon = [
     "medousa-types/json-schema",
+    "dep:axum",
     "dep:base64",
+    "dep:calamine",
     "dep:chrono-tz",
     "dep:dirs",
     "dep:grapheme-compiler",
@@ -261,12 +263,15 @@ embedded-daemon = [
     "dep:futures-util",
     "dep:medousa-browser-lite",
     "dep:medousa-mcp-gateway",
+    "dep:medousa-secrets",
     "dep:medousa-tool-macros",
+    "dep:pdf-extract",
     "dep:reqwest",
     "dep:schemars",
     "dep:serde_yaml",
     "dep:toml",
     "dep:unicode-normalization",
+    "dep:urlencoding",
     "dep:zeroize",
 ]
 otel-export = [

@@ -1,5 +1,8 @@
 //! Local user media under `medousa/media/` (P5a — no cloud).
 
+use std::path::PathBuf;
+use std::sync::RwLock;
+
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -20,11 +23,23 @@ const MAX_EXTRACT_BYTES: u64 = (crate::media_text_extract::MAX_MEDIA_EXTRACT_CHA
 const MEDIA_PAYLOAD_DOMAIN: &[u8] = b"media-payload";
 const MEDIA_EXTRACT_DOMAIN: &[u8] = b"media-extract";
 
-static MEDIA_STORE: Lazy<crate::session_storage::SessionDirectoryStore> = Lazy::new(|| {
-    crate::session_storage::SessionDirectoryStore::new(
-        crate::paths::medousa_data_dir().join("media"),
-    )
-});
+static MEDIA_STORE_ROOT: Lazy<RwLock<Option<PathBuf>>> = Lazy::new(|| RwLock::new(None));
+
+pub fn configure_media_store_root(root: impl Into<PathBuf>) -> Result<(), String> {
+    *MEDIA_STORE_ROOT
+        .write()
+        .map_err(|_| "media store root lock poisoned".to_string())? = Some(root.into());
+    Ok(())
+}
+
+fn media_store() -> crate::session_storage::SessionDirectoryStore {
+    let root = MEDIA_STORE_ROOT
+        .read()
+        .ok()
+        .and_then(|root| root.as_ref().cloned())
+        .unwrap_or_else(|| crate::paths::medousa_data_dir().join("media"));
+    crate::session_storage::SessionDirectoryStore::new(root)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaRecord {
@@ -76,7 +91,7 @@ pub fn persist_user_media(
     );
     let ext = extension_for_mime(&mime);
     let payload_path = media_payload_path(&media_id, ext);
-    MEDIA_STORE
+    media_store()
         .atomic_write(&session_id, &payload_path, bytes)
         .map_err(|err| err.to_string())?;
 
@@ -92,7 +107,7 @@ pub fn persist_user_media(
         crate::media_text_extract::extract_media_text(bytes, &mime, label.as_deref())
     {
         let path = media_extract_path(&media_id);
-        MEDIA_STORE
+        media_store()
             .atomic_write(&session_id, &path, extract.text.as_bytes())
             .map_err(|err| err.to_string())?;
         extract_chars = Some(extract.text.chars().count());
@@ -137,7 +152,7 @@ pub fn get_media_record(session_id: &str, media_id: &str) -> Option<MediaRecord>
 }
 
 pub fn open_media_payload(record: &MediaRecord) -> Result<Vec<u8>, String> {
-    open_media_payload_from(&MEDIA_STORE, record)
+    open_media_payload_from(&media_store(), record)
 }
 
 fn open_media_payload_from(
@@ -172,13 +187,13 @@ pub fn delete_media_for_session(session_id: &str) -> Result<(), String> {
         .filter(|record| record.session_id != session_id.as_str())
         .collect::<Vec<_>>();
     overwrite_index_records(&remaining)?;
-    MEDIA_STORE
+    media_store()
         .remove_session(&session_id)
         .map_err(|error| error.to_string())?;
     if read_index_records()
         .iter()
         .any(|record| record.session_id == session_id.as_str())
-        || MEDIA_STORE
+        || media_store()
             .contains_session(&session_id)
             .map_err(|error| error.to_string())?
     {
@@ -207,7 +222,7 @@ pub fn validate_media_refs(session_id: &str, refs: &[MediaRef]) -> Result<(), St
 }
 
 pub fn read_media_extract(record: &MediaRecord) -> Option<String> {
-    read_media_extract_from(&MEDIA_STORE, record)
+    read_media_extract_from(&media_store(), record)
 }
 
 fn read_media_extract_from(
@@ -449,13 +464,13 @@ fn extension_for_mime(mime: &str) -> &'static str {
 fn append_index_record(record: &MediaRecord) -> Result<(), String> {
     let mut line = serde_json::to_vec(record).map_err(|err| err.to_string())?;
     line.push(b'\n');
-    MEDIA_STORE
+    media_store()
         .append_root(&index_path(), &line)
         .map_err(|err| err.to_string())
 }
 
 fn read_index_records() -> Vec<MediaRecord> {
-    let Ok(bytes) = MEDIA_STORE.read_root(&index_path()) else {
+    let Ok(bytes) = media_store().read_root(&index_path()) else {
         return Vec::new();
     };
     bytes
@@ -471,7 +486,7 @@ fn overwrite_index_records(records: &[MediaRecord]) -> Result<(), String> {
         serde_json::to_writer(&mut bytes, record).map_err(|error| error.to_string())?;
         bytes.push(b'\n');
     }
-    MEDIA_STORE
+    media_store()
         .atomic_write_root(&index_path(), &bytes)
         .map_err(|error| error.to_string())
 }

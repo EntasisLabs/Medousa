@@ -29,24 +29,15 @@ pub async fn session_create(
 ) -> Result<CreateSessionResponse, String> {
     #[cfg(target_os = "ios")]
     if let Some(client) = _embedded_state.client_if_active().await? {
-        if catalog
-            .as_deref()
-            .is_some_and(|value| value.trim() != "single")
-            || member_profile_ids
-                .as_ref()
-                .is_some_and(|values| !values.is_empty())
-            || agent_profile_id
-                .as_deref()
-                .is_some_and(|value| !value.trim().is_empty())
-            || display_name
-                .as_deref()
-                .is_some_and(|value| !value.trim().is_empty())
-        {
-            return Err(
-                "the first embedded daemon profile supports plain single-seat sessions".to_string(),
-            );
-        }
-        return client.create_session().map_err(|error| error.to_string());
+        return client
+            .create_session_with_request(CreateSessionRequest {
+                session_id: None,
+                catalog,
+                member_profile_ids,
+                agent_profile_id,
+                display_name,
+            })
+            .map_err(|error| error.to_string());
     }
 
     client(&state)?
@@ -65,9 +56,17 @@ pub async fn session_create(
 #[tauri::command]
 pub async fn session_derive(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     request: DeriveSessionRequest,
     idempotency_key: String,
 ) -> Result<DeriveSessionResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .derive_session(request, idempotency_key.trim())
+            .await
+            .map_err(|error| error.to_string());
+    }
     client(&state)?
         .sessions()
         .derive(&request, idempotency_key.trim())
@@ -88,29 +87,17 @@ pub async fn session_list(
     let include_verification = include_verification.unwrap_or(false);
     #[cfg(target_os = "ios")]
     if let Some(client) = _embedded_state.client_if_active().await? {
-        if q.as_deref().is_some_and(|value| !value.trim().is_empty())
-            || cursor
-                .as_deref()
-                .is_some_and(|value| !value.trim().is_empty())
-        {
-            return Err(
-                "search and paginated session history are not enabled in the first embedded daemon profile"
-                    .to_string(),
-            );
-        }
-        let mut sessions = client
-            .list_sessions(capped)
+        let mut page = client
+            .list_sessions_page(capped, q.as_deref(), cursor.as_deref())
             .map_err(|error| error.to_string())?;
         if !include_verification {
-            sessions = sessions
+            page.sessions = page
+                .sessions
                 .into_iter()
                 .map(|session| session.without_verification_fields())
                 .collect();
         }
-        return Ok(SessionHistoryListResponse {
-            sessions,
-            next_cursor: None,
-        });
+        return Ok(page);
     }
 
     let mut query = vec![
@@ -137,6 +124,7 @@ pub async fn session_list(
 #[tauri::command]
 pub async fn session_set_display_name(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
     display_name: String,
 ) -> Result<SessionSetDisplayNameResponse, String> {
@@ -149,6 +137,13 @@ pub async fn session_set_display_name(
         return Err("display name must not be empty".to_string());
     }
 
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .set_session_display_name(trimmed_id, trimmed_name)
+            .map_err(|error| error.to_string());
+    }
+
     client(&state)?
         .sessions()
         .set_display_name(trimmed_id, trimmed_name)
@@ -159,7 +154,12 @@ pub async fn session_set_display_name(
 #[tauri::command]
 pub async fn agent_mode_list(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<AgentModeListResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client.list_agent_modes().map_err(|error| error.to_string());
+    }
     client(&state)?
         .runtime()
         .agent_modes()
@@ -170,7 +170,14 @@ pub async fn agent_mode_list(
 #[tauri::command]
 pub async fn agent_mode_transition_policy_get(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<AgentModeTransitionPolicy, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .agent_mode_transition_policy()
+            .map_err(|error| error.to_string());
+    }
     client(&state)?
         .runtime()
         .agent_mode_transition_policy()
@@ -181,8 +188,15 @@ pub async fn agent_mode_transition_policy_get(
 #[tauri::command]
 pub async fn agent_mode_transition_policy_set(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     policy: AgentModeTransitionPolicy,
 ) -> Result<AgentModeTransitionPolicy, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .set_agent_mode_transition_policy(policy)
+            .map_err(|error| error.to_string());
+    }
     client(&state)?
         .runtime()
         .set_agent_mode_transition_policy(&policy)
@@ -216,6 +230,7 @@ pub async fn session_get_agent_mode(
 #[tauri::command]
 pub async fn session_set_agent_mode(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
     mode: AgentModeId,
 ) -> Result<SessionAgentModeResponse, String> {
@@ -223,17 +238,21 @@ pub async fn session_set_agent_mode(
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
+    let request = SetSessionAgentModeRequest {
+        mode,
+        scope: AgentModeScope::Session,
+        task_id: None,
+        expires_at_utc: None,
+    };
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .set_session_agent_mode(trimmed, request)
+            .map_err(|error| error.to_string());
+    }
     client(&state)?
         .sessions()
-        .set_agent_mode(
-            trimmed,
-            &SetSessionAgentModeRequest {
-                mode,
-                scope: AgentModeScope::Session,
-                task_id: None,
-                expires_at_utc: None,
-            },
-        )
+        .set_agent_mode(trimmed, &request)
         .await
         .map_err(sdk_error)
 }
@@ -241,11 +260,18 @@ pub async fn session_set_agent_mode(
 #[tauri::command]
 pub async fn session_list_agent_mode_proposals(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
 ) -> Result<AgentModeProposalListResponse, String> {
     let trimmed = session_id.trim();
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
+    }
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .list_agent_mode_proposals(trimmed)
+            .map_err(|error| error.to_string());
     }
     client(&state)?
         .sessions()
@@ -257,10 +283,17 @@ pub async fn session_list_agent_mode_proposals(
 #[tauri::command]
 pub async fn session_decide_agent_mode_proposal(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
     proposal_id: String,
     accept: bool,
 ) -> Result<AgentModeProposalResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .decide_agent_mode_proposal(session_id.trim(), proposal_id.trim(), accept)
+            .map_err(|error| error.to_string());
+    }
     client(&state)?
         .sessions()
         .decide_agent_mode_proposal(session_id.trim(), proposal_id.trim(), accept)
@@ -328,6 +361,7 @@ pub async fn session_start_code_project(
 #[tauri::command]
 pub async fn session_delete(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
     purge_memory: Option<bool>,
 ) -> Result<SessionDeleteResponse, String> {
@@ -338,6 +372,13 @@ pub async fn session_delete(
     let query = SessionDeleteQuery {
         purge_memory: purge_memory.unwrap_or(true),
     };
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .delete_session(trimmed, query.purge_memory)
+            .await
+            .map_err(|error| error.to_string());
+    }
     client(&state)?
         .sessions()
         .delete(trimmed, &query)
@@ -348,7 +389,14 @@ pub async fn session_delete(
 #[tauri::command]
 pub async fn prompt_stash_list(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<PromptStashListResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .list_prompt_stashes()
+            .map_err(|error| error.to_string());
+    }
     client(&state)?
         .prompt_stashes()
         .list()
@@ -359,8 +407,15 @@ pub async fn prompt_stash_list(
 #[tauri::command]
 pub async fn prompt_stash_create(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     request: CreatePromptStashRequest,
 ) -> Result<PromptStash, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .create_prompt_stash(request)
+            .map_err(|error| error.to_string());
+    }
     client(&state)?
         .prompt_stashes()
         .create(&request)
@@ -371,8 +426,15 @@ pub async fn prompt_stash_create(
 #[tauri::command]
 pub async fn prompt_stash_delete(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     stash_id: String,
 ) -> Result<DeletePromptStashResponse, String> {
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .delete_prompt_stash(stash_id.trim())
+            .map_err(|error| error.to_string());
+    }
     client(&state)?
         .prompt_stashes()
         .delete(stash_id.trim())
@@ -666,7 +728,8 @@ pub async fn turn_create(
     {
         if !matches!(ticket_mode, TurnTicketMode::Interactive) {
             return Err(
-                "background turns are not enabled in the first embedded daemon profile".to_string(),
+                "Background chat turns require a Shared workshop host because iOS may suspend Personal while the turn is running."
+                    .to_string(),
             );
         }
         if matches!(agent_mode, Some(AgentModeId::Coder))
@@ -674,34 +737,33 @@ pub async fn turn_create(
             || code_project_setup_authorized.unwrap_or(false)
         {
             return Err(
-                "code work is not enabled in the first embedded daemon profile".to_string(),
-            );
-        }
-        if media_refs.as_ref().is_some_and(|refs| !refs.is_empty()) {
-            return Err(
-                "media turns are not enabled in the first embedded daemon profile".to_string(),
-            );
-        }
-        if response_depth_mode
-            .as_deref()
-            .is_some_and(|value| !matches!(value.trim(), "" | "standard"))
-            || reasoning_effort
-                .as_deref()
-                .is_some_and(|value| !matches!(value.trim(), "" | "default"))
-        {
-            return Err(
-                "custom depth and reasoning controls are not enabled in the first embedded daemon profile"
+                "Code work requires a workshop host with Forge, a shell, and project filesystem authority."
                     .to_string(),
             );
         }
+        let embedded_response_depth = response_depth_mode
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("standard")
+            .to_string();
+        let embedded_reasoning_effort = reasoning_effort
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("default")
+            .to_string();
         let accepted = client
-            .start_turn_with_presentation_context(
+            .start_turn_with_options(
                 trimmed_session,
                 prompt.clone(),
                 identity_user_id.clone(),
                 channel_surface.clone(),
                 voice_preset_id.clone(),
                 voice_appendix.clone(),
+                embedded_response_depth,
+                embedded_reasoning_effort,
+                media_refs.clone().unwrap_or_default(),
             )
             .await
             .map_err(|error| error.to_string())?;

@@ -1,0 +1,139 @@
+/**
+ * Unlayered mobile button geometry.
+ *
+ * Tailwind's global button reset is unlayered, so padding authored inside the
+ * feature layer loses even when the feature selector is more specific. Keep
+ * this bridge limited to shared mobile sheet controls. Most paint and type
+ * stay with their owning features; button backgrounds that the reset clears
+ * are repeated here deliberately.
+ */
+
+.mobile-turn-sheet-row,
+.mobile-turn-sheet-link-row {
+  padding: 0.875rem 1rem;
+}
+
+.mobile-turn-sheet-manual-action,
+.mobile-turn-sheet-setup-action {
+  background: rgb(var(--color-primary-500) / 0.2);
+}
+
+.mobile-turn-sheet-manual-action {
+  padding-inline: 1rem;
+}
+
+.mobile-turn-sheet-setup-action {
+  padding-inline: 1rem;
+}
+
+:is(.settings-nav-picker, .settings-sheet, .automations-sheet)
+  :is(.mobile-turn-sheet-row, .mobile-turn-sheet-link-row) {
+  padding-block: 0.7rem;
+  padding-inline: var(--mobile-sheet-row-inset);
+}
+
+.mobile-dest-menu-row {
+  padding: 0.625rem 0.875rem;
+}
+
+.mobile-dest-menu-edit-row {
+  padding-right: 1rem;
+}
+
+.mobile-dest-menu-switchers .mobile-profile-pill {
+  padding: 0.5rem 0.625rem;
+}
+
+.mobile-sessions-menu-item {
+  padding: 0.5rem 0.625rem;
+  background: transparent;
+}
+
+.mobile-sessions-menu-item:hover,
+.mobile-sessions-menu-item:active {
+  background: rgb(var(--color-surface-800) / 0.72);
+}
+
+.composer-plus-menu-panel-mobile .composer-plus-menu-item {
+  padding: 0.5rem 0.625rem;
+  background: transparent;
+  color: rgb(var(--color-surface-100));
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+}
+
+.composer-plus-menu-panel-mobile .composer-plus-menu-item:hover,
+.composer-plus-menu-panel-mobile .composer-plus-menu-item:active {
+  background: rgb(var(--color-surface-800) / 0.72);
+}
+
+.composer-plus-menu-panel-mobile .composer-stash-apply {
+  padding: 0.5rem 0.625rem;
+  background: transparent;
+  color: rgb(var(--theme-text-secondary));
+}
+
+.composer-plus-menu-panel-mobile .composer-stash-delete {
+  margin: 0 0.375rem 0 0;
+  padding: 0;
+  background: transparent;
+  color: rgb(var(--theme-text-quiet));
+}
+
+.composer-plus-menu-panel-mobile .composer-stash-delete:hover,
+.composer-plus-menu-panel-mobile .composer-stash-delete:active {
+  background: rgb(var(--color-surface-700) / 0.7);
+  color: rgb(var(--color-error-300));
+}
+
+.mobile-notes-library-option {
+  padding: 0 0.5rem;
+  border-color: transparent;
+  background: transparent;
+  color: rgb(var(--theme-text-tertiary));
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
+}
+
+.mobile-notes-filter-section-title {
+  margin-bottom: 0.5rem;
+}
+
+.mobile-notes-library-option-active {
+  background: rgb(var(--color-surface-700) / 0.7);
+  color: rgb(var(--color-surface-50));
+}
+
+.mobile-notes-space-option {
+  padding-inline: 0.5rem;
+  border-color: transparent;
+  background: transparent;
+  color: rgb(var(--theme-text-secondary));
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
+}
+
+.mobile-notes-space-option-active {
+  border-color: transparent;
+  background: rgb(var(--color-primary-500) / 0.11);
+  color: rgb(var(--color-primary-200));
+}
+
+.mobile-notes-view-row {
+  padding: 0.375rem 0.625rem;
+  background: transparent;
+}
+
+.mobile-notes-view-row-active {
+  background: rgb(var(--color-surface-700) / 0.24);
+}
+
+.mobile-notes-filter-sheet .mobile-sheet-done {
+  color: rgb(var(--theme-link));
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1rem;
+}

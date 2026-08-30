@@ -18,10 +18,10 @@
     Users,
     Zap,
   } from "@lucide/svelte";
-  import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import ProfileSwitcherCompact from "$lib/components/mobile/ProfileSwitcherCompact.svelte";
   import { registerMobileBackHandler, switchMobileTab } from "$lib/mobileNavigation";
   import { environment } from "$lib/stores/environment.svelte";
+  import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { haptic } from "$lib/haptics";
   import {
@@ -246,21 +246,9 @@
         <button type="button" class="mobile-dest-menu-done" onclick={finishOrClose}>Done</button>
       </header>
 
-      {#if !editing}
+      {#if !editing && userProfiles.hasMultipleProfiles}
         <div class="mobile-dest-menu-switchers">
-          <WorkshopSwitcherCompact />
           <ProfileSwitcherCompact />
-          <button
-            type="button"
-            class="mobile-dest-menu-activity"
-            onclick={() => {
-              onClose();
-              layout.toggleActivitySheet();
-            }}
-          >
-            <Activity size={16} strokeWidth={1.75} aria-hidden="true" />
-            <span>Activity</span>
-          </button>
         </div>
       {/if}
 
@@ -292,7 +280,9 @@
                     disabled={editBusyId !== null}
                     onclick={() => void toggleSurface(item.surfaceId!)}
                   >
-                    <Icon size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
+                    <span class="mobile-dest-menu-icon" aria-hidden="true">
+                      <Icon size={19} strokeWidth={1.75} />
+                    </span>
                     <span class="mobile-turn-sheet-row-title min-w-0 flex-1 text-left">
                       {item.label}
                     </span>
@@ -332,7 +322,9 @@
                     disabled={editBusyId !== null}
                     onclick={() => void toggleSurface(view.id)}
                   >
-                    <Sparkles size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
+                    <span class="mobile-dest-menu-icon" aria-hidden="true">
+                      <Sparkles size={19} strokeWidth={1.75} />
+                    </span>
                     <span class="mobile-turn-sheet-row-title min-w-0 flex-1 text-left">
                       {view.label}
                     </span>
@@ -373,7 +365,9 @@
                     aria-current={isActive(item) ? "page" : undefined}
                     onclick={() => pick(item)}
                   >
-                    <Icon size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
+                    <span class="mobile-dest-menu-icon" aria-hidden="true">
+                      <Icon size={19} strokeWidth={1.75} />
+                    </span>
                     <span class="mobile-turn-sheet-row-copy text-left">
                       <span class="mobile-turn-sheet-row-title">{item.label}</span>
                       {#if item.hint}
@@ -402,7 +396,9 @@
                     aria-current={isCustomViewActive(view.id) ? "page" : undefined}
                     onclick={() => pickCustom(view.id)}
                   >
-                    <Sparkles size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
+                    <span class="mobile-dest-menu-icon" aria-hidden="true">
+                      <Sparkles size={19} strokeWidth={1.75} />
+                    </span>
                     <span class="mobile-turn-sheet-row-copy text-left">
                       <span class="mobile-turn-sheet-row-title">{view.label}</span>
                     </span>
@@ -429,7 +425,9 @@
                     aria-current={isActive(item) ? "page" : undefined}
                     onclick={() => pick(item)}
                   >
-                    <Icon size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
+                    <span class="mobile-dest-menu-icon" aria-hidden="true">
+                      <Icon size={19} strokeWidth={1.75} />
+                    </span>
                     <span class="mobile-turn-sheet-row-copy text-left">
                       <span class="mobile-turn-sheet-row-title">{item.label}</span>
                       {#if item.hint}
@@ -453,7 +451,9 @@
                 aria-current={isActive(settingsItem) ? "page" : undefined}
                 onclick={() => pick(settingsItem)}
               >
-                <Settings size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
+                <span class="mobile-dest-menu-icon" aria-hidden="true">
+                  <Settings size={19} strokeWidth={1.75} />
+                </span>
                 <span class="mobile-turn-sheet-row-copy text-left">
                   <span class="mobile-turn-sheet-row-title">
                     {settingsItem.label}

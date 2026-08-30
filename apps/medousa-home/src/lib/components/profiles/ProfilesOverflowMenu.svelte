@@ -9,7 +9,6 @@
   } from "$lib/daemon";
   import { toast } from "$lib/runtime/toast.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
-  import { isTauriMobilePlatform } from "$lib/platform";
   import { downloadTextFile } from "$lib/utils/sessionTranscript";
   import { PROFILES_ADD_PROFILE_EVENT } from "$lib/utils/profilesChromeEvents";
   import { onMount } from "svelte";
@@ -18,7 +17,7 @@
     mobile?: boolean;
   }
 
-  let { mobile = false }: Props = $props();
+  let { mobile: _mobile = false }: Props = $props();
 
   let sheetOpen = $state(false);
   let importInputEl = $state<HTMLInputElement | null>(null);
@@ -34,7 +33,7 @@
     return () => window.removeEventListener(PROFILES_ADD_PROFILE_EVENT, onAddProfile);
   });
 
-  const readOnly = $derived(mobile && isTauriMobilePlatform());
+  const readOnly = false;
 
   async function runExportNotes() {
     exportBusy = true;

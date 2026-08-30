@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Bell, FileText, MapPin, Plus, Repeat, X } from "@lucide/svelte";
+  import { Bell, Check, FileText, MapPin, Plus, Repeat, X } from "@lucide/svelte";
   import type { CalendarAlarm, CalendarEvent } from "$lib/types/calendar";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { calendarDateUtils } from "$lib/stores/calendar.svelte";
@@ -10,12 +10,14 @@
   } from "$lib/utils/calendarReminders";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
+  import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
 
   interface Props {
     event: CalendarEvent | null;
     defaultDay: Date;
     mobile?: boolean;
     onClose: () => void;
+    onSwitchKind?: (kind: "event" | "reminder") => void;
     onSave: (payload: {
       summary: string;
       description: string;
@@ -30,7 +32,15 @@
     onDelete?: () => Promise<void>;
   }
 
-  let { event, defaultDay, mobile = false, onClose, onSave, onDelete }: Props = $props();
+  let {
+    event,
+    defaultDay,
+    mobile = false,
+    onClose,
+    onSwitchKind,
+    onSave,
+    onDelete,
+  }: Props = $props();
 
   const { isoDay, allDayKey, nextAllDayKey, allDayBoundIso } = calendarDateUtils;
 
@@ -95,7 +105,8 @@
   let saving = $state(false);
   let linking = $state(false);
   let error = $state<string | null>(null);
-  let titleEl: HTMLInputElement | undefined = $state();
+  let sheetEl = $state<HTMLDivElement | null>(null);
+  let headerEl = $state<HTMLElement | null>(null);
 
   $effect.pre(() => {
     const source = event;
@@ -125,10 +136,6 @@
       trigger_minutes_before: alarm.trigger_minutes_before,
       action: alarm.action ?? "display",
     }));
-  });
-
-  $effect(() => {
-    queueMicrotask(() => titleEl?.focus());
   });
 
   const whenSummary = $derived.by(() => {
@@ -263,20 +270,31 @@
       return true;
     });
   });
+
+  $effect(() => {
+    if (!mobile || !sheetEl || !headerEl) return;
+    return attachMobileSheetGestures(sheetEl, headerEl, {
+      onDismiss: onClose,
+    });
+  });
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
   class="cal-pop-backdrop"
   class:cal-pop-backdrop-mobile={mobile}
+  class:mobile-sheet-backdrop={mobile}
   role="presentation"
   onclick={onClose}
   onkeydown={onKeydown}
 >
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
+    bind:this={sheetEl}
     class="cal-pop"
     class:cal-pop-mobile={mobile}
+    class:mobile-sheet={mobile}
+    class:calendar-editor-sheet={mobile}
     role="dialog"
     tabindex="-1"
     aria-modal="true"
@@ -284,59 +302,131 @@
     onclick={(e) => e.stopPropagation()}
     onkeydown={onKeydown}
   >
-    <div class="cal-pop-grab" aria-hidden="true"></div>
-
-    <header class="cal-pop-head">
-      <div class="cal-pop-mode">
-        <span class="cal-pop-mode-active">{event ? "Event" : "New Event"}</span>
+    {#if mobile}
+      <div bind:this={headerEl} class="cal-pop-mobile-sheet-head">
+        <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
+        <header class="cal-pop-mobile-head">
+          <button type="button" class="cal-pop-x" aria-label="Close" onclick={onClose}>
+            <X size={21} strokeWidth={1.75} />
+          </button>
+          <h2>{event ? "Edit Event" : "New"}</h2>
+          <button
+            type="button"
+            class="cal-pop-mobile-save"
+            aria-label={event ? "Save event" : "Add event"}
+            disabled={saving}
+            onclick={() => void submit()}
+          >
+            <Check size={22} strokeWidth={2} />
+          </button>
+        </header>
+        {#if !event}
+          <div class="cal-pop-kind" role="tablist" aria-label="Create type">
+            <button type="button" role="tab" aria-selected="true" class="cal-pop-kind-active">
+              Event
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected="false"
+              onclick={() => onSwitchKind?.("reminder")}
+            >
+              Reminder
+            </button>
+          </div>
+        {/if}
       </div>
-      <button type="button" class="cal-pop-x" aria-label="Close" onclick={onClose}>
-        <X size={15} strokeWidth={1.75} />
-      </button>
-    </header>
+    {:else}
+      <div class="cal-pop-grab" aria-hidden="true"></div>
+      <header class="cal-pop-head">
+        <div class="cal-pop-mode">
+          <span class="cal-pop-mode-active">{event ? "Event" : "New Event"}</span>
+        </div>
+        <button type="button" class="cal-pop-x" aria-label="Close" onclick={onClose}>
+          <X size={15} strokeWidth={1.75} />
+        </button>
+      </header>
+    {/if}
 
     <div class="cal-pop-scroll">
       <div class="cal-pop-card cal-pop-card-title">
         <input
-          bind:this={titleEl}
           class="cal-pop-title"
           bind:value={summary}
           placeholder="New Event"
           maxlength={200}
         />
-        <div class="cal-pop-all-day">
-          <span class="cal-pop-switch-label">All day</span>
-          <button
-            type="button"
-            class="cal-pop-switch"
-            class:cal-pop-switch-on={allDay}
-            aria-label="All day"
-            aria-pressed={allDay}
-            onclick={() => (allDay = !allDay)}
-          >
-            <span class="cal-pop-switch-knob"></span>
-          </button>
-        </div>
+        {#if mobile}
+          <input
+            class="cal-pop-mobile-location"
+            bind:value={location}
+            placeholder="Location or video call"
+          />
+        {:else}
+          <div class="cal-pop-all-day">
+            <span class="cal-pop-switch-label">All day</span>
+            <button
+              type="button"
+              class="cal-pop-switch"
+              class:cal-pop-switch-on={allDay}
+              aria-label="All day"
+              aria-pressed={allDay}
+              onclick={() => (allDay = !allDay)}
+            >
+              <span class="cal-pop-switch-knob"></span>
+            </button>
+          </div>
+        {/if}
       </div>
 
       <div class="cal-pop-card">
-        <div class="cal-pop-when-summary">{whenSummary}</div>
-        <div class="cal-pop-when-edit">
-          <label class="cal-pop-field-group cal-pop-field-group-date">
+        {#if mobile}
+          <div class="cal-pop-mobile-field-row">
+            <span>All-day</span>
+            <button
+              type="button"
+              class="cal-pop-switch"
+              class:cal-pop-switch-on={allDay}
+              aria-label="All day"
+              aria-pressed={allDay}
+              onclick={() => (allDay = !allDay)}
+            >
+              <span class="cal-pop-switch-knob"></span>
+            </button>
+          </div>
+          <label class="cal-pop-mobile-field-row">
             <span>Date</span>
             <input class="cal-pop-field" type="date" bind:value={date} />
           </label>
           {#if !allDay}
-            <label class="cal-pop-field-group">
+            <label class="cal-pop-mobile-field-row">
               <span>Starts</span>
               <input class="cal-pop-field" type="time" bind:value={startTime} />
             </label>
-            <label class="cal-pop-field-group">
+            <label class="cal-pop-mobile-field-row">
               <span>Ends</span>
               <input class="cal-pop-field" type="time" bind:value={endTime} />
             </label>
           {/if}
-        </div>
+        {:else}
+          <div class="cal-pop-when-summary">{whenSummary}</div>
+          <div class="cal-pop-when-edit">
+            <label class="cal-pop-field-group cal-pop-field-group-date">
+              <span>Date</span>
+              <input class="cal-pop-field" type="date" bind:value={date} />
+            </label>
+            {#if !allDay}
+              <label class="cal-pop-field-group">
+                <span>Starts</span>
+                <input class="cal-pop-field" type="time" bind:value={startTime} />
+              </label>
+              <label class="cal-pop-field-group">
+                <span>Ends</span>
+                <input class="cal-pop-field" type="time" bind:value={endTime} />
+              </label>
+            {/if}
+          </div>
+        {/if}
         <p class="cal-pop-hint">
           {allDay ? "This event uses the whole day." : "Times use your current time zone."}
         </p>
@@ -400,14 +490,16 @@
         </select>
       </div>
 
-      <div class="cal-pop-card cal-pop-row">
-        <MapPin size={14} strokeWidth={1.75} class="cal-pop-row-icon" />
-        <input
-          class="cal-pop-inline"
-          bind:value={location}
-          placeholder="Add Location"
-        />
-      </div>
+      {#if !mobile}
+        <div class="cal-pop-card cal-pop-row">
+          <MapPin size={14} strokeWidth={1.75} class="cal-pop-row-icon" />
+          <input
+            class="cal-pop-inline"
+            bind:value={location}
+            placeholder="Add Location"
+          />
+        </div>
+      {/if}
 
       <div class="cal-pop-card">
         <div class="cal-pop-section-label">
@@ -459,9 +551,21 @@
       {#if error}
         <p class="cal-pop-error">{error}</p>
       {/if}
+
+      {#if mobile && event && onDelete}
+        <button
+          type="button"
+          class="cal-pop-mobile-delete"
+          disabled={saving}
+          onclick={() => void onDelete()}
+        >
+          Delete Event
+        </button>
+      {/if}
     </div>
 
-    <footer class="cal-pop-foot">
+    {#if !mobile}
+      <footer class="cal-pop-foot">
       {#if event && onDelete}
         <button
           type="button"
@@ -485,7 +589,8 @@
           {saving ? "Saving…" : event ? "Save" : "Add"}
         </button>
       </div>
-    </footer>
+      </footer>
+    {/if}
   </div>
 </div>
 
@@ -504,12 +609,17 @@
 
   .cal-pop-backdrop-mobile {
     position: fixed;
-    z-index: 50;
+    inset: 0;
+    bottom: auto;
+    z-index: 70;
+    height: calc(
+      var(--mobile-layout-height, 100dvh) - var(--mobile-keyboard-inset, 0px)
+    );
     align-items: flex-end;
-    justify-content: stretch;
+    justify-content: center;
     padding: 0;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    background: rgb(var(--color-surface-950) / 0.45);
+    background: rgb(var(--color-surface-950) / 0.7);
+    backdrop-filter: none;
   }
 
   .cal-pop {
@@ -534,11 +644,23 @@
     display: flex;
     flex-direction: column;
     width: 100%;
-    max-height: min(92dvh, 40rem);
+    height: min(82dvh, 46rem);
+    max-height: calc(
+      var(--mobile-layout-height, 100dvh) - var(--mobile-keyboard-inset, 0px) -
+        max(1rem, env(safe-area-inset-top, 0px))
+    );
     overflow: hidden;
-    border-radius: 1rem 1rem 0 0;
-    padding: 0.55rem 0.7rem 0;
-    animation: cal-pop-sheet-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    border: 1px solid rgb(var(--shell-border) / 0.62);
+    border-bottom: 0;
+    border-radius: 1.5rem 1.5rem 0 0;
+    background: rgb(var(--shell-pane-bg));
+    padding: 0;
+    box-shadow: 0 -18px 52px rgb(var(--theme-shadow) / 0.32);
+    backdrop-filter: none;
+  }
+
+  .cal-pop-mobile-sheet-head {
+    flex-shrink: 0;
   }
 
   .cal-pop-mobile .cal-pop-scroll {
@@ -547,41 +669,166 @@
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding-bottom: 1rem;
+    padding: 0.75rem 1rem calc(2rem + env(safe-area-inset-bottom, 0px));
+    -webkit-overflow-scrolling: touch;
   }
 
-  .cal-pop-mobile .cal-pop-foot {
-    position: relative;
-    z-index: 2;
+  .cal-pop-mobile-head {
+    display: grid;
     flex-shrink: 0;
-    margin: 0 -0.7rem;
-    padding: 0.55rem 0.85rem max(0.75rem, env(safe-area-inset-bottom, 0px));
-    border-top: 1px solid rgb(var(--shell-border) / 0.55);
-    background: rgb(var(--shell-pane-bg));
-    box-shadow: 0 -8px 24px rgb(var(--theme-shadow) / 0.16);
+    grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.1rem 1rem 0.45rem;
+  }
+
+  .cal-pop-mobile-head h2 {
+    margin: 0;
+    text-align: center;
+    font-size: 1.0625rem;
+    font-weight: 650;
+    letter-spacing: -0.018em;
+    color: rgb(var(--theme-text));
   }
 
   .cal-pop-mobile .cal-pop-x,
-  .cal-pop-mobile .cal-pop-text,
-  .cal-pop-mobile .cal-pop-text-danger,
-  .cal-pop-mobile .cal-pop-save {
-    min-height: 2.75rem;
-  }
-
-  .cal-pop-mobile .cal-pop-x {
+  .cal-pop-mobile-save {
+    display: inline-flex;
     width: 2.75rem;
+    height: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgb(var(--shell-border) / 0.72);
+    border-radius: 9999px;
+    background: rgb(var(--color-surface-800) / 0.62);
+    color: rgb(var(--theme-text));
   }
 
-  .cal-pop-mobile .cal-pop-text,
-  .cal-pop-mobile .cal-pop-text-danger,
-  .cal-pop-mobile .cal-pop-save {
-    padding-inline: 0.85rem;
+  .cal-pop-mobile-save {
+    background: rgb(var(--color-primary-500));
+    color: rgb(var(--on-primary));
+  }
+
+  .cal-pop-mobile-save:disabled {
+    opacity: 0.45;
+  }
+
+  .cal-pop-kind {
+    display: grid;
+    flex-shrink: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.15rem;
+    margin: 0.15rem 1rem 0.55rem;
+    border-radius: 0.8rem;
+    background: rgb(var(--color-surface-800) / 0.72);
+    padding: 0.16rem;
+  }
+
+  .cal-pop-kind button {
+    min-height: 2.6rem;
+    border-radius: 0.65rem;
     font-size: 0.875rem;
+    font-weight: 600;
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  .cal-pop-kind button.cal-pop-kind-active {
+    background: rgb(var(--color-surface-600) / 0.82);
+    color: rgb(var(--theme-text));
+    box-shadow: 0 1px 2px rgb(var(--theme-shadow) / 0.18);
+  }
+
+  .cal-pop-mobile .cal-pop-card {
+    margin-bottom: 0.75rem;
+    border: 0;
+    border-radius: 1rem;
+    background: rgb(var(--color-surface-800) / 0.58);
+    padding: 0.8rem 0.9rem;
+  }
+
+  .cal-pop-mobile .cal-pop-card-title {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
+  }
+
+  .cal-pop-mobile .cal-pop-title {
+    min-height: 3.25rem;
+    padding: 0.55rem 0.15rem !important;
+    font-size: 1.1875rem;
+    line-height: 1.35;
+  }
+
+  .cal-pop-mobile-location {
+    min-height: 3.1rem;
+    border: 0;
+    border-top: 1px solid rgb(var(--shell-border) / 0.45);
+    background: transparent;
+    padding: 0.7rem 0.15rem 0.5rem !important;
+    font-size: 1rem;
+    color: rgb(var(--theme-text));
+    outline: none;
+    box-shadow: none;
+  }
+
+  .cal-pop-mobile-location::placeholder {
+    color: rgb(var(--theme-placeholder));
+  }
+
+  .cal-pop-mobile-field-row {
+    display: flex;
+    min-height: 3.35rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    border-bottom: 1px solid rgb(var(--shell-border) / 0.45);
+    font-size: 0.9375rem;
+    color: rgb(var(--theme-text));
+  }
+
+  .cal-pop-mobile-field-row:last-of-type {
+    border-bottom: 0;
   }
 
   .cal-pop-mobile .cal-pop-field {
-    min-height: 2.75rem;
+    width: auto;
+    min-width: 8.5rem;
+    min-height: 2.5rem;
+    border-radius: 9999px;
+    background: rgb(var(--color-surface-700) / 0.72);
+    padding: 0.35rem 0.7rem;
     font-size: 1rem;
+    text-align: right;
+  }
+
+  .cal-pop-mobile .cal-pop-alarm-add {
+    width: 100%;
+    text-align: left;
+  }
+
+  .cal-pop-mobile .cal-pop-row {
+    min-height: 3.35rem;
+  }
+
+  .cal-pop-mobile .cal-pop-inline,
+  .cal-pop-mobile .cal-pop-notes {
+    font-size: 1rem;
+  }
+
+  .cal-pop-mobile .cal-pop-section-label {
+    font-size: 0.75rem;
+  }
+
+  .cal-pop-mobile-delete {
+    width: 100%;
+    min-height: 3.25rem;
+    border-radius: 1rem;
+    background: rgb(var(--theme-error) / 0.1);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: rgb(var(--theme-error));
   }
 
   @keyframes cal-pop-in {

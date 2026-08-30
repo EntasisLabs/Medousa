@@ -51,8 +51,9 @@
       query = "";
       chat.sessionListQuery = "";
       void chat.refreshSessions({ force: true, q: "" });
-      // Autofocus so the drawer feels interactive immediately.
-      if (showBuiltInToolbar) {
+      // Desktop drawers can take focus immediately; mobile sheets should open
+      // without summoning the keyboard over the session list.
+      if (showBuiltInToolbar && variant !== "sheet") {
         queueMicrotask(() => searchInputEl?.focus());
       }
     });
@@ -236,7 +237,7 @@
         >
           <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
           <div class="mobile-sheet-header-row">
-            <h2 class="text-sm font-semibold text-surface-50">Sessions</h2>
+            <h2 class="text-base font-semibold text-surface-50">Sessions</h2>
             <button
               type="button"
               class="btn btn-sm variant-ghost-surface"

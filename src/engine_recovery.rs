@@ -64,7 +64,7 @@ pub fn mark_recovery_ledger(session_id: &str, turn_id: &str) {
 }
 
 pub fn delete_session_recovery(session_id: &str) -> Result<(), String> {
-    let root_path = paths::medousa_data_dir().join(TURN_LOG_DIR);
+    let root_path = default_log_root();
     let root = StoreRoot::open_or_create(&root_path).map_err(|error| error.to_string())?;
     let ledger_path =
         StorePath::parse("recovery_ledger.json").expect("static recovery ledger path");

@@ -24,6 +24,7 @@
   import { mobileCodeWorkspaceState } from "$lib/stores/mobileCodeWorkspaceState.svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import { openMobileCodeFile } from "$lib/utils/mobileCodeOpen";
+  import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
 
   interface Props {
     workId: string;
@@ -34,7 +35,6 @@
   let editor = $state<{
     getValue: () => string;
     flushChanges: () => void;
-    revealLine: (line: number) => void;
     getView: () => EditorView | undefined;
   } | null>(null);
   let saving = $state(false);
@@ -43,6 +43,8 @@
   let findOpen = $state(false);
   let findQuery = $state("");
   let findInput = $state<HTMLInputElement | null>(null);
+  let switcherSheetEl = $state<HTMLDivElement | null>(null);
+  let switcherHeaderEl = $state<HTMLElement | null>(null);
   let beginEditPromise: Promise<void> | null = null;
 
   const tab = $derived(codeWorkspace.activeFor(workId));
@@ -91,10 +93,21 @@
   });
 
   $effect(() => {
-    const line = tab?.line;
-    if (!editor || !line || line < 1) return;
-    editor.revealLine(line);
+    if (!switcherOpen || !switcherSheetEl) return;
+    return attachMobileSheetGestures(switcherSheetEl, switcherHeaderEl, {
+      onDismiss: dismissFileSwitcher,
+      swipeBack: false,
+    });
   });
+
+  function closeFileSwitcher() {
+    mobileCodeWorkspaceState.fileSwitcherOpen = false;
+  }
+
+  function dismissFileSwitcher() {
+    haptic("light");
+    closeFileSwitcher();
+  }
 
   function view(): EditorView | undefined {
     return editor?.getView();
@@ -304,7 +317,7 @@
     </p>
   {/if}
 
-  <div class="relative min-h-0 flex-1 overflow-hidden">
+  <div class="mobile-code-editor-canvas relative min-h-0 flex-1 overflow-hidden">
     {#if tab}
       {#key `${tab.tabId}:${tab.syncKey}`}
         <CodeMirrorHost
@@ -316,6 +329,7 @@
           contentSyncKey={tab.syncKey}
           wordWrap={true}
           showFoldGutter={false}
+          initialLine={tab.line}
           onFindRequested={openFindBar}
           onchange={(value) => void onDraftChanged(value)}
           onCursorChanged={(cursor) => {
@@ -333,18 +347,31 @@
 </div>
 
 {#if switcherOpen}
-  <div class="mobile-sheet-backdrop" role="presentation">
-    <div class="mobile-sheet" role="dialog" aria-label="Open files" tabindex="-1">
-      <div class="mobile-sheet-header">
-        <p class="text-sm font-medium">Open files</p>
-        <button
-          type="button"
-          class="text-sm text-content-link"
-          onclick={() => {
-            mobileCodeWorkspaceState.fileSwitcherOpen = false;
-          }}
-        >Close</button>
-      </div>
+  <div
+    class="mobile-sheet-backdrop"
+    role="presentation"
+    onclick={(event) => {
+      if (event.target === event.currentTarget) closeFileSwitcher();
+    }}
+  >
+    <div
+      bind:this={switcherSheetEl}
+      class="mobile-sheet"
+      role="dialog"
+      aria-label="Open files"
+      tabindex="-1"
+    >
+      <header bind:this={switcherHeaderEl} class="mobile-sheet-stack-header">
+        <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
+        <div class="mobile-sheet-header-row">
+          <p class="text-sm font-medium">Open files</p>
+          <button
+            type="button"
+            class="text-sm text-content-link"
+            onclick={closeFileSwitcher}
+          >Close</button>
+        </div>
+      </header>
       <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto p-1">
         {#each tabs as openTab (openTab.tabId)}
           <button
@@ -365,3 +392,11 @@
     </div>
   </div>
 {/if}
+
+<style>
+  .mobile-code-editor-canvas {
+    /* iOS zooms focused contenteditable text below 16px. CodeMirror measures
+       before that zoom, which can separate wrapped lines from their gutters. */
+    --code-editor-min-font-size: 16px;
+  }
+</style>

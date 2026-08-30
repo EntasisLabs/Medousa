@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import HomeSplash from "$lib/components/layout/HomeSplash.svelte";
+  import BootstrapSplashHandoff from "$lib/components/layout/BootstrapSplashHandoff.svelte";
   import LazyFeatureView from "$lib/components/layout/LazyFeatureView.svelte";
   import ShellChunkError from "$lib/components/layout/ShellChunkError.svelte";
   import ToastHost from "$lib/components/layout/ToastHost.svelte";
@@ -19,6 +19,7 @@
   import { probeClientPlatform } from "$lib/runtime/platformProbe";
   import { startShellRootResources } from "$lib/runtime/shellLifecycle";
   import { focusChatComposer } from "$lib/runtime/shellUseCases";
+  import { dismissBootstrapSplash } from "$lib/runtime/bootstrapSplash";
   import {
     loadBrowserWorkshop,
     loadCommandSpotlight,
@@ -50,26 +51,34 @@
 </script>
 
 {#if wizard.loading}
-  <HomeSplash />
+  <!-- app.html keeps the single startup surface visible while bootstrap settles. -->
 {:else if wizard.visible && isTauriMobilePlatform()}
-  <LazyFeatureView loader={loadWizardContainer} overlay />
+  <LazyFeatureView
+    loader={loadWizardContainer}
+    overlay
+    onSettled={dismissBootstrapSplash}
+  />
 {:else if layout.isMobile}
   {#key shellEpoch}
     {#await loadMobileShell()}
-      <HomeSplash />
+      <!-- The static startup surface remains above this pending branch. -->
     {:then { default: MobileShell }}
+      <BootstrapSplashHandoff />
       <MobileShell />
     {:catch}
+      <BootstrapSplashHandoff />
       <ShellChunkError onRetry={() => { shellEpoch += 1; }} />
     {/await}
   {/key}
 {:else}
   {#key shellEpoch}
     {#await loadDesktopShell()}
-      <HomeSplash />
+      <!-- The static startup surface remains above this pending branch. -->
     {:then { default: WorkshopShell }}
+      <BootstrapSplashHandoff />
       <WorkshopShell onOpenSpotlight={() => commandSpotlight.openSpotlight()} />
     {:catch}
+      <BootstrapSplashHandoff />
       <ShellChunkError onRetry={() => { shellEpoch += 1; }} />
     {/await}
   {/key}

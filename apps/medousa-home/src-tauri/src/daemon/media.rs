@@ -2,12 +2,15 @@ use crate::daemon::types::{MediaRef, MediaUploadResponse};
 use crate::workshop_transport::MultipartField;
 use tauri::State;
 
+use crate::embedded_daemon::EmbeddedDaemonState;
+
 use super::DaemonState;
 use super::workshop_http;
 
 #[tauri::command]
 pub async fn media_upload(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
     filename: String,
     mime: String,
@@ -34,6 +37,23 @@ pub async fn media_upload(
     } else {
         mime.to_string()
     };
+
+    #[cfg(target_os = "ios")]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        let effective_label = label
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or(filename.as_str());
+        return client
+            .upload_media(
+                session_id,
+                &bytes,
+                &mime,
+                (!effective_label.is_empty()).then_some(effective_label),
+            )
+            .map_err(|error| error.to_string());
+    }
 
     let mut fields = vec![MultipartField {
         name: "file".to_string(),
@@ -64,6 +84,7 @@ pub async fn media_upload(
 #[tauri::command]
 pub async fn media_upload_path(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
     path: String,
     label: Option<String>,
@@ -80,6 +101,7 @@ pub async fn media_upload_path(
         .to_string();
     media_upload(
         state,
+        _embedded_state,
         session_id,
         filename,
         guess_mime_from_path(path),

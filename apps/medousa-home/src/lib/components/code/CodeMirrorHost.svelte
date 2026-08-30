@@ -143,7 +143,8 @@
       overflow: "auto",
       maxWidth: "100%",
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-      fontSize: "var(--code-editor-font-size, 13px)",
+      fontSize:
+        "max(var(--code-editor-font-size, 13px), var(--code-editor-min-font-size, 0px))",
       lineHeight: "1.55",
     },
     ".cm-content": {
@@ -227,6 +228,8 @@
     showLineNumbers?: boolean;
     /** Fold chevrons to the right of line numbers. Hidden on narrow Code. */
     showFoldGutter?: boolean;
+    /** Initial 1-based cursor line. Applied before CodeMirror measures or paints. */
+    initialLine?: number | null;
     /** Parent owns Find (mobile). Mod-F still fires this instead of the CM panel. */
     onFindRequested?: () => void;
     /** Override syntax pack; default follows Settings → Preferences. */
@@ -253,6 +256,7 @@
     wordWrap = readCodeEditorWordWrap(),
     showLineNumbers = readCodeEditorLineNumbers(),
     showFoldGutter = true,
+    initialLine = null,
     onFindRequested,
     syntaxTheme = null,
   }: Props = $props();
@@ -473,12 +477,24 @@
 
   onMount(() => {
     if (!host) return;
+    const baseState = EditorState.create({
+      doc: value,
+      extensions: buildExtensions(),
+    });
+    const targetLine = initialLine && initialLine > 0
+      ? baseState.doc.line(
+          Math.min(Math.max(1, Math.floor(initialLine)), baseState.doc.lines),
+        )
+      : null;
+    const state = targetLine
+      ? baseState.update({ selection: { anchor: targetLine.from } }).state
+      : baseState;
     view = new EditorView({
       parent: host,
-      state: EditorState.create({
-        doc: value,
-        extensions: buildExtensions(),
-      }),
+      state,
+      scrollTo: targetLine
+        ? EditorView.scrollIntoView(targetLine.from, { y: "center", yMargin: 48 })
+        : undefined,
     });
     syncedKey = contentSyncKey;
     reportCursor(view.state);
