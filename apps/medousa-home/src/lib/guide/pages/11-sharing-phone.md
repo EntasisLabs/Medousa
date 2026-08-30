@@ -1,6 +1,8 @@
 # Sharing and phone
 
-Three different relationships: **phone portal** into *your* workshop, **peers** (other workshops on the LAN), and **Shared mode** seats on one brain. See [Architecture](guide:architecture#workshop-vs-peer-vs-phone) for the noun table.
+Three different relationships: a phone's own **Personal** workshop, an optional
+**phone portal** into another workshop, and **peers** / **Shared mode** between
+workshops and seats. See [Architecture](guide:architecture#workshop-vs-peer-vs-phone) for the noun table.
 
 Related: [Messaging channels](guide:messaging-channels) · [Getting started](guide:getting-started) · [Troubleshooting](guide:troubleshooting#phone-discovery)
 
@@ -12,7 +14,10 @@ Desktop: Settings → **Sharing** → **Phone**, or the wizard’s optional phon
 2. Scan from the companion app (or use the pairing link / address).
 3. Paired list shows device name and **Seat {profile}** when Shared; **Forget** revokes.
 
-Phone first-run connects to a host — it does not install a separate Offline brain. Most model changes update the host.
+Phone first-run creates an embedded Personal workshop on iOS and Android. It can
+use hosted providers but does not install desktop Offline brain packages. A
+paired portal is an additional workshop; model changes apply to whichever
+workshop is selected.
 
 Turn **Always reachable on Wi‑Fi** (or equivalent Sharing exposure) on when you actually use a companion. Leave it off on untrusted networks.
 
@@ -56,7 +61,7 @@ Paired portals appear under **Your workshops**. After trust, **Switch** puts Hom
 ```callout
 tone: tip
 title: Local first
-body: Most days you only need This device. Add phone, peers, or Shared seats when a second portal earns a place at the bench.
+body: Most days you only need Personal on the device in your hand. Add portals, peers, or Shared seats when another workshop earns a place at the bench.
 ```
 
 Next: [Messaging channels](guide:messaging-channels) · [Workshops and connections](guide:workshops-connections).

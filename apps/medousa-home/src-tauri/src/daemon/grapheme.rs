@@ -17,7 +17,7 @@ pub async fn grapheme_list_modules(
     state: State<'_, DaemonState>,
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
 ) -> Result<GraphemeModulesListResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .grapheme_list_modules()
@@ -32,7 +32,7 @@ pub async fn grapheme_get_module(
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     module_id: String,
 ) -> Result<GraphemeModuleDetailResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .grapheme_get_module(&module_id)
@@ -49,7 +49,7 @@ pub async fn grapheme_get_module_ops(
     module_id: String,
     q: Option<String>,
 ) -> Result<GraphemeModuleOpsResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .grapheme_get_module_ops(&module_id, q.as_deref())
@@ -76,7 +76,7 @@ pub async fn grapheme_list_scripts(
     tag: Option<String>,
     limit: Option<usize>,
 ) -> Result<GraphemeScriptsListResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .grapheme_list_scripts(crate::daemon::types::GraphemeScriptsListQuery {
@@ -109,7 +109,7 @@ pub async fn grapheme_get_script(
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     script_id: String,
 ) -> Result<GraphemeScriptDetailResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .grapheme_get_script(&script_id)
@@ -125,7 +125,7 @@ pub async fn grapheme_run_source(
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     source: String,
 ) -> Result<GraphemeRunResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .grapheme_run_source(&source)
@@ -140,7 +140,7 @@ pub async fn grapheme_get_allowlist(
     state: State<'_, DaemonState>,
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
 ) -> Result<GraphemeAllowlistResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .grapheme_get_allowlist()
@@ -156,7 +156,7 @@ pub async fn grapheme_update_allowlist(
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     allowed_modules: Vec<String>,
 ) -> Result<GraphemeAllowlistResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .grapheme_update_allowlist(GraphemeAllowlistUpdateRequest { allowed_modules })
@@ -177,7 +177,7 @@ pub async fn grapheme_save_script(
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     request: GraphemeScriptSaveRequest,
 ) -> Result<GraphemeScriptSaveResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .grapheme_save_script(request)
@@ -192,7 +192,7 @@ pub async fn grapheme_delete_script(
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     script_id: String,
 ) -> Result<GraphemeScriptDeleteResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .grapheme_delete_script(&script_id)
@@ -209,7 +209,7 @@ pub async fn grapheme_rename_script(
     script_id: String,
     name: String,
 ) -> Result<GraphemeScriptSaveResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .grapheme_rename_script(&script_id, &name)
@@ -231,7 +231,7 @@ pub async fn grapheme_compile_source(
     source: String,
     mode: Option<String>,
 ) -> Result<GraphemeCompileResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .grapheme_compile_source(GraphemeCompileRequest { source, mode })
@@ -252,7 +252,7 @@ pub async fn grapheme_load_module(
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     request: GraphemeModuleLoadRequest,
 ) -> Result<GraphemeModuleLoadResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .grapheme_load_module(request)
@@ -267,7 +267,7 @@ pub async fn grapheme_get_lifecycle(
     state: State<'_, DaemonState>,
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
 ) -> Result<GraphemeLifecycleResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .grapheme_lifecycle()

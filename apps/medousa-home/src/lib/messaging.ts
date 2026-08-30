@@ -7,7 +7,7 @@ import {
   resolveSecretTarget,
   upsertIntegrationSecret,
 } from "$lib/integrationsClient";
-import { isTauriIos } from "$lib/platform";
+import { isTauriMobilePlatform } from "$lib/platform";
 import { loadWorkshopRegistry } from "$lib/workshops";
 import {
   secretWorkshopScope,
@@ -15,7 +15,10 @@ import {
 } from "$lib/utils/secretWorkshopScope";
 
 async function activeSecretScope(): Promise<SecretWorkshopScope> {
-  return secretWorkshopScope(await loadWorkshopRegistry(), isTauriIos());
+  return secretWorkshopScope(
+    await loadWorkshopRegistry(),
+    isTauriMobilePlatform(),
+  );
 }
 
 export async function loadProductConfigSummary(): Promise<ProductConfigSummary> {

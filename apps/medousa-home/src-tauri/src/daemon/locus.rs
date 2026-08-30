@@ -16,7 +16,7 @@ pub async fn locus_list_nodes(
     tags: Option<String>,
     tag_prefix: Option<String>,
 ) -> Result<Value, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         let response = client
             .list_locus_nodes(medousa_types::LocusNodesQuery {
@@ -57,7 +57,7 @@ pub async fn locus_list_tags(
     prefix: Option<String>,
     limit: Option<usize>,
 ) -> Result<Value, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         let response = client
             .list_locus_tags(medousa_types::LocusTagsQuery {
@@ -92,7 +92,7 @@ pub async fn locus_get_node(
     if trimmed.is_empty() {
         return Err("sync_key is required".to_string());
     }
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         let response = client
             .get_locus_node(trimmed)

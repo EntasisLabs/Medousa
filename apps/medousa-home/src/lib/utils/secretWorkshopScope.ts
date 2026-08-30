@@ -7,16 +7,16 @@ import {
 export type SecretWorkshopScope = "embedded" | "local-transport" | "remote";
 
 /**
- * Secret writes follow the selected workshop. Only iOS Personal uses the
+ * Secret writes follow the selected workshop. Native mobile Personal uses the
  * native embedded credential port; portal workshops must never fall back to it.
  */
 export function secretWorkshopScope(
   registry: WorkshopRegistry,
-  nativeIos: boolean,
+  nativeEmbeddedMobile: boolean,
 ): SecretWorkshopScope {
   const workshop = activeWorkshop(registry);
   if (
-    nativeIos &&
+    nativeEmbeddedMobile &&
     workshop?.id === PERSONAL_WORKSHOP_ID &&
     workshop.kind === "local"
   ) {

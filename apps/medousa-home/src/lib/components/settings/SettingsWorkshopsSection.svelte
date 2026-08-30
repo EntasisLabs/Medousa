@@ -79,15 +79,19 @@
     addMenuOpen || mobileManageId !== null || (mobile && addLocalOpen),
   );
 
-  const isIosNative =
+  const isEmbeddedMobileNative =
     typeof document !== "undefined" &&
     (document.documentElement.dataset.nativeShell === "ios" ||
-      /iPhone|iPad|iPod/i.test(navigator.userAgent));
+      document.documentElement.dataset.nativeShell === "android" ||
+      /Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
 
   onMount(() => {
     void (async () => {
       await workshops.load();
-      if (isIosNative && workshops.activeWorkshopId === PERSONAL_WORKSHOP_ID) {
+      if (
+        isEmbeddedMobileNative &&
+        workshops.activeWorkshopId === PERSONAL_WORKSHOP_ID
+      ) {
         try {
           delegationBinding = await loadDelegationBinding();
         } catch {
@@ -472,7 +476,7 @@
                 <button type="button" class="ws-cta" onclick={() => startBranding(workshop)}>
                   Brand
                 </button>
-                {#if isIosNative && workshops.activeWorkshopId === PERSONAL_WORKSHOP_ID && workshop.pairing && (workshop.kind === "portal" || workshop.kind === "paired")}
+                {#if isEmbeddedMobileNative && workshops.activeWorkshopId === PERSONAL_WORKSHOP_ID && workshop.pairing && (workshop.kind === "portal" || workshop.kind === "paired")}
                   {#if delegationBinding?.target.routeRef === workshop.id}
                     <button
                       type="button"
@@ -691,7 +695,7 @@
                 <span class="mobile-turn-sheet-row-subtitle">Choose its icon, accent, and tagline.</span>
               </span>
             </button>
-            {#if isIosNative && workshops.activeWorkshopId === PERSONAL_WORKSHOP_ID && mobileManageWorkshop.pairing && (mobileManageWorkshop.kind === "portal" || mobileManageWorkshop.kind === "paired")}
+            {#if isEmbeddedMobileNative && workshops.activeWorkshopId === PERSONAL_WORKSHOP_ID && mobileManageWorkshop.pairing && (mobileManageWorkshop.kind === "portal" || mobileManageWorkshop.kind === "paired")}
               <button
                 type="button"
                 class="mobile-turn-sheet-row mobile-turn-sheet-row-divider"

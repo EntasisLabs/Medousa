@@ -34,7 +34,7 @@ pub async fn messaging_save_secret(
     let changes_inference_route = secret_id.starts_with("base_url_");
     let previous = secrets::load_secret_value(secret_id)?;
     secrets::save_secret(secret_id, value)?;
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if changes_inference_route {
         if let Err(error) = embedded_state
             .reconfigure_active(&crate::medousa_paths::load_tui_defaults())
@@ -47,7 +47,7 @@ pub async fn messaging_save_secret(
             return Err(error);
         }
     }
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let _ = (embedded_state, previous, changes_inference_route);
     crate::channel_adapters::sync_channel_adapters(None)?;
     Ok(())
@@ -68,7 +68,7 @@ pub fn messaging_read_secret(secret_id: String) -> Result<Option<String>, String
 }
 
 fn require_native_secret_authority() -> Result<(), String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if !matches!(
         crate::active_workshop::resolve()?,
         crate::active_workshop::ActiveWorkshopTarget::EmbeddedPersonal

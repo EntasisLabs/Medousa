@@ -36,7 +36,10 @@
     "tauri:ios:dev:sim": "npm run ios:prepare && MEDOUSA_LIVE_ACTIVITY=1 tauri ios dev \"iPhone 16 Pro\"",
     "tauri:ios:build": "npm run ios:prepare && MEDOUSA_LIVE_ACTIVITY=1 tauri ios build",
     "tauri:ios:clean": "bash scripts/ios-clean.sh",
-    "tauri:ios:build:testflight": "bash scripts/ios-testflight-build.sh"
+    "tauri:ios:build:testflight": "bash scripts/ios-testflight-build.sh",
+    "tauri:android:init": "tauri android init",
+    "tauri:android:dev": "tauri android dev",
+    "tauri:android:build": "tauri android build"
   },
   "license": "MIT",
   "dependencies": {

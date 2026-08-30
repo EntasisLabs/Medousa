@@ -16,7 +16,7 @@ pub async fn workflow_list(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     limit: Option<usize>,
 ) -> Result<WorkflowsListResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .list_workflows(limit)
@@ -37,7 +37,7 @@ pub async fn workflow_get(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     workflow_id: String,
 ) -> Result<WorkflowDetailResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .get_workflow(workflow_id)
@@ -54,7 +54,7 @@ pub async fn workflow_run(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: WorkflowRunRequest,
 ) -> Result<WorkflowRunResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .run_workflow(request)
@@ -70,7 +70,7 @@ pub async fn workflow_plan(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: WorkflowPlanRequest,
 ) -> Result<WorkflowPlanResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .plan_workflow(request)
@@ -85,7 +85,7 @@ pub async fn workflow_schedule(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: WorkflowScheduleRequest,
 ) -> Result<WorkflowScheduleResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .schedule_workflow(request)
@@ -102,7 +102,7 @@ pub async fn workflow_list_runs(
     workflow_id: String,
     limit: Option<usize>,
 ) -> Result<WorkflowRunsResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .list_workflow_runs(workflow_id, limit)

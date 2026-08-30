@@ -164,7 +164,7 @@ fn default_allowed_effects() -> Vec<String> {
     ]
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 fn count_u32(value: usize) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
 }
@@ -434,7 +434,7 @@ async fn reindex_daemon_capabilities(
         .map_err(crate::daemon::sdk::sdk_error)
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 async fn reload_embedded_mcp(
     client: &medousa::embedded_daemon::EmbeddedDaemonClient,
 ) -> Result<(), String> {
@@ -594,7 +594,7 @@ pub async fn mcp_gateway_status(
     state: tauri::State<'_, crate::daemon::DaemonState>,
     _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
 ) -> Result<McpGatewayStatusResult, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         let (_, path, _) = load_file_config()?;
         let (health, servers) = client
@@ -678,14 +678,14 @@ pub async fn mcp_oauth_status(
     _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     server_id: String,
 ) -> Result<medousa_types::McpOAuthStatusResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .mcp_oauth_status(&server_id)
             .await
             .map_err(|error| format!("read MCP connection: {error:#}"));
     }
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let _ = _embedded_state;
     crate::daemon::workshop_http::get_json(&state, &format!("/v1/mcp/oauth/{}", server_id.trim()))
         .await
@@ -736,14 +736,14 @@ pub async fn mcp_oauth_begin(
     _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     request: medousa_types::BeginMcpOAuthRequest,
 ) -> Result<medousa_types::BeginMcpOAuthResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .begin_mcp_oauth(request)
             .await
             .map_err(|error| format!("begin MCP authorization: {error:#}"));
     }
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let _ = _embedded_state;
     crate::daemon::workshop_http::post_json(&state, "/v1/mcp/oauth/begin", &request).await
 }
@@ -754,14 +754,14 @@ pub async fn mcp_oauth_complete(
     _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     request: medousa_types::CompleteMcpOAuthRequest,
 ) -> Result<medousa_types::CompleteMcpOAuthResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .complete_mcp_oauth(request)
             .await
             .map_err(|error| format!("complete MCP authorization: {error:#}"));
     }
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let _ = _embedded_state;
     crate::daemon::workshop_http::post_json(&state, "/v1/mcp/oauth/complete", &request).await
 }
@@ -772,14 +772,14 @@ pub async fn mcp_oauth_refresh(
     _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     request: medousa_types::RefreshMcpOAuthRequest,
 ) -> Result<medousa_types::McpOAuthStatusResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .refresh_mcp_oauth(&request.server_id)
             .await
             .map_err(|error| format!("refresh MCP connection: {error:#}"));
     }
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let _ = _embedded_state;
     crate::daemon::workshop_http::post_json(&state, "/v1/mcp/oauth/refresh", &request).await
 }
@@ -790,14 +790,14 @@ pub async fn mcp_oauth_disconnect(
     _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     server_id: String,
 ) -> Result<medousa_types::DisconnectMcpOAuthResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .disconnect_mcp_oauth(&server_id)
             .await
             .map_err(|error| format!("disconnect MCP authorization: {error:#}"));
     }
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let _ = _embedded_state;
     crate::daemon::workshop_http::delete_json(
         &state,
@@ -928,7 +928,7 @@ pub async fn mcp_gateway_restart(
     _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
 ) -> Result<McpGatewayRestartResult, String> {
     require_local_mcp_config()?;
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     {
         let client = _embedded_state
             .client_if_active()
@@ -943,13 +943,13 @@ pub async fn mcp_gateway_restart(
         });
     }
 
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let (result, ready) = perform_mcp_gateway_restart().await?;
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     if ready {
         let _ = reindex_daemon_capabilities(&_state).await;
     }
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     Ok(result)
 }
 
@@ -960,17 +960,17 @@ pub async fn mcp_gateway_upsert_server(
 ) -> Result<McpServerMutationResult, String> {
     require_local_mcp_config()?;
     let server = validate_server(&request)?;
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if server.transport == "stdio" && !server.use_mock {
         return Err("Embedded MCP supports hosted HTTP and SSE servers only".to_string());
     }
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     let embedded_client = _embedded_state
         .client_if_active()
         .await?
         .ok_or_else(|| "MCP configuration is managed by the selected workshop".to_string())?;
     let path = persist_server(server)?;
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     {
         reload_embedded_mcp(&embedded_client).await?;
         return Ok(McpServerMutationResult {
@@ -980,7 +980,7 @@ pub async fn mcp_gateway_upsert_server(
         });
     }
 
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     Ok(McpServerMutationResult {
         ok: true,
         message: "Server saved — restart the MCP gateway to apply".to_string(),
@@ -994,7 +994,7 @@ pub async fn mcp_gateway_remove_server(
     server_id: String,
 ) -> Result<McpServerMutationResult, String> {
     require_local_mcp_config()?;
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     let embedded_client = _embedded_state
         .client_if_active()
         .await?
@@ -1009,7 +1009,7 @@ pub async fn mcp_gateway_remove_server(
         return Err(format!("unknown MCP server '{id}'"));
     }
     let path = persist_file_config(&config)?;
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     {
         reload_embedded_mcp(&embedded_client).await?;
         return Ok(McpServerMutationResult {
@@ -1019,7 +1019,7 @@ pub async fn mcp_gateway_remove_server(
         });
     }
 
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     Ok(McpServerMutationResult {
         ok: true,
         message: "Server removed — restart the MCP gateway to apply".to_string(),
@@ -1034,7 +1034,7 @@ pub async fn mcp_gateway_set_server_enabled(
     enabled: bool,
 ) -> Result<McpServerMutationResult, String> {
     require_local_mcp_config()?;
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     let embedded_client = _embedded_state
         .client_if_active()
         .await?
@@ -1048,7 +1048,7 @@ pub async fn mcp_gateway_set_server_enabled(
         .ok_or_else(|| format!("unknown MCP server '{id}'"))?;
     entry.enabled = enabled;
     let path = persist_file_config(&config)?;
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     {
         reload_embedded_mcp(&embedded_client).await?;
         return Ok(McpServerMutationResult {
@@ -1062,7 +1062,7 @@ pub async fn mcp_gateway_set_server_enabled(
         });
     }
 
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     Ok(McpServerMutationResult {
         ok: true,
         message: if enabled {
@@ -1081,7 +1081,7 @@ pub async fn mcp_gateway_apply_server(
     request: McpServerUpsertRequest,
 ) -> Result<McpGatewayTestResult, String> {
     require_local_mcp_config()?;
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     {
         let client = _embedded_state
             .client_if_active()
@@ -1125,33 +1125,33 @@ pub async fn mcp_gateway_apply_server(
         });
     }
 
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     mcp_gateway_upsert_server(_embedded_state, request.clone()).await?;
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let (_, ready) = perform_mcp_gateway_restart().await?;
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let gateway_url = resolve_gateway_url();
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let _ = admin_refresh_catalog(&gateway_url).await;
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     if ready {
         let _ = reindex_daemon_capabilities(&_state).await;
     }
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     tokio::time::sleep(Duration::from_millis(750)).await;
 
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let id = normalize_server_id(&request.id)?;
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let servers = fetch_runtime_servers(&gateway_url)
         .await
         .unwrap_or_default();
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let runtime = servers
         .iter()
         .find(|server| server.server_id.eq_ignore_ascii_case(&id));
 
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     if let Some(runtime) = runtime {
         return Ok(McpGatewayTestResult {
             ok: runtime.connected || request.use_mock,
@@ -1174,7 +1174,7 @@ pub async fn mcp_gateway_apply_server(
         });
     }
 
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     Ok(McpGatewayTestResult {
         ok: false,
         connected: false,

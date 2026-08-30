@@ -214,24 +214,13 @@ fn ensure_migration_wizard() -> Result<WizardFile, String> {
 
 #[tauri::command]
 pub fn wizard_bootstrap() -> Result<WizardBootstrap, String> {
-    #[cfg(target_os = "android")]
-    {
-        return Ok(WizardBootstrap {
-            visible: false,
-            mode: "none".to_string(),
-            screen: WizardScreen::Screen1,
-            existing_provider: None,
-            existing_model: None,
-        });
-    }
-
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     {
         if let Some(file) = read_wizard_file() {
             return Ok(bootstrap_from_file(&file));
         }
 
-        // Personal is a real in-process workshop on iOS. New installs should
+        // Personal is a real in-process workshop on mobile. New installs should
         // receive the same first-run relationship setup as desktop instead of
         // being treated as a companion that must pair before it can work.
         let file = ensure_fresh_wizard()?;
@@ -467,7 +456,7 @@ pub async fn wizard_apply_screen1(
         }
     }
 
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if matches!(
         crate::active_workshop::resolve()?,
         crate::active_workshop::ActiveWorkshopTarget::EmbeddedPersonal

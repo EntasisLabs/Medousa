@@ -4,7 +4,7 @@ What each way of running Medousa can do.
 
 - **Desktop app** — full workshop on your computer.
 - **Web** — browser window connected to a workshop address.
-- **Phone** — companion into a desktop workshop.
+- **Phone** — embedded Personal workshop, with optional portals into other workshops.
 
 Related: [Getting started](guide:getting-started) · [Sharing and phone](guide:sharing-phone)
 
@@ -14,30 +14,30 @@ Related: [Getting started](guide:getting-started) · [Sharing and phone](guide:s
 |------------|-------------|-----|-------|
 | Chat and notes with a workshop | Yes | Yes | Yes |
 | Install Offline brain / packages | Yes | No | No |
-| Install MCP / external tools | Yes | Use desktop | Use desktop |
+| Install MCP / external tools | Yes | Use desktop | Hosted HTTP/SSE MCP in Personal; desktop for local binaries |
 | Built-in browser | Yes | Limited | Yes (mobile Web) |
 | Pop-out windows | Yes | No | No |
-| Change models & tool safety | Yes | Limited | Usually read-only (set on computer) |
+| Change models & tool safety | Yes | Limited | Yes in Personal; follows the selected portal when remote |
 | Shared mode / seat invites | Yes (host) | No | Pair on the computer |
 | Phone pairing QR | Yes | No | No |
 | Start workshop at login | Yes when offered | No | No |
-| Pin folders on this Mac | Yes | Limited | Files stay on the computer |
+| Pin local folders | Yes | Limited | Personal uses private app storage; portals use the host's files |
 | Push / Live Activity | — | — | In Preferences when available |
 
 ## Simple picture
 
 ```
-Desktop computer ── runs your workshop (notes, models, tools)
-        ▲
-        │ same workshop
-Web browser ──────┘
-Phone app ────────┘  (a second screen, not a second brain)
+Phone app ───── embedded Personal (notes, models, mobile tools)
+     │
+     └──── optional portal ──── Desktop workshop (its files and tools)
+
+Web browser ───── connected to a selected workshop address
 ```
 
 ## Tips
 
 1. Install packages and Offline brain on the **desktop**.
-2. Pair phones and seats from the **computer**.
+2. Pair a phone only when you want it to open a different workshop.
 3. Use the desktop for advanced tool safety changes.
 4. Web is fine for light chat and notes when the workshop is reachable.
 

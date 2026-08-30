@@ -150,7 +150,9 @@ still open from a direct link — hiding navigation does not disable the feature
 | **Preferences** | Preferences (Settings), Workshop (Runtime pulse / jobs) |
 | **My views** | Custom surfaces from the active layout preset |
 
-Automations may open from deep links or More rather than a permanent tab. Companion shells talk to a **remote workshop**; see [Getting started](guide:getting-started#phone--companion-first-run).
+Automations may open from deep links or More rather than a permanent tab. Mobile
+shells default to their embedded **Personal** workshop and can switch to a paired
+remote workshop; see [Getting started](guide:getting-started#phone--companion-first-run).
 
 ## Summon toolbars
 

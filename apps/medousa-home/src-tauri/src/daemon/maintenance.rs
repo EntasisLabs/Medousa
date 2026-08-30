@@ -15,7 +15,7 @@ pub async fn artifact_retention_status(
     state: State<'_, DaemonState>,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<ArtifactRetentionStatusResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .artifact_retention_status()
@@ -30,7 +30,7 @@ pub async fn storage_status(
     state: State<'_, DaemonState>,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<StorageUsageReportResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if _embedded_state.client_if_active().await?.is_some() {
         return Err(
             "Forge cache storage controls belong to a Shared workshop host; Personal has no Forge caches to maintain."
@@ -46,7 +46,7 @@ pub async fn storage_settings_update(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: StorageGovernorSettingsResponse,
 ) -> Result<StorageUsageReportResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if _embedded_state.client_if_active().await?.is_some() {
         return Err(
             "Forge cache storage controls belong to a Shared workshop host; Personal has no Forge caches to maintain."
@@ -62,7 +62,7 @@ pub async fn storage_maintenance_run(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: StorageMaintenanceRequest,
 ) -> Result<StorageMaintenanceReportResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if _embedded_state.client_if_active().await?.is_some() {
         return Err(
             "Forge cache storage controls belong to a Shared workshop host; Personal has no Forge caches to maintain."
@@ -78,7 +78,7 @@ pub async fn artifact_retention_update(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: UpdateArtifactRetentionRequest,
 ) -> Result<UpdateArtifactRetentionResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .update_artifact_retention(request)

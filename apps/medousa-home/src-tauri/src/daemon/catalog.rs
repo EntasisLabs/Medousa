@@ -18,7 +18,7 @@ pub async fn catalog_list_manuscripts(
     limit: Option<usize>,
     skills_only: Option<bool>,
 ) -> Result<ManuscriptCatalogResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .list_manuscripts(ManuscriptCatalogQuery {
@@ -45,7 +45,7 @@ pub async fn catalog_list_capabilities(
     state: State<'_, DaemonState>,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<CapabilityListResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         let value = client
             .list_capabilities()
@@ -66,7 +66,7 @@ pub async fn catalog_get_capability(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     capability_id: String,
 ) -> Result<CapabilityResolveResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         let value = client
             .get_capability(&capability_id)
@@ -86,7 +86,7 @@ pub async fn catalog_reindex_capabilities(
     state: State<'_, DaemonState>,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<serde_json::Value, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .reindex_capabilities()
@@ -106,7 +106,7 @@ pub async fn catalog_get_manuscript(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     manuscript_id: String,
 ) -> Result<ManuscriptDetailResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .get_manuscript(manuscript_id)
@@ -126,7 +126,7 @@ pub async fn catalog_create_manuscript(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: CreateManuscriptRequest,
 ) -> Result<ManuscriptDetailResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .create_manuscript(request)
@@ -147,7 +147,7 @@ pub async fn catalog_update_manuscript(
     manuscript_id: String,
     request: UpdateManuscriptRequest,
 ) -> Result<ManuscriptDetailResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .update_manuscript(manuscript_id, request)
@@ -167,7 +167,7 @@ pub async fn catalog_import_manuscripts(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: ManuscriptImportRequest,
 ) -> Result<ManuscriptImportResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .import_manuscripts(request)

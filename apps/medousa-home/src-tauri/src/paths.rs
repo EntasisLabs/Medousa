@@ -51,7 +51,37 @@ pub fn medousa_data_dir() -> PathBuf {
         .clone()
 }
 
+#[cfg(target_os = "android")]
+pub fn initialize_android_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    use tauri::Manager;
+
+    let data_dir = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| format!("resolve Android app data directory: {error}"))?
+        .join("medousa");
+    std::fs::create_dir_all(&data_dir)
+        .map_err(|error| format!("create Android app data directory: {error}"))?;
+    if let Some(existing) = RESOLVED_DATA_DIR.get() {
+        if existing != &data_dir {
+            return Err(format!(
+                "Android data directory was already initialized as {}",
+                existing.display()
+            ));
+        }
+    } else {
+        let _ = RESOLVED_DATA_DIR.set(data_dir.clone());
+    }
+    Ok(data_dir)
+}
+
 pub fn medousa_config_dir() -> PathBuf {
+    #[cfg(target_os = "android")]
+    {
+        return medousa_data_dir();
+    }
+
+    #[cfg(not(target_os = "android"))]
     std::env::var("MEDOUSA_CONFIG_DIR")
         .ok()
         .map(|value| value.trim().to_string())

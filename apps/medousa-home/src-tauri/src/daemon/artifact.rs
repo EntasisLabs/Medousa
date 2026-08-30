@@ -16,7 +16,7 @@ pub async fn artifact_command(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: ArtifactCommandRequest,
 ) -> Result<ArtifactCommandResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .artifact_command(request)
@@ -35,7 +35,7 @@ pub async fn artifact_fetch(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: ArtifactFetchRequest,
 ) -> Result<ArtifactFetchResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .artifact_fetch(request)
@@ -54,7 +54,7 @@ pub async fn artifact_list_ui(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: ArtifactListUiRequest,
 ) -> Result<ArtifactListUiResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .artifact_list_ui(request)
@@ -73,7 +73,7 @@ pub async fn artifact_write(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: ArtifactWriteRequest,
 ) -> Result<ArtifactWriteResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .artifact_write(request)
@@ -92,7 +92,7 @@ pub async fn artifact_delete(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: ArtifactDeleteRequest,
 ) -> Result<ArtifactDeleteResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .artifact_delete(request)
