@@ -19,6 +19,7 @@
   } from "$lib/utils/localInferenceApi";
   import { startEngine, waitForEngine } from "$lib/utils/providersApi";
   import { localBrainOnDeviceHint, onThisHostPhrase } from "$lib/platformCopy";
+  import { isTauriIos } from "$lib/platform";
 
   interface Props {
     disabled?: boolean;
@@ -33,21 +34,31 @@
   let localBusy = $state(false);
   let localMessage = $state<string | null>(null);
   let downloadProgress = $state<ModelDownloadProgress | null>(null);
+  let downloadingModelId = $state<string | null>(null);
+  let customModelId = $state("");
 
-  const recommendedModelId = $derived(localCatalog?.recommendedModelId ?? null);
   const engineReady = $derived(Boolean(engineStatus?.loaded));
+  const activeModelId = $derived(engineStatus?.modelAlias ?? null);
+  const catalogModels = $derived(localCatalog?.models ?? []);
+  const customInstalledModels = $derived(
+    installedModels.filter(
+      (entry) => !catalogModels.some((model) => model.id === entry.modelId),
+    ),
+  );
 
   const statusMeta = $derived.by(() => {
     if (localBusy && !engineStatus && !localHardware) return "Checking hardware…";
     if (engineReady) {
       return engineStatus?.modelAlias
         ? `Ready · ${engineStatus.modelAlias}`
-        : "Ready · offline Gemma loaded";
+        : "Ready · private model loaded";
     }
     if (localHardware) {
       return `Idle · ${localHardware.profile.tierLabel} · ${localHardware.profile.recommendedDisplayName}`;
     }
-    return `Optional offline Gemma ${onThisHostPhrase()}`;
+    return isTauriIos()
+      ? "Optional private models on this device"
+      : `Optional private models ${onThisHostPhrase()}`;
   });
 
   onMount(() => {
@@ -58,18 +69,25 @@
     localBusy = true;
     localMessage = null;
     try {
-      // Probe only — never auto-spawn the offline brain (Load does that).
-      await startEngine({ privateBrain: false });
-      const health = await waitForEngine(20);
-      if (!health.ok) {
-        localMessage = health.message;
-        return;
+      if (!isTauriIos()) {
+        // Desktop probes the sidecar. iOS talks directly to the in-process MLX runtime.
+        await startEngine({ privateBrain: false });
+        const health = await waitForEngine(20);
+        if (!health.ok) {
+          localMessage = health.message;
+          return;
+        }
       }
-      localHardware = await fetchLocalHardware();
-      localCatalog = await fetchLocalCatalog();
-      const models = await fetchLocalModels();
+      const [hardware, catalog, models, status] = await Promise.all([
+        fetchLocalHardware(),
+        fetchLocalCatalog(),
+        fetchLocalModels(),
+        fetchLocalEngineStatus(),
+      ]);
+      localHardware = hardware;
+      localCatalog = catalog;
       installedModels = models.installed;
-      engineStatus = await fetchLocalEngineStatus();
+      engineStatus = status;
     } catch (err) {
       localMessage = err instanceof Error ? err.message : String(err);
     } finally {
@@ -77,20 +95,37 @@
     }
   }
 
-  async function downloadRecommended() {
-    if (!recommendedModelId) return;
+  async function downloadModel(modelId: string, label = modelId) {
+    const normalized = modelId.trim();
+    if (!normalized) return;
     localBusy = true;
-    localMessage = "Downloading recommended Gemma 4 model…";
+    downloadingModelId = normalized;
+    localMessage = `Downloading ${label}…`;
     try {
-      downloadProgress = await ensureLocalModelReady(recommendedModelId);
+      downloadProgress = await ensureLocalModelReady(normalized, (progress) => {
+        downloadProgress = progress;
+      });
       await refreshLocalPanel();
-      localMessage = "Download complete.";
+      localMessage = `${label} is ready.`;
+      customModelId = "";
     } catch (err) {
       localMessage = err instanceof Error ? err.message : String(err);
     } finally {
       localBusy = false;
       downloadProgress = null;
+      downloadingModelId = null;
     }
+  }
+
+  function installedModel(modelId: string): InstalledLocalModel | null {
+    return installedModels.find((entry) => entry.modelId === modelId) ?? null;
+  }
+
+  function catalogMeta(model: LocalCatalogResponse["models"][number]): string {
+    const bits = [model.variant, formatBytes(model.sizeBytes)];
+    if (model.modalities.includes("image")) bits.push("Vision");
+    if (model.tierRecommended) bits.unshift("Recommended");
+    return bits.join(" · ");
   }
 
   async function loadEngine(modelId: string) {
@@ -143,7 +178,7 @@
   <div class="brain-stack">
     <div class="brain-tile">
       <span class="brain-copy">
-        <span class="brain-title">Offline Gemma</span>
+        <span class="brain-title">On-device models</span>
         <span class="brain-meta">{statusMeta}</span>
       </span>
       <span class="brain-pill" class:brain-pill-ok={engineReady}>
@@ -162,20 +197,6 @@
             <Power size={15} strokeWidth={1.75} />
           </button>
         {/if}
-        <button
-          type="button"
-          class="brain-icon-btn"
-          disabled={disabled || localBusy || !recommendedModelId}
-          title="Download recommended Gemma 4"
-          aria-label="Download recommended Gemma 4"
-          onclick={() => void downloadRecommended()}
-        >
-          {#if localBusy && downloadProgress}
-            <LoaderCircle size={15} strokeWidth={1.75} class="brain-spin" aria-hidden="true" />
-          {:else}
-            <Download size={15} strokeWidth={1.75} />
-          {/if}
-        </button>
         <button
           type="button"
           class="brain-icon-btn"
@@ -205,21 +226,64 @@
       </div>
     {/if}
 
-    {#each installedModels as entry (entry.modelId)}
+    {#each catalogModels as model (model.id)}
+      {@const installed = installedModel(model.id)}
+      <div class="brain-tile">
+        <span class="brain-copy">
+          <span class="brain-title">{model.displayName}</span>
+          <span class="brain-meta">{catalogMeta(model)}</span>
+        </span>
+        {#if installed}
+          <button
+            type="button"
+            class="brain-cta"
+            disabled={disabled || localBusy || activeModelId === model.id}
+            onclick={() => void loadEngine(model.id)}
+          >
+            {activeModelId === model.id ? "Loaded" : "Load"}
+          </button>
+          <button
+            type="button"
+            class="brain-cta brain-cta-danger"
+            disabled={disabled || localBusy}
+            aria-label="Remove {model.displayName}"
+            onclick={() => void removeModel(model.id)}
+          >
+            <Trash2 size={14} strokeWidth={1.75} />
+          </button>
+        {:else}
+          <button
+            type="button"
+            class="brain-cta"
+            disabled={disabled || localBusy}
+            onclick={() => void downloadModel(model.id, model.displayName)}
+          >
+            {#if downloadingModelId === model.id}
+              <LoaderCircle size={14} strokeWidth={1.75} class="brain-spin" aria-hidden="true" />
+            {:else}
+              <Download size={14} strokeWidth={1.75} aria-hidden="true" />
+            {/if}
+            Download
+          </button>
+        {/if}
+      </div>
+    {/each}
+
+    {#each customInstalledModels as entry (entry.modelId)}
       <div class="brain-tile">
         <span class="brain-copy">
           <span class="brain-title">{entry.modelId}</span>
           <span class="brain-meta">
-            {formatBytes(entry.bytesOnDisk)} · {entry.verified ? "verified" : "pending"}
+            Custom MLX checkpoint · {formatBytes(entry.bytesOnDisk)}
           </span>
         </span>
         <button
           type="button"
           class="brain-cta"
-          disabled={disabled || localBusy}
+          disabled={disabled || localBusy || activeModelId === entry.modelId}
           onclick={() => void loadEngine(entry.modelId)}
         >
-          Load now
+          {activeModelId === entry.modelId ? "Loaded" : "Load"}
         </button>
         <button
           type="button"
@@ -233,8 +297,39 @@
       </div>
     {/each}
 
-    {#if installedModels.length === 0 && localHardware?.engineAvailable}
-      <p class="brain-footnote">No local models installed yet.</p>
+    {#if isTauriIos()}
+      <form
+        class="brain-custom"
+        onsubmit={(event) => {
+          event.preventDefault();
+          void downloadModel(customModelId, customModelId.trim());
+        }}
+      >
+        <label class="brain-copy" for="brain-custom-model">
+          <span class="brain-title">Other MLX model</span>
+          <span class="brain-meta">Enter a full Hugging Face repository ID.</span>
+        </label>
+        <div class="brain-custom-controls">
+          <input
+            id="brain-custom-model"
+            class="brain-custom-input"
+            type="text"
+            placeholder="mlx-community/model-name"
+            bind:value={customModelId}
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            disabled={disabled || localBusy}
+          />
+          <button
+            type="submit"
+            class="brain-cta"
+            disabled={disabled || localBusy || !customModelId.trim()}
+          >
+            Download
+          </button>
+        </div>
+      </form>
     {/if}
 
     {#if localMessage}
@@ -366,6 +461,37 @@
 
   .brain-cta-danger {
     color: rgb(var(--theme-error) / 0.9);
+  }
+
+  .brain-custom {
+    display: grid;
+    gap: 0.55rem;
+    padding: 0.7rem 0.75rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.32);
+    border-radius: 0.65rem;
+    background: rgb(var(--color-surface-900) / 0.2);
+  }
+
+  .brain-custom-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+  }
+
+  .brain-custom-input {
+    min-width: 0;
+    flex: 1 1 auto;
+    border: 1px solid rgb(var(--color-surface-500) / 0.35);
+    border-radius: 0.5rem;
+    background: rgb(var(--color-surface-950) / 0.35);
+    padding: 0.5rem 0.6rem;
+    font-size: 0.72rem;
+    color: rgb(var(--color-surface-100));
+  }
+
+  .brain-custom-input:focus {
+    border-color: rgb(var(--color-primary-500) / 0.55);
+    outline: none;
   }
 
   .brain-progress-track {

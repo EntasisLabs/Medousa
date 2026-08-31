@@ -1,7 +1,7 @@
 //! Tauri ownership for the in-process mobile deployment of `medousa_daemon`.
 
 #[cfg(any(target_os = "ios", target_os = "android"))]
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 #[cfg(any(target_os = "ios", target_os = "android"))]
 use medousa::chatgpt_oauth::{ChatGptCredentialStore, ChatGptOAuthBroker};
@@ -13,13 +13,16 @@ use medousa::delegated_task::{
 #[cfg(any(target_os = "ios", target_os = "android"))]
 use medousa::embedded_daemon::{
     CredentialProvider, EmbeddedDaemon, EmbeddedDaemonClient, EmbeddedDaemonConfig,
-    ProviderCredential, ProviderCredentialError,
+    EmbeddedNativeChatRequest, EmbeddedNativeChatResponse, EmbeddedNativeInference,
+    EmbeddedNativeInferenceEvent, ProviderCredential, ProviderCredentialError,
 };
 
 #[derive(Clone)]
 pub struct EmbeddedDaemonState {
     #[cfg(any(target_os = "ios", target_os = "android"))]
     daemon: Arc<tokio::sync::OnceCell<Arc<EmbeddedDaemon>>>,
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    native_inference: Arc<OnceLock<Arc<dyn EmbeddedNativeInference>>>,
 }
 
 impl EmbeddedDaemonState {
@@ -27,7 +30,19 @@ impl EmbeddedDaemonState {
         Self {
             #[cfg(any(target_os = "ios", target_os = "android"))]
             daemon: Arc::new(tokio::sync::OnceCell::new()),
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            native_inference: Arc::new(OnceLock::new()),
         }
+    }
+
+    #[cfg(target_os = "ios")]
+    pub fn install_native_inference(
+        &self,
+        inference: Arc<dyn EmbeddedNativeInference>,
+    ) -> Result<(), String> {
+        self.native_inference
+            .set(inference)
+            .map_err(|_| "native inference was already installed".to_string())
     }
 
     #[cfg(any(target_os = "ios", target_os = "android"))]
@@ -36,9 +51,10 @@ impl EmbeddedDaemonState {
             return Ok(None);
         }
 
+        let native_inference = self.native_inference.get().cloned();
         let daemon = self
             .daemon
-            .get_or_try_init(boot_embedded_daemon)
+            .get_or_try_init(|| boot_embedded_daemon(native_inference))
             .await?
             .clone();
 
@@ -139,6 +155,102 @@ impl EmbeddedDaemonState {
     }
 }
 
+#[cfg(target_os = "ios")]
+#[derive(Clone)]
+pub struct HomeNativeInference {
+    plugin: tauri_plugin_native_inference::NativeInference<tauri::Wry>,
+}
+
+#[cfg(target_os = "ios")]
+impl HomeNativeInference {
+    pub fn new(plugin: tauri_plugin_native_inference::NativeInference<tauri::Wry>) -> Self {
+        Self { plugin }
+    }
+}
+
+#[cfg(target_os = "ios")]
+struct NativeRequestGuard {
+    plugin: tauri_plugin_native_inference::NativeInference<tauri::Wry>,
+    request_id: String,
+    done: tokio::sync::mpsc::UnboundedSender<Option<serde_json::Value>>,
+    armed: bool,
+}
+
+#[cfg(target_os = "ios")]
+impl NativeRequestGuard {
+    fn finish(&mut self) {
+        self.armed = false;
+        let _ = self.done.send(None);
+    }
+}
+
+#[cfg(target_os = "ios")]
+impl Drop for NativeRequestGuard {
+    fn drop(&mut self) {
+        let _ = self.done.send(None);
+        if !self.armed {
+            return;
+        }
+        let plugin = self.plugin.clone();
+        let request_id = self.request_id.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = plugin.cancel(&request_id).await;
+        });
+    }
+}
+
+#[cfg(target_os = "ios")]
+#[async_trait::async_trait]
+impl EmbeddedNativeInference for HomeNativeInference {
+    async fn generate(
+        &self,
+        request: EmbeddedNativeChatRequest,
+        events: Option<tokio::sync::mpsc::Sender<EmbeddedNativeInferenceEvent>>,
+    ) -> Result<EmbeddedNativeChatResponse, String> {
+        let request = serde_json::to_value(request)
+            .map_err(|error| format!("encode native inference request: {error}"))?;
+        let request_id =
+            tauri_plugin_native_inference::NativeInference::<tauri::Wry>::new_request_id();
+        let (bridge_tx, mut bridge_rx) = tokio::sync::mpsc::unbounded_channel();
+        let relay = tauri::async_runtime::spawn(async move {
+            while let Some(value) = bridge_rx.recv().await {
+                let Some(value) = value else { break };
+                let Some(events) = events.as_ref() else {
+                    continue;
+                };
+                let event: EmbeddedNativeInferenceEvent = serde_json::from_value(value)
+                    .map_err(|error| format!("decode native inference event: {error}"))?;
+                events
+                    .send(event)
+                    .await
+                    .map_err(|_| "native inference stream consumer closed".to_string())?;
+            }
+            Ok::<(), String>(())
+        });
+        let callback_tx = bridge_tx.clone();
+        let mut guard = NativeRequestGuard {
+            plugin: self.plugin.clone(),
+            request_id: request_id.clone(),
+            done: bridge_tx,
+            armed: true,
+        };
+        let result = self
+            .plugin
+            .generate(&request_id, request, move |event| {
+                let _ = callback_tx.send(Some(event));
+            })
+            .await
+            .map_err(|error| error.to_string());
+        guard.finish();
+        relay
+            .await
+            .map_err(|error| format!("join native inference event relay: {error}"))??;
+        let response = result?;
+        serde_json::from_value(response)
+            .map_err(|error| format!("decode native inference response: {error}"))
+    }
+}
+
 impl Default for EmbeddedDaemonState {
     fn default() -> Self {
         Self::new()
@@ -225,7 +337,10 @@ fn inference_route_from_defaults(
         .filter(|value| !value.is_empty())
         .unwrap_or("gpt-5.4-mini")
         .to_string();
-    let base_url = if provider.eq_ignore_ascii_case("openai-codex") {
+    let native_local = cfg!(target_os = "ios")
+        && provider
+            .eq_ignore_ascii_case(medousa::embedded_daemon::EMBEDDED_NATIVE_LOCAL_PROVIDER_ID);
+    let base_url = if provider.eq_ignore_ascii_case("openai-codex") || native_local {
         None
     } else {
         crate::integration_secrets::load_connection_base_url(&provider)
@@ -242,12 +357,20 @@ fn inference_route_from_defaults(
                     .and_then(|entry| entry.default_base_url.map(str::to_string))
             })
     };
-    medousa::embedded_daemon::validate_credentialed_inference_route(
-        provider.clone(),
-        model.clone(),
-        base_url.clone(),
-    )
-    .map_err(|error| format!("configure embedded daemon inference: {error:#}"))?;
+    if native_local {
+        medousa::embedded_daemon::validate_embedded_native_inference_route(
+            model.clone(),
+            base_url.clone(),
+        )
+        .map_err(|error| format!("configure embedded native inference: {error:#}"))?;
+    } else {
+        medousa::embedded_daemon::validate_credentialed_inference_route(
+            provider.clone(),
+            model.clone(),
+            base_url.clone(),
+        )
+        .map_err(|error| format!("configure embedded daemon inference: {error:#}"))?;
+    }
     Ok((provider, model, base_url))
 }
 
@@ -270,7 +393,9 @@ fn portable_tui_defaults(
 }
 
 #[cfg(any(target_os = "ios", target_os = "android"))]
-async fn boot_embedded_daemon() -> Result<Arc<EmbeddedDaemon>, String> {
+async fn boot_embedded_daemon(
+    native_inference: Option<Arc<dyn EmbeddedNativeInference>>,
+) -> Result<Arc<EmbeddedDaemon>, String> {
     let (installation_id, provider, model, base_url, defaults, data_dir, root) =
         tokio::task::spawn_blocking(|| {
             let installation_id = crate::integration_secrets::ensure_secrets_bootstrapped()?;
@@ -299,7 +424,7 @@ async fn boot_embedded_daemon() -> Result<Arc<EmbeddedDaemon>, String> {
     let mcp_oauth = Arc::new(medousa_mcp_gateway::McpOAuthBroker::new(Arc::new(
         mcp_oauth_store,
     )));
-    let config = EmbeddedDaemonConfig::credentialed_with_chatgpt(
+    let config = EmbeddedDaemonConfig::credentialed_with_chatgpt_and_native(
         root,
         installation_id,
         provider,
@@ -307,6 +432,7 @@ async fn boot_embedded_daemon() -> Result<Arc<EmbeddedDaemon>, String> {
         base_url,
         Arc::new(HomeCredentialProvider),
         chatgpt_oauth,
+        native_inference,
     )
     .map_err(|error| format!("configure embedded daemon inference: {error:#}"))?
     .with_tui_defaults(defaults)

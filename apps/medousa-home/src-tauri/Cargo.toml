@@ -66,6 +66,7 @@ async-trait = "0.1"
 medousa = { path = "../../..", default-features = false, features = ["embedded-daemon"] }
 
 [target.'cfg(target_os = "ios")'.dependencies]
+tauri-plugin-native-inference = { path = "../../../vendor/tauri-plugin-native-inference" }
 objc2 = "0.6"
 block2 = "0.6"
 objc2-core-foundation = { version = "0.3", features = ["CFCGTypes", "objc2"] }

@@ -56,6 +56,23 @@ When Codex, Cursor, or Hermes owns the loop, the model picker contains only the
 choices advertised by that runtime. Runtime selection stays under the composer,
 so it is not duplicated inside the model picker.
 
+## Run a private model on iPhone or iPad
+
+On iOS, **Medousa Local** runs MLX models inside the app. The prompt, model
+weights, and generated tokens stay on the device; the Embedded Personal daemon
+still owns conversation history, tools, and the agent loop.
+
+Choose **Medousa Local** in the model picker, then manage downloads under
+**Settings → Connection → Private brain**. Medousa recommends a small model for
+the device and also offers other text and vision checkpoints. You can paste a
+full Hugging Face MLX repository ID when you want a compatible model that is not
+in the curated list. Downloaded models remain available offline and can be
+unloaded to release memory or removed to reclaim storage.
+
+Desktop keeps using the existing optional local-engine package. Selecting
+Medousa Local never silently changes a remote workshop: the model runs wherever
+the selected workshop has inference authority.
+
 ## Choose General or Coder
 
 Source and mode are independent:

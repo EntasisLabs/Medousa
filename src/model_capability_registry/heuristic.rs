@@ -34,7 +34,12 @@ pub fn infer_supports_vision(provider: &str, model: &str) -> bool {
         return false;
     }
 
-    if model.contains("vision") || model.contains("llava") || model.contains("bakllava") {
+    if model.contains("vision")
+        || model.contains("llava")
+        || model.contains("bakllava")
+        || model.contains("-vl")
+        || model.contains("_vl")
+    {
         return true;
     }
 
@@ -64,6 +69,11 @@ pub fn infer_supports_vision(provider: &str, model: &str) -> bool {
                 || model.contains("moondream")
                 || model.contains("minicpm-v")
         }
+        "medousa-local" => {
+            model == "gemma-4-e2b-it-4bit"
+                || model == "lfm2.5-vl-1.6b-4bit"
+                || model == "ministral-3-3b-instruct-4bit"
+        }
         _ => false,
     }
 }
@@ -76,5 +86,25 @@ mod tests {
     fn chatgpt_account_gpt5_models_support_vision() {
         assert!(infer_supports_vision("openai-codex", "gpt-5.6-sol"));
         assert!(infer_supports_vision("openai-codex", "gpt-5.6-luna"));
+    }
+
+    #[test]
+    fn native_ios_catalog_distinguishes_vision_models() {
+        assert!(infer_supports_vision(
+            "medousa-local",
+            "gemma-4-e2b-it-4bit"
+        ));
+        assert!(infer_supports_vision(
+            "medousa-local",
+            "lfm2.5-vl-1.6b-4bit"
+        ));
+        assert!(infer_supports_vision(
+            "medousa-local",
+            "ministral-3-3b-instruct-4bit"
+        ));
+        assert!(!infer_supports_vision(
+            "medousa-local",
+            "qwen3.5-2b-4bit"
+        ));
     }
 }

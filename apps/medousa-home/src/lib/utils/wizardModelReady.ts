@@ -51,6 +51,6 @@ export async function ensureSkipReadyModel(
   return {
     ok: false,
     message:
-      "Pick a brain above first — use Offline Gemma, add an API key, or install Ollama for a free local model.",
+      "Pick a brain above first — use a private on-device model, add an API key, or install Ollama for a free local model.",
   };
 }

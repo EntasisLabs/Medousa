@@ -166,7 +166,9 @@ fn run_home() {
     // as a band below fixed bottom UI (matches env(safe-area-inset-bottom) ~34px).
     #[cfg(target_os = "ios")]
     {
-        builder = builder.plugin(tauri_plugin_ios_webview_insets::init());
+        builder = builder
+            .plugin(tauri_plugin_ios_webview_insets::init())
+            .plugin(tauri_plugin_native_inference::init());
     }
 
     builder = builder
@@ -200,6 +202,18 @@ fn run_home() {
     builder = builder.setup(move |app| {
         let setup_started = std::time::Instant::now();
         eprintln!("[medousa-home] setup start");
+        #[cfg(target_os = "ios")]
+        {
+            let inference = app
+                .state::<tauri_plugin_native_inference::NativeInference<tauri::Wry>>()
+                .inner()
+                .clone();
+            app.state::<EmbeddedDaemonState>()
+                .install_native_inference(std::sync::Arc::new(
+                    embedded_daemon::HomeNativeInference::new(inference),
+                ))
+                .map_err(std::io::Error::other)?;
+        }
         #[cfg(target_os = "android")]
         {
             let data_dir = crate::paths::initialize_android_data_dir(app.handle())?;

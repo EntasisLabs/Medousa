@@ -13,7 +13,11 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
 use chrono::Utc;
-use genai::chat::ChatMessage;
+use genai::adapter::AdapterKind;
+use genai::chat::{
+    BinarySource, ChatMessage, ChatOptions, ChatRequest, ChatResponse, ChatRole, ContentPart,
+    MessageContent, StopReason, ToolCall, Usage,
+};
 use medousa_engine::{TurnPipelineHandle, TurnStreamRegistryPort};
 use medousa_runtime::{
     CredentialedAiChatClient, CredentialedAiChatConfig, DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS,
@@ -89,6 +93,7 @@ use medousa_types::{
     GraphemeScriptSaveRequest, GraphemeScriptSaveResponse, PromptStash, PromptStashId,
     PromptStashListResponse,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use stasis::application::orchestration::prompt_pipeline::PromptExecutionPipeline;
 use stasis::application::orchestration::tool_loop_pipeline::{
@@ -887,6 +892,290 @@ impl EmbeddedToolRegistryRecipe for EmptyEmbeddedToolRegistryRecipe {
     }
 }
 
+/// Provider id used by native, in-process inference implementations.
+pub const EMBEDDED_NATIVE_LOCAL_PROVIDER_ID: &str = "medousa-local";
+
+/// Portable request sent across the native inference boundary.
+///
+/// The agent runtime remains the authority for transcript history and tool
+/// execution. Native runtimes only receive model input and return generated
+/// text or tool calls.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbeddedNativeChatRequest {
+    pub model: String,
+    pub system: Option<String>,
+    pub messages: Vec<EmbeddedNativeChatMessage>,
+    pub tools: Vec<EmbeddedNativeToolSpec>,
+    pub options: EmbeddedNativeChatOptions,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbeddedNativeChatMessage {
+    pub role: String,
+    pub content: String,
+    #[serde(default)]
+    pub attachments: Vec<EmbeddedNativeAttachment>,
+    #[serde(default)]
+    pub tool_calls: Vec<EmbeddedNativeToolCall>,
+    #[serde(default)]
+    pub tool_call_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbeddedNativeAttachment {
+    pub content_type: String,
+    pub name: Option<String>,
+    pub base64: Option<String>,
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbeddedNativeToolSpec {
+    pub name: String,
+    pub description: Option<String>,
+    pub schema: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbeddedNativeToolCall {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub arguments: Value,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbeddedNativeChatOptions {
+    pub temperature: Option<f64>,
+    pub max_tokens: Option<u32>,
+    pub top_p: Option<f64>,
+    #[serde(default)]
+    pub stop_sequences: Vec<String>,
+    pub seed: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbeddedNativeChatResponse {
+    pub content: String,
+    #[serde(default)]
+    pub tool_calls: Vec<EmbeddedNativeToolCall>,
+    pub prompt_tokens: Option<i32>,
+    pub completion_tokens: Option<i32>,
+    pub stop_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum EmbeddedNativeInferenceEvent {
+    Content { text: String },
+    Reasoning { text: String },
+}
+
+/// Host-owned transport for a native inference runtime such as MLX on iOS.
+#[async_trait::async_trait]
+pub trait EmbeddedNativeInference: Send + Sync {
+    async fn generate(
+        &self,
+        request: EmbeddedNativeChatRequest,
+        events: Option<mpsc::Sender<EmbeddedNativeInferenceEvent>>,
+    ) -> std::result::Result<EmbeddedNativeChatResponse, String>;
+}
+
+#[derive(Clone)]
+struct EmbeddedNativeChatClient {
+    model: String,
+    inference: Arc<dyn EmbeddedNativeInference>,
+}
+
+impl EmbeddedNativeChatClient {
+    fn new(model: String, inference: Arc<dyn EmbeddedNativeInference>) -> Self {
+        Self { model, inference }
+    }
+
+    fn native_request(
+        &self,
+        request: ChatRequest,
+        options: Option<&ChatOptions>,
+    ) -> EmbeddedNativeChatRequest {
+        let messages = request
+            .messages
+            .into_iter()
+            .map(|message| {
+                let mut content = String::new();
+                let mut attachments = Vec::new();
+                let mut tool_calls = Vec::new();
+                let mut tool_call_id = None;
+                for part in message.content {
+                    match part {
+                        ContentPart::Text(text) => content.push_str(&text),
+                        ContentPart::ReasoningContent(text) => content.push_str(&text),
+                        ContentPart::Binary(binary) => {
+                            let (base64, url) = match binary.source {
+                                BinarySource::Base64(value) => (Some(value.to_string()), None),
+                                BinarySource::Url(value) => (None, Some(value)),
+                            };
+                            attachments.push(EmbeddedNativeAttachment {
+                                content_type: binary.content_type,
+                                name: binary.name,
+                                base64,
+                                url,
+                            });
+                        }
+                        ContentPart::ToolCall(call) => {
+                            tool_calls.push(EmbeddedNativeToolCall {
+                                id: call.call_id,
+                                name: call.fn_name,
+                                arguments: call.fn_arguments,
+                            });
+                        }
+                        ContentPart::ToolResponse(response) => {
+                            tool_call_id.get_or_insert(response.call_id);
+                            content.push_str(&response.content);
+                        }
+                        ContentPart::ThoughtSignature(_) | ContentPart::Custom(_) => {}
+                    }
+                }
+                EmbeddedNativeChatMessage {
+                    role: match message.role {
+                        ChatRole::System => "system",
+                        ChatRole::User => "user",
+                        ChatRole::Assistant => "assistant",
+                        ChatRole::Tool => "tool",
+                    }
+                    .to_string(),
+                    content,
+                    attachments,
+                    tool_calls,
+                    tool_call_id,
+                }
+            })
+            .collect();
+        let tools = request
+            .tools
+            .unwrap_or_default()
+            .into_iter()
+            .map(|tool| EmbeddedNativeToolSpec {
+                name: tool.name.as_str().to_string(),
+                description: tool.description,
+                schema: tool.schema,
+            })
+            .collect();
+        let native_options = options.cloned().unwrap_or_default();
+        EmbeddedNativeChatRequest {
+            model: self.model.clone(),
+            system: request.system,
+            messages,
+            tools,
+            options: EmbeddedNativeChatOptions {
+                temperature: native_options.temperature,
+                max_tokens: native_options.max_tokens,
+                top_p: native_options.top_p,
+                stop_sequences: native_options.stop_sequences,
+                seed: native_options.seed,
+            },
+        }
+    }
+
+    fn chat_response(&self, response: EmbeddedNativeChatResponse) -> ChatResponse {
+        let mut parts = Vec::new();
+        if !response.content.is_empty() {
+            parts.push(ContentPart::Text(response.content));
+        }
+        let has_tool_calls = !response.tool_calls.is_empty();
+        parts.extend(response.tool_calls.into_iter().map(|call| {
+            ContentPart::ToolCall(ToolCall {
+                call_id: call.id,
+                fn_name: call.name,
+                fn_arguments: call.arguments,
+                thought_signatures: None,
+            })
+        }));
+        let model_iden = genai::ModelIden::new(AdapterKind::Ollama, self.model.clone());
+        let prompt_tokens = response.prompt_tokens;
+        let completion_tokens = response.completion_tokens;
+        ChatResponse {
+            content: MessageContent::from_parts(parts),
+            reasoning_content: None,
+            model_iden: model_iden.clone(),
+            provider_model_iden: model_iden,
+            stop_reason: response
+                .stop_reason
+                .map(StopReason::from)
+                .or_else(|| has_tool_calls.then(|| StopReason::ToolCall("tool_calls".to_string()))),
+            usage: Usage {
+                prompt_tokens,
+                completion_tokens,
+                total_tokens: prompt_tokens.zip(completion_tokens).map(|(a, b)| a + b),
+                ..Usage::default()
+            },
+            captured_raw_body: None,
+            response_id: None,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl AiChatClient for EmbeddedNativeChatClient {
+    async fn complete(
+        &self,
+        request: ChatRequest,
+        options: Option<&ChatOptions>,
+    ) -> StasisResult<ChatResponse> {
+        let request = self.native_request(request, options);
+        self.inference
+            .generate(request, None)
+            .await
+            .map(|response| self.chat_response(response))
+            .map_err(|error| StasisError::PortFailure(format!("native inference: {error}")))
+    }
+
+    async fn complete_stream(
+        &self,
+        request: ChatRequest,
+        options: Option<&ChatOptions>,
+        chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
+    ) -> StasisResult<ChatResponse> {
+        let request = self.native_request(request, options);
+        let (event_tx, mut event_rx) = mpsc::channel(64);
+        let downstream = chunk_tx.cloned();
+        let relay = tokio::spawn(async move {
+            while let Some(event) = event_rx.recv().await {
+                let Some(downstream) = downstream.as_ref() else {
+                    continue;
+                };
+                let delta = match event {
+                    EmbeddedNativeInferenceEvent::Content { text } => StreamDelta::Content(text),
+                    EmbeddedNativeInferenceEvent::Reasoning { text } => {
+                        StreamDelta::Reasoning(text)
+                    }
+                };
+                downstream
+                    .send(delta)
+                    .await
+                    .map_err(|_| StasisError::StreamClosed)?;
+            }
+            Ok::<(), StasisError>(())
+        });
+        let response = self
+            .inference
+            .generate(request, chunk_tx.map(|_| event_tx))
+            .await;
+        relay
+            .await
+            .map_err(|error| StasisError::PortFailure(format!("native stream relay: {error}")))??;
+        response
+            .map(|response| self.chat_response(response))
+            .map_err(|error| StasisError::PortFailure(format!("native inference: {error}")))
+    }
+}
+
 /// Deployment configuration assembled by the native host.
 ///
 /// The configuration retains only the host credential-provider boundary;
@@ -945,12 +1234,39 @@ impl EmbeddedDaemonConfig {
         credentials: Arc<dyn CredentialProvider>,
         chatgpt_oauth: Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>,
     ) -> Result<Self> {
+        Self::credentialed_with_chatgpt_and_native(
+            root,
+            installation_id,
+            provider,
+            model,
+            base_url,
+            credentials,
+            chatgpt_oauth,
+            None,
+        )
+    }
+
+    /// Bind portable credential routes plus an optional host-native local
+    /// inference runtime. The native route is selected only for
+    /// [`EMBEDDED_NATIVE_LOCAL_PROVIDER_ID`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn credentialed_with_chatgpt_and_native(
+        root: impl Into<PathBuf>,
+        installation_id: InstallationId,
+        provider: impl Into<String>,
+        model: impl Into<String>,
+        base_url: Option<String>,
+        credentials: Arc<dyn CredentialProvider>,
+        chatgpt_oauth: Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>,
+        native_inference: Option<Arc<dyn EmbeddedNativeInference>>,
+    ) -> Result<Self> {
         let routed_chat_client = EmbeddedRoutedChatClient::new(
             provider.into(),
             model.into(),
             base_url,
             credentials.clone(),
             chatgpt_oauth.clone(),
+            native_inference,
         )?;
         let (provider, model) = routed_chat_client.route();
         let chat_client: Arc<dyn AiChatClient> = Arc::new(routed_chat_client.clone());
@@ -1074,6 +1390,7 @@ struct EmbeddedRoutedChatClient {
     active: Arc<std::sync::RwLock<EmbeddedActiveInference>>,
     credentials: Arc<dyn CredentialProvider>,
     chatgpt_oauth: Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>,
+    native_inference: Option<Arc<dyn EmbeddedNativeInference>>,
 }
 
 #[derive(Clone)]
@@ -1090,6 +1407,7 @@ impl EmbeddedRoutedChatClient {
         base_url: Option<String>,
         credentials: Arc<dyn CredentialProvider>,
         chatgpt_oauth: Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>,
+        native_inference: Option<Arc<dyn EmbeddedNativeInference>>,
     ) -> Result<Self> {
         let active = Self::build_route(
             provider,
@@ -1097,11 +1415,13 @@ impl EmbeddedRoutedChatClient {
             base_url,
             credentials.clone(),
             chatgpt_oauth.clone(),
+            native_inference.clone(),
         )?;
         Ok(Self {
             active: Arc::new(std::sync::RwLock::new(active)),
             credentials,
             chatgpt_oauth,
+            native_inference,
         })
     }
 
@@ -1111,7 +1431,28 @@ impl EmbeddedRoutedChatClient {
         base_url: Option<String>,
         credentials: Arc<dyn CredentialProvider>,
         chatgpt_oauth: Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>,
+        native_inference: Option<Arc<dyn EmbeddedNativeInference>>,
     ) -> Result<EmbeddedActiveInference> {
+        if provider
+            .trim()
+            .eq_ignore_ascii_case(EMBEDDED_NATIVE_LOCAL_PROVIDER_ID)
+        {
+            if base_url
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|value| !value.is_empty())
+            {
+                bail!("native embedded inference does not accept a base URL");
+            }
+            let model = validate_embedded_native_inference_route(model, base_url)?;
+            let inference = native_inference
+                .ok_or_else(|| anyhow!("native embedded inference is unavailable on this host"))?;
+            return Ok(EmbeddedActiveInference {
+                provider: EMBEDDED_NATIVE_LOCAL_PROVIDER_ID.to_string(),
+                model: model.clone(),
+                client: Arc::new(EmbeddedNativeChatClient::new(model, inference)),
+            });
+        }
         if provider
             .trim()
             .eq_ignore_ascii_case(crate::openai_codex_chat_client::OPENAI_CODEX_PROVIDER_ID)
@@ -1167,6 +1508,7 @@ impl EmbeddedRoutedChatClient {
             base_url,
             self.credentials.clone(),
             self.chatgpt_oauth.clone(),
+            self.native_inference.clone(),
         )?;
         *self
             .active
@@ -1174,6 +1516,25 @@ impl EmbeddedRoutedChatClient {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = next;
         Ok(())
     }
+}
+
+/// Validate a host-native model route before persisting or activating it.
+pub fn validate_embedded_native_inference_route(
+    model: String,
+    base_url: Option<String>,
+) -> Result<String> {
+    if base_url
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|value| !value.is_empty())
+    {
+        bail!("native embedded inference does not accept a base URL");
+    }
+    let model = model.trim().to_string();
+    if model.is_empty() || model.len() > 512 || model.chars().any(char::is_control) {
+        bail!("invalid native embedded inference model");
+    }
+    Ok(model)
 }
 
 #[async_trait::async_trait]
@@ -5080,6 +5441,7 @@ fn embedded_ticket_phase(outcome: TurnCompletionOutcomeV3) -> &'static str {
 mod tests {
     use std::future::pending;
     use std::sync::atomic::AtomicUsize;
+    use std::sync::Mutex;
 
     use async_trait::async_trait;
     use genai::ModelIden;
@@ -5311,6 +5673,7 @@ query MobileProbe {
             None,
             Arc::new(CanaryCredentialProvider),
             broker,
+            None,
         )
         .expect("routed client");
         let binding = EmbeddedInferenceBinding::Routed(routed);
@@ -5330,6 +5693,158 @@ query MobileProbe {
             binding.route(),
             ("anthropic".to_string(), "claude-sonnet-4-6".to_string())
         );
+    }
+
+    #[derive(Default)]
+    struct NativeInferenceProbe {
+        requests: Mutex<Vec<EmbeddedNativeChatRequest>>,
+    }
+
+    #[async_trait]
+    impl EmbeddedNativeInference for NativeInferenceProbe {
+        async fn generate(
+            &self,
+            request: EmbeddedNativeChatRequest,
+            events: Option<mpsc::Sender<EmbeddedNativeInferenceEvent>>,
+        ) -> std::result::Result<EmbeddedNativeChatResponse, String> {
+            self.requests
+                .lock()
+                .expect("native inference probe lock")
+                .push(request);
+            if let Some(events) = events {
+                events
+                    .send(EmbeddedNativeInferenceEvent::Content {
+                        text: "Native ".to_string(),
+                    })
+                    .await
+                    .map_err(|_| "native stream closed".to_string())?;
+                events
+                    .send(EmbeddedNativeInferenceEvent::Reasoning {
+                        text: "checking locally".to_string(),
+                    })
+                    .await
+                    .map_err(|_| "native stream closed".to_string())?;
+            }
+            Ok(EmbeddedNativeChatResponse {
+                content: "Native answer".to_string(),
+                tool_calls: vec![EmbeddedNativeToolCall {
+                    id: "native-call-1".to_string(),
+                    name: "lookup_weather".to_string(),
+                    arguments: json!({ "city": "Phoenix" }),
+                }],
+                prompt_tokens: Some(12),
+                completion_tokens: Some(7),
+                stop_reason: Some("tool_calls".to_string()),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn native_inference_preserves_messages_tools_options_and_streams() {
+        let inference = Arc::new(NativeInferenceProbe::default());
+        let client = EmbeddedNativeChatClient::new(
+            "gemma-4-e2b-it-4bit".to_string(),
+            inference.clone(),
+        );
+        let previous_call = ToolCall {
+            call_id: "previous-call".to_string(),
+            fn_name: "lookup_weather".to_string(),
+            fn_arguments: json!({ "city": "Tempe" }),
+            thought_signatures: None,
+        };
+        let request = ChatRequest::new(vec![
+            ChatMessage::user(MessageContent::from_parts(vec![
+                ContentPart::Text("What is outside?".to_string()),
+                ContentPart::from_binary_base64(
+                    "image/png",
+                    "aW1hZ2U=",
+                    Some("window.png".to_string()),
+                ),
+            ])),
+            ChatMessage::assistant(MessageContent::from_tool_calls(vec![
+                previous_call.clone(),
+            ])),
+            ChatMessage::tool(MessageContent::from_tool_responses(vec![
+                genai::chat::ToolResponse::from_tool_call(&previous_call, "sunny"),
+            ])),
+        ])
+        .with_system("Keep the response private.")
+        .with_tools([genai::chat::Tool::new("lookup_weather")
+            .with_description("Read current conditions")
+            .with_schema(json!({
+                "type": "object",
+                "properties": { "city": { "type": "string" } }
+            }))]);
+        let options = ChatOptions::default()
+            .with_temperature(0.2)
+            .with_top_p(0.8)
+            .with_max_tokens(96)
+            .with_stop_sequence("DONE");
+        let (delta_tx, mut delta_rx) = mpsc::channel(4);
+
+        let response = client
+            .complete_stream(request, Some(&options), Some(&delta_tx))
+            .await
+            .expect("native inference response");
+
+        assert!(matches!(
+            delta_rx.recv().await,
+            Some(StreamDelta::Content(value)) if value == "Native "
+        ));
+        assert!(matches!(
+            delta_rx.recv().await,
+            Some(StreamDelta::Reasoning(value)) if value == "checking locally"
+        ));
+        assert_eq!(response.first_text(), Some("Native answer"));
+        let returned_call = response
+            .content
+            .parts()
+            .iter()
+            .find_map(ContentPart::as_tool_call)
+            .expect("native tool call");
+        assert_eq!(returned_call.call_id, "native-call-1");
+        assert_eq!(returned_call.fn_arguments, json!({ "city": "Phoenix" }));
+        assert_eq!(response.usage.total_tokens, Some(19));
+
+        let requests = inference
+            .requests
+            .lock()
+            .expect("native inference probe lock");
+        let request = requests.first().expect("captured native request");
+        assert_eq!(request.model, "gemma-4-e2b-it-4bit");
+        assert_eq!(request.system.as_deref(), Some("Keep the response private."));
+        assert_eq!(request.messages[0].attachments[0].content_type, "image/png");
+        assert_eq!(request.messages[1].tool_calls[0].id, "previous-call");
+        assert_eq!(request.messages[2].tool_call_id.as_deref(), Some("previous-call"));
+        assert_eq!(request.tools[0].name, "lookup_weather");
+        assert_eq!(request.options.max_tokens, Some(96));
+        assert_eq!(request.options.stop_sequences, ["DONE"]);
+    }
+
+    #[test]
+    fn native_route_requires_a_native_host_and_rejects_base_urls() {
+        let broker = Arc::new(crate::chatgpt_oauth::ChatGptOAuthBroker::new(Arc::new(
+            EmptyChatGptStore,
+        )));
+        let missing_host = EmbeddedRoutedChatClient::new(
+            EMBEDDED_NATIVE_LOCAL_PROVIDER_ID.to_string(),
+            "gemma-4-e2b-it-4bit".to_string(),
+            None,
+            Arc::new(CanaryCredentialProvider),
+            broker.clone(),
+            None,
+        );
+        assert!(missing_host.is_err());
+
+        let with_base_url = EmbeddedRoutedChatClient::new(
+            EMBEDDED_NATIVE_LOCAL_PROVIDER_ID.to_string(),
+            "gemma-4-e2b-it-4bit".to_string(),
+            Some("http://127.0.0.1:7417/v1".to_string()),
+            Arc::new(CanaryCredentialProvider),
+            broker,
+            Some(Arc::new(NativeInferenceProbe::default())),
+        );
+        assert!(with_base_url.is_err());
     }
 
     async fn collect_to_eof(mut stream: EmbeddedTurnStream) -> Vec<TurnStreamEnvelopeV2> {

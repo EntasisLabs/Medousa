@@ -23,7 +23,7 @@
   import SettingsLocalBrainPanel from "$lib/components/settings/SettingsLocalBrainPanel.svelte";
   import SettingsWorkshopsSection from "$lib/components/settings/SettingsWorkshopsSection.svelte";
   import { isTauri } from "$lib/window";
-  import { isTauriDesktop } from "$lib/platform";
+  import { isTauriDesktop, isTauriIos } from "$lib/platform";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { workshopBasementConnectionLabel, thisHostLabel } from "$lib/platformCopy";
 
@@ -463,7 +463,7 @@
     </div>
   {/if}
 
-  {#if isTauriDesktop()}
+  {#if isTauriDesktop() || isTauriIos()}
     <SettingsLocalBrainPanel />
   {/if}
 

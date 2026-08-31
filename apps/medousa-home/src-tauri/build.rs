@@ -76,7 +76,7 @@ fn compile_ios_live_activity() {
         }
     };
 
-    let min_version = "16.2";
+    let min_version = "17.0";
     let swift_target = if sdk == "iphonesimulator" {
         format!("arm64-apple-ios{min_version}-simulator")
     } else {
@@ -113,7 +113,7 @@ fn compile_ios_live_activity() {
         Ok(s) => {
             panic!(
                 "Live Activity Swift compile failed (exit {s}). \
-                 See ios-live-activity/App — deployment target must be iOS 16.2+"
+                 See ios-live-activity/App — deployment target must be iOS 17.0+"
             );
         }
         Err(err) => {

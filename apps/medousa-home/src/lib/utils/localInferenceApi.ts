@@ -119,52 +119,52 @@ export function formatBytes(bytes: number): string {
 }
 
 export async function fetchLocalHardware(): Promise<LocalHardwareResponse> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   return invoke<LocalHardwareResponse>("local_inference_hardware");
 }
 
 export async function fetchLocalCatalog(): Promise<LocalCatalogResponse> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   return invoke<LocalCatalogResponse>("local_inference_catalog");
 }
 
 export async function fetchLocalModels(): Promise<LocalModelsResponse> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   return invoke<LocalModelsResponse>("local_inference_models");
 }
 
 export async function startLocalModelDownload(modelId: string): Promise<ModelDownloadProgress> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   return invoke<ModelDownloadProgress>("local_inference_start_download", { modelId });
 }
 
 export async function loadLocalEngine(modelId?: string | null): Promise<LocalEngineStatus> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   return invoke<LocalEngineStatus>("local_inference_spawn_engine", { modelId: modelId ?? null });
 }
 
 export async function fetchLocalEngineStatus(): Promise<LocalEngineStatus> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   return invoke<LocalEngineStatus>("local_inference_engine_status");
 }
 
 export async function unloadLocalEngine(): Promise<LocalEngineStatus> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   return invoke<LocalEngineStatus>("local_inference_unload_engine");
 }
 
 export async function removeLocalModel(modelId: string): Promise<void> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   await invoke("local_inference_remove_model", { modelId });
 }
 
 export async function streamLocalModelDownload(jobId: string): Promise<void> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   await invoke("local_inference_stream_download", { jobId });
 }
 
 export async function stopLocalModelDownloadStream(): Promise<void> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   await invoke("local_inference_stream_download_stop");
 }
 
@@ -183,7 +183,7 @@ export function onModelDownloadError(handler: (message: string) => void): Promis
 }
 
 export async function fetchDownloadStatus(jobId: string): Promise<ModelDownloadProgress> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   return invoke<ModelDownloadProgress>("local_inference_download_status", { jobId });
 }
 

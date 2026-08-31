@@ -1,4 +1,5 @@
 import {
+  isTauriIos,
   isTauriMacDesktop,
   isTauriMobilePlatform,
 } from "$lib/platform";
@@ -118,9 +119,13 @@ export function workshopBasementRestartHint(): string {
 }
 
 export function localBrainOnDeviceHint(): string {
-  return isCompanionShell()
-    ? `Optional local Gemma engine on ${hostComputerPhrase()} — separate from cloud chat models.`
-    : `Optional local Gemma engine on ${hostComputerPhrase()} — separate from cloud chat models.`;
+  if (isTauriIos()) {
+    const device = typeof navigator !== "undefined" && /iPad/i.test(navigator.userAgent)
+      ? "iPad"
+      : "iPhone";
+    return `Private MLX models run entirely on this ${device} — no cloud required.`;
+  }
+  return `Optional private models on ${hostComputerPhrase()} — separate from cloud chat models.`;
 }
 
 export function vaultPinFolderHint(): string {

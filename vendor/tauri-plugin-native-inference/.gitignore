@@ -1,0 +1,10 @@
+/target
+Cargo.lock
+*.swp
+*.swo
+.DS_Store
+.tauri/
+ios/.build/
+ios/.swiftpm/
+node_modules/
+.npmrc

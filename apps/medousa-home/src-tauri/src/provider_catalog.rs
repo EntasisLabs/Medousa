@@ -425,6 +425,7 @@ pub fn providers_catalog_for_embedded() -> ProvidersListResult {
     let mut catalog = providers_catalog();
     catalog.providers.retain(|entry| {
         entry.id == "custom"
+            || (cfg!(target_os = "ios") && entry.id == "medousa-local")
             || medousa_runtime::CredentialedAiChatConfig::new(
                 entry.id.clone(),
                 entry.default_model.clone(),
@@ -432,6 +433,17 @@ pub fn providers_catalog_for_embedded() -> ProvidersListResult {
             )
             .is_ok()
     });
+    #[cfg(target_os = "ios")]
+    if let Some(local) = catalog
+        .providers
+        .iter_mut()
+        .find(|entry| entry.id == "medousa-local")
+    {
+        local.default_model = "gemma-4-e2b-it-4bit".to_string();
+        local.supports_custom_base_url = false;
+        local.default_base_url = None;
+        local.blurb = "Private MLX models running entirely on this device".to_string();
+    }
     catalog
 }
 
@@ -451,10 +463,12 @@ mod tests {
     fn chatgpt_oauth_route_is_selectable() {
         let route = find_provider("openai-codex").expect("route metadata");
         assert!(!route.needs_api_key);
-        assert!(providers_catalog()
-            .providers
-            .iter()
-            .any(|entry| entry.id == "openai-codex"));
+        assert!(
+            providers_catalog()
+                .providers
+                .iter()
+                .any(|entry| entry.id == "openai-codex")
+        );
     }
 
     #[test]

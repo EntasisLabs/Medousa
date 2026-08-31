@@ -1,0 +1,22 @@
+[package]
+name = "tauri-plugin-native-inference"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77.2"
+links = "tauri-plugin-native-inference"
+build = "build.rs"
+license = "MIT OR Apache-2.0"
+description = "Tauri bridge for private, on-device model inference"
+
+[package.metadata.tauri-plugin]
+ios-src = "ios"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = "2"
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }
