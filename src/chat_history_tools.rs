@@ -272,7 +272,7 @@ impl CognitionChatHistorySearchTool {
                     .into_values()
                     .filter(|summary| metadata_matches(summary, query_text))
                     .collect::<Vec<_>>();
-                metadata_hits.sort_by(|left, right| right.last_timestamp.cmp(&left.last_timestamp));
+                metadata_hits.sort_by_key(|hit| std::cmp::Reverse(hit.last_timestamp));
                 for summary in metadata_hits.into_iter().take(limit - results.len()) {
                     results.push(search_match_from_summary(summary, None, None, None));
                 }

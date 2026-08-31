@@ -138,17 +138,6 @@ pub async fn sync_recurring_schedule(
     Ok(definition)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::DEFAULT_MAINTENANCE_CRON;
-
-    #[test]
-    fn default_maintenance_cron_is_a_valid_weekly_schedule() {
-        crate::recurring_delivery::validate_recurring_cron(DEFAULT_MAINTENANCE_CRON, "UTC")
-            .expect("artifact maintenance cron must remain valid");
-    }
-}
-
 pub async fn ensure_schedule_on_startup(runtime: &RuntimeComposition) -> StasisResult<()> {
     let settings = load_settings();
     if !settings.enabled {
@@ -228,4 +217,15 @@ pub async fn update_settings(
         },
         next_run_at_utc: definition.next_run_at,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DEFAULT_MAINTENANCE_CRON;
+
+    #[test]
+    fn default_maintenance_cron_is_a_valid_weekly_schedule() {
+        crate::recurring_delivery::validate_recurring_cron(DEFAULT_MAINTENANCE_CRON, "UTC")
+            .expect("artifact maintenance cron must remain valid");
+    }
 }

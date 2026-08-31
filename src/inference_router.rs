@@ -292,7 +292,7 @@ where
         profile,
         required,
         &mut on_notice,
-        |target, required| target_ineligibility_reason(target, required),
+        target_ineligibility_reason,
         operation,
     )
     .await

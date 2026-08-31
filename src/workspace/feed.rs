@@ -182,7 +182,7 @@ async fn emit_snapshot_delta(
     last_revision: &mut u64,
     last_feed_index: &mut usize,
     last_cards: &mut HashMap<String, WorkCard>,
-) -> Result<(), mpsc::error::SendError<WorkspaceStreamEvent>> {
+) -> Result<(), Box<mpsc::error::SendError<WorkspaceStreamEvent>>> {
     let revision = snapshot.revision;
     let feed_index = workspace_store().feed_len();
 
@@ -264,7 +264,7 @@ async fn send_card_upserted(
     revision: u64,
     card: &WorkCard,
     worker_progress: Option<crate::daemon_api::WorkerProgressDto>,
-) -> Result<(), mpsc::error::SendError<WorkspaceStreamEvent>> {
+) -> Result<(), Box<mpsc::error::SendError<WorkspaceStreamEvent>>> {
     tx.send(WorkspaceStreamEvent {
         workspace_revision: revision,
         stream_event_type: "card_upserted".to_string(),
@@ -276,6 +276,7 @@ async fn send_card_upserted(
         worker_progress,
     })
     .await
+    .map_err(Box::new)
 }
 
 /// Live transcript slice for turn-worker cards. Chat renders subagent rows from

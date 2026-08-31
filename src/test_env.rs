@@ -16,6 +16,7 @@ pub(crate) fn hermetic() -> bool {
 }
 
 /// Skip OS keyring in the hermetic lib suite (treat as unconfigured).
+#[allow(dead_code)]
 pub(crate) fn refuse_host_keyring() -> Result<(), keyring::Error> {
     if hermetic() {
         return Err(keyring::Error::NoEntry);

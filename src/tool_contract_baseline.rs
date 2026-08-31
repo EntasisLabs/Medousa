@@ -104,8 +104,13 @@ fn snapshot_tool_surface(id: &str, tools: &[Tool]) -> ToolSurfaceFootprintSnapsh
     let largest_tools_share_bps = if footprint.total_chars == 0 {
         0
     } else {
-        u32::try_from(largest_chars.saturating_mul(10_000) / footprint.total_chars)
-            .unwrap_or(u32::MAX)
+        u32::try_from(
+            largest_chars
+                .checked_div(footprint.total_chars)
+                .and_then(|quotient| quotient.checked_mul(10_000))
+                .unwrap_or(usize::MAX),
+        )
+        .unwrap_or(u32::MAX)
     };
     ToolSurfaceFootprintSnapshot {
         id: id.to_string(),
@@ -175,33 +180,33 @@ fn tool_footprint_baseline(
     ToolFootprintBaseline {
         estimator: crate::agent_runtime::context_usage::ESTIMATOR_LABEL.to_string(),
         surfaces: vec![
-            snapshot_tool_surface("general", &general_tools),
+            snapshot_tool_surface("general", general_tools),
             snapshot_tool_surface(
                 "host_bus_home",
-                &filtered_surface(&general_tools, &host_bus, true, true),
+                &filtered_surface(general_tools, &host_bus, true, true),
             ),
             snapshot_tool_surface(
                 "host_bus_thin",
-                &filtered_surface(&general_tools, &host_bus, false, false),
+                &filtered_surface(general_tools, &host_bus, false, false),
             ),
             snapshot_tool_surface(
                 "workshop_general_bound",
-                &filtered_surface(&general_tools, &worker_general, true, true),
+                &filtered_surface(general_tools, &worker_general, true, true),
             ),
             snapshot_tool_surface(
                 "worker_general",
-                &filtered_surface(&general_tools, &worker_general, false, false),
+                &filtered_surface(general_tools, &worker_general, false, false),
             ),
             snapshot_tool_surface(
                 "worker_research",
-                &filtered_surface(&general_tools, &worker_research, false, false),
+                &filtered_surface(general_tools, &worker_research, false, false),
             ),
             snapshot_tool_surface(
                 "worker_memory",
-                &filtered_surface(&general_tools, &worker_memory, false, false),
+                &filtered_surface(general_tools, &worker_memory, false, false),
             ),
-            snapshot_tool_surface("coder_setup", &coder_setup_tools),
-            snapshot_tool_surface("coder_work", &coder_work_tools),
+            snapshot_tool_surface("coder_setup", coder_setup_tools),
+            snapshot_tool_surface("coder_work", coder_work_tools),
         ],
     }
 }

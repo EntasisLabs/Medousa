@@ -84,7 +84,7 @@ pub enum RuntimeMutateAction {
     #[serde(rename = "job.cancel")]
     JobCancel(JobCancel),
     #[serde(rename = "recurring.register")]
-    RecurringRegister(RecurringRegister),
+    RecurringRegister(Box<RecurringRegister>),
     #[serde(rename = "recurring.pause")]
     RecurringPause(RecurringPause),
     #[serde(rename = "recurring.cancel")]

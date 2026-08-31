@@ -157,6 +157,7 @@ pub async fn stage_remote_work_environment_payload(
 
 /// Build the unsigned Stasis envelope. The selected transport must sign it
 /// before delivery using the paired runtime identity.
+#[allow(clippy::too_many_arguments)]
 pub fn build_remote_work_environment_envelope(
     envelope_id: impl Into<String>,
     payload: BlobDescriptor,

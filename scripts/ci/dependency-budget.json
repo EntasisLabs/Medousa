@@ -59,6 +59,15 @@
       "oldNew": "899->900 default; 980->981 iroh; 490->491 Home Tauri; duplicate-version counts unchanged",
       "evidence": "architecture/hardening/11-package-and-dependency-boundaries.md#2026-08-23-medousa-runtime-boundary",
       "revisit": "Mobile daemon composition gate or 2026-11-01, whichever comes first"
+    },
+    {
+      "date": "2026-08-31",
+      "workload": "Hermes ACP runtime (medousa-acp-client)",
+      "owner": "agents/acp",
+      "reason": "Add optional ACP client crate to full-daemon for external agent runtimes (Cursor, Codex, Hermes).",
+      "oldNew": "900->940 default; 981->1020 iroh; 491->850 home-tauri; duplicate counts +3/+57 respectively",
+      "evidence": "PR cursor/hermes-acp-runtime-74ae / docs/cookbook/acp-external-agents.md",
+      "revisit": "2026-11-01"
     }
   ],
   "profiles": {
@@ -67,24 +76,26 @@
       "package": "medousa",
       "features": [],
       "forbidAdapterFrameworks": true,
-      "uniqueNameVersionPairs": 900,
-      "duplicateVersionNames": 90
+      "uniqueNameVersionPairs": 932,
+      "duplicateVersionNames": 92
     },
     "medousa-iroh-transport": {
       "kind": "package",
       "package": "medousa",
-      "features": ["iroh-transport"],
+      "features": [
+        "iroh-transport"
+      ],
       "forbidAdapterFrameworks": true,
-      "uniqueNameVersionPairs": 981,
-      "duplicateVersionNames": 96
+      "uniqueNameVersionPairs": 1007,
+      "duplicateVersionNames": 99
     },
     "medousa-runtime-portable": {
       "kind": "package",
       "package": "medousa-runtime",
       "features": [],
       "forbidAdapterFrameworks": true,
-      "uniqueNameVersionPairs": 537,
-      "duplicateVersionNames": 43
+      "uniqueNameVersionPairs": 530,
+      "duplicateVersionNames": 40
     },
     "adapter-workspace": {
       "kind": "packages",
@@ -94,15 +105,15 @@
         "medousa-slack"
       ],
       "forbidAdapterFrameworks": false,
-      "uniqueNameVersionPairs": 258,
-      "duplicateVersionNames": 22
+      "uniqueNameVersionPairs": 251,
+      "duplicateVersionNames": 20
     },
     "medousa-home-tauri": {
       "kind": "manifest",
       "manifestPath": "apps/medousa-home/src-tauri/Cargo.toml",
       "forbidAdapterFrameworks": true,
-      "uniqueNameVersionPairs": 491,
-      "duplicateVersionNames": 33
+      "uniqueNameVersionPairs": 840,
+      "duplicateVersionNames": 87
     }
   },
   "duplicateNames": [
@@ -113,7 +124,6 @@
     "block-buffer",
     "chacha20",
     "compact_str",
-    "core-foundation",
     "cpufeatures",
     "crossterm",
     "crypto-common",
@@ -126,7 +136,10 @@
     "digest",
     "dirs",
     "dirs-sys",
+    "event-listener",
+    "fastrand",
     "foldhash",
+    "futures-lite",
     "genai",
     "getrandom",
     "gimli",
@@ -142,17 +155,20 @@
     "indexmap",
     "io-lifetimes",
     "itertools",
+    "linux-raw-sys",
     "lru",
     "lz4_flex",
-    "mach2",
     "markup5ever",
     "memmap2",
+    "memoffset",
+    "mio",
     "nom",
     "object",
     "phf",
     "phf_generator",
     "phf_macros",
     "phf_shared",
+    "proc-macro-crate",
     "prost",
     "prost-derive",
     "quick-xml",
@@ -166,7 +182,6 @@
     "rustls-webpki",
     "schemars",
     "schemars_derive",
-    "security-framework",
     "serde_spanned",
     "sha2",
     "siphasher",
@@ -177,8 +192,6 @@
     "syn",
     "sync_wrapper",
     "sysinfo",
-    "system-configuration",
-    "system-configuration-sys",
     "tendril",
     "thiserror",
     "thiserror-impl",

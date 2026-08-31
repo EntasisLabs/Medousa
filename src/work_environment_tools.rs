@@ -146,6 +146,7 @@ pub(crate) fn workspace_directory(raw: Option<&str>) -> StasisResult<String> {
         .map(|relative| format!("{WORK_ENVIRONMENT_WORKSPACE_ROOT}/{relative}"))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn exec(
     invocation: &EnvironmentToolInvocation,
     boundary: &str,

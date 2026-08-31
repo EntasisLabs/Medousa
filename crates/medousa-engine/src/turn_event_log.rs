@@ -1406,8 +1406,11 @@ mod tests {
                     .open(&path)
                     .unwrap();
                 write!(f, "{{\"envelope\":{{\"turn_id\":\"turn-reopen\"").unwrap();
+                f.sync_all().unwrap();
             }
         }
+        #[cfg(windows)]
+        std::thread::sleep(std::time::Duration::from_millis(100));
         {
             let reopened = TurnEventLog::open_in(&root, env("turn-reopen")).unwrap();
             let receipt = reopened
