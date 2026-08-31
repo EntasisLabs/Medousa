@@ -59,8 +59,21 @@ pub struct McpServerConfig {
     pub allowed_effect_classes: Vec<String>,
     #[serde(default)]
     pub tool_tags: HashMap<String, Vec<String>>,
+    /// Tools hidden from discovery and denied at invoke time. A denylist keeps
+    /// newly-added server tools enabled until the user explicitly disables one.
+    #[serde(default)]
+    pub disabled_tools: Vec<String>,
     #[serde(default)]
     pub use_mock: bool,
+}
+
+impl McpServerConfig {
+    pub fn tool_enabled(&self, tool_name: &str) -> bool {
+        !self
+            .disabled_tools
+            .iter()
+            .any(|disabled| disabled.eq_ignore_ascii_case(tool_name))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -199,4 +212,39 @@ fn find_arg_value(args: &[String], flag: &str) -> Option<String> {
         .and_then(|index| args.get(index + 1))
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::McpGatewayFileConfig;
+
+    #[test]
+    fn tool_discovery_hints_and_disabled_tools_round_trip() {
+        let raw = r#"
+[[servers]]
+id = "search"
+title = "Search"
+disabled_tools = ["delete_index"]
+
+[servers.tool_tags]
+search_web = ["web_research", "internet"]
+"#;
+
+        let parsed: McpGatewayFileConfig = toml::from_str(raw).expect("parse gateway config");
+        let server = parsed.servers.first().expect("configured server");
+        assert_eq!(server.disabled_tools, ["delete_index"]);
+        assert_eq!(
+            server.tool_tags.get("search_web"),
+            Some(&vec!["web_research".to_string(), "internet".to_string()])
+        );
+
+        let encoded = toml::to_string_pretty(&parsed).expect("serialize gateway config");
+        let reparsed: McpGatewayFileConfig =
+            toml::from_str(&encoded).expect("reparse gateway config");
+        assert_eq!(reparsed.servers[0].disabled_tools, ["delete_index"]);
+        assert_eq!(
+            reparsed.servers[0].tool_tags.get("search_web"),
+            Some(&vec!["web_research".to_string(), "internet".to_string()])
+        );
+    }
 }

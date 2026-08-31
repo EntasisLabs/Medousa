@@ -77,7 +77,39 @@ pub struct McpServerUpsertRequest {
     #[serde(default)]
     pub bearer_token: Option<String>,
     #[serde(default)]
+    pub tool_tags: Option<HashMap<String, Vec<String>>>,
+    #[serde(default)]
+    pub disabled_tools: Option<Vec<String>>,
+    #[serde(default)]
     pub use_mock: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpGatewayToolDto {
+    pub tool_name: String,
+    pub title: String,
+    pub enabled: bool,
+    pub available: bool,
+    pub capability_ids: Vec<String>,
+    pub discovery_hints: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpGatewayToolsResult {
+    pub tools: Vec<McpGatewayToolDto>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpToolUpdateRequest {
+    pub server_id: String,
+    pub tool_name: String,
+    pub enabled: bool,
+    #[serde(default)]
+    pub discovery_hints: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -164,6 +196,46 @@ fn default_allowed_effects() -> Vec<String> {
     ]
 }
 
+fn normalize_tool_tags(raw: HashMap<String, Vec<String>>) -> HashMap<String, Vec<String>> {
+    raw.into_iter()
+        .filter_map(|(tool_name, hints)| {
+            let tool_name = tool_name.trim().to_string();
+            if tool_name.is_empty() {
+                return None;
+            }
+            let mut normalized = Vec::new();
+            for hint in hints {
+                let hint = hint.trim();
+                if hint.is_empty()
+                    || normalized
+                        .iter()
+                        .any(|existing: &String| existing.eq_ignore_ascii_case(hint))
+                {
+                    continue;
+                }
+                normalized.push(hint.to_string());
+            }
+            (!normalized.is_empty()).then_some((tool_name, normalized))
+        })
+        .collect()
+}
+
+fn normalize_disabled_tools(raw: Vec<String>) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for tool_name in raw {
+        let tool_name = tool_name.trim();
+        if tool_name.is_empty()
+            || normalized
+                .iter()
+                .any(|existing: &String| existing.eq_ignore_ascii_case(tool_name))
+        {
+            continue;
+        }
+        normalized.push(tool_name.to_string());
+    }
+    normalized
+}
+
 #[cfg(any(target_os = "ios", target_os = "android"))]
 fn count_u32(value: usize) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
@@ -240,6 +312,9 @@ fn validate_server(
         return Err("Title is required".to_string());
     }
     let transport = normalize_transport(&request.transport)?;
+    let tool_tags = normalize_tool_tags(request.tool_tags.clone().unwrap_or_default());
+    let disabled_tools =
+        normalize_disabled_tools(request.disabled_tools.clone().unwrap_or_default());
 
     if request.use_mock {
         return Ok(medousa_mcp_gateway::McpServerConfig {
@@ -253,7 +328,8 @@ fn validate_server(
             bearer_token: None,
             allowed_lanes: default_allowed_lanes(),
             allowed_effect_classes: default_allowed_effects(),
-            tool_tags: HashMap::new(),
+            tool_tags,
+            disabled_tools,
             use_mock: true,
         });
     }
@@ -293,7 +369,8 @@ fn validate_server(
             bearer_token,
             allowed_lanes: default_allowed_lanes(),
             allowed_effect_classes: default_allowed_effects(),
-            tool_tags: HashMap::new(),
+            tool_tags,
+            disabled_tools,
             use_mock: false,
         });
     }
@@ -322,9 +399,34 @@ fn validate_server(
         bearer_token: None,
         allowed_lanes: default_allowed_lanes(),
         allowed_effect_classes: default_allowed_effects(),
-        tool_tags: HashMap::new(),
+        tool_tags,
+        disabled_tools,
         use_mock: false,
     })
+}
+
+fn server_from_request(
+    request: &McpServerUpsertRequest,
+) -> Result<medousa_mcp_gateway::McpServerConfig, String> {
+    let mut server = validate_server(request)?;
+    if request.tool_tags.is_some() && request.disabled_tools.is_some() {
+        return Ok(server);
+    }
+
+    let (config, _, _) = load_file_config()?;
+    if let Some(existing) = config
+        .servers
+        .iter()
+        .find(|entry| entry.id.eq_ignore_ascii_case(&server.id))
+    {
+        if request.tool_tags.is_none() {
+            server.tool_tags = existing.tool_tags.clone();
+        }
+        if request.disabled_tools.is_none() {
+            server.disabled_tools = existing.disabled_tools.clone();
+        }
+    }
+    Ok(server)
 }
 
 fn http_client() -> Result<reqwest::Client, String> {
@@ -405,6 +507,22 @@ async fn fetch_runtime_servers(base_url: &str) -> Result<Vec<McpServerRuntimeDto
         .collect())
 }
 
+async fn fetch_runtime_catalog(
+    base_url: &str,
+) -> Result<medousa_types::mcp_gateway_api::McpCatalogSyncResponse, String> {
+    let client = http_client()?;
+    let response = apply_gateway_auth(
+        client.get(format!("{}/v1/mcp/catalog", base_url.trim_end_matches('/'))),
+    )
+    .send()
+    .await
+    .map_err(|err| format!("cannot reach MCP gateway at {base_url}: {err}"))?;
+    if !response.status().is_success() {
+        return Err(format!("MCP gateway returned HTTP {}", response.status()));
+    }
+    response.json().await.map_err(|err| err.to_string())
+}
+
 async fn admin_refresh_catalog(base_url: &str) -> Result<(), String> {
     let client = http_client()?;
     let response = apply_admin_auth(client.post(format!(
@@ -442,7 +560,12 @@ async fn reload_embedded_mcp(
     client
         .reconfigure_mcp_gateway(config)
         .await
-        .map_err(|error| format!("reload embedded MCP adapter: {error:#}"))
+        .map_err(|error| format!("reload embedded MCP adapter: {error:#}"))?;
+    client
+        .reindex_capabilities()
+        .await
+        .map(|_| ())
+        .map_err(|error| format!("reindex embedded MCP capabilities: {error:#}"))
 }
 
 fn bind_port(bind: &str) -> Option<u16> {
@@ -670,6 +793,121 @@ pub async fn mcp_gateway_status(
             config_path,
         }),
     }
+}
+
+#[tauri::command]
+pub async fn mcp_gateway_list_tools(
+    _state: tauri::State<'_, crate::daemon::DaemonState>,
+    _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
+    server_id: String,
+) -> Result<McpGatewayToolsResult, String> {
+    require_local_mcp_config()?;
+    let id = normalize_server_id(&server_id)?;
+    let (config, _, _) = load_file_config()?;
+    let server = config
+        .servers
+        .iter()
+        .find(|entry| entry.id.eq_ignore_ascii_case(&id))
+        .ok_or_else(|| format!("unknown MCP server '{id}'"))?;
+
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    let catalog_result = {
+        let client = _embedded_state
+            .client_if_active()
+            .await?
+            .ok_or_else(|| "MCP configuration is managed by the selected workshop".to_string())?;
+        client
+            .mcp_gateway_catalog()
+            .await
+            .map_err(|error| format!("read embedded MCP catalog: {error:#}"))
+    };
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    let catalog_result = fetch_runtime_catalog(&resolve_gateway_url()).await;
+
+    let (catalog, message) = match catalog_result {
+        Ok(catalog) => (Some(catalog), String::new()),
+        Err(error) => (
+            None,
+            format!("Live tools are unavailable until the MCP gateway reconnects ({error})"),
+        ),
+    };
+
+    let mut tools = HashMap::<String, McpGatewayToolDto>::new();
+    if let Some(catalog) = catalog {
+        for entry in catalog
+            .entries
+            .into_iter()
+            .filter(|entry| entry.server_id.eq_ignore_ascii_case(&id))
+        {
+            let key = entry.tool_name.to_ascii_lowercase();
+            tools.insert(
+                key,
+                McpGatewayToolDto {
+                    enabled: server.tool_enabled(&entry.tool_name),
+                    discovery_hints: server
+                        .tool_tags
+                        .iter()
+                        .find_map(|(name, hints)| {
+                            name.eq_ignore_ascii_case(&entry.tool_name)
+                                .then_some(hints.clone())
+                        })
+                        .unwrap_or_default(),
+                    tool_name: entry.tool_name,
+                    title: entry.title,
+                    available: entry.available,
+                    capability_ids: entry.capability_ids,
+                },
+            );
+        }
+    }
+
+    for tool_name in server.tool_tags.keys().chain(server.disabled_tools.iter()) {
+        let key = tool_name.to_ascii_lowercase();
+        tools.entry(key).or_insert_with(|| McpGatewayToolDto {
+            tool_name: tool_name.clone(),
+            title: tool_name.clone(),
+            enabled: server.tool_enabled(tool_name),
+            available: false,
+            capability_ids: Vec::new(),
+            discovery_hints: server
+                .tool_tags
+                .iter()
+                .find_map(|(name, hints)| {
+                    name.eq_ignore_ascii_case(tool_name)
+                        .then_some(hints.clone())
+                })
+                .unwrap_or_default(),
+        });
+    }
+
+    for tool in tools.values_mut() {
+        if let Some(configured) = server
+            .tool_tags
+            .iter()
+            .find_map(|(name, hints)| name.eq_ignore_ascii_case(&tool.tool_name).then_some(hints))
+        {
+            for hint in configured {
+                if !tool
+                    .capability_ids
+                    .iter()
+                    .any(|existing| existing.eq_ignore_ascii_case(hint))
+                {
+                    tool.capability_ids.push(hint.clone());
+                }
+            }
+        }
+        tool.enabled = server.tool_enabled(&tool.tool_name);
+        tool.available &= tool.enabled;
+    }
+
+    let mut tools = tools.into_values().collect::<Vec<_>>();
+    tools.sort_by(|left, right| {
+        left.title
+            .to_ascii_lowercase()
+            .cmp(&right.title.to_ascii_lowercase())
+            .then_with(|| left.tool_name.cmp(&right.tool_name))
+    });
+    Ok(McpGatewayToolsResult { tools, message })
 }
 
 #[tauri::command]
@@ -959,7 +1197,7 @@ pub async fn mcp_gateway_upsert_server(
     request: McpServerUpsertRequest,
 ) -> Result<McpServerMutationResult, String> {
     require_local_mcp_config()?;
-    let server = validate_server(&request)?;
+    let server = server_from_request(&request)?;
     #[cfg(any(target_os = "ios", target_os = "android"))]
     if server.transport == "stdio" && !server.use_mock {
         return Err("Embedded MCP supports hosted HTTP and SSE servers only".to_string());
@@ -1075,6 +1313,103 @@ pub async fn mcp_gateway_set_server_enabled(
 }
 
 #[tauri::command]
+pub async fn mcp_gateway_update_tool(
+    _state: tauri::State<'_, crate::daemon::DaemonState>,
+    _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
+    request: McpToolUpdateRequest,
+) -> Result<McpServerMutationResult, String> {
+    require_local_mcp_config()?;
+    let id = normalize_server_id(&request.server_id)?;
+    let tool_name = request.tool_name.trim();
+    if tool_name.is_empty() {
+        return Err("Tool name is required".to_string());
+    }
+    if tool_name.chars().any(char::is_control) {
+        return Err("Tool name contains unsupported control characters".to_string());
+    }
+
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    let embedded_client = _embedded_state
+        .client_if_active()
+        .await?
+        .ok_or_else(|| "MCP configuration is managed by the selected workshop".to_string())?;
+
+    let (mut config, _, _) = load_file_config()?;
+    let server = config
+        .servers
+        .iter_mut()
+        .find(|entry| entry.id.eq_ignore_ascii_case(&id))
+        .ok_or_else(|| format!("unknown MCP server '{id}'"))?;
+    let canonical_name = server
+        .tool_tags
+        .keys()
+        .find(|existing| existing.eq_ignore_ascii_case(tool_name))
+        .cloned()
+        .or_else(|| {
+            server
+                .disabled_tools
+                .iter()
+                .find(|existing| existing.eq_ignore_ascii_case(tool_name))
+                .cloned()
+        })
+        .unwrap_or_else(|| tool_name.to_string());
+
+    server
+        .tool_tags
+        .retain(|name, _| !name.eq_ignore_ascii_case(tool_name));
+    let hints = normalize_tool_tags(HashMap::from([(
+        canonical_name.clone(),
+        request.discovery_hints,
+    )]));
+    if let Some(hints) = hints.get(&canonical_name) {
+        server
+            .tool_tags
+            .insert(canonical_name.clone(), hints.clone());
+    }
+
+    server
+        .disabled_tools
+        .retain(|disabled| !disabled.eq_ignore_ascii_case(tool_name));
+    if !request.enabled {
+        server.disabled_tools.push(canonical_name.clone());
+    }
+    server.disabled_tools = normalize_disabled_tools(std::mem::take(&mut server.disabled_tools));
+    let path = persist_file_config(&config)?;
+
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    {
+        reload_embedded_mcp(&embedded_client).await?;
+        return Ok(McpServerMutationResult {
+            ok: true,
+            message: format!("{} updated", canonical_name),
+            config_path: path.display().to_string(),
+        });
+    }
+
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        let (_, ready) = perform_mcp_gateway_restart().await?;
+        let gateway_url = resolve_gateway_url();
+        let _ = admin_refresh_catalog(&gateway_url).await;
+        if ready {
+            let _ = reindex_daemon_capabilities(&_state).await;
+        }
+        Ok(McpServerMutationResult {
+            ok: true,
+            message: if ready {
+                format!("{} updated", canonical_name)
+            } else {
+                format!(
+                    "{} saved — the MCP gateway is still starting",
+                    canonical_name
+                )
+            },
+            config_path: path.display().to_string(),
+        })
+    }
+}
+
+#[tauri::command]
 pub async fn mcp_gateway_apply_server(
     _state: tauri::State<'_, crate::daemon::DaemonState>,
     _embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
@@ -1087,7 +1422,7 @@ pub async fn mcp_gateway_apply_server(
             .client_if_active()
             .await?
             .ok_or_else(|| "MCP configuration is managed by the selected workshop".to_string())?;
-        let server = validate_server(&request)?;
+        let server = server_from_request(&request)?;
         if server.transport == "stdio" && !server.use_mock {
             return Err("Embedded MCP supports hosted HTTP and SSE servers only".to_string());
         }

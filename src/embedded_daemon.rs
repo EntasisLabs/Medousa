@@ -2230,6 +2230,13 @@ impl EmbeddedDaemonClient {
         Ok((health, servers))
     }
 
+    pub async fn mcp_gateway_catalog(
+        &self,
+    ) -> Result<medousa_types::mcp_gateway_api::McpCatalogSyncResponse> {
+        self.require(Capability::WorkshopRead)?;
+        self.daemon.mcp_gateway_client.fetch_catalog().await
+    }
+
     pub async fn mcp_oauth_status(
         &self,
         server_id: &str,

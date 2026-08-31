@@ -56,6 +56,7 @@ allowed_effect_classes = ["external_read", "external_write", "external_side_effe
 # args = ["-y", "@modelcontextprotocol/server-filesystem", "/home/you/projects"]
 # allowed_lanes = ["interactive", "scheduled"]
 # allowed_effect_classes = ["external_read", "external_write"]
+# disabled_tools = ["delete_file"]
 # [servers.tool_tags]
 # "list_directory" = ["files", "read"]
 
@@ -68,6 +69,8 @@ allowed_effect_classes = ["external_read", "external_write", "external_side_effe
 # args = ["mcp-server-fetch"]
 # allowed_lanes = ["interactive"]
 # allowed_effect_classes = ["external_read"]
+# [servers.tool_tags]
+# "fetch" = ["web_research", "web", "internet"]
 "#;
 
 /// Install starter config if missing. Returns the config path (existing or new).

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import {
+    ChevronDown,
     LoaderCircle,
     Plug,
     Plus,
@@ -27,6 +28,7 @@
   } from "$lib/utils/mcpGatewayApi";
   import { isTauri } from "$lib/window";
   import { onThisHostPhrase } from "$lib/platformCopy";
+  import McpServerToolsPanel from "$lib/components/skills/McpServerToolsPanel.svelte";
 
   interface Props {
     embedded?: boolean;
@@ -68,6 +70,9 @@
   let formArgs = $state("");
   let formUrl = $state("");
   let formBearerToken = $state("");
+  let formToolTags = $state<Record<string, string[]>>({});
+  let formDisabledTools = $state<string[]>([]);
+  let expandedToolsServerId = $state<string | null>(null);
 
   const connectedCount = $derived(servers.filter((s) => s.connected).length);
   const editingExisting = $derived(Boolean(formId.trim()) && servers.some(
@@ -122,6 +127,8 @@
     formArgs = "";
     formUrl = "";
     formBearerToken = "";
+    formToolTags = {};
+    formDisabledTools = [];
     showForm = false;
   }
 
@@ -134,6 +141,8 @@
     formArgs = "";
     formUrl = "";
     formBearerToken = "";
+    formToolTags = {};
+    formDisabledTools = [];
     showForm = true;
     error = null;
     statusMessage = null;
@@ -162,6 +171,8 @@
     formArgs = "";
     formUrl = "";
     formBearerToken = "";
+    formToolTags = {};
+    formDisabledTools = [];
     formTransport = "stdio";
     showForm = true;
     error = null;
@@ -178,6 +189,8 @@
       formArgs = config.args.join(" ");
       formUrl = config.url ?? "";
       formBearerToken = config.bearerToken ?? "";
+      formToolTags = config.toolTags;
+      formDisabledTools = config.disabledTools;
     } catch {
       // Keep id/title; user can re-enter connection details.
     }
@@ -191,6 +204,8 @@
         enabled: true,
         transport: "stdio",
         useMock: true,
+        toolTags: formToolTags,
+        disabledTools: formDisabledTools,
       };
     }
 
@@ -203,6 +218,8 @@
         url: formUrl.trim() || null,
         bearerToken: formBearerToken.trim() || null,
         useMock: false,
+        toolTags: formToolTags,
+        disabledTools: formDisabledTools,
       };
     }
 
@@ -217,7 +234,18 @@
         .map((part) => part.trim())
         .filter(Boolean),
       useMock: false,
+      toolTags: formToolTags,
+      disabledTools: formDisabledTools,
     };
+  }
+
+  function toggleServerTools(server: McpServerRuntime) {
+    if (expandedToolsServerId === server.serverId) {
+      expandedToolsServerId = null;
+      return;
+    }
+    expandedToolsServerId = server.serverId;
+    error = null;
   }
 
   async function saveServer(signIn: boolean) {
@@ -664,6 +692,19 @@
                       type="button"
                       class="mcp-server-action"
                       disabled={busy}
+                      aria-expanded={expandedToolsServerId === server.serverId}
+                      onclick={() => void toggleServerTools(server)}
+                    >
+                      Tools
+                      <ChevronDown
+                        class="ml-1 h-3.5 w-3.5 transition-transform {expandedToolsServerId === server.serverId ? 'rotate-180' : ''}"
+                        aria-hidden="true"
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      class="mcp-server-action"
+                      disabled={busy}
                       onclick={() => void editServer(server)}
                     >
                       Edit
@@ -683,6 +724,22 @@
                   </button>
                 {/if}
               </div>
+              {#if expandedToolsServerId === server.serverId}
+                <div class="mcp-tools-panel">
+                  <McpServerToolsPanel
+                    {server}
+                    disabled={busy}
+                    {mobile}
+                    onBusyChange={(value) => (busy = value)}
+                    onStatus={(message) => {
+                      error = null;
+                      statusMessage = message;
+                    }}
+                    onError={(message) => (error = message)}
+                    onChanged={refresh}
+                  />
+                </div>
+              {/if}
             </div>
           {/each}
         </div>
@@ -725,8 +782,16 @@
 
   .mcp-server-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: stretch;
     gap: 1rem;
+  }
+
+  .mcp-tools-panel {
+    flex: 1 0 100%;
+    min-width: 0;
+    padding-top: 1rem;
+    border-top: 1px solid rgb(var(--color-surface-600) / 0.28);
   }
 
   .mcp-server-main {
@@ -873,6 +938,11 @@
     min-height: 3rem;
     margin-top: 0.45rem;
     border-top: 1px solid rgb(var(--color-surface-600) / 0.22);
+  }
+
+  .mcp-server-row.mcp-mobile .mcp-tools-panel {
+    margin-top: 0.15rem;
+    padding-top: 0.85rem;
   }
 
   .mcp-server-row.mcp-mobile .mcp-server-session-actions {

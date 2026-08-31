@@ -9,6 +9,8 @@ export interface McpServerConfig {
   bearerToken?: string | null;
   allowedLanes: string[];
   allowedEffectClasses: string[];
+  toolTags: Record<string, string[]>;
+  disabledTools: string[];
   useMock: boolean;
 }
 
@@ -71,7 +73,30 @@ export interface McpServerUpsertRequest {
   args?: string[];
   url?: string | null;
   bearerToken?: string | null;
+  toolTags?: Record<string, string[]>;
+  disabledTools?: string[];
   useMock?: boolean;
+}
+
+export interface McpGatewayTool {
+  toolName: string;
+  title: string;
+  enabled: boolean;
+  available: boolean;
+  capabilityIds: string[];
+  discoveryHints: string[];
+}
+
+export interface McpGatewayToolsResult {
+  tools: McpGatewayTool[];
+  message: string;
+}
+
+export interface McpToolUpdateRequest {
+  serverId: string;
+  toolName: string;
+  enabled: boolean;
+  discoveryHints: string[];
 }
 
 export interface McpServerMutationResult {

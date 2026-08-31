@@ -68,6 +68,14 @@ the local inference worker when the first chat turn targets **Medousa Local**.
 To release the model memory immediately, open **Settings → Connection → Private
 brain** and choose the power button. The next local turn loads it again.
 
+## Manage MCP tools
+
+After installing the MCP gateway, open **Settings → MCP** and connect a server.
+Open **Tools** on that server to disable individual tools or add discovery hints.
+Hints are comma-separated capability ids or natural search words; for example,
+`web_research`, `web`, and `internet` let Medousa find a web-search tool even
+when the server's own description uses different language.
+
 Before allocating model memory, Medousa verifies that the installed model index
 contains file-level SHA-256 evidence and fingerprints the worker binary. It then
 waits for a versioned handshake identifying the exact worker generation, PID,
