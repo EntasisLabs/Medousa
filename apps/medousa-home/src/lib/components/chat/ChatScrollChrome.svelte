@@ -2,6 +2,7 @@
   import { ArrowDown, LoaderCircle } from "@lucide/svelte";
   import MarkdownHeadingOutline from "$lib/components/ui/MarkdownHeadingOutline.svelte";
   import { haptic } from "$lib/haptics";
+  import { resolveChatTurnNavigation } from "$lib/utils/chatTurnNavigation";
   import { tick, type Snippet } from "svelte";
 
   interface TurnItem {
@@ -16,8 +17,6 @@
     showFab: boolean;
     showTurnRail: boolean;
     showCurrentTurnAnchor: boolean;
-    latestUserPreview: string;
-    latestUserTurnId: string | null;
     chatTurnItems: TurnItem[];
     activeChatTurnId: string | null;
     chatScrolling: boolean;
@@ -41,8 +40,6 @@
     showFab,
     showTurnRail,
     showCurrentTurnAnchor,
-    latestUserPreview,
-    latestUserTurnId,
     chatTurnItems,
     activeChatTurnId = $bindable(null),
     chatScrolling = $bindable(false),
@@ -61,7 +58,10 @@
   }: Props = $props();
 
   let atBottom = $state(true);
-  let pinLatestUserTurn = $state(false);
+  let pinnedUserTurnId = $state<string | null>(null);
+  const pinnedUserPreview = $derived(
+    chatTurnItems.find((item) => item.id === pinnedUserTurnId)?.text ?? "",
+  );
   let chatNavigationFrame = 0;
   let chatScrollEndTimer: ReturnType<typeof setTimeout> | undefined;
   let historySentinel = $state<HTMLDivElement>();
@@ -128,39 +128,28 @@
     chatNavigationFrame = 0;
     if (!scrollEl) {
       activeChatTurnId = null;
-      pinLatestUserTurn = false;
+      pinnedUserTurnId = null;
       return;
     }
     const rootRect = scrollEl.getBoundingClientRect();
     const turns = [...scrollEl.querySelectorAll<HTMLElement>("[data-chat-turn-user-id]")];
     if (turns.length === 0) {
       activeChatTurnId = null;
-      pinLatestUserTurn = false;
+      pinnedUserTurnId = null;
       return;
     }
-    const threshold = rootRect.top + 64;
-    let activeId = turns[0]?.dataset.chatTurnUserId ?? null;
-    for (const turn of turns) {
-      if (turn.getBoundingClientRect().top <= threshold) {
-        activeId = turn.dataset.chatTurnUserId ?? activeId;
-      } else {
-        break;
-      }
-    }
-    activeChatTurnId = activeId;
-    const latestId = latestUserTurnId;
-    const latestTurn = latestId
-      ? turns.find((turn) => turn.dataset.chatTurnUserId === latestId)
-      : undefined;
-    if (!latestTurn) {
-      pinLatestUserTurn = false;
-      return;
-    }
-    const latestRect = latestTurn.getBoundingClientRect();
-    const responseIsLong = latestRect.height >= Math.max(280, scrollEl.clientHeight * 0.8);
-    const promptHasLeftTop = latestRect.top < rootRect.top + 8;
-    const responseStillVisible = latestRect.bottom > rootRect.top + 96;
-    pinLatestUserTurn = responseIsLong && promptHasLeftTop && responseStillVisible;
+    const navigation = resolveChatTurnNavigation(
+      turns.flatMap((turn) => {
+        const id = turn.dataset.chatTurnUserId;
+        if (!id) return [];
+        const rect = turn.getBoundingClientRect();
+        return [{ id, top: rect.top, bottom: rect.bottom, height: rect.height }];
+      }),
+      rootRect.top,
+      scrollEl.clientHeight,
+    );
+    activeChatTurnId = navigation.activeId;
+    pinnedUserTurnId = navigation.pinnedId;
   }
 
   function scheduleChatNavigationMeasureFn() {
@@ -204,7 +193,7 @@
   }
 
   function scrollToCurrentTurn() {
-    if (latestUserTurnId) scrollToChatTurn(latestUserTurnId);
+    if (pinnedUserTurnId) scrollToChatTurn(pinnedUserTurnId);
   }
 
   function resetForSessionFn() {
@@ -212,7 +201,7 @@
     historyNavigationReady = false;
     onAtBottomChange(true);
     activeChatTurnId = null;
-    pinLatestUserTurn = false;
+    pinnedUserTurnId = null;
   }
 
   $effect(() => {
@@ -251,15 +240,15 @@
 </script>
 
 <div class="chat-panel-main">
-  {#if showCurrentTurnAnchor && pinLatestUserTurn}
+  {#if showCurrentTurnAnchor && pinnedUserTurnId && pinnedUserPreview}
     <button
       type="button"
       class="chat-current-turn-anchor"
-      aria-label="Show your latest message"
+      aria-label="Show the current user message"
       onclick={scrollToCurrentTurn}
     >
       <span class="chat-current-turn-anchor-label">You</span>
-      <span class="chat-current-turn-anchor-preview">{latestUserPreview}</span>
+      <span class="chat-current-turn-anchor-preview">{pinnedUserPreview}</span>
     </button>
   {/if}
   <div class={bodyClass}>

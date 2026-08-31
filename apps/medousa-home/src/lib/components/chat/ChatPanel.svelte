@@ -453,17 +453,6 @@
       (chatMessages.length > 0 || subagentRows.length > 0),
   );
 
-  const latestUserTurn = $derived.by(() => {
-    for (let index = chatMessages.length - 1; index >= 0; index -= 1) {
-      const message = chatMessages[index];
-      if (message?.role === "user" && message.content.trim()) return message;
-    }
-    return null;
-  });
-  const latestUserPreview = $derived.by(() => {
-    const firstLine = latestUserTurn?.content.trim().split("\n")[0] ?? "";
-    return firstLine.length > 120 ? `${firstLine.slice(0, 119)}…` : firstLine;
-  });
   const chatTurnItems = $derived(
     chatMessages
       .filter((message) => message.role === "user" && message.content.trim())
@@ -479,7 +468,7 @@
   const showChatTurnRail = $derived(
     !embedded && !useMobileChatLayout && chatTurnItems.length > 1,
   );
-  const showCurrentTurnAnchor = $derived(Boolean(latestUserTurn && latestUserPreview));
+  const showCurrentTurnAnchor = $derived(chatTurnItems.length > 0);
 
   $effect(() => {
     void panelSessionId;
@@ -959,8 +948,6 @@
     showFab={showScrollFab && visible}
     showTurnRail={showChatTurnRail}
     {showCurrentTurnAnchor}
-    {latestUserPreview}
-    latestUserTurnId={latestUserTurn?.id ?? null}
     {chatTurnItems}
     bind:activeChatTurnId
     bind:chatScrolling
