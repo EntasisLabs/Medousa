@@ -2248,6 +2248,10 @@ class WorkspaceEventRef(MedousaModel):
     ref_type: str
 
 
+class CountsByColumn(RootModel[int]):
+    root: int = Field(..., ge=0)
+
+
 class AgentModeTransitionPolicy(MedousaModel):
     auto_accept: AgentModeAutoAccept | None = 'never'
     proposal_ttl_seconds: int = Field(..., ge=0)
@@ -2544,7 +2548,9 @@ class CreateAgentSessionRequest(MedousaModel):
         None,
         description='Optional ACP wire `sessionId` to resume (from a prior `RecoveryDisposition::ResumeSupported`). When omitted but `work_id` is set, the daemon looks up the latest resume token on that work item.',
     )
-    runtime: str = Field(..., description='External runtime: `cursor` or `codex` (not `medousa`).')
+    runtime: str = Field(
+        ..., description='External runtime: `cursor`, `codex`, or `hermes` (not `medousa`).'
+    )
     session_id: str
     surface: TurnSurfaceContext | None = None
     work_id: str | None = Field(
@@ -2796,7 +2802,7 @@ class InteractiveTurnResponse(MedousaModel):
 class InteractiveTurnStreamEvent(MedousaModel):
     agent_runtime: str | None = Field(
         None,
-        description='External runtime kind when streaming an ACP session (`cursor` / `codex`).',
+        description='External runtime kind when streaming an ACP session (`cursor` / `codex` / `hermes`).',
     )
     agent_session_id: str | None = Field(
         None,
@@ -3678,7 +3684,7 @@ class WorkspaceEvent(MedousaModel):
 
 class WorkspaceSnapshot(MedousaModel):
     cards: list[WorkCard]
-    counts_by_column: dict[str, int]
+    counts_by_column: dict[str, CountsByColumn]
     feed_tail: list[WorkspaceEvent]
     server_time_utc: AwareDatetime
     workspace_revision: int = Field(..., ge=0)

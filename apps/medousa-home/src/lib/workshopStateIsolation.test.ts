@@ -53,12 +53,12 @@ describe("workshop client-state isolation", () => {
     persistDraftForSession(sessionId, "remote draft");
     localStorage.setItem(workshopScopedStorageKey(SESSION_KEY), "remote-session");
     savePromotedAskIds(new Set(["ask-remote"]));
-    setSessionAgentRuntime(sessionId, "cursor");
+    setSessionAgentRuntime(sessionId, "hermes");
 
     expect(loadDraftForSession(sessionId)).toBe("remote draft");
     expect(loadSessionId()).toBe("remote-session");
     expect([...loadPromotedAskIds()]).toEqual(["ask-remote"]);
-    expect(getSessionAgentRuntime(sessionId)).toBe("cursor");
+    expect(getSessionAgentRuntime(sessionId)).toBe("hermes");
 
     activeWorkshop = "authority-personal";
     expect(loadDraftForSession(sessionId)).toBe("personal draft");

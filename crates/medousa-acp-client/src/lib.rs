@@ -3,11 +3,12 @@
 //! The **daemon** owns this library and exposes `/v1/agents` via the Medousa SDK.
 //! Clients never speak ACP directly.
 //!
-//! Stub session + Cursor/Codex process adapters (spawn when binary exists;
+//! Stub session + Cursor/Codex/Hermes process adapters (spawn when binary exists;
 //! real `session/new` → `session/prompt` → `session/update` pump).
 //! Cursor: `agent acp`. Codex: `codex-acp` or `npx -y @agentclientprotocol/codex-acp@1.1.14`
-//! (stock `codex` has no `acp` subcommand). Missing CLI → stub; spawn/handshake
-//! failures surface as errors (no silent stub). Force stub: `MEDOUSA_ACP_FORCE_STUB=1`.
+//! (stock `codex` has no `acp` subcommand). Hermes: `hermes-acp` or `hermes acp`.
+//! Missing CLI → stub; spawn/handshake failures surface as errors (no silent stub).
+//! Force stub: `MEDOUSA_ACP_FORCE_STUB=1`.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -25,6 +26,7 @@ use tokio::sync::Mutex as AsyncMutex;
 /// Built-in runtime ids for 0.4.0 bones QA.
 pub const RUNTIME_CURSOR: &str = "cursor";
 pub const RUNTIME_CODEX: &str = "codex";
+pub const RUNTIME_HERMES: &str = "hermes";
 pub const RUNTIME_MEDOUSA: &str = "medousa";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -33,6 +35,7 @@ pub enum AgentRuntimeKind {
     Medousa,
     Cursor,
     Codex,
+    Hermes,
 }
 
 impl AgentRuntimeKind {
@@ -41,6 +44,7 @@ impl AgentRuntimeKind {
             Self::Medousa => RUNTIME_MEDOUSA,
             Self::Cursor => RUNTIME_CURSOR,
             Self::Codex => RUNTIME_CODEX,
+            Self::Hermes => RUNTIME_HERMES,
         }
     }
 
@@ -49,6 +53,7 @@ impl AgentRuntimeKind {
             "medousa" | "native" => Some(Self::Medousa),
             "cursor" => Some(Self::Cursor),
             "codex" => Some(Self::Codex),
+            "hermes" => Some(Self::Hermes),
             _ => None,
         }
     }
@@ -105,6 +110,27 @@ impl AcpAgentConfig {
             cwd: None,
         }
     }
+
+    pub fn hermes_default() -> Self {
+        if let Ok(command) = std::env::var("MEDOUSA_ACP_HERMES_COMMAND") {
+            let args = env_args("MEDOUSA_ACP_HERMES_ARGS", &["acp"]);
+            return Self {
+                kind: AgentRuntimeKind::Hermes,
+                command: resolve_command_path(&command)
+                    .map(|p| p.display().to_string())
+                    .unwrap_or(command),
+                args,
+                cwd: None,
+            };
+        }
+        let (command, args) = resolve_hermes_acp_launch();
+        Self {
+            kind: AgentRuntimeKind::Hermes,
+            command,
+            args,
+            cwd: None,
+        }
+    }
 }
 
 /// Prefer an installed `codex-acp` binary; otherwise use the protocol-tested
@@ -124,6 +150,37 @@ fn resolve_codex_acp_launch() -> (String, Vec<String>) {
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "codex".into());
     (codex, vec!["acp".into()])
+}
+
+/// Prefer `hermes-acp` when present; otherwise `hermes acp` (official ACP mode).
+fn resolve_hermes_acp_launch() -> (String, Vec<String>) {
+    if let Some(path) = resolve_command_path("hermes-acp") {
+        return (path.display().to_string(), Vec::new());
+    }
+    let hermes = resolve_command_path("hermes")
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "hermes".into());
+    (hermes, vec!["acp".into()])
+}
+
+fn hermes_home_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Ok(override_home) = std::env::var("HERMES_HOME") {
+        let trimmed = override_home.trim();
+        if !trimmed.is_empty() {
+            dirs.push(PathBuf::from(trimmed));
+        }
+    }
+    if let Some(home) = home_dir() {
+        dirs.push(home.join(".hermes"));
+    }
+    #[cfg(windows)]
+    {
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            dirs.push(PathBuf::from(local).join("hermes"));
+        }
+    }
+    dirs
 }
 
 fn env_args(key: &str, default: &[&str]) -> Vec<String> {
@@ -442,6 +499,95 @@ fn cursor_keychain_has_tokens() -> bool {
     }
 }
 
+/// Hermes ACP reuses provider credentials under `~/.hermes` (or `%LOCALAPPDATA%\hermes`
+/// on native Windows / `HERMES_HOME`). We only check that config looks present —
+/// never parse API keys.
+fn hermes_auth_probe(binary_present: bool) -> RuntimeAuthProbe {
+    if binary_present && let Some((status, detail)) = hermes_auth_from_cli_status() {
+        return RuntimeAuthProbe {
+            status,
+            binary_present: true,
+            detail: Some(detail),
+        };
+    }
+
+    let mut saw_home = false;
+    let mut configured = false;
+    for dir in hermes_home_dirs() {
+        if !dir.is_dir() {
+            continue;
+        }
+        saw_home = true;
+        if path_has_content(&dir.join(".env")) || path_has_content(&dir.join("config.yaml")) {
+            configured = true;
+            break;
+        }
+    }
+
+    let (status, detail) = if configured {
+        (
+            RuntimeAuthStatus::SignedIn,
+            Some("Hermes provider config found".into()),
+        )
+    } else if saw_home || binary_present {
+        (
+            RuntimeAuthStatus::SignedOut,
+            Some("not configured — run `hermes acp --setup` (or `hermes model`)".into()),
+        )
+    } else {
+        (
+            RuntimeAuthStatus::Unknown,
+            Some("Hermes CLI not installed".into()),
+        )
+    };
+    RuntimeAuthProbe {
+        status,
+        binary_present,
+        detail,
+    }
+}
+
+/// Best-effort: `hermes status` text when the CLI is present.
+fn hermes_auth_from_cli_status() -> Option<(RuntimeAuthStatus, String)> {
+    ensure_vendor_cli_path();
+    let program = resolve_command_path("hermes")?;
+    let output = std::process::Command::new(program)
+        .arg("status")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .ok()?;
+    let text = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let normalized = text.to_ascii_lowercase();
+    // Hermes status wording varies by version; treat obvious "no provider" /
+    // "not configured" as signed out, otherwise configured when exit 0.
+    if normalized.contains("no provider")
+        || normalized.contains("not configured")
+        || normalized.contains("run hermes setup")
+        || normalized.contains("run `hermes model`")
+        || normalized.contains("run hermes model")
+        || normalized.contains("missing api")
+        || normalized.contains("no api key")
+    {
+        return Some((
+            RuntimeAuthStatus::SignedOut,
+            "Hermes provider not configured — run `hermes acp --setup`".into(),
+        ));
+    }
+    if output.status.success() {
+        return Some((
+            RuntimeAuthStatus::SignedIn,
+            "Hermes CLI reports configured".into(),
+        ));
+    }
+    None
+}
+
 /// Best-effort auth probe for an external runtime (medousa native is always
 /// "signed in" — it needs no vendor account).
 pub fn runtime_auth_probe(kind: AgentRuntimeKind) -> RuntimeAuthProbe {
@@ -462,6 +608,14 @@ pub fn runtime_auth_probe(kind: AgentRuntimeKind) -> RuntimeAuthProbe {
         AgentRuntimeKind::Codex => {
             // Sign-in is via the Codex CLI; ACP itself may launch through `codex-acp` / npx.
             codex_auth_probe(command_available("codex"))
+        }
+        AgentRuntimeKind::Hermes => {
+            let cfg = AcpAgentConfig::hermes_default();
+            let present = command_available("hermes")
+                || command_available("hermes-acp")
+                || command_available(&cfg.command)
+                || PathBuf::from(&cfg.command).is_file();
+            hermes_auth_probe(present)
         }
     }
 }
@@ -628,11 +782,12 @@ fn uuid_v4_lite() -> String {
     format!("{nanos:x}")
 }
 
-/// Resolve a configured external runtime (Cursor / Codex only in 0.4.0).
+/// Resolve a configured external runtime (Cursor / Codex / Hermes).
 pub fn external_runtime_config(kind: AgentRuntimeKind) -> Result<AcpAgentConfig> {
     match kind {
         AgentRuntimeKind::Cursor => Ok(AcpAgentConfig::cursor_default()),
         AgentRuntimeKind::Codex => Ok(AcpAgentConfig::codex_default()),
+        AgentRuntimeKind::Hermes => Ok(AcpAgentConfig::hermes_default()),
         AgentRuntimeKind::Medousa => {
             bail!("medousa runtime is not an ACP external agent")
         }
@@ -774,7 +929,7 @@ pub fn runtime_availability(kind: AgentRuntimeKind) -> (bool, Option<String>, Op
             None,
             Some("Use /v1/turns for native Medousa agent loop".into()),
         ),
-        AgentRuntimeKind::Cursor | AgentRuntimeKind::Codex => {
+        AgentRuntimeKind::Cursor | AgentRuntimeKind::Codex | AgentRuntimeKind::Hermes => {
             let cfg = match external_runtime_config(kind) {
                 Ok(c) => c,
                 Err(err) => return (false, None, Some(err.to_string())),
@@ -796,6 +951,12 @@ pub fn runtime_availability(kind: AgentRuntimeKind) -> (bool, Option<String>, Op
                 Some(
                     "Codex ACP adapter not found — install Node.js (for npx) or `codex-acp`, \
                      then retry. Stock `codex` has no `acp` subcommand."
+                        .into(),
+                )
+            } else if matches!(kind, AgentRuntimeKind::Hermes) {
+                Some(
+                    "Hermes CLI not found — install from Settings → Connections \
+                     (needs ACP: `hermes acp` / `hermes-acp`)."
                         .into(),
                 )
             } else {
@@ -828,7 +989,7 @@ struct ProcessSession {
     config_options: Vec<Value>,
 }
 
-/// Spawns Cursor/Codex ACP stdio when the binary exists; otherwise errors loudly.
+/// Spawns Cursor/Codex/Hermes ACP stdio when the binary exists; otherwise errors loudly.
 ///
 /// The bundled [`StubAcpClient`] is only used when `MEDOUSA_ACP_FORCE_STUB` is
 /// set (dev/bones) — a missing CLI otherwise surfaces a clear setup error so the
@@ -1139,6 +1300,11 @@ async fn spawn_acp_process(config: &AcpAgentConfig) -> Result<ProcessSession> {
             .env_remove("MODEL_PROVIDER")
             .env("DEFAULT_AUTH_REQUEST", r#"{"methodId":"chat-gpt"}"#)
             .env("CODEX_CONFIG", codex_subscription_config());
+    }
+    if matches!(config.kind, AgentRuntimeKind::Hermes) {
+        // Medousa owns MCP via session/new — skip Hermes' global config.yaml MCP
+        // boot so initialize is not blocked by unrelated servers.
+        cmd.env("HERMES_ACP_SKIP_CONFIGURED_MCP", "1");
     }
     if let Some(cwd) = &config.cwd {
         cmd.current_dir(cwd);
@@ -1660,7 +1826,18 @@ mod tests {
             AgentRuntimeKind::parse("codex"),
             Some(AgentRuntimeKind::Codex)
         );
+        assert_eq!(
+            AgentRuntimeKind::parse("hermes"),
+            Some(AgentRuntimeKind::Hermes)
+        );
         assert!(external_runtime_config(AgentRuntimeKind::Medousa).is_err());
+        let hermes = AcpAgentConfig::hermes_default();
+        assert_eq!(hermes.kind, AgentRuntimeKind::Hermes);
+        assert!(
+            hermes.command.contains("hermes"),
+            "expected hermes launch command, got {}",
+            hermes.command
+        );
     }
 
     #[tokio::test]

@@ -1958,7 +1958,7 @@ pub struct InteractiveTurnStreamEvent {
     /// Bound Medousa chat session for agent-runtime streams (`turn_id` holds agent_session_id).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session_id: Option<String>,
-    /// External runtime kind when streaming an ACP session (`cursor` / `codex`).
+    /// External runtime kind when streaming an ACP session (`cursor` / `codex` / `hermes`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_runtime: Option<String>,
     /// Trusted secret-entry handoff. Metadata only; the value never enters a
@@ -3476,6 +3476,7 @@ pub enum AgentRuntimeId {
     Medousa,
     Cursor,
     Codex,
+    Hermes,
 }
 
 impl AgentRuntimeId {
@@ -3484,6 +3485,7 @@ impl AgentRuntimeId {
             Self::Medousa => "medousa",
             Self::Cursor => "cursor",
             Self::Codex => "codex",
+            Self::Hermes => "hermes",
         }
     }
 
@@ -3492,6 +3494,7 @@ impl AgentRuntimeId {
             "medousa" | "native" => Some(Self::Medousa),
             "cursor" => Some(Self::Cursor),
             "codex" => Some(Self::Codex),
+            "hermes" => Some(Self::Hermes),
             _ => None,
         }
     }
@@ -3618,7 +3621,7 @@ pub struct CodeIntentContext {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct CreateAgentSessionRequest {
     pub session_id: String,
-    /// External runtime: `cursor` or `codex` (not `medousa`).
+    /// External runtime: `cursor`, `codex`, or `hermes` (not `medousa`).
     pub runtime: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,

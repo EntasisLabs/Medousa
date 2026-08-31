@@ -49,7 +49,7 @@
     save: CodeSaveController;
     busy: boolean;
     agentHasControl: boolean;
-    onHandoffToAgent?: (runtime: "codex" | "cursor", draft?: string) => Promise<void>;
+    onHandoffToAgent?: (runtime: "codex" | "cursor" | "hermes", draft?: string) => Promise<void>;
     problems: CodeProblemsController;
     canReference: boolean;
     canRename: boolean;

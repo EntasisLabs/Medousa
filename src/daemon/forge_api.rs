@@ -10043,10 +10043,10 @@ async fn prepare_handoff(
             move || {
                 let id = parse_work_id(&work_id)?;
                 let target = body.to_executor.trim().to_ascii_lowercase();
-                if !matches!(target.as_str(), "codex" | "cursor" | "human") {
+                if !matches!(target.as_str(), "codex" | "cursor" | "hermes" | "human") {
                     return Err(request_error(
                         StatusCode::BAD_REQUEST,
-                        "handoff target must be codex, cursor, or human",
+                        "handoff target must be codex, cursor, hermes, or human",
                     ));
                 }
                 let lease = resolve_lease(forge(&state).as_ref(), &body.lease_id, body.generation)?;

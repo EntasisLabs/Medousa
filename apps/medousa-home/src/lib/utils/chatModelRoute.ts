@@ -5,7 +5,8 @@ export type ChatCredentialRoute =
   | "api-key"
   | "local"
   | "chatgpt-account"
-  | "cursor-account";
+  | "cursor-account"
+  | "hermes-account";
 
 export interface ChatModelRouteRef {
   runtime: ChatAgentRuntime;
@@ -26,6 +27,7 @@ export function credentialRouteFor(
 ): ChatCredentialRoute {
   if (runtime === "codex") return "chatgpt-account";
   if (runtime === "cursor") return "cursor-account";
+  if (runtime === "hermes") return "hermes-account";
   const normalized = provider.trim().toLowerCase();
   if (normalized === "openai-codex") return "chatgpt-account";
   return normalized === "ollama" || normalized === "medousa-local"
@@ -57,7 +59,9 @@ export function agentModelDisplayLabel(
       return option.currentValue.trim();
     }
   }
-  return runtime === "codex" ? "Choose ChatGPT model" : "Choose Cursor model";
+  if (runtime === "codex") return "Choose ChatGPT model";
+  if (runtime === "hermes") return "Choose Hermes model";
+  return "Choose Cursor model";
 }
 
 export function modelSourceLabel(runtime: ChatAgentRuntime): string {
@@ -66,6 +70,8 @@ export function modelSourceLabel(runtime: ChatAgentRuntime): string {
       return "ChatGPT";
     case "cursor":
       return "Cursor";
+    case "hermes":
+      return "Hermes";
     default:
       return "Medousa";
   }
@@ -78,6 +84,7 @@ export function modelSourceDetail(
 ): string {
   if (runtime === "codex") return "OpenAI account · Codex runtime";
   if (runtime === "cursor") return "Cursor account · Cursor runtime";
+  if (runtime === "hermes") return "Hermes providers · Hermes runtime";
   const provider = nativeProviderId.trim().toLowerCase();
   const connection = credentialRouteFor(runtime, provider) === "local" ? "Local" : "API key";
   return `${nativeProviderLabel} · ${connection}`;

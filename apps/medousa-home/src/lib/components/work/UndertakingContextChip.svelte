@@ -178,7 +178,7 @@
     void undertakings.select(active.workId);
   });
 
-  async function withItem(action: "terminal" | "codex" | "cursor") {
+  async function withItem(action: "terminal" | "codex" | "cursor" | "hermes") {
     if (!active || busy) return;
     busy = true;
     error = null;
@@ -341,6 +341,16 @@
       >
         <Bot size={14} />
         Ask Cursor to continue
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        class="context-action"
+        disabled={busy}
+        onclick={() => { chipMenuOpen = false; void withItem("hermes"); }}
+      >
+        <Bot size={14} />
+        Ask Hermes to continue
       </button>
     {/if}
 

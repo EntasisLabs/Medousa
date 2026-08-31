@@ -1373,7 +1373,7 @@ export async function prepareExecutorHandoff(input: {
   work_id: string;
   lease_id: string;
   generation: number;
-  to_executor: "codex" | "cursor" | "human";
+  to_executor: "codex" | "cursor" | "hermes" | "human";
 }): Promise<ItemProjection> {
   return forgeFetch(operationPath("forge.items.by_work_id.handoff.post", { work_id: input.work_id }), {
     method: "POST",

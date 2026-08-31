@@ -865,14 +865,16 @@ fn collect_attribution(
         let kind = match executor.as_str() {
             "human" => "human",
             "terminal" => "terminal",
-            "codex" | "cursor" | "agent" | "script" => "agent",
+            "codex" | "cursor" | "hermes" | "acp-codex" | "acp-cursor" | "acp-hermes"
+            | "agent" | "script" => "agent",
             _ => "agent",
         };
         let label = match executor.as_str() {
             "human" => "You".into(),
             "terminal" => "Terminal".into(),
-            "codex" => "Codex".into(),
-            "cursor" => "Cursor".into(),
+            "codex" | "acp-codex" => "Codex".into(),
+            "cursor" | "acp-cursor" => "Cursor".into(),
+            "hermes" | "acp-hermes" => "Hermes".into(),
             "script" => "Automation".into(),
             _ => attempt.executor.kind.clone(),
         };
@@ -1150,8 +1152,9 @@ fn human_executor(kind: &str) -> String {
     match kind.trim().to_ascii_lowercase().as_str() {
         "human" => "You".into(),
         "terminal" => "Terminal".into(),
-        "codex" => "Codex".into(),
-        "cursor" => "Cursor".into(),
+        "codex" | "acp-codex" => "Codex".into(),
+        "cursor" | "acp-cursor" => "Cursor".into(),
+        "hermes" | "acp-hermes" => "Hermes".into(),
         "script" => "Automation".into(),
         _ => kind.to_owned(),
     }

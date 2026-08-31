@@ -129,7 +129,7 @@ export async function openTrackedTerminal(
 
 export async function startTrackedAgent(
   item: ItemProjection,
-  runtime: "codex" | "cursor",
+  runtime: "codex" | "cursor" | "hermes",
   options?: { draft?: string },
 ): Promise<string> {
   const currentSession = chat.sessionId;

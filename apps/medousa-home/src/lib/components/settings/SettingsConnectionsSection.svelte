@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * Settings → Connections — daemon-owned ChatGPT OAuth plus Codex/Cursor
+   * Settings → Connections — daemon-owned ChatGPT OAuth plus Codex/Cursor/Hermes
    * vendor runtime sign-in. These credential routes intentionally stay separate.
    */
   import { onDestroy, onMount } from "svelte";
@@ -15,6 +15,7 @@
     RefreshCw,
     Sparkles,
     MousePointer2,
+    Bot,
   } from "@lucide/svelte";
   import { accountConnections } from "$lib/stores/accountConnections.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
@@ -25,6 +26,7 @@
     beginTerminalLogin,
     accountSignOut,
     installAccountCli,
+    type AccountId,
   } from "$lib/utils/accountConnections";
   import { openGuide } from "$lib/guide/openGuide";
   import { openUrlInDefaultBrowser } from "$lib/utils/browserActions";
@@ -47,7 +49,7 @@
   let actionBusy = $state<string | null>(null);
   let actionNote = $state<string | null>(null);
   let actionError = $state<string | null>(null);
-  let waitingFor = $state<"chatgpt" | "cursor" | null>(null);
+  let waitingFor = $state<AccountId | null>(null);
   let nativeChatGpt = $state<ChatGptOAuthConnection | null>(null);
   let nativeChatGptLoading = $state(false);
   let nativeChatGptLoaded = $state(false);
@@ -114,7 +116,7 @@
     }
   }
 
-  async function waitForSignIn(account: "chatgpt" | "cursor"): Promise<string> {
+  async function waitForSignIn(account: AccountId): Promise<string> {
     waitingFor = account;
     const status = await accountConnections.awaitSignedIn(account, {
       timeoutMs: 3 * 60_000,
@@ -195,11 +197,18 @@
     });
   }
 
-  async function signOut(account: "chatgpt" | "cursor") {
+  async function signInHermes() {
+    await withAction("hermes-login", async () => {
+      actionNote = await beginTerminalLogin("hermes");
+      return await waitForSignIn("hermes");
+    });
+  }
+
+  async function signOut(account: AccountId) {
     await withAction(`${account}-logout`, () => accountSignOut(account));
   }
 
-  async function installCli(account: "chatgpt" | "cursor") {
+  async function installCli(account: AccountId) {
     await withAction(`${account}-install`, async () => {
       const result = await installAccountCli(account);
       return result.detail;
@@ -219,7 +228,8 @@
   const anySignedIn = $derived(
     nativeChatGptReady ||
       accountConnections.isSignedIn("chatgpt") ||
-      accountConnections.isSignedIn("cursor"),
+      accountConnections.isSignedIn("cursor") ||
+      accountConnections.isSignedIn("hermes"),
   );
 </script>
 
@@ -258,7 +268,7 @@
     {/if}
 
     <ol class="connections-steps workshop-faint mt-3">
-      <li><strong>Choose ownership</strong> — Medousa{desktopCli ? ", Codex, or Cursor" : ""}.</li>
+      <li><strong>Choose ownership</strong> — Medousa{desktopCli ? ", Codex, Cursor, or Hermes" : ""}.</li>
       <li><strong>Sign in</strong> to that connection; credentials are not shared.</li>
       <li>
         <strong>In Chat</strong>, choose the runtime under the composer. For
@@ -356,8 +366,9 @@
 
       {#if desktopCli}
         {#each [
-          { info: accountConnections.connections?.chatgpt, account: "chatgpt" as const, icon: "chatgpt" },
-          { info: accountConnections.connections?.cursor, account: "cursor" as const, icon: "cursor" },
+          { info: accountConnections.connections?.chatgpt, account: "chatgpt" as const, icon: "chatgpt", title: "Codex", sub: "Codex runtime · ChatGPT account", cli: "Codex CLI", runtimeLabel: "Codex" },
+          { info: accountConnections.connections?.cursor, account: "cursor" as const, icon: "cursor", title: "Cursor", sub: "Cursor coding agent", cli: "Cursor Agent CLI", runtimeLabel: "Cursor" },
+          { info: accountConnections.connections?.hermes, account: "hermes" as const, icon: "hermes", title: "Hermes", sub: "Hermes Agent · ACP", cli: "Hermes Agent CLI", runtimeLabel: "Hermes" },
         ] as card (card.account)}
         {@const info = card.info}
         <div class="connections-card" data-account={card.account}>
@@ -365,19 +376,15 @@
             <span class="connections-card-icon" aria-hidden="true">
               {#if card.icon === "chatgpt"}
                 <Sparkles size={16} strokeWidth={1.85} />
+              {:else if card.icon === "hermes"}
+                <Bot size={16} strokeWidth={1.85} />
               {:else}
                 <MousePointer2 size={16} strokeWidth={1.85} />
               {/if}
             </span>
             <div class="min-w-0 flex-1">
-              <p class="connections-card-title">
-                {card.account === "chatgpt" ? "Codex" : "Cursor"}
-              </p>
-              <p class="connections-card-sub workshop-faint">
-                {card.account === "chatgpt"
-                  ? "Codex runtime · ChatGPT account"
-                  : "Cursor coding agent"}
-              </p>
+              <p class="connections-card-title">{card.title}</p>
+              <p class="connections-card-sub workshop-faint">{card.sub}</p>
             </div>
             <span
               class="connections-status"
@@ -398,8 +405,7 @@
 
           {#if info && !info.binaryPresent}
             <p class="connections-note workshop-faint">
-              {card.account === "chatgpt" ? "Codex CLI" : "Cursor Agent CLI"} isn’t
-              installed yet — Medousa can install it for you with the vendor’s
+              {card.cli} isn’t installed yet — Medousa can install it for you with the vendor’s
               official installer.
             </p>
           {:else if waitingFor === card.account}
@@ -409,9 +415,7 @@
             </p>
           {:else if info?.authStatus === "signed_in"}
             <p class="connections-note workshop-faint">
-              Ready. In Chat, pick
-              {card.account === "chatgpt" ? "Codex" : "Cursor"}
-              from the runtime control under the composer.
+              Ready. In Chat, pick {card.runtimeLabel} from the runtime control under the composer.
             </p>
           {:else if info?.authStatus === "signed_out"}
             <p class="connections-note workshop-faint">
@@ -446,7 +450,7 @@
                 onclick={() => void signOut(card.account)}
               >
                 <LogOut size={13} strokeWidth={2} />
-                Sign out
+                {card.account === "hermes" ? "Reconfigure" : "Sign out"}
               </button>
             {:else}
               <button
@@ -454,12 +458,16 @@
                 class="btn btn-sm variant-filled-primary"
                 disabled={actionBusy != null}
                 onclick={() =>
-                  void (card.account === "chatgpt" ? signInCodex() : signInCursor())}
+                  void (card.account === "chatgpt"
+                    ? signInCodex()
+                    : card.account === "hermes"
+                      ? signInHermes()
+                      : signInCursor())}
               >
                 <LogIn size={13} strokeWidth={2} />
                 {waitingFor === card.account
                   ? "Waiting…"
-                  : actionBusy === `${card.account}-login` || actionBusy === "codex-login"
+                  : actionBusy === `${card.account}-login` || actionBusy === "codex-login" || actionBusy === "hermes-login"
                     ? "Signing in…"
                     : "Sign in"}
               </button>

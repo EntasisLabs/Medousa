@@ -1613,7 +1613,7 @@
             ]
           },
           "runtime": {
-            "description": "External runtime: `cursor` or `codex` (not `medousa`).",
+            "description": "External runtime: `cursor`, `codex`, or `hermes` (not `medousa`).",
             "type": "string"
           },
           "session_id": {
