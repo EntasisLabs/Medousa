@@ -104,6 +104,18 @@ describe("eager AppShell graph freeze", () => {
   });
 });
 
+describe("app viewport contract", () => {
+  it("keeps a boxed full-height mount for native WebViews", () => {
+    const source = readFileSync(join(homeRoot, "src/app.html"), "utf8");
+    const mount = source.match(/<div\s+id="medousa-app-root"[\s\S]*?>/)?.[0];
+
+    expect(mount).toBeDefined();
+    expect(mount).toContain("height: 100%");
+    expect(mount).toContain("width: 100%");
+    expect(mount).not.toContain("display: contents");
+  });
+});
+
 describe("shell and chat a11y fixtures", () => {
   it("keeps desktop/mobile/chat landmarks used by later composition splits", () => {
     for (const fixture of Object.values(SHELL_A11Y_FIXTURES)) {
