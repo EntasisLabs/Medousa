@@ -7,8 +7,8 @@
       "shellEntry": "src/lib/components/layout/WorkshopShell.svelte",
       "jsFiles": 263,
       "cssFiles": 31,
-      "jsBytes": 3822700,
-      "jsGzipBytes": 1256898,
+      "jsBytes": 3822696,
+      "jsGzipBytes": 1256899,
       "cssBytes": 631395,
       "cssGzipBytes": 102743,
       "largestJsChunkBytes": 808641
@@ -17,8 +17,8 @@
       "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
       "jsFiles": 297,
       "cssFiles": 46,
-      "jsBytes": 6312531,
-      "jsGzipBytes": 1963152,
+      "jsBytes": 6312527,
+      "jsGzipBytes": 1963153,
       "cssBytes": 972100,
       "cssGzipBytes": 154577,
       "largestJsChunkBytes": 1454824
@@ -35,8 +35,8 @@
       "shellEntry": "src/lib/components/layout/WorkshopShell.svelte",
       "jsFiles": 263,
       "cssFiles": 31,
-      "jsBytes": 3822700,
-      "jsGzipBytes": 1256898,
+      "jsBytes": 3822696,
+      "jsGzipBytes": 1256899,
       "cssBytes": 631395,
       "cssGzipBytes": 102743,
       "largestJsChunkBytes": 808641
@@ -45,8 +45,8 @@
       "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
       "jsFiles": 297,
       "cssFiles": 46,
-      "jsBytes": 6312531,
-      "jsGzipBytes": 1963152,
+      "jsBytes": 6312527,
+      "jsGzipBytes": 1963153,
       "cssBytes": 972100,
       "cssGzipBytes": 154577,
       "largestJsChunkBytes": 1454824

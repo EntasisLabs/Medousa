@@ -1823,7 +1823,7 @@ summary second
         fs::write(source.join("hello.txt"), "changed\n").unwrap();
         fs::write(source.join("delete-me.txt"), "delete\n").unwrap();
         git.run(source, &["add", "delete-me.txt"]).unwrap();
-        git.run(source, &["commit", "-m", "add delete target"])
+        git.commit_checkpoint(source, "add delete target", &CheckpointAuthor::default())
             .unwrap();
         let source_head = git.head_oid(source).unwrap();
         fs::remove_file(source.join("delete-me.txt")).unwrap();

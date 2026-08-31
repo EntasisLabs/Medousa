@@ -171,13 +171,30 @@ impl TurnEventLog {
     pub fn open_in_dir(root: Dir, envelope: TurnEnvelope) -> std::io::Result<Self> {
         let turn_id = TurnEventId::parse(&envelope.turn_id).map_err(std::io::Error::other)?;
         let journal_path = journal_name(&turn_id);
+        let scan = match scan_journal(&root, &journal_path, &envelope.turn_id) {
+            Ok(scan) => scan,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => JournalScan {
+                next_seq: 1,
+                events: VecDeque::new(),
+                retained_bytes: 0,
+                evicted_events: 0,
+                evicted_bytes: 0,
+                sparse_offsets: Vec::new(),
+                valid_bytes: 0,
+            },
+            Err(error) => return Err(error),
+        };
         let mut options = OpenOptions::new();
-        options.create(true).append(true).follow(FollowSymlinks::No);
-        let journal = root.open_with(&journal_path, &options)?;
-        let scan = scan_journal(&root, &journal_path, &envelope.turn_id)?;
+        options
+            .create(true)
+            .read(true)
+            .write(true)
+            .follow(FollowSymlinks::No);
+        let mut journal = root.open_with(&journal_path, &options)?;
         if journal.metadata()?.len() != scan.valid_bytes {
             journal.set_len(scan.valid_bytes)?;
         }
+        journal.seek(SeekFrom::End(0))?;
         let committed = commit_marker_matches(&root, &turn_id, scan.next_seq.saturating_sub(1));
         Ok(Self {
             envelope,
