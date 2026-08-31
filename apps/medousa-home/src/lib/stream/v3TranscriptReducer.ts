@@ -103,6 +103,24 @@ function applyTextCommitted(
   return replaceSegment(segments, index, { ...current, committed: true });
 }
 
+function applyProgress(
+  segments: ChatSegment[],
+  envelope: TurnStreamEnvelopeV3,
+  event: Extract<TurnStreamEventV3, { type: "progress" }>,
+): ChatSegment[] {
+  const markdown = event.message.trim();
+  if (!markdown) return segments;
+  const progressId = `progress:${envelope.turn_id}:${envelope.seq}`;
+  if (
+    segments.some(
+      (segment) => segment.kind === "progress" && segment.progressId === progressId,
+    )
+  ) {
+    return segments;
+  }
+  return [...segments, { kind: "progress", progressId, markdown }];
+}
+
 function runFromToolEvent(
   event: Extract<TurnStreamEventV3, { type: "tool_started" | "tool_finished" }>,
   previous?: ToolRunState,
@@ -280,7 +298,8 @@ export function applyV3EnvelopeToMessage(
       chrome = { phase: event.phase, statusLine: event.operator_message ?? message.statusLine ?? null };
       break;
     case "progress":
-      chrome = { statusLine: event.message };
+      segments = applyProgress(segments, envelope, event);
+      chrome = { statusLine: null };
       break;
     case "model_receipt":
       chrome = { responseProvider: event.provider, responseModel: event.model };
@@ -333,6 +352,7 @@ export function v3EventPromotesChatMessage(event: TurnStreamEventV3): boolean {
     case "ui_scene":
     case "worker_ack":
     case "budget_approval_required":
+    case "progress":
       return true;
     case "turn_completed":
       return Boolean(event.aggregate_text.trim());

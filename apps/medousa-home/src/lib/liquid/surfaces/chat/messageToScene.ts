@@ -77,6 +77,15 @@ function chronologicalSegmentFlow(
         }
         break;
       }
+      case "progress":
+        if (segment.markdown.trim()) {
+          flow.push(
+            child(`${message.id}:segment:${segment.progressId}`, "whisper", {
+              text: segment.markdown,
+            }),
+          );
+        }
+        break;
       case "tool_group":
         if (segment.runs.length > 0) {
           flow.push(

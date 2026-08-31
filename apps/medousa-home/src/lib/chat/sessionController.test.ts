@@ -45,6 +45,10 @@ describe("mapTurns chronological history", () => {
           tool_round: 1,
         },
         {
+          kind: "progress",
+          markdown: "I found the relevant entries.",
+        },
+        {
           kind: "text",
           markdown: "Found it.",
           segment_id: "segment-b",
@@ -56,8 +60,10 @@ describe("mapTurns chronological history", () => {
     expect(messages[0]?.segments?.map((segment) => segment.kind)).toEqual([
       "text",
       "tool_group",
+      "progress",
       "text",
     ]);
+    expect(messages[0]?.statusLine).toBeNull();
   });
 
   it("keeps pre-V3 history on the legacy flat layout", () => {

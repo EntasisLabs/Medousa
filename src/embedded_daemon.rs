@@ -636,7 +636,20 @@ impl EmbeddedChronologicalTurn {
         fallback: &str,
     ) -> Result<String, medousa_engine::TurnPipelineError> {
         self.commit_active(false).await?;
-        if self.aggregate_text().trim().is_empty() && !fallback.trim().is_empty() {
+        let terminal_text_is_new = self
+            .text
+            .lock()
+            .map(|state| {
+                let fallback = fallback.trim();
+                !fallback.is_empty()
+                    && state.committed_markdown.join("\n\n").trim() != fallback
+                    && state
+                        .committed_markdown
+                        .last()
+                        .is_none_or(|last| last.trim() != fallback)
+            })
+            .unwrap_or(false);
+        if terminal_text_is_new {
             self.content_delta(fallback.to_string()).await?;
             self.commit_active(false).await?;
         }
@@ -5065,8 +5078,12 @@ mod tests {
     use genai::ModelIden;
     use genai::adapter::AdapterKind;
     use genai::chat::{ChatOptions, ChatRequest, ChatResponse, MessageContent, ToolCall};
+    use medousa_engine::{
+        TURN_PIPELINE_BYTE_CAPACITY, TurnPipelineEmission, TurnPipelineError, TurnPipelineOutput,
+    };
     use stasis::domain::errors::Result as StasisResult;
     use stasis::domain::runtime::job::JobState;
+    use tokio::sync::Semaphore;
 
     use super::*;
     use crate::request_principal::PrincipalKind;
@@ -5084,6 +5101,45 @@ query MobileProbe {
     }
 }
 "#;
+
+    struct DiscardTurnOutput;
+
+    impl TurnPipelineOutput for DiscardTurnOutput {
+        async fn publish(
+            &self,
+            _emission: TurnPipelineEmission,
+        ) -> std::result::Result<(), TurnPipelineError> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn embedded_terminal_tool_message_follows_earlier_interim_prose() {
+        let pipeline = TurnPipelineHandle::spawn(
+            "embedded-terminal-message",
+            0,
+            Arc::new(Semaphore::new(TURN_PIPELINE_BYTE_CAPACITY * 2)),
+            Arc::new(DiscardTurnOutput),
+        );
+        let chronological =
+            EmbeddedChronologicalTurn::new("embedded-terminal-message", pipeline.clone());
+
+        chronological
+            .content_delta("I found the likely cause.".into())
+            .await
+            .expect("publish interim prose");
+        chronological
+            .commit_active(true)
+            .await
+            .expect("commit interim prose");
+        let body = chronological
+            .terminal_body("The fix is ready.")
+            .await
+            .expect("commit terminal tool message");
+
+        assert_eq!(body, "I found the likely cause.\n\nThe fix is ready.");
+        pipeline.cancel();
+    }
 
     #[test]
     fn embedded_prompt_uses_general_sttp_and_tool_hud() {
