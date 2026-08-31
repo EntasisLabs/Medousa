@@ -3,9 +3,9 @@
 **Audience:** people who want a mobile Personal workshop to connect to another
 Medousa workshop.
 
-On iPhone, first-run setup creates the embedded Personal workshop and can
-configure its own model provider. Pairing is not part of that critical path.
-Pairing later adds a separate
+On iPhone and Android, first-run setup creates the embedded Personal workshop
+and can configure its own model provider. Pairing is not part of that critical
+path. Pairing later adds a separate
 portal you may switch to; it does not replace Personal or merge their data.
 
 ---
@@ -16,7 +16,7 @@ portal you may switch to; it does not replace Personal or merge their data.
 2. For a compact QR, phone and host are on the **same trusted Wi‑Fi** for first
    pair (café Wi‑Fi is a bad idea). An off-LAN host can instead issue a full Iroh
    invite as described below.
-3. Install the Medousa companion from TestFlight / store when available, or a
+3. Install Medousa from TestFlight / the app store when available, or use a
    dev build ([mobile-and-lan cookbook](../cookbook/mobile-and-lan.md)).
 
 ---

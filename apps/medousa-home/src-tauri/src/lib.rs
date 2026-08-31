@@ -27,9 +27,10 @@ mod files;
 mod integration_secrets;
 #[cfg(target_os = "ios")]
 mod home_widget;
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod human_browser;
 #[cfg(target_os = "android")]
+#[path = "human_browser_mobile.rs"]
 mod human_browser_android;
 #[cfg(target_os = "ios")]
 mod human_browser_ios;
@@ -149,6 +150,7 @@ fn run_home() {
     // Tauri's custom-protocol handler uses reqwest during the first WKWebView load.
     let _ = rustls::crypto::ring::default_provider().install_default();
 
+    #[cfg(not(target_os = "android"))]
     if let Some(path) = crate::paths::load_env_overlay() {
         eprintln!("[medousa-home] loaded env overlay from {}", path.display());
     }
@@ -198,6 +200,14 @@ fn run_home() {
     builder = builder.setup(move |app| {
         let setup_started = std::time::Instant::now();
         eprintln!("[medousa-home] setup start");
+        #[cfg(target_os = "android")]
+        {
+            let data_dir = crate::paths::initialize_android_data_dir(app.handle())?;
+            eprintln!(
+                "[medousa-home] Android app data initialized at {}",
+                data_dir.display()
+            );
+        }
         if let Err(err) =
             workshop_registry::sync_daemon_state_from_registry(&app.state::<DaemonState>())
         {
@@ -253,6 +263,7 @@ fn run_home() {
         #[cfg(target_os = "android")]
         {
             human_browser_android::init_app_handle(app.handle().clone());
+            embedded_daemon::prewarm(app.handle());
         }
         #[cfg(target_os = "ios")]
         {
@@ -369,6 +380,23 @@ fn run_home() {
                 if let tauri::WindowEvent::Resized { .. } = event {
                     human_browser_android::on_main_window_resized(window.app_handle());
                 }
+                if matches!(event, tauri::WindowEvent::Suspended) {
+                    let live_turns = window
+                        .app_handle()
+                        .state::<EmbeddedDaemonState>()
+                        .background_if_booted();
+                    if live_turns > 0 {
+                        eprintln!(
+                            "[medousa-home] embedded daemon backgrounded with {live_turns} live turn(s); execution remains OS-managed"
+                        );
+                    }
+                }
+                if matches!(event, tauri::WindowEvent::Resumed) {
+                    window
+                        .app_handle()
+                        .state::<EmbeddedDaemonState>()
+                        .resume_if_booted();
+                }
             }
         });
     }
@@ -460,11 +488,11 @@ fn run_home() {
             mesh_intros::mesh_list_local_peers,
             mesh_intros::mesh_set_peer_rendezvous,
             mesh_intros::mesh_set_peer_task_request,
-            #[cfg(target_os = "ios")]
+            #[cfg(any(target_os = "ios", target_os = "android"))]
             embedded_daemon::embedded_delegation_binding,
-            #[cfg(target_os = "ios")]
+            #[cfg(any(target_os = "ios", target_os = "android"))]
             embedded_daemon::embedded_set_delegation_binding,
-            #[cfg(target_os = "ios")]
+            #[cfg(any(target_os = "ios", target_os = "android"))]
             embedded_daemon::embedded_clear_delegation_binding,
             workshop_registry::workshops_load,
             workshop_registry::workshops_set_active,

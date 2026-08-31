@@ -1,7 +1,7 @@
 //! Resolve the one daemon Home is allowed to address.
 //!
 //! The registry is a client-side list of known workshops. Only its explicit
-//! active selection is routing authority: iOS Personal is in-process, while a
+//! active selection is routing authority: mobile Personal is in-process, while a
 //! selected local desktop or paired portal is reached through its own exact
 //! transport credentials.
 
@@ -69,7 +69,10 @@ fn resolve_for_registry(
 
 pub fn resolve() -> Result<ActiveWorkshopTarget, String> {
     let registry = ensure_migrated()?;
-    resolve_for_registry(&registry, cfg!(target_os = "ios"))
+    resolve_for_registry(
+        &registry,
+        cfg!(any(target_os = "ios", target_os = "android")),
+    )
 }
 
 pub fn display_url() -> Result<String, String> {

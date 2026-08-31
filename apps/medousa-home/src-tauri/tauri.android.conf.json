@@ -1,0 +1,21 @@
+{
+  "build": {
+    "beforeBuildCommand": "npm run build"
+  },
+  "bundle": {
+    "externalBin": []
+  },
+  "app": {
+    "security": {
+      "capabilities": ["mobile"]
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "Medousa",
+        "width": 390,
+        "height": 844
+      }
+    ]
+  }
+}

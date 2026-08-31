@@ -58,7 +58,7 @@ pub async fn runtime_get_stats(
     state: State<'_, DaemonState>,
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
 ) -> Result<DaemonStatsResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .runtime_stats()
@@ -72,7 +72,7 @@ pub async fn runtime_get_stats(
 pub async fn runtime_get_tui_defaults(
     state: State<'_, DaemonState>,
 ) -> Result<TuiDefaultsDto, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if matches!(
         crate::active_workshop::resolve()?,
         crate::active_workshop::ActiveWorkshopTarget::EmbeddedPersonal
@@ -92,7 +92,7 @@ pub async fn runtime_put_tui_defaults(
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     dto: TuiDefaultsDto,
 ) -> Result<(), String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if matches!(
         crate::active_workshop::resolve()?,
         crate::active_workshop::ActiveWorkshopTarget::EmbeddedPersonal
@@ -173,7 +173,7 @@ pub async fn runtime_get_delivery_status(
     state: State<'_, DaemonState>,
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
 ) -> Result<DeliveryHealthResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .runtime_delivery_status()
@@ -188,7 +188,7 @@ pub async fn runtime_get_continuation_status(
     state: State<'_, DaemonState>,
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
 ) -> Result<ContinuationStatusResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .runtime_continuation_status()
@@ -203,7 +203,7 @@ pub async fn runtime_config_command(
     _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     request: RuntimeConfigCommandRequest,
 ) -> Result<RuntimeConfigCommandResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if matches!(
         crate::active_workshop::resolve()?,
         crate::active_workshop::ActiveWorkshopTarget::EmbeddedPersonal

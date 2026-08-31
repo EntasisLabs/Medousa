@@ -25,7 +25,7 @@ pub async fn chatgpt_oauth_request(
     operation: ChatGptOperation,
     login_id: Option<String>,
 ) -> Result<Value, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = embedded_state.client_if_active().await? {
         let value = match operation {
             ChatGptOperation::Status => serde_json::to_value(
@@ -70,7 +70,7 @@ pub async fn chatgpt_oauth_request(
         return value.map_err(|error| format!("encode ChatGPT response: {error}"));
     }
 
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let _ = embedded_state;
 
     match operation {

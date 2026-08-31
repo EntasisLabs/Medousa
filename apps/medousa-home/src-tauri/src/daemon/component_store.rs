@@ -23,7 +23,7 @@ pub async fn component_store_get(
         return Err("component_id is required".to_string());
     }
 
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .component_store_get(component_id.to_string(), key, profile_id)
@@ -60,7 +60,7 @@ pub async fn component_store_set(
         return Err("key is required".to_string());
     }
 
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .component_store_set(component_id.to_string(), key.to_string(), value, profile_id)
@@ -93,7 +93,7 @@ pub async fn component_store_delete(
         return Err("component_id and key are required".to_string());
     }
 
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .component_store_delete(component_id.to_string(), key.to_string(), profile_id)
@@ -124,7 +124,7 @@ pub async fn component_store_list_keys(
         return Err("component_id is required".to_string());
     }
 
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .component_store_list_keys(component_id.to_string(), profile_id)

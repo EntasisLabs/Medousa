@@ -28,7 +28,7 @@ pub async fn model_catalog_list(
     capability: Option<String>,
     q: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .model_catalog_list(provider, capability, q)
@@ -63,7 +63,7 @@ pub async fn model_catalog_lookup(
     if provider.is_empty() || model.is_empty() {
         return Err("provider and model are required".to_string());
     }
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .model_capabilities(provider, model)
@@ -86,7 +86,7 @@ pub async fn model_catalog_refresh(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     providers: Option<Vec<String>>,
 ) -> Result<serde_json::Value, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .refresh_model_catalog(providers)

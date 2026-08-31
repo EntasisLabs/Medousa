@@ -26,7 +26,7 @@ function withRemoteActive(): WorkshopRegistry {
 }
 
 describe("secretWorkshopScope", () => {
-  it("uses the embedded credential port only for iOS Personal", () => {
+  it("uses the embedded credential port only for native mobile Personal", () => {
     expect(secretWorkshopScope(defaultWorkshopRegistry(), true)).toBe("embedded");
     expect(secretWorkshopScope(defaultWorkshopRegistry(), false)).toBe(
       "local-transport",

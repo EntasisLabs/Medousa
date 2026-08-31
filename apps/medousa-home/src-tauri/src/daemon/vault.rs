@@ -41,7 +41,7 @@ pub async fn vault_list_notes(
         cursor: cursor.filter(|value| !value.trim().is_empty()),
         generation,
     };
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .list_vault_notes(query)
@@ -68,7 +68,7 @@ pub async fn vault_list_changes(
         cursor: cursor.filter(|value| !value.trim().is_empty()),
         limit,
     };
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .list_vault_changes(query)
@@ -93,7 +93,7 @@ pub async fn vault_list_tags(
         prefix: prefix.filter(|value| !value.trim().is_empty()),
         limit,
     };
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .list_vault_tags(query)
@@ -113,7 +113,7 @@ pub async fn vault_get_note(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     path: String,
 ) -> Result<VaultNoteContentResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .get_vault_note(path.trim().to_string())
@@ -134,7 +134,7 @@ pub async fn vault_get_file(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     path: String,
 ) -> Result<VaultFileContentResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .get_vault_file(path.trim().to_string())
@@ -159,7 +159,7 @@ pub async fn vault_save_note(
     session_id: Option<String>,
     auto_workshop_tags: Option<bool>,
 ) -> Result<VaultWriteResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         let request = VaultWriteRequest {
             path: None,
@@ -213,7 +213,7 @@ pub async fn vault_create_note(
         semantic_tags: semantic_tags.filter(|tags| !tags.is_empty()),
         auto_workshop_tags: auto_workshop_tags.unwrap_or(true),
     };
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .create_vault_note(request)
@@ -233,7 +233,7 @@ pub async fn vault_delete_note(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     path: String,
 ) -> Result<serde_json::Value, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .delete_vault_note(path.trim().to_string())
@@ -268,7 +268,7 @@ pub async fn vault_search(
         limit: limit.or(Some(20)),
         tags: tags.filter(|value| !value.trim().is_empty()),
     };
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .search_vault(search)
@@ -288,7 +288,7 @@ pub async fn vault_backlinks(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     path: String,
 ) -> Result<VaultBacklinksResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .vault_backlinks(path.trim().to_string())
@@ -310,7 +310,7 @@ pub async fn vault_list_roots(
     state: State<'_, DaemonState>,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<VaultRootsResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client.list_vault_roots().map_err(|error| error.to_string());
     }
@@ -327,7 +327,7 @@ pub async fn vault_set_active_root(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     root_id: String,
 ) -> Result<VaultRootsResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .set_active_vault_root(root_id.trim())
@@ -351,7 +351,7 @@ pub async fn vault_add_root(
     path: String,
     id: Option<String>,
 ) -> Result<VaultRootsResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .add_vault_root(label.trim(), path.trim(), id.as_deref())
@@ -375,7 +375,7 @@ pub async fn vault_list_trash(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     limit: Option<usize>,
 ) -> Result<serde_json::Value, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .list_vault_trash(limit.unwrap_or(100))
@@ -396,7 +396,7 @@ pub async fn vault_restore_trash(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     path: String,
 ) -> Result<serde_json::Value, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .restore_vault_trash(path.trim().to_string())

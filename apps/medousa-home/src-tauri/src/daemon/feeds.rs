@@ -24,7 +24,7 @@ pub async fn feed_tail(
         return Err(format!("invalid feed_id '{feed_id}'"));
     }
 
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .feed_tail(feed_id, profile_id, limit)
@@ -58,7 +58,7 @@ pub async fn feed_latest_good(
         return Err(format!("invalid feed_id '{feed_id}'"));
     }
 
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .feed_latest_good(feed_id, profile_id)

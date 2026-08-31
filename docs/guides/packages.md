@@ -191,7 +191,7 @@ Operators / CI: [Install & self-host](../cookbook/install-and-self-host.md) ·
 
 - Packages needs a network path to your **release manifest**
   (`MEDOUSA_RELEASE_BASE_URL` or the embedded release defaults).
-- Phone / companion apps don’t install desktop binaries — do Packages on the Mac
-  or PC that hosts the engine.
+- Mobile apps run embedded Personal but don’t install desktop binaries — do
+  Packages on the Mac or PC that hosts those workloads.
 - After installing a channel adapter, configure tokens under messaging /
   [Channels](channels.md).

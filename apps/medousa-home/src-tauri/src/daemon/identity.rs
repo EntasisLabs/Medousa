@@ -19,7 +19,7 @@ pub async fn identity_get_context(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: IdentityContextRequest,
 ) -> Result<Value, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .identity_context(request)
@@ -34,7 +34,7 @@ pub async fn identity_list_profiles(
     state: State<'_, DaemonState>,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<ListUserProfilesResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client.list_profiles().map_err(|error| error.to_string());
     }
@@ -48,7 +48,7 @@ pub async fn identity_create_profile(
     slug: String,
     display_name: String,
 ) -> Result<CreateUserProfileResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .create_profile(&slug, &display_name)
@@ -69,7 +69,7 @@ pub async fn identity_set_active_profile(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     profile_id: String,
 ) -> Result<SetActiveUserProfileResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .set_active_profile(&profile_id)
@@ -89,7 +89,7 @@ pub async fn identity_remember(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: IdentityRememberRequest,
 ) -> Result<IdentityRememberResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .identity_remember(request)
@@ -105,7 +105,7 @@ pub async fn identity_digest_preview(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: IdentityContextRequest,
 ) -> Result<IdentityDigestPreviewResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .identity_digest_preview(request)
@@ -121,7 +121,7 @@ pub async fn identity_export_markdown(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: IdentityExportMarkdownRequest,
 ) -> Result<IdentityExportMarkdownResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .identity_export_markdown(request)
@@ -144,7 +144,7 @@ pub async fn identity_export_profile(
         session_limit: session_limit.unwrap_or(500),
         node_limit_per_session: node_limit_per_session.unwrap_or(500),
     };
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .export_profile(request)
@@ -166,7 +166,7 @@ pub async fn identity_import_profile(
             .map_err(|err| format!("invalid profile bundle: {err}"))?,
         dry_run: dry_run.unwrap_or(false),
     };
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .import_profile(request)

@@ -69,10 +69,7 @@ pub struct CapabilitiesMutationResult {
 }
 
 fn capabilities_path() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("medousa")
-        .join("capabilities.toml")
+    crate::paths::medousa_config_dir().join("capabilities.toml")
 }
 
 fn load_overlay_file() -> Result<(CapabilitiesOverlayFile, PathBuf, bool), String> {

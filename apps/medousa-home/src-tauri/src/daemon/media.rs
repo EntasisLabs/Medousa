@@ -38,7 +38,7 @@ pub async fn media_upload(
         mime.to_string()
     };
 
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         let effective_label = label
             .as_deref()

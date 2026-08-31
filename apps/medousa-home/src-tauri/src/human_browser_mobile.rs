@@ -5,6 +5,10 @@ use medousa_browser_lite::SearchResponse;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
+pub fn init_app_handle(_app: AppHandle) {}
+
+pub fn on_main_window_resized(_app: &AppHandle) {}
+
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EmbedMobileLayoutParams {
@@ -79,6 +83,20 @@ pub async fn human_browser_go_back(_app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn human_browser_go_forward(_app: AppHandle) -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn human_browser_embed_activate_tab(
+    _app: AppHandle,
+    _tab_id: String,
+    _url: String,
+) -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn human_browser_embed_close_tab(_app: AppHandle, _tab_id: String) -> Result<(), String> {
     Ok(())
 }
 

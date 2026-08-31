@@ -18,7 +18,7 @@ pub async fn tool_history_list_slices(
     tool_filter: Option<String>,
     keyword: Option<String>,
 ) -> Result<ToolHistoryListResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .list_tool_history(medousa_types::daemon_api::ToolHistoryListQuery {
@@ -63,7 +63,7 @@ pub async fn workflow_from_slice(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: WorkflowFromSliceRequest,
 ) -> Result<WorkflowFromSliceResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .workflow_from_slice(request)

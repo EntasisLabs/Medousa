@@ -25,7 +25,7 @@ pub async fn component_runtime_append_events(
     if component_id.is_empty() {
         return Err("component_id is required".to_string());
     }
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .component_runtime_append_events(component_id.to_string(), request)
@@ -52,7 +52,7 @@ pub async fn component_runtime_tail_events(
         return Err("component_id is required".to_string());
     }
 
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .component_runtime_tail_events(component_id.to_string(), profile_id, limit)
@@ -84,7 +84,7 @@ pub async fn component_runtime_complete_probe(
     if component_id.is_empty() || probe_id.is_empty() {
         return Err("component_id and probe_id are required".to_string());
     }
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .component_runtime_complete_probe(

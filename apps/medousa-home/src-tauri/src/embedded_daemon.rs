@@ -1,16 +1,16 @@
-//! Tauri ownership for the in-process iOS deployment of `medousa_daemon`.
+//! Tauri ownership for the in-process mobile deployment of `medousa_daemon`.
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 use std::sync::Arc;
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 use medousa::chatgpt_oauth::{ChatGptCredentialStore, ChatGptOAuthBroker};
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 use medousa::delegated_task::{
     DelegatedTaskError, DelegatedTaskObservation, DelegatedTaskRequest, DelegatedTaskTransport,
     delegated_work_id,
 };
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 use medousa::embedded_daemon::{
     CredentialProvider, EmbeddedDaemon, EmbeddedDaemonClient, EmbeddedDaemonConfig,
     ProviderCredential, ProviderCredentialError,
@@ -18,19 +18,19 @@ use medousa::embedded_daemon::{
 
 #[derive(Clone)]
 pub struct EmbeddedDaemonState {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     daemon: Arc<tokio::sync::OnceCell<Arc<EmbeddedDaemon>>>,
 }
 
 impl EmbeddedDaemonState {
     pub fn new() -> Self {
         Self {
-            #[cfg(target_os = "ios")]
+            #[cfg(any(target_os = "ios", target_os = "android"))]
             daemon: Arc::new(tokio::sync::OnceCell::new()),
         }
     }
 
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     pub async fn client_if_active(&self) -> Result<Option<EmbeddedDaemonClient>, String> {
         if !embedded_workshop_selected().await? {
             return Ok(None);
@@ -50,7 +50,7 @@ impl EmbeddedDaemonState {
         Ok(Some(daemon.local_client()))
     }
 
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     pub async fn client_if_active_for_route(
         &self,
         provider: Option<&str>,
@@ -80,7 +80,7 @@ impl EmbeddedDaemonState {
         Ok(Some(client))
     }
 
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     pub fn validate_inference_defaults(
         &self,
         defaults: &crate::medousa_paths::TuiDefaultsDto,
@@ -89,7 +89,7 @@ impl EmbeddedDaemonState {
         Ok(())
     }
 
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     pub async fn reconfigure_active(
         &self,
         defaults: &crate::medousa_paths::TuiDefaultsDto,
@@ -108,16 +108,16 @@ impl EmbeddedDaemonState {
         Ok(())
     }
 
-    #[cfg(target_os = "ios")]
-    fn background_if_booted(&self) -> usize {
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    pub(crate) fn background_if_booted(&self) -> usize {
         let Some(daemon) = self.daemon.get().cloned() else {
             return 0;
         };
         daemon.enter_background()
     }
 
-    #[cfg(target_os = "ios")]
-    fn resume_if_booted(&self) {
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    pub(crate) fn resume_if_booted(&self) {
         let Some(daemon) = self.daemon.get().cloned() else {
             return;
         };
@@ -145,7 +145,7 @@ impl Default for EmbeddedDaemonState {
     }
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 #[tauri::command]
 pub async fn embedded_delegation_binding(
     state: tauri::State<'_, EmbeddedDaemonState>,
@@ -160,7 +160,7 @@ pub async fn embedded_delegation_binding(
         .map_err(|error| format!("load delegation binding: {error:#}"))
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 #[tauri::command]
 pub async fn embedded_set_delegation_binding(
     state: tauri::State<'_, EmbeddedDaemonState>,
@@ -180,7 +180,7 @@ pub async fn embedded_set_delegation_binding(
         .map_err(|error| format!("set delegation binding: {error:#}"))
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 #[tauri::command]
 pub async fn embedded_clear_delegation_binding(
     state: tauri::State<'_, EmbeddedDaemonState>,
@@ -195,7 +195,7 @@ pub async fn embedded_clear_delegation_binding(
         .map_err(|error| format!("clear delegation binding: {error:#}"))
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 async fn embedded_workshop_selected() -> Result<bool, String> {
     tokio::task::spawn_blocking(|| {
         Ok(matches!(
@@ -207,7 +207,7 @@ async fn embedded_workshop_selected() -> Result<bool, String> {
     .map_err(|_| "embedded workshop selection task failed".to_string())?
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 fn inference_route_from_defaults(
     defaults: &crate::medousa_paths::TuiDefaultsDto,
 ) -> Result<(String, String, Option<String>), String> {
@@ -251,7 +251,7 @@ fn inference_route_from_defaults(
     Ok((provider, model, base_url))
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 pub(crate) fn normalize_inference_defaults(
     mut defaults: crate::medousa_paths::TuiDefaultsDto,
 ) -> Result<crate::medousa_paths::TuiDefaultsDto, String> {
@@ -261,7 +261,7 @@ pub(crate) fn normalize_inference_defaults(
     Ok(defaults)
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 fn portable_tui_defaults(
     defaults: &crate::medousa_paths::TuiDefaultsDto,
 ) -> Result<medousa_types::session::TuiDefaults, String> {
@@ -269,7 +269,7 @@ fn portable_tui_defaults(
         .map_err(|error| format!("normalize Personal runtime settings: {error}"))
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 async fn boot_embedded_daemon() -> Result<Arc<EmbeddedDaemon>, String> {
     let (installation_id, provider, model, base_url, defaults, data_dir, root) =
         tokio::task::spawn_blocking(|| {
@@ -322,11 +322,11 @@ async fn boot_embedded_daemon() -> Result<Arc<EmbeddedDaemon>, String> {
 
 /// Native adapter for the daemon's transport port. The runtime supplies the
 /// exact persisted binding; Home only resolves that route and authenticates it.
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 #[derive(Debug)]
 struct HomeDelegatedTaskTransport;
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 #[async_trait::async_trait]
 impl DelegatedTaskTransport for HomeDelegatedTaskTransport {
     async fn submit_or_observe(
@@ -381,7 +381,7 @@ impl DelegatedTaskTransport for HomeDelegatedTaskTransport {
     }
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 fn delegation_transport_for(
     target: &medousa::delegation::DelegationTarget,
 ) -> Result<crate::pairing_client::WorkshopTransportConfig, String> {
@@ -419,7 +419,7 @@ fn delegation_transport_for(
     Ok(config)
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 fn delegation_target_for(
     workshop_id: &str,
 ) -> Result<medousa::delegation::DelegationTarget, String> {
@@ -457,11 +457,11 @@ fn delegation_target_for(
     })
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 #[derive(Debug)]
 struct HomeCredentialProvider;
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 #[async_trait::async_trait]
 impl CredentialProvider for HomeCredentialProvider {
     async fn credential_for(
@@ -479,11 +479,11 @@ impl CredentialProvider for HomeCredentialProvider {
     }
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 #[derive(Debug)]
 struct HomeChatGptCredentialStore;
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 impl ChatGptCredentialStore for HomeChatGptCredentialStore {
     fn load_bundle(&self) -> Result<Option<String>, String> {
         Ok(crate::integration_secrets::load_kind_secret(
@@ -502,7 +502,7 @@ impl ChatGptCredentialStore for HomeChatGptCredentialStore {
     }
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 pub fn prewarm(app: &tauri::AppHandle) {
     use tauri::Manager;
 

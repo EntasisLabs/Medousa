@@ -32,7 +32,7 @@ pub async fn composer_stt_status(
     state: State<'_, DaemonState>,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<ComposerSttStatus, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .stt_status()
@@ -75,7 +75,7 @@ pub async fn composer_stt_transcribe(
     let extension = extension_for_mime(&mime_type);
     let filename = format!("composer-voice.{extension}");
 
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .transcribe_audio(&request.audio_bytes, &mime_type)

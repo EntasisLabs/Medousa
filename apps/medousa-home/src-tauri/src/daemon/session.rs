@@ -27,7 +27,7 @@ pub async fn session_create(
     agent_profile_id: Option<String>,
     display_name: Option<String>,
 ) -> Result<CreateSessionResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .create_session_with_request(CreateSessionRequest {
@@ -60,7 +60,7 @@ pub async fn session_derive(
     request: DeriveSessionRequest,
     idempotency_key: String,
 ) -> Result<DeriveSessionResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .derive_session(request, idempotency_key.trim())
@@ -85,7 +85,7 @@ pub async fn session_list(
 ) -> Result<SessionHistoryListResponse, String> {
     let capped = limit.unwrap_or(50).clamp(1, 200);
     let include_verification = include_verification.unwrap_or(false);
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         let mut page = client
             .list_sessions_page(capped, q.as_deref(), cursor.as_deref())
@@ -137,7 +137,7 @@ pub async fn session_set_display_name(
         return Err("display name must not be empty".to_string());
     }
 
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .set_session_display_name(trimmed_id, trimmed_name)
@@ -156,7 +156,7 @@ pub async fn agent_mode_list(
     state: State<'_, DaemonState>,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<AgentModeListResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client.list_agent_modes().map_err(|error| error.to_string());
     }
@@ -172,7 +172,7 @@ pub async fn agent_mode_transition_policy_get(
     state: State<'_, DaemonState>,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<AgentModeTransitionPolicy, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .agent_mode_transition_policy()
@@ -191,7 +191,7 @@ pub async fn agent_mode_transition_policy_set(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     policy: AgentModeTransitionPolicy,
 ) -> Result<AgentModeTransitionPolicy, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .set_agent_mode_transition_policy(policy)
@@ -214,7 +214,7 @@ pub async fn session_get_agent_mode(
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .session_agent_mode(trimmed)
@@ -244,7 +244,7 @@ pub async fn session_set_agent_mode(
         task_id: None,
         expires_at_utc: None,
     };
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .set_session_agent_mode(trimmed, request)
@@ -267,7 +267,7 @@ pub async fn session_list_agent_mode_proposals(
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .list_agent_mode_proposals(trimmed)
@@ -288,7 +288,7 @@ pub async fn session_decide_agent_mode_proposal(
     proposal_id: String,
     accept: bool,
 ) -> Result<AgentModeProposalResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .decide_agent_mode_proposal(session_id.trim(), proposal_id.trim(), accept)
@@ -307,7 +307,7 @@ pub async fn session_get_code_binding(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
 ) -> Result<SessionCodeBindingResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .session_code_binding(session_id.trim())
@@ -372,7 +372,7 @@ pub async fn session_delete(
     let query = SessionDeleteQuery {
         purge_memory: purge_memory.unwrap_or(true),
     };
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .delete_session(trimmed, query.purge_memory)
@@ -391,7 +391,7 @@ pub async fn prompt_stash_list(
     state: State<'_, DaemonState>,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<PromptStashListResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .list_prompt_stashes()
@@ -410,7 +410,7 @@ pub async fn prompt_stash_create(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: CreatePromptStashRequest,
 ) -> Result<PromptStash, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .create_prompt_stash(request)
@@ -429,7 +429,7 @@ pub async fn prompt_stash_delete(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     stash_id: String,
 ) -> Result<DeletePromptStashResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .delete_prompt_stash(stash_id.trim())
@@ -452,7 +452,7 @@ pub async fn session_get_history(
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         let turns = client
             .load_transcript_entries(trimmed)
@@ -482,7 +482,7 @@ pub async fn session_get_active_turn(
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .active_turn(trimmed)
@@ -514,7 +514,7 @@ pub async fn session_cancel_active_turn(
             message: "Cancelled local model loading".to_string(),
         });
     }
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .cancel_active_turn(trimmed)
@@ -718,7 +718,7 @@ pub async fn turn_create(
     } else {
         Some(model.as_str())
     };
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state
         .client_if_active_for_route(
             (!selected_provider.is_empty()).then_some(selected_provider),

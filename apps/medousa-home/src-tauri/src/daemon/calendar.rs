@@ -26,7 +26,7 @@ pub async fn calendar_list_events(
         to: parse_optional_datetime(to)?,
         path: path.filter(|value| !value.trim().is_empty()),
     };
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .list_calendar_events(query)
@@ -45,7 +45,7 @@ pub async fn calendar_create_event(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: CalendarWriteRequest,
 ) -> Result<CalendarWriteResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .create_calendar_event(&request)
@@ -65,7 +65,7 @@ pub async fn calendar_update_event(
     uid: String,
     request: CalendarWriteRequest,
 ) -> Result<CalendarWriteResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .update_calendar_event(uid.trim(), &request)
@@ -86,7 +86,7 @@ pub async fn calendar_delete_event(
     path: Option<String>,
 ) -> Result<CalendarDeleteResponse, String> {
     let path = path.filter(|value| !value.trim().is_empty());
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .delete_calendar_event(uid.trim(), path.as_deref())
@@ -111,7 +111,7 @@ pub async fn calendar_import_ics(
         ics,
         calendar_path: path.filter(|value| !value.trim().is_empty()),
     };
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .import_calendar(&request)
@@ -131,7 +131,7 @@ pub async fn calendar_export(
     path: Option<String>,
 ) -> Result<CalendarExportResponse, String> {
     let path = path.filter(|value| !value.trim().is_empty());
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .export_calendar(path.as_deref())

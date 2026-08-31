@@ -207,7 +207,10 @@ pub fn load_registry() -> Result<WorkshopRegistry, String> {
             migrated = true;
         }
     }
-    if normalize_embedded_personal(&mut registry, cfg!(target_os = "ios")) {
+    if normalize_embedded_personal(
+        &mut registry,
+        cfg!(any(target_os = "ios", target_os = "android")),
+    ) {
         migrated = true;
     }
     // Peer credentials must never be the active workshop.
@@ -351,7 +354,7 @@ pub fn ensure_migrated() -> Result<WorkshopRegistry, String> {
     }
 
     let mut registry = default_registry();
-    let resolved = if cfg!(target_os = "ios") {
+    let resolved = if cfg!(any(target_os = "ios", target_os = "android")) {
         DEFAULT_DAEMON_URL.to_string()
     } else {
         normalize_url(&resolve_daemon_url())
@@ -454,7 +457,7 @@ pub fn update_active_workshop_url(url: &str) -> Result<(), String> {
     else {
         return Err("Active workshop not found".to_string());
     };
-    if cfg!(target_os = "ios")
+    if cfg!(any(target_os = "ios", target_os = "android"))
         && workshop.id == PERSONAL_WORKSHOP_ID
         && workshop.kind == "local"
     {
@@ -571,11 +574,11 @@ pub async fn workshops_set_active(
     }
 
     if workshop.kind == "local" {
-        #[cfg(target_os = "ios")]
+        #[cfg(any(target_os = "ios", target_os = "android"))]
         if workshop.id != PERSONAL_WORKSHOP_ID {
-            return Err("iOS supports only the personal embedded local workshop".to_string());
+            return Err("Mobile supports only the personal embedded local workshop".to_string());
         }
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
         {
             let ensure = crate::workshop_runtime::ensure_local_engine(
                 &workshop,

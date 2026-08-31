@@ -17,7 +17,7 @@ pub async fn recurring_list(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     enabled_only: Option<bool>,
 ) -> Result<RecurringListResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .list_recurring_schedules_filtered(RecurringListQuery { enabled_only })
@@ -37,7 +37,7 @@ pub async fn recurring_register_prompt(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     request: RegisterRecurringPromptRequest,
 ) -> Result<RegisterRecurringResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .register_prompt_schedule(request)
@@ -58,7 +58,7 @@ pub async fn recurring_update(
     recurring_id: String,
     request: UpdateRecurringRequest,
 ) -> Result<UpdateRecurringResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .update_recurring_schedule(recurring_id.trim(), request)
@@ -78,7 +78,7 @@ pub async fn recurring_delete(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     recurring_id: String,
 ) -> Result<DeleteRecurringResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .delete_recurring_schedule(recurring_id.trim())
@@ -99,7 +99,7 @@ pub async fn recurring_list_runs(
     recurring_id: String,
     limit: Option<usize>,
 ) -> Result<RecurringRunsResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .list_recurring_runs(recurring_id.trim(), RecurringRunsQuery { limit })
@@ -119,7 +119,7 @@ pub async fn recurring_get_delivery(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     recurring_id: String,
 ) -> Result<RecurringDeliveryResponse, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return client
             .recurring_delivery(recurring_id.trim())

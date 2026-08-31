@@ -52,11 +52,14 @@ You may see **Welcome back** instead of a blank wizard. Choose **Continue**.
 
 ## First time on a phone {#phone--companion-first-run}
 
-The phone connects to your computer’s workshop — it doesn’t install a separate Offline brain.
+The iOS and Android apps create a private **Personal** workshop on the phone. Choose a
+hosted model provider during first-run setup; mobile does not install the desktop
+Offline brain packages.
 
-1. On the computer: **Settings → Sharing → Phone** → show the QR or code.
-2. On the phone: scan or enter the link / address.
-3. Wait until the connection looks healthy.
+You can start chatting immediately. Pairing is optional: to use a computer's
+workshop too, open **Settings → Sharing → Phone** on the computer, then add that
+workshop from **Settings → Connection** on the phone. Personal remains separate
+and available when you switch back.
 
 ## First connection checklist
 

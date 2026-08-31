@@ -283,7 +283,7 @@ pub async fn daemon_health(
     state: State<'_, DaemonState>,
     _embedded_state: State<'_, EmbeddedDaemonState>,
 ) -> Result<DaemonHealth, String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
         return Ok(match client.health().await {
             Ok(detail) => connected_health(detail, "Personal"),
@@ -305,7 +305,7 @@ pub async fn workspace_stream_start(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     since_revision: Option<u64>,
 ) -> Result<(), String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if _embedded_state.client_if_active().await?.is_some() {
         return Ok(());
     }
@@ -364,7 +364,7 @@ pub async fn environment_stream_start(
     since_revision: Option<u64>,
     profile_id: Option<String>,
 ) -> Result<(), String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if _embedded_state.client_if_active().await?.is_some() {
         return Ok(());
     }
@@ -553,7 +553,7 @@ pub async fn interactive_stream_start(
     _embedded_state: State<'_, EmbeddedDaemonState>,
     stream_url: String,
 ) -> Result<(), String> {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     if stream_url.starts_with("medousa-embedded://") {
         let turn_id = extract_turn_id_from_stream_url(&stream_url)
             .ok_or_else(|| "embedded stream URL missing turn id".to_string())?;
