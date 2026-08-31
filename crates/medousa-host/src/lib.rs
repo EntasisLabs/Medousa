@@ -110,6 +110,11 @@ pub fn force_process_tree_stop_by_pid(pid: u32) -> bool {
 }
 
 pub fn is_process_alive(pid: u32) -> bool {
+    // kill(2) takes pid_t; values outside the signed 32-bit range (notably
+    // u32::MAX → -1) can appear "alive" on Linux and strand leases forever.
+    if pid == 0 || pid > i32::MAX as u32 {
+        return false;
+    }
     #[cfg(unix)]
     {
         run_process_control(Command::new("kill").args(["-0", &pid.to_string()]))
