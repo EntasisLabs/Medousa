@@ -539,12 +539,12 @@ fn load_secret_for_record(data_dir: &Path, record: &CredentialRecord) -> Result<
                 );
             }
             // Legacy account under com.entasislabs.medousa.local-credentials.
-            if let Some(secret) = read_legacy_keyring_secret(account)? {
-                if let Ok(path) = local_auth_path(data_dir, &record.name, &secret.credential_id) {
-                    if write_daemon_secret_payload(data_dir, &path, &secret).is_ok() {
-                        let _ =
-                            medousa_secrets::delete_legacy_keyring(LEGACY_KEYRING_SERVICE, account);
-                    }
+            if let Some(secret) = read_legacy_keyring_secret(account)?
+                && let Ok(path) = local_auth_path(data_dir, &record.name, &secret.credential_id)
+            {
+                if write_daemon_secret_payload(data_dir, &path, &secret).is_ok() {
+                    let _ =
+                        medousa_secrets::delete_legacy_keyring(LEGACY_KEYRING_SERVICE, account);
                 }
                 return Ok(secret);
             }
@@ -570,13 +570,13 @@ fn recover_missing_keyring_secret(
     if mirror.is_file() {
         return Ok(Some(read_file_secret(&mirror)?));
     }
-    if let Ok(legacy_account) = legacy_keyring_account(data_dir, &record.name) {
-        if let Some(secret) = read_legacy_keyring_secret(&legacy_account)? {
-            if let Ok(path) = local_auth_path(data_dir, &record.name, &secret.credential_id) {
-                let _ = write_daemon_secret_payload(data_dir, &path, &secret);
-            }
-            return Ok(Some(secret));
+    if let Ok(legacy_account) = legacy_keyring_account(data_dir, &record.name)
+        && let Some(secret) = read_legacy_keyring_secret(&legacy_account)?
+    {
+        if let Ok(path) = local_auth_path(data_dir, &record.name, &secret.credential_id) {
+            let _ = write_daemon_secret_payload(data_dir, &path, &secret);
         }
+        return Ok(Some(secret));
     }
     Ok(None)
 }
@@ -593,6 +593,7 @@ fn read_record(path: &Path) -> Result<CredentialRecord> {
     serde_json::from_slice(&raw).with_context(|| format!("parse {}", path.display()))
 }
 
+#[allow(dead_code)] // test fixtures (`provision_file_fixture`)
 fn create_record(path: &Path, record: &CredentialRecord) -> Result<()> {
     let encoded = serde_json::to_vec_pretty(record).context("serialize local credential record")?;
     match create_private_file(path, &encoded) {
@@ -827,7 +828,7 @@ fn decode_digest(value: &str) -> Result<[u8; 32]> {
         bail!("invalid local credential verifier length");
     }
     let mut digest = [0u8; 32];
-    for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+    for (index, pair) in value.as_bytes().as_chunks::<2>().0.iter().enumerate() {
         let pair = std::str::from_utf8(pair)?;
         digest[index] =
             u8::from_str_radix(pair, 16).context("invalid local credential verifier")?;

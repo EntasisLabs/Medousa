@@ -130,6 +130,13 @@ export function projectTurnStreamEvent(
         message: event.message,
       });
       break;
+    case "secret_request":
+      projected.push({
+        kind: "permission_request",
+        requestId: event.request_id,
+        message: event.label.trim() || event.reason.trim() || "Secret required",
+      });
+      break;
     default:
       assertNever(event);
   }

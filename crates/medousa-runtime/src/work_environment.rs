@@ -679,7 +679,7 @@ pub enum WorkEnvironmentPublicationResult {
         expected: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         found: Option<String>,
-        preserved_checkpoint: WorkEnvironmentCheckpoint,
+        preserved_checkpoint: Box<WorkEnvironmentCheckpoint>,
     },
 }
 
@@ -1239,7 +1239,7 @@ impl WorkEnvironmentPort for InMemoryWorkEnvironmentPort {
                 target_ref: publication.target_ref,
                 expected: publication.expected_value,
                 found,
-                preserved_checkpoint: checkpoint.clone(),
+                preserved_checkpoint: Box::new(checkpoint.clone()),
             });
         }
         publications.insert(publication.target_ref.clone(), value.clone());

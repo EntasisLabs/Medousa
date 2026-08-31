@@ -2248,10 +2248,6 @@ class WorkspaceEventRef(MedousaModel):
     ref_type: str
 
 
-class CountsByColumn(RootModel[int]):
-    root: int = Field(..., ge=0)
-
-
 class AgentModeTransitionPolicy(MedousaModel):
     auto_accept: AgentModeAutoAccept | None = 'never'
     proposal_ttl_seconds: int = Field(..., ge=0)
@@ -3684,7 +3680,7 @@ class WorkspaceEvent(MedousaModel):
 
 class WorkspaceSnapshot(MedousaModel):
     cards: list[WorkCard]
-    counts_by_column: dict[str, CountsByColumn]
+    counts_by_column: dict[str, int]
     feed_tail: list[WorkspaceEvent]
     server_time_utc: AwareDatetime
     workspace_revision: int = Field(..., ge=0)

@@ -1400,11 +1400,13 @@ mod tests {
         }
         {
             let path = root.join(journal_name(&TurnEventId::parse("turn-reopen").unwrap()));
-            let mut f = std::fs::OpenOptions::new()
-                .append(true)
-                .open(&path)
-                .unwrap();
-            write!(f, "{{\"envelope\":{{\"turn_id\":\"turn-reopen\"").unwrap();
+            {
+                let mut f = std::fs::OpenOptions::new()
+                    .append(true)
+                    .open(&path)
+                    .unwrap();
+                write!(f, "{{\"envelope\":{{\"turn_id\":\"turn-reopen\"").unwrap();
+            }
         }
         {
             let reopened = TurnEventLog::open_in(&root, env("turn-reopen")).unwrap();
