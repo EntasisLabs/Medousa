@@ -6924,14 +6924,13 @@ async fn publish_task_output(run_id: &str, stream: &str, text: &str) {
         )
     };
     if became_ready {
-        if let (true, Some(url)) = (!work_id.is_empty(), ready_url.as_ref()) {
-            if let Some(token) =
+        if let (true, Some(url)) = (!work_id.is_empty(), ready_url.as_ref())
+            && let Some(token) =
                 crate::daemon::forge_preview::mint_preview_grant(&work_id, run_id, url).await
-                && let Some(handle) = PROJECT_TASK_RUNS.read().await.get(run_id).cloned()
-            {
-                handle.store.lock().await.run.preview_path =
-                    Some(crate::daemon::forge_preview::preview_path_for_token(&token));
-            }
+            && let Some(handle) = PROJECT_TASK_RUNS.read().await.get(run_id).cloned()
+        {
+            handle.store.lock().await.run.preview_path =
+                Some(crate::daemon::forge_preview::preview_path_for_token(&token));
         }
         publish_task_state(run_id, "ready", None).await;
     }
@@ -7020,6 +7019,7 @@ async fn pump_task_stderr(run_id: String, mut reader: tokio::process::ChildStder
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn finish_project_task_run(
     state: AppState,
     item: WorkItem,
@@ -7101,6 +7101,7 @@ async fn finish_project_task_run(
     publish_item(&state, &item, "task_finished");
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn pump_project_task_session(
     state: AppState,
     item: WorkItem,
@@ -10043,10 +10044,10 @@ async fn prepare_handoff(
             move || {
                 let id = parse_work_id(&work_id)?;
                 let target = body.to_executor.trim().to_ascii_lowercase();
-                if !matches!(target.as_str(), "codex" | "cursor" | "human") {
+                if !matches!(target.as_str(), "codex" | "cursor" | "hermes" | "human") {
                     return Err(request_error(
                         StatusCode::BAD_REQUEST,
-                        "handoff target must be codex, cursor, or human",
+                        "handoff target must be codex, cursor, hermes, or human",
                     ));
                 }
                 let lease = resolve_lease(forge(&state).as_ref(), &body.lease_id, body.generation)?;

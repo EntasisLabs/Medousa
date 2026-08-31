@@ -1,6 +1,6 @@
 # ACP external agents (bones)
 
-**Audience:** engineers wiring channels to Cursor / Codex via the SDK + daemon
+**Audience:** engineers wiring channels to Cursor / Codex / Hermes via the SDK + daemon
 
 Any Medousa **channel** talks to the daemon **through the Medousa SDK** (`client.agents()`). The daemon owns agent runtimes — Medousa-native (`/v1/turns`) or external ACP (`/v1/agents`). External agents reach Medousa space via the [MCP server](mcp-server-setup.md).
 
@@ -14,7 +14,7 @@ let session = client
     .agents()
     .create_session(&CreateAgentSessionRequest {
         session_id: "…".into(),
-        runtime: "cursor".into(),
+        runtime: "hermes".into(),
         prompt: Some("hello".into()),
         cwd: None,
         command: None,
@@ -43,30 +43,39 @@ Home: Tauri commands → `client().agents()` only (`daemon/agents.rs`).
 
 ## ACP crate
 
-`crates/medousa-acp-client` — `ExternalAcpClient` spawns Cursor (`agent acp`) or the Codex ACP adapter (`codex-acp`, or the pinned `npx -y @agentclientprotocol/codex-acp@1.1.14` fallback — stock `codex` has no `acp` subcommand). Missing CLI → stub bridge. Spawn/handshake failures return errors (no silent stub). Handshake: `initialize` → `session/new` → optional `session/set_config_option` → `session/prompt`; streams `session/update` chunks and replies to `session/request_permission`. Force stub: `MEDOUSA_ACP_FORCE_STUB=1`. Demo permissions: `MEDOUSA_ACP_STUB_PERMISSION=1`. Permission wait timeout (default-deny): `MEDOUSA_ACP_PERMISSION_TIMEOUT_SECS` (default `300`).
+`crates/medousa-acp-client` — `ExternalAcpClient` spawns:
+
+| Runtime | Default launch | Notes |
+|---------|----------------|-------|
+| **Cursor** | `agent acp` | Override: `MEDOUSA_ACP_CURSOR_COMMAND` / `MEDOUSA_ACP_CURSOR_ARGS` |
+| **Codex** | `codex-acp`, or pinned `npx -y @agentclientprotocol/codex-acp@1.1.14` | Stock `codex` has no `acp` subcommand |
+| **Hermes** | `hermes-acp`, or `hermes acp` | Sets `HERMES_ACP_SKIP_CONFIGURED_MCP=1` so Medousa owns MCP via `session/new`. Override: `MEDOUSA_ACP_HERMES_COMMAND` / `MEDOUSA_ACP_HERMES_ARGS` |
+
+Missing CLI → clear setup error (no silent stub). Spawn/handshake failures return errors. Handshake: `initialize` → `session/new` → optional `session/set_config_option` → `session/prompt`; streams `session/update` chunks and replies to `session/request_permission`. Force stub: `MEDOUSA_ACP_FORCE_STUB=1`. Demo permissions: `MEDOUSA_ACP_STUB_PERMISSION=1`. Permission wait timeout (default-deny): `MEDOUSA_ACP_PERMISSION_TIMEOUT_SECS` (default `300`).
 
 ## Account sign-in (0.7.0)
 
-External runtimes need the vendor CLI signed in **before** `create_session`. Medousa orchestrates the official login — credentials stay in the vendor's own store (`~/.codex/…`, Cursor's store), never in Medousa.
+External runtimes need the vendor CLI signed in / configured **before** `create_session`. Medousa orchestrates the official login — credentials stay in the vendor's own store (`~/.codex/…`, Cursor's store, `~/.hermes/…`), never in Medousa.
 
 | Runtime | Install | Sign-in | Sign-out |
 |---------|---------|---------|----------|
 | **ChatGPT / Codex** | Connections → **Install** (official Codex installer). ACP uses `codex-acp` / pinned `npx -y @agentclientprotocol/codex-acp@1.1.14` | `codex login` (browser) or `codex login --device-auth` | `codex logout` |
 | **Cursor** | Connections → **Install** (official Cursor Agent installer) | Prefer `cursor agent login` (falls back to `agent login`); same auth store | `cursor agent logout` / `agent logout` |
+| **Hermes** | Connections → **Install** (official Hermes installer). Ensures ACP extras (`hermes acp` / `hermes-acp`) | `hermes acp --setup` (or `hermes model`) — multi-provider config in `~/.hermes` | No vendor logout; **Reconfigure** opens `hermes model` (Medousa never deletes `~/.hermes`) |
 
 Home: **Settings → Connections** installs missing CLIs via the vendor installers, runs login via Tauri (`account_connections.rs`), and probes status without reading tokens. The daemon surfaces it on each runtime:
 
 ```jsonc
 // GET /v1/agents/runtimes → AgentRuntimeInfo
 {
-  "kind": "codex",
+  "kind": "hermes",
   "binary_present": true,
   "auth_status": "signed_in",   // signed_out | signed_in | unknown
   "auth_detail": null
 }
 ```
 
-`POST /v1/agents/sessions` returns **401** when the binary is present but signed out — surface a sign-in CTA rather than a generic spawn error. Cursor auth is probed via `agent status --format json` (tokens live in the OS keychain, not a file Medousa can read); Codex still uses `~/.codex` file presence only. Raw tokens are never read into Medousa logs.
+`POST /v1/agents/sessions` returns **401** when the binary is present but signed out — surface a sign-in CTA rather than a generic spawn error. Cursor auth is probed via `agent status --format json` (tokens live in the OS keychain, not a file Medousa can read); Codex still uses `~/.codex` / `codex login status`; Hermes uses `hermes status` when available plus presence of `~/.hermes/.env` / `config.yaml`. Raw tokens are never read into Medousa logs.
 
 ## Thinking / reasoning traces
 
@@ -105,7 +114,7 @@ Forge undertaking's governed worktree instead of a bare chat:
 
 ```text
 register + provision via /v1/forge   →   work item Ready with a worktree
-POST /v1/agents/sessions { work_id, runtime: "cursor" | "codex" }
+POST /v1/agents/sessions { work_id, runtime: "cursor" | "codex" | "hermes" }
         → isolated lease acquired first, provider cwd forced to its worktree
 prompt(s) → heartbeats + command-log staging beside the chat SSE stream
 POST /v1/forge/leases/{id}/complete → seal + evidence (explicit — never auto)
@@ -124,6 +133,6 @@ makes the executor honest. See [Forge — ACP binding](../engine/forge.md#acp-bi
 | In 0.6 Dynamic | Later |
 |----------------|--------|
 | SDK + daemon + Home Runtime select | Polished pickers on every channel |
-| Cursor + Codex ACP pump (`session/*`) | Broader ACP vendor quirks |
+| Cursor + Codex + Hermes ACP pump (`session/*`) | Broader ACP vendor quirks |
 | Permission approve/deny + Home bar + timeout | UX parity with native tool cards |
 | Stasis 0.8 ingress + waitable correlation | Durable turn wait store |

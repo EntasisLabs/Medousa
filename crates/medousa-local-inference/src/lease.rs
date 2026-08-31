@@ -365,7 +365,7 @@ mod tests {
             &ActivationLeaseRegistry {
                 leases: vec![ActivationLeaseRecord {
                     lease_id: "dead".to_string(),
-                    pid: u32::MAX,
+                    pid: i32::MAX as u32,
                     created_at_unix_secs: now_unix_secs(),
                     model_id: "dead-model".to_string(),
                     host_reserved_mb: 6_000,

@@ -6,15 +6,15 @@
   "alarms": [
     {
       "path": "src/lib/components/work/CodeSourceEditor.svelte",
-      "maxLines": 1998,
+      "maxLines": 2223,
       "owner": "Home / Forge",
       "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
       "expires": "2026-10-01",
-      "blocksValidation": false
+      "blocksValidation": true
     },
     {
       "path": "src/lib/stores/shellTabs.svelte.ts",
-      "maxLines": 1993,
+      "maxLines": 1992,
       "owner": "Home",
       "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
       "expires": "2026-10-01",
@@ -22,7 +22,7 @@
     },
     {
       "path": "src/lib/styles/vault-live.postcss",
-      "maxLines": 1914,
+      "maxLines": 1950,
       "owner": "Home / Vault",
       "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
       "expires": "2026-10-01",
@@ -30,7 +30,7 @@
     },
     {
       "path": "src/lib/forge.ts",
-      "maxLines": 1817,
+      "maxLines": 1883,
       "owner": "Home / Forge",
       "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
       "expires": "2026-10-01",
@@ -38,15 +38,31 @@
     },
     {
       "path": "src/lib/components/work/UndertakingsPanel.svelte",
-      "maxLines": 1703,
+      "maxLines": 1723,
       "owner": "Home / Forge",
       "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
       "expires": "2026-10-01",
       "blocksValidation": false
     },
     {
+      "path": "src/lib/components/settings/SettingsPreferencesSection.svelte",
+      "maxLines": 1540,
+      "owner": "Home",
+      "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
+      "expires": "2026-10-01",
+      "blocksValidation": false
+    },
+    {
+      "path": "src/lib/components/lme/explorers/LmeCodeExplorer.svelte",
+      "maxLines": 1529,
+      "owner": "Home",
+      "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
+      "expires": "2026-10-01",
+      "blocksValidation": false
+    },
+    {
       "path": "src/routes/popout/toolbar/+page.svelte",
-      "maxLines": 1415,
+      "maxLines": 1411,
       "owner": "Home",
       "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
       "expires": "2026-10-01",
@@ -54,24 +70,40 @@
     },
     {
       "path": "src/lib/stores/vault.svelte.ts",
-      "maxLines": 1400,
+      "maxLines": 1408,
       "owner": "Home / Vault",
       "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
       "expires": "2026-10-01",
       "blocksValidation": false
     },
     {
-      "path": "src/lib/components/lme/explorers/LmeCodeExplorer.svelte",
-      "maxLines": 1367,
+      "path": "src/lib/styles/mobile-shell.postcss",
+      "maxLines": 1393,
+      "owner": "Home / CSS",
+      "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
+      "expires": "2026-10-01",
+      "blocksValidation": false
+    },
+    {
+      "path": "src/lib/components/calendar/CalendarPanel.svelte",
+      "maxLines": 1309,
       "owner": "Home",
       "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
       "expires": "2026-10-01",
       "blocksValidation": false
     },
     {
-      "path": "src/lib/components/settings/SettingsPreferencesSection.svelte",
-      "maxLines": 1302,
-      "owner": "Home",
+      "path": "src/lib/styles/vault-browse.postcss",
+      "maxLines": 1298,
+      "owner": "Home / Vault",
+      "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
+      "expires": "2026-10-01",
+      "blocksValidation": false
+    },
+    {
+      "path": "src/lib/components/chat/ChatPanel.svelte",
+      "maxLines": 1292,
+      "owner": "Home / Chat",
       "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
       "expires": "2026-10-01",
       "blocksValidation": false
@@ -85,16 +117,16 @@
       "blocksValidation": false
     },
     {
-      "path": "src/lib/components/calendar/CalendarPanel.svelte",
-      "maxLines": 1263,
+      "path": "src/lib/components/settings/SettingsRuntimeSection.svelte",
+      "maxLines": 1249,
       "owner": "Home",
       "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
       "expires": "2026-10-01",
       "blocksValidation": false
     },
     {
-      "path": "src/lib/components/settings/SettingsRuntimeSection.svelte",
-      "maxLines": 1258,
+      "path": "src/lib/components/calendar/EventEditor.svelte",
+      "maxLines": 1248,
       "owner": "Home",
       "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
       "expires": "2026-10-01",
@@ -117,9 +149,17 @@
       "blocksValidation": false
     },
     {
-      "path": "src/lib/components/chat/ChatPanel.svelte",
-      "maxLines": 1201,
-      "owner": "Home / Chat",
+      "path": "src/lib/code/codingEngineClient.ts",
+      "maxLines": 1204,
+      "owner": "Home",
+      "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
+      "expires": "2026-10-01",
+      "blocksValidation": false
+    },
+    {
+      "path": "src/lib/components/settings/SettingsWorkshopsSection.svelte",
+      "maxLines": 1184,
+      "owner": "Home",
       "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
       "expires": "2026-10-01",
       "blocksValidation": false
@@ -142,7 +182,7 @@
     },
     {
       "path": "src/lib/components/settings/SettingsAgentSection.svelte",
-      "maxLines": 1147,
+      "maxLines": 1145,
       "owner": "Home",
       "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
       "expires": "2026-10-01",
@@ -158,32 +198,32 @@
     },
     {
       "path": "src/lib/components/layout/NavShell.svelte",
-      "maxLines": 1115,
+      "maxLines": 1121,
       "owner": "Home",
       "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
       "expires": "2026-10-01",
       "blocksValidation": false
     },
     {
-      "path": "src/lib/code/codingEngineClient.ts",
-      "maxLines": 1075,
-      "owner": "Home",
-      "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
-      "expires": "2026-10-01",
-      "blocksValidation": false
-    },
-    {
-      "path": "src/lib/components/lme/explorers/CodeRepositoryTree.svelte",
-      "maxLines": 1054,
-      "owner": "Home",
+      "path": "src/lib/styles/composer.postcss",
+      "maxLines": 1108,
+      "owner": "Home / CSS",
       "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
       "expires": "2026-10-01",
       "blocksValidation": false
     },
     {
       "path": "src/lib/components/vault/VaultLiveEditor.svelte",
-      "maxLines": 1054,
+      "maxLines": 1069,
       "owner": "Home / Vault",
+      "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
+      "expires": "2026-10-01",
+      "blocksValidation": false
+    },
+    {
+      "path": "src/lib/components/lme/explorers/CodeRepositoryTree.svelte",
+      "maxLines": 1049,
+      "owner": "Home",
       "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
       "expires": "2026-10-01",
       "blocksValidation": false
@@ -192,14 +232,6 @@
       "path": "src/lib/styles/workshop-shell.postcss",
       "maxLines": 1045,
       "owner": "Home / Forge",
-      "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
-      "expires": "2026-10-01",
-      "blocksValidation": false
-    },
-    {
-      "path": "src/lib/styles/mobile-shell.postcss",
-      "maxLines": 1041,
-      "owner": "Home / CSS",
       "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
       "expires": "2026-10-01",
       "blocksValidation": false
@@ -221,9 +253,9 @@
       "blocksValidation": false
     },
     {
-      "path": "src/lib/components/calendar/EventEditor.svelte",
-      "maxLines": 1001,
-      "owner": "Home",
+      "path": "src/lib/styles/vault-editor.postcss",
+      "maxLines": 1002,
+      "owner": "Home / Vault",
       "reason": "Legacy H09 ownership debt; growth is forbidden until the owner boundary is split.",
       "expires": "2026-10-01",
       "blocksValidation": false

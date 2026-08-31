@@ -36,11 +36,15 @@ describe("chat model route", () => {
     expect(modelSourceDetail("codex", "OpenAI", "openai")).toBe(
       "OpenAI account · Codex runtime",
     );
+    expect(modelSourceDetail("hermes", "OpenRouter", "openrouter")).toBe(
+      "Hermes providers · Hermes runtime",
+    );
     expect(modelSourceDetail("medousa", "OpenAI", "openai")).toBe(
       "OpenAI · API key",
     );
     expect(modelSourceDetail("medousa", "Ollama", "ollama")).toBe("Ollama · Local");
     expect(credentialRouteFor("codex", "openai")).toBe("chatgpt-account");
+    expect(credentialRouteFor("hermes", "openrouter")).toBe("hermes-account");
     expect(credentialRouteFor("medousa", "openai")).toBe("api-key");
     expect(credentialRouteFor("medousa", "openai-codex")).toBe("chatgpt-account");
     expect(

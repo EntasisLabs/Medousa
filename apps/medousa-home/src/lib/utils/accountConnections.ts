@@ -1,5 +1,5 @@
 /**
- * Settings → Connections (ChatGPT / Cursor) — Tauri bridge for vendor CLI
+ * Settings → Connections (ChatGPT / Cursor / Hermes) — Tauri bridge for vendor CLI
  * login orchestration. Auth status comes from the daemon agents surface.
  */
 
@@ -7,6 +7,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { isTauriDesktop } from "$lib/platform";
 
 export type AccountAuthStatus = "signed_in" | "signed_out" | "unknown";
+
+export type AccountId = "chatgpt" | "cursor" | "hermes";
 
 export interface AccountConnectionInfo {
   id: string;
@@ -21,6 +23,7 @@ export interface AccountConnectionInfo {
 export interface AccountConnections {
   chatgpt: AccountConnectionInfo;
   cursor: AccountConnectionInfo;
+  hermes: AccountConnectionInfo;
 }
 
 export interface DeviceAuthStart {
@@ -41,11 +44,11 @@ export async function beginChatgptDeviceLogin(): Promise<DeviceAuthStart> {
   return invoke<DeviceAuthStart>("account_chatgpt_begin_device_login");
 }
 
-export async function beginTerminalLogin(account: "chatgpt" | "cursor"): Promise<string> {
+export async function beginTerminalLogin(account: AccountId): Promise<string> {
   return invoke<string>("account_begin_terminal_login", { account });
 }
 
-export async function accountSignOut(account: "chatgpt" | "cursor"): Promise<string> {
+export async function accountSignOut(account: AccountId): Promise<string> {
   return invoke<string>("account_sign_out", { account });
 }
 
@@ -55,9 +58,9 @@ export interface AccountCliInstallResult {
   detail: string;
 }
 
-/** Install Codex / Cursor Agent CLI via the vendor's official installer. */
+/** Install Codex / Cursor / Hermes CLI via the vendor's official installer. */
 export async function installAccountCli(
-  account: "chatgpt" | "cursor",
+  account: AccountId,
 ): Promise<AccountCliInstallResult> {
   return invoke<AccountCliInstallResult>("account_cli_install", { account });
 }
@@ -71,4 +74,12 @@ export function authStatusLabel(status: AccountAuthStatus): string {
     default:
       return "Unknown";
   }
+}
+
+/** Map chat runtime id → Connections account card id. */
+export function accountIdForRuntime(
+  runtime: "cursor" | "codex" | "hermes",
+): AccountId {
+  if (runtime === "codex") return "chatgpt";
+  return runtime;
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { SessionSummary } from "$lib/types/session";
 import { groupSessionsByRecency } from "./sessionHistoryGroups";
 
@@ -14,6 +14,20 @@ function session(id: string, timestamp?: string | null): SessionSummary {
 }
 
 describe("groupSessionsByRecency", () => {
+  const originalTz = process.env.TZ;
+
+  beforeAll(() => {
+    process.env.TZ = "America/Los_Angeles";
+  });
+
+  afterAll(() => {
+    if (originalTz === undefined) {
+      delete process.env.TZ;
+    } else {
+      process.env.TZ = originalTz;
+    }
+  });
+
   it("groups history into useful local-calendar ranges", () => {
     const groups = groupSessionsByRecency(
       [

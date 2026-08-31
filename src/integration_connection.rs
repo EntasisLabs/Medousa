@@ -225,7 +225,7 @@ impl IntegrationConnectionService {
         label: Option<&str>,
         base_url: Option<&str>,
     ) -> anyhow::Result<IntegrationConnection> {
-        Ok(ensure_kind_sync(kind, label, base_url)?)
+        ensure_kind_sync(kind, label, base_url)
     }
 
     pub async fn set_slot_presence(
@@ -234,7 +234,7 @@ impl IntegrationConnectionService {
         slot: IntegrationSecretSlot,
         present: bool,
     ) -> anyhow::Result<Option<IntegrationConnection>> {
-        Ok(set_slot_presence_sync(connection_id, slot, present)?)
+        set_slot_presence_sync(connection_id, slot, present)
     }
 
     fn list_file(&self) -> Vec<IntegrationConnection> {

@@ -35,96 +35,6 @@ impl TurnJournalOutput {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use medousa_engine::{Principal, TurnEnvelope};
-    use medousa_types::{TurnStreamEnvelopeV3, TurnStreamEventV3};
-
-    use super::*;
-
-    #[tokio::test]
-    async fn native_v3_facts_are_journaled_and_published_once_with_optional_v2() {
-        let root = std::env::temp_dir().join(format!(
-            "medousa-v3-output-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
-        let log = Arc::new(
-            TurnEventLog::open_in(
-                &root,
-                TurnEnvelope::new("turn-native-v3", Principal::operator()),
-            )
-            .unwrap(),
-        );
-        let channel = TurnEventChannel::new(8);
-        let mut subscriber = channel.try_subscribe().unwrap();
-        let output = TurnJournalOutput::new(Arc::clone(&channel), Arc::clone(&log));
-        let envelope = TurnStreamEnvelopeV3::new(
-            "turn-native-v3",
-            1,
-            chrono::Utc::now(),
-            TurnStreamEventV3::AssistantTextStarted {
-                segment_id: "segment-1".into(),
-                model_round: 1,
-            },
-        )
-        .unwrap();
-
-        output
-            .publish(TurnPipelineEmission {
-                envelope: TurnPipelineEnvelope::V3(envelope),
-                journal_override: None,
-            })
-            .await
-            .unwrap();
-
-        let published = subscriber.recv().await.unwrap();
-        assert_eq!(published.seq(), 1);
-        assert!(published.v1.is_none());
-        assert!(published.v2.is_none());
-        assert!(matches!(
-            published.v3.as_ref().map(|envelope| &envelope.event),
-            Some(TurnStreamEventV3::AssistantTextStarted { segment_id, .. })
-                if segment_id == "segment-1"
-        ));
-
-        let append = TurnStreamEnvelopeV3::new(
-            "turn-native-v3",
-            2,
-            chrono::Utc::now(),
-            TurnStreamEventV3::ContentAppend {
-                segment_id: "segment-1".into(),
-                text: "visible".into(),
-            },
-        )
-        .unwrap();
-        output
-            .publish(TurnPipelineEmission {
-                envelope: TurnPipelineEnvelope::V3(append),
-                journal_override: None,
-            })
-            .await
-            .unwrap();
-        let published = subscriber.recv().await.unwrap();
-        assert_eq!(published.seq(), 2);
-        assert!(published.v1.is_some());
-        assert!(published.v2.is_some());
-        assert!(published.v3.is_some());
-
-        let replay = log.snapshot_since(0);
-        assert_eq!(replay.len(), 2);
-        assert!(replay[0].stream_event_v2.is_none());
-        assert!(replay[0].stream_event_v3.is_some());
-        assert!(replay[1].stream_event_v2.is_none());
-        assert!(replay[1].stream_event_v3.is_some());
-
-        drop(output);
-        drop(subscriber);
-        drop(channel);
-        drop(log);
-        std::fs::remove_dir_all(root).ok();
-    }
-}
-
 impl TurnPipelineOutput for TurnJournalOutput {
     async fn publish(&self, emission: TurnPipelineEmission) -> Result<(), TurnPipelineError> {
         match emission.envelope {
@@ -214,5 +124,95 @@ impl TurnJournalOutput {
         debug_assert_eq!(receipt.seq(), v3.seq);
         self.stream_tx.publish_v3(v3, v2);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use medousa_engine::{Principal, TurnEnvelope};
+    use medousa_types::{TurnStreamEnvelopeV3, TurnStreamEventV3};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn native_v3_facts_are_journaled_and_published_once_with_optional_v2() {
+        let root = std::env::temp_dir().join(format!(
+            "medousa-v3-output-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let log = Arc::new(
+            TurnEventLog::open_in(
+                &root,
+                TurnEnvelope::new("turn-native-v3", Principal::operator()),
+            )
+            .unwrap(),
+        );
+        let channel = TurnEventChannel::new(8);
+        let mut subscriber = channel.try_subscribe().unwrap();
+        let output = TurnJournalOutput::new(Arc::clone(&channel), Arc::clone(&log));
+        let envelope = TurnStreamEnvelopeV3::new(
+            "turn-native-v3",
+            1,
+            chrono::Utc::now(),
+            TurnStreamEventV3::AssistantTextStarted {
+                segment_id: "segment-1".into(),
+                model_round: 1,
+            },
+        )
+        .unwrap();
+
+        output
+            .publish(TurnPipelineEmission {
+                envelope: TurnPipelineEnvelope::V3(envelope),
+                journal_override: None,
+            })
+            .await
+            .unwrap();
+
+        let published = subscriber.recv().await.unwrap();
+        assert_eq!(published.seq(), 1);
+        assert!(published.v1.is_none());
+        assert!(published.v2.is_none());
+        assert!(matches!(
+            published.v3.as_ref().map(|envelope| &envelope.event),
+            Some(TurnStreamEventV3::AssistantTextStarted { segment_id, .. })
+                if segment_id == "segment-1"
+        ));
+
+        let append = TurnStreamEnvelopeV3::new(
+            "turn-native-v3",
+            2,
+            chrono::Utc::now(),
+            TurnStreamEventV3::ContentAppend {
+                segment_id: "segment-1".into(),
+                text: "visible".into(),
+            },
+        )
+        .unwrap();
+        output
+            .publish(TurnPipelineEmission {
+                envelope: TurnPipelineEnvelope::V3(append),
+                journal_override: None,
+            })
+            .await
+            .unwrap();
+        let published = subscriber.recv().await.unwrap();
+        assert_eq!(published.seq(), 2);
+        assert!(published.v1.is_some());
+        assert!(published.v2.is_some());
+        assert!(published.v3.is_some());
+
+        let replay = log.snapshot_since(0);
+        assert_eq!(replay.len(), 2);
+        assert!(replay[0].stream_event_v2.is_none());
+        assert!(replay[0].stream_event_v3.is_some());
+        assert!(replay[1].stream_event_v2.is_none());
+        assert!(replay[1].stream_event_v3.is_some());
+
+        drop(output);
+        drop(subscriber);
+        drop(channel);
+        drop(log);
+        std::fs::remove_dir_all(root).ok();
     }
 }

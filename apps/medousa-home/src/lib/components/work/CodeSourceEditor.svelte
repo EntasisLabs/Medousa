@@ -115,8 +115,8 @@
     onStopAgent?: () => void;
     onResumeEditing?: () => void;
     onProvision?: () => Promise<void>;
-    preferredAgent?: "codex" | "cursor";
-    onHandoffToAgent?: (runtime: "codex" | "cursor", draft?: string) => Promise<void>;
+    preferredAgent?: "codex" | "cursor" | "hermes";
+    onHandoffToAgent?: (runtime: "codex" | "cursor" | "hermes", draft?: string) => Promise<void>;
     onReclaimHuman?: () => Promise<void>;
     /** Project kebab items (Ask Codex, Terminal, Discard, …). */
     projectMenu?: Snippet;

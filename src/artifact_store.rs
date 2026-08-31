@@ -25,7 +25,9 @@ static ARTIFACT_TEST_ROOT: Lazy<tempfile::TempDir> =
 
 static ARTIFACT_FILES: Lazy<crate::session_storage::SessionDirectoryStore> = Lazy::new(|| {
     #[cfg(test)]
-    let root = ARTIFACT_TEST_ROOT.path().join("artifacts");
+    let root = std::env::var("MEDOUSA_DATA_DIR")
+        .map(|dir| std::path::PathBuf::from(dir).join("artifacts"))
+        .unwrap_or_else(|_| ARTIFACT_TEST_ROOT.path().join("artifacts"));
     #[cfg(not(test))]
     let root = crate::paths::medousa_data_dir().join("artifacts");
     crate::session_storage::SessionDirectoryStore::new(root)

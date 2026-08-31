@@ -359,6 +359,28 @@ impl TurnPartsAccumulator {
         self.parts.retain(
             |part| !matches!(part, TurnPart::Reasoning { markdown } if markdown.is_empty()),
         );
+
+        // Reasoning streamed before tool runs must settle after them in the final turn.
+        let reasoning: Vec<TurnPart> = self
+            .parts
+            .iter()
+            .filter(|part| matches!(part, TurnPart::Reasoning { .. }))
+            .cloned()
+            .collect();
+        if !reasoning.is_empty() {
+            self.parts
+                .retain(|part| !matches!(part, TurnPart::Reasoning { .. }));
+            let insert_at = self
+                .parts
+                .iter()
+                .rposition(|part| matches!(part, TurnPart::ToolRun { .. }))
+                .map(|index| index + 1)
+                .unwrap_or(0);
+            for (offset, part) in reasoning.into_iter().enumerate() {
+                self.parts.insert(insert_at + offset, part);
+            }
+        }
+
         if let Some((kind, work_id)) = handoff {
             self.parts.push(TurnPart::Handoff {
                 handoff_kind: kind,

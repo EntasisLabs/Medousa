@@ -1577,7 +1577,7 @@ impl WorkEnvironmentPort for OciCliWorkEnvironmentPort {
                     target_ref: publication.target_ref.clone(),
                     expected: publication.expected_value.clone(),
                     found,
-                    preserved_checkpoint: checkpoint.clone(),
+                    preserved_checkpoint: Box::new(checkpoint.clone()),
                 })
             }
         }

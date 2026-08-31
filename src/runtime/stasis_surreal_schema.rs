@@ -49,6 +49,17 @@ async fn apply_schema_statements(db: &Surreal<Any>, statements: &[&str]) -> anyh
     Ok(())
 }
 
+pub async fn ensure_stasis_runtime_schema(runtime: &RuntimeComposition) -> anyhow::Result<()> {
+    match runtime {
+        RuntimeComposition::Surreal(rt) => {
+            apply_schema_statements(&rt.job_store.db(), STASIS_RUNTIME_TABLES).await?;
+            eprintln!("Stasis runtime Surreal tables ensured (dashboard + scheduler)");
+        }
+        RuntimeComposition::InMemory(_) => {}
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -90,15 +101,4 @@ mod tests {
         }
         assert_eq!(DAEMON_PERSISTENCE_SCHEMA_REVISION, 1);
     }
-}
-
-pub async fn ensure_stasis_runtime_schema(runtime: &RuntimeComposition) -> anyhow::Result<()> {
-    match runtime {
-        RuntimeComposition::Surreal(rt) => {
-            apply_schema_statements(&rt.job_store.db(), STASIS_RUNTIME_TABLES).await?;
-            eprintln!("Stasis runtime Surreal tables ensured (dashboard + scheduler)");
-        }
-        RuntimeComposition::InMemory(_) => {}
-    }
-    Ok(())
 }

@@ -1,5 +1,5 @@
 /**
- * Reactive account connections (ChatGPT / Cursor) for Settings + chat runtime
+ * Reactive account connections (ChatGPT / Cursor / Hermes) for Settings + chat runtime
  * gating. Probed via Tauri → daemon agents surface.
  */
 
@@ -9,6 +9,7 @@ import {
   type AccountConnectionInfo,
   type AccountConnections,
   type AccountAuthStatus,
+  type AccountId,
 } from "$lib/utils/accountConnections";
 
 function createAccountConnectionsStore() {
@@ -33,12 +34,12 @@ function createAccountConnectionsStore() {
     }
   }
 
-  function connection(id: "chatgpt" | "cursor"): AccountConnectionInfo | null {
+  function connection(id: AccountId): AccountConnectionInfo | null {
     if (!connections) return null;
-    return id === "chatgpt" ? connections.chatgpt : connections.cursor;
+    return connections[id];
   }
 
-  function isSignedIn(id: "chatgpt" | "cursor"): boolean {
+  function isSignedIn(id: AccountId): boolean {
     return connection(id)?.authStatus === "signed_in";
   }
 
@@ -48,7 +49,7 @@ function createAccountConnectionsStore() {
    * without a manual refresh.
    */
   async function awaitSignedIn(
-    id: "chatgpt" | "cursor",
+    id: AccountId,
     options?: { timeoutMs?: number; intervalMs?: number },
   ): Promise<AccountAuthStatus> {
     const timeoutMs = options?.timeoutMs ?? 3 * 60_000;

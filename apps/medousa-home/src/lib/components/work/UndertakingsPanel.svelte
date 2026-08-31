@@ -108,7 +108,7 @@
   let exportOpen = $state(false);
   let exportDestination = $state("");
   let exportedDestination = $state<string | null>(null);
-  let preferredCodeAgent = $state<"codex" | "cursor">("codex");
+  let preferredCodeAgent = $state<"codex" | "cursor" | "hermes">("codex");
   let providerHandoff = $state<ProviderHandoff | null>(null);
   let providerComments = $state<ProviderComment[]>([]);
   let providerLink = $state("");
@@ -154,7 +154,9 @@
       if (root?.path) repoPath = root.path;
     }
     const savedAgent = localStorage.getItem("medousa-code-agent-runtime");
-    if (savedAgent === "cursor" || savedAgent === "codex") preferredCodeAgent = savedAgent;
+    if (savedAgent === "cursor" || savedAgent === "codex" || savedAgent === "hermes") {
+      preferredCodeAgent = savedAgent;
+    }
   });
 
   $effect(() => {
@@ -219,7 +221,7 @@
     await lmeWorkspace.openCodeReview(detail.id, `Review · ${detail.title}`);
   }
 
-  async function startAgent(runtime: "codex" | "cursor") {
+  async function startAgent(runtime: "codex" | "cursor" | "hermes") {
     const d = detail;
     if (!d) return;
     preferredCodeAgent = runtime;
@@ -230,7 +232,7 @@
     });
   }
 
-  async function handoffToAgent(runtime: "codex" | "cursor", draft?: string) {
+  async function handoffToAgent(runtime: "codex" | "cursor" | "hermes", draft?: string) {
     const d = detail;
     if (!d) return;
     preferredCodeAgent = runtime;
@@ -312,7 +314,11 @@
     ),
   );
   const agentLabel = $derived(
-    undertakings.active?.executorKind === "cursor" ? "Cursor" : "Codex",
+    undertakings.active?.executorKind === "cursor"
+      ? "Cursor"
+      : undertakings.active?.executorKind === "hermes"
+        ? "Hermes"
+        : "Codex",
   );
   async function doSeal() {
     let leaseId = undertakings.active?.leaseId ?? null;
@@ -1206,6 +1212,13 @@
                   disabled={busy}
                   onclick={() => void startAgent("cursor")}
                 >Ask Cursor to continue</button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="secondary-action"
+                  disabled={busy}
+                  onclick={() => void startAgent("hermes")}
+                >Ask Hermes to continue</button>
               {/if}
               <button
                 type="button"
@@ -1321,6 +1334,13 @@
                   disabled={busy}
                   onclick={() => void startAgent("cursor")}
                 >Ask Cursor to continue</button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="code-chrome-menu-item"
+                  disabled={busy}
+                  onclick={() => void startAgent("hermes")}
+                >Ask Hermes to continue</button>
               {/if}
               <button
                 type="button"

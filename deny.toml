@@ -21,6 +21,7 @@ ignore = [
     { id = "RUSTSEC-2026-0233", reason = "bincode archive UAF; transitive unmaintained bincode" },
     { id = "RUSTSEC-2026-0234", reason = "bincode OOB hash tables; transitive unmaintained bincode" },
     { id = "RUSTSEC-2026-0235", reason = "bincode OOB Rc/Arc; transitive unmaintained bincode" },
+    { id = "RUSTSEC-2026-0258", reason = "h2 empty DATA frames; transitive via hyper until workspace h2 >=0.4.16 bump" },
 ]
 
 [licenses]

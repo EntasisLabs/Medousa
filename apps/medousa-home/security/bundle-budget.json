@@ -5,23 +5,23 @@
   "ceilings": {
     "desktop": {
       "shellEntry": "src/lib/components/layout/WorkshopShell.svelte",
-      "jsFiles": 233,
-      "cssFiles": 26,
-      "jsBytes": 3595119,
-      "jsGzipBytes": 1189100,
-      "cssBytes": 823781,
-      "cssGzipBytes": 120375,
-      "largestJsChunkBytes": 852924
+      "jsFiles": 263,
+      "cssFiles": 31,
+      "jsBytes": 3822700,
+      "jsGzipBytes": 1257000,
+      "cssBytes": 631395,
+      "cssGzipBytes": 102743,
+      "largestJsChunkBytes": 808641
     },
     "mobile": {
       "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
-      "jsFiles": 270,
-      "cssFiles": 37,
-      "jsBytes": 6093545,
-      "jsGzipBytes": 1900361,
-      "cssBytes": 880060,
-      "cssGzipBytes": 133140,
-      "largestJsChunkBytes": 1457578
+      "jsFiles": 297,
+      "cssFiles": 46,
+      "jsBytes": 6312527,
+      "jsGzipBytes": 1963153,
+      "cssBytes": 972100,
+      "cssGzipBytes": 154577,
+      "largestJsChunkBytes": 1454824
     }
   },
   "measured": {
@@ -33,23 +33,23 @@
     ],
     "desktop": {
       "shellEntry": "src/lib/components/layout/WorkshopShell.svelte",
-      "jsFiles": 233,
-      "cssFiles": 26,
-      "jsBytes": 3595119,
-      "jsGzipBytes": 1189100,
-      "cssBytes": 823781,
-      "cssGzipBytes": 120375,
-      "largestJsChunkBytes": 852924
+      "jsFiles": 263,
+      "cssFiles": 31,
+      "jsBytes": 3822700,
+      "jsGzipBytes": 1257000,
+      "cssBytes": 631395,
+      "cssGzipBytes": 102743,
+      "largestJsChunkBytes": 808641
     },
     "mobile": {
       "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
-      "jsFiles": 270,
-      "cssFiles": 37,
-      "jsBytes": 6093545,
-      "jsGzipBytes": 1900361,
-      "cssBytes": 880060,
-      "cssGzipBytes": 133140,
-      "largestJsChunkBytes": 1457578
+      "jsFiles": 297,
+      "cssFiles": 46,
+      "jsBytes": 6312527,
+      "jsGzipBytes": 1963153,
+      "cssBytes": 972100,
+      "cssGzipBytes": 154577,
+      "largestJsChunkBytes": 1454824
     }
   }
 }

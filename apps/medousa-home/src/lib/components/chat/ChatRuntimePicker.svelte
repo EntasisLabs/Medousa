@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { Bot, Check, ChevronDown, LogIn, MousePointer2, Terminal } from "@lucide/svelte";
+  import { Bot, Check, ChevronDown, LogIn, MousePointer2, Sparkles, Terminal } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import {
     agentRuntimeLabel,
@@ -10,6 +10,7 @@
   import { placeComposerPopover } from "$lib/utils/railPopover";
   import { accountConnections } from "$lib/stores/accountConnections.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
+  import { accountIdForRuntime } from "$lib/utils/accountConnections";
 
   interface Props {
     value: ChatAgentRuntime;
@@ -26,6 +27,7 @@
     { id: "medousa", hint: "Native Medousa turns" },
     { id: "cursor", hint: "External Cursor agent" },
     { id: "codex", hint: "ChatGPT-backed agent + chat" },
+    { id: "hermes", hint: "External Hermes agent" },
   ];
 
   $effect(() => {
@@ -35,7 +37,7 @@
   /** Signed-out external runtimes stay visible but locked with a sign-in CTA. */
   function lockedFor(runtime: ChatAgentRuntime): boolean {
     if (runtime === "medousa") return false;
-    const account = runtime === "codex" ? "chatgpt" : "cursor";
+    const account = accountIdForRuntime(runtime);
     const info = accountConnections.connection(account);
     if (!info) return false;
     if (!info.binaryPresent) return true;
@@ -43,13 +45,13 @@
   }
 
   function lockHint(runtime: ChatAgentRuntime): string | null {
-    if (!lockedFor(runtime)) return null;
-    const account = runtime === "codex" ? "chatgpt" : "cursor";
+    if (runtime === "medousa" || !lockedFor(runtime)) return null;
+    const account = accountIdForRuntime(runtime);
     const info = accountConnections.connection(account);
     if (info && !info.binaryPresent) {
-      return runtime === "codex"
-        ? "Install Codex CLI — Settings → Connections"
-        : "Install Cursor CLI — Settings → Connections";
+      if (runtime === "codex") return "Install Codex CLI — Settings → Connections";
+      if (runtime === "hermes") return "Install Hermes — Settings → Connections";
+      return "Install Cursor CLI — Settings → Connections";
     }
     return "Sign in — Settings → Connections";
   }
@@ -113,6 +115,8 @@
     <MousePointer2 {size} strokeWidth={1.85} class="shrink-0 opacity-70" />
   {:else if runtime === "codex"}
     <Terminal {size} strokeWidth={1.85} class="shrink-0 opacity-70" />
+  {:else if runtime === "hermes"}
+    <Sparkles {size} strokeWidth={1.85} class="shrink-0 opacity-70" />
   {:else}
     <Bot {size} strokeWidth={1.85} class="shrink-0 opacity-70" />
   {/if}

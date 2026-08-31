@@ -203,6 +203,7 @@ pub async fn list_agent_runtimes() -> Json<AgentRuntimeListResponse> {
         AgentRuntimeKind::Medousa,
         AgentRuntimeKind::Cursor,
         AgentRuntimeKind::Codex,
+        AgentRuntimeKind::Hermes,
     ];
     let runtimes = kinds
         .into_iter()
@@ -240,7 +241,7 @@ pub async fn create_agent_session(
     if matches!(kind, AgentRuntimeKind::Medousa) {
         return Err((
             StatusCode::BAD_REQUEST,
-            "medousa runtime uses /v1/turns — pick cursor or codex for /v1/agents".into(),
+            "medousa runtime uses /v1/turns — pick cursor, codex, or hermes for /v1/agents".into(),
         ));
     }
 
@@ -249,7 +250,7 @@ pub async fn create_agent_session(
     if coder_session_missing_project(session_mode.effective_mode, command.work_id.is_some()) {
         return Err((
             StatusCode::CONFLICT,
-            "choose or create a project before starting Cursor or Codex in Coder mode".into(),
+            "choose or create a project before starting an external agent in Coder mode".into(),
         ));
     }
 

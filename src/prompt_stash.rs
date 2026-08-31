@@ -105,7 +105,7 @@ impl PromptStashStore {
             .into_iter()
             .filter(|stash| stash.created_by == created_by)
             .collect();
-        stashes.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+        stashes.sort_by_key(|stash| std::cmp::Reverse(stash.updated_at));
         Ok(stashes)
     }
 
@@ -133,7 +133,7 @@ impl PromptStashStore {
 }
 
 fn validate_request(request: &mut CreatePromptStashRequest) -> Result<(), String> {
-    if request.draft.text.as_bytes().len() > MAX_DRAFT_BYTES {
+    if request.draft.text.len() > MAX_DRAFT_BYTES {
         return Err(format!("draft exceeds {MAX_DRAFT_BYTES} bytes"));
     }
     if request.draft.text.trim().is_empty() && request.draft.media_refs.is_empty() {

@@ -28,6 +28,7 @@ pub struct EnvironmentRecord {
 #[derive(Clone)]
 enum EnvironmentStoreAuthority {
     Ambient(Arc<PathBuf>),
+    #[allow(dead_code)]
     Opened(Arc<StoreRoot>),
 }
 
@@ -71,6 +72,7 @@ impl EnvironmentHub {
     }
 
     /// Retain an already-opened, capability-confined deployment root.
+    #[allow(dead_code)]
     pub(crate) fn new_with_store(store: Arc<StoreRoot>) -> Self {
         Self::with_store(EnvironmentStoreAuthority::Opened(store))
     }

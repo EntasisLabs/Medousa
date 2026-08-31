@@ -1,10 +1,11 @@
-//! Settings → Connections: ChatGPT (via Codex CLI) and Cursor account sign-in.
+//! Settings → Connections: ChatGPT (via Codex CLI), Cursor, and Hermes account sign-in.
 //!
 //! Medousa never holds vendor tokens — login orchestrates the official CLIs
-//! (`codex login`, `cursor agent login` / `agent login`), which keep credentials in their own
-//! stores. We probe sign-in state via the daemon agents surface, start device
-//! auth / terminal login from here, and shell out to `* logout` on sign-out.
-//! Missing CLIs are installed via the vendors' official installers (not Packages).
+//! (`codex login`, `cursor agent login` / `agent login`, `hermes acp --setup`), which keep
+//! credentials in their own stores. We probe sign-in state via the daemon agents surface,
+//! start device auth / terminal login from here, and shell out to `* logout` on sign-out
+//! (Hermes has no logout — credentials stay in `~/.hermes`). Missing CLIs are installed via
+//! the vendors' official installers (not Packages).
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -26,6 +27,10 @@ fn codex_command() -> String {
 
 fn cursor_command() -> String {
     std::env::var("MEDOUSA_ACP_CURSOR_COMMAND").unwrap_or_else(|_| "agent".into())
+}
+
+fn hermes_command() -> String {
+    std::env::var("MEDOUSA_ACP_HERMES_COMMAND").unwrap_or_else(|_| "hermes".into())
 }
 
 /// Resolve a bare command name to an absolute path when possible (for Terminal.app
@@ -206,7 +211,7 @@ fn detach_new_session(_command: &mut Command) {}
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountConnectionInfo {
-    /// `chatgpt` (Codex CLI) or `cursor`.
+    /// `chatgpt` (Codex CLI), `cursor`, or `hermes`.
     pub id: String,
     pub label: String,
     pub runtime: String,
@@ -222,6 +227,7 @@ pub struct AccountConnectionInfo {
 pub struct AccountConnections {
     pub chatgpt: AccountConnectionInfo,
     pub cursor: AccountConnectionInfo,
+    pub hermes: AccountConnectionInfo,
 }
 
 #[derive(Serialize, Clone)]
@@ -248,6 +254,7 @@ fn connection_from_runtime(
     let command = match id {
         "chatgpt" => Some(codex_command()),
         "cursor" => Some(cursor_command()),
+        "hermes" => Some(hermes_command()),
         _ => None,
     };
     let binary_present = info
@@ -256,7 +263,8 @@ fn connection_from_runtime(
     // Prefer local discovery when the daemon hasn't picked up a just-installed CLI yet.
     let binary_present = binary_present
         || command.as_deref().map(command_on_path).unwrap_or(false)
-        || (id == "cursor" && (command_on_path("agent") || command_on_path("cursor-agent")));
+        || (id == "cursor" && (command_on_path("agent") || command_on_path("cursor-agent")))
+        || (id == "hermes" && (command_on_path("hermes") || command_on_path("hermes-acp")));
 
     let mut auth_status = info
         .and_then(|i| i.auth_status.clone())
@@ -279,6 +287,7 @@ fn connection_from_runtime(
         label: label.to_string(),
         runtime: match id {
             "chatgpt" => "codex".into(),
+            "hermes" => "hermes".into(),
             _ => "cursor".into(),
         },
         binary_present,
@@ -344,9 +353,11 @@ pub async fn account_connections_probe(
         .runtimes;
     let codex = runtimes.iter().find(|r| r.runtime == "codex");
     let cursor = runtimes.iter().find(|r| r.runtime == "cursor");
+    let hermes = runtimes.iter().find(|r| r.runtime == "hermes");
     Ok(AccountConnections {
         chatgpt: connection_from_runtime("chatgpt", "ChatGPT", codex),
         cursor: connection_from_runtime("cursor", "Cursor", cursor),
+        hermes: connection_from_runtime("hermes", "Hermes", hermes),
     })
 }
 
@@ -445,16 +456,19 @@ fn wait_with_timeout(
 }
 
 /// Install the vendor CLI for an account using the official installer.
-/// ChatGPT → Codex (`chatgpt.com/codex/install`); Cursor → Agent CLI (`cursor.com/install`).
+/// ChatGPT → Codex; Cursor → Agent CLI; Hermes → Hermes Agent.
 #[tauri::command]
 pub async fn account_cli_install(account: String) -> Result<AccountCliInstallResult, String> {
     let (command, label) = match account.as_str() {
         "chatgpt" => (codex_command(), "Codex CLI"),
         "cursor" => (cursor_command(), "Cursor Agent CLI"),
+        "hermes" => (hermes_command(), "Hermes Agent CLI"),
         other => return Err(format!("unknown account '{other}'")),
     };
     ensure_vendor_cli_path();
-    if command_on_path(&command) {
+    if command_on_path(&command)
+        || (account == "hermes" && (command_on_path("hermes") || command_on_path("hermes-acp")))
+    {
         let mut detail = format!("{label} is already installed.");
         if account == "chatgpt" {
             match ensure_codex_acp_adapter() {
@@ -463,6 +477,17 @@ pub async fn account_cli_install(account: String) -> Result<AccountCliInstallRes
                     detail = format!(
                         "{detail} (Codex ACP adapter not installed yet: {err}. \
                          Medousa will try `npx -y @agentclientprotocol/codex-acp@1.1.14` at runtime.)"
+                    );
+                }
+            }
+        }
+        if account == "hermes" {
+            match ensure_hermes_acp_extra() {
+                Ok(note) => detail = format!("{detail} {note}"),
+                Err(err) => {
+                    detail = format!(
+                        "{detail} (Hermes ACP extra not confirmed: {err}. \
+                         Run `hermes acp --check` after install.)"
                     );
                 }
             }
@@ -504,11 +529,23 @@ if (-not $bash) { throw "Cursor Agent CLI install needs bash (Git Bash or WSL) o
                     "curl -fsSL https://cursor.com/install | bash"
                 }
             }
+            "hermes" => {
+                #[cfg(windows)]
+                {
+                    "iex (irm https://hermes-agent.nousresearch.com/install.ps1)"
+                }
+                #[cfg(not(windows))]
+                {
+                    "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash"
+                }
+            }
             _ => unreachable!(),
         };
         run_install_shell(script)?;
         ensure_vendor_cli_path();
-        if !command_on_path(&command_owned) {
+        let hermes_ok = account_owned == "hermes"
+            && (command_on_path("hermes") || command_on_path("hermes-acp"));
+        if !command_on_path(&command_owned) && !hermes_ok {
             return Err(format!(
                 "{label_owned} installed, but '{command_owned}' is still not on PATH. \
                  Quit and reopen Medousa, or add ~/.local/bin to your PATH."
@@ -527,14 +564,110 @@ if (-not $bash) { throw "Cursor Agent CLI install needs bash (Git Bash or WSL) o
                 }
             }
         }
+        if account_owned == "hermes" {
+            match ensure_hermes_acp_extra() {
+                Ok(note) => detail = format!("{detail} {note}"),
+                Err(err) => {
+                    detail = format!(
+                        "{detail} (Hermes ACP extra not confirmed: {err}. \
+                         Run `hermes acp --check` after install.)"
+                    );
+                }
+            }
+        }
         Ok(AccountCliInstallResult {
             account: account_owned,
-            command: command_owned,
+            command: if hermes_ok && !command_on_path(&command_owned) {
+                if command_on_path("hermes-acp") {
+                    "hermes-acp".into()
+                } else {
+                    "hermes".into()
+                }
+            } else {
+                command_owned
+            },
             detail,
         })
     })
     .await
     .map_err(|err| format!("install task failed: {err}"))?
+}
+
+/// Ensure Hermes ACP extras are available (`hermes acp` / `hermes-acp`).
+fn ensure_hermes_acp_extra() -> Result<String, String> {
+    ensure_vendor_cli_path();
+    if hermes_acp_ready() {
+        return Ok("Hermes ACP launcher ready.".into());
+    }
+    let checkout = std::env::var_os("HERMES_HOME")
+        .map(PathBuf::from)
+        .or_else(home_dir)
+        .map(|home| {
+            if home.ends_with(".hermes") || home.ends_with("hermes") {
+                home.join("hermes-agent")
+            } else {
+                home.join(".hermes").join("hermes-agent")
+            }
+        });
+    let Some(checkout) = checkout.filter(|p| p.is_dir()) else {
+        return Err(
+            "Hermes checkout not found at ~/.hermes/hermes-agent — re-run the installer or `uv pip install -e '.[acp]'` there"
+                .into(),
+        );
+    };
+    let uv = ["uv", "uv.exe"]
+        .into_iter()
+        .find(|name| command_on_path(name))
+        .ok_or_else(|| "uv not found — needed to install Hermes ACP extras".to_string())?;
+    let mut command = Command::new(uv);
+    command
+        .current_dir(&checkout)
+        .args(["pip", "install", "-e", ".[acp]"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    detach_new_session(&mut command);
+    let output = command
+        .output()
+        .map_err(|err| format!("couldn't start uv: {err}"))?;
+    if !output.status.success() {
+        let combined = format!(
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return Err(format!(
+            "uv pip install failed (exit {}): {}",
+            output.status.code().unwrap_or(-1),
+            combined.trim()
+        ));
+    }
+    ensure_vendor_cli_path();
+    if hermes_acp_ready() {
+        Ok("Hermes ACP extras installed.".into())
+    } else {
+        Ok(
+            "ACP extras installed; restart Medousa if runtime still can't find `hermes acp`."
+                .into(),
+        )
+    }
+}
+
+fn hermes_acp_ready() -> bool {
+    if command_on_path("hermes-acp") {
+        return true;
+    }
+    if !command_on_path("hermes") {
+        return false;
+    }
+    let program = resolve_command_abs("hermes");
+    let output = Command::new(&program)
+        .args(["acp", "--check"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output();
+    matches!(output, Ok(out) if out.status.success())
 }
 
 /// Install the protocol-tested Codex ACP adapter so ChatGPT runtime can speak ACP.
@@ -743,11 +876,11 @@ fn open_terminal_with_login(command: &str, args: &[String]) -> Result<(), String
                 return Ok(());
             }
         }
-        return Err("no terminal emulator found to run the login".into());
+        Err("no terminal emulator found to run the login".into())
     }
 }
 
-/// Fallback / Cursor login: run the vendor CLI's interactive login in a
+/// Fallback / Cursor / Hermes login: run the vendor CLI's interactive login in a
 /// terminal window (browser callback flows need a TTY).
 #[tauri::command]
 pub async fn account_begin_terminal_login(account: String) -> Result<String, String> {
@@ -767,6 +900,28 @@ pub async fn account_begin_terminal_login(account: String) -> Result<String, Str
             )
         }
         "cursor" => cursor_auth_argv("login")?,
+        "hermes" => {
+            ensure_vendor_cli_path();
+            if !command_on_path("hermes") && !command_on_path("hermes-acp") {
+                return Err(
+                    "'hermes' not found — tap Install on the Hermes card in Settings → Connections"
+                        .into(),
+                );
+            }
+            if command_on_path("hermes") {
+                (
+                    resolve_command_abs("hermes"),
+                    vec!["acp".into(), "--setup".into()],
+                    "hermes acp --setup".to_string(),
+                )
+            } else {
+                (
+                    resolve_command_abs("hermes-acp"),
+                    vec!["--setup".into()],
+                    "hermes-acp --setup".to_string(),
+                )
+            }
+        }
         other => return Err(format!("unknown account '{other}'")),
     };
     open_terminal_with_login(&command, &args)?;
@@ -788,6 +943,22 @@ pub async fn account_sign_out(account: String) -> Result<String, String> {
         "cursor" => {
             let (cmd, argv, _) = cursor_auth_argv("logout")?;
             (cmd, argv)
+        }
+        "hermes" => {
+            // Hermes has no vendor logout — provider keys live in ~/.hermes.
+            // Open interactive model/provider setup so the user can change them.
+            ensure_vendor_cli_path();
+            if !command_on_path("hermes") {
+                return Err(
+                    "Hermes credentials live in ~/.hermes — install Hermes or run `hermes model` to reconfigure"
+                        .into(),
+                );
+            }
+            open_terminal_with_login(&resolve_command_abs("hermes"), &["model".into()])?;
+            return Ok(
+                "Opened `hermes model` — Hermes keeps credentials in ~/.hermes; Medousa never deletes them."
+                    .into(),
+            );
         }
         other => return Err(format!("unknown account '{other}'")),
     };

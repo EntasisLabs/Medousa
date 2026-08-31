@@ -453,7 +453,8 @@ An external agent chat session can opt in to Forge custody by setting
   overriding any client-supplied `cwd`.
 - The lease begins before provider session creation so the provider process can
   never start in the staging anchor. Provider creation and stream-registration
-  failures release custody. Executor kind is `acp-cursor` / `acp-codex` with
+  failures release custody. Executor kind is `acp-cursor` / `acp-codex` /
+  `acp-hermes` with
   `agent_session_id` and `chat_session_id` recorded in the executor detail.
 - During the prompt pump the daemon heartbeats the lease every ~15s and
   stages prompt/tool lines into `attempts/{seq}/evidence/commands.jsonl`

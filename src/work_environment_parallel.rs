@@ -1738,7 +1738,7 @@ mod tests {
                     target_ref: "refs/heads/main".to_string(),
                     expected: Some(BASE.to_string()),
                     found: Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string()),
-                    preserved_checkpoint: checkpoint,
+                    preserved_checkpoint: Box::new(checkpoint),
                 },
             ),
             updated_at: Utc::now(),

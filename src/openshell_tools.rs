@@ -682,7 +682,7 @@ impl CognitionOpenshellSandboxRunTool {
         if let Some(scope) = scope.as_ref() {
             wire_turn_child_job(
                 &mut job,
-                &scope,
+                scope,
                 COGNITION_OPENSHELL_SANDBOX_RUN,
                 OPENSHELL_SANDBOX_RUN_JOB_TYPE,
                 ContinuationAwaitMode::Async,

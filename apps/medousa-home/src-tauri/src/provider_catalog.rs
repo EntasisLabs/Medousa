@@ -425,7 +425,6 @@ pub fn providers_catalog_for_embedded() -> ProvidersListResult {
     let mut catalog = providers_catalog();
     catalog.providers.retain(|entry| {
         entry.id == "custom"
-            || entry.id == "openai-codex"
             || medousa_runtime::CredentialedAiChatConfig::new(
                 entry.id.clone(),
                 entry.default_model.clone(),
@@ -463,7 +462,6 @@ mod tests {
         let catalog = providers_catalog_for_embedded();
         for provider in [
             "openai",
-            "openai-codex",
             "anthropic",
             "google",
             "deepseek",

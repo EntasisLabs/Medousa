@@ -293,7 +293,7 @@ fn build_prompt_pipeline(
             &model_target.model,
             model_target.base_url.as_deref(),
         ));
-        return Ok(PromptExecutionPipeline::new(chat_client));
+        Ok(PromptExecutionPipeline::new(chat_client))
     }
     #[cfg(not(feature = "full-daemon"))]
     Err(StasisError::PortFailure(

@@ -150,6 +150,7 @@ fn slot_kinds(config: &RuntimeWorkerConfig) -> Vec<SlotKind> {
     slots
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_slot(
     workers: &mut JoinSet<(usize, SlotKind)>,
     runtime: RuntimeComposition,

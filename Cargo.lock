@@ -7833,7 +7833,6 @@ dependencies = [
  "anyhow",
  "arc-swap",
  "base64 0.22.1",
- "keyring",
  "medousa-secrets",
  "medousa-types",
  "rand 0.8.6",

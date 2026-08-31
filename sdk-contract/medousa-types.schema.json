@@ -3514,7 +3514,7 @@
         ]
       },
       "runtime": {
-        "description": "External runtime: `cursor` or `codex` (not `medousa`).",
+        "description": "External runtime: `cursor`, `codex`, or `hermes` (not `medousa`).",
         "type": "string"
       },
       "session_id": {
@@ -11835,7 +11835,7 @@
     ],
     "properties": {
       "agent_runtime": {
-        "description": "External runtime kind when streaming an ACP session (`cursor` / `codex`).",
+        "description": "External runtime kind when streaming an ACP session (`cursor` / `codex` / `hermes`).",
         "type": [
           "string",
           "null"
