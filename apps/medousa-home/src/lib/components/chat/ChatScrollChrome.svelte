@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { ArrowDown } from "@lucide/svelte";
+  import { ArrowDown, LoaderCircle } from "@lucide/svelte";
   import MarkdownHeadingOutline from "$lib/components/ui/MarkdownHeadingOutline.svelte";
   import { haptic } from "$lib/haptics";
-  import type { Snippet } from "svelte";
+  import { resolveChatTurnNavigation } from "$lib/utils/chatTurnNavigation";
+  import { tick, type Snippet } from "svelte";
 
   interface TurnItem {
     id: string;
@@ -16,13 +17,15 @@
     showFab: boolean;
     showTurnRail: boolean;
     showCurrentTurnAnchor: boolean;
-    latestUserPreview: string;
-    latestUserTurnId: string | null;
     chatTurnItems: TurnItem[];
     activeChatTurnId: string | null;
     chatScrolling: boolean;
     bodyClass: string;
     scrollClass: string;
+    historyKey?: string;
+    canLoadOlder?: boolean;
+    loadingOlder?: boolean;
+    onLoadOlder?: () => Promise<unknown>;
     children?: Snippet;
     onAtBottomChange: (atBottom: boolean) => void;
     scrollEl?: HTMLDivElement;
@@ -37,13 +40,15 @@
     showFab,
     showTurnRail,
     showCurrentTurnAnchor,
-    latestUserPreview,
-    latestUserTurnId,
     chatTurnItems,
     activeChatTurnId = $bindable(null),
     chatScrolling = $bindable(false),
     bodyClass,
     scrollClass,
+    historyKey = "",
+    canLoadOlder = false,
+    loadingOlder = false,
+    onLoadOlder,
     children,
     onAtBottomChange,
     scrollEl = $bindable(),
@@ -53,9 +58,57 @@
   }: Props = $props();
 
   let atBottom = $state(true);
-  let pinLatestUserTurn = $state(false);
+  let pinnedUserTurnId = $state<string | null>(null);
+  const pinnedUserPreview = $derived(
+    chatTurnItems.find((item) => item.id === pinnedUserTurnId)?.text ?? "",
+  );
   let chatNavigationFrame = 0;
   let chatScrollEndTimer: ReturnType<typeof setTimeout> | undefined;
+  let historySentinel = $state<HTMLDivElement>();
+  let historyLoadInFlight = $state(false);
+  let historyLoadFailed = $state(false);
+  let historyNavigationReady = $state(false);
+  let observedHistoryKey = "";
+
+  function shouldLoadOlderAtTop(): boolean {
+    return Boolean(historyNavigationReady && scrollEl && scrollEl.scrollTop <= 160);
+  }
+
+  async function requestOlder(force = false) {
+    if (
+      !scrollEl ||
+      !onLoadOlder ||
+      !canLoadOlder ||
+      loadingOlder ||
+      historyLoadInFlight ||
+      (!force && !shouldLoadOlderAtTop()) ||
+      (historyLoadFailed && !force)
+    ) {
+      return;
+    }
+
+    const previousHeight = scrollEl.scrollHeight;
+    const previousTop = scrollEl.scrollTop;
+    historyLoadInFlight = true;
+    historyLoadFailed = false;
+    try {
+      await onLoadOlder();
+      historyLoadInFlight = false;
+      await tick();
+      if (!scrollEl) return;
+      const addedHeight = scrollEl.scrollHeight - previousHeight;
+      scrollEl.scrollTop = Math.max(0, previousTop + addedHeight);
+      scheduleChatNavigationMeasureFn();
+    } catch {
+      historyLoadFailed = true;
+    } finally {
+      historyLoadInFlight = false;
+      await tick();
+      if (!historyLoadFailed && shouldLoadOlderAtTop() && canLoadOlder) {
+        queueMicrotask(() => void requestOlder());
+      }
+    }
+  }
 
   function scrollToLatestFn(force = false, behavior: ScrollBehavior = "auto") {
     if (!scrollEl) return;
@@ -66,6 +119,8 @@
       scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior });
       atBottom = true;
       onAtBottomChange(true);
+      historyNavigationReady = true;
+      if (shouldLoadOlderAtTop()) void requestOlder();
     });
   }
 
@@ -73,39 +128,28 @@
     chatNavigationFrame = 0;
     if (!scrollEl) {
       activeChatTurnId = null;
-      pinLatestUserTurn = false;
+      pinnedUserTurnId = null;
       return;
     }
     const rootRect = scrollEl.getBoundingClientRect();
     const turns = [...scrollEl.querySelectorAll<HTMLElement>("[data-chat-turn-user-id]")];
     if (turns.length === 0) {
       activeChatTurnId = null;
-      pinLatestUserTurn = false;
+      pinnedUserTurnId = null;
       return;
     }
-    const threshold = rootRect.top + 64;
-    let activeId = turns[0]?.dataset.chatTurnUserId ?? null;
-    for (const turn of turns) {
-      if (turn.getBoundingClientRect().top <= threshold) {
-        activeId = turn.dataset.chatTurnUserId ?? activeId;
-      } else {
-        break;
-      }
-    }
-    activeChatTurnId = activeId;
-    const latestId = latestUserTurnId;
-    const latestTurn = latestId
-      ? turns.find((turn) => turn.dataset.chatTurnUserId === latestId)
-      : undefined;
-    if (!latestTurn) {
-      pinLatestUserTurn = false;
-      return;
-    }
-    const latestRect = latestTurn.getBoundingClientRect();
-    const responseIsLong = latestRect.height >= Math.max(280, scrollEl.clientHeight * 0.8);
-    const promptHasLeftTop = latestRect.top < rootRect.top + 8;
-    const responseStillVisible = latestRect.bottom > rootRect.top + 96;
-    pinLatestUserTurn = responseIsLong && promptHasLeftTop && responseStillVisible;
+    const navigation = resolveChatTurnNavigation(
+      turns.flatMap((turn) => {
+        const id = turn.dataset.chatTurnUserId;
+        if (!id) return [];
+        const rect = turn.getBoundingClientRect();
+        return [{ id, top: rect.top, bottom: rect.bottom, height: rect.height }];
+      }),
+      rootRect.top,
+      scrollEl.clientHeight,
+    );
+    activeChatTurnId = navigation.activeId;
+    pinnedUserTurnId = navigation.pinnedId;
   }
 
   function scheduleChatNavigationMeasureFn() {
@@ -126,6 +170,7 @@
       chatScrollEndTimer = undefined;
     }, 160);
     scheduleChatNavigationMeasureFn();
+    if (shouldLoadOlderAtTop()) void requestOlder();
   }
 
   function scrollToChatTurn(id: string) {
@@ -148,14 +193,15 @@
   }
 
   function scrollToCurrentTurn() {
-    if (latestUserTurnId) scrollToChatTurn(latestUserTurnId);
+    if (pinnedUserTurnId) scrollToChatTurn(pinnedUserTurnId);
   }
 
   function resetForSessionFn() {
     atBottom = true;
+    historyNavigationReady = false;
     onAtBottomChange(true);
     activeChatTurnId = null;
-    pinLatestUserTurn = false;
+    pinnedUserTurnId = null;
   }
 
   $effect(() => {
@@ -163,22 +209,64 @@
     scheduleChatNavigationMeasure = scheduleChatNavigationMeasureFn;
     resetForSession = resetForSessionFn;
   });
+
+  $effect(() => {
+    const key = historyKey;
+    if (key === observedHistoryKey) return;
+    observedHistoryKey = key;
+    historyLoadFailed = false;
+    historyLoadInFlight = false;
+  });
+
+  $effect(() => {
+    const root = scrollEl;
+    const sentinel = historySentinel;
+    void historyKey;
+    void canLoadOlder;
+    void loadingOlder;
+    void historyNavigationReady;
+    if (!root || !sentinel || !onLoadOlder || typeof IntersectionObserver === "undefined") {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) void requestOlder();
+      },
+      { root, rootMargin: "160px 0px 0px", threshold: 0 },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  });
 </script>
 
 <div class="chat-panel-main">
-  {#if showCurrentTurnAnchor && pinLatestUserTurn}
+  {#if showCurrentTurnAnchor && pinnedUserTurnId && pinnedUserPreview}
     <button
       type="button"
       class="chat-current-turn-anchor"
-      aria-label="Show your latest message"
+      aria-label="Show the current user message"
       onclick={scrollToCurrentTurn}
     >
       <span class="chat-current-turn-anchor-label">You</span>
-      <span class="chat-current-turn-anchor-preview">{latestUserPreview}</span>
+      <span class="chat-current-turn-anchor-preview">{pinnedUserPreview}</span>
     </button>
   {/if}
   <div class={bodyClass}>
     <div bind:this={scrollEl} onscroll={onScroll} class={scrollClass}>
+      <div
+        bind:this={historySentinel}
+        class:chat-history-sentinel-active={canLoadOlder || loadingOlder || historyLoadInFlight}
+        class="chat-history-sentinel"
+        aria-live="polite"
+      >
+        {#if loadingOlder || historyLoadInFlight}
+          <LoaderCircle size={16} class="animate-spin" aria-label="Loading earlier messages" />
+        {:else if historyLoadFailed && canLoadOlder}
+          <button type="button" class="chat-history-retry" onclick={() => void requestOlder(true)}>
+            Load earlier messages
+          </button>
+        {/if}
+      </div>
       {@render children?.()}
     </div>
     {#if showTurnRail}
@@ -212,6 +300,32 @@
     flex-direction: column;
     min-height: 0;
     flex: 1;
+  }
+
+  .chat-history-sentinel {
+    display: flex;
+    min-height: 0;
+    align-items: center;
+    justify-content: center;
+    color: rgb(var(--theme-text-tertiary));
+  }
+
+  .chat-history-sentinel-active {
+    min-height: 1.75rem;
+  }
+
+  .chat-history-retry {
+    border: 0;
+    background: transparent;
+    color: rgb(var(--theme-text-secondary));
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+
+  .chat-history-retry:hover,
+  .chat-history-retry:focus-visible {
+    color: rgb(var(--theme-text-primary));
+    outline: none;
   }
 
   .chat-current-turn-anchor {

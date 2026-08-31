@@ -502,6 +502,15 @@ pub struct SessionHistoryListResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SessionHistoryRequest {
+    /// Maximum transcript entries to return. Omit for the complete transcript.
+    pub limit: Option<usize>,
+    /// Opaque pagination cursor from a prior response (`next_cursor`).
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SessionTranscriptSearchRequest {
     /// Text to search across user- and assistant-visible transcript prose.
     pub q: String,
@@ -533,6 +542,8 @@ pub struct SessionHistoryResponse {
     pub authority_id: AuthorityId,
     pub session_id: String,
     pub turns: Vec<TranscriptEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

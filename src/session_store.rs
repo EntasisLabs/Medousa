@@ -731,9 +731,51 @@ impl fmt::Display for StoreError {
 
 impl std::error::Error for StoreError {}
 
+#[derive(Debug, Clone)]
+pub struct TranscriptPage {
+    pub entries: Vec<TranscriptEntry>,
+    /// Sequence of the oldest returned entry; the next page is strictly older.
+    pub next_cursor: Option<u64>,
+}
+
+fn paginate_transcript_entries(
+    entries: Vec<TranscriptEntry>,
+    limit: usize,
+    before_entry_seq: Option<u64>,
+) -> TranscriptPage {
+    let limit = limit.max(1);
+    let end = before_entry_seq
+        .and_then(|before| entries.iter().position(|entry| entry.entry_seq >= before))
+        .unwrap_or(entries.len());
+    let start = end.saturating_sub(limit);
+    let page = entries[start..end].to_vec();
+    let next_cursor = if start > 0 {
+        page.first().map(|entry| entry.entry_seq)
+    } else {
+        None
+    };
+    TranscriptPage {
+        entries: page,
+        next_cursor,
+    }
+}
+
 #[async_trait]
 pub trait SessionStore: Send + Sync + 'static {
     fn load_transcript_entries(&self, session_id: &SessionId) -> Vec<TranscriptEntry>;
+
+    fn load_transcript_entries_page(
+        &self,
+        session_id: &SessionId,
+        limit: usize,
+        before_entry_seq: Option<u64>,
+    ) -> TranscriptPage {
+        paginate_transcript_entries(
+            self.load_transcript_entries(session_id),
+            limit,
+            before_entry_seq,
+        )
+    }
 
     fn load_history(&self, session_id: &SessionId) -> Vec<ConversationTurn> {
         self.load_transcript_entries(session_id)
@@ -857,6 +899,60 @@ impl FileSessionStore {
         Ok((entries, migrated_legacy))
     }
 
+    fn read_entries_page(
+        files: &crate::session_storage::SessionFileStore,
+        session_id: &SessionId,
+        limit: usize,
+        before_entry_seq: Option<u64>,
+    ) -> Result<(TranscriptPage, bool), StoreError> {
+        let bytes = match files.read(session_id) {
+            Ok(bytes) => bytes,
+            Err(error) if error.is_not_found() => {
+                return Ok((
+                    TranscriptPage {
+                        entries: Vec::new(),
+                        next_cursor: None,
+                    },
+                    false,
+                ));
+            }
+            Err(error) => return Err(StoreError::Backend(error.to_string())),
+        };
+        let lines = bytes
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.iter().all(u8::is_ascii_whitespace))
+            .collect::<Vec<_>>();
+        let end = before_entry_seq
+            .and_then(|before| usize::try_from(before.saturating_sub(1)).ok())
+            .unwrap_or(lines.len())
+            .min(lines.len());
+        let start = end.saturating_sub(limit.max(1));
+        let mut entries = Vec::with_capacity(end.saturating_sub(start));
+        for (index, line) in lines[start..end].iter().enumerate() {
+            let Ok(mut entry) = serde_json::from_slice::<TranscriptEntry>(line) else {
+                let (entries, migrated_legacy) = Self::read_entries(files, session_id)?;
+                return Ok((
+                    paginate_transcript_entries(entries, limit, before_entry_seq),
+                    migrated_legacy,
+                ));
+            };
+            entry.entry_seq = (start + index) as u64 + 1;
+            entries.push(entry);
+        }
+        let next_cursor = if start > 0 {
+            entries.first().map(|entry| entry.entry_seq)
+        } else {
+            None
+        };
+        Ok((
+            TranscriptPage {
+                entries,
+                next_cursor,
+            },
+            false,
+        ))
+    }
+
     fn encode_entries(entries: &[TranscriptEntry]) -> Result<Vec<u8>, StoreError> {
         let mut bytes = Vec::new();
         for entry in entries {
@@ -881,6 +977,30 @@ impl SessionStore for FileSessionStore {
             tracing::warn!(%session_id, %error, "legacy transcript coordinate backfill failed");
         }
         entries
+    }
+
+    fn load_transcript_entries_page(
+        &self,
+        session_id: &SessionId,
+        limit: usize,
+        before_entry_seq: Option<u64>,
+    ) -> TranscriptPage {
+        let Ok((page, migrated_legacy)) =
+            Self::read_entries_page(&self.files, session_id, limit, before_entry_seq)
+        else {
+            return TranscriptPage {
+                entries: Vec::new(),
+                next_cursor: None,
+            };
+        };
+        if migrated_legacy
+            && let Ok((entries, _)) = Self::read_entries(&self.files, session_id)
+            && let Ok(bytes) = Self::encode_entries(&entries)
+            && let Err(error) = self.files.atomic_write(session_id, &bytes)
+        {
+            tracing::warn!(%session_id, %error, "legacy transcript coordinate backfill failed");
+        }
+        page
     }
 
     async fn append_transcript_batch(
@@ -1217,6 +1337,50 @@ impl SurrealSessionStore {
         }
         Ok(())
     }
+
+    fn entries_for_bindings(&self, bindings: Vec<SessionEntryRecord>) -> Vec<TranscriptEntry> {
+        if bindings.is_empty() {
+            return Vec::new();
+        }
+        let entry_ids = bindings
+            .iter()
+            .map(|binding| binding.entry_id.clone())
+            .collect::<Vec<_>>();
+        let entry_sql = "SELECT entry_id, role, content, timestamp, tool_names, answer_state, \
+                         parts, slice_summary, speaker_profile_id, execution_authority_id, \
+                         execution_session_id, execution_id, content_digest \
+                         FROM type::table($table) WHERE entry_id IN $entry_ids";
+        let mut entry_response = match block_on(
+            self.db
+                .query(entry_sql)
+                .bind(("table", TRANSCRIPT_ENTRY_TABLE))
+                .bind(("entry_ids", entry_ids)),
+        ) {
+            Ok(response) => response,
+            Err(error) => {
+                eprintln!("SurrealSessionStore transcript payload error: {error}");
+                return Vec::new();
+            }
+        };
+        let records = match entry_response.take::<Vec<TranscriptEntryRecord>>(0) {
+            Ok(records) => records,
+            Err(error) => {
+                eprintln!("SurrealSessionStore transcript payload decode: {error}");
+                return Vec::new();
+            }
+        };
+        let mut by_id = records
+            .into_iter()
+            .map(|record| (record.entry_id.clone(), record))
+            .collect::<HashMap<_, _>>();
+        bindings
+            .into_iter()
+            .filter_map(|binding| {
+                let record = by_id.remove(&binding.entry_id)?;
+                transcript_entry_from_records(record, binding)
+            })
+            .collect()
+    }
 }
 
 #[async_trait]
@@ -1248,47 +1412,72 @@ impl SessionStore for SurrealSessionStore {
                 return Vec::new();
             }
         };
-        if bindings.is_empty() {
-            return Vec::new();
+        self.entries_for_bindings(bindings)
+    }
+
+    fn load_transcript_entries_page(
+        &self,
+        session_id: &SessionId,
+        limit: usize,
+        before_entry_seq: Option<u64>,
+    ) -> TranscriptPage {
+        let binding_fields = "SELECT session_id, entry_seq, entry_id, source_authority_id, \
+                              source_session_id, source_entry_id, source_entry_seq, committed_at, \
+                              role, search_text, timestamp FROM type::table($table)";
+        let query = if before_entry_seq.is_some() {
+            format!(
+                "{binding_fields} WHERE session_id = $session_id AND entry_seq < $before \
+                 ORDER BY entry_seq DESC LIMIT $limit"
+            )
+        } else {
+            format!(
+                "{binding_fields} WHERE session_id = $session_id \
+                 ORDER BY entry_seq DESC LIMIT $limit"
+            )
+        };
+        let fetch_limit = limit.max(1).saturating_add(1);
+        let mut statement = self
+            .db
+            .query(query)
+            .bind(("table", SESSION_ENTRY_TABLE))
+            .bind(("session_id", session_id.to_string()))
+            .bind(("limit", i64::try_from(fetch_limit).unwrap_or(i64::MAX)));
+        if let Some(before) = before_entry_seq {
+            statement = statement.bind(("before", i64::try_from(before).unwrap_or(i64::MAX)));
         }
-        let entry_ids = bindings
-            .iter()
-            .map(|binding| binding.entry_id.clone())
-            .collect::<Vec<_>>();
-        let entry_sql = "SELECT entry_id, role, content, timestamp, tool_names, answer_state, \
-                         parts, slice_summary, speaker_profile_id, execution_authority_id, \
-                         execution_session_id, execution_id, content_digest \
-                         FROM type::table($table) WHERE entry_id IN $entry_ids";
-        let mut entry_response = match block_on(
-            self.db
-                .query(entry_sql)
-                .bind(("table", TRANSCRIPT_ENTRY_TABLE))
-                .bind(("entry_ids", entry_ids)),
-        ) {
+        let mut response = match block_on(statement) {
             Ok(response) => response,
             Err(error) => {
-                eprintln!("SurrealSessionStore::load_transcript_entries payload error: {error}");
-                return Vec::new();
+                eprintln!("SurrealSessionStore transcript page query error: {error}");
+                return TranscriptPage {
+                    entries: Vec::new(),
+                    next_cursor: None,
+                };
             }
         };
-        let records = match entry_response.take::<Vec<TranscriptEntryRecord>>(0) {
+        let mut bindings = match response.take::<Vec<SessionEntryRecord>>(0) {
             Ok(records) => records,
             Err(error) => {
-                eprintln!("SurrealSessionStore::load_transcript_entries payload decode: {error}");
-                return Vec::new();
+                eprintln!("SurrealSessionStore transcript page decode error: {error}");
+                return TranscriptPage {
+                    entries: Vec::new(),
+                    next_cursor: None,
+                };
             }
         };
-        let mut by_id = records
-            .into_iter()
-            .map(|record| (record.entry_id.clone(), record))
-            .collect::<HashMap<_, _>>();
-        bindings
-            .into_iter()
-            .filter_map(|binding| {
-                let record = by_id.remove(&binding.entry_id)?;
-                transcript_entry_from_records(record, binding)
-            })
-            .collect()
+        let has_more = bindings.len() > limit.max(1);
+        bindings.truncate(limit.max(1));
+        bindings.reverse();
+        let entries = self.entries_for_bindings(bindings);
+        let next_cursor = if has_more {
+            entries.first().map(|entry| entry.entry_seq)
+        } else {
+            None
+        };
+        TranscriptPage {
+            entries,
+            next_cursor,
+        }
     }
 
     async fn append_transcript_batch(
@@ -1926,6 +2115,54 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn file_transcript_pages_walk_back_without_overlap() {
+        let root = std::env::temp_dir().join(format!(
+            "medousa-session-pages-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let session_id = SessionId::parse("file-page-history").unwrap();
+        let store = FileSessionStore::at(root.clone());
+        let turns = (1..=7)
+            .map(|index| turn(&format!("turn {index}")))
+            .collect::<Vec<_>>();
+        store.append_turn_batch(&session_id, &turns).await.unwrap();
+
+        let latest = store.load_transcript_entries_page(&session_id, 3, None);
+        assert_eq!(
+            latest
+                .entries
+                .iter()
+                .map(|entry| entry.entry_seq)
+                .collect::<Vec<_>>(),
+            vec![5, 6, 7]
+        );
+        assert_eq!(latest.next_cursor, Some(5));
+
+        let middle = store.load_transcript_entries_page(&session_id, 3, latest.next_cursor);
+        assert_eq!(
+            middle
+                .entries
+                .iter()
+                .map(|entry| entry.entry_seq)
+                .collect::<Vec<_>>(),
+            vec![2, 3, 4]
+        );
+        assert_eq!(middle.next_cursor, Some(2));
+
+        let oldest = store.load_transcript_entries_page(&session_id, 3, middle.next_cursor);
+        assert_eq!(
+            oldest
+                .entries
+                .iter()
+                .map(|entry| entry.entry_seq)
+                .collect::<Vec<_>>(),
+            vec![1]
+        );
+        assert_eq!(oldest.next_cursor, None);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn file_entries_preserve_execution_causation_after_restart() {
         let root = std::env::temp_dir().join(format!(
             "medousa-session-causation-{}",
@@ -2202,6 +2439,57 @@ mod tests {
         assert_eq!(entries[0].caused_by, Some(caused_by));
         assert_eq!(entries[1].turn.content, "two");
         assert_ne!(entries[0].entry_id, entries[1].entry_id);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn surreal_transcript_pages_walk_back_without_overlap() {
+        let db = surrealdb::engine::any::connect("mem://").await.unwrap();
+        db.use_ns("session-page-tests")
+            .use_db(uuid::Uuid::new_v4().simple().to_string())
+            .await
+            .unwrap();
+        SurrealSessionStore::ensure_schema_for_db(&db)
+            .await
+            .unwrap();
+        let store = SurrealSessionStore::new(db);
+        let session_id = SessionId::parse("surreal-page-history").unwrap();
+        let turns = (1..=5)
+            .map(|index| turn(&format!("turn {index}")))
+            .collect::<Vec<_>>();
+        store.append_turn_batch(&session_id, &turns).await.unwrap();
+
+        let latest = store.load_transcript_entries_page(&session_id, 2, None);
+        assert_eq!(
+            latest
+                .entries
+                .iter()
+                .map(|entry| entry.entry_seq)
+                .collect::<Vec<_>>(),
+            vec![4, 5]
+        );
+        assert_eq!(latest.next_cursor, Some(4));
+
+        let middle = store.load_transcript_entries_page(&session_id, 2, latest.next_cursor);
+        assert_eq!(
+            middle
+                .entries
+                .iter()
+                .map(|entry| entry.entry_seq)
+                .collect::<Vec<_>>(),
+            vec![2, 3]
+        );
+        assert_eq!(middle.next_cursor, Some(2));
+
+        let oldest = store.load_transcript_entries_page(&session_id, 2, middle.next_cursor);
+        assert_eq!(
+            oldest
+                .entries
+                .iter()
+                .map(|entry| entry.entry_seq)
+                .collect::<Vec<_>>(),
+            vec![1]
+        );
+        assert_eq!(oldest.next_cursor, None);
     }
 
     #[tokio::test(flavor = "multi_thread")]

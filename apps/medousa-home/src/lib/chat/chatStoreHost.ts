@@ -42,6 +42,8 @@ export type ChatStoreHost = {
   sessionsRefreshing: boolean;
   pinnedIds: string[];
   historyLoading: boolean;
+  historyCursor: string | null;
+  historyLoadingOlder: boolean;
   sessionPristine: boolean;
   historyNotice: string | null;
   askHandoffNotice: string | null;

@@ -526,6 +526,23 @@ impl BlockingSessionsApi<'_> {
         )?)
     }
 
+    pub fn history_page(
+        &self,
+        session_id: &str,
+        limit: usize,
+        cursor: Option<&str>,
+    ) -> Result<SessionHistoryResponse, SdkError> {
+        let mut query = vec![("limit", limit.max(1).to_string())];
+        if let Some(cursor) = cursor.map(str::trim).filter(|cursor| !cursor.is_empty()) {
+            query.push(("cursor", cursor.to_string()));
+        }
+        self.http.get(&op_path_query(
+            &ops::SESSIONS_BY_SESSION_ID_HISTORY_GET,
+            &[("session_id", session_id)],
+            &query,
+        )?)
+    }
+
     pub fn derive(
         &self,
         request: &DeriveSessionRequest,

@@ -18,10 +18,10 @@ use crate::daemon_api::{
     DeriveSessionRequest, DeriveSessionResponse, PromptStash, PromptStashListResponse,
     SessionAgentModeResponse, SessionAppendTurnRequest, SessionAppendTurnResponse,
     SessionCodeBindingResponse, SessionDeleteQuery, SessionDeleteResponse,
-    SessionHistoryListRequest, SessionHistoryListResponse, SessionHistoryResponse,
-    SessionSetDisplayNameRequest, SessionSetDisplayNameResponse, SessionTranscriptSearchHit,
-    SessionTranscriptSearchRequest, SessionTranscriptSearchResponse, SetSessionAgentModeRequest,
-    SetSessionCodeBindingRequest,
+    SessionHistoryListRequest, SessionHistoryListResponse, SessionHistoryRequest,
+    SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
+    SessionTranscriptSearchHit, SessionTranscriptSearchRequest, SessionTranscriptSearchResponse,
+    SetSessionAgentModeRequest, SetSessionCodeBindingRequest,
 };
 use crate::shared_session_catalog::SessionCatalogKind;
 use crate::turn_ticket::TurnTicketRegistry;
@@ -303,10 +303,40 @@ pub async fn delete_prompt_stash(
 
 pub async fn get_session_history(
     AxumPath(session_id): AxumPath<String>,
+    Query(request): Query<SessionHistoryRequest>,
 ) -> Result<Json<SessionHistoryResponse>, (StatusCode, String)> {
     let session_id = validated_session_id(session_id)?;
 
-    let turns = crate::session::load_transcript_entries(&session_id);
+    let paged = request.limit.is_some() || request.cursor.is_some();
+    let (turns, next_cursor) = if paged {
+        let limit = request.limit.unwrap_or(40).clamp(1, 200);
+        let before_entry_seq = request
+            .cursor
+            .as_deref()
+            .map(str::trim)
+            .filter(|cursor| !cursor.is_empty())
+            .map(|cursor| {
+                cursor
+                    .parse::<u64>()
+                    .ok()
+                    .filter(|seq| *seq > 0)
+                    .ok_or_else(|| {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            "invalid session history cursor".to_string(),
+                        )
+                    })
+            })
+            .transpose()?;
+        let page =
+            crate::session::load_transcript_entries_page(&session_id, limit, before_entry_seq);
+        (
+            page.entries,
+            page.next_cursor.map(|cursor| cursor.to_string()),
+        )
+    } else {
+        (crate::session::load_transcript_entries(&session_id), None)
+    };
     let authority_id = crate::workshop_authority::current()
         .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?
         .clone();
@@ -314,6 +344,7 @@ pub async fn get_session_history(
         authority_id,
         session_id,
         turns,
+        next_cursor,
     }))
 }
 

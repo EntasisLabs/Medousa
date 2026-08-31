@@ -137,7 +137,7 @@ for the protocol and surface-scoping rules.
 | GET | `/v1/sessions` | `SessionHistoryListResponse` (`origin_surface`, `has_code_work` on each summary) | `sessions().list` |
 | GET | `/v1/sessions/search?q=&limit=` | Profile-scoped transcript matches with role, timestamp, and excerpt | `sessions().search_transcripts` |
 | POST | `/v1/sessions/derive` | `DeriveSessionRequest` → `DeriveSessionResponse` | `sessions().derive` |
-| GET | `/v1/sessions/{session_id}/history` | `SessionHistoryResponse` | `sessions().history` |
+| GET | `/v1/sessions/{session_id}/history?limit=&cursor=` | `SessionHistoryResponse` | `sessions().history` / `sessions().history_page` |
 | PUT | `/v1/sessions/{session_id}/name` | `SessionSetDisplayNameRequest` | `sessions().set_display_name` |
 | GET | `/v1/sessions/{session_id}/agent-mode` | Effective selection and source | `sessions().agent_mode` |
 | PUT | `/v1/sessions/{session_id}/agent-mode` | `SetSessionAgentModeRequest` | `sessions().set_agent_mode` |
@@ -157,6 +157,11 @@ turn fields remain flat for compatible renderers; each record also carries a
 durable `entry_id`, one-based session `entry_seq`, `content_digest`, and
 optional execution/source provenance. Use `(authority_id, session_id,
 entry_id, entry_seq)` when addressing a committed transcript occurrence.
+When either pagination parameter is present, the daemon returns the newest
+matching page in chronological order (`limit` defaults to 40) and includes
+`next_cursor` when older entries remain. Pass that opaque cursor back to walk
+toward the beginning of the conversation. Omitting both pagination parameters
+preserves the complete-history response for existing clients.
 `authority_id` is required in both `CreateSessionResponse` and
 `SessionHistoryResponse`; clients must not substitute the selected connection
 or another workshop when it is absent.

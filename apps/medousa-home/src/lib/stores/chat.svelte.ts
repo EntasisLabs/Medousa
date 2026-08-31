@@ -45,6 +45,7 @@ import {
   forkSessionFromEntry,
   hydrateAskThreads,
   isPinned,
+  loadOlderHistory,
   loadPinnedIds,
   loadPromotedAskIds,
   loadSessionId,
@@ -154,6 +155,8 @@ export class ChatStore implements ChatStoreHost {
   sessionsRefreshing = $state(false);
   pinnedIds = $state<string[]>(loadPinnedIds(this.workshopScopeId));
   historyLoading = $state(true);
+  historyCursor = $state<string | null>(null);
+  historyLoadingOlder = $state(false);
   sessionPristine = $state(false);
   historyNotice = $state<string | null>(null);
   askHandoffNotice = $state<string | null>(null);
@@ -344,6 +347,30 @@ export class ChatStore implements ChatStoreHost {
     return this.sessionRuntimes.get(trimmed)?.historyLoading ?? false;
   }
 
+  historyCursorFor(sessionId: string): string | null {
+    void this.runtimeRevision;
+    const trimmed = sessionId.trim();
+    if (!trimmed) return null;
+    if (this.fieldsMatchFocused() && trimmed === this.sessionId) return this.historyCursor;
+    if (this.streamApplyPrincipalId && trimmed === this.streamApplyPrincipalId) {
+      return this.sessionRuntimes.get(trimmed)?.historyCursor ?? null;
+    }
+    if (trimmed === this.sessionId) return this.historyCursor;
+    return this.sessionRuntimes.get(trimmed)?.historyCursor ?? null;
+  }
+
+  historyLoadingOlderFor(sessionId: string): boolean {
+    void this.runtimeRevision;
+    const trimmed = sessionId.trim();
+    if (!trimmed) return false;
+    if (this.fieldsMatchFocused() && trimmed === this.sessionId) return this.historyLoadingOlder;
+    if (this.streamApplyPrincipalId && trimmed === this.streamApplyPrincipalId) {
+      return this.sessionRuntimes.get(trimmed)?.historyLoadingOlder ?? false;
+    }
+    if (trimmed === this.sessionId) return this.historyLoadingOlder;
+    return this.sessionRuntimes.get(trimmed)?.historyLoadingOlder ?? false;
+  }
+
   snapshotFocusedRuntime(): ChatSessionRuntime {
     return {
       sessionId: this.sessionId,
@@ -351,6 +378,8 @@ export class ChatStore implements ChatStoreHost {
       draft: this.draft,
       streamError: this.streamError,
       historyLoading: this.historyLoading,
+      historyCursor: this.historyCursor,
+      historyLoadingOlder: this.historyLoadingOlder,
       sessionPristine: this.sessionPristine,
       historyNotice: this.historyNotice,
       secretAlert: this.secretAlert,
@@ -375,6 +404,8 @@ export class ChatStore implements ChatStoreHost {
     this.draft = runtime.draft;
     this.streamError = runtime.streamError;
     this.historyLoading = runtime.historyLoading;
+    this.historyCursor = runtime.historyCursor;
+    this.historyLoadingOlder = runtime.historyLoadingOlder;
     this.sessionPristine = runtime.sessionPristine;
     this.historyNotice = runtime.historyNotice;
     this.secretAlert = runtime.secretAlert;
@@ -577,6 +608,10 @@ export class ChatStore implements ChatStoreHost {
 
   async reloadCurrentSession(options?: { notice?: boolean }) {
     return reloadCurrentSession(this, options);
+  }
+
+  async loadOlderHistory(sessionId = this.sessionId) {
+    return loadOlderHistory(this, sessionId);
   }
 
   async switchSession(sessionId: string) {

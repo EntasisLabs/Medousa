@@ -116,6 +116,7 @@ synthesis events, not through an application-client polling contract.
 | `search_transcripts(query, limit)` | `GET /v1/sessions/search?q=&limit=` | `SessionTranscriptSearchResponse` |
 | `derive(request, idempotency_key)` | `POST /v1/sessions/derive` | `DeriveSessionResponse` |
 | `history(session_id)` | `GET /v1/sessions/{id}/history` | `SessionHistoryResponse` |
+| `history_page(session_id, limit, cursor)` | `GET /v1/sessions/{id}/history?limit=&cursor=` | `SessionHistoryResponse` |
 | `set_display_name(session_id, name)` | `PUT /v1/sessions/{id}/name` | `SessionSetDisplayNameRequest` |
 | `agent_mode(session_id)` | `GET /v1/sessions/{id}/agent-mode` | `SessionAgentModeResponse` |
 | `set_agent_mode(session_id, request)` | `PUT /v1/sessions/{id}/agent-mode` | Persist a session selection or task lease |
@@ -137,6 +138,9 @@ History methods return `TranscriptEntry` items in
 legacy turn fields remain top-level. `entry_id` and one-based `entry_seq`
 provide durable transcript coordinates; `caused_by` and `source` carry
 execution and derivation provenance when known.
+`history` retains the complete-history behavior. `history_page` returns the
+latest page in chronological order; continue with `next_cursor` to request
+older pages until the cursor is absent.
 `CreateSessionResponse.authority_id` and
 `SessionHistoryResponse.authority_id` are required. If either is absent, the
 async SDK probes canonical health on that same transport and returns a typed

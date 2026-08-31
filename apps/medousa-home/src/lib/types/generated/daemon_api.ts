@@ -151,6 +151,7 @@ export interface TranscriptEntry {
 
 export interface SessionHistoryResponse {
   authority_id: AuthorityId;
+  next_cursor?: string | null;
   session_id: string;
   turns: TranscriptEntry[];
 }

@@ -132,6 +132,9 @@
   let cardDetailOpen = $state(false);
   let cardDetail = $state<CardDetailPayload | null>(null);
   let workerTranscriptWorkId = $state<string | null>(null);
+  let loadingOlderForScroll = $state(false);
+  let previousChatFirstId = "";
+  let previousChatLastId = "";
 
   function openCardDetail(detail: CardDetailPayload) {
     cardDetail = detail;
@@ -178,6 +181,17 @@
     return active;
   });
   const panelMessages = $derived(chat.messagesFor(panelSessionId));
+
+  async function loadOlderMessages() {
+    if (loadingOlderForScroll) return;
+    loadingOlderForScroll = true;
+    try {
+      await chat.loadOlderHistory(panelSessionId);
+      await tick();
+    } finally {
+      loadingOlderForScroll = false;
+    }
+  }
   /**
    * Worker-lane turns stay in the principal thread: they carry the sub-agent's
    * synthesis prose, and their position is where the beat belongs chronologically.
@@ -439,17 +453,6 @@
       (chatMessages.length > 0 || subagentRows.length > 0),
   );
 
-  const latestUserTurn = $derived.by(() => {
-    for (let index = chatMessages.length - 1; index >= 0; index -= 1) {
-      const message = chatMessages[index];
-      if (message?.role === "user" && message.content.trim()) return message;
-    }
-    return null;
-  });
-  const latestUserPreview = $derived.by(() => {
-    const firstLine = latestUserTurn?.content.trim().split("\n")[0] ?? "";
-    return firstLine.length > 120 ? `${firstLine.slice(0, 119)}…` : firstLine;
-  });
   const chatTurnItems = $derived(
     chatMessages
       .filter((message) => message.role === "user" && message.content.trim())
@@ -465,7 +468,7 @@
   const showChatTurnRail = $derived(
     !embedded && !useMobileChatLayout && chatTurnItems.length > 1,
   );
-  const showCurrentTurnAnchor = $derived(Boolean(latestUserTurn && latestUserPreview));
+  const showCurrentTurnAnchor = $derived(chatTurnItems.length > 0);
 
   $effect(() => {
     void panelSessionId;
@@ -485,7 +488,15 @@
       .join("\0");
     void subagentRows.map((row) => row.statusLine).join("\0");
     void chat.hasTurnActivity;
-    scrollToLatest(false);
+    const firstId = chatMessages[0]?.id ?? "";
+    const lastId = chatMessages.at(-1)?.id ?? "";
+    const prepended =
+      Boolean(previousChatFirstId) &&
+      previousChatLastId === lastId &&
+      previousChatFirstId !== firstId;
+    previousChatFirstId = firstId;
+    previousChatLastId = lastId;
+    if (!prepended) scrollToLatest(false);
     void tick().then(scheduleChatNavigationMeasure);
   });
 
@@ -937,8 +948,6 @@
     showFab={showScrollFab && visible}
     showTurnRail={showChatTurnRail}
     {showCurrentTurnAnchor}
-    {latestUserPreview}
-    latestUserTurnId={latestUserTurn?.id ?? null}
     {chatTurnItems}
     bind:activeChatTurnId
     bind:chatScrolling
@@ -946,6 +955,10 @@
     bind:scrollToLatest
     bind:scheduleChatNavigationMeasure
     bind:resetForSession={resetScrollSession}
+    historyKey={panelSessionId}
+    canLoadOlder={Boolean(chat.historyCursorFor(panelSessionId))}
+    loadingOlder={chat.historyLoadingOlderFor(panelSessionId)}
+    onLoadOlder={loadOlderMessages}
     onAtBottomChange={(value) => (atBottom = value)}
     bodyClass={embedded && !useMobileChatLayout
       ? "vault-workshop-chat-body"
