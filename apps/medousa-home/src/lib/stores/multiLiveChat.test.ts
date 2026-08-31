@@ -50,6 +50,7 @@ function msg(id: string, content: string, role: ChatMessage["role"] = "user"): C
 
 describe("multi-live chat session runtimes", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.resetModules();
     const storage = new Map<string, string>();
     vi.stubGlobal("localStorage", {
@@ -217,6 +218,126 @@ describe("multi-live chat session runtimes", () => {
     await vi.waitFor(() => {
       expect(store.messagesFor("sess-bg").length).toBeGreaterThan(0);
     });
+  });
+
+  it("prepends an older transcript page and advances that session's cursor", async () => {
+    const { store } = await loadStore();
+    const { getSessionHistory } = await import("$lib/daemon");
+    store.sessionId = "sess-page";
+    store.historyCursor = "5";
+    store.messages = [
+      {
+        id: "sess-page:ent_55555555555555555555555555555555",
+        role: "user",
+        content: "turn 5",
+        transcript: {
+          authorityId: "auth_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          sessionId: "sess-page",
+          entryId: "ent_55555555555555555555555555555555",
+          entrySeq: 5,
+        },
+      },
+    ];
+    vi.mocked(getSessionHistory).mockResolvedValue({
+      authority_id: "auth_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      session_id: "sess-page",
+      next_cursor: "3",
+      turns: [
+        {
+          entry_id: "ent_33333333333333333333333333333333",
+          entry_seq: 3,
+          content_digest: "sha256:three",
+          role: "user",
+          content: "turn 3",
+          timestamp: "2026-08-30T01:00:00Z",
+          tool_names: [],
+        },
+        {
+          entry_id: "ent_44444444444444444444444444444444",
+          entry_seq: 4,
+          content_digest: "sha256:four",
+          role: "assistant",
+          content: "turn 4",
+          timestamp: "2026-08-30T01:00:01Z",
+          tool_names: [],
+        },
+      ],
+    });
+
+    await store.loadOlderHistory("sess-page");
+
+    expect(getSessionHistory).toHaveBeenCalledWith("sess-page", {
+      limit: 24,
+      cursor: "5",
+    });
+    expect(store.messages.map((message) => message.content)).toEqual([
+      "turn 3",
+      "turn 4",
+      "turn 5",
+    ]);
+    expect(store.historyCursor).toBe("3");
+    expect(store.historyLoadingOlder).toBe(false);
+  });
+
+  it("reconciles every unseen page until durable history overlaps", async () => {
+    const { store } = await loadStore();
+    const { getSessionHistory } = await import("$lib/daemon");
+    const authorityId = "auth_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const entry = (seq: number, role: "user" | "assistant") => ({
+      entry_id: `ent_${String(seq).padStart(32, "0")}`,
+      entry_seq: seq,
+      content_digest: `sha256:${seq}`,
+      role,
+      content: `turn ${seq}`,
+      timestamp: `2026-08-30T01:00:0${seq}Z`,
+      tool_names: [],
+    });
+    store.sessionId = "sess-gap";
+    store.sessionPristine = false;
+    store.messages = [
+      {
+        id: "sess-gap:ent_00000000000000000000000000000002",
+        role: "assistant",
+        content: "turn 2",
+        transcript: {
+          authorityId,
+          sessionId: "sess-gap",
+          entryId: "ent_00000000000000000000000000000002",
+          entrySeq: 2,
+        },
+      },
+    ];
+    vi.mocked(getSessionHistory).mockImplementation(async (_sessionId, options) => {
+      if (!options?.cursor) {
+        return {
+          authority_id: authorityId,
+          session_id: "sess-gap",
+          turns: [entry(5, "user"), entry(6, "assistant")],
+          next_cursor: "5",
+        };
+      }
+      return {
+        authority_id: authorityId,
+        session_id: "sess-gap",
+        turns: [entry(2, "assistant"), entry(3, "user"), entry(4, "assistant")],
+        next_cursor: "2",
+      };
+    });
+
+    await store.reconcileOnResume({ notice: false });
+
+    expect(getSessionHistory).toHaveBeenNthCalledWith(1, "sess-gap", { limit: 24 });
+    expect(getSessionHistory).toHaveBeenNthCalledWith(2, "sess-gap", {
+      limit: 24,
+      cursor: "5",
+    });
+    expect(store.messages.map((message) => message.content)).toEqual([
+      "turn 2",
+      "turn 3",
+      "turn 4",
+      "turn 5",
+      "turn 6",
+    ]);
   });
 
   it("keeps session A transcript in memory after focus swap to B and back", async () => {

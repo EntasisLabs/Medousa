@@ -7,6 +7,8 @@ export type ChatSessionRuntime = {
   draft: string;
   streamError: string | null;
   historyLoading: boolean;
+  historyCursor: string | null;
+  historyLoadingOlder: boolean;
   sessionPristine: boolean;
   historyNotice: string | null;
   secretAlert: PendingAgentSecret | null;
@@ -36,6 +38,8 @@ export function emptySessionRuntime(sessionId: string, draft = ""): ChatSessionR
     draft,
     streamError: null,
     historyLoading: false,
+    historyCursor: null,
+    historyLoadingOlder: false,
     sessionPristine: false,
     historyNotice: null,
     secretAlert: null,

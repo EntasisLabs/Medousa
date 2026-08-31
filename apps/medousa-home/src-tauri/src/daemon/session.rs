@@ -447,29 +447,68 @@ pub async fn session_get_history(
     state: State<'_, DaemonState>,
     _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
+    limit: Option<usize>,
+    cursor: Option<String>,
 ) -> Result<SessionHistoryResponse, String> {
     let trimmed = session_id.trim();
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
+    let cursor = cursor
+        .as_deref()
+        .map(str::trim)
+        .filter(|cursor| !cursor.is_empty());
+    let paged = limit.is_some() || cursor.is_some();
+    let page_limit = limit.unwrap_or(40).clamp(1, 200);
+    let _before_entry_seq = cursor
+        .map(|cursor| {
+            cursor
+                .parse::<u64>()
+                .ok()
+                .filter(|seq| *seq > 0)
+                .ok_or_else(|| "invalid session history cursor".to_string())
+        })
+        .transpose()?;
     #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state.client_if_active().await? {
-        let turns = client
-            .load_transcript_entries(trimmed)
-            .map_err(|error| error.to_string())?;
+        let (turns, next_cursor) = if paged {
+            let page = client
+                .load_transcript_entries_page(trimmed, page_limit, _before_entry_seq)
+                .map_err(|error| error.to_string())?;
+            (
+                page.entries,
+                page.next_cursor.map(|cursor| cursor.to_string()),
+            )
+        } else {
+            (
+                client
+                    .load_transcript_entries(trimmed)
+                    .map_err(|error| error.to_string())?,
+                None,
+            )
+        };
         return Ok(SessionHistoryResponse {
             // Conversation authority belongs to the embedded daemon, not the
             // local UI principal.
             authority_id: client.authority_id().clone(),
             session_id: trimmed.to_string(),
             turns,
+            next_cursor,
         });
     }
-    client(&state)?
-        .sessions()
-        .history(trimmed)
-        .await
-        .map_err(sdk_error)
+    if paged {
+        client(&state)?
+            .sessions()
+            .history_page(trimmed, page_limit, cursor)
+            .await
+            .map_err(sdk_error)
+    } else {
+        client(&state)?
+            .sessions()
+            .history(trimmed)
+            .await
+            .map_err(sdk_error)
+    }
 }
 
 #[tauri::command]

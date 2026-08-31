@@ -53,6 +53,25 @@ class SessionsApiSync:
         )
         return decode(SessionHistoryResponse, value)
 
+    def history_page(
+        self,
+        session_id: str,
+        limit: int = 24,
+        cursor: str | None = None,
+    ) -> SessionHistoryResponse:
+        query = [("limit", str(max(1, limit)))]
+        if cursor and cursor.strip():
+            query.append(("cursor", cursor.strip()))
+        value = self._client._transport.get_json(
+            self._client.base_url,
+            op_path_query(
+                "sessions.by_session_id.history.get",
+                query,
+                session_id=session_id,
+            ),
+        )
+        return decode(SessionHistoryResponse, value)
+
     def derive(
         self,
         request: DeriveSessionRequest,

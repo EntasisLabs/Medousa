@@ -24,7 +24,7 @@ import { streamPathWithSince } from "$lib/stream/reconnect";
 import { friendlyUserError } from "$lib/utils/normieErrors";
 import { randomUuid } from "$lib/utils/randomUuid";
 import { beginTurnMessages, turnStateFromTicket } from "$lib/chat/turnController";
-import { mapTurns } from "$lib/chat/sessionController";
+import { mapTurns, TRANSCRIPT_PAGE_SIZE } from "$lib/chat/sessionController";
 import { workerLinkForTurn } from "$lib/chat/workerLaneController";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
 
@@ -522,7 +522,7 @@ async function reconcileTurnFromHistory(host: ChatStoreHost, turnId: string) {
 
   const epoch = host.transcriptEpoch;
   try {
-    const history = await getSessionHistory(sessionId);
+    const history = await getSessionHistory(sessionId, { limit: TRANSCRIPT_PAGE_SIZE });
     if (epoch !== host.transcriptEpoch) return;
     const daemonMessages = mapTurns(history.turns, {
       sessionId,

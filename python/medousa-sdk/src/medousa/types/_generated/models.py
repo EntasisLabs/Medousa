@@ -329,6 +329,14 @@ class CapabilityRecommendation(MedousaModel):
     source: str
 
 
+class McpOAuthStatusResponse(MedousaModel):
+    connected: bool
+    issuer: str | None = None
+    scopes: list[str] | None = []
+    server_id: str
+    status: str
+
+
 class ComponentRuntimeEventInput(MedousaModel):
     emittedAtUtc: AwareDatetime | None = None
     level: str
@@ -2066,6 +2074,8 @@ class TurnStreamEventV322(MedousaModel):
         extra='forbid',
     )
     aggregate_text: str
+    debug_message: str | None = None
+    operator_message: str | None = None
     outcome: TurnCompletionOutcomeV3
     tool_names: list[str] | None = []
     type: Type51
@@ -2366,6 +2376,22 @@ class AskJobCompleteActionsResponse(MedousaModel):
     ok: bool
 
 
+class BeginMcpOAuthRequest(MedousaModel):
+    challenge: str | None = None
+    client_id: str | None = None
+    client_metadata_url: str | None = None
+    client_secret: str | None = None
+    redirect_uri: str
+    scopes: list[str] | None = []
+    server_id: str
+
+
+class BeginMcpOAuthResponse(MedousaModel):
+    authorization_url: str
+    login_id: str
+    server_id: str
+
+
 class CalendarDeleteResponse(MedousaModel):
     calendar_path: str
     deleted: bool
@@ -2442,6 +2468,15 @@ class CapabilityResolveResponse(MedousaModel):
     implementations: CapabilityImplementations
     recommended: CapabilityRecommendation | None = None
     title: str
+
+
+class CompleteMcpOAuthRequest(MedousaModel):
+    callback_url: str
+    login_id: str
+
+
+class CompleteMcpOAuthResponse(MedousaModel):
+    connection: McpOAuthStatusResponse
 
 
 class ComponentRuntimeEventsQuery(MedousaModel):
@@ -2590,6 +2625,11 @@ class DeletePromptStashResponse(MedousaModel):
 class DeleteRecurringResponse(MedousaModel):
     deleted: bool
     recurring_id: str
+
+
+class DisconnectMcpOAuthResponse(MedousaModel):
+    disconnected: bool
+    server_id: str
 
 
 class EnqueueAskRequest(MedousaModel):
@@ -2952,6 +2992,10 @@ class RecurringRunsResponse(MedousaModel):
     runs: list[RecurringRunEntry]
 
 
+class RefreshMcpOAuthRequest(MedousaModel):
+    server_id: str
+
+
 class RegisterRecurringPromptRequest(MedousaModel):
     cron_expr: str
     delivery: Any | None = Field(
@@ -3055,6 +3099,17 @@ class SessionDeleteResponse(MedousaModel):
 class SessionHistoryListResponse(MedousaModel):
     next_cursor: str | None = None
     sessions: list[SessionHistorySummary]
+
+
+class SessionHistoryRequest(MedousaModel):
+    cursor: str | None = Field(
+        None, description='Opaque pagination cursor from a prior response (`next_cursor`).'
+    )
+    limit: int | None = Field(
+        None,
+        description='Maximum transcript entries to return. Omit for the complete transcript.',
+        ge=0,
+    )
 
 
 class SessionSetDisplayNameRequest(MedousaModel):
@@ -3755,6 +3810,7 @@ class RuntimeConfigCommandRequest(MedousaModel):
 
 class SessionHistoryResponse(MedousaModel):
     authority_id: AuthorityId
+    next_cursor: str | None = None
     session_id: str
     turns: list[TranscriptEntry]
 

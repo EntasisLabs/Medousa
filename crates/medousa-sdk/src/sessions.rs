@@ -97,6 +97,36 @@ impl SessionsApi<'_> {
         decode(value).await
     }
 
+    pub async fn history_page(
+        &self,
+        session_id: &str,
+        limit: usize,
+        cursor: Option<&str>,
+    ) -> Result<SessionHistoryResponse, crate::SdkError> {
+        let mut query = vec![("limit", limit.max(1).to_string())];
+        if let Some(cursor) = cursor.map(str::trim).filter(|cursor| !cursor.is_empty()) {
+            query.push(("cursor", cursor.to_string()));
+        }
+        let path = op_path_query(
+            &ops::SESSIONS_BY_SESSION_ID_HISTORY_GET,
+            &[("session_id", session_id)],
+            &query,
+        )?;
+        let value = self
+            .client
+            .transport()
+            .get_json(self.client.base_url(), &path)
+            .await?;
+        if value
+            .get("authority_id")
+            .and_then(serde_json::Value::as_str)
+            .is_none()
+        {
+            return Err(crate::health::missing_authority_error(self.client, "GET", &path).await);
+        }
+        decode(value).await
+    }
+
     pub async fn derive(
         &self,
         request: &DeriveSessionRequest,

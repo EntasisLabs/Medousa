@@ -91,6 +91,7 @@ fn main() {
         SessionHistoryListResponse,
         "SessionHistoryListResponse"
     );
+    export_type!(schemas, SessionHistoryRequest, "SessionHistoryRequest");
     export_type!(schemas, SessionHistoryResponse, "SessionHistoryResponse");
     export_type!(
         schemas,

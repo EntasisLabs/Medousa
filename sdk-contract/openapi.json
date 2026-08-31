@@ -4556,6 +4556,12 @@
           "authority_id": {
             "$ref": "#/components/schemas/AuthorityId"
           },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "session_id": {
             "type": "string"
           },

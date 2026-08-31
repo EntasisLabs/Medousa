@@ -499,6 +499,29 @@ async fn missing_history_authority_names_the_responder_build() {
 }
 
 #[tokio::test]
+async fn history_page_reuses_the_history_route_with_cursor_query() {
+    let authority = format!("auth_{}", "c".repeat(64));
+    let transport = Arc::new(MockTransport::new().on_get(
+        "/v1/sessions/session-1/history?limit=24&cursor=25",
+        serde_json::json!({
+            "authority_id": authority,
+            "session_id": "session-1",
+            "turns": [],
+            "next_cursor": "1"
+        }),
+    ));
+    let client = medousa_sdk::MedousaClient::with_transport(transport, "http://127.0.0.1:8080");
+
+    let page = client
+        .sessions()
+        .history_page("session-1", 24, Some("25"))
+        .await
+        .expect("paged session history");
+
+    assert_eq!(page.next_cursor.as_deref(), Some("1"));
+}
+
+#[tokio::test]
 async fn mock_transport_routes_prompt_stash_lifecycle() {
     use medousa_types::{CreatePromptStashRequest, PromptStashDraft};
 

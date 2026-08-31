@@ -403,6 +403,24 @@ pub fn load_transcript_entries(session_id: &str) -> Vec<medousa_types::session::
     crate::session_store::get_session_store().load_transcript_entries(&session_id)
 }
 
+pub fn load_transcript_entries_page(
+    session_id: &str,
+    limit: usize,
+    before_entry_seq: Option<u64>,
+) -> crate::session_store::TranscriptPage {
+    let Ok(session_id) = crate::session_storage::SessionId::parse(session_id) else {
+        return crate::session_store::TranscriptPage {
+            entries: Vec::new(),
+            next_cursor: None,
+        };
+    };
+    crate::session_store::get_session_store().load_transcript_entries_page(
+        &session_id,
+        limit,
+        before_entry_seq,
+    )
+}
+
 pub async fn append_turn(
     session_id: &str,
     turn: &ConversationTurn,

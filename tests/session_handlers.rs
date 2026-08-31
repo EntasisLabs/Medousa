@@ -5,7 +5,9 @@ use axum::Json;
 use axum::extract::{Extension, Path as AxumPath, Query};
 use chrono::Utc;
 
-use medousa::daemon_api::{SessionAppendTurnRequest, SessionHistoryListRequest};
+use medousa::daemon_api::{
+    SessionAppendTurnRequest, SessionHistoryListRequest, SessionHistoryRequest,
+};
 use medousa::daemon_handlers::{append_session_turn, get_session_history, list_session_history};
 use medousa::request_principal::{RequestPrincipal, TransportClass};
 use medousa::session::ConversationTurn;
@@ -48,12 +50,76 @@ async fn session_append_and_get_via_handlers() {
     assert!(body.stored);
 
     // call get handler
-    let get_res = get_session_history(AxumPath(session_id.clone())).await;
+    let get_res = get_session_history(
+        AxumPath(session_id.clone()),
+        Query(SessionHistoryRequest {
+            limit: None,
+            cursor: None,
+        }),
+    )
+    .await;
     assert!(get_res.is_ok());
     let Json(history) = get_res.unwrap();
     assert_eq!(history.session_id, session_id);
     assert!(!history.turns.is_empty());
-    assert_eq!(history.turns.last().unwrap().content, "hello from test");
+    assert_eq!(
+        history.turns.last().unwrap().turn.content,
+        "hello from test"
+    );
+    assert!(history.next_cursor.is_none());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn session_history_pages_walk_backward_via_handler() {
+    let tmp = make_temp_data_dir();
+    unsafe { std::env::set_var("XDG_DATA_HOME", &tmp) };
+
+    let session_id = "test-session-handler-pages".to_string();
+    for index in 1..=5 {
+        let turn =
+            ConversationTurn::plain("user", format!("turn {index}"), Utc::now(), vec![], None);
+        medousa::session::append_turn(&session_id, &turn)
+            .await
+            .unwrap();
+    }
+
+    let Json(latest) = get_session_history(
+        AxumPath(session_id.clone()),
+        Query(SessionHistoryRequest {
+            limit: Some(2),
+            cursor: None,
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        latest
+            .turns
+            .iter()
+            .map(|turn| turn.entry_seq)
+            .collect::<Vec<_>>(),
+        vec![4, 5]
+    );
+    assert_eq!(latest.next_cursor.as_deref(), Some("4"));
+
+    let Json(older) = get_session_history(
+        AxumPath(session_id),
+        Query(SessionHistoryRequest {
+            limit: Some(2),
+            cursor: latest.next_cursor,
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        older
+            .turns
+            .iter()
+            .map(|turn| turn.entry_seq)
+            .collect::<Vec<_>>(),
+        vec![2, 3]
+    );
+    assert_eq!(older.next_cursor.as_deref(), Some("2"));
 }
 
 #[tokio::test(flavor = "multi_thread")]

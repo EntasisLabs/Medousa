@@ -11,6 +11,7 @@ import { workerStatusLineForColumn } from "$lib/utils/workerThreads";
 import { randomUuid } from "$lib/utils/randomUuid";
 import type { WorkerLink } from "$lib/chat/chatSessionRuntime";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
+import { TRANSCRIPT_PAGE_SIZE } from "$lib/chat/sessionController";
 
 export function workerLinkForTurn(
   workers: Map<string, WorkerLink>,
@@ -592,7 +593,7 @@ async function fetchLatestAssistantTurn(
   skipContentMatching?: string | null,
 ): Promise<string | null> {
   try {
-    const history = await getSessionHistory(sessionId);
+    const history = await getSessionHistory(sessionId, { limit: TRANSCRIPT_PAGE_SIZE });
     const assistants = [...history.turns].reverse().filter((turn) => turn.role === "assistant");
     const skip = skipContentMatching?.trim();
     if (skip) {

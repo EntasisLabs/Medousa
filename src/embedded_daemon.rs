@@ -4298,6 +4298,21 @@ impl EmbeddedDaemonClient {
             .load_transcript_entries(&session_id))
     }
 
+    pub fn load_transcript_entries_page(
+        &self,
+        session_id: &str,
+        limit: usize,
+        before_entry_seq: Option<u64>,
+    ) -> Result<crate::session_store::TranscriptPage> {
+        self.require(Capability::ContentRead)?;
+        let session_id = SessionId::parse(session_id).map_err(|error| anyhow!(error))?;
+        Ok(self.daemon.session_store.load_transcript_entries_page(
+            &session_id,
+            limit,
+            before_entry_seq,
+        ))
+    }
+
     pub fn session_agent_mode(&self, session_id: &str) -> Result<SessionAgentModeResponse> {
         self.require(Capability::WorkshopRead)?;
         let session_id = SessionId::parse(session_id).map_err(|error| anyhow!(error))?;

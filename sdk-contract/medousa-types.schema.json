@@ -17041,6 +17041,29 @@
       }
     }
   },
+  "SessionHistoryRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SessionHistoryRequest",
+    "type": "object",
+    "properties": {
+      "cursor": {
+        "description": "Opaque pagination cursor from a prior response (`next_cursor`).",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "limit": {
+        "description": "Maximum transcript entries to return. Omit for the complete transcript.",
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint",
+        "minimum": 0.0
+      }
+    }
+  },
   "SessionHistoryResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "SessionHistoryResponse",
@@ -17053,6 +17076,12 @@
     "properties": {
       "authority_id": {
         "$ref": "#/definitions/AuthorityId"
+      },
+      "next_cursor": {
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "session_id": {
         "type": "string"

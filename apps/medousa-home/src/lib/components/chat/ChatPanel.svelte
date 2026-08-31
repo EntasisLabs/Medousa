@@ -132,6 +132,9 @@
   let cardDetailOpen = $state(false);
   let cardDetail = $state<CardDetailPayload | null>(null);
   let workerTranscriptWorkId = $state<string | null>(null);
+  let loadingOlderForScroll = $state(false);
+  let previousChatFirstId = "";
+  let previousChatLastId = "";
 
   function openCardDetail(detail: CardDetailPayload) {
     cardDetail = detail;
@@ -178,6 +181,17 @@
     return active;
   });
   const panelMessages = $derived(chat.messagesFor(panelSessionId));
+
+  async function loadOlderMessages() {
+    if (loadingOlderForScroll) return;
+    loadingOlderForScroll = true;
+    try {
+      await chat.loadOlderHistory(panelSessionId);
+      await tick();
+    } finally {
+      loadingOlderForScroll = false;
+    }
+  }
   /**
    * Worker-lane turns stay in the principal thread: they carry the sub-agent's
    * synthesis prose, and their position is where the beat belongs chronologically.
@@ -485,7 +499,15 @@
       .join("\0");
     void subagentRows.map((row) => row.statusLine).join("\0");
     void chat.hasTurnActivity;
-    scrollToLatest(false);
+    const firstId = chatMessages[0]?.id ?? "";
+    const lastId = chatMessages.at(-1)?.id ?? "";
+    const prepended =
+      Boolean(previousChatFirstId) &&
+      previousChatLastId === lastId &&
+      previousChatFirstId !== firstId;
+    previousChatFirstId = firstId;
+    previousChatLastId = lastId;
+    if (!prepended) scrollToLatest(false);
     void tick().then(scheduleChatNavigationMeasure);
   });
 
@@ -946,6 +968,10 @@
     bind:scrollToLatest
     bind:scheduleChatNavigationMeasure
     bind:resetForSession={resetScrollSession}
+    historyKey={panelSessionId}
+    canLoadOlder={Boolean(chat.historyCursorFor(panelSessionId))}
+    loadingOlder={chat.historyLoadingOlderFor(panelSessionId)}
+    onLoadOlder={loadOlderMessages}
     onAtBottomChange={(value) => (atBottom = value)}
     bodyClass={embedded && !useMobileChatLayout
       ? "vault-workshop-chat-body"

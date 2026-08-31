@@ -59,6 +59,22 @@ Same names as Rust `MedousaClient` (full table in [api-reference.md](api-referen
 | `capabilities()`, `mcp_gateway()`, `budget()` | Catalog + gateway + budget |
 | `vault()`, `workspace()` | Library + work board |
 
+Long transcripts can be opened newest-first without downloading the entire
+conversation. Continue with the opaque cursor returned by each page:
+
+```python
+page = await client.sessions().history_page("session-id", limit=24)
+while page.next_cursor:
+    page = await client.sessions().history_page(
+        "session-id",
+        limit=24,
+        cursor=page.next_cursor,
+    )
+```
+
+`sessions().history(session_id)` remains available when a complete export is
+actually required.
+
 ---
 
 ## Interactive streaming

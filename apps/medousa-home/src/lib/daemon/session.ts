@@ -129,10 +129,21 @@ export async function setSharedMode(
   return invoke<SharedModeStatus>("shared_mode_set", { mode });
 }
 
+export interface SessionHistoryOptions {
+  limit?: number;
+  /** Pagination cursor from a prior `next_cursor` response. */
+  cursor?: string;
+}
+
 export async function getSessionHistory(
   sessionId: string,
+  options?: SessionHistoryOptions,
 ): Promise<SessionHistoryResponse> {
-  return invoke<SessionHistoryResponse>("session_get_history", { sessionId });
+  return invoke<SessionHistoryResponse>("session_get_history", {
+    sessionId,
+    limit: options?.limit,
+    cursor: options?.cursor?.trim() || undefined,
+  });
 }
 
 export async function setSessionDisplayName(

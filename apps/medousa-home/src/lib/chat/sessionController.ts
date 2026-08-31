@@ -43,6 +43,7 @@ const PROMOTED_ASKS_KEY = "medousa-home-promoted-asks-v1";
 const SESSIONS_STALE_MS = 30_000;
 const SESSIONS_REFRESH_DEBOUNCE_MS = 1_500;
 const PROMOTED_ASKS_MAX = 200;
+export const TRANSCRIPT_PAGE_SIZE = 24;
 
 export function loadPromotedAskIds(workshopId?: string): Set<string> {
   if (typeof localStorage === "undefined") return new Set();
@@ -115,13 +116,16 @@ export function mapTurns(
   const authorityId = options?.authorityId?.trim() || "";
   return turns.map((turn, index) => {
     const modelReceipt = modelReceiptFromParts(turn.parts ?? null);
+    const entryId = turn.entry_id?.trim();
     return {
-      id: `${sessionId}:${turn.timestamp}:${turn.role}:${index}`,
+      id: entryId
+        ? `${sessionId}:${entryId}`
+        : `${sessionId}:${turn.timestamp}:${turn.role}:${index}`,
       role: normalizeRole(turn.role),
       content: turn.content,
       lane,
       askJobId,
-      turnIndex: index + 1,
+      turnIndex: turn.entry_seq || index + 1,
       answerState: turn.answer_state ?? null,
       tools: turn.tool_names?.length ? turn.tool_names : undefined,
       toolRuns: toolRunsFromParts(turn.parts ?? null),
@@ -154,6 +158,70 @@ export function mapTurns(
           : null,
     };
   });
+}
+
+function historyCursor(history: SessionHistoryResponse): string | null {
+  return history.next_cursor?.trim() || null;
+}
+
+/**
+ * Reconnect from the newest page and keep walking backward only until it
+ * overlaps the newest durable entry already rendered. This closes gaps after a
+ * long suspension without restoring the old full-transcript download.
+ */
+async function recentHistoryForMerge(
+  sessionId: string,
+  localMessages: ChatMessage[],
+  shouldContinue: () => boolean,
+): Promise<SessionHistoryResponse> {
+  const newestLocalSeq = localMessages.reduce((latest, message) => {
+    const coordinate = message.transcript;
+    return coordinate?.sessionId === sessionId
+      ? Math.max(latest, coordinate.entrySeq)
+      : latest;
+  }, 0);
+  const pages: SessionHistoryResponse["turns"][] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+  let authorityId: SessionHistoryResponse["authority_id"] | undefined;
+
+  while (true) {
+    const page = await getSessionHistory(
+      sessionId,
+      cursor
+        ? { limit: TRANSCRIPT_PAGE_SIZE, cursor }
+        : { limit: TRANSCRIPT_PAGE_SIZE },
+    );
+    authorityId = page.authority_id;
+    pages.unshift(page.turns);
+    if (!shouldContinue()) break;
+
+    const overlapsLocal =
+      newestLocalSeq > 0 &&
+      page.turns.some((turn) => turn.entry_seq <= newestLocalSeq);
+    const nextCursor = historyCursor(page);
+    if (
+      newestLocalSeq === 0 ||
+      overlapsLocal ||
+      !nextCursor ||
+      seenCursors.has(nextCursor)
+    ) {
+      break;
+    }
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  }
+
+  const turnsById = new Map<string, SessionHistoryResponse["turns"][number]>();
+  for (const turn of pages.flat()) turnsById.set(turn.entry_id, turn);
+  const turns = [...turnsById.values()].sort(
+    (left, right) => left.entry_seq - right.entry_seq,
+  );
+  return {
+    authority_id: authorityId!,
+    session_id: sessionId,
+    turns,
+  };
 }
 
 function derivationIdempotencyKey(): string {
@@ -422,7 +490,7 @@ export async function warmBackgroundSession(host: ChatStoreHost, sessionId: stri
   host.bumpRuntimeRevision();
 
   try {
-    const history = await getSessionHistory(trimmed);
+    const history = await getSessionHistory(trimmed, { limit: TRANSCRIPT_PAGE_SIZE });
     if (host.workshopEpoch !== workshopEpoch) return;
     if (host.sessionId === trimmed) return;
     const current =
@@ -432,6 +500,7 @@ export async function warmBackgroundSession(host: ChatStoreHost, sessionId: stri
       sessionId: trimmed,
       authorityId: history.authority_id,
     });
+    current.historyCursor = historyCursor(history);
     current.historyLoading = false;
     current.streamError = null;
     host.sessionRuntimes.set(trimmed, current);
@@ -617,7 +686,11 @@ export async function reconcileOnResume(
       return;
     }
 
-    const history = await getSessionHistory(sessionId);
+    const history = await recentHistoryForMerge(
+      sessionId,
+      host.messages,
+      stillSameSession,
+    );
     if (!stillSameSession()) return;
 
     const daemonMessages = mapTurns(history.turns, {
@@ -655,14 +728,16 @@ export async function reloadCurrentSession(
     host.sessionId.trim() === sessionId;
 
   host.historyLoading = true;
+  host.historyLoadingOlder = false;
   host.streamError = null;
   try {
-    const history = await getSessionHistory(sessionId);
+    const history = await getSessionHistory(sessionId, { limit: TRANSCRIPT_PAGE_SIZE });
     if (!stillSameSession()) return;
     host.messages = mapTurns(history.turns, {
       sessionId,
       authorityId: history.authority_id,
     });
+    host.historyCursor = historyCursor(history);
     if (options?.notice !== false && history.turns.length > 0) {
       const count = history.turns.length;
       host.historyNotice = `Restored ${count} turn${count === 1 ? "" : "s"}`;
@@ -674,6 +749,54 @@ export async function reloadCurrentSession(
   } finally {
     if (stillSameSession()) {
       host.historyLoading = false;
+    }
+  }
+}
+
+export async function loadOlderHistory(
+  host: ChatStoreHost,
+  sessionId: string,
+): Promise<number> {
+  const workshopEpoch = host.workshopEpoch;
+  const trimmed = sessionId.trim();
+  const cursor = host.historyCursor?.trim();
+  if (
+    !trimmed ||
+    trimmed !== host.sessionId.trim() ||
+    !cursor ||
+    host.historyLoadingOlder
+  ) {
+    return 0;
+  }
+
+  const epoch = host.transcriptEpoch;
+  const stillSameSession = () =>
+    workshopEpoch === host.workshopEpoch &&
+    epoch === host.transcriptEpoch &&
+    host.sessionId.trim() === trimmed;
+
+  host.historyLoadingOlder = true;
+  try {
+    const history = await getSessionHistory(trimmed, {
+      limit: TRANSCRIPT_PAGE_SIZE,
+      cursor,
+    });
+    if (!stillSameSession()) return 0;
+
+    const older = mapTurns(history.turns, {
+      sessionId: trimmed,
+      authorityId: history.authority_id,
+    });
+    host.messages = dedupeMessagesById([...older, ...host.messages]);
+    const nextCursor = historyCursor(history);
+    host.historyCursor = nextCursor === cursor ? null : nextCursor;
+    host.sanitizeTranscript();
+    return older.length;
+  } finally {
+    if (workshopEpoch === host.workshopEpoch) {
+      host.withSessionFields(trimmed, () => {
+        if (host.transcriptEpoch === epoch) host.historyLoadingOlder = false;
+      });
     }
   }
 }
@@ -749,7 +872,7 @@ export async function switchSession(host: ChatStoreHost, sessionId: string) {
   chatScenes.reset();
   chatInteractions.reset();
   try {
-    const history = await getSessionHistory(trimmed);
+    const history = await getSessionHistory(trimmed, { limit: TRANSCRIPT_PAGE_SIZE });
     if (
       host.workshopEpoch !== workshopEpoch ||
       host.sessionId !== trimmed ||
@@ -759,6 +882,7 @@ export async function switchSession(host: ChatStoreHost, sessionId: string) {
       sessionId: trimmed,
       authorityId: history.authority_id,
     });
+    host.historyCursor = historyCursor(history);
     const { workshops } = await import("$lib/stores/workshops.svelte");
     void workshops.saveActiveSession(trimmed);
   } catch (err) {
@@ -817,7 +941,9 @@ export async function hydrateAskThreads(host: ChatStoreHost, cards: WorkCard[]) 
       targets.map(async (card) => {
         try {
           const sessionId = askSessionId(card.id);
-          const history = await getSessionHistory(sessionId);
+          const history = await getSessionHistory(sessionId, {
+            limit: TRANSCRIPT_PAGE_SIZE,
+          });
           if (
             workshopEpoch !== host.workshopEpoch ||
             epoch !== host.transcriptEpoch ||

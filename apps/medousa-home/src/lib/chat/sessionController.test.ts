@@ -19,6 +19,13 @@ function turn(
 }
 
 describe("mapTurns chronological history", () => {
+  it("uses durable entry coordinates for stable ids and turn indexes", () => {
+    const messages = mapTurns([turn([])], { sessionId: "session-a" });
+
+    expect(messages[0]?.id).toBe("session-a:entry-1");
+    expect(messages[0]?.turnIndex).toBe(1);
+  });
+
   it("hydrates segment-aware assistant parts into the V3 scene model", () => {
     const messages = mapTurns([
       turn([
