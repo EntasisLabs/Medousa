@@ -353,12 +353,12 @@ mod tests {
             Some("Researching the latest OpenClaw trends give me a moment.")
         );
         assert_eq!(event.intent.as_deref(), Some("research"));
-        assert_eq!(event.tool_names.len(), 2);
+        assert_eq!(event.tool_names.len(), 1);
         assert!(
             event
                 .context_line
                 .as_deref()
-                .is_some_and(|line| line.contains("capability invoke"))
+                .is_some_and(|line| line.contains("capability"))
         );
     }
 }

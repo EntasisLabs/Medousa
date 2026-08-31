@@ -1409,9 +1409,28 @@ mod tests {
                 f.sync_all().unwrap();
             }
         }
-        #[cfg(windows)]
-        std::thread::sleep(std::time::Duration::from_millis(100));
         {
+            #[cfg(windows)]
+            let reopened = {
+                use std::time::Duration;
+                let mut last_err = None;
+                let mut log = None;
+                for _ in 0..20 {
+                    std::thread::sleep(Duration::from_millis(50));
+                    match TurnEventLog::open_in(&root, env("turn-reopen")) {
+                        Ok(opened) => {
+                            log = Some(opened);
+                            break;
+                        }
+                        Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
+                            last_err = Some(err);
+                        }
+                        Err(err) => panic!("reopen after torn tail: {err}"),
+                    }
+                }
+                log.unwrap_or_else(|| panic!("reopen after torn tail: {:?}", last_err))
+            };
+            #[cfg(not(windows))]
             let reopened = TurnEventLog::open_in(&root, env("turn-reopen")).unwrap();
             let receipt = reopened
                 .append(TurnEvent::Notice {

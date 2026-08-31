@@ -114,6 +114,18 @@ impl IrohHttpHook for TauriIrohHook {
     }
 }
 
+fn iroh_body_stream(
+    body: medousa_iroh_http::IrohHttpBody,
+) -> impl Stream<Item = Result<bytes::Bytes, SdkError>> {
+    futures_util::stream::unfold(body, |mut body| async move {
+        match body.read_chunk().await {
+            Ok(Some(chunk)) => Some((Ok(bytes::Bytes::from(chunk)), body)),
+            Ok(None) => None,
+            Err(err) => Some((Err(SdkError::Http(err.to_string())), body)),
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::iroh_status_error;
@@ -133,16 +145,4 @@ mod tests {
         assert!(matches!(error, medousa_sdk::SdkError::Compatibility(_)));
         assert!(error.to_string().contains("contract revision"));
     }
-}
-
-fn iroh_body_stream(
-    body: medousa_iroh_http::IrohHttpBody,
-) -> impl Stream<Item = Result<bytes::Bytes, SdkError>> {
-    futures_util::stream::unfold(body, |mut body| async move {
-        match body.read_chunk().await {
-            Ok(Some(chunk)) => Some((Ok(bytes::Bytes::from(chunk)), body)),
-            Ok(None) => None,
-            Err(err) => Some((Err(SdkError::Http(err.to_string())), body)),
-        }
-    })
 }

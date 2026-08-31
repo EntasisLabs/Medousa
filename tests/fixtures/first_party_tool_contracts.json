@@ -1843,7 +1843,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_web_search",
-      "description": "Search the public web with one call. Uses configured provider preference and binding fallbacks (web.<provider>, then websearch.search). For deep reports use mode=research_report.",
+      "description": "Search the public web with one call. The registered backend selects provider bindings and fallbacks.",
       "input_schema": {
         "properties": {
           "intent": {
@@ -1851,9 +1851,19 @@
             "maxLength": 320,
             "type": "string"
           },
+          "max_results": {
+            "default": null,
+            "description": "Maximum direct-search results",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "mode": {
             "default": "search",
-            "description": "search = provider-native web lookup; research_* = websearch facade pipelines",
+            "description": "Search directly or use a configured research pipeline",
             "enum": [
               "facade",
               "research_materials",
@@ -1863,7 +1873,7 @@
             "type": "string"
           },
           "provider": {
-            "description": "Optional web provider id (duckduckgo, google, tavily, …). Defaults to capabilities.toml [web_search].preferred_provider or MEDOUSA_WEB_SEARCH_PROVIDER",
+            "description": "Optional configured provider id",
             "type": "string"
           },
           "query": {
@@ -4879,12 +4889,22 @@
     {
       "registry": "general_runtime",
       "name": "cognition_web_search",
-      "description": "Search the public web with one call. Uses configured provider preference and binding fallbacks (web.<provider>, then websearch.search). For deep reports use mode=research_report.",
+      "description": "Search the public web with one call. The registered backend selects provider bindings and fallbacks.",
       "input_schema": {
         "properties": {
+          "max_results": {
+            "default": null,
+            "description": "Maximum direct-search results",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "mode": {
             "default": "search",
-            "description": "search = provider-native web lookup; research_* = websearch facade pipelines",
+            "description": "Search directly or use a configured research pipeline",
             "enum": [
               "facade",
               "research_materials",
@@ -4894,7 +4914,7 @@
             "type": "string"
           },
           "provider": {
-            "description": "Optional web provider id (duckduckgo, google, tavily, …). Defaults to capabilities.toml [web_search].preferred_provider or MEDOUSA_WEB_SEARCH_PROVIDER",
+            "description": "Optional configured provider id",
             "type": "string"
           },
           "query": {

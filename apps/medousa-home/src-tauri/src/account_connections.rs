@@ -876,7 +876,7 @@ fn open_terminal_with_login(command: &str, args: &[String]) -> Result<(), String
                 return Ok(());
             }
         }
-        return Err("no terminal emulator found to run the login".into());
+        Err("no terminal emulator found to run the login".into())
     }
 }
 
