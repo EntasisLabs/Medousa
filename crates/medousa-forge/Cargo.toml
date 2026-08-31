@@ -1,6 +1,6 @@
 [package]
 name = "medousa-forge"
-version = "0.9.1"
+version = "0.10.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Forge — Medousa's version-controlled work lifecycle engine. User-owned work items, governed git environments, lease-fenced executor attempts, sealed evidence, human review, durable dispositions."

@@ -49,7 +49,7 @@ Pinned version from the public release CDN:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/EntasisLabs/Medousa/main/scripts/install.sh \
-  | bash -s -- --registry-url https://releases.entasislabs.com/medousa --version v0.9.1
+  | bash -s -- --registry-url https://releases.entasislabs.com/medousa --version v0.10.0
 ```
 
 Air-gap / local artifact (engine tarball):

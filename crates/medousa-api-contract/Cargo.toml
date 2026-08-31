@@ -1,6 +1,6 @@
 [package]
 name = "medousa-api-contract"
-version = "0.9.1"
+version = "0.10.0"
 edition = "2024"
 description = "Route-owned daemon API IR, OpenAPI generation, and client codecs"
 publish = false

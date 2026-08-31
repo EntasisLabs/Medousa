@@ -23,9 +23,9 @@ curl -fsSL https://raw.githubusercontent.com/EntasisLabs/Medousa/main/scripts/in
 
 On first launch the app starts your **Personal** workshop for you. Desktop
 onboarding happens inside Home: choose what you want nearby, shape the first
-layout, and pick a Medousa mark and matching color theme. On iPhone, Personal
-runs as an embedded engine: name your Home, pick its look, and optionally
-connect a model provider. Pairing a computer is not required.
+layout, and pick a Medousa mark and matching color theme. On iPhone and Android,
+Personal runs as an embedded engine: name your Home, pick its look, and
+optionally connect a model provider. Pairing a computer is not required.
 
 > Prefer a terminal / headless engine? See
 > [Install & self-host](../cookbook/install-and-self-host.md).
@@ -59,9 +59,9 @@ If offline brain isn’t installed yet, the wizard points you to
 Enter Home whenever you are ready. Optional package downloads continue in the
 background and do not block the workspace.
 
-On iPhone, choose **Workspace with a brain**, then sign in with ChatGPT to use
-your subscription or search the providers and models supported by embedded
-Personal and enter an API key on-device.
+On iPhone or Android, choose **Workspace with a brain**, then sign in with
+ChatGPT to use your subscription or search the providers and models supported
+by embedded Personal and enter an API key on-device.
 Choose **Just the workspace** to start with Home, Notes, Calendar, and
 Automations and add a model later. The wizard does not open the keyboard until
 you choose a field, and computer pairing stays optional under **Settings →
