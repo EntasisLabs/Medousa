@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "fs";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
 import { cardHasDetail, preprocessLiquidEmbeds } from "./liquidEmbeds";
+
+const fixturePath = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "fixtures",
+  "frontier-models-mid-2026.md",
+);
 
 function decodeLiquidProps<T>(encoded: string): T | null {
   try {
@@ -12,10 +20,7 @@ function decodeLiquidProps<T>(encoded: string): T | null {
 
 describe("frontier demo note", () => {
   it("hydrates a one-decision brief (not a component zoo)", () => {
-    const src = readFileSync(
-      "/Users/theelevators/medousa/frontier-models-mid-2026.md",
-      "utf8",
-    );
+    const src = readFileSync(fixturePath, "utf8");
     const out = preprocessLiquidEmbeds(src);
     const kinds = new Set(
       [...out.matchAll(/data-liquid-embed="([^"]+)"/g)].map((m) => m[1]!),
@@ -59,10 +64,7 @@ describe("frontier demo note", () => {
   });
 
   it("carousel cards carry detail payloads for vault popups", () => {
-    const src = readFileSync(
-      "/Users/theelevators/medousa/frontier-models-mid-2026.md",
-      "utf8",
-    );
+    const src = readFileSync(fixturePath, "utf8");
     const out = preprocessLiquidEmbeds(src);
     const carouselMatch = out.match(
       /data-liquid-embed="carousel"[^>]*data-liquid-props="([^"]+)"/,

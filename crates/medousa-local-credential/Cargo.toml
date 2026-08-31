@@ -9,7 +9,6 @@ description = "Native local-client credential storage and verification for Medou
 anyhow = "1"
 arc-swap = "1"
 base64 = "0.22"
-keyring = "2.3"
 medousa-secrets = { path = "../medousa-secrets" }
 medousa-types = { path = "../medousa-types" }
 rand = "0.8"

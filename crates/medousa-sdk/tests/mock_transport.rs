@@ -6,12 +6,13 @@ use std::sync::{Arc, Mutex};
 use medousa_sdk::{SdkError, Transport};
 
 type Handler = Box<dyn Fn() -> serde_json::Value + Send + Sync>;
+type RequestHeaders = Arc<Mutex<Vec<Vec<(String, String)>>>>;
 
 struct MockTransport {
     handlers: HashMap<(String, String), Handler>,
     calls: Arc<Mutex<Vec<(String, String)>>>,
     sse_batches: Arc<Mutex<VecDeque<Vec<bytes::Bytes>>>>,
-    request_headers: Arc<Mutex<Vec<Vec<(String, String)>>>>,
+    request_headers: RequestHeaders,
 }
 
 impl MockTransport {
