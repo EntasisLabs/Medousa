@@ -182,7 +182,16 @@
         </div>
       </div>
     </div>
-    <div style="display: contents">%sveltekit.body%</div>
+    <!--
+      Keep a real containing box between body and the Svelte layout. macOS
+      WKWebView does not reliably resolve percentage-height descendants through
+      a display:contents mount, which can collapse the desktop shell to its
+      active pane's content height.
+    -->
+    <div
+      id="medousa-app-root"
+      style="height: 100%; width: 100%; min-height: 0; min-width: 0"
+    >%sveltekit.body%</div>
     <script>
       // iOS mid loads as tauri://localhost and proxies Vite. SvelteKit's
       // dynamic imports (/node_modules/..., /@fs/...) fail under that proxy —
