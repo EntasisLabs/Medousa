@@ -820,6 +820,8 @@ fn run_home() {
             daemon::session::turn_list_session,
             daemon::media::media_upload,
             daemon::media::media_upload_path,
+            daemon::media::media_read,
+            daemon::media::media_read_image_path,
             daemon::catalog::catalog_list_manuscripts,
             daemon::catalog::catalog_get_manuscript,
             daemon::catalog::catalog_create_manuscript,

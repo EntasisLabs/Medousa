@@ -1,7 +1,8 @@
 <script lang="ts">
   import { X } from "@lucide/svelte";
-  import { mediaFetchUrl } from "$lib/daemon";
+  import { readMediaBytes } from "$lib/daemon";
   import { chat } from "$lib/stores/chat.svelte";
+  import { chatImageObjectUrl } from "$lib/utils/chatImagePreview";
 
   interface Props {
     disabled?: boolean;
@@ -11,28 +12,43 @@
   let urls = $state<Record<string, string>>({});
 
   $effect(() => {
-    const pendingImages = chat.pendingMediaRefs.filter(
-      (attachment) =>
-        attachment.mime.startsWith("image/") && !urls[attachment.media_id],
-    );
-    if (pendingImages.length === 0) return;
+    const activeSessionId = chat.sessionId;
+    const pendingImages = chat.pendingMediaRefs
+      .filter((attachment) => attachment.mime.startsWith("image/"))
+      .map((attachment) => ({ ...attachment }));
     let cancelled = false;
+    let ownedUrls: string[] = [];
+    urls = {};
     void (async () => {
       const loaded: Record<string, string> = {};
+      const created: string[] = [];
       for (const attachment of pendingImages) {
         try {
-          loaded[attachment.media_id] = await mediaFetchUrl(
-            chat.sessionId,
+          const payload = await readMediaBytes(
+            activeSessionId,
             attachment.media_id,
           );
+          const url = await chatImageObjectUrl(
+            payload.bytes,
+            payload.mime,
+            attachment.label?.trim() || attachment.media_id,
+          );
+          created.push(url);
+          loaded[attachment.media_id] = url;
         } catch {
           // Keep the filename chip when a preview is unavailable.
         }
       }
-      if (!cancelled) urls = { ...urls, ...loaded };
+      if (cancelled) {
+        created.forEach((url) => URL.revokeObjectURL(url));
+        return;
+      }
+      ownedUrls = created;
+      urls = loaded;
     })();
     return () => {
       cancelled = true;
+      ownedUrls.forEach((url) => URL.revokeObjectURL(url));
     };
   });
 </script>

@@ -13,6 +13,24 @@ export interface MediaUploadResponse {
   text_extracted?: boolean;
 }
 
+export interface MediaPayloadResponse {
+  mime: string;
+  bytes_base64: string;
+}
+
+export interface MediaPathResponse extends MediaPayloadResponse {
+  filename: string;
+}
+
+export interface MediaPayload {
+  mime: string;
+  bytes: Uint8Array;
+}
+
+export interface MediaPathPayload extends MediaPayload {
+  filename: string;
+}
+
 export interface ChatMediaAttachment {
   mediaId: string;
   kind: string;

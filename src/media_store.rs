@@ -361,6 +361,9 @@ fn infer_mime(bytes: &[u8], mime: &str, label: Option<&str>) -> String {
     if bytes.starts_with(b"%PDF") {
         return "application/pdf".to_string();
     }
+    if let Some(image_mime) = sniff_image_mime(bytes) {
+        return image_mime.to_string();
+    }
     if let Some(label) = label
         && let Some(from_name) = mime_from_filename(label)
     {
@@ -371,6 +374,33 @@ fn infer_mime(bytes: &[u8], mime: &str, label: Option<&str>) -> String {
 
 fn mime_from_filename(name: &str) -> Option<String> {
     let lower = name.trim().to_ascii_lowercase();
+    if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
+        return Some("image/jpeg".to_string());
+    }
+    if lower.ends_with(".png") {
+        return Some("image/png".to_string());
+    }
+    if lower.ends_with(".gif") {
+        return Some("image/gif".to_string());
+    }
+    if lower.ends_with(".webp") {
+        return Some("image/webp".to_string());
+    }
+    if lower.ends_with(".heic") {
+        return Some("image/heic".to_string());
+    }
+    if lower.ends_with(".heif") {
+        return Some("image/heif".to_string());
+    }
+    if lower.ends_with(".avif") {
+        return Some("image/avif".to_string());
+    }
+    if lower.ends_with(".bmp") {
+        return Some("image/bmp".to_string());
+    }
+    if lower.ends_with(".tif") || lower.ends_with(".tiff") {
+        return Some("image/tiff".to_string());
+    }
     if lower.ends_with(".pdf") {
         return Some("application/pdf".to_string());
     }
@@ -417,6 +447,11 @@ fn infer_mime_for_record(record: &MediaRecord) -> String {
     {
         return "application/pdf".to_string();
     }
+    if let Ok(bytes) = open_media_payload(record)
+        && let Some(image_mime) = sniff_image_mime(&bytes)
+    {
+        return image_mime.to_string();
+    }
     if let Some(label) = record.label.as_deref()
         && let Some(from_name) = mime_from_filename(label)
     {
@@ -449,6 +484,11 @@ fn extension_for_mime(mime: &str) -> &'static str {
         "image/png" => "png",
         "image/gif" => "gif",
         "image/webp" => "webp",
+        "image/heic" => "heic",
+        "image/heif" => "heif",
+        "image/avif" => "avif",
+        "image/bmp" => "bmp",
+        "image/tiff" => "tiff",
         "application/pdf" => "pdf",
         "text/plain" => "txt",
         "text/markdown" => "md",
@@ -459,6 +499,48 @@ fn extension_for_mime(mime: &str) -> &'static str {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => "docx",
         _ => "",
     }
+}
+
+fn sniff_image_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+        return Some("image/jpeg");
+    }
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Some("image/png");
+    }
+    if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        return Some("image/gif");
+    }
+    if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        return Some("image/webp");
+    }
+    if bytes.starts_with(b"BM") {
+        return Some("image/bmp");
+    }
+    if bytes.starts_with(b"II*\0") || bytes.starts_with(b"MM\0*") {
+        return Some("image/tiff");
+    }
+    if bytes.len() < 12 || &bytes[4..8] != b"ftyp" {
+        return None;
+    }
+    let brands = bytes[8..bytes.len().min(64)].chunks_exact(4);
+    if brands
+        .clone()
+        .any(|brand| brand == b"avif" || brand == b"avis")
+    {
+        return Some("image/avif");
+    }
+    for brand in brands {
+        if [
+            b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"mif1", b"msf1",
+        ]
+        .iter()
+        .any(|candidate| brand == *candidate)
+        {
+            return Some("image/heic");
+        }
+    }
+    None
 }
 
 fn append_index_record(record: &MediaRecord) -> Result<(), String> {
@@ -570,6 +652,26 @@ mod tests {
         assert_ne!(payload, extract);
         assert!(payload.file_name().starts_with("o1-"));
         assert!(!payload.file_name().contains(':'));
+    }
+
+    #[test]
+    fn infers_mobile_image_mime_from_bytes_or_filename() {
+        assert_eq!(
+            infer_mime(
+                b"\0\0\0\x18ftypheic\0\0\0\0mif1",
+                "application/octet-stream",
+                None,
+            ),
+            "image/heic"
+        );
+        assert_eq!(
+            infer_mime(
+                b"not-real-image",
+                "application/octet-stream",
+                Some("photo.heif")
+            ),
+            "image/heif"
+        );
     }
 
     #[test]

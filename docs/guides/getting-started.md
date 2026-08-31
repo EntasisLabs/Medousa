@@ -94,7 +94,10 @@ Useful early asks:
 - *“Build me a simple notes canvas.”*
 
 To include a screenshot or document, choose **+ → Attach** or drag files onto
-the composer. The files appear as removable chips before you send; each message
+the composer. On a phone, **+** also offers **Take photo**, **Photo library**,
+and **Attach file**. iPhone HEIC/HEIF photos are converted automatically; JPEG,
+PNG, GIF, WebP, AVIF, BMP, and TIFF images are accepted across desktop and
+mobile. The files appear as removable previews before you send; each message
 can include up to five attachments.
 
 To put an unfinished prompt aside intentionally, choose **+ → Stash draft**.

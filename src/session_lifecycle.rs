@@ -501,6 +501,7 @@ mod tests {
                     crate::session_meta_store::get_session_display_name(session_id.as_str())
                         .is_none()
                 );
+                #[cfg(feature = "full-daemon")]
                 assert!(
                     crate::agent_runtime::turn_worker::TurnWorkerStore::session_absent_on_disk(
                         session_id.as_str()

@@ -3177,6 +3177,19 @@ impl EmbeddedDaemonClient {
             .map_err(anyhow::Error::msg)
     }
 
+    pub fn read_media(&self, session_id: &str, media_id: &str) -> Result<(String, Vec<u8>)> {
+        self.require(Capability::ContentRead)?;
+        let session_id = SessionId::parse(session_id).map_err(anyhow::Error::new)?;
+        let media_id = media_id.trim();
+        if media_id.is_empty() {
+            bail!("media_id is required");
+        }
+        let record = crate::media_store::get_media_record(session_id.as_str(), media_id)
+            .ok_or_else(|| anyhow!("media not found"))?;
+        let bytes = crate::media_store::open_media_payload(&record).map_err(anyhow::Error::msg)?;
+        Ok((record.mime, bytes))
+    }
+
     pub async fn stt_status(&self) -> Result<crate::stt::SttStatusResponse> {
         self.require(Capability::WorkshopRead)?;
         Ok(match self.daemon.credential_provider.as_deref() {
@@ -5307,6 +5320,87 @@ query MobileProbe {
                 }
             }
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn embedded_catalog_tracks_and_repairs_durable_transcripts() {
+        let sandbox = tempfile::tempdir().expect("embedded catalog sandbox");
+        let installation_id = InstallationId::parse(INSTALLATION_ID).expect("installation id");
+        let daemon = EmbeddedDaemon::boot(
+            EmbeddedDaemonConfig::with_chat_client(
+                sandbox.path(),
+                installation_id,
+                "openai",
+                "embedded-test-model",
+                Arc::new(LifecycleChatClient::default()),
+            )
+            .with_tool_registry_recipe(Arc::new(
+                crate::mobile_tool_registry::PersonalMobileToolRegistryRecipe,
+            )),
+        )
+        .await
+        .expect("boot embedded catalog daemon");
+        let client = daemon.local_client();
+        let session = client.create_session().expect("create embedded session");
+
+        let accepted = client
+            .start_turn(&session.session_id, "keep this conversation")
+            .await
+            .expect("start embedded turn");
+        let events = collect_to_eof(
+            client
+                .subscribe_turn(&accepted.turn_id, 0)
+                .await
+                .expect("subscribe embedded turn"),
+        )
+        .await;
+        assert!(matches!(
+            events.last().map(|event| &event.event),
+            Some(TurnStreamEventV2::Final { .. })
+        ));
+        let summary = client
+            .list_sessions_page(10, None, None)
+            .expect("list embedded sessions")
+            .sessions
+            .into_iter()
+            .find(|summary| summary.session_id == session.session_id)
+            .expect("new session remains in paginated history");
+        assert_eq!(summary.turns, 2);
+        assert!(summary.last_timestamp.is_some());
+
+        // Recreate the pre-fix state and prove the one-time migration restores
+        // the already-durable conversation without replaying the turn.
+        let parsed_session_id = SessionId::parse(&session.session_id).expect("parse test session");
+        crate::session_catalog::delete_catalog_row(&parsed_session_id)
+            .expect("remove current catalog projection");
+        crate::session_catalog::ensure_named_session(&session.session_id, None);
+        assert_eq!(
+            crate::session_catalog::turn_count(&session.session_id),
+            Some(0)
+        );
+        let repair_marker = sandbox
+            .path()
+            .join(crate::session_catalog::EMBEDDED_TRANSCRIPT_PROJECTION_REPAIR_MARKER);
+        if repair_marker.is_file() {
+            std::fs::remove_file(&repair_marker).expect("reset projection repair marker");
+        }
+        crate::session_catalog::repair_embedded_transcript_projection_once()
+            .expect("repair embedded transcript projection");
+        let repaired = client
+            .list_sessions_page(10, None, None)
+            .expect("list repaired embedded sessions")
+            .sessions
+            .into_iter()
+            .find(|summary| summary.session_id == session.session_id)
+            .expect("repaired session remains in paginated history");
+        assert_eq!(repaired.turns, 2);
+        assert!(repaired.last_timestamp.is_some());
+        assert!(repair_marker.is_file());
+
+        drop(client);
+        crate::session_store::reset_session_store_for_test();
+        assert_eq!(Arc::strong_count(&daemon), 1);
+        drop(daemon);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

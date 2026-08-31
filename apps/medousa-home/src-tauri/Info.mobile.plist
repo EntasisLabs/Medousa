@@ -7,8 +7,12 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Medousa uses the camera when you choose Take photo so you can attach a picture to your chat.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Medousa records audio when you tap the voice button so your message can be transcribed in chat.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Medousa lets you choose photos from your library to attach to your chat.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 </dict>

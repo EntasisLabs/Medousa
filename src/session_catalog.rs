@@ -27,6 +27,9 @@ pub const PREVIEW_MAX_CHARS: usize = 72;
 pub const AUTO_TITLE_MAX_CHARS: usize = 48;
 
 const SESSION_CATALOG_TABLE: &str = "session_catalog";
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub(crate) const EMBEDDED_TRANSCRIPT_PROJECTION_REPAIR_MARKER: &str =
+    ".session-catalog-transcript-projection-v1";
 
 const SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE TABLE session_catalog SCHEMAFULL",
@@ -814,6 +817,63 @@ pub async fn init_session_catalog_with_runtime(runtime: &RuntimeComposition) {
     }
 
     backfill_if_needed();
+
+    #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+    if let Err(error) = repair_embedded_transcript_projection_once() {
+        eprintln!("embedded session catalog projection repair error: {error}");
+    }
+}
+
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub(crate) fn repair_embedded_transcript_projection_once() -> Result<(), String> {
+    let marker = medousa_data_dir().join(EMBEDDED_TRANSCRIPT_PROJECTION_REPAIR_MARKER);
+    if marker.is_file() {
+        return Ok(());
+    }
+
+    let limit = catalog_store().row_count().saturating_add(100).max(500);
+    let summaries = crate::session_store::build_backfill_summaries(limit);
+    if summaries.is_empty() && crate::session_store::has_persisted_sessions() {
+        return Err("transcripts exist but no repair summaries could be read".to_string());
+    }
+
+    let mut repaired = 0usize;
+    for summary in summaries {
+        let Ok(session_id) = SessionId::parse(&summary.session_id) else {
+            continue;
+        };
+        let mut row = catalog_store()
+            .get_row(&session_id)
+            .unwrap_or_else(|| SessionCatalogRow::empty_session(summary.session_id.clone()));
+        if row.turn_count == summary.turns
+            && row.last_activity_at == summary.last_timestamp
+            && row.preview == summary.preview
+        {
+            continue;
+        }
+
+        row.turn_count = summary.turns;
+        row.last_activity_at = summary.last_timestamp;
+        row.preview = summary.preview;
+        if row.display_name.is_none() {
+            row.display_name = summary
+                .display_name
+                .or_else(|| auto_title_from_preview(&row.preview));
+        }
+        if row.origin_surface.is_none() {
+            row.origin_surface = summary.origin_surface;
+        }
+        row.has_code_work |= summary.has_code_work;
+        catalog_store().upsert_row(&session_id, &row);
+        repaired += 1;
+    }
+
+    crate::session::atomic_write(&marker, format!("repaired={repaired}\n").as_bytes())
+        .map_err(|error| format!("write projection repair marker: {error}"))?;
+    if repaired > 0 {
+        eprintln!("embedded session catalog projection repaired ({repaired} sessions)");
+    }
+    Ok(())
 }
 
 pub async fn init_surreal_catalog_for_db(db: Surreal<Any>) -> Result<(), surrealdb::Error> {

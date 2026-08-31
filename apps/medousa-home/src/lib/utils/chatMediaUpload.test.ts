@@ -2,12 +2,14 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { uploadMediaBytes, uploadMediaPath } = vi.hoisted(() => ({
+const { readMediaImagePath, uploadMediaBytes, uploadMediaPath } = vi.hoisted(() => ({
+  readMediaImagePath: vi.fn(),
   uploadMediaBytes: vi.fn(),
   uploadMediaPath: vi.fn(),
 }));
 
 vi.mock("$lib/daemon", () => ({
+  readMediaImagePath,
   uploadMediaBytes,
   uploadMediaPath,
 }));
@@ -22,7 +24,20 @@ describe("chat media upload", () => {
   beforeEach(() => {
     uploadMediaBytes.mockReset();
     uploadMediaPath.mockReset();
+    readMediaImagePath.mockReset();
     document.body.innerHTML = "";
+  });
+
+  it("configures a rear-camera picker without allowing multiple captures", () => {
+    const click = vi.spyOn(HTMLInputElement.prototype, "click");
+
+    void pickChatAttachmentFiles("camera");
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+
+    expect(input?.multiple).toBe(false);
+    expect(input?.accept).toContain("image/*");
+    expect(input?.getAttribute("capture")).toBe("environment");
+    click.mockRestore();
   });
 
   it("creates and clicks the picker input synchronously", async () => {
@@ -61,7 +76,7 @@ describe("chat media upload", () => {
       "session-1",
       "pixel.png",
       "image/png",
-      [1, 2, 3],
+      new Uint8Array([1, 2, 3]),
       "pixel.png",
     );
     expect(refs).toEqual([
@@ -83,6 +98,18 @@ describe("chat media upload", () => {
     await expect(uploadChatFiles("session-1", [file])).rejects.toThrow(
       '"huge.png" — That file is too large',
     );
+  });
+
+  it("rejects oversize photos before attempting conversion or IPC", async () => {
+    const file = new File([new Uint8Array([1])], "huge.heic", {
+      type: "image/heic",
+    });
+    Object.defineProperty(file, "size", { value: 25 * 1024 * 1024 + 1 });
+
+    await expect(uploadChatFiles("session-1", [file])).rejects.toThrow(
+      '"huge.heic" — That file is too large',
+    );
+    expect(uploadMediaBytes).not.toHaveBeenCalled();
   });
 
   it("uploads Tauri drops from native paths", async () => {

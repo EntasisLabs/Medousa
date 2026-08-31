@@ -100,7 +100,7 @@ assert.deepEqual(cspDirectives["object-src"], ["'none'"]);
 assert.deepEqual(cspDirectives["base-uri"], ["'self'"]);
 assert.deepEqual(cspDirectives["form-action"], ["'self'"]);
 assert.deepEqual(cspDirectives["frame-ancestors"], ["'none'"]);
-assert.deepEqual(cspDirectives["script-src"], ["'self'"]);
+assert.deepEqual(cspDirectives["script-src"], ["'self'", "'wasm-unsafe-eval'"]);
 for (const forbidden of ["'unsafe-eval'", "'unsafe-inline'", "http:", "https:", "data:", "blob:", "*"]) {
   assert.ok(!cspDirectives["script-src"].includes(forbidden), `script-src permits ${forbidden}`);
 }
