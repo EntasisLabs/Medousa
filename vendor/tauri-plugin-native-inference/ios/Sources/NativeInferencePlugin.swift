@@ -2,6 +2,7 @@ import CoreImage
 import Darwin
 import Foundation
 import HuggingFace
+import MLX
 import MLXLLM
 import MLXLMCommon
 import MLXVLM
@@ -139,13 +140,36 @@ private struct HuggingFaceTokenizer: MLXLMCommon.Tokenizer {
   ) throws -> [Int] {
     do {
       return try upstream.applyChatTemplate(
-        messages: messages,
-        tools: tools,
-        additionalContext: additionalContext)
+        messages: messages.map(jinjaCompatibleObject),
+        tools: tools?.map(jinjaCompatibleObject),
+        additionalContext: additionalContext.map(jinjaCompatibleObject))
     } catch Tokenizers.TokenizerError.missingChatTemplate {
       throw MLXLMCommon.TokenizerError.missingChatTemplate
     }
   }
+}
+
+/// swift-jinja represents JSON null as a nil Optional, while Foundation's
+/// JSON bridge and MLXLMCommon represent it as NSNull. Normalize recursively
+/// at the tokenizer boundary so schemas and historical tool arguments remain
+/// valid JSON without leaking an unsupported Foundation object into Jinja.
+private func jinjaCompatibleValue(_ value: any Sendable) -> any Sendable {
+  switch value {
+  case is NSNull:
+    return Optional<String>.none as String?
+  case let object as [String: any Sendable]:
+    return jinjaCompatibleObject(object)
+  case let array as [any Sendable]:
+    return array.map(jinjaCompatibleValue)
+  default:
+    return value
+  }
+}
+
+private func jinjaCompatibleObject(
+  _ object: [String: any Sendable]
+) -> [String: any Sendable] {
+  object.mapValues(jinjaCompatibleValue)
 }
 
 private struct HuggingFaceTokenizerLoader: MLXLMCommon.TokenizerLoader {
@@ -448,6 +472,13 @@ private actor NativeInferenceRuntime {
   private let manifestURL: URL
 
   init() {
+    // MLX defaults its reusable buffer cache to Metal's recommended working
+    // set, which can exceed iOS's considerably lower per-process jetsam limit.
+    // Keep enough cache for efficient generation without allowing temporary
+    // evaluation buffers to crowd out the resident model and app UI.
+    MLX.Memory.cacheLimit = 20 * 1024 * 1024
+    MLX.Memory.clearCache()
+
     let support = FileManager.default.urls(
       for: .applicationSupportDirectory,
       in: .userDomainMask).first!
@@ -591,6 +622,7 @@ private actor NativeInferenceRuntime {
   func unload() throws -> EngineStatus {
     guard !generationActive, phase != "loading" else { throw NativeInferenceError.modelBusy }
     loadedModel = nil
+    MLX.Memory.clearCache()
     phase = "cold"
     return status()
   }
@@ -600,6 +632,7 @@ private actor NativeInferenceRuntime {
     let descriptor = try ModelDescriptor.resolve(modelID)
     if loadedModel?.descriptor.id == descriptor.id {
       loadedModel = nil
+      MLX.Memory.clearCache()
       phase = "cold"
     }
     if let record = installed.removeValue(forKey: descriptor.id) {
@@ -617,12 +650,14 @@ private actor NativeInferenceRuntime {
     guard !generationActive, phase != "loading" else { throw NativeInferenceError.modelBusy }
     generationActive = true
     defer {
+      MLX.Memory.clearCache()
       generationActive = false
       phase = loadedModel == nil ? "cold" : "ready"
     }
     let descriptor = try ModelDescriptor.resolve(request.model)
     let model = try await loadContainer(descriptor: descriptor, jobID: nil)
     phase = "busy"
+    MLX.Memory.clearCache()
 
     let messages = try request.messages.map { try $0.mlxMessage() }
     let tools = request.tools.map(\.mlxSpec)
@@ -704,6 +739,10 @@ private actor NativeInferenceRuntime {
     if let loadedModel, loadedModel.descriptor.id == descriptor.id {
       return loadedModel.container
     }
+    // Never overlap resident model containers while switching checkpoints.
+    // Even two small quantized models can cross an iPhone's jetsam ceiling.
+    loadedModel = nil
+    MLX.Memory.clearCache()
     phase = "loading"
     let configuration = ModelConfiguration(
       id: descriptor.repo,
@@ -761,6 +800,10 @@ private actor NativeInferenceRuntime {
     installed[descriptor.id] = record
     persistManifest()
     loadedModel = LoadedModel(descriptor: descriptor, container: container)
+    // Loading and quantizing weights leaves large temporary buffers eligible
+    // for reuse. On iOS those buffers need to be returned immediately so the
+    // first prompt has headroom beneath the jetsam limit.
+    MLX.Memory.clearCache()
     phase = "ready"
     return container
   }
