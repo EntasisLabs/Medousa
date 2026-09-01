@@ -38,6 +38,7 @@
     imageFileFromDataTransfer,
     markdownFromImageFile,
   } from "$lib/utils/vaultImagePaste";
+  import { codeMirrorCspExtension } from "$lib/security/codeMirrorCsp";
 
   interface Props {
     value: string;
@@ -388,6 +389,7 @@
       state: EditorState.create({
         doc: value,
         extensions: [
+          codeMirrorCspExtension(),
           basicSetup,
           markdown(),
           vaultMarkdownSyntax,
@@ -554,5 +556,6 @@
 <div
   bind:this={host}
   class="vault-codemirror-host vault-codemirror-host--{surface} min-h-0 min-w-0 max-w-full flex-1 overflow-hidden {className}"
+  data-no-tab-swipe
   data-find-epoch={findDecorationsEpoch}
 ></div>
