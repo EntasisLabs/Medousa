@@ -102,6 +102,14 @@ describe("css inventory and cascade", () => {
       "$lib/styles/vault-browse.postcss",
     );
   });
+
+  it("establishes the packaged shell height chain before app CSS loads", () => {
+    const appHtml = source("src/app.html");
+    expect(appHtml).toMatch(
+      /html,\s*body,\s*#medousa-app-root\s*\{[^}]*height:\s*100%/s,
+    );
+    expect(appHtml).toMatch(/html,\s*body\s*\{[^}]*overflow:\s*hidden/s);
+  });
 });
 
 describe("selected-theme Tailwind compile", () => {
