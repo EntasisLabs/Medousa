@@ -13,10 +13,8 @@
     LogOut,
     MessageSquare,
     RefreshCw,
-    Sparkles,
-    MousePointer2,
-    Bot,
   } from "@lucide/svelte";
+  import ExternalAgentLogo from "$lib/components/brand/ExternalAgentLogo.svelte";
   import { accountConnections } from "$lib/stores/accountConnections.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { isTauriDesktop } from "$lib/platform";
@@ -172,32 +170,18 @@
       </p>
     {/if}
 
-    <ol class="connections-steps workshop-faint mt-3">
-      <li><strong>Choose an agent</strong> — Codex, Cursor, or Hermes.</li>
-      <li><strong>Install and sign in</strong> with that agent’s own account.</li>
-      <li>
-        <strong>In Chat</strong>, choose it from the runtime control under the composer.
-      </li>
-    </ol>
-
     <div class="connections-cards mt-3">
       {#if desktopCli}
         {#each [
-          { info: accountConnections.connections?.chatgpt, account: "chatgpt" as const, icon: "chatgpt", title: "Codex", sub: "Codex runtime · ChatGPT account", cli: "Codex CLI", runtimeLabel: "Codex" },
-          { info: accountConnections.connections?.cursor, account: "cursor" as const, icon: "cursor", title: "Cursor", sub: "Cursor coding agent", cli: "Cursor Agent CLI", runtimeLabel: "Cursor" },
-          { info: accountConnections.connections?.hermes, account: "hermes" as const, icon: "hermes", title: "Hermes", sub: "Hermes Agent · ACP", cli: "Hermes Agent CLI", runtimeLabel: "Hermes" },
+          { info: accountConnections.connections?.chatgpt, account: "chatgpt" as const, agent: "codex" as const, logoSize: 26, title: "Codex", sub: "Codex runtime · ChatGPT account", cli: "Codex CLI", runtimeLabel: "Codex" },
+          { info: accountConnections.connections?.cursor, account: "cursor" as const, agent: "cursor" as const, logoSize: 20, title: "Cursor", sub: "Cursor coding agent", cli: "Cursor Agent CLI", runtimeLabel: "Cursor" },
+          { info: accountConnections.connections?.hermes, account: "hermes" as const, agent: "hermes" as const, logoSize: 26, title: "Hermes", sub: "Hermes Agent · ACP", cli: "Hermes Agent CLI", runtimeLabel: "Hermes" },
         ] as card (card.account)}
         {@const info = card.info}
         <div class="connections-card" data-account={card.account}>
           <div class="connections-card-head">
             <span class="connections-card-icon" aria-hidden="true">
-              {#if card.icon === "chatgpt"}
-                <Sparkles size={16} strokeWidth={1.85} />
-              {:else if card.icon === "hermes"}
-                <Bot size={16} strokeWidth={1.85} />
-              {:else}
-                <MousePointer2 size={16} strokeWidth={1.85} />
-              {/if}
+              <ExternalAgentLogo agent={card.agent} size={card.logoSize} />
             </span>
             <div class="min-w-0 flex-1">
               <p class="connections-card-title">{card.title}</p>
@@ -318,20 +302,6 @@
 </section>
 
 <style>
-  .connections-steps {
-    margin: 0;
-    padding-left: 1.15rem;
-    font-size: 0.78rem;
-    line-height: 1.45;
-    display: grid;
-    gap: 0.2rem;
-  }
-
-  .connections-steps strong {
-    color: rgb(var(--color-surface-100));
-    font-weight: 600;
-  }
-
   .connections-cards {
     display: grid;
     gap: 0.75rem;
