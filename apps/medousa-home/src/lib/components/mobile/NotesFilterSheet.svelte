@@ -1,5 +1,14 @@
 <script lang="ts">
-  import { Check, Clock, FolderTree, LayoutGrid, Shapes, Tags } from "@lucide/svelte";
+  import {
+    Check,
+    Clock,
+    FolderOpen,
+    FolderTree,
+    LayoutGrid,
+    LoaderCircle,
+    Shapes,
+    Tags,
+  } from "@lucide/svelte";
   import { selectableGroupSpaces } from "$lib/config/vaultSpaces";
   import { haptic } from "$lib/haptics";
   import { vault, type LibraryBrowseMode } from "$lib/stores/vault.svelte";
@@ -20,9 +29,14 @@
 
   let sheetEl = $state<HTMLDivElement | null>(null);
   let headerEl = $state<HTMLElement | null>(null);
+  let switchingVaultId = $state<string | null>(null);
+  let vaultSwitchError = $state<string | null>(null);
 
   const visibleSpaces = $derived(selectableGroupSpaces(vault.showSystemNotes));
   const counts = $derived(vault.spaceCountsMap);
+  const showVaultPicker = $derived(
+    !vault.vaultRootsUnavailable && vault.vaultRoots.length > 1,
+  );
 
   const browseModes: { id: LibraryBrowseMode; label: string; Icon: Component }[] = [
     { id: "recent", label: "Recent", Icon: Clock },
@@ -53,6 +67,20 @@
     onLibrarySection(section);
   }
 
+  async function selectVaultRoot(rootId: string) {
+    if (switchingVaultId || rootId === vault.activeVaultRootId) return;
+    haptic("light");
+    switchingVaultId = rootId;
+    vaultSwitchError = null;
+    try {
+      await vault.switchVaultRoot(rootId);
+    } catch (error) {
+      vaultSwitchError = error instanceof Error ? error.message : String(error);
+    } finally {
+      switchingVaultId = null;
+    }
+  }
+
   $effect(() => {
     if (!open || !sheetEl) return;
     return attachMobileSheetGestures(sheetEl, headerEl, { onDismiss: dismiss });
@@ -81,6 +109,54 @@
       </header>
 
       <div class="mobile-turn-sheet-body mobile-notes-filter-body">
+        {#if librarySection === "notes" && showVaultPicker}
+          <section>
+            <h3 class="mobile-notes-filter-section-title">Vault</h3>
+            <div
+              class="mobile-turn-sheet-group mobile-notes-vault-group"
+              role="listbox"
+              aria-label="Vault folders"
+              aria-busy={switchingVaultId !== null}
+            >
+              {#each vault.vaultRoots as root, index (root.id)}
+                {@const selected = root.id === vault.activeVaultRootId}
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  disabled={switchingVaultId !== null}
+                  class="mobile-turn-sheet-row mobile-notes-vault-row {index > 0
+                    ? 'mobile-turn-sheet-row-divider'
+                    : ''} {selected ? 'mobile-notes-vault-row-active' : ''}"
+                  onclick={() => void selectVaultRoot(root.id)}
+                >
+                  <span class="mobile-notes-view-icon">
+                    <FolderOpen size={15} strokeWidth={1.75} />
+                  </span>
+                  <span class="mobile-turn-sheet-row-copy">
+                    <span class="mobile-turn-sheet-row-title">{root.label}</span>
+                    {#if root.isObsidian}
+                      <span class="mobile-turn-sheet-row-subtitle">Obsidian vault</span>
+                    {/if}
+                  </span>
+                  {#if switchingVaultId === root.id}
+                    <LoaderCircle
+                      size={15}
+                      strokeWidth={1.9}
+                      class="mobile-notes-vault-spinner"
+                    />
+                  {:else if selected}
+                    <Check size={16} strokeWidth={2.2} class="mobile-turn-sheet-row-check" />
+                  {/if}
+                </button>
+              {/each}
+            </div>
+            {#if vaultSwitchError}
+              <p class="mobile-notes-vault-error">{vaultSwitchError}</p>
+            {/if}
+          </section>
+        {/if}
+
         <section>
           <h3 class="mobile-notes-filter-section-title">Library</h3>
           <div class="mobile-notes-library-switch" role="tablist" aria-label="Library section">

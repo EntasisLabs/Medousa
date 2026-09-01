@@ -8,7 +8,7 @@
       "jsFiles": 265,
       "cssFiles": 33,
       "jsBytes": 3837380,
-      "jsGzipBytes": 1261951,
+      "jsGzipBytes": 1261963,
       "cssBytes": 632387,
       "cssGzipBytes": 103205,
       "largestJsChunkBytes": 808641
@@ -17,10 +17,10 @@
       "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
       "jsFiles": 299,
       "cssFiles": 48,
-      "jsBytes": 6328388,
-      "jsGzipBytes": 1968681,
-      "cssBytes": 973674,
-      "cssGzipBytes": 155173,
+      "jsBytes": 6330311,
+      "jsGzipBytes": 1969215,
+      "cssBytes": 974253,
+      "cssGzipBytes": 155250,
       "largestJsChunkBytes": 1454824
     }
   },
@@ -36,7 +36,7 @@
       "jsFiles": 265,
       "cssFiles": 33,
       "jsBytes": 3837380,
-      "jsGzipBytes": 1261951,
+      "jsGzipBytes": 1261963,
       "cssBytes": 632387,
       "cssGzipBytes": 103205,
       "largestJsChunkBytes": 808641
@@ -45,10 +45,10 @@
       "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
       "jsFiles": 299,
       "cssFiles": 48,
-      "jsBytes": 6328388,
-      "jsGzipBytes": 1968681,
-      "cssBytes": 973674,
-      "cssGzipBytes": 155173,
+      "jsBytes": 6330311,
+      "jsGzipBytes": 1969215,
+      "cssBytes": 974253,
+      "cssGzipBytes": 155250,
       "largestJsChunkBytes": 1454824
     }
   }

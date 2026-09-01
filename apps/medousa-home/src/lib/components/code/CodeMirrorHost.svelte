@@ -73,6 +73,7 @@
   import { buildCodeSyntaxThemeExtensions, getCodeSyntaxTheme } from "$lib/syntax/codeSyntaxThemes";
   import { codeSyntaxThemePreference } from "$lib/stores/codeSyntaxThemePreference.svelte";
   import { codeEditorFind } from "$lib/stores/codeEditorFind.svelte";
+  import { codeMirrorCspExtension } from "$lib/security/codeMirrorCsp";
 
   /**
    * Like CodeMirror basicSetup, with fold chevrons to the right of line numbers
@@ -414,6 +415,7 @@
 
   function buildExtensions(): Extension[] {
     return [
+      codeMirrorCspExtension(),
       codeEditorCoreSetup,
       codeEditorChromeTheme,
       languageCompartment.of(buildCodeEditorLanguageExtensions(resolvedLanguage)),
@@ -765,6 +767,7 @@
 <div
   bind:this={host}
   class="grapheme-codemirror-host code-codemirror-host h-full min-h-0 min-w-0 flex-1 overflow-hidden"
+  data-no-tab-swipe
   class:code-owned-find={Boolean(onFindRequested)}
   style={`--code-editor-font-size: ${readCodeEditorFontSize()}px; --code-syntax-bg: ${activeSyntaxTheme.canvas.background}; --code-syntax-fg: ${activeSyntaxTheme.canvas.foreground}; background-color: ${activeSyntaxTheme.canvas.background}; color: ${activeSyntaxTheme.canvas.foreground}`}
   role="textbox"
