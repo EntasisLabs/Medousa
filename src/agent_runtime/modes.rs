@@ -120,6 +120,13 @@ pub fn resolve_agent_mode(
             completion_profile: TurnCompletionProfile::HostScheduler,
             coder_phase: None,
         }),
+        AgentModeId::Instant => Ok(ResolvedAgentMode {
+            id: AgentModeId::Instant,
+            contract_revision: crate::agent_mode_context::INSTANT_CONTRACT_REVISION,
+            execution_lane: ModeExecutionLane::HostOrchestrated,
+            completion_profile: TurnCompletionProfile::HostScheduler,
+            coder_phase: None,
+        }),
         AgentModeId::Coder => Ok(ResolvedAgentMode {
             id: AgentModeId::Coder,
             contract_revision: "coder-v3",
@@ -141,6 +148,15 @@ pub fn list_agent_modes() -> AgentModeListResponse {
                 unavailable_reason: None,
             },
             AgentModeAvailability {
+                mode: AgentModeId::Instant,
+                label: "Instant".to_string(),
+                available: true,
+                contract_revision: Some(
+                    crate::agent_mode_context::INSTANT_CONTRACT_REVISION.to_string(),
+                ),
+                unavailable_reason: None,
+            },
+            AgentModeAvailability {
                 mode: AgentModeId::Coder,
                 label: "Coder".to_string(),
                 available: true,
@@ -154,7 +170,7 @@ pub fn list_agent_modes() -> AgentModeListResponse {
 /// Compile the exact host policy for this immutable mode snapshot.
 pub fn compiled_system_policy_for_mode(mode: &ResolvedAgentMode) -> CompiledSttpPolicy {
     let policy_mode = match (mode.id, mode.coder_phase) {
-        (AgentModeId::General, _) => SttpPolicyMode::General,
+        (AgentModeId::General | AgentModeId::Instant, _) => SttpPolicyMode::General,
         (AgentModeId::Coder, Some(CoderRuntimePhase::Work)) => SttpPolicyMode::CoderWork,
         (AgentModeId::Coder, _) => SttpPolicyMode::CoderSetup,
     };
@@ -200,6 +216,23 @@ mod tests {
     }
 
     #[test]
+    fn instant_reuses_general_runtime_contract() {
+        let mode = resolve_agent_mode(AgentModeId::Instant).expect("instant mode");
+        assert_eq!(mode.id, AgentModeId::Instant);
+        assert_eq!(mode.contract_revision, "instant-v2");
+        assert_eq!(mode.execution_lane, ModeExecutionLane::HostOrchestrated);
+        assert_eq!(
+            mode.completion_profile,
+            TurnCompletionProfile::HostScheduler
+        );
+        assert_eq!(mode.coder_phase, None);
+        assert_eq!(
+            system_prompt_for_mode(&mode),
+            system_prompt_for_mode(&resolve_agent_mode(AgentModeId::General).expect("general"))
+        );
+    }
+
+    #[test]
     fn coder_resolves_to_foreground_contract() {
         let mode = resolve_agent_mode(AgentModeId::Coder).expect("coder mode");
         assert_eq!(mode.contract_revision, "coder-v3");
@@ -222,12 +255,14 @@ mod tests {
     }
 
     #[test]
-    fn registry_reports_coder_available() {
+    fn registry_reports_all_modes_available() {
         let registry = list_agent_modes();
-        assert_eq!(registry.modes.len(), 2);
+        assert_eq!(registry.modes.len(), 3);
         assert!(registry.modes[0].available);
         assert!(registry.modes[1].available);
-        assert_eq!(registry.modes[1].mode, AgentModeId::Coder);
+        assert!(registry.modes[2].available);
+        assert_eq!(registry.modes[1].mode, AgentModeId::Instant);
+        assert_eq!(registry.modes[2].mode, AgentModeId::Coder);
     }
 
     #[test]

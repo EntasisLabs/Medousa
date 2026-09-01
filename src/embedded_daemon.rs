@@ -34,7 +34,7 @@ use medousa_types::component_store::{
     ComponentStoreQuery, ComponentStoreSetRequest, ComponentStoreSetResponse,
 };
 use medousa_types::daemon_api::{
-    AgentModeListResponse, AgentModeProposalListResponse, AgentModeProposalResponse,
+    AgentModeId, AgentModeListResponse, AgentModeProposalListResponse, AgentModeProposalResponse,
     AgentModeTransitionPolicy, ArtifactCommandRequest, ArtifactCommandResponse,
     ArtifactDeleteRequest, ArtifactDeleteResponse, ArtifactFetchRequest, ArtifactFetchResponse,
     ArtifactListUiRequest, ArtifactListUiResponse, ArtifactRetentionStatusResponse,
@@ -250,25 +250,66 @@ impl crate::delegation::DelegationCompletionSink for EmbeddedDelegationCompletio
     }
 }
 
-fn embedded_system_prompt() -> String {
+fn embedded_system_prompt(agent_mode: AgentModeId) -> String {
     static PROMPT: OnceLock<String> = OnceLock::new();
-    PROMPT
+    let policy = PROMPT
         .get_or_init(|| {
-            let policy = crate::prompt_policy::compile_sttp_policy(
+            crate::prompt_policy::compile_sttp_policy(
                 crate::prompt_policy::SttpPolicySelection::new(
                     crate::prompt_policy::SttpPolicyMode::General,
                     crate::prompt_policy::SttpPolicyActor::Host,
                 ),
             )
             .expect("built-in embedded STTP policy must compile")
-            .rendered;
-            format!(
-                "{policy}\n\n[MEDOUSA_HUD]\nsurface=personal_mobile\n\
-                 catalog_tool=cognition_tools_discover\n\
-                 web_tool=cognition_web_search"
-            )
+            .rendered
         })
-        .clone()
+        .clone();
+    let hud = if agent_mode == AgentModeId::Instant {
+        format!(
+            "[MEDOUSA_HUD]\nsurface=personal_mobile\nmode=instant\nweb_tool=cognition_web_search\n{}",
+            crate::agent_mode_context::INSTANT_CAPABILITY_CONTEXT
+        )
+    } else {
+        "[MEDOUSA_HUD]\nsurface=personal_mobile\ncatalog_tool=cognition_tools_discover\nweb_tool=cognition_web_search".to_string()
+    };
+    format!("{policy}\n\n{hud}")
+}
+
+#[derive(Clone)]
+struct EmbeddedModeToolRegistry {
+    inner: Arc<dyn ToolRegistry>,
+    allowlist: std::collections::HashSet<String>,
+}
+
+impl EmbeddedModeToolRegistry {
+    fn instant(inner: Arc<dyn ToolRegistry>) -> Self {
+        Self {
+            inner,
+            allowlist: crate::agent_mode_context::instant_tool_names(),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl ToolRegistry for EmbeddedModeToolRegistry {
+    async fn list_tools(&self) -> StasisResult<Vec<genai::chat::Tool>> {
+        Ok(self
+            .inner
+            .list_tools()
+            .await?
+            .into_iter()
+            .filter(|tool| self.allowlist.contains(tool.name.as_str()))
+            .collect())
+    }
+
+    async fn invoke_tool(&self, tool_name: &str, input: Value) -> StasisResult<Value> {
+        if !self.allowlist.contains(tool_name) {
+            return Err(StasisError::PortFailure(format!(
+                "tool not loaded in the active agent mode: {tool_name}"
+            )));
+        }
+        self.inner.invoke_tool(tool_name, input).await
+    }
 }
 
 fn embedded_sensitive_key(key: &str) -> bool {
@@ -1004,10 +1045,15 @@ impl EmbeddedNativeChatClient {
         request: ChatRequest,
         options: Option<&ChatOptions>,
     ) -> EmbeddedNativeChatRequest {
+        let mut system_parts = request
+            .system
+            .into_iter()
+            .filter(|value| !value.trim().is_empty())
+            .collect::<Vec<_>>();
         let messages = request
             .messages
             .into_iter()
-            .map(|message| {
+            .filter_map(|message| {
                 let mut content = String::new();
                 let mut attachments = Vec::new();
                 let mut tool_calls = Vec::new();
@@ -1042,19 +1088,29 @@ impl EmbeddedNativeChatClient {
                         ContentPart::ThoughtSignature(_) | ContentPart::Custom(_) => {}
                     }
                 }
-                EmbeddedNativeChatMessage {
-                    role: match message.role {
-                        ChatRole::System => "system",
-                        ChatRole::User => "user",
-                        ChatRole::Assistant => "assistant",
-                        ChatRole::Tool => "tool",
+                let role = match message.role {
+                    ChatRole::System => "system",
+                    ChatRole::User => "user",
+                    ChatRole::Assistant => "assistant",
+                    ChatRole::Tool => "tool",
+                };
+                if role == "system"
+                    && attachments.is_empty()
+                    && tool_calls.is_empty()
+                    && tool_call_id.is_none()
+                {
+                    if !content.trim().is_empty() {
+                        system_parts.push(content);
                     }
-                    .to_string(),
+                    return None;
+                }
+                Some(EmbeddedNativeChatMessage {
+                    role: role.to_string(),
                     content,
                     attachments,
                     tool_calls,
                     tool_call_id,
-                }
+                })
             })
             .collect();
         let tools = request
@@ -1070,7 +1126,7 @@ impl EmbeddedNativeChatClient {
         let native_options = options.cloned().unwrap_or_default();
         EmbeddedNativeChatRequest {
             model: self.model.clone(),
-            system: request.system,
+            system: (!system_parts.is_empty()).then(|| system_parts.join("\n\n")),
             messages,
             tools,
             options: EmbeddedNativeChatOptions {
@@ -2100,6 +2156,7 @@ impl EmbeddedDaemon {
         current_turn_user_message: ChatMessage,
         media_refs: Vec<medousa_types::daemon_api::MediaRef>,
         reasoning_effort: String,
+        agent_mode: AgentModeId,
         prior_messages: Vec<ChatMessage>,
         stream: TurnStreamEntry,
     ) {
@@ -2180,7 +2237,14 @@ impl EmbeddedDaemon {
         }
 
         let prompt_pipeline = PromptExecutionPipeline::new(self.chat_client.clone());
-        let tool_loop = MedousaToolLoopPipeline::new(prompt_pipeline, self.tool_registry.clone());
+        let tool_registry: Arc<dyn ToolRegistry> = if agent_mode == AgentModeId::Instant {
+            Arc::new(EmbeddedModeToolRegistry::instant(
+                self.tool_registry.clone(),
+            ))
+        } else {
+            self.tool_registry.clone()
+        };
+        let tool_loop = MedousaToolLoopPipeline::new(prompt_pipeline, tool_registry);
         let mut prompt_context = crate::reasoning_effort::prompt_execution_context(
             context.route().model(),
             Some(&reasoning_effort),
@@ -2188,7 +2252,7 @@ impl EmbeddedDaemon {
         prompt_context.correlation_id = Some(context.correlation_id().to_string());
         let request = ToolLoopExecutionRequest {
             user_prompt: inference_prompt,
-            system_prompt: Some(embedded_system_prompt()),
+            system_prompt: Some(embedded_system_prompt(agent_mode)),
             context: prompt_context,
             tool_name: String::new(),
             tool_input: json!({}),
@@ -4725,6 +4789,15 @@ impl EmbeddedDaemonClient {
                     unavailable_reason: None,
                 },
                 medousa_types::daemon_api::AgentModeAvailability {
+                    mode: medousa_types::daemon_api::AgentModeId::Instant,
+                    label: "Instant".to_string(),
+                    available: true,
+                    contract_revision: Some(
+                        crate::agent_mode_context::INSTANT_CONTRACT_REVISION.to_string(),
+                    ),
+                    unavailable_reason: None,
+                },
+                medousa_types::daemon_api::AgentModeAvailability {
                     mode: medousa_types::daemon_api::AgentModeId::Coder,
                     label: "Coder".to_string(),
                     available: false,
@@ -4935,8 +5008,11 @@ impl EmbeddedDaemonClient {
             }
         };
 
-        let prior_messages =
-            history_to_chat_messages(self.daemon.session_store.load_history(&session_id));
+        let agent_mode = crate::agent_mode_state::resolve_for_turn(session_id.as_str(), None).mode;
+        let prior_messages = history_to_chat_messages(
+            self.daemon.session_store.load_history(&session_id),
+            agent_mode,
+        );
         let turn_id = format!("daemon-turn-{}", Uuid::new_v4().simple());
         let stream_url = format!("{EMBEDDED_STREAM_SCHEME}/{turn_id}/stream");
         let accepted_at_utc = Utc::now();
@@ -5016,6 +5092,7 @@ impl EmbeddedDaemonClient {
                     current_turn_user_message,
                     media_refs,
                     reasoning_effort,
+                    agent_mode,
                     prior_messages,
                     stream,
                 )
@@ -5331,16 +5408,42 @@ async fn register_or_heartbeat_node(
         .context("register embedded Stasis node")
 }
 
-fn history_to_chat_messages(history: Vec<ConversationTurn>) -> Vec<ChatMessage> {
-    history
-        .into_iter()
-        .filter_map(|turn| match turn.role.as_str() {
-            "user" => Some(ChatMessage::user(turn.content)),
-            "assistant" | "agent" => Some(ChatMessage::assistant(turn.content)),
-            "system" => Some(ChatMessage::system(turn.content)),
-            _ => None,
-        })
-        .collect()
+fn history_to_chat_messages(
+    history: Vec<ConversationTurn>,
+    agent_mode: AgentModeId,
+) -> Vec<ChatMessage> {
+    let Some(limits) = crate::agent_mode_context::context_limits_for_mode(agent_mode) else {
+        return history
+            .into_iter()
+            .filter_map(conversation_turn_to_chat_message)
+            .collect();
+    };
+
+    let mut remaining = limits.max_prior_total_chars;
+    let mut messages = Vec::new();
+    for mut turn in history.into_iter().rev().take(limits.hot_window_turns) {
+        if remaining == 0 {
+            break;
+        }
+        let message_budget = limits.max_single_prior_message_chars.min(remaining);
+        turn.content = crate::text_budget::truncate_text_for_budget(&turn.content, message_budget);
+        let message_chars = turn.content.chars().count();
+        if let Some(message) = conversation_turn_to_chat_message(turn) {
+            remaining = remaining.saturating_sub(message_chars);
+            messages.push(message);
+        }
+    }
+    messages.reverse();
+    messages
+}
+
+fn conversation_turn_to_chat_message(turn: ConversationTurn) -> Option<ChatMessage> {
+    match turn.role.as_str() {
+        "user" => Some(ChatMessage::user(turn.content)),
+        "assistant" | "agent" => Some(ChatMessage::assistant(turn.content)),
+        "system" => Some(ChatMessage::system(turn.content)),
+        _ => None,
+    }
 }
 
 async fn emit_provider_delta(
@@ -5440,8 +5543,8 @@ fn embedded_ticket_phase(outcome: TurnCompletionOutcomeV3) -> &'static str {
 #[cfg(test)]
 mod tests {
     use std::future::pending;
-    use std::sync::atomic::AtomicUsize;
     use std::sync::Mutex;
+    use std::sync::atomic::AtomicUsize;
 
     use async_trait::async_trait;
     use genai::ModelIden;
@@ -5512,13 +5615,34 @@ query MobileProbe {
 
     #[test]
     fn embedded_prompt_uses_general_sttp_and_tool_hud() {
-        let prompt = embedded_system_prompt();
+        let prompt = embedded_system_prompt(AgentModeId::General);
         assert!(prompt.contains("p1_core(.99)"));
         assert!(prompt.contains("p2_mode_general(.99)"));
         assert!(prompt.contains("p3_actor_host(.99)"));
         assert!(prompt.contains("[MEDOUSA_HUD]"));
         assert!(prompt.contains("catalog_tool=cognition_tools_discover"));
         assert!(prompt.contains("web_tool=cognition_web_search"));
+    }
+
+    #[test]
+    fn instant_embedded_prompt_keeps_general_policy_with_smaller_hud() {
+        let prompt = embedded_system_prompt(AgentModeId::Instant);
+        assert!(prompt.contains("p2_mode_general(.99)"));
+        assert!(prompt.contains("mode=instant"));
+        assert!(prompt.contains("web_tool=cognition_web_search"));
+        assert!(prompt.contains("capability_tool=cognition_capability"));
+        assert!(prompt.contains("mcp_actions=mcp.find|mcp.invoke"));
+        assert!(prompt.contains("schema_tool=cognition_schema"));
+        assert!(!prompt.contains("catalog_tool=cognition_tools_discover"));
+    }
+
+    #[test]
+    fn instant_embedded_history_only_loads_the_recent_window() {
+        let history = (0..12)
+            .map(|index| crate::turn_parts::user_conversation_turn(format!("turn {index}")))
+            .collect();
+        let messages = history_to_chat_messages(history, AgentModeId::Instant);
+        assert_eq!(messages.len(), 6);
     }
 
     fn text_response(text: &str) -> ChatResponse {
@@ -5739,13 +5863,33 @@ query MobileProbe {
         }
     }
 
+    #[test]
+    fn native_inference_hoists_system_messages_for_strict_templates() {
+        let inference = Arc::new(NativeInferenceProbe::default());
+        let client = EmbeddedNativeChatClient::new("qwen3.5-2b-4bit".to_string(), inference);
+        let request = ChatRequest::new(vec![
+            ChatMessage::system("Primary policy"),
+            ChatMessage::user("Hello"),
+            ChatMessage::system("Round control"),
+        ])
+        .with_system("Host policy");
+
+        let native = client.native_request(request, None);
+
+        assert_eq!(
+            native.system.as_deref(),
+            Some("Host policy\n\nPrimary policy\n\nRound control")
+        );
+        assert_eq!(native.messages.len(), 1);
+        assert_eq!(native.messages[0].role, "user");
+        assert_eq!(native.messages[0].content, "Hello");
+    }
+
     #[tokio::test]
     async fn native_inference_preserves_messages_tools_options_and_streams() {
         let inference = Arc::new(NativeInferenceProbe::default());
-        let client = EmbeddedNativeChatClient::new(
-            "gemma-4-e2b-it-4bit".to_string(),
-            inference.clone(),
-        );
+        let client =
+            EmbeddedNativeChatClient::new("gemma-4-e2b-it-4bit".to_string(), inference.clone());
         let previous_call = ToolCall {
             call_id: "previous-call".to_string(),
             fn_name: "lookup_weather".to_string(),
@@ -5761,9 +5905,7 @@ query MobileProbe {
                     Some("window.png".to_string()),
                 ),
             ])),
-            ChatMessage::assistant(MessageContent::from_tool_calls(vec![
-                previous_call.clone(),
-            ])),
+            ChatMessage::assistant(MessageContent::from_tool_calls(vec![previous_call.clone()])),
             ChatMessage::tool(MessageContent::from_tool_responses(vec![
                 genai::chat::ToolResponse::from_tool_call(&previous_call, "sunny"),
             ])),
@@ -5812,10 +5954,16 @@ query MobileProbe {
             .expect("native inference probe lock");
         let request = requests.first().expect("captured native request");
         assert_eq!(request.model, "gemma-4-e2b-it-4bit");
-        assert_eq!(request.system.as_deref(), Some("Keep the response private."));
+        assert_eq!(
+            request.system.as_deref(),
+            Some("Keep the response private.")
+        );
         assert_eq!(request.messages[0].attachments[0].content_type, "image/png");
         assert_eq!(request.messages[1].tool_calls[0].id, "previous-call");
-        assert_eq!(request.messages[2].tool_call_id.as_deref(), Some("previous-call"));
+        assert_eq!(
+            request.messages[2].tool_call_id.as_deref(),
+            Some("previous-call")
+        );
         assert_eq!(request.tools[0].name, "lookup_weather");
         assert_eq!(request.options.max_tokens, Some(96));
         assert_eq!(request.options.stop_sequences, ["DONE"]);

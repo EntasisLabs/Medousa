@@ -11,6 +11,7 @@ const DEFAULT_OLLAMA_MODEL: &str = "llama3.2";
 const IOS_LOCAL_MODELS: &[&str] = &[
     "gemma-4-e2b-it-4bit",
     "qwen3.5-2b-4bit",
+    "lfm2.5-2.6b-4bit",
     "lfm2.5-vl-1.6b-4bit",
     "ministral-3-3b-instruct-4bit",
 ];

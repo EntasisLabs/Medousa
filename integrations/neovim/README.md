@@ -52,7 +52,7 @@ conversation selection when present and is otherwise optional.
 - Press `A` on a settled answer—or directly inside a code fence—to inspect a
   unified diff. Apply with `a`, copy with `y`, or cancel with `q`.
 - Press `<leader>ms` to continue, rename, or delete daemon-owned conversations.
-- Press `<leader>mm` to switch General/Coder and `<leader>mp` to choose,
+- Press `<leader>mm` to switch Instant/General/Coder and `<leader>mp` to choose,
   create, or detach a daemon-governed project. An unbound Coder send opens the
   same picker without consuming the draft.
 - Resolve budget and tool-permission prompts in place; `:MedousaAttention`

@@ -102,9 +102,7 @@ mod tests {
             "medousa-local",
             "ministral-3-3b-instruct-4bit"
         ));
-        assert!(!infer_supports_vision(
-            "medousa-local",
-            "qwen3.5-2b-4bit"
-        ));
+        assert!(!infer_supports_vision("medousa-local", "qwen3.5-2b-4bit"));
+        assert!(!infer_supports_vision("medousa-local", "lfm2.5-2.6b-4bit"));
     }
 }

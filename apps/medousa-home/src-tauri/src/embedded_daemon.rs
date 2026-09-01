@@ -234,13 +234,24 @@ impl EmbeddedNativeInference for HomeNativeInference {
             done: bridge_tx,
             armed: true,
         };
-        let result = self
-            .plugin
-            .generate(&request_id, request, move |event| {
-                let _ = callback_tx.send(Some(event));
-            })
+        // Keep Tauri's mobile plugin future alive independently from this
+        // request future. `run_mobile_plugin_async` panics if its Rust receiver
+        // is dropped before Swift reports cancellation or another error.
+        // Dropping this outer future still triggers `NativeRequestGuard`, which
+        // cancels Swift, while the detached task safely receives that reply.
+        let plugin = self.plugin.clone();
+        let call_request_id = request_id.clone();
+        let call = tauri::async_runtime::spawn(async move {
+            plugin
+                .generate(&call_request_id, request, move |event| {
+                    let _ = callback_tx.send(Some(event));
+                })
+                .await
+                .map_err(|error| error.to_string())
+        });
+        let result = call
             .await
-            .map_err(|error| error.to_string());
+            .map_err(|error| format!("join native inference request: {error}"))?;
         guard.finish();
         relay
             .await

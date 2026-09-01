@@ -62,26 +62,39 @@ On iOS, **Medousa Local** runs MLX models inside the app. The prompt, model
 weights, and generated tokens stay on the device; the Embedded Personal daemon
 still owns conversation history, tools, and the agent loop.
 
-Choose **Medousa Local** in the model picker, then manage downloads under
-**Settings → Connection → Private brain**. Medousa recommends a small model for
-the device and also offers other text and vision checkpoints. You can paste a
-full Hugging Face MLX repository ID when you want a compatible model that is not
-in the curated list. Downloaded models remain available offline and can be
-unloaded to release memory or removed to reclaim storage.
+Manage downloads under **Settings → Connection → Private brain**, then choose a
+verified on-device model under **Medousa Local** in the model picker. Keeping
+storage management in one place makes incomplete downloads visible and
+removable instead of presenting them as usable models. Medousa recommends a
+small model for the device and also offers other text and vision checkpoints.
+You can paste a full Hugging Face MLX repository ID when you want a compatible
+model that is not in the curated list. Downloaded models remain available
+offline and can be unloaded to release memory or removed to reclaim storage.
+
+The curated LFM choices separate their jobs: **LFM2.5 2.6B** is the stronger
+text, reasoning, and tool-use model, while **LFM2.5 VL 1.6B** remains available
+when a conversation needs image understanding.
 
 Desktop keeps using the existing optional local-engine package. Selecting
 Medousa Local never silently changes a remote workshop: the model runs wherever
 the selected workshop has inference authority.
 
-## Choose General or Coder
+## Choose Instant, General, or Coder
 
 Source and mode are independent:
 
+- **Instant** keeps General's behavior and agent loop but loads only recent
+  conversation context and a compact everyday tool set. MCP capabilities stay
+  available through lazy search and invocation instead of preloading every MCP
+  tool schema. It is a good fit for quick replies and private models running on
+  a phone.
 - **General** is for everyday conversation, planning, and research. It does not
   require a project.
 - **Coder** is repository-aware and requires a governed Forge project. Choose or
   create that project from the project control above chat.
 
-General/Coder remains available with Medousa, Codex, Cursor, and Hermes. When
-an external source runs in Coder mode, Medousa launches it inside the governed
-project worktree rather than an arbitrary folder.
+Modes remain available with Medousa, Codex, Cursor, and Hermes. Instant changes
+only the context loaded for the turn; it does not change generation settings or
+the runtime that owns the loop. When an external source runs in Coder mode,
+Medousa launches it inside the governed project worktree rather than an
+arbitrary folder.

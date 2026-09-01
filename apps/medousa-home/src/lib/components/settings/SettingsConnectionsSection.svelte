@@ -314,8 +314,8 @@
           </div>
         {:else if nativeChatGptReady}
           <p class="connections-note workshop-faint">
-            Ready for Medousa’s General and Coder agents. In Chat, keep the
-            Medousa runtime and choose OpenAI · ChatGPT account.
+            Ready for Medousa’s Instant, General, and Coder agents. In Chat,
+            keep the Medousa runtime and choose OpenAI · ChatGPT account.
           </p>
         {:else if nativeChatGpt?.status === "reauth_required"}
           <p class="connections-note workshop-faint">

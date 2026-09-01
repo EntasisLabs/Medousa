@@ -44,7 +44,7 @@ available for follow-up questions without appearing as text in the transcript.
 
 The controls above the composer show the conversation's Medousa mode and
 bound Forge undertaking. These are daemon-owned: opening the same conversation
-in Medousa preserves the same General/Coder selection and project binding.
+in Medousa preserves the same Instant/General/Coder selection and project binding.
 Choose **Coder** at any time. If the conversation has no project yet, the
 project control lets you continue ready work, create a blank codebase, or let
 Medousa choose or create the project from your message. New codebases are

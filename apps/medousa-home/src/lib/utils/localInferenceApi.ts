@@ -191,6 +191,17 @@ export async function waitForModelDownload(
   jobId: string,
   onProgress?: (progress: ModelDownloadProgress) => void,
 ): Promise<ModelDownloadProgress> {
+  if (!onProgress) {
+    while (true) {
+      const progress = await fetchDownloadStatus(jobId);
+      if (progress.phase === "ready") return progress;
+      if (progress.phase === "failed") {
+        throw new Error(progress.error ?? progress.message);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    }
+  }
+
   const unlisten = await onModelDownloadProgress((progress) => {
     if (progress.jobId === jobId) {
       onProgress?.(progress);
@@ -221,13 +232,14 @@ export async function ensureLocalModelReady(
   onProgress?: (progress: ModelDownloadProgress) => void,
 ): Promise<ModelDownloadProgress> {
   const models = await fetchLocalModels();
-  if (models.installed.some((entry) => entry.modelId === modelId)) {
+  const installed = models.installed.find((entry) => entry.modelId === modelId && entry.verified);
+  if (installed) {
     return {
       jobId: "installed",
       modelId,
       phase: "ready",
-      bytesDone: 0,
-      bytesTotal: 0,
+      bytesDone: installed.bytesOnDisk,
+      bytesTotal: installed.bytesOnDisk,
       percent: 100,
       message: "Already installed",
     };

@@ -41,14 +41,16 @@ describe("planAgentWorkspace", () => {
   });
 
   it("keeps a plain external chat explicitly launched without a project", () => {
-    expect(
-      planAgentWorkspace({
-        runtime: "codex",
-        mode: "general",
-        bindingWorkId: null,
-        agentSessionId: "agent-1",
-        agentWorkId: null,
-      }),
-    ).toBe("keep");
+    for (const mode of ["instant", "general"] as const) {
+      expect(
+        planAgentWorkspace({
+          runtime: "codex",
+          mode,
+          bindingWorkId: null,
+          agentSessionId: "agent-1",
+          agentWorkId: null,
+        }),
+      ).toBe("keep");
+    }
   });
 });

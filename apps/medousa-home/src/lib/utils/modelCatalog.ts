@@ -99,7 +99,7 @@ export const CURATED_MODEL_PICKS: ModelPick[] = [
 export function defaultProviderModel(providerId: string): string | undefined {
   const normalized = providerId.trim().toLowerCase();
   if (normalized === "medousa-local" && isTauriIos()) {
-    return "gemma-4-e2b-it-4bit";
+    return "qwen3.5-2b-4bit";
   }
   return PROVIDER_DEFAULT_MODELS[normalized];
 }

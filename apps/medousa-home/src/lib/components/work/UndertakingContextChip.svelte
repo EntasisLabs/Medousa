@@ -27,6 +27,7 @@
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import type { AgentModeId } from "$lib/types/session";
   import {
     openTrackedTerminal,
     startTrackedAgent,
@@ -54,7 +55,7 @@
   );
   let busy = $state(false);
   let error = $state<string | null>(null);
-  let activeMode = $state<"general" | "coder">("general");
+  let activeMode = $state<AgentModeId>("general");
   let chooserOpen = $state(false);
   let chooserTriggerEl = $state<HTMLButtonElement | null>(null);
   let chooserPanelEl = $state<HTMLDivElement | null>(null);

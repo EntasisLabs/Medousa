@@ -4,6 +4,8 @@
 //! the same daemon product. The embedded profile exposes the existing portable
 //! authority, session, turn, and runtime modules without server/desktop hosts.
 
+pub mod agent_mode_context;
+
 #[cfg(feature = "full-daemon")]
 include!("full_daemon.rs");
 

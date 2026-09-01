@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { Check, ChevronDown, Code2, Sparkles } from "@lucide/svelte";
+  import { Check, ChevronDown, Code2, Sparkles, Zap } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import {
     getSessionAgentMode,
@@ -27,6 +27,12 @@
       contract_revision: "general-v1",
     },
     {
+      mode: "instant",
+      label: "Instant",
+      available: true,
+      contract_revision: "instant-v2",
+    },
+    {
       mode: "coder",
       label: "Coder",
       available: true,
@@ -48,6 +54,12 @@
 
   function isAvailable(mode: AgentModeAvailability): boolean {
     return mode.available;
+  }
+
+  function modeDescription(mode: AgentModeId): string {
+    if (mode === "instant") return "Faster chat with focused recent context";
+    if (mode === "coder") return "Repository-aware engineering";
+    return "Life, planning, research, and everyday work";
   }
 
   $effect(() => {
@@ -138,6 +150,8 @@
 {#snippet modeIcon(mode: AgentModeId, size = 13)}
   {#if mode === "coder"}
     <Code2 {size} strokeWidth={1.9} class="shrink-0 opacity-75" />
+  {:else if mode === "instant"}
+    <Zap {size} strokeWidth={1.9} class="shrink-0 opacity-75" />
   {:else}
     <Sparkles {size} strokeWidth={1.9} class="shrink-0 opacity-75" />
   {/if}
@@ -197,9 +211,7 @@
                 <span class="block text-[13px] font-medium text-surface-100">{mode.label}</span>
                 <span class="workshop-faint mt-0.5 block text-[11px]">
                   {available
-                    ? mode.mode === "general"
-                      ? "Life, planning, research, and everyday work"
-                      : "Repository-aware engineering"
+                    ? modeDescription(mode.mode)
                     : mode.mode === "coder" && mode.available
                       ? "Open or bind a Forge undertaking first"
                       : mode.unavailable_reason ?? "Not ready on this workshop"}

@@ -15,7 +15,6 @@
     type LocalCatalogResponse,
     type LocalEngineStatus,
     type LocalHardwareResponse,
-    type ModelDownloadProgress,
   } from "$lib/utils/localInferenceApi";
   import { startEngine, waitForEngine } from "$lib/utils/providersApi";
   import { localBrainOnDeviceHint, onThisHostPhrase } from "$lib/platformCopy";
@@ -33,7 +32,6 @@
   let engineStatus = $state<LocalEngineStatus | null>(null);
   let localBusy = $state(false);
   let localMessage = $state<string | null>(null);
-  let downloadProgress = $state<ModelDownloadProgress | null>(null);
   let downloadingModelId = $state<string | null>(null);
   let customModelId = $state("");
 
@@ -66,6 +64,7 @@
   });
 
   async function refreshLocalPanel() {
+    let activeDownloadModelId: string | null = null;
     localBusy = true;
     localMessage = null;
     try {
@@ -88,31 +87,35 @@
       localCatalog = catalog;
       installedModels = models.installed;
       engineStatus = status;
+      activeDownloadModelId = models.activeDownloads[0]?.modelId ?? null;
     } catch (err) {
       localMessage = err instanceof Error ? err.message : String(err);
     } finally {
       localBusy = false;
+      if (activeDownloadModelId && !downloadingModelId) {
+        const label = catalogModels.find((model) => model.id === activeDownloadModelId)?.displayName;
+        void downloadModel(activeDownloadModelId, label ?? activeDownloadModelId);
+      }
     }
   }
 
   async function downloadModel(modelId: string, label = modelId) {
     const normalized = modelId.trim();
-    if (!normalized) return;
+    if (!normalized || downloadingModelId) return;
     localBusy = true;
     downloadingModelId = normalized;
     localMessage = `Downloading ${label}…`;
     try {
-      downloadProgress = await ensureLocalModelReady(normalized, (progress) => {
-        downloadProgress = progress;
-      });
+      await ensureLocalModelReady(normalized);
       await refreshLocalPanel();
       localMessage = `${label} is ready.`;
       customModelId = "";
     } catch (err) {
-      localMessage = err instanceof Error ? err.message : String(err);
+      const message = err instanceof Error ? err.message : String(err);
+      await refreshLocalPanel();
+      localMessage = message;
     } finally {
       localBusy = false;
-      downloadProgress = null;
       downloadingModelId = null;
     }
   }
@@ -205,7 +208,7 @@
           aria-label="Re-probe hardware"
           onclick={() => void refreshLocalPanel()}
         >
-          {#if localBusy && !downloadProgress}
+          {#if localBusy && !downloadingModelId}
             <LoaderCircle size={15} strokeWidth={1.75} class="brain-spin" aria-hidden="true" />
           {:else}
             <RefreshCw size={15} strokeWidth={1.75} />
@@ -214,26 +217,18 @@
       </span>
     </div>
 
-    {#if downloadProgress}
-      <div class="brain-tile brain-tile-col">
-        <div class="brain-progress-track">
-          <div
-            class="brain-progress-fill"
-            style:width="{Math.max(4, Math.round(downloadProgress.percent))}%"
-          ></div>
-        </div>
-        <span class="brain-meta">{downloadProgress.message}</span>
-      </div>
-    {/if}
-
     {#each catalogModels as model (model.id)}
       {@const installed = installedModel(model.id)}
       <div class="brain-tile">
         <span class="brain-copy">
           <span class="brain-title">{model.displayName}</span>
-          <span class="brain-meta">{catalogMeta(model)}</span>
+          <span class="brain-meta">
+            {catalogMeta(model)}{installed && !installed.verified
+              ? ` · ${formatBytes(installed.bytesOnDisk)} cached · incomplete`
+              : ""}
+          </span>
         </span>
-        {#if installed}
+        {#if installed?.verified}
           <button
             type="button"
             class="brain-cta"
@@ -263,8 +258,19 @@
             {:else}
               <Download size={14} strokeWidth={1.75} aria-hidden="true" />
             {/if}
-            Download
+            {downloadingModelId === model.id ? "Downloading…" : installed ? "Resume" : "Download"}
           </button>
+          {#if installed}
+            <button
+              type="button"
+              class="brain-cta brain-cta-danger"
+              disabled={disabled || localBusy}
+              aria-label="Remove incomplete {model.displayName} download"
+              onclick={() => void removeModel(model.id)}
+            >
+              <Trash2 size={14} strokeWidth={1.75} />
+            </button>
+          {/if}
         {/if}
       </div>
     {/each}
@@ -273,18 +279,32 @@
       <div class="brain-tile">
         <span class="brain-copy">
           <span class="brain-title">{entry.modelId}</span>
-          <span class="brain-meta">
-            Custom MLX checkpoint · {formatBytes(entry.bytesOnDisk)}
-          </span>
+          <span class="brain-meta">Custom MLX checkpoint · {formatBytes(entry.bytesOnDisk)}{entry.verified ? "" : " cached · incomplete"}</span>
         </span>
-        <button
-          type="button"
-          class="brain-cta"
-          disabled={disabled || localBusy || activeModelId === entry.modelId}
-          onclick={() => void loadEngine(entry.modelId)}
-        >
-          {activeModelId === entry.modelId ? "Loaded" : "Load"}
-        </button>
+        {#if entry.verified}
+          <button
+            type="button"
+            class="brain-cta"
+            disabled={disabled || localBusy || activeModelId === entry.modelId}
+            onclick={() => void loadEngine(entry.modelId)}
+          >
+            {activeModelId === entry.modelId ? "Loaded" : "Load"}
+          </button>
+        {:else}
+          <button
+            type="button"
+            class="brain-cta"
+            disabled={disabled || localBusy}
+            onclick={() => void downloadModel(entry.modelId)}
+          >
+            {#if downloadingModelId === entry.modelId}
+              <LoaderCircle size={14} strokeWidth={1.75} class="brain-spin" aria-hidden="true" />
+            {:else}
+              <Download size={14} strokeWidth={1.75} aria-hidden="true" />
+            {/if}
+            {downloadingModelId === entry.modelId ? "Downloading…" : "Resume"}
+          </button>
+        {/if}
         <button
           type="button"
           class="brain-cta brain-cta-danger"
@@ -365,13 +385,6 @@
     border-radius: 0.65rem;
     border: 1px solid rgb(var(--color-surface-500) / 0.32);
     background: rgb(var(--color-surface-900) / 0.28);
-  }
-
-  .brain-tile-col {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.45rem;
-    min-height: 0;
   }
 
   .brain-copy {
@@ -492,20 +505,6 @@
   .brain-custom-input:focus {
     border-color: rgb(var(--color-primary-500) / 0.55);
     outline: none;
-  }
-
-  .brain-progress-track {
-    height: 0.35rem;
-    overflow: hidden;
-    border-radius: 999px;
-    background: rgb(var(--color-surface-800) / 0.8);
-  }
-
-  .brain-progress-fill {
-    height: 100%;
-    border-radius: inherit;
-    background: rgb(var(--color-primary-500) / 0.85);
-    transition: width 160ms ease;
   }
 
   .brain-footnote {
