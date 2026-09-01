@@ -7,6 +7,14 @@ use std::time::Duration;
 const DEFAULT_OLLAMA_BASE_URL: &str = "http://127.0.0.1:11434/v1/";
 const OLLAMA_TAGS_URL: &str = "http://127.0.0.1:11434/api/tags";
 const DEFAULT_OLLAMA_MODEL: &str = "llama3.2";
+#[cfg(target_os = "ios")]
+const IOS_LOCAL_MODELS: &[&str] = &[
+    "gemma-4-e2b-it-4bit",
+    "qwen3.5-2b-4bit",
+    "lfm2.5-2.6b-4bit",
+    "lfm2.5-vl-1.6b-4bit",
+    "ministral-3-3b-instruct-4bit",
+];
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -53,6 +61,10 @@ fn detect_local_ollama_tcp() -> bool {
 }
 
 fn default_model_for_provider(provider: &str) -> String {
+    #[cfg(target_os = "ios")]
+    if provider.trim().eq_ignore_ascii_case("medousa-local") {
+        return IOS_LOCAL_MODELS[0].to_string();
+    }
     provider_catalog::find_provider(provider)
         .map(|spec| spec.default_model.to_string())
         .unwrap_or_else(|| "gpt-5.4-mini".to_string())
@@ -312,7 +324,11 @@ pub async fn providers_validate_key(
     if provider_id == "medousa-local" {
         return Ok(ProvidersValidateKeyResult {
             ok: true,
-            message: "Use Settings → Voice to download and load the private brain".to_string(),
+            message: if cfg!(target_os = "ios") {
+                "Private on-device inference is ready; models download when first used".to_string()
+            } else {
+                "Use Settings → Voice to download and load the private brain".to_string()
+            },
             suggested_model: Some(suggested_model),
         });
     }
@@ -440,8 +456,24 @@ pub async fn providers_list_models(
 
     if provider_id == "medousa-local" {
         return Ok(ProvidersListModelsResult {
-            source: "catalog.default".to_string(),
-            models: vec![default_model_for_provider(&provider_id)],
+            source: if cfg!(target_os = "ios") {
+                "native.mlx".to_string()
+            } else {
+                "catalog.default".to_string()
+            },
+            models: {
+                #[cfg(target_os = "ios")]
+                {
+                    IOS_LOCAL_MODELS
+                        .iter()
+                        .map(|model| (*model).to_string())
+                        .collect()
+                }
+                #[cfg(not(target_os = "ios"))]
+                {
+                    vec![default_model_for_provider(&provider_id)]
+                }
+            },
         });
     }
 

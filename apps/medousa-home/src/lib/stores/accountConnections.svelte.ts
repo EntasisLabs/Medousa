@@ -45,7 +45,7 @@ function createAccountConnectionsStore() {
 
   /**
    * Poll until the account reports signed_in (or timeout). Used after kicking
-   * off vendor login in the browser / terminal so Connections can flip status
+   * off vendor login in the browser / terminal so External Agents can flip status
    * without a manual refresh.
    */
   async function awaitSignedIn(

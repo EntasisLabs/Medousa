@@ -105,10 +105,12 @@ context is advisory and never grants filesystem or vault authority.
 `InteractiveTurnRequest.agent_mode` is a per-turn behavioral override,
 independent of interactive/background ticket delivery. When omitted, the
 daemon checks the active task lease, then the session selection, then defaults
-to `general`. `coder` additionally requires an active Forge undertaking and
-its turn-scoped authority for file, shell, and engineering tools; without a
-binding it enters the restricted project-setup phase. Resolution is
-deterministic and does not require an additional model call.
+to `general`. `instant` uses the General execution path with a smaller recent
+history and tool context; it does not change provider or generation behavior.
+`coder` additionally requires an active Forge undertaking and its turn-scoped
+authority for file, shell, and engineering tools; without a binding it enters
+the restricted project-setup phase. Resolution is deterministic and does not
+require an additional model call.
 
 `InteractiveTurnRequest.code_project_setup_authorized` (also accepted by
 `POST /v1/turns`) records that the principal explicitly selected a surface

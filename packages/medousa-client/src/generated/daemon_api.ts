@@ -276,7 +276,7 @@ export interface InteractiveTurnResponse {
   turn_id: string;
 }
 
-export type AgentModeId = "general" | "coder";
+export type AgentModeId = "general" | "instant" | "coder";
 
 export interface CodeIntentContext {
   active_path?: string | null;

@@ -32,7 +32,8 @@ describe("settings nav groups", () => {
     expect(settingsSectionById("network")?.hint).toBe("Seats, phone, peers & channels");
     expect(settingsSectionById("network")?.group).toBe("app");
     expect(settingsSectionById("connections")?.group).toBe("app");
-    expect(settingsSectionById("connections")?.label).toBe("Connections");
+    expect(settingsSectionById("connections")?.label).toBe("External Agents");
+    expect(settingsSectionById("connections")?.hint).toBe("Codex, Cursor & Hermes");
     expect(SETTINGS_SECTIONS.filter((section) => section.group === "app")).toHaveLength(5);
 
     expect(settingsSectionById("packages")?.group).toBe("machine");

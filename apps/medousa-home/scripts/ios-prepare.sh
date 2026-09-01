@@ -125,11 +125,25 @@ strip_block = """    postBuildScripts:
           fi
         name: Strip libapp.a from bundle
         basedOnDependencyAnalysis: false
+      - script: |
+          bash "${SRCROOT}/../../../scripts/prepare-ios-mlx-metallib.sh" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
+        name: Bundle MLX Metal Library
+        basedOnDependencyAnalysis: false
 """
 if "Strip libapp.a from bundle" not in text:
     anchor = "    preBuildScripts:"
     if anchor in text:
         text = text.replace(anchor, strip_block + anchor, 1)
+
+mlx_bundle_entry = """      - script: |
+          bash "${SRCROOT}/../../../scripts/prepare-ios-mlx-metallib.sh" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
+        name: Bundle MLX Metal Library
+        basedOnDependencyAnalysis: false
+"""
+if "Bundle MLX Metal Library" not in text:
+    anchor = "    postBuildScripts:\n"
+    if anchor in text:
+        text = text.replace(anchor, anchor + mlx_bundle_entry, 1)
 
 # Live Activity: enable Rust/Swift bridge during Xcode Rust build.
 if "MEDOUSA_LIVE_ACTIVITY" not in text:

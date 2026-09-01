@@ -386,19 +386,49 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
         activation.reason = "coder_mode_requires_tool_capable_foreground_loop";
     }
 
-    let hot_window_turns = parse_usize_with_bounds(
-        &params.settings.slice_hot_window_turns,
-        DEFAULT_HOT_WINDOW_TURNS,
-        MIN_HOT_WINDOW_TURNS,
-        MAX_HOT_WINDOW_TURNS,
-    );
-    let cold_window_turns = parse_usize_with_bounds(
-        &params.settings.slice_cold_window_turns,
-        DEFAULT_COLD_WINDOW_TURNS,
-        MIN_COLD_WINDOW_TURNS,
-        MAX_COLD_WINDOW_TURNS,
-    )
-    .max(hot_window_turns);
+    let (hot_window_turns, cold_window_turns, prior_limits) =
+        if let Some(limits) = crate::agent_mode_context::context_limits_for_mode(
+            params.prepared.agent_mode.id,
+        ) {
+            (
+                limits.hot_window_turns,
+                limits.cold_window_turns,
+                PriorMessageLimits {
+                    max_prior_total_chars: limits.max_prior_total_chars,
+                    max_single_prior_message_chars: limits.max_single_prior_message_chars,
+                    hot_window_char_budget: limits.hot_window_char_budget,
+                    cold_window_char_budget: limits.cold_window_char_budget,
+                    cold_summary_line_chars: limits.cold_summary_line_chars,
+                    include_auxiliary_history: limits.include_auxiliary_history,
+                },
+            )
+        } else {
+            let hot_window_turns = parse_usize_with_bounds(
+                &params.settings.slice_hot_window_turns,
+                DEFAULT_HOT_WINDOW_TURNS,
+                MIN_HOT_WINDOW_TURNS,
+                MAX_HOT_WINDOW_TURNS,
+            );
+            let cold_window_turns = parse_usize_with_bounds(
+                &params.settings.slice_cold_window_turns,
+                DEFAULT_COLD_WINDOW_TURNS,
+                MIN_COLD_WINDOW_TURNS,
+                MAX_COLD_WINDOW_TURNS,
+            )
+            .max(hot_window_turns);
+            (
+                hot_window_turns,
+                cold_window_turns,
+                PriorMessageLimits {
+                    max_prior_total_chars: MAX_PRIOR_TOTAL_CHARS,
+                    max_single_prior_message_chars: MAX_SINGLE_PRIOR_MESSAGE_CHARS,
+                    hot_window_char_budget: HOT_WINDOW_CHAR_BUDGET,
+                    cold_window_char_budget: COLD_WINDOW_CHAR_BUDGET,
+                    cold_summary_line_chars: COLD_SUMMARY_LINE_CHARS,
+                    include_auxiliary_history: true,
+                },
+            )
+        };
 
     let prior_build = turn_services::build_prior_messages(
         params.tui_rt.tool_catalog.as_ref(),
@@ -408,13 +438,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
         params.persist_user_turn,
         hot_window_turns,
         cold_window_turns,
-        PriorMessageLimits {
-            max_prior_total_chars: MAX_PRIOR_TOTAL_CHARS,
-            max_single_prior_message_chars: MAX_SINGLE_PRIOR_MESSAGE_CHARS,
-            hot_window_char_budget: HOT_WINDOW_CHAR_BUDGET,
-            cold_window_char_budget: COLD_WINDOW_CHAR_BUDGET,
-            cold_summary_line_chars: COLD_SUMMARY_LINE_CHARS,
-        },
+        prior_limits,
     );
 
     let prompt_for_request = if activation.enforce_no_tools {

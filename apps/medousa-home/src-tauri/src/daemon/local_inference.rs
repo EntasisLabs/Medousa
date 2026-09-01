@@ -1,8 +1,8 @@
+use crate::daemon::DaemonState;
 use crate::daemon::sdk;
 use crate::daemon::sse::stream_sse_json_workshop;
 use crate::daemon::workshop_http;
-use crate::daemon::DaemonState;
-use crate::workshop_registry::{load_registry, PERSONAL_WORKSHOP_ID};
+use crate::workshop_registry::{PERSONAL_WORKSHOP_ID, load_registry};
 use crate::workshop_runtime;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 use medousa_types::LocalResourceAdmission;
@@ -11,10 +11,29 @@ use medousa_types::{
     LocalRuntimePhase, ModelDownloadProgress,
 };
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter, State};
+#[cfg(target_os = "ios")]
+use tauri::Manager;
 use tokio::sync::watch;
+
+#[cfg(target_os = "ios")]
+fn ios_native_inference(
+    app: &AppHandle,
+) -> Result<tauri_plugin_native_inference::NativeInference<tauri::Wry>, String> {
+    app.try_state::<tauri_plugin_native_inference::NativeInference<tauri::Wry>>()
+        .map(|state| state.inner().clone())
+        .ok_or_else(|| "native inference plugin is unavailable".to_string())
+}
+
+#[cfg(target_os = "ios")]
+fn decode_ios_response<T: serde::de::DeserializeOwned>(
+    value: serde_json::Value,
+) -> Result<T, String> {
+    serde_json::from_value(value)
+        .map_err(|error| format!("decode native inference response: {error}"))
+}
 
 pub struct LocalInferenceStreamState {
     cancel: Mutex<Option<watch::Sender<bool>>>,
@@ -91,8 +110,19 @@ impl LocalInferenceActivationState {
 
 #[tauri::command]
 pub async fn local_inference_hardware(
+    app: AppHandle,
     state: State<'_, DaemonState>,
 ) -> Result<LocalHardwareResponse, String> {
+    #[cfg(target_os = "ios")]
+    {
+        let value = ios_native_inference(&app)?
+            .hardware()
+            .await
+            .map_err(|error| error.to_string())?;
+        return decode_ios_response(value);
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = app;
     sdk::client(&state)?
         .local_models()
         .hardware()
@@ -102,8 +132,19 @@ pub async fn local_inference_hardware(
 
 #[tauri::command]
 pub async fn local_inference_catalog(
+    app: AppHandle,
     state: State<'_, DaemonState>,
 ) -> Result<LocalCatalogResponse, String> {
+    #[cfg(target_os = "ios")]
+    {
+        let value = ios_native_inference(&app)?
+            .catalog()
+            .await
+            .map_err(|error| error.to_string())?;
+        return decode_ios_response(value);
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = app;
     sdk::client(&state)?
         .local_models()
         .catalog()
@@ -113,8 +154,19 @@ pub async fn local_inference_catalog(
 
 #[tauri::command]
 pub async fn local_inference_models(
+    app: AppHandle,
     state: State<'_, DaemonState>,
 ) -> Result<LocalModelsResponse, String> {
+    #[cfg(target_os = "ios")]
+    {
+        let value = ios_native_inference(&app)?
+            .models()
+            .await
+            .map_err(|error| error.to_string())?;
+        return decode_ios_response(value);
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = app;
     sdk::client(&state)?
         .local_models()
         .list()
@@ -124,9 +176,20 @@ pub async fn local_inference_models(
 
 #[tauri::command]
 pub async fn local_inference_start_download(
+    app: AppHandle,
     state: State<'_, DaemonState>,
     model_id: String,
 ) -> Result<ModelDownloadProgress, String> {
+    #[cfg(target_os = "ios")]
+    {
+        let value = ios_native_inference(&app)?
+            .start_download(model_id.trim())
+            .await
+            .map_err(|error| error.to_string())?;
+        return decode_ios_response(value);
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = app;
     sdk::client(&state)?
         .local_models()
         .start_download(model_id.trim())
@@ -137,9 +200,20 @@ pub async fn local_inference_start_download(
 
 #[tauri::command]
 pub async fn local_inference_download_status(
+    app: AppHandle,
     state: State<'_, DaemonState>,
     job_id: String,
 ) -> Result<ModelDownloadProgress, String> {
+    #[cfg(target_os = "ios")]
+    {
+        let value = ios_native_inference(&app)?
+            .download_status(job_id.trim())
+            .await
+            .map_err(|error| error.to_string())?;
+        return decode_ios_response(value);
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = app;
     sdk::client(&state)?
         .local_models()
         .download_status(job_id.trim())
@@ -150,9 +224,24 @@ pub async fn local_inference_download_status(
 /// Spawn `medousa_local` on the desktop (daemon only probes engine status).
 #[tauri::command]
 pub async fn local_inference_spawn_engine(
+    app: AppHandle,
     state: State<'_, DaemonState>,
     model_id: Option<String>,
 ) -> Result<LocalEngineStatus, String> {
+    #[cfg(target_os = "ios")]
+    {
+        let model = model_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let value = ios_native_inference(&app)?
+            .load_model(model)
+            .await
+            .map_err(|error| error.to_string())?;
+        return decode_ios_response(value);
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = app;
     let registry = load_registry()?;
     let workshop = registry
         .workshops
@@ -226,8 +315,19 @@ pub(crate) async fn ensure_local_engine_for_turn(
 
 #[tauri::command]
 pub async fn local_inference_unload_engine(
+    app: AppHandle,
     state: State<'_, DaemonState>,
 ) -> Result<LocalEngineStatus, String> {
+    #[cfg(target_os = "ios")]
+    {
+        let value = ios_native_inference(&app)?
+            .unload()
+            .await
+            .map_err(|error| error.to_string())?;
+        return decode_ios_response(value);
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = app;
     workshop_runtime::stop_local_brain_bounded(PERSONAL_WORKSHOP_ID).await?;
     sdk::client(&state)?
         .local_models()
@@ -238,8 +338,19 @@ pub async fn local_inference_unload_engine(
 
 #[tauri::command]
 pub async fn local_inference_engine_status(
+    app: AppHandle,
     state: State<'_, DaemonState>,
 ) -> Result<LocalEngineStatus, String> {
+    #[cfg(target_os = "ios")]
+    {
+        let value = ios_native_inference(&app)?
+            .status()
+            .await
+            .map_err(|error| error.to_string())?;
+        return decode_ios_response(value);
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = app;
     let mut status = sdk::client(&state)?
         .local_models()
         .engine_status()
@@ -260,9 +371,19 @@ pub async fn local_inference_engine_status(
 
 #[tauri::command]
 pub async fn local_inference_remove_model(
+    app: AppHandle,
     state: State<'_, DaemonState>,
     model_id: String,
 ) -> Result<serde_json::Value, String> {
+    #[cfg(target_os = "ios")]
+    {
+        return ios_native_inference(&app)?
+            .remove_model(model_id.trim())
+            .await
+            .map_err(|error| error.to_string());
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = app;
     sdk::client(&state)?
         .local_models()
         .remove_model(model_id.trim())
@@ -282,6 +403,44 @@ pub async fn local_inference_stream_download(
     }
     let (cancel_tx, cancel_rx) = watch::channel(false);
     *stream_state.cancel.lock().expect("lock") = Some(cancel_tx);
+
+    #[cfg(target_os = "ios")]
+    {
+        let inference = ios_native_inference(&app)?;
+        let job_id = job_id.trim().to_string();
+        tauri::async_runtime::spawn(async move {
+            let mut cancel_rx = cancel_rx;
+            loop {
+                if *cancel_rx.borrow() {
+                    break;
+                }
+                match inference.download_status(&job_id).await {
+                    Ok(value) => {
+                        let terminal = value
+                            .get("phase")
+                            .and_then(serde_json::Value::as_str)
+                            .is_some_and(|phase| phase == "ready" || phase == "failed");
+                        let _ = app.emit("model_download_progress", value);
+                        if terminal {
+                            break;
+                        }
+                    }
+                    Err(error) => {
+                        let _ = app.emit(
+                            "model_download_progress://error",
+                            serde_json::json!({ "message": error.to_string() }),
+                        );
+                        break;
+                    }
+                }
+                tokio::select! {
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(350)) => {}
+                    _ = cancel_rx.changed() => {}
+                }
+            }
+        });
+        return Ok(());
+    }
 
     let config = workshop_http::transport_config(&state)?;
     let path = medousa_sdk::generated::expand_path(

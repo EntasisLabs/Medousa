@@ -13,6 +13,7 @@
         "description": "Behavioral runtime profile for an agent turn.\n\nThis is distinct from [`TurnTicketMode`], which selects interactive versus background delivery. Agent modes preserve one Medousa identity while changing context, tools, lane policy, and completion behavior.",
         "enum": [
           "general",
+          "instant",
           "coder"
         ],
         "type": "string"

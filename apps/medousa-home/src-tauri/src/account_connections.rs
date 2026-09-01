@@ -1,4 +1,4 @@
-//! Settings → Connections: ChatGPT (via Codex CLI), Cursor, and Hermes account sign-in.
+//! Settings → External Agents: Codex, Cursor, and Hermes account sign-in.
 //!
 //! Medousa never holds vendor tokens — login orchestrates the official CLIs
 //! (`codex login`, `cursor agent login` / `agent login`, `hermes acp --setup`), which keep
@@ -93,7 +93,7 @@ fn cursor_auth_argv(action: &str) -> Result<(String, Vec<String>, String), Strin
     let agent = cursor_command();
     if !command_on_path(&agent) && !command_on_path("cursor-agent") {
         return Err(
-            "'cursor' / 'agent' not found — tap Install on the Cursor card in Settings → Connections"
+            "'cursor' / 'agent' not found — tap Install on the Cursor card in Settings → External Agents"
                 .into(),
         );
     }
@@ -272,7 +272,7 @@ fn connection_from_runtime(
     let mut detail = info.and_then(|i| i.auth_detail.clone().or(i.detail.clone()));
 
     // Cursor tokens live in the OS keychain — file probes on the daemon often
-    // lag. Ask the local CLI so Connections flips to signed-in right after login.
+    // lag. Ask the local CLI so External Agents flips to signed-in right after login.
     if id == "cursor" && auth_status != "signed_in" {
         if let Some((local_status, local_detail)) = local_cursor_auth_status() {
             auth_status = local_status;
@@ -721,7 +721,7 @@ pub async fn account_chatgpt_begin_device_login() -> Result<DeviceAuthStart, Str
     let command = codex_command();
     if !command_on_path(&command) {
         return Err(format!(
-            "'{command}' not found — tap Install on the ChatGPT card in Settings → Connections"
+            "'{command}' not found — tap Install on the Codex card in Settings → External Agents"
         ));
     }
 
@@ -889,7 +889,7 @@ pub async fn account_begin_terminal_login(account: String) -> Result<String, Str
             let cmd = codex_command();
             if !command_on_path(&cmd) {
                 return Err(
-                    "'codex' not found — tap Install on the ChatGPT card in Settings → Connections"
+                    "'codex' not found — tap Install on the Codex card in Settings → External Agents"
                         .into(),
                 );
             }
@@ -904,7 +904,7 @@ pub async fn account_begin_terminal_login(account: String) -> Result<String, Str
             ensure_vendor_cli_path();
             if !command_on_path("hermes") && !command_on_path("hermes-acp") {
                 return Err(
-                    "'hermes' not found — tap Install on the Hermes card in Settings → Connections"
+                    "'hermes' not found — tap Install on the Hermes card in Settings → External Agents"
                         .into(),
                 );
             }

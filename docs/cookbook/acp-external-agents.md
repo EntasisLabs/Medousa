@@ -59,11 +59,11 @@ External runtimes need the vendor CLI signed in / configured **before** `create_
 
 | Runtime | Install | Sign-in | Sign-out |
 |---------|---------|---------|----------|
-| **ChatGPT / Codex** | Connections → **Install** (official Codex installer). ACP uses `codex-acp` / pinned `npx -y @agentclientprotocol/codex-acp@1.1.14` | `codex login` (browser) or `codex login --device-auth` | `codex logout` |
-| **Cursor** | Connections → **Install** (official Cursor Agent installer) | Prefer `cursor agent login` (falls back to `agent login`); same auth store | `cursor agent logout` / `agent logout` |
-| **Hermes** | Connections → **Install** (official Hermes installer). Ensures ACP extras (`hermes acp` / `hermes-acp`) | `hermes acp --setup` (or `hermes model`) — multi-provider config in `~/.hermes` | No vendor logout; **Reconfigure** opens `hermes model` (Medousa never deletes `~/.hermes`) |
+| **ChatGPT / Codex** | External Agents → **Install** (official Codex installer). ACP uses `codex-acp` / pinned `npx -y @agentclientprotocol/codex-acp@1.1.14` | `codex login` (browser) or `codex login --device-auth` | `codex logout` |
+| **Cursor** | External Agents → **Install** (official Cursor Agent installer) | Prefer `cursor agent login` (falls back to `agent login`); same auth store | `cursor agent logout` / `agent logout` |
+| **Hermes** | External Agents → **Install** (official Hermes installer). Ensures ACP extras (`hermes acp` / `hermes-acp`) | `hermes acp --setup` (or `hermes model`) — multi-provider config in `~/.hermes` | No vendor logout; **Reconfigure** opens `hermes model` (Medousa never deletes `~/.hermes`) |
 
-Home: **Settings → Connections** installs missing CLIs via the vendor installers, runs login via Tauri (`account_connections.rs`), and probes status without reading tokens. The daemon surfaces it on each runtime:
+Home: **Settings → External Agents** installs missing CLIs via the vendor installers, runs login via Tauri (`account_connections.rs`), and probes status without reading tokens. The daemon surfaces it on each runtime:
 
 ```jsonc
 // GET /v1/agents/runtimes → AgentRuntimeInfo

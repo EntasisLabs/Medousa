@@ -28,6 +28,31 @@ import {
 const TOKEN_KEY = "medousa.bearerToken";
 const SESSION_KEY = "medousa.sessionId";
 
+function agentModeLabel(mode: AgentModeId): string {
+  if (mode === "coder") return "Coder";
+  if (mode === "instant") return "Instant";
+  return "General";
+}
+
+function agentModeQuickPick(mode: AgentModeId): { label: string; detail: string } {
+  if (mode === "coder") {
+    return {
+      label: "$(code) Coder",
+      detail: "Repository-aware engineering in a governed Forge worktree",
+    };
+  }
+  if (mode === "instant") {
+    return {
+      label: "$(zap) Instant",
+      detail: "Faster chat with focused recent context",
+    };
+  }
+  return {
+    label: "$(sparkle) General",
+    detail: "Life, planning, research, and everyday work",
+  };
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   const chat = new MedousaChatView(context);
   context.subscriptions.push(
@@ -193,7 +218,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
       type: "runtimeState",
       mode: this.activeMode,
       modeLabel: this.modes.find((mode) => mode.mode === this.activeMode)?.label
-        ?? (this.activeMode === "coder" ? "Coder" : "General"),
+        ?? agentModeLabel(this.activeMode),
       workId: this.boundWorkId,
       workTitle: this.boundUndertaking?.title ?? this.boundWorkId,
       coderReady: ["ready", "executing"].includes(this.boundUndertaking?.state.toLowerCase() ?? "")
@@ -238,16 +263,15 @@ class MedousaChatView implements vscode.WebviewViewProvider {
     if (!client || !sessionId) return;
     if (!this.modes.length) await this.refreshRuntimeState();
     const picked = await vscode.window.showQuickPick(
-      this.modes.map((mode) => ({
-        label: mode.mode === "coder" ? "$(code) Coder" : "$(sparkle) General",
-        description: mode.mode === this.activeMode ? "Active" : undefined,
-        detail: mode.available
-          ? mode.mode === "coder"
-            ? "Repository-aware engineering in a governed Forge worktree"
-            : "Life, planning, research, and everyday work"
-          : mode.unavailable_reason ?? "Unavailable",
-        mode,
-      })),
+      this.modes.map((mode) => {
+        const copy = agentModeQuickPick(mode.mode);
+        return {
+          label: copy.label,
+          description: mode.mode === this.activeMode ? "Active" : undefined,
+          detail: mode.available ? copy.detail : mode.unavailable_reason ?? "Unavailable",
+          mode,
+        };
+      }),
       { placeHolder: "How should Medousa work in this conversation?" },
     );
     if (!picked || !picked.mode.available) return;

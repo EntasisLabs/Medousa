@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { ChevronDown, Minus, Plus } from "@lucide/svelte";
+  import SettingsChatGptAccount from "$lib/components/settings/SettingsChatGptAccount.svelte";
   import SettingsListRow from "$lib/components/settings/SettingsListRow.svelte";
   import ModelCatalogSheet from "$lib/components/settings/ModelCatalogSheet.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
@@ -28,6 +29,7 @@
     catalog: ProvidersListResult | null;
     disabled?: boolean;
     sttReady?: boolean;
+    chatGptAccountAuth?: boolean;
     onKeyStatusChange?: () => void | Promise<void>;
   }
 
@@ -35,6 +37,7 @@
     catalog,
     disabled = false,
     sttReady: _sttReady = false,
+    chatGptAccountAuth = true,
     onKeyStatusChange,
   }: Props = $props();
 
@@ -134,6 +137,7 @@
 </script>
 
 <div class="models-calm">
+  <SettingsChatGptAccount enabled={chatGptAccountAuth} />
   <div class="settings-native-group models-primary">
     {#each PRIMARY_TARGETS as target, index (`primary-${index}`)}
       {#if target.type === "primary"}

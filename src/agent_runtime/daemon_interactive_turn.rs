@@ -1578,6 +1578,21 @@ async fn run_agent_turn_inner(
                 Some(registry_override),
             )
         }
+    } else if agent_mode.id == crate::daemon_api::AgentModeId::Instant {
+        let registry_override: Arc<
+            dyn stasis::application::orchestration::tool_registry::ToolRegistry,
+        > = Arc::new(super::turn_worker::AllowlistToolRegistry::new_exact(
+            agent_rt.tool_registry.clone(),
+            crate::agent_mode_context::instant_tool_names(),
+        ));
+        (
+            None,
+            None,
+            None,
+            None,
+            Some(crate::agent_mode_context::INSTANT_CAPABILITY_CONTEXT.to_string()),
+            Some(registry_override),
+        )
     } else {
         (None, None, None, None, None, None)
     };

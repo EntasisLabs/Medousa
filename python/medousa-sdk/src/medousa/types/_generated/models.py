@@ -15,6 +15,7 @@ class MedousaModel(BaseModel):
 
 class AgentModeId(Enum):
     general = 'general'
+    instant = 'instant'
     coder = 'coder'
 
 

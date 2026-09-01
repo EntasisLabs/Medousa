@@ -1,6 +1,8 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { Bot, Check, ChevronDown, LogIn, MousePointer2, Sparkles, Terminal } from "@lucide/svelte";
+  import { Check, ChevronDown, LogIn } from "@lucide/svelte";
+  import ExternalAgentLogo from "$lib/components/brand/ExternalAgentLogo.svelte";
+  import MedousaMark from "$lib/components/brand/MedousaMark.svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import {
     agentRuntimeLabel,
@@ -9,6 +11,7 @@
   import { attachComposerMenuDismiss } from "$lib/utils/composerMenuDismiss";
   import { placeComposerPopover } from "$lib/utils/railPopover";
   import { accountConnections } from "$lib/stores/accountConnections.svelte";
+  import { settings } from "$lib/stores/settings.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { accountIdForRuntime } from "$lib/utils/accountConnections";
 
@@ -49,14 +52,14 @@
     const account = accountIdForRuntime(runtime);
     const info = accountConnections.connection(account);
     if (info && !info.binaryPresent) {
-      if (runtime === "codex") return "Install Codex CLI — Settings → Connections";
-      if (runtime === "hermes") return "Install Hermes — Settings → Connections";
-      return "Install Cursor CLI — Settings → Connections";
+      if (runtime === "codex") return "Install Codex CLI — Settings → External Agents";
+      if (runtime === "hermes") return "Install Hermes — Settings → External Agents";
+      return "Install Cursor CLI — Settings → External Agents";
     }
-    return "Sign in — Settings → Connections";
+    return "Sign in — Settings → External Agents";
   }
 
-  function openConnections() {
+  function openExternalAgents() {
     open = false;
     settingsNav.setActiveSection("connections");
   }
@@ -108,18 +111,37 @@
     onChange?.(next);
     open = false;
   }
+
+  function opticalLogoSize(runtime: ChatAgentRuntime, baseSize: number): number {
+    if (runtime === "codex" || runtime === "hermes") return Math.round(baseSize * 1.3);
+    if (runtime === "medousa") return Math.round(baseSize * 1.15);
+    return baseSize;
+  }
 </script>
 
 {#snippet runtimeIcon(runtime: ChatAgentRuntime, size = 13)}
-  {#if runtime === "cursor"}
-    <MousePointer2 {size} strokeWidth={1.85} class="shrink-0 opacity-70" />
-  {:else if runtime === "codex"}
-    <Terminal {size} strokeWidth={1.85} class="shrink-0 opacity-70" />
-  {:else if runtime === "hermes"}
-    <Sparkles {size} strokeWidth={1.85} class="shrink-0 opacity-70" />
-  {:else}
-    <Bot {size} strokeWidth={1.85} class="shrink-0 opacity-70" />
-  {/if}
+  <span
+    class="chat-runtime-logo-slot opacity-70"
+    style:width={`${size + 4}px`}
+    style:height={`${size + 4}px`}
+  >
+    {#if runtime === "medousa"}
+      <span
+        class="block"
+        style:width={`${opticalLogoSize(runtime, size)}px`}
+        style:height={`${opticalLogoSize(runtime, size)}px`}
+      >
+        <MedousaMark
+          markId={settings.medousaMark}
+          darkMode={settings.darkMode}
+          simplified
+          decorative
+        />
+      </span>
+    {:else}
+      <ExternalAgentLogo agent={runtime} size={opticalLogoSize(runtime, size)} />
+    {/if}
+  </span>
 {/snippet}
 
 <div class="chat-runtime-picker">
@@ -163,7 +185,7 @@
             {@const locked = lockedFor(option.id)}
             <button
               type="button"
-              class="chat-runtime-option"
+              class="chat-runtime-option chat-runtime-agent-option"
               class:chat-runtime-option-active={value === option.id}
               class:chat-runtime-option-locked={locked}
               role="option"
@@ -171,25 +193,29 @@
               aria-disabled={locked}
               onclick={() => {
                 if (locked) {
-                  openConnections();
+                  openExternalAgents();
                   return;
                 }
                 pick(option.id);
               }}
             >
               {@render runtimeIcon(option.id, 14)}
-              <span class="min-w-0 flex-1 text-left">
-                <span class="block text-[13px] font-medium text-surface-100"
+              <span class="chat-runtime-option-copy min-w-0 flex-1 text-left">
+                <span class="chat-runtime-option-title block text-[13px] font-medium text-surface-100"
                   >{agentRuntimeLabel(option.id)}</span
                 >
-                <span class="workshop-faint mt-0.5 block text-[11px]">
+                <span class="chat-runtime-option-hint workshop-faint mt-0.5 block text-[11px]">
                   {locked ? lockHint(option.id) : option.hint}
                 </span>
               </span>
               {#if locked}
-                <LogIn size={13} strokeWidth={2} class="shrink-0 text-content-link" />
+                <span class="chat-runtime-option-action">
+                  <LogIn size={13} strokeWidth={2} class="text-content-link" />
+                </span>
               {:else if value === option.id}
-                <Check size={14} strokeWidth={2} class="shrink-0 text-content-link" />
+                <span class="chat-runtime-option-action">
+                  <Check size={14} strokeWidth={2} class="text-content-link" />
+                </span>
               {/if}
             </button>
           {/each}

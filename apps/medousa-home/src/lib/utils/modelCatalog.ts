@@ -1,4 +1,5 @@
 import { modelPickKey } from "$lib/utils/formatModelDisplay";
+import { isTauriIos } from "$lib/platform";
 
 export interface ModelPick {
   provider: string;
@@ -96,7 +97,11 @@ export const CURATED_MODEL_PICKS: ModelPick[] = [
 ];
 
 export function defaultProviderModel(providerId: string): string | undefined {
-  return PROVIDER_DEFAULT_MODELS[providerId.trim().toLowerCase()];
+  const normalized = providerId.trim().toLowerCase();
+  if (normalized === "medousa-local" && isTauriIos()) {
+    return "qwen3.5-2b-4bit";
+  }
+  return PROVIDER_DEFAULT_MODELS[normalized];
 }
 
 export function curatedPicksForProvider(providerId: string): ModelPick[] {

@@ -16,6 +16,7 @@
     "type": "string",
     "enum": [
       "general",
+      "instant",
       "coder"
     ]
   },
@@ -71,6 +72,7 @@
         "type": "string",
         "enum": [
           "general",
+          "instant",
           "coder"
         ]
       }
@@ -97,6 +99,7 @@
         "type": "string",
         "enum": [
           "general",
+          "instant",
           "coder"
         ]
       },
@@ -281,6 +284,7 @@
         "type": "string",
         "enum": [
           "general",
+          "instant",
           "coder"
         ]
       },
@@ -11377,6 +11381,7 @@
         "type": "string",
         "enum": [
           "general",
+          "instant",
           "coder"
         ]
       },
@@ -15854,6 +15859,7 @@
         "type": "string",
         "enum": [
           "general",
+          "instant",
           "coder"
         ]
       },
@@ -18120,6 +18126,7 @@
         "type": "string",
         "enum": [
           "general",
+          "instant",
           "coder"
         ]
       },

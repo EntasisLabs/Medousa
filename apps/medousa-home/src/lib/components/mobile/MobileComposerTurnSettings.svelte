@@ -2,13 +2,20 @@
   import { onMount } from "svelte";
   import { fade } from "svelte/transition";
   import { cubicIn, cubicOut } from "svelte/easing";
-  import { Check, ChevronDown, ChevronLeft, ChevronRight, Search, X } from "@lucide/svelte";
+  import {
+    Check,
+    ChevronDown,
+    ChevronLeft,
+    ChevronRight,
+    Search,
+    X,
+  } from "@lucide/svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { voicePresets } from "$lib/stores/voicePresets.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
-  import { isTauriMobilePlatform } from "$lib/platform";
+  import { isTauriIos, isTauriMobilePlatform } from "$lib/platform";
   import { modelPickKey } from "$lib/utils/formatModelDisplay";
   import { providerMonogram, resolveProviderLabel } from "$lib/utils/chatModelPicker";
   import { resolveModelDisplayLabel } from "$lib/utils/modelCatalog";
@@ -34,6 +41,7 @@
   import { DEPTH_CHARTER_OPTIONS } from "$lib/types/settings";
   import type { DepthMode, ReasoningEffortMode } from "$lib/types/runtime";
   import { REASONING_EFFORT_OPTIONS, reasoningEffortLabel } from "$lib/types/reasoningEffort";
+  import { fetchLocalModels } from "$lib/utils/localInferenceApi";
 
   type SheetView = "main" | "provider" | "model" | "voice" | "stance" | "reasoning";
 
@@ -60,10 +68,13 @@
   let manualModelId = $state("");
   let models = $state<ModelCapabilityRecord[]>([]);
   let modelsLoading = $state(false);
-  let providerSetupSection = $state<"agent" | "connections" | null>(null);
+  let providerSetupSection = $state<"agent" | null>(null);
   let providerSetupMessage = $state<string | null>(null);
   let modelLoadError = $state<string | null>(null);
   let modelActionError = $state<string | null>(null);
+  let localModelRequiresSetup = $state(false);
+  let installedLocalModelIds = $state<Set<string>>(new Set());
+  let localInstallStateLoaded = $state(false);
   let modelLoadSeq = 0;
 
   const activeKey = $derived(modelPickKey(runtime.provider, runtime.model));
@@ -117,6 +128,9 @@
     });
   });
   const canUseManualModel = $derived(manualModelId.trim().length > 0 && !runtime.savingControls);
+  const selectedLocalIosProvider = $derived(
+    isTauriIos() && selectedProvider?.id.trim().toLowerCase() === "medousa-local",
+  );
   const sheetTitle = $derived(
     sheetView === "main"
       ? "Turn settings"
@@ -172,6 +186,9 @@
     providerSetupMessage = null;
     modelLoadError = null;
     modelActionError = null;
+    localModelRequiresSetup = false;
+    installedLocalModelIds = new Set();
+    localInstallStateLoaded = false;
     modelLoadSeq += 1;
   }
 
@@ -274,7 +291,7 @@
         const connection = await getChatGptOAuthConnection();
         if (seq !== modelLoadSeq) return;
         if (!chatGptOAuthReady(connection)) {
-          providerSetupSection = "connections";
+          providerSetupSection = "agent";
           providerSetupMessage =
             "Connect your ChatGPT account before choosing a subscription model.";
           return;
@@ -294,6 +311,22 @@
       const next = await resolveModelsForProvider(entry);
       if (seq !== modelLoadSeq) return;
       models = next;
+      if (isTauriIos() && entry.id.trim().toLowerCase() === "medousa-local") {
+        try {
+          const localModels = await fetchLocalModels();
+          if (seq !== modelLoadSeq) return;
+          installedLocalModelIds = new Set(
+            localModels.installed
+              .filter((model) => model.verified)
+              .map((model) => model.modelId.trim()),
+          );
+          localInstallStateLoaded = true;
+        } catch {
+          // Keep the catalog visible, but do not pretend an unverified local
+          // checkpoint is ready for chat.
+          localInstallStateLoaded = false;
+        }
+      }
     } catch (error) {
       if (seq !== modelLoadSeq) return;
       models = [];
@@ -308,6 +341,7 @@
     const nextModel = model.trim();
     if (!nextProvider || !nextModel || runtime.savingControls) return;
     modelActionError = null;
+    localModelRequiresSetup = false;
     const nextKey = modelPickKey(nextProvider, nextModel);
     if (nextKey !== activeKey) await runtime.applyModel(nextProvider, nextModel);
     if (modelPickKey(runtime.provider, runtime.model) !== nextKey) {
@@ -321,12 +355,40 @@
 
   async function selectModel(record: ModelCapabilityRecord) {
     if (!selectedProvider) return;
+    if (selectedLocalIosProvider) {
+      if (!localModelIsReady(record.modelId)) {
+        showLocalModelSetup(record.modelId);
+        return;
+      }
+    }
     await applyModel(await resolveRuntimeProviderId(selectedProvider.id), record.modelId);
   }
 
   async function confirmManualModel() {
     if (!selectedProvider || !canUseManualModel) return;
+    if (selectedLocalIosProvider) {
+      if (!localModelIsReady(manualModelId)) {
+        showLocalModelSetup(manualModelId);
+        return;
+      }
+    }
     await applyModel(await resolveRuntimeProviderId(selectedProvider.id), manualModelId);
+  }
+
+  function showLocalModelSetup(modelId: string) {
+    const normalized = modelId.trim();
+    localModelRequiresSetup = true;
+    modelActionError = localInstallStateLoaded
+      ? `${resolveModelDisplayLabel("medousa-local", normalized)} is not fully downloaded. Manage it under Private brain.`
+      : "Medousa could not verify the models on this device. Open Private brain to refresh them.";
+  }
+
+  function localModelIsReady(modelId: string): boolean {
+    return localInstallStateLoaded && installedLocalModelIds.has(modelId.trim());
+  }
+
+  function localModelNeedsSetup(modelId: string): boolean {
+    return selectedLocalIosProvider && !localModelIsReady(modelId);
   }
 
   function displayModelName(record: ModelCapabilityRecord): string {
@@ -342,6 +404,12 @@
     closeSheet();
     if (!section) return;
     settingsNav.setActiveSection(section);
+    layout.openMore("settings");
+  }
+
+  function openLocalBrainSettings() {
+    closeSheet();
+    settingsNav.setActiveSection("basement");
     layout.openMore("settings");
   }
 
@@ -602,7 +670,18 @@
                 </label>
 
                 {#if modelActionError}
-                  <p class="mobile-turn-sheet-inline-error" role="alert">{modelActionError}</p>
+                  {#if localModelRequiresSetup}
+                    <div class="mobile-turn-sheet-setup">
+                      <p class="mobile-turn-sheet-row-subtitle" role="alert">{modelActionError}</p>
+                      <button
+                        type="button"
+                        class="mobile-turn-sheet-setup-action"
+                        onclick={openLocalBrainSettings}
+                      >Open Private brain</button>
+                    </div>
+                  {:else}
+                    <p class="mobile-turn-sheet-inline-error" role="alert">{modelActionError}</p>
+                  {/if}
                 {/if}
 
                 <div class="mobile-turn-sheet-model-list">
@@ -618,6 +697,7 @@
                     <div class="mobile-turn-sheet-group" role="listbox" aria-label="Models">
                       {#each filteredModels as record, index (`${record.provider}:${record.modelId}`)}
                         {@const selected = modelPickKey(record.provider, record.modelId) === activeKey}
+                        {@const needsSetup = localModelNeedsSetup(record.modelId)}
                         <button
                           type="button"
                           class="mobile-turn-sheet-row {index > 0 ? 'mobile-turn-sheet-row-divider' : ''}"
@@ -634,7 +714,11 @@
                               </span>
                             {/if}
                           </span>
-                          {#if selected}
+                          {#if needsSetup}
+                            <span class="mobile-turn-sheet-row-tail text-[12px] font-medium text-primary-400">
+                              Get in settings
+                            </span>
+                          {:else if selected}
                             <Check size={18} strokeWidth={2.5} class="mobile-turn-sheet-row-check" />
                           {/if}
                         </button>
@@ -671,7 +755,11 @@
                       onclick={() => void confirmManualModel()}
                     >Use</button>
                   </div>
-                  <p class="mobile-turn-sheet-manual-hint">For models that do not appear in the catalog.</p>
+                  <p class="mobile-turn-sheet-manual-hint">
+                    {selectedLocalIosProvider
+                      ? "Downloads and storage are managed under Settings → Connection → Private brain."
+                      : "For models that do not appear in the catalog."}
+                  </p>
                 </div>
               {/if}
             {:else if displayView === "voice"}

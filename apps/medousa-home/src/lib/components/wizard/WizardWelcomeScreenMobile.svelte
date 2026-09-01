@@ -277,7 +277,7 @@
     <div class="wizard-beat my-5 flex items-center gap-3">
       <span class="h-px flex-1 bg-surface-500/25"></span>
       <span class="text-[10px] font-semibold uppercase tracking-[0.15em] text-content-quiet">
-        Or use an API key
+        Or choose another provider
       </span>
       <span class="h-px flex-1 bg-surface-500/25"></span>
     </div>
@@ -292,7 +292,7 @@
         compact
         progressive
         showValidate={false}
-        excludeProviderIds={["medousa-local", "ollama", "openai-codex", "bedrock"]}
+        excludeProviderIds={["ollama", "openai-codex", "bedrock"]}
         onProviderChange={onProviderChange}
         onModelChange={(value) => (model = value)}
         onApiKeyChange={(value) => (apiKey = value)}
@@ -303,8 +303,9 @@
 
     <p class="wizard-beat mt-4 flex items-start gap-2 text-xs leading-relaxed text-content-quiet">
       <ShieldCheck class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-      Your credential is stored securely on this device. You can change providers anytime from the
-      model picker or Settings.
+      {provider === "medousa-local"
+        ? "Model weights and inference stay on this device. Download or switch models anytime in Settings."
+        : "Your credential is stored securely on this device. You can change providers anytime from the model picker or Settings."}
     </p>
 
     {#if statusMessage}

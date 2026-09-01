@@ -9,10 +9,10 @@ Related: [How Medousa fits together](guide:architecture) · [Desktop, web, and p
 | Section | Who it affects | Where you can change it |
 |---------|----------------|-------------------------|
 | **Preferences** | Mostly this device (theme also follows layout) | All apps; some items phone-only |
-| **Medousa Agent** | This workshop’s answers and models | Editable wherever the selected workshop grants control |
+| **Medousa Agent** | This workshop’s answers, provider access, and models | Editable wherever the selected workshop grants control |
 | **Runtime Controls** | Tool safety and advanced engine options | Same as Agent |
 | **Sharing** | Phone, peers, Shared seats, channels | QR and Shared host controls on desktop |
-| **Connections** | ChatGPT account sign-in for Medousa; Codex/Cursor coding-agent sign-in | Medousa account sign-in works in Personal on phone; coding-agent connections remain desktop-only |
+| **External Agents** | Codex, Cursor, and Hermes runtime sign-in | Desktop workshop hosts |
 | **Packages** | Optional software on this computer | Desktop app only |
 | **MCP** | External tool servers | Desktop app only |
 | **Connection** | Which workshop you’re in, restart, updates | Address everywhere; file paths on desktop |
@@ -30,16 +30,16 @@ Motion calming follows your **system** reduced-motion setting — there’s no s
 
 ## Medousa Agent
 
-Models (chat, vision, dictation), stance/voices, memory depth, and presentation cleanup. Changes apply to the workshop. Stages and provider keys are under expandable details.
+Models (chat, vision, dictation), ChatGPT subscription sign-in, stance/voices, memory depth, and presentation cleanup. Changes apply to the workshop. Stages and provider keys are under expandable details.
 
 ## Runtime Controls
 
 Advanced: which tools are allowed, shell access, network limits, and optional note **Versions**. Empty tool lists can mean everything is allowed — be careful. Day-one safety tips: [Permissions](guide:permissions-budgets).
 
-## Sharing / Connections / Packages / MCP / Connection
+## Sharing / External Agents / Packages / MCP / Connection
 
 - **Sharing** — phone QR, peers, Shared mode, messaging channels.
-- **Connections** — connect a **ChatGPT account** directly to the Medousa runtime on desktop or in Personal on phone. Medousa still owns the agent loop and tools. Desktop hosts can separately sign into **Codex** and **Cursor** coding agents; missing CLIs install from the same screen using vendor installers. Signed-out routes show a sign-in prompt in the chat runtime picker.
+- **External Agents** — install and sign in to **Codex**, **Cursor**, and **Hermes** as independent runtimes on desktop workshop hosts. Missing CLIs install from the same screen using vendor installers. Signed-out routes show a sign-in prompt in the chat runtime picker.
 - **Packages** — optional Offline brain and helpers (desktop).
 - **MCP** — connect external tools (desktop).
 - **Connection** — switch workshop, restart engine, app updates, **Files & diagnostics** paths on desktop.

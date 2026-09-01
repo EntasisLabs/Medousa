@@ -1058,6 +1058,7 @@ fn build_prior_messages(
             hot_window_char_budget: turn_orchestrator::HOT_WINDOW_CHAR_BUDGET,
             cold_window_char_budget: turn_orchestrator::COLD_WINDOW_CHAR_BUDGET,
             cold_summary_line_chars: turn_orchestrator::COLD_SUMMARY_LINE_CHARS,
+            include_auxiliary_history: true,
         },
     )
 }

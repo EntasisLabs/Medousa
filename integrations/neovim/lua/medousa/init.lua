@@ -11,6 +11,12 @@ local normalize_session
 local refresh_runtime_state
 local check_mode_proposals
 
+local function agent_mode_label(mode)
+  if mode == "coder" then return "Coder" end
+  if mode == "instant" then return "Instant" end
+  return "General"
+end
+
 local state = {
   client = nil,
   configured = false,
@@ -668,7 +674,7 @@ refresh_runtime_state = function(session_id, callback)
       return
     end
     state.agent_mode = mode.effective_mode or "general"
-    state.mode_label = state.agent_mode == "coder" and "Coder" or "General"
+    state.mode_label = agent_mode_label(state.agent_mode)
     state.client:code_binding(session_id, function(binding, binding_err)
       if state.session_id ~= session_id then return end
       if not binding then
@@ -846,7 +852,7 @@ check_mode_proposals = function(session_id)
     end
     if not pending then return end
     state.handled_mode_proposals[pending.proposal_id] = true
-    local target = pending.to_mode == "coder" and "Coder" or "General"
+    local target = agent_mode_label(pending.to_mode)
     vim.ui.select({ "Switch to " .. target, "Not now" }, {
       prompt = "Medousa suggests " .. target .. ": " .. tostring(pending.reason or "better fit"),
     }, function(choice)

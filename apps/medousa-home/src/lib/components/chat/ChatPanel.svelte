@@ -12,9 +12,7 @@
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import ComposerSkillPills from "$lib/components/chat/ComposerSkillPills.svelte";
   import ComposerSkillSlashMenu from "$lib/components/chat/ComposerSkillSlashMenu.svelte";
-  import ComposerDraftsControl from "$lib/components/chat/ComposerDraftsControl.svelte";
-  import ComposerTurnControls from "$lib/components/chat/ComposerTurnControls.svelte";
-  import AgentSessionControls from "$lib/components/chat/AgentSessionControls.svelte";
+  import ChatRuntimeControlRow from "$lib/components/chat/ChatRuntimeControlRow.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
   import ModeProposalBar from "$lib/components/chat/ModeProposalBar.svelte";
   import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
@@ -83,7 +81,6 @@
   } from "$lib/utils/slashMenuPlacement";
   import OfflineChatGate from "$lib/components/chat/OfflineChatGate.svelte";
   import LiquidCardDetailSheet from "$lib/components/chat/LiquidCardDetailSheet.svelte";
-  import ChatAgentModePicker from "$lib/components/chat/ChatAgentModePicker.svelte";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
   import { automationsNav } from "$lib/stores/automationsNav.svelte";
   import { flowDraft } from "$lib/stores/flowDraft.svelte";
@@ -1163,29 +1160,16 @@
         onCursorChange={(cursor) => (draftCursor = cursor)}
       />
       {#if !workshop && !embedded}
-        <div class="chat-runtime-under">
-          <ChatAgentModePicker
-            sessionId={panelSessionId}
-            disabled={connection.offline || chat.composerBlocked || agentSession.preparingAgent}
-          />
-          <ComposerTurnControls
-            disabled={connection.offline || chat.composerBlocked}
-            showNativeControls={agentSession.sessionRuntime === "medousa"}
-          />
-          {#if agentSession.sessionRuntime !== "medousa"}
-            <AgentSessionControls
-              options={agentSession.agentConfigOptions}
-              includeModel={false}
-              disabled={connection.offline || chat.composerBlocked || agentSession.preparingAgent}
-              onChange={agentSession.updateAgentConfig}
-            />
-          {/if}
-          <ComposerDraftsControl
-            disabled={connection.offline || chat.composerBlocked}
-            mode={agentSession.sessionRuntime}
-            model={`${runtime.provider}:${runtime.model}`}
-          />
-        </div>
+        <ChatRuntimeControlRow
+          sessionId={panelSessionId}
+          value={agentSession.sessionRuntime}
+          configOptions={agentSession.agentConfigOptions}
+          pending={agentSession.preparingAgent}
+          disabled={connection.offline || chat.composerBlocked}
+          model={`${runtime.provider}:${runtime.model}`}
+          onChange={agentSession.onRuntimeChange}
+          onConfigChange={agentSession.updateAgentConfig}
+        />
       {/if}
       <ComposerSkillSlashMenu
         open={slashMenuOpen}

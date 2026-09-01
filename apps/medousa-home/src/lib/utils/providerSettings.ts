@@ -26,7 +26,6 @@ export function providerAllowsBaseUrl(entry: ProviderCatalogEntry): boolean {
   return (
     entry.supportsCustomBaseUrl ||
     entry.id === "ollama" ||
-    entry.id === "medousa-local" ||
     entry.id === CUSTOM_PROVIDER_CATALOG_ID
   );
 }

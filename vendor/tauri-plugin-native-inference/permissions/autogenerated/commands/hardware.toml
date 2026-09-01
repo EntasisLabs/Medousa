@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-hardware"
+description = "Enables the hardware command without any pre-configured scope."
+commands.allow = ["hardware"]
+
+[[permission]]
+identifier = "deny-hardware"
+description = "Denies the hardware command without any pre-configured scope."
+commands.deny = ["hardware"]

@@ -119,52 +119,52 @@ export function formatBytes(bytes: number): string {
 }
 
 export async function fetchLocalHardware(): Promise<LocalHardwareResponse> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   return invoke<LocalHardwareResponse>("local_inference_hardware");
 }
 
 export async function fetchLocalCatalog(): Promise<LocalCatalogResponse> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   return invoke<LocalCatalogResponse>("local_inference_catalog");
 }
 
 export async function fetchLocalModels(): Promise<LocalModelsResponse> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   return invoke<LocalModelsResponse>("local_inference_models");
 }
 
 export async function startLocalModelDownload(modelId: string): Promise<ModelDownloadProgress> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   return invoke<ModelDownloadProgress>("local_inference_start_download", { modelId });
 }
 
 export async function loadLocalEngine(modelId?: string | null): Promise<LocalEngineStatus> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   return invoke<LocalEngineStatus>("local_inference_spawn_engine", { modelId: modelId ?? null });
 }
 
 export async function fetchLocalEngineStatus(): Promise<LocalEngineStatus> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   return invoke<LocalEngineStatus>("local_inference_engine_status");
 }
 
 export async function unloadLocalEngine(): Promise<LocalEngineStatus> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   return invoke<LocalEngineStatus>("local_inference_unload_engine");
 }
 
 export async function removeLocalModel(modelId: string): Promise<void> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   await invoke("local_inference_remove_model", { modelId });
 }
 
 export async function streamLocalModelDownload(jobId: string): Promise<void> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   await invoke("local_inference_stream_download", { jobId });
 }
 
 export async function stopLocalModelDownloadStream(): Promise<void> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   await invoke("local_inference_stream_download_stop");
 }
 
@@ -183,7 +183,7 @@ export function onModelDownloadError(handler: (message: string) => void): Promis
 }
 
 export async function fetchDownloadStatus(jobId: string): Promise<ModelDownloadProgress> {
-  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  if (!isTauri()) throw new Error("Local inference requires the Medousa app");
   return invoke<ModelDownloadProgress>("local_inference_download_status", { jobId });
 }
 
@@ -191,6 +191,17 @@ export async function waitForModelDownload(
   jobId: string,
   onProgress?: (progress: ModelDownloadProgress) => void,
 ): Promise<ModelDownloadProgress> {
+  if (!onProgress) {
+    while (true) {
+      const progress = await fetchDownloadStatus(jobId);
+      if (progress.phase === "ready") return progress;
+      if (progress.phase === "failed") {
+        throw new Error(progress.error ?? progress.message);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    }
+  }
+
   const unlisten = await onModelDownloadProgress((progress) => {
     if (progress.jobId === jobId) {
       onProgress?.(progress);
@@ -221,13 +232,14 @@ export async function ensureLocalModelReady(
   onProgress?: (progress: ModelDownloadProgress) => void,
 ): Promise<ModelDownloadProgress> {
   const models = await fetchLocalModels();
-  if (models.installed.some((entry) => entry.modelId === modelId)) {
+  const installed = models.installed.find((entry) => entry.modelId === modelId && entry.verified);
+  if (installed) {
     return {
       jobId: "installed",
       modelId,
       phase: "ready",
-      bytesDone: 0,
-      bytesTotal: 0,
+      bytesDone: installed.bytesOnDisk,
+      bytesTotal: installed.bytesOnDisk,
       percent: 100,
       message: "Already installed",
     };

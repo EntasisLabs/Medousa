@@ -49,6 +49,7 @@ pub struct PriorMessageLimits {
     pub hot_window_char_budget: usize,
     pub cold_window_char_budget: usize,
     pub cold_summary_line_chars: usize,
+    pub include_auxiliary_history: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -251,60 +252,73 @@ pub fn build_prior_messages(
         accepted.push(ChatMessage::assistant(cold_summary));
     }
 
-    let slice_budget = limits
-        .hot_window_char_budget
-        .min(DEFAULT_SLICE_BLOCK_CHARS)
-        .min(limits.max_prior_total_chars.saturating_sub(total_chars));
-    let tool_slices_block = build_tool_slices_block(
-        turns,
-        &hot_turns,
-        slice_budget,
-        DEFAULT_SLICE_HOT_LINE_CHARS,
-    );
-    let tool_slices_chars = tool_slices_block.chars().count();
-    if !tool_slices_block.trim().is_empty() {
-        total_chars = total_chars.saturating_add(tool_slices_chars);
-        accepted.push(ChatMessage::assistant(tool_slices_block));
-    }
+    let (tool_slices_chars, script_recall_chars, learning_recall_chars, tool_hints_chars) =
+        if limits.include_auxiliary_history {
+            let slice_budget = limits
+                .hot_window_char_budget
+                .min(DEFAULT_SLICE_BLOCK_CHARS)
+                .min(limits.max_prior_total_chars.saturating_sub(total_chars));
+            let tool_slices_block = build_tool_slices_block(
+                turns,
+                &hot_turns,
+                slice_budget,
+                DEFAULT_SLICE_HOT_LINE_CHARS,
+            );
+            let tool_slices_chars = tool_slices_block.chars().count();
+            if !tool_slices_block.trim().is_empty() {
+                total_chars = total_chars.saturating_add(tool_slices_chars);
+                accepted.push(ChatMessage::assistant(tool_slices_block));
+            }
 
-    let script_budget = limits
-        .hot_window_char_budget
-        .min(DEFAULT_SCRIPT_RECALL_BLOCK_CHARS)
-        .min(limits.max_prior_total_chars.saturating_sub(total_chars));
-    let script_recall_block = build_grapheme_script_recall_block(current_prompt, script_budget);
-    let script_recall_chars = script_recall_block.chars().count();
-    if !script_recall_block.trim().is_empty() {
-        total_chars = total_chars.saturating_add(script_recall_chars);
-        accepted.push(ChatMessage::assistant(script_recall_block));
-    }
+            let script_budget = limits
+                .hot_window_char_budget
+                .min(DEFAULT_SCRIPT_RECALL_BLOCK_CHARS)
+                .min(limits.max_prior_total_chars.saturating_sub(total_chars));
+            let script_recall_block =
+                build_grapheme_script_recall_block(current_prompt, script_budget);
+            let script_recall_chars = script_recall_block.chars().count();
+            if !script_recall_block.trim().is_empty() {
+                total_chars = total_chars.saturating_add(script_recall_chars);
+                accepted.push(ChatMessage::assistant(script_recall_block));
+            }
 
-    let learning_budget = limits
-        .hot_window_char_budget
-        .min(DEFAULT_LEARNING_RECALL_BLOCK_CHARS)
-        .min(limits.max_prior_total_chars.saturating_sub(total_chars));
-    let learning_recall_block = build_runtime_learnings_block(current_prompt, learning_budget);
-    let learning_recall_chars = learning_recall_block.chars().count();
-    if !learning_recall_block.trim().is_empty() {
-        total_chars = total_chars.saturating_add(learning_recall_chars);
-        accepted.push(ChatMessage::assistant(learning_recall_block));
-    }
+            let learning_budget = limits
+                .hot_window_char_budget
+                .min(DEFAULT_LEARNING_RECALL_BLOCK_CHARS)
+                .min(limits.max_prior_total_chars.saturating_sub(total_chars));
+            let learning_recall_block =
+                build_runtime_learnings_block(current_prompt, learning_budget);
+            let learning_recall_chars = learning_recall_block.chars().count();
+            if !learning_recall_block.trim().is_empty() {
+                total_chars = total_chars.saturating_add(learning_recall_chars);
+                accepted.push(ChatMessage::assistant(learning_recall_block));
+            }
 
-    let hints_budget = limits
-        .hot_window_char_budget
-        .min(DEFAULT_TOOL_HINTS_BLOCK_CHARS)
-        .min(limits.max_prior_total_chars.saturating_sub(total_chars));
-    let tool_hints_block = build_tool_hints_block(
-        tool_catalog,
-        session_id,
-        current_prompt,
-        turns,
-        hints_budget,
-    );
-    let tool_hints_chars = tool_hints_block.chars().count();
-    if !tool_hints_block.trim().is_empty() {
-        total_chars = total_chars.saturating_add(tool_hints_chars);
-        accepted.push(ChatMessage::assistant(tool_hints_block));
-    }
+            let hints_budget = limits
+                .hot_window_char_budget
+                .min(DEFAULT_TOOL_HINTS_BLOCK_CHARS)
+                .min(limits.max_prior_total_chars.saturating_sub(total_chars));
+            let tool_hints_block = build_tool_hints_block(
+                tool_catalog,
+                session_id,
+                current_prompt,
+                turns,
+                hints_budget,
+            );
+            let tool_hints_chars = tool_hints_block.chars().count();
+            if !tool_hints_block.trim().is_empty() {
+                total_chars = total_chars.saturating_add(tool_hints_chars);
+                accepted.push(ChatMessage::assistant(tool_hints_block));
+            }
+            (
+                tool_slices_chars,
+                script_recall_chars,
+                learning_recall_chars,
+                tool_hints_chars,
+            )
+        } else {
+            (0, 0, 0, 0)
+        };
 
     accepted.reverse();
     PriorMessageBuild {
@@ -569,6 +583,7 @@ mod tests {
             hot_window_char_budget: 14_000,
             cold_window_char_budget: 8_000,
             cold_summary_line_chars: 240,
+            include_auxiliary_history: true,
         }
     }
 
@@ -838,6 +853,24 @@ mod tests {
         );
         assert!(built.tool_slices_chars > TOOL_SLICES_PREFIX.len());
         assert!(built.total_chars > built.tool_slices_chars);
+
+        let mut focused_limits = sample_limits();
+        focused_limits.include_auxiliary_history = false;
+        let focused = build_prior_messages(
+            &crate::typed_tools::ToolCatalog::default(),
+            "test-session",
+            &turns,
+            "spin them up",
+            false,
+            6,
+            0,
+            focused_limits,
+        );
+        assert_eq!(focused.cold_turns_summarized, 0);
+        assert_eq!(focused.tool_slices_chars, 0);
+        assert_eq!(focused.script_recall_chars, 0);
+        assert_eq!(focused.learning_recall_chars, 0);
+        assert_eq!(focused.tool_hints_chars, 0);
     }
 
     #[test]
