@@ -523,9 +523,9 @@ fn sniff_image_mime(bytes: &[u8]) -> Option<&'static str> {
     if bytes.len() < 12 || &bytes[4..8] != b"ftyp" {
         return None;
     }
-    let brands = bytes[8..bytes.len().min(64)].chunks_exact(4);
+    let (brands, _) = bytes[8..bytes.len().min(64)].as_chunks::<4>();
     if brands
-        .clone()
+        .iter()
         .any(|brand| brand == b"avif" || brand == b"avis")
     {
         return Some("image/avif");
@@ -534,8 +534,7 @@ fn sniff_image_mime(bytes: &[u8]) -> Option<&'static str> {
         if [
             b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"mif1", b"msf1",
         ]
-        .iter()
-        .any(|candidate| brand == *candidate)
+        .contains(&brand)
         {
             return Some("image/heic");
         }

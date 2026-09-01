@@ -5,22 +5,22 @@
   "ceilings": {
     "desktop": {
       "shellEntry": "src/lib/components/layout/WorkshopShell.svelte",
-      "jsFiles": 264,
-      "cssFiles": 31,
-      "jsBytes": 3826044,
-      "jsGzipBytes": 1258155,
-      "cssBytes": 631395,
-      "cssGzipBytes": 102743,
+      "jsFiles": 265,
+      "cssFiles": 33,
+      "jsBytes": 3837380,
+      "jsGzipBytes": 1261951,
+      "cssBytes": 632387,
+      "cssGzipBytes": 103205,
       "largestJsChunkBytes": 808641
     },
     "mobile": {
       "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
-      "jsFiles": 298,
-      "cssFiles": 46,
-      "jsBytes": 6315890,
-      "jsGzipBytes": 1964432,
-      "cssBytes": 972100,
-      "cssGzipBytes": 154577,
+      "jsFiles": 299,
+      "cssFiles": 48,
+      "jsBytes": 6328388,
+      "jsGzipBytes": 1968681,
+      "cssBytes": 973674,
+      "cssGzipBytes": 155173,
       "largestJsChunkBytes": 1454824
     }
   },
@@ -33,22 +33,22 @@
     ],
     "desktop": {
       "shellEntry": "src/lib/components/layout/WorkshopShell.svelte",
-      "jsFiles": 264,
-      "cssFiles": 31,
-      "jsBytes": 3826044,
-      "jsGzipBytes": 1258155,
-      "cssBytes": 631395,
-      "cssGzipBytes": 102743,
+      "jsFiles": 265,
+      "cssFiles": 33,
+      "jsBytes": 3837380,
+      "jsGzipBytes": 1261951,
+      "cssBytes": 632387,
+      "cssGzipBytes": 103205,
       "largestJsChunkBytes": 808641
     },
     "mobile": {
       "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
-      "jsFiles": 298,
-      "cssFiles": 46,
-      "jsBytes": 6315890,
-      "jsGzipBytes": 1964432,
-      "cssBytes": 972100,
-      "cssGzipBytes": 154577,
+      "jsFiles": 299,
+      "cssFiles": 48,
+      "jsBytes": 6328388,
+      "jsGzipBytes": 1968681,
+      "cssBytes": 973674,
+      "cssGzipBytes": 155173,
       "largestJsChunkBytes": 1454824
     }
   }
