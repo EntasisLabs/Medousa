@@ -119,7 +119,7 @@ export function chatSegmentsFromParts(parts?: TurnPart[] | null): ChatSegment[] 
   }
 
   const segments: ChatSegment[] = [];
-  for (const part of parts) {
+  for (const [partIndex, part] of parts.entries()) {
     switch (part.kind) {
       case "text": {
         const segmentId = part.segment_id?.trim();
@@ -133,6 +133,15 @@ export function chatSegmentsFromParts(parts?: TurnPart[] | null): ChatSegment[] 
         });
         break;
       }
+      case "progress":
+        if (part.markdown.trim()) {
+          segments.push({
+            kind: "progress",
+            progressId: `history-progress:${partIndex}`,
+            markdown: part.markdown.trim(),
+          });
+        }
+        break;
       case "tool_run": {
         const run: ToolRunState = {
           runId: part.run_id,

@@ -96,7 +96,7 @@ Environment:
 
 Examples:
   # Production: pinned release from CDN / GitHub
-  curl -fsSL https://raw.githubusercontent.com/${MEDOUSA_GITHUB_REPO}/main/scripts/install.sh | bash -s -- --version v0.9.1
+  curl -fsSL https://raw.githubusercontent.com/${MEDOUSA_GITHUB_REPO}/main/scripts/install.sh | bash -s -- --version v0.10.0
 
   # Enterprise / air-gap: local engine artifact
   ./scripts/install.sh --from-dist dist/engine-v0.1.0-x86_64-unknown-linux-gnu.tar.gz

@@ -28,6 +28,7 @@ Disk use varies by package — Offline brain is the large one. Non-desktop shell
    - **Mock** (dev)
 3. Fill **Server id**, **Title**, URL/token or Command/Arguments.
 4. Enable/disable servers under **Your servers**; advanced gateway config path when shown.
+5. Open **Tools** on a server to switch individual tools on or off. Add comma-separated **Discovery hints** such as `web_research`, `web`, or `internet` when the server's own tool description does not use the words you naturally ask with.
 
 Tools from MCP appear for chat, specialists, and Flow **External tool** steps — still subject to Runtime Controls module allowlists.
 

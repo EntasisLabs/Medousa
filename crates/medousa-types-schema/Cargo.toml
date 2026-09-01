@@ -1,6 +1,6 @@
 [package]
 name = "medousa-types-schema"
-version = "0.9.1"
+version = "0.10.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Export JSON Schema from medousa-types for Python codegen"

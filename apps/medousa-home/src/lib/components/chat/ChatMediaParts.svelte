@@ -2,8 +2,9 @@
   import { onMount } from "svelte";
   import { X } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
-  import { mediaFetchUrl } from "$lib/daemon";
+  import { readMediaBytes } from "$lib/daemon";
   import type { ChatMediaAttachment } from "$lib/types/media";
+  import { chatImageObjectUrl } from "$lib/utils/chatImagePreview";
 
   interface Props {
     sessionId: string;
@@ -16,22 +17,42 @@
   let urls = $state<Record<string, string>>({});
   let preview = $state<{ url: string; label: string } | null>(null);
 
-  onMount(() => {
+  $effect(() => {
+    const activeSessionId = sessionId;
+    const images = attachments
+      .filter((attachment) => attachment.mime.startsWith("image/"))
+      .map((attachment) => ({ ...attachment }));
     let cancelled = false;
+    let ownedUrls: string[] = [];
+    urls = {};
+    preview = null;
     void (async () => {
       const next: Record<string, string> = {};
-      for (const attachment of attachments) {
-        if (!attachment.mime.startsWith("image/")) continue;
+      const created: string[] = [];
+      for (const attachment of images) {
         try {
-          next[attachment.mediaId] = await mediaFetchUrl(sessionId, attachment.mediaId);
+          const payload = await readMediaBytes(activeSessionId, attachment.mediaId);
+          const url = await chatImageObjectUrl(
+            payload.bytes,
+            payload.mime,
+            attachment.label,
+          );
+          created.push(url);
+          next[attachment.mediaId] = url;
         } catch {
           // Thumbnail optional — chip still shows label.
         }
       }
-      if (!cancelled) urls = next;
+      if (cancelled) {
+        created.forEach((url) => URL.revokeObjectURL(url));
+        return;
+      }
+      ownedUrls = created;
+      urls = next;
     })();
     return () => {
       cancelled = true;
+      ownedUrls.forEach((url) => URL.revokeObjectURL(url));
     };
   });
 

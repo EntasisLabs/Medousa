@@ -7,13 +7,91 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-08-31
+
+### Added
+
+- **Embedded Personal on iOS and Android** — mobile builds can run the Medousa
+  daemon on-device instead of acting only as a portal. Chat, Notes, Calendar,
+  Automations, agents, flows, history, model routing, and workshop state remain
+  available without pairing a desktop.
+- **Mobile-first setup and navigation** — onboarding can connect a ChatGPT
+  account or an API-key provider, the model picker searches providers and model
+  ids, bottom sheets expand to a full-height detent, and Home, Calendar,
+  Automations, Workshop, Code, Notes, and chat history share one calmer mobile
+  interaction model.
+- **Long-conversation navigation** — transcripts page older history on demand,
+  preserve the reader's scroll anchor, and keep the contextually relevant user
+  turn sticky while moving through earlier responses.
+- **Durable conversation tools** — prompt stashes preserve unfinished text and
+  attachments, committed history forks branch from an earlier turn, transcript
+  search is indexed, and ordered conversation coordinates survive reconnects.
+- **Hermes agent runtime** — Hermes joins Medousa, Codex, and Cursor as a
+  first-class ACP runtime with readiness checks, setup guidance, model routing,
+  and governed Coder worktree support.
+- **MCP OAuth** — discover, authorize, refresh, revoke, and reconnect OAuth-backed
+  MCP servers through the daemon-owned browser flow and credential registry.
+- **Daemon-owned work environments** — OCI-backed jobs gain durable checkpoints,
+  resumable remote delegation, target selection, parallel reconciliation, and
+  federated result transport without moving custody out of Medousa.
+- **Generated API contracts** — a declared route inventory now drives the
+  OpenAPI schema, Rust and Python types, SDK clients, Tauri bridges, and
+  versioned error envelopes from one contract surface.
+
 ### Changed
 
 - **Bounded persistence ownership** — feed appends now use independent per-feed
   owners and incremental logs; workspace state uses a typed mutation journal and
   generation checkpoints; and Forge task runs use bounded per-run output/replay
   storage with explicit reconnect gaps and terminal eviction.
-- **Bounded provider streaming** — upgraded to `stasis-rs` 0.9.0 and replaced the provider/tool-loop unbounded delta channel with awaited bounded admission. Slow consumers now backpressure providers, while closed receivers and oversized deltas fail visibly instead of being dropped or accumulating without limit.
+- **Bounded provider streaming** — upgraded to `stasis-rs` 0.9.0 and replaced
+  the provider/tool-loop unbounded delta channel with awaited bounded admission.
+  Slow consumers now backpressure providers, while closed receivers and
+  oversized deltas fail visibly instead of being dropped or accumulating.
+- **Chronological turn streaming** — native, SDK, TUI, embedded-daemon, and Home
+  consumers now preserve interleaved prose, reasoning, tool activity, and
+  completion order through a typed reconnectable stream.
+- **Scoped runtime execution** — turn workers, tools, cancellation, continuations,
+  and delegated waits carry exact workshop and generation ownership instead of
+  relying on ambient shared state.
+- **Atomic vault, Forge, and Coder storage** — generation-fenced mutations,
+  crash-safe logs, compaction, bounded checkpoints, and explicit replay gaps
+  replace full-map rewrites and unbounded retained output.
+- **Desktop runtime boundaries** — destination code and CSS load on demand,
+  lifecycle ownership is centralized, bundle budgets are enforced, and the
+  workspace shell keeps inactive views mounted and sized correctly.
+- **Code workbench** — projects open on one tap, tasks attach to terminal
+  sessions, run output reconnects, tests are repository-root aware, and editor,
+  feedback, and review commands share the same governed workspace.
+
+### Fixed
+
+- Mobile history and library sheets no longer lose their expanded detent or
+  bounce back while swiping; search fields wait for an explicit tap before
+  opening the keyboard.
+- Contextual sticky user turns now advance through the whole loaded transcript
+  instead of pinning only the literal latest user message.
+- Embedded Personal restores workshop identity, credentials, turns, and feature
+  state across app lifecycle transitions and recovers cleanly from interrupted
+  startup.
+- The desktop shell once again fills the viewport after the CSS/runtime split;
+  inactive destinations render normally instead of leaving an empty pane.
+- Mobile startup uses one splash, and mobile menus, popovers, code text, chat
+  history, Notes chips, Calendar sheets, and action rows use consistent touch
+  targets, spacing, and typography.
+
+### Security
+
+- Daemon access now fails closed: local and remote clients authenticate with
+  workshop credentials, requests carry typed principals, and every protected
+  route declares its required capability.
+- Session, vault, artifact, media, Git, and Coder storage use typed identifiers
+  and confined filesystem authority through final I/O, including Windows path
+  semantics and durable deletion.
+- Remote browser WebViews are isolated behind bounded native actions, hardened
+  content-security policy, lifecycle fencing, and packaged-resource checks.
+- Secrets are centralized in the platform credential store and scoped to the
+  workshop that owns them; revocation is enforced across reconnects.
 
 ## [0.9.1] — 2026-08-12
 
@@ -356,6 +434,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - Product path is **Home-first**: download the app, chat, then add packages from Settings; Installer remains an advanced/repair escape hatch
 - Connection → Extras and welcome-wizard offline CTAs open Settings → Packages instead of launching the Installer by default
 
+[Unreleased]: https://github.com/EntasisLabs/Medousa/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.10.0
 [0.9.1]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.9.1
 [0.9.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.9.0
 [0.8.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.8.0

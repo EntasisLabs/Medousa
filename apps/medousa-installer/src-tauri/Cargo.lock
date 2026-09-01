@@ -2076,7 +2076,7 @@ checksum = "4facc753ae494aeb6e3c22f839b158aebd4f9270f55cd3c79906c45476c47ab4"
 
 [[package]]
 name = "medousa-install-support"
-version = "0.9.1"
+version = "0.10.0"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
@@ -2097,7 +2097,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-installer"
-version = "0.9.1"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2120,7 +2120,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-types"
-version = "0.9.1"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

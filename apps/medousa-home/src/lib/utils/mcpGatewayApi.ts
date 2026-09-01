@@ -6,9 +6,11 @@ import type {
   McpGatewayRestartResult,
   McpGatewayStatusResult,
   McpGatewayTestResult,
+  McpGatewayToolsResult,
   McpOAuthStatus,
   McpServerMutationResult,
   McpServerUpsertRequest,
+  McpToolUpdateRequest,
 } from "$lib/types/mcpGateway";
 
 interface McpOAuthStatusWire {
@@ -57,6 +59,8 @@ interface McpGatewayConfigWire {
       bearer_token?: string | null;
       allowed_lanes?: string[];
       allowed_effect_classes?: string[];
+      tool_tags?: Record<string, string[]>;
+      disabled_tools?: string[];
       use_mock?: boolean;
     }>;
   };
@@ -93,6 +97,8 @@ export async function loadMcpGatewayConfig(): Promise<McpGatewayConfigLoadResult
         bearerToken: server.bearer_token,
         allowedLanes: server.allowed_lanes ?? [],
         allowedEffectClasses: server.allowed_effect_classes ?? [],
+        toolTags: server.tool_tags ?? {},
+        disabledTools: server.disabled_tools ?? [],
         useMock: server.use_mock ?? false,
       })),
     },
@@ -152,6 +158,24 @@ export async function setMcpServerEnabled(
     serverId,
     enabled,
   });
+}
+
+export async function listMcpServerTools(
+  serverId: string,
+): Promise<McpGatewayToolsResult> {
+  if (!isTauri()) {
+    return { tools: [], message: "Unavailable in browser dev mode" };
+  }
+  return invoke<McpGatewayToolsResult>("mcp_gateway_list_tools", { serverId });
+}
+
+export async function updateMcpTool(
+  request: McpToolUpdateRequest,
+): Promise<McpServerMutationResult> {
+  if (!isTauri()) {
+    return { ok: false, message: "Unavailable in browser dev mode", configPath: "" };
+  }
+  return invoke<McpServerMutationResult>("mcp_gateway_update_tool", { request });
 }
 
 export async function applyMcpServer(

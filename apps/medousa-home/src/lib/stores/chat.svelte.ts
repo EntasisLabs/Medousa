@@ -970,8 +970,8 @@ export class ChatStore implements ChatStoreHost {
     removePendingMedia(this, mediaId);
   }
 
-  async attachFilesFromPicker() {
-    await attachFilesFromPicker(this);
+  async attachFilesFromPicker(source: "all" | "photos" | "camera" = "all") {
+    await attachFilesFromPicker(this, source);
   }
 
   async attachDroppedFiles(files: File[]) {

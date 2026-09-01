@@ -67,6 +67,8 @@ Each server is one MCP connection the gateway manages.
 | `use_mock` | `true` = mock tools only (no subprocess) |
 | `allowed_lanes` | `interactive`, `scheduled`, … |
 | `allowed_effect_classes` | Policy hints: `external_read`, `external_write`, `external_side_effect` |
+| `tool_tags` | Per-tool capability ids and search aliases used by MCP discovery |
+| `disabled_tools` | Tool names hidden from discovery and denied at invoke time |
 
 ## Example servers
 
@@ -111,7 +113,17 @@ command = "uvx"
 args = ["mcp-server-fetch"]
 allowed_lanes = ["interactive"]
 allowed_effect_classes = ["external_read"]
+disabled_tools = []
+
+[servers.tool_tags]
+"fetch" = ["web_research", "web", "internet"]
 ```
+
+`tool_tags` augments Medousa's inferred tags. In the example above, asking to
+“search the internet” can resolve the `fetch` tool through either direct MCP
+discovery or the `web_research` capability. `disabled_tools` is a denylist, so
+new tools exposed by a server remain enabled until you explicitly switch them
+off.
 
 ### Remote HTTP (hosted MCP gateway)
 

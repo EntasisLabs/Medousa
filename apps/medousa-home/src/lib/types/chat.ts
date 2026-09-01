@@ -42,6 +42,11 @@ export type ChatSegment =
       committed: boolean;
     }
   | {
+      kind: "progress";
+      progressId: string;
+      markdown: string;
+    }
+  | {
       kind: "tool_group";
       groupId: string;
       /** First round in this uninterrupted tool streak; each run retains its exact round. */

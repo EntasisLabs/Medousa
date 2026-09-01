@@ -66,6 +66,10 @@ describe("turnParts", () => {
         tool_round: 2,
       },
       {
+        kind: "progress",
+        markdown: "I found the relevant entries.",
+      },
+      {
         kind: "text",
         markdown: "Found it.",
         segment_id: "segment-b",
@@ -77,6 +81,7 @@ describe("turnParts", () => {
     expect(segments?.map((segment) => segment.kind)).toEqual([
       "text",
       "tool_group",
+      "progress",
       "text",
     ]);
     expect(segments?.[1]).toEqual(
@@ -89,6 +94,12 @@ describe("turnParts", () => {
           }),
           expect.objectContaining({ runId: "run-2" }),
         ],
+      }),
+    );
+    expect(segments?.[2]).toEqual(
+      expect.objectContaining({
+        kind: "progress",
+        markdown: "I found the relevant entries.",
       }),
     );
   });

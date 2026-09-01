@@ -54,28 +54,8 @@ fn file_session_root() -> PathBuf {
     }
 }
 
-#[cfg(feature = "full-daemon")]
 fn record_catalog_append(session_id: &SessionId, turn: &ConversationTurn) {
     crate::session_catalog::record_turn_appended_for_id(session_id, turn);
-}
-
-#[cfg(not(feature = "full-daemon"))]
-fn record_catalog_append(_session_id: &SessionId, _turn: &ConversationTurn) {}
-
-fn preview_from_turn(turn: &ConversationTurn) -> Option<String> {
-    #[cfg(feature = "full-daemon")]
-    {
-        crate::session_catalog::preview_from_turn(turn)
-    }
-    #[cfg(not(feature = "full-daemon"))]
-    {
-        let text = turn.content.trim();
-        if text.is_empty() {
-            None
-        } else {
-            Some(text.lines().next().unwrap_or("").chars().take(72).collect())
-        }
-    }
 }
 
 const SESSION_SCHEMA_STATEMENTS: &[&str] = &[
@@ -1159,14 +1139,7 @@ impl SessionStore for FileSessionStore {
     }
 
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary> {
-        #[cfg(feature = "full-daemon")]
-        {
-            crate::session_catalog::list_sessions(limit)
-        }
-        #[cfg(not(feature = "full-daemon"))]
-        {
-            self.build_backfill_summaries(limit)
-        }
+        crate::session_catalog::list_sessions(limit)
     }
 
     fn search_transcripts(
@@ -1810,14 +1783,7 @@ impl SessionStore for SurrealSessionStore {
     }
 
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary> {
-        #[cfg(feature = "full-daemon")]
-        {
-            crate::session_catalog::list_sessions(limit)
-        }
-        #[cfg(not(feature = "full-daemon"))]
-        {
-            self.build_backfill_summaries(limit)
-        }
+        crate::session_catalog::list_sessions(limit)
     }
 
     fn search_transcripts(
@@ -1959,14 +1925,29 @@ impl SessionStore for SurrealSessionStore {
 
 impl SurrealSessionStore {
     fn preview_for_session(&self, session_id: &str) -> Option<String> {
-        let session_id = SessionId::parse(session_id).ok()?;
-        for entry in self
-            .load_transcript_entries(&session_id)
-            .into_iter()
-            .rev()
-            .take(8)
-        {
-            if let Some(preview) = preview_from_turn(&entry.turn) {
+        #[derive(Debug, Deserialize, SurrealValue)]
+        struct PreviewRow {
+            search_text: Option<String>,
+        }
+
+        let mut response = block_on(
+            self.db
+                .query(
+                    "SELECT search_text FROM type::table($table) \
+                     WHERE session_id = $session_id \
+                     ORDER BY entry_seq DESC LIMIT 8",
+                )
+                .bind(("table", SESSION_ENTRY_TABLE))
+                .bind(("session_id", session_id.to_string())),
+        )
+        .ok()?;
+        let rows = response.take::<Vec<PreviewRow>>(0).ok()?;
+        for row in rows {
+            if let Some(preview) = row
+                .search_text
+                .as_deref()
+                .and_then(crate::session_catalog::preview_line_from_content)
+            {
                 return Some(preview);
             }
         }

@@ -5,20 +5,20 @@
   "ceilings": {
     "desktop": {
       "shellEntry": "src/lib/components/layout/WorkshopShell.svelte",
-      "jsFiles": 263,
+      "jsFiles": 264,
       "cssFiles": 31,
-      "jsBytes": 3822700,
-      "jsGzipBytes": 1257000,
+      "jsBytes": 3826044,
+      "jsGzipBytes": 1258155,
       "cssBytes": 631395,
       "cssGzipBytes": 102743,
       "largestJsChunkBytes": 808641
     },
     "mobile": {
       "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
-      "jsFiles": 297,
+      "jsFiles": 298,
       "cssFiles": 46,
-      "jsBytes": 6312527,
-      "jsGzipBytes": 1963153,
+      "jsBytes": 6315890,
+      "jsGzipBytes": 1964432,
       "cssBytes": 972100,
       "cssGzipBytes": 154577,
       "largestJsChunkBytes": 1454824
@@ -33,20 +33,20 @@
     ],
     "desktop": {
       "shellEntry": "src/lib/components/layout/WorkshopShell.svelte",
-      "jsFiles": 263,
+      "jsFiles": 264,
       "cssFiles": 31,
-      "jsBytes": 3822700,
-      "jsGzipBytes": 1257000,
+      "jsBytes": 3826044,
+      "jsGzipBytes": 1258155,
       "cssBytes": 631395,
       "cssGzipBytes": 102743,
       "largestJsChunkBytes": 808641
     },
     "mobile": {
       "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
-      "jsFiles": 297,
+      "jsFiles": 298,
       "cssFiles": 46,
-      "jsBytes": 6312527,
-      "jsGzipBytes": 1963153,
+      "jsBytes": 6315890,
+      "jsGzipBytes": 1964432,
       "cssBytes": 972100,
       "cssGzipBytes": 154577,
       "largestJsChunkBytes": 1454824

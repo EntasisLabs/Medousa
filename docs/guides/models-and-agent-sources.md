@@ -1,8 +1,8 @@
 # Models, providers, and runtimes
 
 The runtime control under the composer chooses who owns the agent loop:
-**Medousa**, **Codex**, or **Cursor**. The model control inside the composer stays
-quiet and shows only the active model.
+**Medousa**, **Codex**, **Cursor**, or **Hermes**. The model control inside the
+composer stays quiet and shows only the active model.
 
 ## Choose a runtime
 
@@ -14,9 +14,12 @@ Use the runtime control under the composer:
   owns that agent loop.
 - **Cursor** uses the connected Cursor account and the models advertised by its
   session.
+- **Hermes** uses the configured Hermes Agent CLI through ACP and the providers
+  advertised by that runtime.
 
-If Codex or Cursor is not ready, its runtime option opens **Settings →
-Connections** for installation or sign-in.
+If Codex, Cursor, or Hermes is not ready, its runtime option opens **Settings →
+Connections** for installation or sign-in. Hermes can also be prepared from the
+terminal with `hermes acp --setup`.
 
 ## Choose a provider and model
 
@@ -49,9 +52,9 @@ Completed Medousa replies show a small model receipt below the answer. This is
 the successful provider/model route observed by the daemon after fallback, so
 it can differ from the model that was initially requested.
 
-When Codex or Cursor owns the loop, the model picker contains only the choices
-advertised by that runtime. Runtime selection stays under the composer, so it
-is not duplicated inside the model picker.
+When Codex, Cursor, or Hermes owns the loop, the model picker contains only the
+choices advertised by that runtime. Runtime selection stays under the composer,
+so it is not duplicated inside the model picker.
 
 ## Choose General or Coder
 
@@ -62,6 +65,6 @@ Source and mode are independent:
 - **Coder** is repository-aware and requires a governed Forge project. Choose or
   create that project from the project control above chat.
 
-General/Coder remains available with Medousa, Codex, and Cursor. When an
-external source runs in Coder mode, Medousa launches it inside the governed
+General/Coder remains available with Medousa, Codex, Cursor, and Hermes. When
+an external source runs in Coder mode, Medousa launches it inside the governed
 project worktree rather than an arbitrary folder.

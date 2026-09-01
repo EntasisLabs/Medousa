@@ -97,6 +97,37 @@ describe("Turn Stream V3 chronological presentation fold", () => {
     ).toBe(true);
     expect(v3EventPromotesChatMessage({ type: "model_receipt", provider: "p", model: "m" }))
       .toBe(false);
+    expect(
+      v3EventPromotesChatMessage({
+        type: "progress",
+        message: "Checking the durable transcript.",
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps turn-control progress as a chronological timeline message", () => {
+    const result = foldV3Envelopes(assistant(), [
+      toolStarted(1, "run-1", "cognition_turn", 1),
+      toolFinished(2, "run-1", "cognition_turn", 1),
+      envelope(3, {
+        type: "progress",
+        message: "Checking the durable transcript.",
+        tool_names: ["cognition_turn"],
+      }),
+      ...textEvents(4, "segment-a", 2, "The transcript is intact."),
+    ]);
+
+    expect(result.segments?.map((segment) => segment.kind)).toEqual([
+      "tool_group",
+      "progress",
+      "text",
+    ]);
+    expect(result.segments?.[1]).toEqual({
+      kind: "progress",
+      progressId: "progress:turn-1:3",
+      markdown: "Checking the durable transcript.",
+    });
+    expect(result.statusLine).toBeNull();
   });
 
   it("keeps response → parallel tools → response → tools → response in occurrence order", () => {

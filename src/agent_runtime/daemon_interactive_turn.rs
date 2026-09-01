@@ -232,8 +232,20 @@ impl InteractiveTurnStreamSink {
 
     async fn terminal_body(&self, fallback: &str) -> String {
         self.commit_active_segment(false).await;
-        if self.aggregate_text().trim().is_empty()
-            && !fallback.trim().is_empty()
+        let terminal_text_is_new = self
+            .text
+            .lock()
+            .map(|state| {
+                let fallback = fallback.trim();
+                !fallback.is_empty()
+                    && state.committed_markdown.join("\n\n").trim() != fallback
+                    && state
+                        .committed_markdown
+                        .last()
+                        .is_none_or(|last| last.trim() != fallback)
+            })
+            .unwrap_or(false);
+        if terminal_text_is_new
             && let Some((started, append)) = self.prepare_content_delta(fallback.to_string())
         {
             if let Some(started) = started {
@@ -770,6 +782,9 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.archive_progress_note(&message);
+        }
         self.publish_tracked(TurnStreamEventV3::Progress {
             message,
             tool_names,
@@ -2427,6 +2442,56 @@ mod chronological_sink_tests {
                 if tool_run_id == "run-1"
         ));
         drop(events);
+        sink.pipeline.cancel();
+    }
+
+    #[tokio::test]
+    async fn terminal_tool_message_follows_earlier_interim_prose() {
+        let output = Arc::new(RecordingOutput::default());
+        let sink = sink(Arc::clone(&output));
+
+        sink.content_chunk(1, "I found the likely cause.".into())
+            .await;
+        sink.model_response_completed_with_text(1, 1, None).await;
+        sink.model_response_completed_with_text(1, 2, None).await;
+        let body = sink.terminal_body("The fix is ready.").await;
+
+        assert_eq!(body, "I found the likely cause.\n\nThe fix is ready.");
+        let parts = sink
+            .parts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .preview_parts();
+        let text = parts
+            .iter()
+            .filter_map(|part| match part {
+                TurnPart::Text { markdown, .. } => Some(markdown.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(text, ["I found the likely cause.", "The fix is ready."]);
+
+        sink.pipeline.cancel();
+    }
+
+    #[tokio::test]
+    async fn turn_progress_is_archived_at_its_timeline_position() {
+        let output = Arc::new(RecordingOutput::default());
+        let sink = sink(Arc::clone(&output));
+
+        sink.agent_turn_progress(1, "Checking the durable transcript.".into(), vec![])
+            .await;
+
+        let parts = sink
+            .parts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .preview_parts();
+        assert!(matches!(
+            parts.as_slice(),
+            [TurnPart::Progress { markdown }] if markdown == "Checking the durable transcript."
+        ));
+
         sink.pipeline.cancel();
     }
 }

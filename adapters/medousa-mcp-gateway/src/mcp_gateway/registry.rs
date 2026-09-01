@@ -122,17 +122,19 @@ impl ServerRegistry {
                 let mock_tools: Vec<_> = mock_tool_catalog()
                     .into_iter()
                     .filter(|tool| tool.server_id == server.id)
+                    .map(|tool| configure_tool_entry(server, tool))
                     .collect();
-                let count = mock_tools.len();
+                let connected = !mock_tools.is_empty();
+                let count = enabled_tool_count(server, &mock_tools);
                 tools.extend(mock_tools);
                 servers.push(status_from_config(
                     server,
-                    count > 0,
+                    connected,
                     count,
-                    if count == 0 {
-                        Some("mock catalog unavailable for server".to_string())
-                    } else {
+                    if connected {
                         None
+                    } else {
+                        Some("mock catalog unavailable for server".to_string())
                     },
                 ));
                 continue;
@@ -144,7 +146,7 @@ impl ServerRegistry {
             };
             match live_tools {
                 Ok(live_tools) => {
-                    let count = live_tools.len();
+                    let count = enabled_tool_count(server, &live_tools);
                     tools.extend(live_tools);
                     servers.push(status_from_config(server, true, count, None));
                 }
@@ -156,10 +158,10 @@ impl ServerRegistry {
                             .filter(|tool| tool.server_id == server.id)
                             .map(|mut tool| {
                                 tool.stability = "mock_fallback".to_string();
-                                tool
+                                configure_tool_entry(server, tool)
                             })
                             .collect();
-                        let count = mock_tools.len();
+                        let count = enabled_tool_count(server, &mock_tools);
                         tools.extend(mock_tools);
                         servers.push(status_from_config(server, false, count, Some(message)));
                     } else {
@@ -188,21 +190,30 @@ impl ServerRegistry {
                 .tools
                 .iter()
                 .map(|tool| {
-                    let available = snapshot.servers.iter().any(|server| {
+                    let runtime = snapshot
+                        .servers
+                        .iter()
+                        .find(|server| server.server_id == tool.server_id);
+                    let runtime_available = runtime.is_some_and(|server| {
                         server.server_id == tool.server_id
                             && (server.connected || server.tool_count > 0)
                     }) || self.config.servers.is_empty();
+                    let tool_enabled = self
+                        .config
+                        .server_by_id(&tool.server_id)
+                        .is_none_or(|server| server.tool_enabled(&tool.tool_name));
+                    let available = tool_enabled && runtime_available;
                     McpCatalogSyncEntry {
                         server_id: tool.server_id.clone(),
                         tool_name: tool.tool_name.clone(),
                         title: tool.title.clone(),
                         capability_ids: tool.capability_ids.clone(),
                         available,
-                        unavailable_reason: snapshot
-                            .servers
-                            .iter()
-                            .find(|server| server.server_id == tool.server_id)
-                            .and_then(|server| server.last_error.clone()),
+                        unavailable_reason: if tool_enabled {
+                            runtime.and_then(|server| server.last_error.clone())
+                        } else {
+                            Some("tool disabled".to_string())
+                        },
                     }
                 })
                 .collect(),
@@ -217,7 +228,17 @@ impl ServerRegistry {
         limit: usize,
     ) -> Vec<McpToolCatalogEntry> {
         let snapshot = self.snapshot.read().await;
-        discover_from_entries(&snapshot.tools, query, server_id, limit)
+        let enabled_tools = snapshot
+            .tools
+            .iter()
+            .filter(|tool| {
+                self.config
+                    .server_by_id(&tool.server_id)
+                    .is_none_or(|server| server.tool_enabled(&tool.tool_name))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        discover_from_entries(&enabled_tools, query, server_id, limit)
     }
 
     pub async fn list_servers(&self) -> McpServersResponse {
@@ -358,6 +379,14 @@ impl ServerRegistry {
             );
         }
 
+        if !server.tool_enabled(&request.tool_name) {
+            return fail(
+                "tool_disabled",
+                format!("MCP tool '{}.{}' is disabled", server.id, request.tool_name),
+                false,
+            );
+        }
+
         if !lane_allowed(server, request.turn_context.lane) {
             return fail(
                 "lane_denied",
@@ -464,7 +493,16 @@ impl ServerRegistry {
             .iter()
             .filter(|server| server.connected)
             .count();
-        (registered, connected, snapshot.tools.len())
+        let enabled_tools = snapshot
+            .tools
+            .iter()
+            .filter(|tool| {
+                self.config
+                    .server_by_id(&tool.server_id)
+                    .is_none_or(|server| server.tool_enabled(&tool.tool_name))
+            })
+            .count();
+        (registered, connected, enabled_tools)
     }
 
     async fn remote_bearer_token(&self, server: &McpServerConfig) -> Result<Option<String>> {
@@ -570,22 +608,58 @@ fn tool_entry_from_definition(
     tool: crate::mcp_gateway::stdio_client::McpToolDefinition,
 ) -> McpToolCatalogEntry {
     let effect_class = infer_effect_class(&tool.name, tool.description.as_deref());
-    let capability_ids = server
+    let capability_ids = auto_tag_capabilities(&tool.name, tool.description.as_deref());
+    configure_tool_entry(
+        server,
+        McpToolCatalogEntry {
+            server_id: server.id.clone(),
+            server_title: server.title.clone(),
+            tool_name: tool.name.clone(),
+            title: tool.title,
+            description: tool.description,
+            input_schema_summary: tool.input_schema.as_ref().map(|schema| schema.to_string()),
+            effect_class,
+            capability_ids,
+            stability: "live".to_string(),
+        },
+    )
+}
+
+fn configure_tool_entry(
+    server: &McpServerConfig,
+    mut tool: McpToolCatalogEntry,
+) -> McpToolCatalogEntry {
+    tool.server_id = server.id.clone();
+    tool.server_title = server.title.clone();
+    if let Some(configured) = server
         .tool_tags
-        .get(&tool.name)
-        .cloned()
-        .unwrap_or_else(|| auto_tag_capabilities(&tool.name, tool.description.as_deref()));
-    McpToolCatalogEntry {
-        server_id: server.id.clone(),
-        server_title: server.title.clone(),
-        tool_name: tool.name.clone(),
-        title: tool.title,
-        description: tool.description,
-        input_schema_summary: tool.input_schema.as_ref().map(|schema| schema.to_string()),
-        effect_class,
-        capability_ids,
-        stability: "live".to_string(),
+        .iter()
+        .find_map(|(name, tags)| name.eq_ignore_ascii_case(&tool.tool_name).then_some(tags))
+    {
+        merge_capability_ids(&mut tool.capability_ids, configured);
     }
+    tool
+}
+
+fn merge_capability_ids(target: &mut Vec<String>, configured: &[String]) {
+    for capability in configured {
+        let capability = capability.trim();
+        if capability.is_empty()
+            || target
+                .iter()
+                .any(|existing| existing.eq_ignore_ascii_case(capability))
+        {
+            continue;
+        }
+        target.push(capability.to_string());
+    }
+}
+
+fn enabled_tool_count(server: &McpServerConfig, tools: &[McpToolCatalogEntry]) -> usize {
+    tools
+        .iter()
+        .filter(|tool| server.tool_enabled(&tool.tool_name))
+        .count()
 }
 
 async fn execute_invoke(
@@ -757,6 +831,7 @@ mod tests {
                 allowed_lanes: vec!["interactive".to_string()],
                 allowed_effect_classes: vec!["external_read".to_string()],
                 tool_tags: Default::default(),
+                disabled_tools: Vec::new(),
                 use_mock: true,
             }],
         });
@@ -769,6 +844,69 @@ mod tests {
         registry.bootstrap().await;
         let tools = registry.discover("notion", None, 10).await;
         assert!(tools.iter().any(|tool| tool.tool_name == "search_pages"));
+    }
+
+    #[tokio::test]
+    async fn configured_hints_make_mock_tools_discoverable_by_alias() {
+        let base = test_registry();
+        let mut config = (*base.config).clone();
+        config.servers[0]
+            .tool_tags
+            .insert("search_pages".to_string(), vec!["web_research".to_string()]);
+        let registry = ServerRegistry::new(Arc::new(config));
+        registry.bootstrap().await;
+
+        let tools = registry.discover("search the internet", None, 10).await;
+        assert!(tools.iter().any(|tool| tool.tool_name == "search_pages"));
+    }
+
+    #[tokio::test]
+    async fn disabled_tools_are_hidden_from_discovery_and_denied_on_invoke() {
+        let base = test_registry();
+        let mut config = (*base.config).clone();
+        config.servers[0]
+            .disabled_tools
+            .push("search_pages".to_string());
+        let registry = ServerRegistry::new(Arc::new(config));
+        registry.bootstrap().await;
+
+        assert!(registry.discover("search_pages", None, 10).await.is_empty());
+        let catalog = registry.catalog_sync().await;
+        let disabled = catalog
+            .entries
+            .iter()
+            .find(|entry| entry.tool_name == "search_pages")
+            .expect("disabled tool remains visible to management surfaces");
+        assert!(!disabled.available);
+        assert_eq!(
+            disabled.unavailable_reason.as_deref(),
+            Some("tool disabled")
+        );
+
+        let response = registry
+            .invoke(
+                McpInvokeRequest {
+                    server_id: "notion".to_string(),
+                    tool_name: "search_pages".to_string(),
+                    input: json!({}),
+                    turn_context: medousa_types::mcp_gateway_api::McpTurnContext {
+                        turn_id: "turn-1".to_string(),
+                        session_id: "session-1".to_string(),
+                        user_id: "user-1".to_string(),
+                        channel_id: "chat".to_string(),
+                        lane: McpTurnLane::Interactive,
+                        policy_profile: None,
+                    },
+                    turn_token: None,
+                    operator_approval_granted: None,
+                },
+                true,
+            )
+            .await;
+        assert_eq!(
+            response.error.as_ref().map(|error| error.code.as_str()),
+            Some("tool_disabled")
+        );
     }
 
     #[tokio::test]

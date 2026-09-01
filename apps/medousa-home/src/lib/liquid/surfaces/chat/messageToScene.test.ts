@@ -80,6 +80,42 @@ describe("chatMessageToScene — assistant order (thinking → body → tools)",
     expect(findNode(scene, "m1:whisper")?.props.text).toBe("Pulling schemas…");
   });
 
+  it("renders native turn progress at its chronological timeline position", () => {
+    const scene = chatMessageToScene(
+      msg({
+        content: "Done.",
+        streaming: false,
+        segments: [
+          {
+            kind: "text",
+            segmentId: "segment-a",
+            modelRound: 1,
+            markdown: "Let me check.",
+            committed: true,
+          },
+          {
+            kind: "progress",
+            progressId: "progress:turn-1:4",
+            markdown: "I found the relevant entries.",
+          },
+          {
+            kind: "text",
+            segmentId: "segment-b",
+            modelRound: 2,
+            markdown: "Done.",
+            committed: true,
+          },
+        ],
+      }),
+    );
+
+    const flow = scene.slots?.flow ?? [];
+    expect(flow.map((node) => node.type)).toEqual(["prose", "whisper", "prose"]);
+    expect(findNode(scene, "m1:segment:progress:turn-1:4")?.props.text).toBe(
+      "I found the relevant entries.",
+    );
+  });
+
   it("renders an error callout + retry button", () => {
     const scene = chatMessageToScene(
       msg({ failed: true, errorLine: "boom", workId: "w9", content: "partial" }),

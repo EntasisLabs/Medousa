@@ -1,6 +1,6 @@
 [package]
 name = "medousa-session"
-version = "0.9.1"
+version = "0.10.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Medousa workshop shell session host — one PTY per session, shared by Home and agents"

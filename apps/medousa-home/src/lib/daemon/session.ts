@@ -25,10 +25,16 @@ import type {
   PromptStash,
   PromptStashListResponse,
 } from "$lib/types/generated/daemon_api";
-import type { MediaRef, MediaUploadResponse } from "$lib/types/media";
+import type {
+  MediaPathResponse,
+  MediaPathPayload,
+  MediaPayload,
+  MediaPayloadResponse,
+  MediaRef,
+  MediaUploadResponse,
+} from "$lib/types/media";
 import type { StageRoutingMatrix } from "$lib/types/runtime";
-import { getDaemonUrl, invokePlain, type StreamErrorPayload } from "./client";
-import { operationPath } from "./opPath";
+import { invokePlain, type StreamErrorPayload } from "./client";
 
 export interface InteractiveTurnAccepted {
   turn_id: string;
@@ -510,14 +516,14 @@ export async function uploadMediaBytes(
   sessionId: string,
   filename: string,
   mime: string,
-  bytes: number[],
+  bytes: Uint8Array,
   label?: string | null,
 ): Promise<MediaUploadResponse> {
   return invoke<MediaUploadResponse>("media_upload", {
     sessionId,
     filename,
     mime,
-    bytes,
+    bytesBase64: bytesToBase64(bytes),
     label: label ?? null,
   });
 }
@@ -534,10 +540,39 @@ export async function uploadMediaPath(
   });
 }
 
-export async function mediaFetchUrl(sessionId: string, mediaId: string): Promise<string> {
-  const base = (await getDaemonUrl()).replace(/\/$/, "");
-  const params = new URLSearchParams({ session_id: sessionId });
-  return `${base}${operationPath("media.by_media_id.get", { media_id: mediaId })}?${params.toString()}`;
+export async function readMediaBytes(
+  sessionId: string,
+  mediaId: string,
+): Promise<MediaPayload> {
+  const response = await invoke<MediaPayloadResponse>("media_read", { sessionId, mediaId });
+  return { mime: response.mime, bytes: base64ToBytes(response.bytes_base64) };
+}
+
+export async function readMediaImagePath(path: string): Promise<MediaPathPayload> {
+  const response = await invoke<MediaPathResponse>("media_read_image_path", { path });
+  return {
+    filename: response.filename,
+    mime: response.mime,
+    bytes: base64ToBytes(response.bytes_base64),
+  };
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
 }
 
 export async function startInteractiveStream(streamUrl: string): Promise<void> {

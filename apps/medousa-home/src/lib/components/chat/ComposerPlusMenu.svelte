@@ -4,6 +4,8 @@
     ArchiveRestore,
     Bot,
     BookmarkPlus,
+    Camera,
+    Images,
     LoaderCircle,
     Paperclip,
     Plus,
@@ -185,9 +187,9 @@
     }
   }
 
-  function attach() {
+  function attach(source: "all" | "photos" | "camera" = "all") {
     open = false;
-    void chat.attachFilesFromPicker();
+    void chat.attachFilesFromPicker(source);
   }
 
   function pickProfile() {
@@ -232,11 +234,40 @@
       role="menu"
       aria-label="Composer actions"
     >
-      <button type="button" class="composer-plus-menu-item" role="menuitem" onclick={attach}>
+      {#if mobile}
+        <button
+          type="button"
+          class="composer-plus-menu-item"
+          role="menuitem"
+          onclick={() => attach("camera")}
+        >
+          <span class="composer-plus-menu-icon" aria-hidden="true">
+            <Camera size={15} strokeWidth={1.75} />
+          </span>
+          <span>Take photo</span>
+        </button>
+        <button
+          type="button"
+          class="composer-plus-menu-item"
+          role="menuitem"
+          onclick={() => attach("photos")}
+        >
+          <span class="composer-plus-menu-icon" aria-hidden="true">
+            <Images size={15} strokeWidth={1.75} />
+          </span>
+          <span>Photo library</span>
+        </button>
+      {/if}
+      <button
+        type="button"
+        class="composer-plus-menu-item"
+        role="menuitem"
+        onclick={() => attach("all")}
+      >
         <span class="composer-plus-menu-icon" aria-hidden="true">
           <Paperclip size={15} strokeWidth={1.75} />
         </span>
-        <span>Attach</span>
+        <span>{mobile ? "Attach file" : "Attach"}</span>
       </button>
       {#if showStashes}
         <button

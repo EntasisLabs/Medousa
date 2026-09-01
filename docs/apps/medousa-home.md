@@ -183,9 +183,11 @@ stale-navigation, cancelled, oversize, and capacity-rejected outcomes.
 ### Trusted shell CSP and local resources
 
 The trusted shell ships with an explicit CSP: scripts are bundled/self-only,
-objects and embedding are denied, and connection/image/frame/worker sources are
-listed by feature. CSP diagnostics record only the effective directive and a
-source class; they never log the blocked URL, query, local path, or payload.
+with the narrower `wasm-unsafe-eval` permission reserved for the bundled HEIC
+decoder; general JavaScript `unsafe-eval` remains denied. Objects and embedding
+are denied, and connection/image/frame/worker sources are listed by feature.
+CSP diagnostics record only the effective directive and a source class; they
+never log the blocked URL, query, local path, or payload.
 
 The Tauri asset protocol is disabled. Co-located vault image previews use
 `authorized_resource_admit` followed by the one-use

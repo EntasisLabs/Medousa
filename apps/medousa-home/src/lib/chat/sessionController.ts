@@ -117,6 +117,8 @@ export function mapTurns(
   return turns.map((turn, index) => {
     const modelReceipt = modelReceiptFromParts(turn.parts ?? null);
     const entryId = turn.entry_id?.trim();
+    const segments =
+      turn.role === "assistant" ? chatSegmentsFromParts(turn.parts ?? null) : undefined;
     return {
       id: entryId
         ? `${sessionId}:${entryId}`
@@ -129,11 +131,13 @@ export function mapTurns(
       answerState: turn.answer_state ?? null,
       tools: turn.tool_names?.length ? turn.tool_names : undefined,
       toolRuns: toolRunsFromParts(turn.parts ?? null),
-      segments:
-        turn.role === "assistant" ? chatSegmentsFromParts(turn.parts ?? null) : undefined,
+      segments,
       uiArtifacts: uiArtifactsFromParts(turn.parts ?? null),
       reasoning: reasoningFromParts(turn.parts ?? null),
-      statusLine: turn.role === "assistant" ? progressFromParts(turn.parts ?? null) : null,
+      statusLine:
+        turn.role === "assistant" && segments === undefined
+          ? progressFromParts(turn.parts ?? null)
+          : null,
       mediaAttachments: userMediaFromParts(turn.parts ?? null),
       hostContext: hostContextFromParts(turn.parts ?? null),
       speakerProfileId: turn.speaker_profile_id?.trim() || null,

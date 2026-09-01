@@ -139,7 +139,10 @@ pub fn auto_tag_capabilities(tool_name: &str, description: Option<&str>) -> Vec<
     if corpus.contains("search") && corpus.contains("issue") {
         tags.push("issue_search".to_string());
     }
-    if corpus.contains("research") || (corpus.contains("search") && corpus.contains("web")) {
+    let mentions_web = ["web", "internet", "online", "website", "browser"]
+        .iter()
+        .any(|term| corpus.contains(term));
+    if corpus.contains("research") || (corpus.contains("search") && mentions_web) {
         tags.push("web_research".to_string());
     }
     tags
@@ -174,7 +177,7 @@ fn score_tool_match(tool: &McpToolCatalogEntry, query: &str, tokens: &[&str]) ->
 
     let overlap = tokens
         .iter()
-        .filter(|token| haystacks.iter().any(|haystack| haystack.contains(**token)))
+        .filter(|token| token_matches_haystacks(token, &haystacks))
         .count();
 
     if overlap == 0 {
@@ -184,6 +187,18 @@ fn score_tool_match(tool: &McpToolCatalogEntry, query: &str, tokens: &[&str]) ->
     ((overlap as f32 / tokens.len() as f32) * 80.0)
         .round()
         .max(1.0) as u8
+}
+
+fn token_matches_haystacks(token: &str, haystacks: &[String]) -> bool {
+    let aliases: &[&str] = match token {
+        "web" | "internet" | "online" | "website" | "browser" => {
+            &["web", "internet", "online", "website", "browser"]
+        }
+        _ => return haystacks.iter().any(|haystack| haystack.contains(token)),
+    };
+    aliases
+        .iter()
+        .any(|alias| haystacks.iter().any(|haystack| haystack.contains(alias)))
 }
 
 fn entry(
@@ -227,5 +242,22 @@ mod tests {
     fn auto_tags_document_search() {
         let tags = auto_tag_capabilities("search_pages", Some("Search workspace pages"));
         assert!(tags.contains(&"document_search".to_string()));
+    }
+
+    #[test]
+    fn internet_query_matches_web_capability_hint() {
+        let mut tool = entry(
+            "search",
+            "Search MCP",
+            "lookup",
+            "Lookup",
+            None,
+            McpEffectClass::ExternalRead,
+            vec!["web_research".to_string()],
+        );
+        tool.server_title = "Acme".to_string();
+
+        let matches = discover_from_entries(&[tool], "search the internet", None, 10);
+        assert_eq!(matches.len(), 1);
     }
 }

@@ -5,6 +5,7 @@
 import type { MediaRef } from "$lib/types/media";
 import {
   attachChatFiles,
+  type ChatAttachmentPickerSource,
   uploadChatFiles,
   uploadChatPaths,
 } from "$lib/utils/chatMediaUpload";
@@ -19,8 +20,13 @@ export function removePendingMedia(host: ChatStoreHost, mediaId: string) {
   host.pendingMediaRefs = host.pendingMediaRefs.filter((ref) => ref.media_id !== mediaId);
 }
 
-export async function attachFilesFromPicker(host: ChatStoreHost) {
-  await attachPendingMedia(host, (slots) => attachChatFiles(host.sessionId, { maxNew: slots }));
+export async function attachFilesFromPicker(
+  host: ChatStoreHost,
+  source: ChatAttachmentPickerSource = "all",
+) {
+  await attachPendingMedia(host, (slots) =>
+    attachChatFiles(host.sessionId, { maxNew: slots, source }),
+  );
 }
 
 export async function attachDroppedFiles(host: ChatStoreHost, files: File[]) {
