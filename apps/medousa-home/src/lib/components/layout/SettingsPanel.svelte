@@ -151,7 +151,11 @@
       {#if activeSection === "preferences"}
         <LazyFeatureView loader={loadSettingsPreferencesSection} />
       {:else if activeSection === "agent"}
-        <LazyFeatureView loader={loadSettingsAgentSection} {nativeWorkloads} />
+        <LazyFeatureView
+          loader={loadSettingsAgentSection}
+          {nativeWorkloads}
+          {chatGptAccountAuth}
+        />
       {:else if activeSection === "runtime"}
         <LazyFeatureView loader={loadSettingsRuntimeSection} {nativeWorkloads} />
       {:else if activeSection === "network"}
@@ -163,7 +167,7 @@
           {nativeWorkloads}
         />
       {:else if activeSection === "connections"}
-        <LazyFeatureView loader={loadSettingsConnectionsSection} {chatGptAccountAuth} />
+        <LazyFeatureView loader={loadSettingsConnectionsSection} />
       {:else if activeSection === "packages"}
         <LazyFeatureView loader={loadSettingsPackagesSection} />
       {:else if activeSection === "mcp"}

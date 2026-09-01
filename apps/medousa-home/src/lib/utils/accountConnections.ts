@@ -1,5 +1,5 @@
 /**
- * Settings → Connections (ChatGPT / Cursor / Hermes) — Tauri bridge for vendor CLI
+ * Settings → External Agents (Codex / Cursor / Hermes) — Tauri bridge for vendor CLI
  * login orchestration. Auth status comes from the daemon agents surface.
  */
 
@@ -76,7 +76,7 @@ export function authStatusLabel(status: AccountAuthStatus): string {
   }
 }
 
-/** Map chat runtime id → Connections account card id. */
+/** Map chat runtime id → External Agents account card id. */
 export function accountIdForRuntime(
   runtime: "cursor" | "codex" | "hermes",
 ): AccountId {

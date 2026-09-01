@@ -49,14 +49,14 @@
     const account = accountIdForRuntime(runtime);
     const info = accountConnections.connection(account);
     if (info && !info.binaryPresent) {
-      if (runtime === "codex") return "Install Codex CLI — Settings → Connections";
-      if (runtime === "hermes") return "Install Hermes — Settings → Connections";
-      return "Install Cursor CLI — Settings → Connections";
+      if (runtime === "codex") return "Install Codex CLI — Settings → External Agents";
+      if (runtime === "hermes") return "Install Hermes — Settings → External Agents";
+      return "Install Cursor CLI — Settings → External Agents";
     }
-    return "Sign in — Settings → Connections";
+    return "Sign in — Settings → External Agents";
   }
 
-  function openConnections() {
+  function openExternalAgents() {
     open = false;
     settingsNav.setActiveSection("connections");
   }
@@ -171,7 +171,7 @@
               aria-disabled={locked}
               onclick={() => {
                 if (locked) {
-                  openConnections();
+                  openExternalAgents();
                   return;
                 }
                 pick(option.id);

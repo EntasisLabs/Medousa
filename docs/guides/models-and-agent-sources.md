@@ -18,14 +18,14 @@ Use the runtime control under the composer:
   advertised by that runtime.
 
 If Codex, Cursor, or Hermes is not ready, its runtime option opens **Settings →
-Connections** for installation or sign-in. Hermes can also be prepared from the
+External Agents** for installation or sign-in. Hermes can also be prepared from the
 terminal with `hermes acp --setup`.
 
 ## Choose a provider and model
 
 When Medousa owns the loop, open the model picker and choose a provider first,
 then a model from that provider. Configure API-key and local providers under
-**Settings → Models**.
+**Settings → Medousa Agent**.
 
 ChatGPT subscriptions and OpenAI API usage are separate. The OpenAI provider
 offers two explicit routes under **Medousa**: **OpenAI · API key** uses public
@@ -34,8 +34,8 @@ model access and keeps Medousa's agent loop. The ChatGPT-account route appears
 as ready only when the workshop daemon has a connected native account. Medousa
 never silently moves credentials between these routes.
 
-To connect the native route, open **Settings → Connections**, find **ChatGPT
-account — Medousa runtime**, and choose **Connect ChatGPT**. Medousa opens the
+To connect the native route, open **Settings → Medousa Agent**, find **OpenAI · ChatGPT
+account**, and choose **Sign in with ChatGPT**. Medousa opens the
 verification page and displays the device code to enter. The card updates when
 authorization completes. This connection is stored and refreshed by the
 workshop daemon—including Embedded Personal on phone—and remains available

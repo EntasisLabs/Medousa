@@ -6,7 +6,7 @@ Related: [Workshops and connections](guide:workshops-connections) · [Desktop, w
 
 ## 0.7.0 highlights
 
-- **Sign in to ChatGPT and Cursor** — Settings → Connections unlocks the coding agents; ChatGPT doubles as a chat path via Codex
+- **Choose model access and external agents** — Settings → Medousa Agent connects ChatGPT subscription models; Settings → External Agents signs in to Codex, Cursor, and Hermes runtimes
 - **Richer notes** — paste CSV/Excel straight into tables and charts, export charts as PNG/SVG/CSV, export notes as HTML or Markdown, and proofread with an optional grammar check
 - **Agent click and type** — Medousa can act in the shared Web tab (with you always able to take the wheel), and the Scripts editor highlights HTML, CSS, JS, XML, and JSON
 

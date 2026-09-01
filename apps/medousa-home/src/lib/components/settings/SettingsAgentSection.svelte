@@ -32,11 +32,8 @@
   } from "$lib/types/generated/daemon_api";
   import { ChevronDown } from "@lucide/svelte";
 
-  interface Props {
-    nativeWorkloads?: boolean;
-  }
-
-  let { nativeWorkloads = true }: Props = $props();
+  type Props = { nativeWorkloads?: boolean; chatGptAccountAuth?: boolean };
+  let { nativeWorkloads = true, chatGptAccountAuth = true }: Props = $props();
 
   type ModelsExtra = "stages" | "providers" | null;
   type Picker = "stance" | "depth" | null;
@@ -435,6 +432,7 @@
       <ModelsSettingsTab
         bind:this={modelsTab}
         catalog={inferenceCatalog}
+        {chatGptAccountAuth}
         {sttReady}
         disabled={workshopDefaults.saving}
         onKeyStatusChange={() => void refreshSttAndKeys()}

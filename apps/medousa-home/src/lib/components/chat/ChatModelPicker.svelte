@@ -348,7 +348,7 @@
     await runtime.applyModel(option.provider, option.model);
   }
 
-  function openConnections() {
+  function openExternalAgents() {
     open = false;
     settingsNav.setActiveSection("connections");
     if (layout.isMobile) layout.openMore("settings");
@@ -620,8 +620,10 @@
                     : chatGptConnection?.status === "reauth_required"
                       ? "Reconnect your ChatGPT account to continue"
                       : "Connect a ChatGPT account to use subscription models"}</span>
-                <button type="button" class="composer-model-connect" onclick={openConnections}>
-                  {chatGptConnection?.status === "reauth_required" ? "Reconnect" : "Open Connections"}
+                <button type="button" class="composer-model-connect" onclick={openModelsSettings}>
+                  {chatGptConnection?.status === "reauth_required"
+                    ? "Reconnect"
+                    : "Open Medousa Agent"}
                 </button>
               </li>
             {:else if loading || loadingLiveModels}
@@ -712,15 +714,13 @@
       <button
         type="button"
         class="composer-model-panel-footer"
-        onclick={agentRuntime === "medousa" && !nativeChatGptSelected
-          ? openModelsSettings
-          : openConnections}
+        onclick={agentRuntime === "medousa" ? openModelsSettings : openExternalAgents}
       >
         <span>{pickerReadonly
             ? "Open Models"
-            : agentRuntime === "medousa" && !nativeChatGptSelected
+            : agentRuntime === "medousa"
               ? "Manage models and providers"
-              : "Manage account connection"}</span>
+              : "Manage external agent"}</span>
         <ArrowUpRight size={14} />
       </button>
     </div>

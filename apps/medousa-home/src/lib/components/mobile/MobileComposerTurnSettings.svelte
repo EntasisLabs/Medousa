@@ -68,7 +68,7 @@
   let manualModelId = $state("");
   let models = $state<ModelCapabilityRecord[]>([]);
   let modelsLoading = $state(false);
-  let providerSetupSection = $state<"agent" | "connections" | null>(null);
+  let providerSetupSection = $state<"agent" | null>(null);
   let providerSetupMessage = $state<string | null>(null);
   let modelLoadError = $state<string | null>(null);
   let modelActionError = $state<string | null>(null);
@@ -291,7 +291,7 @@
         const connection = await getChatGptOAuthConnection();
         if (seq !== modelLoadSeq) return;
         if (!chatGptOAuthReady(connection)) {
-          providerSetupSection = "connections";
+          providerSetupSection = "agent";
           providerSetupMessage =
             "Connect your ChatGPT account before choosing a subscription model.";
           return;

@@ -80,8 +80,8 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
   },
   {
     id: "connections",
-    label: "Connections",
-    hint: "ChatGPT & Cursor sign-in",
+    label: "External Agents",
+    hint: "Codex, Cursor & Hermes",
     group: "app",
   },
   {
