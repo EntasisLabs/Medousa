@@ -8,6 +8,9 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::OnceLock;
 
+use anyhow::{Context, Result};
+use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
+
 use crate::daemon_api::DEFAULT_DAEMON_URL;
 
 static SELF_BASE_URL: OnceLock<String> = OnceLock::new();
@@ -42,6 +45,37 @@ pub fn daemon_self_base_url() -> String {
         .map(|value| value.trim().trim_end_matches('/').to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string())
+}
+
+/// Build an authenticated client for calls back into this daemon.
+///
+/// A live bound address is process-owned authority even when the daemon binds
+/// a specific LAN interface, so it may carry the provisioned local credential.
+/// Before daemon initialization, the normal local-client rules still apply and
+/// refuse to send that credential to a non-loopback URL from the environment.
+pub fn authenticated_http_client() -> Result<reqwest::Client> {
+    let mut headers = HeaderMap::new();
+    if let Some(value) = self_authorization_header()? {
+        headers.insert(AUTHORIZATION, value);
+    }
+    reqwest::Client::builder()
+        .default_headers(headers)
+        .build()
+        .context("build authenticated daemon self client")
+}
+
+/// Authorization value for an HTTP upgrade back into this daemon.
+pub fn self_authorization_header() -> Result<Option<HeaderValue>> {
+    if SELF_BASE_URL.get().is_some() {
+        return crate::local_daemon_auth::trusted_self_authorization_header(
+            medousa_local_credential::CLI_LOCAL_NAME,
+        )
+        .map(Some);
+    }
+    crate::local_daemon_auth::authorization_header(
+        &daemon_self_base_url(),
+        medousa_local_credential::CLI_LOCAL_NAME,
+    )
 }
 
 #[cfg(test)]

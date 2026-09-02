@@ -787,10 +787,8 @@ async fn daemon_http_healthy(base_url: &str) -> bool {
         Err(_) => return false,
     };
     let url = format!("{}/health", base_url.trim_end_matches('/'));
-    let config = crate::workshop_transport::config_from_lan_base(base_url);
     client
         .get(url)
-        .headers(crate::workshop_transport::auth_headers(&config))
         .send()
         .await
         .map(|response| response.status().is_success())

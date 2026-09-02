@@ -41,6 +41,7 @@
     X,
   } from "@lucide/svelte";
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
+  import { withPackagedStyleNonce } from "$lib/security/packagedStyleNonce";
 
   interface Props {
     /** Workshop shell session id. Empty string = create a fresh session on mount. */
@@ -280,8 +281,9 @@
   }
 
   function initializeTerminal() {
-    if (!terminalHost || terminal) return;
-    terminal = new XTerm({
+    const host = terminalHost;
+    if (!host || terminal) return;
+    const xterm = new XTerm({
       allowTransparency: false,
       convertEol: false,
       cursorBlink: true,
@@ -319,24 +321,25 @@
         brightWhite: "#fafaf9",
       },
     });
+    terminal = xterm;
     fitAddon = new FitAddon();
     searchAddon = new SearchAddon();
-    terminal.loadAddon(fitAddon);
-    terminal.loadAddon(searchAddon);
-    terminal.loadAddon(new WebLinksAddon((_event, uri) => void openExternalLink(uri)));
-    terminalDisposables.push(terminal.registerLinkProvider(createFileLinkProvider()));
-    terminal.open(terminalHost);
+    xterm.loadAddon(fitAddon);
+    xterm.loadAddon(searchAddon);
+    xterm.loadAddon(new WebLinksAddon((_event, uri) => void openExternalLink(uri)));
+    terminalDisposables.push(xterm.registerLinkProvider(createFileLinkProvider()));
+    withPackagedStyleNonce(() => xterm.open(host));
 
     terminalDisposables.push(
-      terminal.onData((data) => queueInput(data)),
-      terminal.onBinary((data) => queueInput(data, true)),
-      terminal.onResize(({ cols, rows }) => {
+      xterm.onData((data) => queueInput(data)),
+      xterm.onBinary((data) => queueInput(data, true)),
+      xterm.onResize(({ cols, rows }) => {
         terminalCols = cols;
         terminalRows = rows;
         void sendResize(cols, rows);
       }),
     );
-    terminal.attachCustomKeyEventHandler((event) => {
+    xterm.attachCustomKeyEventHandler((event) => {
       if (
         event.type === "keydown" &&
         (event.metaKey || event.ctrlKey) &&
@@ -350,9 +353,9 @@
         event.type === "keydown" &&
         (event.metaKey || event.ctrlKey) &&
         event.key.toLowerCase() === "c" &&
-        terminal?.hasSelection();
-      if (!copy || !terminal) return true;
-      void navigator.clipboard.writeText(terminal.getSelection());
+        xterm.hasSelection();
+      if (!copy) return true;
+      void navigator.clipboard.writeText(xterm.getSelection());
       return false;
     });
   }
@@ -679,6 +682,7 @@
 
 <div
   class="terminal-pane flex h-full min-h-0 flex-col bg-[#0c0a09] text-[#e7e5e4]"
+  data-no-tab-swipe
   role="application"
   aria-label={title}
 >

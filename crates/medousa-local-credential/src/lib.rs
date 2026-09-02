@@ -4,10 +4,11 @@
 //! with an owner-only file fallback. The daemon retains only a SHA-256 verifier
 //! and compares digests in constant time on the request path.
 
+use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write};
-use std::path::Path;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::{Context, Result, bail};
 use arc_swap::ArcSwap;
@@ -26,6 +27,9 @@ pub const FIRST_PARTY_LOCAL_NAMES: [&str; 3] = [HOME_LOCAL_NAME, CLI_LOCAL_NAME,
 const RECORD_VERSION: u8 = 1;
 const LEGACY_KEYRING_SERVICE: &str = "com.entasislabs.medousa.local-credentials";
 const CREDENTIALS_DIR: &str = "credentials";
+
+static LOADED_SECRET_CACHE: OnceLock<Mutex<HashMap<(PathBuf, String), CachedLocalCredential>>> =
+    OnceLock::new();
 
 use medousa_types::secrets::{DaemonSecretPath, LocalClientKind};
 
@@ -188,6 +192,19 @@ impl Drop for SecretPayload {
     }
 }
 
+struct CachedLocalCredential {
+    credential_id: String,
+    generation: u64,
+    token_sha256: String,
+    token: String,
+}
+
+impl Drop for CachedLocalCredential {
+    fn drop(&mut self) {
+        self.token.zeroize();
+    }
+}
+
 /// Provision the stable Home credential if necessary and return its verifier.
 ///
 /// This validates that the verifier and secret agree on every startup. Missing
@@ -201,10 +218,18 @@ pub fn provision_first_party(data_dir: &Path) -> Result<LocalCredentialSet> {
     let mut verifiers = Vec::new();
     for name in FIRST_PARTY_LOCAL_NAMES {
         let record_path = data_dir.join(CREDENTIALS_DIR).join(record_file(name));
-        if record_path.is_file() && read_record(&record_path)?.revoked {
-            continue;
+        if record_path.is_file() {
+            let record = read_record(&record_path)?;
+            if record.revoked {
+                continue;
+            }
+            // The record already contains the verifier digest. Daemon startup
+            // must not unlock three client secrets merely to reconstruct the
+            // hashes it uses on the request path.
+            verifiers.push(verifier_from_record(&record, name)?);
+        } else {
+            verifiers.push(provision_named(data_dir, name)?);
         }
-        verifiers.push(provision_named(data_dir, name)?);
     }
     Ok(LocalCredentialSet::new(verifiers))
 }
@@ -251,7 +276,7 @@ pub fn provision_named(data_dir: &Path, name: &str) -> Result<LocalCredentialVer
             },
         );
         replace_record(&record_path, &record)?;
-        return load_verifier(data_dir, &record_path, name);
+        return verifier_from_parts(&record, &secret, name);
     }
 
     let secret_path = credentials_dir.join(secret_file(name));
@@ -266,7 +291,7 @@ pub fn provision_named(data_dir: &Path, name: &str) -> Result<LocalCredentialVer
             },
         );
         replace_record(&record_path, &record)?;
-        return load_verifier(data_dir, &record_path, name);
+        return verifier_from_parts(&record, &secret, name);
     }
 
     let secret = generate_secret();
@@ -284,7 +309,7 @@ pub fn provision_named(data_dir: &Path, name: &str) -> Result<LocalCredentialVer
                 },
             );
             replace_record(&record_path, &record)?;
-            load_verifier(data_dir, &record_path, name)
+            verifier_from_parts(&record, &secret, name)
         }
         Err(_) => {
             let mut encoded = serde_json::to_vec(&secret)?;
@@ -300,7 +325,7 @@ pub fn provision_named(data_dir: &Path, name: &str) -> Result<LocalCredentialVer
                 },
             );
             replace_record(&record_path, &record)?;
-            load_verifier(data_dir, &record_path, name)
+            verifier_from_parts(&record, &secret, name)
         }
     }
 }
@@ -314,12 +339,50 @@ pub fn load_named_secret(data_dir: &Path, name: &str) -> Result<LocalCredentialS
     validate_name(name)?;
     let record_path = data_dir.join(CREDENTIALS_DIR).join(record_file(name));
     let record = read_record(&record_path)?;
+    validate_record(&record, name)?;
+    let cache_key = (data_dir.to_path_buf(), name.to_string());
+    let mut cache = LOADED_SECRET_CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(cached) = cache.get(&cache_key)
+        && cached.credential_id == record.credential_id
+        && cached.generation == record.generation
+        && cached.token_sha256 == record.token_sha256
+    {
+        return Ok(LocalCredentialSecret {
+            credential_id: cached.credential_id.clone(),
+            token: cached.token.clone(),
+        });
+    }
+    cache.remove(&cache_key);
     let mut secret = load_secret_for_record(data_dir, &record)?;
     verifier_from_parts(&record, &secret, name)?;
+    let credential_id = std::mem::take(&mut secret.credential_id);
+    let token = std::mem::take(&mut secret.token);
+    cache.insert(
+        cache_key,
+        CachedLocalCredential {
+            credential_id: credential_id.clone(),
+            generation: record.generation,
+            token_sha256: record.token_sha256,
+            token: token.clone(),
+        },
+    );
     Ok(LocalCredentialSecret {
-        credential_id: std::mem::take(&mut secret.credential_id),
-        token: std::mem::take(&mut secret.token),
+        credential_id,
+        token,
     })
+}
+
+fn clear_cached_secret(data_dir: &Path, name: &str) {
+    let Some(cache) = LOADED_SECRET_CACHE.get() else {
+        return;
+    };
+    cache
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .remove(&(data_dir.to_path_buf(), name.to_string()));
 }
 
 /// Load a named secret when it has been provisioned by a compatible daemon.
@@ -407,6 +470,7 @@ pub fn rotate_named(data_dir: &Path, name: &str) -> Result<LocalCredentialRotati
         };
     }
     let verifier = verifier_from_parts(&next, &secret, name)?;
+    clear_cached_secret(data_dir, name);
     Ok(LocalCredentialRotation {
         verifier,
         revoked_generation: old_was_active.then_some(old_generation),
@@ -423,17 +487,8 @@ pub fn revoke_named(data_dir: &Path, name: &str) -> Result<LocalCredentialSummar
         record.revoked = true;
         replace_record(&record_path, &record)?;
     }
+    clear_cached_secret(data_dir, name);
     Ok(summary(&record))
-}
-
-fn load_verifier(
-    data_dir: &Path,
-    record_path: &Path,
-    expected_name: &str,
-) -> Result<LocalCredentialVerifier> {
-    let record = read_record(record_path)?;
-    let secret = load_secret_for_record(data_dir, &record)?;
-    verifier_from_parts(&record, &secret, expected_name)
 }
 
 fn generate_secret() -> SecretPayload {
@@ -467,18 +522,25 @@ fn verifier_from_parts(
     secret: &SecretPayload,
     expected_name: &str,
 ) -> Result<LocalCredentialVerifier> {
-    validate_record(record, expected_name)?;
+    let verifier = verifier_from_record(record, expected_name)?;
     if secret.credential_id != record.credential_id {
         bail!("local credential identifier does not match its verifier record");
     }
-    let digest = decode_digest(&record.token_sha256)?;
-    if !constant_time_eq(&digest, &Sha256::digest(secret.token.as_bytes())) {
+    if !verifier.verify(&secret.token) {
         bail!("local credential secret does not match its verifier record");
     }
+    Ok(verifier)
+}
+
+fn verifier_from_record(
+    record: &CredentialRecord,
+    expected_name: &str,
+) -> Result<LocalCredentialVerifier> {
+    validate_record(record, expected_name)?;
     Ok(LocalCredentialVerifier {
         name: Arc::from(record.name.as_str()),
         credential_id: Arc::from(record.credential_id.as_str()),
-        digest,
+        digest: decode_digest(&record.token_sha256)?,
         generation: record.generation,
     })
 }
@@ -543,8 +605,7 @@ fn load_secret_for_record(data_dir: &Path, record: &CredentialRecord) -> Result<
                 && let Ok(path) = local_auth_path(data_dir, &record.name, &secret.credential_id)
             {
                 if write_daemon_secret_payload(data_dir, &path, &secret).is_ok() {
-                    let _ =
-                        medousa_secrets::delete_legacy_keyring(LEGACY_KEYRING_SERVICE, account);
+                    let _ = medousa_secrets::delete_legacy_keyring(LEGACY_KEYRING_SERVICE, account);
                 }
                 return Ok(secret);
             }
@@ -566,7 +627,9 @@ fn recover_missing_keyring_secret(
     data_dir: &Path,
     record: &CredentialRecord,
 ) -> Result<Option<SecretPayload>> {
-    let mirror = data_dir.join(CREDENTIALS_DIR).join(secret_file(&record.name));
+    let mirror = data_dir
+        .join(CREDENTIALS_DIR)
+        .join(secret_file(&record.name));
     if mirror.is_file() {
         return Ok(Some(read_file_secret(&mirror)?));
     }
@@ -926,7 +989,9 @@ mod tests {
             },
         };
         replace_record(
-            &data_dir.join(CREDENTIALS_DIR).join(record_file(HOME_LOCAL_NAME)),
+            &data_dir
+                .join(CREDENTIALS_DIR)
+                .join(record_file(HOME_LOCAL_NAME)),
             &dangling,
         )?;
 
@@ -1014,6 +1079,50 @@ mod tests {
             Some(tui.credential_id())
         );
         assert!(set.resolve("wrong-token").is_none());
+        fs::remove_dir_all(data_dir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn first_party_bootstrap_uses_persisted_verifiers_without_secret_reads() -> Result<()> {
+        let data_dir = test_dir("verifier-only-bootstrap");
+        let home = provision_file_fixture(&data_dir, HOME_LOCAL_NAME)?;
+        let cli = provision_file_fixture(&data_dir, CLI_LOCAL_NAME)?;
+        let tui = provision_file_fixture(&data_dir, TUI_LOCAL_NAME)?;
+        for name in FIRST_PARTY_LOCAL_NAMES {
+            fs::remove_file(data_dir.join(CREDENTIALS_DIR).join(secret_file(name)))?;
+        }
+
+        let set = provision_first_party(&data_dir)?;
+
+        assert!(set.resolve(home.token()).is_some());
+        assert!(set.resolve(cli.token()).is_some());
+        assert!(set.resolve(tui.token()).is_some());
+        fs::remove_dir_all(data_dir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn client_secret_cache_is_invalidated_by_record_generation() -> Result<()> {
+        let data_dir = test_dir("client-cache-generation");
+        let first = provision_file_fixture(&data_dir, HOME_LOCAL_NAME)?;
+        fs::remove_file(
+            data_dir
+                .join(CREDENTIALS_DIR)
+                .join(secret_file(HOME_LOCAL_NAME)),
+        )?;
+
+        let cached = load_home_local_secret(&data_dir)?;
+        assert_eq!(cached.token(), first.token());
+
+        let record_path = data_dir
+            .join(CREDENTIALS_DIR)
+            .join(record_file(HOME_LOCAL_NAME));
+        let mut record = read_record(&record_path)?;
+        record.generation += 1;
+        replace_record(&record_path, &record)?;
+        assert!(load_home_local_secret(&data_dir).is_err());
+
         fs::remove_dir_all(data_dir)?;
         Ok(())
     }

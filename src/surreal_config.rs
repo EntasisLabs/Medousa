@@ -30,39 +30,31 @@ pub fn resolve_surreal_connection_settings(
     product: &ProductConfig,
     defaults: &TuiDefaults,
 ) -> SurrealConnectionSettings {
+    let mut settings = resolve_surreal_connection_metadata(product, defaults);
+    settings.password = resolve_optional_string(
+        product.surreal.password.as_deref(),
+        defaults.surreal_password.as_deref(),
+        "MEDOUSA_SURREAL_PASSWORD",
+        "STASIS_SURREAL_PASSWORD",
+    )
+    .or_else(crate::session::load_surreal_password);
+    settings
+}
+
+/// Resolve Surreal routing metadata without opening the stored password.
+pub fn resolve_surreal_connection_metadata(
+    product: &ProductConfig,
+    defaults: &TuiDefaults,
+) -> SurrealConnectionSettings {
     SurrealConnectionSettings {
-        endpoint: product
-            .surreal
-            .endpoint
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToString::to_string)
-            .or_else(|| {
-                defaults
-                    .surreal_endpoint
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .map(ToString::to_string)
-            })
-            .or_else(|| std::env::var("MEDOUSA_SURREAL_ENDPOINT").ok())
-            .or_else(|| std::env::var("STASIS_SURREAL_ENDPOINT").ok())
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty()),
+        endpoint: resolve_surreal_endpoint(product, defaults),
         username: resolve_optional_string(
             product.surreal.username.as_deref(),
             defaults.surreal_username.as_deref(),
             "MEDOUSA_SURREAL_USERNAME",
             "STASIS_SURREAL_USERNAME",
         ),
-        password: resolve_optional_string(
-            product.surreal.password.as_deref(),
-            defaults.surreal_password.as_deref(),
-            "MEDOUSA_SURREAL_PASSWORD",
-            "STASIS_SURREAL_PASSWORD",
-        )
-        .or_else(crate::session::load_surreal_password),
+        password: None,
         namespace: resolve_optional_string(
             product.surreal.namespace.as_deref(),
             defaults.surreal_namespace.as_deref(),
@@ -76,6 +68,32 @@ pub fn resolve_surreal_connection_settings(
             "STASIS_SURREAL_DATABASE",
         ),
     }
+}
+
+/// Resolve only the non-secret Surreal endpoint for diagnostics and status UI.
+pub fn resolve_surreal_endpoint(
+    product: &ProductConfig,
+    defaults: &TuiDefaults,
+) -> Option<String> {
+    product
+        .surreal
+        .endpoint
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .or_else(|| {
+            defaults
+                .surreal_endpoint
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string)
+        })
+        .or_else(|| std::env::var("MEDOUSA_SURREAL_ENDPOINT").ok())
+        .or_else(|| std::env::var("STASIS_SURREAL_ENDPOINT").ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn resolve_optional_string(

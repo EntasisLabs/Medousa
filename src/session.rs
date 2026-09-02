@@ -27,7 +27,7 @@ fn tui_defaults_path() -> PathBuf {
 }
 
 pub fn detect_tui_api_key_storage_backend() -> ApiKeyStorageBackend {
-    if load_tui_api_key().is_some() {
+    if tui_api_key_configured() {
         ApiKeyStorageBackend::KeychainActive
     } else {
         ApiKeyStorageBackend::KeychainReady
@@ -154,6 +154,13 @@ pub fn load_tui_api_key() -> Option<String> {
     crate::integration_connection::load_kind_secret("openai", IntegrationSecretSlot::ApiKey)
 }
 
+pub fn tui_api_key_configured() -> bool {
+    crate::integration_connection::kind_secret_configured(
+        "openai",
+        IntegrationSecretSlot::ApiKey,
+    )
+}
+
 /// Per-provider API key (Phase 3). Falls back to legacy workshop key when provider matches main.
 pub fn load_provider_api_key(provider: &str) -> Option<String> {
     let provider = provider.to_ascii_lowercase();
@@ -182,11 +189,36 @@ pub fn load_provider_api_key(provider: &str) -> Option<String> {
 }
 
 pub fn provider_api_key_configured(provider: &str) -> bool {
-    load_provider_api_key(provider).is_some()
+    let provider = provider.trim().to_ascii_lowercase();
+    let Ok(provider) = ProviderId::parse(&provider) else {
+        return false;
+    };
+    if matches!(
+        provider.as_str(),
+        "ollama" | "local" | "lmstudio" | "lm-studio"
+    ) {
+        return false;
+    }
+    if crate::integration_connection::kind_secret_configured(
+        provider.as_str(),
+        IntegrationSecretSlot::ApiKey,
+    ) {
+        return true;
+    }
+
+    let defaults = load_tui_defaults();
+    let main_provider = crate::resolve_llm_provider(defaults.provider.as_deref())
+        .trim()
+        .to_ascii_lowercase();
+    (provider.as_str() == main_provider && tui_api_key_configured())
+        || provider_api_key_from_env(provider.as_str()).is_some()
 }
 
 pub fn chatgpt_oauth_configured() -> bool {
-    crate::chatgpt_oauth::configured()
+    crate::integration_connection::kind_secret_configured(
+        "chatgpt",
+        IntegrationSecretSlot::OauthBundle,
+    )
 }
 
 pub fn save_provider_api_key(provider: &str, api_key: Option<&str>) {
@@ -243,6 +275,13 @@ pub fn load_discord_bot_token() -> Option<String> {
     crate::integration_connection::load_kind_secret("discord", IntegrationSecretSlot::BotToken)
 }
 
+pub fn discord_bot_token_configured() -> bool {
+    crate::integration_connection::kind_secret_configured(
+        "discord",
+        IntegrationSecretSlot::BotToken,
+    )
+}
+
 pub fn save_discord_bot_token(token: Option<&str>) {
     crate::integration_connection::save_kind_secret(
         "discord",
@@ -252,6 +291,15 @@ pub fn save_discord_bot_token(token: Option<&str>) {
 }
 
 pub fn load_telegram_bot_token() -> Option<String> {
+    telegram_bot_token_from_env().or_else(|| {
+        crate::integration_connection::load_kind_secret(
+            "telegram",
+            IntegrationSecretSlot::BotToken,
+        )
+    })
+}
+
+fn telegram_bot_token_from_env() -> Option<String> {
     for key in [
         "MEDOUSA_TELEGRAM_BOT_TOKEN",
         "MEDOUSA_TELEGRAM_TOKEN",
@@ -264,7 +312,15 @@ pub fn load_telegram_bot_token() -> Option<String> {
             }
         }
     }
-    crate::integration_connection::load_kind_secret("telegram", IntegrationSecretSlot::BotToken)
+    None
+}
+
+pub fn telegram_bot_token_configured() -> bool {
+    telegram_bot_token_from_env().is_some()
+        || crate::integration_connection::kind_secret_configured(
+            "telegram",
+            IntegrationSecretSlot::BotToken,
+        )
 }
 
 pub fn save_telegram_bot_token(token: Option<&str>) {
@@ -279,6 +335,13 @@ pub fn load_slack_bot_token() -> Option<String> {
     crate::integration_connection::load_kind_secret("slack", IntegrationSecretSlot::BotToken)
 }
 
+pub fn slack_bot_token_configured() -> bool {
+    crate::integration_connection::kind_secret_configured(
+        "slack",
+        IntegrationSecretSlot::BotToken,
+    )
+}
+
 pub fn save_slack_bot_token(token: Option<&str>) {
     crate::integration_connection::save_kind_secret(
         "slack",
@@ -289,6 +352,13 @@ pub fn save_slack_bot_token(token: Option<&str>) {
 
 pub fn load_slack_app_token() -> Option<String> {
     crate::integration_connection::load_kind_secret("slack", IntegrationSecretSlot::AppToken)
+}
+
+pub fn slack_app_token_configured() -> bool {
+    crate::integration_connection::kind_secret_configured(
+        "slack",
+        IntegrationSecretSlot::AppToken,
+    )
 }
 
 pub fn save_slack_app_token(token: Option<&str>) {

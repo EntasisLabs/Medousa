@@ -56,6 +56,13 @@ const OUTBOX_DEDUP_CAPACITY: usize = 10_000;
 /// streams). Bounds growth even if a finalize path misses its cleanup.
 const CANCELLED_MARKER_CAPACITY: usize = 4_096;
 
+/// The daemon boot future retains platform, Forge, router, pairing, and worker
+/// initialization state across many await points. Windows release binaries
+/// normally start with a comparatively small main-thread stack, so drive that
+/// future from one explicitly sized thread instead of increasing every Tokio
+/// worker stack.
+const DAEMON_BOOTSTRAP_STACK_SIZE: usize = 16 * 1024 * 1024;
+
 fn work_environment_worker_capabilities(
     node_id: impl Into<String>,
     oci_available: bool,
@@ -271,8 +278,26 @@ fn resolve_max_concurrency() -> usize {
         .unwrap_or(DEFAULT_MAX_CONCURRENCY)
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    std::thread::Builder::new()
+        .name("medousa-daemon-bootstrap".to_string())
+        .stack_size(DAEMON_BOOTSTRAP_STACK_SIZE)
+        .spawn(run_daemon_runtime)
+        .context("failed to spawn daemon bootstrap thread")?
+        .join()
+        .map_err(|_| anyhow::anyhow!("daemon bootstrap thread panicked"))?
+}
+
+fn run_daemon_runtime() -> Result<()> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_name("medousa-daemon-worker")
+        .build()
+        .context("failed to build daemon Tokio runtime")?;
+    runtime.block_on(start_daemon())
+}
+
+async fn start_daemon() -> Result<()> {
     medousa::observability::init_tracing_from_env();
 
     let args = std::env::args().skip(1).collect::<Vec<_>>();

@@ -440,7 +440,9 @@ pub async fn apply_change_set(
         crate::daemon_self_url::daemon_self_base_url().trim_end_matches('/'),
         urlencoding::encode(lease.work_id.as_str()),
     );
-    let response = reqwest::Client::new().put(url).json(&body).send().await;
+    let client = crate::daemon_self_url::authenticated_http_client()
+        .map_err(|error| input_error(format!("cannot authorize Forge change set: {error}")))?;
+    let response = client.put(url).json(&body).send().await;
     let result = match response {
         Ok(response) if response.status().is_success() => response
             .json::<Value>()
@@ -548,7 +550,9 @@ pub async fn affected_tests(
     .map_err(|error| input_error(format!("invalid Forge tests URL: {error}")))?;
     url.query_pairs_mut()
         .append_pair("attempt_id", lease.attempt_id.as_str());
-    let response = reqwest::Client::new()
+    let client = crate::daemon_self_url::authenticated_http_client()
+        .map_err(|error| input_error(format!("cannot authorize Forge test discovery: {error}")))?;
+    let response = client
         .get(url)
         .send()
         .await

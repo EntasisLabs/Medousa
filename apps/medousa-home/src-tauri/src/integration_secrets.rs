@@ -10,7 +10,8 @@ use std::sync::{Mutex, OnceLock};
 use chrono::Utc;
 use medousa_secrets::{
     delete_daemon_secret, delete_legacy_file, delete_legacy_keyring, ensure_installation_id,
-    load_daemon_secret, load_legacy_file, load_legacy_keyring, save_daemon_secret,
+    load_daemon_secret, load_legacy_file, load_legacy_keyring, mark_secret_migration_completed,
+    save_daemon_secret, secret_migration_completed,
 };
 use medousa_types::authority_id::ProviderId;
 use medousa_types::secrets::{
@@ -23,6 +24,8 @@ const FILE_STORE: &str = "integration_connections.json";
 
 static FILE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 static MIGRATED: OnceLock<()> = OnceLock::new();
+const DAEMON_LEGACY_SECRET_MIGRATION: &str = "daemon-legacy-secrets-v1";
+const HOME_LEGACY_SECRET_MIGRATION: &str = "home-legacy-secrets-v1";
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct FileStoreDocument {
@@ -76,14 +79,31 @@ fn integration_path(
 
 pub fn ensure_secrets_bootstrapped() -> Result<InstallationId, String> {
     let data_dir = data_dir();
-    let installation_id =
-        ensure_installation_id(&data_dir).map_err(|err| err.to_string())?;
+    let installation_id = ensure_installation_id(&data_dir).map_err(|err| err.to_string())?;
     let _ = MIGRATED.get_or_init(|| {
-        if let Err(err) = migrate_legacy_secrets(&data_dir, &installation_id) {
+        if let Err(err) = migrate_legacy_secrets_once(&data_dir, &installation_id) {
             eprintln!("home integration secret migration warning: {err}");
         }
     });
     Ok(installation_id)
+}
+
+fn migrate_legacy_secrets_once(
+    data_dir: &Path,
+    installation_id: &InstallationId,
+) -> Result<(), String> {
+    // On desktop the daemon owns the superset migration and shares this data
+    // root. Do not make Home rescan the same legacy Keychain coordinates.
+    if secret_migration_completed(data_dir, DAEMON_LEGACY_SECRET_MIGRATION)
+        .map_err(|error| error.to_string())?
+        || secret_migration_completed(data_dir, HOME_LEGACY_SECRET_MIGRATION)
+            .map_err(|error| error.to_string())?
+    {
+        return Ok(());
+    }
+    migrate_legacy_secrets(data_dir, installation_id)?;
+    mark_secret_migration_completed(data_dir, HOME_LEGACY_SECRET_MIGRATION)
+        .map_err(|error| error.to_string())
 }
 
 fn find_by_kind_sync(kind: &str) -> Vec<IntegrationConnection> {
@@ -153,6 +173,15 @@ pub fn load_kind_secret(kind: &str, slot: IntegrationSecretSlot) -> Option<Strin
         .map(|r| r.value)
 }
 
+pub fn kind_secret_configured(kind: &str, slot: IntegrationSecretSlot) -> bool {
+    if ensure_secrets_bootstrapped().is_err() {
+        return false;
+    }
+    find_by_kind_sync(kind)
+        .into_iter()
+        .any(|connection| connection.secrets.slot(slot))
+}
+
 pub fn save_kind_secret(kind: &str, slot: IntegrationSecretSlot, value: Option<&str>) {
     let Ok(installation_id) = ensure_secrets_bootstrapped() else {
         return;
@@ -182,9 +211,7 @@ pub fn save_provider_secret(provider: &str, api_key: Option<&str>) {
 }
 
 pub fn load_connection_base_url(kind: &str) -> Option<String> {
-    find_by_kind_sync(kind)
-        .into_iter()
-        .find_map(|c| c.base_url)
+    find_by_kind_sync(kind).into_iter().find_map(|c| c.base_url)
 }
 
 pub fn save_connection_base_url(kind: &str, base_url: Option<&str>) {
@@ -198,10 +225,8 @@ pub fn save_connection_base_url(kind: &str, base_url: Option<&str>) {
     connection.updated_at = Utc::now();
     let _guard = file_lock().lock().unwrap_or_else(|e| e.into_inner());
     let mut doc = load_file_doc();
-    doc.connections.insert(
-        connection.connection_id.as_str().to_string(),
-        connection,
-    );
+    doc.connections
+        .insert(connection.connection_id.as_str().to_string(), connection);
     let _ = save_file_doc(&doc);
 }
 
@@ -272,12 +297,9 @@ fn migrate_provider(
         .ok()
         .flatten()
         .or_else(|| {
-            load_legacy_keyring(
-                "medousa.providers",
-                &format!("api_key.{}", opaque.as_str()),
-            )
-            .ok()
-            .flatten()
+            load_legacy_keyring("medousa.providers", &format!("api_key.{}", opaque.as_str()))
+                .ok()
+                .flatten()
         })
         .or_else(|| {
             load_legacy_keyring("medousa.providers", provider)
@@ -307,10 +329,7 @@ fn migrate_provider(
             &value,
         )?;
         let _ = delete_legacy_keyring("medousa.providers", opaque.as_str());
-        let _ = delete_legacy_keyring(
-            "medousa.providers",
-            &format!("api_key.{}", opaque.as_str()),
-        );
+        let _ = delete_legacy_keyring("medousa.providers", &format!("api_key.{}", opaque.as_str()));
         let _ = delete_legacy_keyring("medousa.providers", provider);
         let _ = delete_legacy_file(
             &data_dir
@@ -341,9 +360,13 @@ fn migrate_provider(
         .flatten()
     })
     .or_else(|| {
-        load_legacy_file(&data_dir.join("secrets").join(format!("base_url_{provider}")))
-            .ok()
-            .flatten()
+        load_legacy_file(
+            &data_dir
+                .join("secrets")
+                .join(format!("base_url_{provider}")),
+        )
+        .ok()
+        .flatten()
     });
     if let Some(base_url) = base {
         let mut connection = ensure_kind_sync(provider, None, Some(&base_url))?;
@@ -351,10 +374,8 @@ fn migrate_provider(
         connection.updated_at = Utc::now();
         let _guard = file_lock().lock().unwrap_or_else(|e| e.into_inner());
         let mut doc = load_file_doc();
-        doc.connections.insert(
-            connection.connection_id.as_str().to_string(),
-            connection,
-        );
+        doc.connections
+            .insert(connection.connection_id.as_str().to_string(), connection);
         save_file_doc(&doc)?;
         let _ = delete_legacy_keyring(
             "medousa.providers",
@@ -366,15 +387,16 @@ fn migrate_provider(
                 .join("secrets")
                 .join(format!("base_url_{}", opaque.as_str())),
         );
-        let _ = delete_legacy_file(&data_dir.join("secrets").join(format!("base_url_{provider}")));
+        let _ = delete_legacy_file(
+            &data_dir
+                .join("secrets")
+                .join(format!("base_url_{provider}")),
+        );
     }
     Ok(())
 }
 
-fn migrate_legacy_secrets(
-    data_dir: &Path,
-    installation_id: &InstallationId,
-) -> Result<(), String> {
+fn migrate_legacy_secrets(data_dir: &Path, installation_id: &InstallationId) -> Result<(), String> {
     migrate_bot(
         data_dir,
         installation_id,
