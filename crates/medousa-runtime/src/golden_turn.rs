@@ -90,6 +90,17 @@ fn finish_call(message: &str) -> ToolCall {
     )
 }
 
+fn silent_finish_call() -> ToolCall {
+    tool_call(
+        COGNITION_TURN,
+        json!({
+            "action": "turn.finish",
+            "intent": "Deliver the completed work and close the turn",
+            "reason": "work completed"
+        }),
+    )
+}
+
 fn checkpoint_call(message: &str) -> ToolCall {
     tool_call(
         COGNITION_TURN,
@@ -802,6 +813,28 @@ async fn golden_finish_prefers_same_response_prose_over_message_fallback() {
     assert_eq!(outcome.termination_reason, "cognition_turn_finish");
     assert_eq!(outcome.text, prose);
     assert_eq!(outcome.rounds_executed, 2);
+}
+
+#[tokio::test]
+async fn golden_silent_finish_is_repaired_before_terminal_delivery() {
+    let outcome = run_golden(
+        "finish with a principal-facing answer",
+        vec![
+            tool_response(vec![silent_finish_call()]),
+            tool_response(vec![finish_call("The requested work is complete.")]),
+        ],
+        10,
+        false,
+    )
+    .await;
+
+    assert_eq!(outcome.termination_reason, "cognition_turn_finish");
+    assert_eq!(outcome.text, "The requested work is complete.");
+    assert_eq!(outcome.rounds_executed, 2);
+    assert_eq!(
+        outcome.tool_invocations,
+        vec![COGNITION_TURN.to_string(), COGNITION_TURN.to_string()]
+    );
 }
 
 #[tokio::test]

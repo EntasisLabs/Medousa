@@ -351,8 +351,8 @@ fn turn_protocol_slice() -> Result<SttpContentSlice, SttpDocumentBuildError> {
                 "s3_terminal(.99)": "typed outcome only"
             },
             "t5_finish(.99)": {
-                "f1_preferred(.99)": "final prose + turn.finish{}",
-                "f2_fallback(.96)": "finish.message only when prose absent"
+                "f1_preferred(.99)": "final prose + turn.finish{message: same final answer}",
+                "f2_required(.99)": "finish.message is the principal-facing fallback; never finish silently"
             },
             "t6_status(.96)": "turn.update_user = ephemeral HUD"
         }),

@@ -61,6 +61,12 @@ use crate::turn_control::{
 };
 
 const DEFAULT_MAX_TOOL_ROUNDS: usize = DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS;
+const SILENT_FINISH_GUIDANCE: &str = concat!(
+    "[MEDOUSA_TURN_CONTROL]\n",
+    "turn.finish was ignored because this response contained no principal-facing final answer. ",
+    "Emit the complete final answer as assistant prose alongside turn.finish, or provide it in ",
+    "turn.finish.message. intent and reason are control metadata and are not shown to the principal."
+);
 
 fn turn_boundary_failure(operation: &str, error: TurnExecutionBoundaryError) -> StasisError {
     StasisError::PortFailure(format!("{error} during {operation}"))
@@ -1020,6 +1026,21 @@ impl MedousaToolLoopPipeline {
                     // turn.finish.message exists only for providers that cannot
                     // emit prose and a tool call in the same response.
                     let message = maybe_text.clone().unwrap_or(message);
+                    if message.trim().is_empty() {
+                        push_turn_control_message(
+                            &mut turn_ctx.tool_lane.messages,
+                            SILENT_FINISH_GUIDANCE,
+                        );
+                        persist_checkpoint!(
+                            SafeCheckpointBoundary::ToolBatchCompleted,
+                            ActiveTurnCheckpointStatus::Active,
+                            None,
+                            None,
+                            &round_tool_names,
+                            &round_provider_call_ids,
+                        );
+                        continue;
+                    }
                     if let Some(gate) = completion_gate.as_ref() {
                         let tools = collect_tool_names(&invocations);
                         persist_gate_ledger(

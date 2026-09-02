@@ -13,6 +13,7 @@
   import DiffStack from "$lib/components/diff/DiffStack.svelte";
   import ForgeReviewSurface from "$lib/components/work/ForgeReviewSurface.svelte";
   import ReviewCommentRail from "$lib/components/work/ReviewCommentRail.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { countDiffStats, type DiffFileSection } from "$lib/diff/diffTypes";
   import {
     addReviewComment,
@@ -425,6 +426,7 @@
                 density="compact"
                 chrome="prefs"
                 showJumpList
+                wrap={layout.isMobile}
                 onOpenFile={(path, line) => onOpenCode(path, line)}
               />
             {:else}
@@ -678,9 +680,12 @@
 
   .chat-review-sheet {
     display: flex;
+    box-sizing: border-box;
     width: min(54rem, calc(100vw - 4rem));
+    min-width: 0;
     height: 100%;
     flex-direction: column;
+    overflow: hidden;
     border-left: 1px solid rgb(var(--theme-border) / 0.3);
     background: rgb(var(--theme-pane));
     box-shadow: -1rem 0 3rem rgb(var(--theme-shadow) / 0.24);
@@ -743,12 +748,14 @@
 
   .chat-review-content {
     display: flex;
+    min-width: 0;
     min-height: 0;
     flex: 1 1 auto;
     overflow: hidden;
   }
 
   .chat-review-body {
+    min-width: 0;
     min-height: 0;
     flex: 1 1 auto;
     overflow-y: auto;
@@ -821,7 +828,9 @@
   @media (max-width: 48rem) {
     .chat-review-sheet {
       width: 100%;
+      height: var(--mobile-layout-height, 100dvh);
       border-left: 0;
+      padding-top: env(safe-area-inset-top, 0px);
     }
 
     .chat-change-file-parent {
@@ -840,6 +849,7 @@
     .chat-review-body {
       flex: 0 0 auto;
       overflow: visible;
+      padding: 0.75rem;
     }
 
     .chat-review-comments {

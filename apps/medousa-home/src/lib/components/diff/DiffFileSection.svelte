@@ -265,6 +265,8 @@
 
 <style>
   .diff-file {
+    min-width: 0;
+    max-width: 100%;
     border: 1px solid rgb(var(--color-surface-500) / 0.26);
     border-radius: 0.65rem;
     background: rgb(var(--color-surface-950) / 0.2);

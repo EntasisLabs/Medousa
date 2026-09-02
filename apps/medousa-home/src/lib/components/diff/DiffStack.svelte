@@ -287,6 +287,7 @@
 <style>
   .diff-stack {
     display: flex;
+    min-width: 0;
     flex-direction: column;
     gap: 0.75rem;
     color: rgb(var(--theme-text));
@@ -392,6 +393,7 @@
 
   .diff-stack-body {
     display: flex;
+    min-width: 0;
     flex-direction: column;
     gap: 0.85rem;
   }
@@ -401,6 +403,7 @@
   }
 
   .diff-stack-item {
+    min-width: 0;
     scroll-margin-top: 0.75rem;
   }
 

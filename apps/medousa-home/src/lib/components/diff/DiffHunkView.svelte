@@ -870,4 +870,54 @@
   .diff-gap--side {
     grid-column: 1 / -1;
   }
+
+  @media (max-width: 48rem) {
+    .diff-view {
+      max-width: 100%;
+      overflow: visible;
+      overscroll-behavior-x: none;
+      touch-action: pan-y;
+    }
+
+    .diff-line {
+      min-width: 0;
+      grid-template-columns: 1.25rem 1.75rem 1.75rem 0.85rem minmax(0, 1fr);
+    }
+
+    .diff-comment-slot,
+    .diff-gutter,
+    .diff-marker,
+    .diff-side-row > div .diff-gutter--old,
+    .diff-side-row > div .diff-gutter--new,
+    .diff-side-row > div .diff-marker {
+      position: static;
+      left: auto;
+    }
+
+    .diff-comment-slot {
+      width: 1.25rem;
+    }
+
+    .diff-view :global(.diff-code) {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .diff-side-labels {
+      display: none;
+    }
+
+    .diff-side-row {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .diff-side-row > div {
+      grid-template-columns: 1.25rem 1.75rem 0.85rem minmax(0, 1fr);
+    }
+
+    .diff-side-row > div + div {
+      border-top: 1px solid rgb(var(--color-surface-500) / 0.18);
+      border-left: 0;
+    }
+  }
 </style>
