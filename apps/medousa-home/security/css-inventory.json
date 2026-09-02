@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "layers": ["base", "components", "utilities", "features"],
-  "notes": "H09 Train 5.1 inventory. Feature sheets must not be @imported from app.postcss; destination components load them. This is CSS ownership split, not FRONT-001 evidence.",
+  "notes": "H09 Train 5.1 inventory. Feature sheets must not be @imported from app.postcss; destination components load them. Feature sheets use the features layer unless explicitly marked layered=false for optimized-build structural fallbacks. This is CSS ownership split, not FRONT-001 evidence.",
   "entries": [
     {
       "id": "cascade-order",
@@ -122,7 +122,9 @@
       "id": "editor-host",
       "class": "feature",
       "path": "src/lib/styles/editor-host.postcss",
-      "loadedBy": "CodeMirrorHost.svelte"
+      "loadedBy": "CodeMirrorHost.svelte",
+      "layered": false,
+      "notes": "Unlayered so Tailwind cannot remove runtime-owned CodeMirror descendants from optimized builds"
     },
     {
       "id": "vault-live",

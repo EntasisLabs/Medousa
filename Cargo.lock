@@ -7539,7 +7539,7 @@ dependencies = [
 
 [[package]]
 name = "medousa"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "a2",
  "anyhow",

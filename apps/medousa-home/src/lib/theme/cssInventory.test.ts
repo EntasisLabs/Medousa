@@ -65,7 +65,11 @@ describe("css inventory and cascade", () => {
     for (const entry of features) {
       expect(entry.loadedBy, `${entry.id} missing loadedBy`).toMatch(/\S/);
       const sheet = source(entry.path);
-      expect(sheet, `${entry.path} must wrap in @layer features`).toContain("@layer features");
+      if (entry.layered === false) {
+        expect(sheet, `${entry.path} must stay unlayered`).not.toContain("@layer");
+      } else {
+        expect(sheet, `${entry.path} must wrap in @layer features`).toContain("@layer features");
+      }
       const loaders = String(entry.loadedBy)
         .split("/")
         .map((part: string) => part.trim())
