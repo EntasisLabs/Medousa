@@ -35,6 +35,19 @@ pub fn authorization_header(base_url: &str, credential_name: &str) -> Result<Opt
     authorization_header_from_data_dir(base_url, credential_name, &crate::paths::medousa_data_dir())
 }
 
+/// Return a bearer for an endpoint already proven to belong to this daemon.
+///
+/// Unlike [`authorization_header`], this deliberately does not classify the
+/// URL. Callers must establish endpoint ownership out of band; today that is
+/// limited to `daemon_self_url`, whose live address is recorded from the
+/// daemon's bound listener.
+pub(crate) fn trusted_self_authorization_header(credential_name: &str) -> Result<HeaderValue> {
+    trusted_self_authorization_header_from_data_dir(
+        credential_name,
+        &crate::paths::medousa_data_dir(),
+    )
+}
+
 fn authorization_header_from_data_dir(
     base_url: &str,
     credential_name: &str,
@@ -43,6 +56,13 @@ fn authorization_header_from_data_dir(
     if !is_loopback_url(base_url)? {
         return Ok(None);
     }
+    trusted_self_authorization_header_from_data_dir(credential_name, data_dir).map(Some)
+}
+
+fn trusted_self_authorization_header_from_data_dir(
+    credential_name: &str,
+    data_dir: &Path,
+) -> Result<HeaderValue> {
     let secret = medousa_local_credential::load_named_secret(data_dir, credential_name)
         .with_context(|| {
             format!(
@@ -59,7 +79,7 @@ fn authorization_header_from_data_dir(
             value
         });
     encoded.zeroize();
-    value.map(Some)
+    value
 }
 
 fn default_headers(base_url: &str, credential_name: &str) -> Result<HeaderMap> {
@@ -92,7 +112,10 @@ fn is_loopback_url(base_url: &str) -> Result<bool> {
 
 #[cfg(test)]
 mod tests {
-    use super::{authorization_header_from_data_dir, is_loopback_url};
+    use super::{
+        authorization_header_from_data_dir, is_loopback_url,
+        trusted_self_authorization_header_from_data_dir,
+    };
 
     #[test]
     fn local_authority_is_bound_to_loopback_urls() {
@@ -125,6 +148,31 @@ mod tests {
             )
             .unwrap()
             .is_none()
+        );
+    }
+
+    #[test]
+    fn trusted_self_authority_uses_the_named_local_credential() {
+        let temp = tempfile::tempdir().expect("temporary data directory");
+        let data_dir = temp.path();
+        medousa_local_credential::provision_named(
+            data_dir,
+            medousa_local_credential::CLI_LOCAL_NAME,
+        )
+        .expect("provision CLI credential");
+
+        let header = trusted_self_authorization_header_from_data_dir(
+            medousa_local_credential::CLI_LOCAL_NAME,
+            data_dir,
+        )
+        .expect("load self authorization");
+
+        assert!(header.is_sensitive());
+        assert!(
+            header
+                .to_str()
+                .expect("ASCII bearer")
+                .starts_with("Bearer ")
         );
     }
 }

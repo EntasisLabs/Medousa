@@ -10,7 +10,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use chrono::Utc;
 use medousa_secrets::{
     delete_daemon_secret, delete_legacy_file, delete_legacy_keyring, ensure_installation_id,
-    load_daemon_secret, load_legacy_file, load_legacy_keyring, save_daemon_secret,
+    load_daemon_secret, load_legacy_file, load_legacy_keyring, mark_secret_migration_completed,
+    save_daemon_secret, secret_migration_completed,
 };
 use medousa_types::authority_id::ProviderId;
 use medousa_types::secrets::{
@@ -73,6 +74,7 @@ pub struct IntegrationConnectionService {
 
 static SERVICE: OnceCell<Arc<IntegrationConnectionService>> = OnceCell::new();
 static MIGRATED: OnceLock<()> = OnceLock::new();
+const LEGACY_SECRET_MIGRATION: &str = "daemon-legacy-secrets-v1";
 
 pub fn init_integration_connection_service(db: Option<Surreal<Any>>) {
     let service = Arc::new(IntegrationConnectionService {
@@ -110,11 +112,23 @@ pub fn ensure_secrets_bootstrapped() -> anyhow::Result<InstallationId> {
     let data_dir = medousa_data_dir();
     let installation_id = ensure_installation_id(&data_dir)?;
     let _ = MIGRATED.get_or_init(|| {
-        if let Err(err) = migrate_legacy_secrets(&data_dir, &installation_id) {
+        if let Err(err) = migrate_legacy_secrets_once(&data_dir, &installation_id) {
             eprintln!("integration secret migration warning: {err:#}");
         }
     });
     Ok(installation_id)
+}
+
+fn migrate_legacy_secrets_once(
+    data_dir: &Path,
+    installation_id: &InstallationId,
+) -> anyhow::Result<()> {
+    if secret_migration_completed(data_dir, LEGACY_SECRET_MIGRATION)? {
+        return Ok(());
+    }
+    migrate_legacy_secrets(data_dir, installation_id)?;
+    mark_secret_migration_completed(data_dir, LEGACY_SECRET_MIGRATION)?;
+    Ok(())
 }
 
 impl IntegrationConnectionService {
@@ -405,6 +419,20 @@ pub fn load_kind_secret(kind: &str, slot: IntegrationSecretSlot) -> Option<Strin
         .map(|r| r.value)
 }
 
+/// Report whether a secret slot is configured without opening the secret store.
+///
+/// Status and routing checks must use the durable presence metadata instead of
+/// reading a Keychain value they do not consume. The value is still verified
+/// when the integration actually loads it.
+pub fn kind_secret_configured(kind: &str, slot: IntegrationSecretSlot) -> bool {
+    if ensure_secrets_bootstrapped().is_err() {
+        return false;
+    }
+    find_by_kind_sync(kind)
+        .into_iter()
+        .any(|connection| connection.secrets.slot(slot))
+}
+
 pub fn save_kind_secret(kind: &str, slot: IntegrationSecretSlot, value: Option<&str>) {
     let Ok(installation_id) = ensure_secrets_bootstrapped() else {
         return;
@@ -434,9 +462,7 @@ pub fn save_provider_secret(provider: &str, api_key: Option<&str>) {
 }
 
 pub fn load_connection_base_url(kind: &str) -> Option<String> {
-    find_by_kind_sync(kind)
-        .into_iter()
-        .find_map(|c| c.base_url)
+    find_by_kind_sync(kind).into_iter().find_map(|c| c.base_url)
 }
 
 pub fn save_connection_base_url(kind: &str, base_url: Option<&str>) {
@@ -449,10 +475,8 @@ pub fn save_connection_base_url(kind: &str, base_url: Option<&str>) {
         .map(str::to_string);
     connection.updated_at = Utc::now();
     let mut doc = load_file_doc();
-    doc.connections.insert(
-        connection.connection_id.as_str().to_string(),
-        connection,
-    );
+    doc.connections
+        .insert(connection.connection_id.as_str().to_string(), connection);
     let _ = save_file_doc(&doc);
 }
 
@@ -480,10 +504,7 @@ pub fn save_surreal_password_secret(password: Option<&str>) {
     }
 }
 
-fn migrate_legacy_secrets(
-    data_dir: &Path,
-    installation_id: &InstallationId,
-) -> anyhow::Result<()> {
+fn migrate_legacy_secrets(data_dir: &Path, installation_id: &InstallationId) -> anyhow::Result<()> {
     if load_daemon_secret(
         data_dir,
         &DaemonSecretPath::SurrealPassword {
@@ -666,14 +687,15 @@ fn migrate_provider(
     let opaque = provider_id.storage_key();
     let value = load_legacy_keyring("medousa.providers", opaque.as_str())?
         .or_else(|| {
-            load_legacy_keyring(
-                "medousa.providers",
-                &format!("api_key.{}", opaque.as_str()),
-            )
-            .ok()
-            .flatten()
+            load_legacy_keyring("medousa.providers", &format!("api_key.{}", opaque.as_str()))
+                .ok()
+                .flatten()
         })
-        .or_else(|| load_legacy_keyring("medousa.providers", provider).ok().flatten())
+        .or_else(|| {
+            load_legacy_keyring("medousa.providers", provider)
+                .ok()
+                .flatten()
+        })
         .or_else(|| {
             load_legacy_file(
                 &data_dir
@@ -697,10 +719,7 @@ fn migrate_provider(
             &value,
         )?;
         let _ = delete_legacy_keyring("medousa.providers", opaque.as_str());
-        let _ = delete_legacy_keyring(
-            "medousa.providers",
-            &format!("api_key.{}", opaque.as_str()),
-        );
+        let _ = delete_legacy_keyring("medousa.providers", &format!("api_key.{}", opaque.as_str()));
         let _ = delete_legacy_keyring("medousa.providers", provider);
         let _ = delete_legacy_file(
             &data_dir
@@ -729,19 +748,21 @@ fn migrate_provider(
         .flatten()
     })
     .or_else(|| {
-        load_legacy_file(&data_dir.join("secrets").join(format!("base_url_{provider}")))
-            .ok()
-            .flatten()
+        load_legacy_file(
+            &data_dir
+                .join("secrets")
+                .join(format!("base_url_{provider}")),
+        )
+        .ok()
+        .flatten()
     });
     if let Some(base_url) = base {
         let mut connection = ensure_kind_sync(provider, None, Some(&base_url))?;
         connection.base_url = Some(base_url);
         connection.updated_at = Utc::now();
         let mut doc = load_file_doc();
-        doc.connections.insert(
-            connection.connection_id.as_str().to_string(),
-            connection,
-        );
+        doc.connections
+            .insert(connection.connection_id.as_str().to_string(), connection);
         save_file_doc(&doc)?;
         let _ = delete_legacy_keyring(
             "medousa.providers",
@@ -753,7 +774,11 @@ fn migrate_provider(
                 .join("secrets")
                 .join(format!("base_url_{}", opaque.as_str())),
         );
-        let _ = delete_legacy_file(&data_dir.join("secrets").join(format!("base_url_{provider}")));
+        let _ = delete_legacy_file(
+            &data_dir
+                .join("secrets")
+                .join(format!("base_url_{provider}")),
+        );
     }
     Ok(())
 }

@@ -57,7 +57,9 @@ async fn proxy(
         )
         .await;
     }
-    let client = reqwest::Client::new();
+    let client = crate::daemon_self_url::authenticated_http_client().map_err(|error| {
+        StasisError::PortFailure(format!("coding engine authorization: {error}"))
+    })?;
     let mut url = reqwest::Url::parse(&format!("{}{path}", daemon_base().trim_end_matches('/')))
         .map_err(|e| StasisError::PortFailure(e.to_string()))?;
     {
@@ -94,7 +96,9 @@ async fn proxy(
 }
 
 pub(crate) async fn request_code_action(input: Value) -> StasisResult<Value> {
-    let client = reqwest::Client::new();
+    let client = crate::daemon_self_url::authenticated_http_client().map_err(|error| {
+        StasisError::PortFailure(format!("coding engine authorization: {error}"))
+    })?;
     let url = format!("{}/v1/code/request", daemon_base().trim_end_matches('/'));
     let response = client
         .post(url)

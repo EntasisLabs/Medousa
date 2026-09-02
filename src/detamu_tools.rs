@@ -39,7 +39,8 @@ fn daemon_base() -> String {
 }
 
 async fn daemon_get(path: &str) -> StasisResult<Value> {
-    let client = reqwest::Client::new();
+    let client = crate::daemon_self_url::authenticated_http_client()
+        .map_err(|error| StasisError::PortFailure(format!("detamu authorization: {error}")))?;
     let url = format!("{}{path}", daemon_base().trim_end_matches('/'));
     let resp = client
         .get(&url)
@@ -60,7 +61,8 @@ async fn daemon_get(path: &str) -> StasisResult<Value> {
 }
 
 async fn daemon_get_query(path: &str, query: &[(&str, String)]) -> StasisResult<Value> {
-    let client = reqwest::Client::new();
+    let client = crate::daemon_self_url::authenticated_http_client()
+        .map_err(|error| StasisError::PortFailure(format!("detamu authorization: {error}")))?;
     let mut url = reqwest::Url::parse(&format!("{}{path}", daemon_base().trim_end_matches('/')))
         .map_err(|e| StasisError::PortFailure(e.to_string()))?;
     {

@@ -11,15 +11,18 @@ use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use crossterm::style::Stylize;
 use medousa::session::{
-    load_discord_bot_token, load_slack_app_token, load_slack_bot_token, load_surreal_password,
-    load_telegram_bot_token, load_tui_api_key, load_tui_defaults, save_discord_bot_token,
-    save_slack_app_token, save_slack_bot_token, save_surreal_password, save_telegram_bot_token,
-    save_tui_api_key, save_tui_defaults,
+    discord_bot_token_configured, load_discord_bot_token, load_slack_app_token,
+    load_slack_bot_token, load_surreal_password, load_telegram_bot_token, load_tui_api_key,
+    load_tui_defaults, save_discord_bot_token, save_slack_app_token, save_slack_bot_token,
+    save_surreal_password, save_telegram_bot_token, save_tui_api_key, save_tui_defaults,
+    slack_app_token_configured, slack_bot_token_configured, telegram_bot_token_configured,
+    tui_api_key_configured,
 };
 use medousa::{
     ProductConfig, apply_adapter_env, apply_daemon_env, clear_stale_surrealkv_lock, format_i64_csv,
     format_u64_csv, load_product_config, migrate_from_onboard_profile, parse_backend,
-    parse_i64_csv, parse_u64_csv, save_product_config, surrealkv_lock_path,
+    parse_backend_for_diagnostics, parse_i64_csv, parse_u64_csv, save_product_config,
+    surrealkv_lock_path,
 };
 use serde::{Deserialize, Serialize};
 
@@ -1194,7 +1197,7 @@ fn run_doctor(args: &[String]) -> Result<()> {
                 "stt": stt.map(|t| serde_json::json!({"provider": t.provider, "model": t.model, "base_url": t.base_url})),
             },
             "mcp_gateway_url": medousa::resolve_mcp_gateway_url(None),
-            "api_key": load_tui_api_key().is_some(),
+            "api_key": tui_api_key_configured(),
         });
         println!("{}", serde_json::to_string_pretty(&payload)?);
         return Ok(());
@@ -1253,7 +1256,8 @@ fn run_doctor(args: &[String]) -> Result<()> {
         &product_config,
         &defaults,
     );
-    let surreal_settings = medousa::resolve_surreal_connection_settings(&product_config, &defaults);
+    let surreal_endpoint =
+        medousa::surreal_config::resolve_surreal_endpoint(&product_config, &defaults);
     println!(
         "daemon_url={} bind={} tcp_reachable={} http_health={}",
         daemon_url, daemon_bind, daemon_tcp_reachable, daemon_http.label
@@ -1266,7 +1270,7 @@ fn run_doctor(args: &[String]) -> Result<()> {
     println!(
         "daemon_otel_note=surreal-ws daemon path does not attach OTLP today; hang is usually Surreal connect or schema bootstrap (watch stderr for medousa-daemon: connecting… lines)"
     );
-    if let Some(endpoint) = surreal_settings.endpoint.as_deref() {
+    if let Some(endpoint) = surreal_endpoint.as_deref() {
         println!("surreal_endpoint_effective={endpoint}");
     }
     if let Some(endpoint) = product_config.surreal.endpoint.as_deref() {
@@ -1291,7 +1295,7 @@ fn run_doctor(args: &[String]) -> Result<()> {
     if !daemon_http.detail.is_empty() {
         println!("daemon_http_detail={}", daemon_http.detail);
     }
-    let backend = parse_backend(Some(&backend_name));
+    let backend = parse_backend_for_diagnostics(Some(&backend_name));
     let daemon_process_running = is_medousa_daemon_process_running();
     println!("daemon_process_running={}", daemon_process_running);
     if daemon_tcp_reachable && !daemon_http.healthy {
@@ -1329,7 +1333,7 @@ fn run_doctor(args: &[String]) -> Result<()> {
     println!("response_depth={}", product_config.tui.response_depth_mode);
     println!(
         "api_key={}",
-        if load_tui_api_key().is_some() {
+        if tui_api_key_configured() {
             "configured"
         } else {
             "missing"
@@ -1337,22 +1341,22 @@ fn run_doctor(args: &[String]) -> Result<()> {
     );
     println!(
         "discord_token={} telegram_token={} slack_bot_token={} slack_app_token={}",
-        if load_discord_bot_token().is_some() {
+        if discord_bot_token_configured() {
             "configured"
         } else {
             "missing"
         },
-        if load_telegram_bot_token().is_some() {
+        if telegram_bot_token_configured() {
             "configured"
         } else {
             "missing"
         },
-        if load_slack_bot_token().is_some() {
+        if slack_bot_token_configured() {
             "configured"
         } else {
             "missing"
         },
-        if load_slack_app_token().is_some() {
+        if slack_app_token_configured() {
             "configured"
         } else {
             "missing"
@@ -2493,7 +2497,12 @@ fn daemon_http_healthy(daemon_url: &str) -> bool {
 
 fn probe_daemon_http(daemon_url: &str) -> DaemonHttpProbe {
     let daemon_url = daemon_url.trim_end_matches('/');
-    let client = match cli_daemon_client(daemon_url, Duration::from_secs(3)) {
+    // `/health` is deliberately anonymous. Status and doctor must not unlock
+    // the CLI credential just to determine whether the daemon is alive.
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()
+    {
         Ok(client) => client,
         Err(err) => {
             return DaemonHttpProbe {

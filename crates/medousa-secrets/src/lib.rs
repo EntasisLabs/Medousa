@@ -22,6 +22,7 @@ pub const CLIENT_SERVICE: &str = "com.entasislabs.medousa.secrets.client";
 
 const INSTALLATION_FILE: &str = "installation.json";
 const SECRETS_DIR: &str = "secrets";
+const MIGRATIONS_DIR: &str = "migrations";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct InstallationDocument {
@@ -32,12 +33,10 @@ struct InstallationDocument {
 pub fn ensure_installation_id(data_dir: &Path) -> Result<InstallationId> {
     let path = data_dir.join(INSTALLATION_FILE);
     if path.is_file() {
-        let raw = fs::read_to_string(&path)
-            .with_context(|| format!("read {}", path.display()))?;
-        let doc: InstallationDocument = serde_json::from_str(&raw)
-            .with_context(|| format!("parse {}", path.display()))?;
-        return InstallationId::parse(&doc.installation_id)
-            .map_err(|err| anyhow::anyhow!("{err}"));
+        let raw = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+        let doc: InstallationDocument =
+            serde_json::from_str(&raw).with_context(|| format!("parse {}", path.display()))?;
+        return InstallationId::parse(&doc.installation_id).map_err(|err| anyhow::anyhow!("{err}"));
     }
     fs::create_dir_all(data_dir).with_context(|| format!("create {}", data_dir.display()))?;
     let id = uuid::Uuid::new_v4().to_string();
@@ -55,13 +54,44 @@ pub fn load_installation_id(data_dir: &Path) -> Result<Option<InstallationId>> {
     if !path.is_file() {
         return Ok(None);
     }
-    let raw = fs::read_to_string(&path)
-        .with_context(|| format!("read {}", path.display()))?;
-    let doc: InstallationDocument = serde_json::from_str(&raw)
-        .with_context(|| format!("parse {}", path.display()))?;
+    let raw = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    let doc: InstallationDocument =
+        serde_json::from_str(&raw).with_context(|| format!("parse {}", path.display()))?;
     InstallationId::parse(&doc.installation_id)
         .map(Some)
         .map_err(|err| anyhow::anyhow!("{err}"))
+}
+
+/// Return whether a versioned secret migration has completed for this data root.
+///
+/// Migration markers are deliberately file-backed: probing the OS keyring to
+/// decide whether to probe the OS keyring would recreate the startup prompt
+/// storm this marker is meant to prevent.
+pub fn secret_migration_completed(data_dir: &Path, name: &str) -> Result<bool> {
+    Ok(secret_migration_marker_path(data_dir, name)?.is_file())
+}
+
+/// Durably record completion of a versioned secret migration.
+pub fn mark_secret_migration_completed(data_dir: &Path, name: &str) -> Result<()> {
+    let marker = secret_migration_marker_path(data_dir, name)?;
+    let parent = marker
+        .parent()
+        .context("secret migration marker has no parent")?;
+    create_private_dir(parent)?;
+    replace_private_file(&marker, b"complete\n")
+}
+
+fn secret_migration_marker_path(data_dir: &Path, name: &str) -> Result<PathBuf> {
+    let valid = !name.is_empty()
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'));
+    if !valid {
+        bail!("invalid secret migration marker name");
+    }
+    Ok(data_dir
+        .join(MIGRATIONS_DIR)
+        .join(format!("{name}.complete")))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,7 +107,12 @@ pub struct SecretRead {
 }
 
 pub fn load_daemon_secret(data_dir: &Path, path: &DaemonSecretPath) -> Result<Option<SecretRead>> {
-    load_secret(data_dir, DAEMON_SERVICE, &path.account(), path.storage_key().as_str())
+    load_secret(
+        data_dir,
+        DAEMON_SERVICE,
+        &path.account(),
+        path.storage_key().as_str(),
+    )
 }
 
 pub fn save_daemon_secret(
@@ -108,7 +143,12 @@ pub fn daemon_secret_present(data_dir: &Path, path: &DaemonSecretPath) -> Result
 }
 
 pub fn load_client_secret(data_dir: &Path, path: &ClientSecretPath) -> Result<Option<SecretRead>> {
-    load_secret(data_dir, CLIENT_SERVICE, &path.account(), path.storage_key().as_str())
+    load_secret(
+        data_dir,
+        CLIENT_SERVICE,
+        &path.account(),
+        path.storage_key().as_str(),
+    )
 }
 
 pub fn save_client_secret(
@@ -210,8 +250,7 @@ pub fn load_legacy_file(path: &Path) -> Result<Option<String>> {
     if !path.is_file() {
         return Ok(None);
     }
-    let value = fs::read_to_string(path)
-        .with_context(|| format!("read {}", path.display()))?;
+    let value = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
     let trimmed = value.trim().to_string();
     if trimmed.is_empty() {
         Ok(None)
@@ -275,12 +314,7 @@ fn save_secret(
     Ok(SecretBackend::FileFallback)
 }
 
-fn delete_secret(
-    data_dir: &Path,
-    service: &str,
-    account: &str,
-    storage_key: &str,
-) -> Result<()> {
+fn delete_secret(data_dir: &Path, service: &str, account: &str, storage_key: &str) -> Result<()> {
     let _ = delete_keyring(service, account);
     delete_legacy_file(&secret_file_path(data_dir, storage_key))?;
     Ok(())
@@ -325,11 +359,8 @@ fn read_keyring(service: &str, account: &str) -> Result<Option<String>> {
 
 fn write_keyring(service: &str, account: &str, value: &str) -> Result<()> {
     refuse_host_keyring()?;
-    let entry =
-        keyring::Entry::new(service, account).context("open keyring entry for write")?;
-    entry
-        .set_password(value)
-        .context("write keyring entry")?;
+    let entry = keyring::Entry::new(service, account).context("open keyring entry for write")?;
+    entry.set_password(value).context("write keyring entry")?;
     Ok(())
 }
 
@@ -410,6 +441,19 @@ mod tests {
     }
 
     #[test]
+    fn migration_markers_are_durable_and_scoped() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!secret_migration_completed(dir.path(), "daemon-legacy-v1").unwrap());
+        assert!(!secret_migration_completed(dir.path(), "home-legacy-v1").unwrap());
+
+        mark_secret_migration_completed(dir.path(), "daemon-legacy-v1").unwrap();
+
+        assert!(secret_migration_completed(dir.path(), "daemon-legacy-v1").unwrap());
+        assert!(!secret_migration_completed(dir.path(), "home-legacy-v1").unwrap());
+        assert!(secret_migration_completed(dir.path(), "../escape").is_err());
+    }
+
+    #[test]
     fn file_fallback_round_trip_when_hermetic() {
         // Hermetic refuses keyring writes → file fallback.
         unsafe {
@@ -417,8 +461,7 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let installation = ensure_installation_id(dir.path()).unwrap();
-        let connection =
-            ConnectionId::parse("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
+        let connection = ConnectionId::parse("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
         let path = DaemonSecretPath::Integration {
             installation_id: installation,
             connection_id: connection,

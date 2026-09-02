@@ -196,7 +196,9 @@ fn verify_expected_digest(path: &Path, expected: &str) -> StasisResult<Option<Ve
 }
 
 async fn daemon_post(path: &str, body: Value) -> StasisResult<Value> {
-    let client = reqwest::Client::new();
+    let client = crate::daemon_self_url::authenticated_http_client().map_err(|error| {
+        StasisError::PortFailure(format!("daemon session authorization: {error}"))
+    })?;
     let url = format!("{}{path}", daemon_base().trim_end_matches('/'));
     let resp = client
         .post(&url)
@@ -208,7 +210,9 @@ async fn daemon_post(path: &str, body: Value) -> StasisResult<Value> {
 }
 
 async fn daemon_get(path: &str) -> StasisResult<Value> {
-    let client = reqwest::Client::new();
+    let client = crate::daemon_self_url::authenticated_http_client().map_err(|error| {
+        StasisError::PortFailure(format!("daemon session authorization: {error}"))
+    })?;
     let url = format!("{}{path}", daemon_base().trim_end_matches('/'));
     let resp = client
         .get(&url)
@@ -1533,6 +1537,22 @@ struct SessionStreamOutput {
     completion_exit_code: Option<i32>,
 }
 
+fn shell_websocket_request(
+    url: &str,
+    authorization: Option<reqwest::header::HeaderValue>,
+) -> StasisResult<tokio_tungstenite::tungstenite::http::Request<()>> {
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+    use tokio_tungstenite::tungstenite::http::header::AUTHORIZATION;
+
+    let mut request = url
+        .into_client_request()
+        .map_err(|error| StasisError::PortFailure(format!("session ws request: {error}")))?;
+    if let Some(value) = authorization {
+        request.headers_mut().insert(AUTHORIZATION, value);
+    }
+    Ok(request)
+}
+
 async fn stream_session_input(
     session_id: &str,
     input: Option<&[u8]>,
@@ -1553,7 +1573,10 @@ async fn stream_session_input(
         base.trim_end_matches('/'),
         urlencoding::encode(session_id)
     );
-    let (mut ws, _) = tokio_tungstenite::connect_async(&url)
+    let authorization = crate::daemon_self_url::self_authorization_header()
+        .map_err(|error| StasisError::PortFailure(format!("session ws authorization: {error}")))?;
+    let request = shell_websocket_request(&url, authorization)?;
+    let (mut ws, _) = tokio_tungstenite::connect_async(request)
         .await
         .map_err(|e| StasisError::PortFailure(format!("session ws connect: {e}")))?;
     let mut pending_input = input.map(|input| {
@@ -2033,6 +2056,25 @@ pub fn register_coding_tools(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shell_websocket_request_carries_sensitive_authorization() {
+        let mut authorization = reqwest::header::HeaderValue::from_static("Bearer self-secret");
+        authorization.set_sensitive(true);
+
+        let request = shell_websocket_request(
+            "ws://127.0.0.1:7419/v1/sessions/shell/example",
+            Some(authorization),
+        )
+        .expect("valid shell WebSocket request");
+        let actual = request
+            .headers()
+            .get(reqwest::header::AUTHORIZATION)
+            .expect("authorization header");
+
+        assert_eq!(actual, "Bearer self-secret");
+        assert!(actual.is_sensitive());
+    }
 
     #[test]
     fn daemon_response_preserves_plain_text_error_details() {

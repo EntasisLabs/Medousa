@@ -653,17 +653,46 @@ pub async fn build_daemon_runtime(
 
 pub fn parse_backend(value: Option<&str>) -> RuntimeBackend {
     let raw = value.unwrap_or("in-memory").trim();
+    if !raw.eq_ignore_ascii_case("surreal-mem")
+        && !raw.starts_with("surreal-kv")
+        && !raw.starts_with("surreal-ws:")
+    {
+        return RuntimeBackend::InMemory;
+    }
     let surreal = surreal_config::resolve_surreal_connection_settings(
         &load_product_config(),
         &session::load_tui_defaults(),
     );
-    let namespace = surreal_config::resolve_surreal_namespace(&surreal);
-    let database = surreal_config::resolve_surreal_database(&surreal);
+    parse_backend_with_settings(raw, &surreal)
+}
+
+/// Parse backend shape for status/doctor without unlocking a stored password.
+pub fn parse_backend_for_diagnostics(value: Option<&str>) -> RuntimeBackend {
+    let raw = value.unwrap_or("in-memory").trim();
+    if !raw.eq_ignore_ascii_case("surreal-mem")
+        && !raw.starts_with("surreal-kv")
+        && !raw.starts_with("surreal-ws:")
+    {
+        return RuntimeBackend::InMemory;
+    }
+    let surreal = surreal_config::resolve_surreal_connection_metadata(
+        &load_product_config(),
+        &session::load_tui_defaults(),
+    );
+    parse_backend_with_settings(raw, &surreal)
+}
+
+fn parse_backend_with_settings(
+    raw: &str,
+    surreal: &surreal_config::SurrealConnectionSettings,
+) -> RuntimeBackend {
+    let namespace = surreal_config::resolve_surreal_namespace(surreal);
+    let database = surreal_config::resolve_surreal_database(surreal);
 
     if raw.eq_ignore_ascii_case("surreal-mem") {
         return surreal_config::apply_surreal_auth_to_backend(
             RuntimeBackend::surreal_mem(namespace, database),
-            &surreal,
+            surreal,
         );
     }
 
@@ -671,15 +700,15 @@ pub fn parse_backend(value: Option<&str>) -> RuntimeBackend {
         let path = parse_surreal_kv_path(raw);
         return surreal_config::apply_surreal_auth_to_backend(
             RuntimeBackend::surreal_kv(path, namespace, database),
-            &surreal,
+            surreal,
         );
     }
 
     if raw.starts_with("surreal-ws:") {
-        let endpoint = surreal_config::resolve_surreal_ws_endpoint(raw, &surreal);
+        let endpoint = surreal_config::resolve_surreal_ws_endpoint(raw, surreal);
         let (endpoint, url_auth) = surreal_config::split_endpoint_userinfo(&endpoint);
         let backend = RuntimeBackend::surreal_ws(endpoint, namespace, database);
-        if let Some(auth) = surreal_config::resolve_surreal_auth(&surreal).or(url_auth) {
+        if let Some(auth) = surreal_config::resolve_surreal_auth(surreal).or(url_auth) {
             return backend.with_surreal_auth(auth);
         }
         return backend;

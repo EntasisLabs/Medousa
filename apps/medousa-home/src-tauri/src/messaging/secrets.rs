@@ -99,7 +99,52 @@ pub fn load_secret_value(secret_id: &str) -> Result<Option<String>, String> {
 }
 
 pub fn secret_is_set(secret_id: &str) -> Result<bool, String> {
-    Ok(load_secret_value(secret_id)?.is_some())
+    let _ = integration_secrets::ensure_secrets_bootstrapped();
+    Ok(match secret_id {
+        "telegram_bot_token" => integration_secrets::kind_secret_configured(
+            "telegram",
+            IntegrationSecretSlot::BotToken,
+        ),
+        "discord_bot_token" => integration_secrets::kind_secret_configured(
+            "discord",
+            IntegrationSecretSlot::BotToken,
+        ),
+        "slack_bot_token" => integration_secrets::kind_secret_configured(
+            "slack",
+            IntegrationSecretSlot::BotToken,
+        ),
+        "slack_app_token" => integration_secrets::kind_secret_configured(
+            "slack",
+            IntegrationSecretSlot::AppToken,
+        ),
+        "api_key" => integration_secrets::kind_secret_configured(
+            "openai",
+            IntegrationSecretSlot::ApiKey,
+        ),
+        "stt_api_key" => integration_secrets::kind_secret_configured(
+            &format!("stt.{}", stt_kind()),
+            IntegrationSecretSlot::ApiKey,
+        ),
+        other if other.starts_with("api_key_") => {
+            let provider = other.trim_start_matches("api_key_");
+            let provider = ProviderId::parse(provider).map_err(|err| err.to_string())?;
+            integration_secrets::kind_secret_configured(
+                provider.as_str(),
+                IntegrationSecretSlot::ApiKey,
+            )
+        }
+        "custom_provider_id" => custom_provider_id_path()
+            .is_file()
+            .then(read_custom_provider_id)
+            .flatten()
+            .is_some(),
+        other if other.starts_with("base_url_") => {
+            let provider = other.trim_start_matches("base_url_");
+            let provider = ProviderId::parse(provider).map_err(|err| err.to_string())?;
+            integration_secrets::load_connection_base_url(provider.as_str()).is_some()
+        }
+        other => return Err(format!("unknown secret_id '{other}'")),
+    })
 }
 
 pub fn save_secret(secret_id: &str, value: Option<String>) -> Result<(), String> {
