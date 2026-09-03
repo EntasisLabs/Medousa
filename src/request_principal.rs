@@ -308,6 +308,8 @@ mod tests {
             last_seen: Utc::now(),
             session_token_hash: "hash".into(),
             session_token_expiry: Utc::now(),
+            trust_expires_at: None,
+            idle_timeout_seconds: None,
             credential_generation: 1,
             role,
             profile_id: profile_id.map(str::to_string),

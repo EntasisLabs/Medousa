@@ -117,7 +117,7 @@ Cookbooks: [Custom views](../cookbook/custom-views-and-canvas.md) · [Advanced](
 
 ### Pairing & workshops
 
-`pairing_fetch_qr`, `pairing_rotate_invite`, `pairing_fetch_qr_image`, `pairing_fetch_status`, `pairing_revoke`, `pairing_wait_ready`, `pairing_complete_from_qr`, `pairing_load_credentials`, `pairing_send_heartbeat`, `bonjour_status`, `workshops_load`, `workshops_set_active`, `workshops_add_local`, `workshops_rename`, `workshops_remove`, `workshops_update_client_state`, `workshops_update_branding`
+`pairing_fetch_qr`, `pairing_rotate_invite`, `pairing_fetch_qr_image`, `pairing_fetch_status`, `pairing_revoke`, `pairing_update_policy`, `pairing_wait_ready`, `pairing_complete_from_qr`, `pairing_load_credentials`, `pairing_send_heartbeat`, `bonjour_status`, `workshops_load`, `workshops_set_active`, `workshops_add_local`, `workshops_rename`, `workshops_remove`, `workshops_update_client_state`, `workshops_update_branding`
 
 ### Interactive chat & sessions
 

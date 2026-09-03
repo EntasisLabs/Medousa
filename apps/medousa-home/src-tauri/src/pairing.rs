@@ -1,5 +1,4 @@
 use crate::daemon::DaemonState;
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tauri::State;
@@ -21,9 +20,21 @@ pub struct PairedDeviceSummary {
     pub paired_at: String,
     pub last_seen: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_expires_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trust_expires_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_timeout_seconds: Option<u64>,
+    #[serde(default = "default_true")]
+    pub trust_active: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<String>,
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,55 +88,22 @@ pub struct PairHeartbeatInvokeRequest {
     pub mesh_iroh_endpoint_id: Option<String>,
 }
 
-fn pairing_http_client(base_url: &str) -> Result<Client, String> {
-    crate::workshop_transport::protected_http_client(
-        base_url,
-        Duration::from_secs(5),
-        Duration::from_secs(10),
-    )
-}
-
 fn daemon_base(_state: &State<'_, DaemonState>) -> Result<String, String> {
     crate::active_workshop::transport_base_url()
 }
 
-fn pairing_unavailable_message(status: reqwest::StatusCode, body: &str) -> String {
-    if status.as_u16() == 404 {
-        return "LAN pairing is not enabled on Medousa Engine. Restart the engine without MEDOUSA_PAIRING_DISABLE.".to_string();
-    }
-    if body.trim().is_empty() {
-        format!("Medousa Engine returned HTTP {}", status)
-    } else {
-        format!("Medousa Engine returned HTTP {}: {}", status, body.trim())
-    }
-}
-
 #[tauri::command]
 pub async fn pairing_fetch_qr(
-    state: State<'_, DaemonState>,
+    _state: State<'_, DaemonState>,
     full: Option<bool>,
 ) -> Result<PairingQrResponse, String> {
-    let base = daemon_base(&state)?;
-    let client = pairing_http_client(&base)?;
+    let config = crate::active_workshop::transport_config()?;
     let path = if full.unwrap_or(false) {
-        format!("{base}/qr?full=true")
+        "/qr?full=true"
     } else {
-        format!("{base}/qr")
+        "/qr"
     };
-    let response = client
-        .get(path)
-        .send()
-        .await
-        .map_err(|err| format!("cannot reach Medousa Engine at {base}: {err}"))?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(pairing_unavailable_message(status, &body));
-    }
-    response
-        .json::<PairingQrResponse>()
-        .await
-        .map_err(|err| err.to_string())
+    crate::workshop_transport::workshop_get_json(&config, path).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -137,21 +115,11 @@ struct QrImagePayload {
     png_base64: String,
 }
 
-async fn fetch_qr_image_once(base: &str, client: &Client) -> Result<PairingQrImage, String> {
-    let response = client
-        .get(format!("{base}/qr/image"))
-        .send()
-        .await
-        .map_err(|err| format!("cannot reach Medousa Engine at {base}: {err}"))?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(pairing_unavailable_message(status, &body));
-    }
-    let payload = response
-        .json::<QrImagePayload>()
-        .await
-        .map_err(|err| err.to_string())?;
+async fn fetch_qr_image_once(
+    config: &crate::pairing_client::WorkshopTransportConfig,
+) -> Result<PairingQrImage, String> {
+    let payload: QrImagePayload =
+        crate::workshop_transport::workshop_get_json(config, "/qr/image").await?;
     Ok(PairingQrImage {
         data_url: format!("data:image/png;base64,{}", payload.png_base64),
         url: payload.url,
@@ -164,9 +132,8 @@ async fn fetch_qr_image_once(base: &str, client: &Client) -> Result<PairingQrIma
 pub async fn pairing_fetch_qr_image(
     state: State<'_, DaemonState>,
 ) -> Result<PairingQrImage, String> {
-    let base = daemon_base(&state)?;
-    let client = pairing_http_client(&base)?;
-    fetch_qr_image_once(&base, &client).await
+    let _ = state;
+    fetch_qr_image_once(&crate::active_workshop::transport_config()?).await
 }
 
 #[tauri::command]
@@ -177,12 +144,12 @@ pub async fn pairing_wait_ready(
     let timeout = Duration::from_secs(timeout_seconds.unwrap_or(45).max(1));
     let poll = Duration::from_millis(750);
     let started = Instant::now();
-    let base = daemon_base(&state)?;
-    let client = pairing_http_client(&base)?;
+    let _ = state;
+    let config = crate::active_workshop::transport_config()?;
     let mut last_error = "Pairing is still starting…".to_string();
 
     while started.elapsed() < timeout {
-        match fetch_qr_image_once(&base, &client).await {
+        match fetch_qr_image_once(&config).await {
             Ok(image) => return Ok(image),
             Err(err) => last_error = err,
         }
@@ -196,22 +163,12 @@ pub async fn pairing_wait_ready(
 pub async fn pairing_fetch_status(
     state: State<'_, DaemonState>,
 ) -> Result<PairingStatusResponse, String> {
-    let base = daemon_base(&state)?;
-    let client = pairing_http_client(&base)?;
-    let response = client
-        .get(format!("{base}/pair/status"))
-        .send()
-        .await
-        .map_err(|err| format!("cannot reach Medousa Engine at {base}: {err}"))?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(pairing_unavailable_message(status, &body));
-    }
-    response
-        .json::<PairingStatusResponse>()
-        .await
-        .map_err(|err| err.to_string())
+    let _ = state;
+    crate::workshop_transport::workshop_get_json(
+        &crate::active_workshop::transport_config()?,
+        "/pair/status",
+    )
+    .await
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -226,28 +183,18 @@ pub async fn pairing_rotate_invite(
     state: State<'_, DaemonState>,
     profile_id: Option<String>,
 ) -> Result<PairingQrResponse, String> {
-    let base = daemon_base(&state)?;
-    let client = pairing_http_client(&base)?;
+    let _ = state;
     let body = RotateInviteBody {
         profile_id: profile_id
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty()),
     };
-    let response = client
-        .post(format!("{base}/qr/rotate"))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|err| format!("cannot reach Medousa Engine at {base}: {err}"))?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(pairing_unavailable_message(status, &body));
-    }
-    response
-        .json::<PairingQrResponse>()
-        .await
-        .map_err(|err| err.to_string())
+    crate::workshop_transport::workshop_post_json(
+        &crate::active_workshop::transport_config()?,
+        "/qr/rotate",
+        &body,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -259,19 +206,47 @@ pub async fn pairing_revoke(
     if trimmed.is_empty() {
         return Err("pairing_id is required".to_string());
     }
-    let base = daemon_base(&state)?;
-    let client = pairing_http_client(&base)?;
-    let response = client
-        .delete(format!("{base}/pair/{trimmed}"))
-        .send()
-        .await
-        .map_err(|err| format!("cannot reach Medousa Engine at {base}: {err}"))?;
-    if response.status().is_success() || response.status().as_u16() == 204 {
-        return Ok(());
+    let _ = state;
+    crate::workshop_transport::workshop_json_request(
+        &crate::active_workshop::transport_config()?,
+        "DELETE",
+        &format!("/pair/{trimmed}"),
+        None,
+    )
+    .await
+    .map(|_| ())
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PairingTrustPolicyBody {
+    trust_expires_at: Option<String>,
+    idle_timeout_seconds: Option<u64>,
+}
+
+#[tauri::command]
+pub async fn pairing_update_policy(
+    _state: State<'_, DaemonState>,
+    pairing_id: String,
+    trust_expires_at: Option<String>,
+    idle_timeout_seconds: Option<u64>,
+) -> Result<PairedDeviceSummary, String> {
+    let pairing_id = pairing_id.trim();
+    if pairing_id.is_empty() {
+        return Err("pairing_id is required".to_string());
     }
-    let status = response.status();
-    let body = response.text().await.unwrap_or_default();
-    Err(pairing_unavailable_message(status, &body))
+    let body = PairingTrustPolicyBody {
+        trust_expires_at: trust_expires_at
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+        idle_timeout_seconds,
+    };
+    crate::workshop_transport::workshop_put_json(
+        &crate::active_workshop::transport_config()?,
+        &format!("/pair/{pairing_id}/policy"),
+        &body,
+    )
+    .await
 }
 
 #[tauri::command]

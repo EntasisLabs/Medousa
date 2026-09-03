@@ -24,6 +24,7 @@ export interface PairingCredentialsSummary {
   workshopDeviceId: string;
   daemonUrl: string;
   pairedAt: string;
+  sessionExpiresAt?: string | null;
   hasSessionToken: boolean;
   irohAvailable: boolean;
 }

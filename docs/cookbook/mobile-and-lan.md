@@ -20,7 +20,11 @@ Connect the Medousa mobile app to a desktop engine over LAN (or Iroh when enable
 1. Authenticated desktop Home or `medousa pair qr` creates an expiring invite.
 2. Mobile scans QR or enters pair code (`GET /pair/code`).
 3. `POST /pair/init` + `POST /pair/verify` exchange credentials.
-4. Mobile stores workshop URL + bearer token; uses [`medousa-sdk-iroh`](../../crates/medousa-sdk-iroh/) `WorkshopTransport` via Tauri `daemon/sdk.rs`.
+4. Mobile stores workshop identity + a short-lived bearer in its OS secret
+   store; it renews the bearer through a signed device-key challenge without
+   repeating the QR ceremony.
+5. Requests use [`medousa-sdk-iroh`](../../crates/medousa-sdk-iroh/)
+   `WorkshopTransport` via Tauri `daemon/sdk.rs`.
 
 Routes: [http-api.md](../engine/http-api.md#pairing-lan--phone)
 

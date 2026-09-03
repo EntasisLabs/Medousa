@@ -25,14 +25,20 @@ use crate::credential_lifecycle::{CredentialKind, CredentialLifecycle};
 
 const QR_TTL: Duration = Duration::from_secs(300);
 const VERIFY_TTL: Duration = Duration::from_secs(10);
+const SESSION_REFRESH_TTL: Duration = Duration::from_secs(60);
 const SESSION_TOKEN_TTL: Duration = Duration::from_secs(86_400);
 const INIT_RATE_LIMIT: usize = 3;
 const INIT_RATE_WINDOW: Duration = Duration::from_secs(60);
 const GLOBAL_INIT_RATE_LIMIT: usize = 24;
 const VERIFY_RATE_LIMIT: usize = 6;
 const GLOBAL_VERIFY_RATE_LIMIT: usize = 48;
+const REFRESH_RATE_LIMIT: usize = 12;
+const GLOBAL_REFRESH_RATE_LIMIT: usize = 96;
 const MAX_PENDING_SESSIONS: usize = 32;
+const MAX_PENDING_REFRESH_SESSIONS: usize = 32;
 const CEREMONY_CONCURRENCY: usize = 4;
+const MIN_IDLE_TIMEOUT_SECONDS: u64 = 86_400;
+const MAX_IDLE_TIMEOUT_SECONDS: u64 = 10 * 365 * 86_400;
 
 const SHORT_CODE_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -89,6 +95,12 @@ pub struct PairedDeviceSummary {
     pub phone_name: String,
     pub paired_at: DateTime<Utc>,
     pub last_seen: DateTime<Utc>,
+    pub session_expires_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trust_expires_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub idle_timeout_seconds: Option<u64>,
+    pub trust_active: bool,
     pub role: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<String>,
@@ -138,7 +150,63 @@ pub struct PairVerifyResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pairing_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_expires_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PairSessionChallengeRequest {
+    pub pairing_id: String,
+    pub phone_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PairSessionChallengeResponse {
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_nonce: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PairSessionRefreshRequest {
+    pub session_id: String,
+    pub pairing_id: String,
+    pub phone_id: String,
+    pub signed_nonce: String,
+    pub phone_nonce: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PairSessionRefreshResponse {
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_signed_nonce: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_expires_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PairTrustPolicyUpdateRequest {
+    #[serde(default)]
+    pub trust_expires_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub idle_timeout_seconds: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -204,12 +272,22 @@ struct PendingPairSession {
     created_at: Instant,
 }
 
+#[derive(Debug, Clone)]
+struct PendingRefreshSession {
+    pairing_id: String,
+    phone_id: String,
+    server_nonce: [u8; 32],
+    created_at: Instant,
+}
+
 #[derive(Default)]
 struct PairingAdmission {
     init_global: VecDeque<Instant>,
     init_by_source: HashMap<IpAddr, VecDeque<Instant>>,
     verify_global: VecDeque<Instant>,
     verify_by_source: HashMap<IpAddr, VecDeque<Instant>>,
+    refresh_global: VecDeque<Instant>,
+    refresh_by_source: HashMap<IpAddr, VecDeque<Instant>>,
 }
 
 impl PairingAdmission {
@@ -236,6 +314,18 @@ impl PairingAdmission {
             VERIFY_RATE_LIMIT,
         )
     }
+
+    fn allow_refresh(&mut self, source: IpAddr, now: Instant) -> bool {
+        allow_attempt(
+            &mut self.refresh_global,
+            &mut self.refresh_by_source,
+            source,
+            now,
+            INIT_RATE_WINDOW,
+            GLOBAL_REFRESH_RATE_LIMIT,
+            REFRESH_RATE_LIMIT,
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -260,7 +350,9 @@ pub struct PairingService {
     iroh: Option<IrohWorkshopInfo>,
     active_qr: RwLock<Option<ActiveQrSession>>,
     pending_sessions: RwLock<HashMap<Uuid, PendingPairSession>>,
+    pending_refresh_sessions: RwLock<HashMap<Uuid, PendingRefreshSession>>,
     admission: Mutex<PairingAdmission>,
+    credential_rotation: Mutex<()>,
     ceremony_slots: Arc<Semaphore>,
     credential_lifecycle: CredentialLifecycle,
 }
@@ -302,7 +394,9 @@ impl PairingService {
             iroh,
             active_qr: RwLock::new(None),
             pending_sessions: RwLock::new(HashMap::new()),
+            pending_refresh_sessions: RwLock::new(HashMap::new()),
             admission: Mutex::new(PairingAdmission::default()),
+            credential_rotation: Mutex::new(()),
             ceremony_slots: Arc::new(Semaphore::new(CEREMONY_CONCURRENCY)),
             credential_lifecycle,
         }
@@ -387,15 +481,7 @@ impl PairingService {
         Ok(PairStatusResponse {
             paired_devices: paired
                 .into_iter()
-                .map(|record| PairedDeviceSummary {
-                    pairing_id: record.pairing_id,
-                    phone_id: record.phone_id,
-                    phone_name: record.phone_name,
-                    paired_at: record.paired_at,
-                    last_seen: record.last_seen,
-                    role: record.role.as_str().to_string(),
-                    profile_id: record.profile_id,
-                })
+                .map(|record| paired_device_summary(record, Utc::now()))
                 .collect(),
             qr_active,
             device_id: self.identity.device_id.clone(),
@@ -578,6 +664,7 @@ impl PairingService {
         let session_token = Uuid::new_v4().to_string();
         let pairing_id = Uuid::new_v4().to_string();
         let now = Utc::now();
+        let session_expires_at = now + SESSION_TOKEN_TTL;
         let record = PairedDeviceRecord {
             pairing_id: pairing_id.clone(),
             phone_id: pending.phone_id.clone(),
@@ -586,7 +673,9 @@ impl PairingService {
             paired_at: now,
             last_seen: now,
             session_token_hash: hash_session_token(&session_token),
-            session_token_expiry: now + SESSION_TOKEN_TTL,
+            session_token_expiry: session_expires_at,
+            trust_expires_at: None,
+            idle_timeout_seconds: None,
             credential_generation: 1,
             role: pending.role,
             profile_id: pending.bound_profile_id,
@@ -605,6 +694,174 @@ impl PairingService {
             server_signed_nonce: Some(server_signed_nonce),
             session_token: Some(session_token),
             pairing_id: Some(pairing_id),
+            session_expires_at: Some(session_expires_at),
+            reason: None,
+        })
+    }
+
+    /// Begin a session rotation using the durable device key established at pairing time.
+    /// This route intentionally does not require the old bearer: an expired access token
+    /// must not turn a still-trusted device into an unpaired device.
+    pub async fn pair_session_challenge(
+        &self,
+        request: PairSessionChallengeRequest,
+        source_ip: IpAddr,
+    ) -> Result<PairSessionChallengeResponse> {
+        if !self
+            .admission
+            .lock()
+            .await
+            .allow_refresh(source_ip, Instant::now())
+        {
+            return Ok(rejected_session_challenge("rate_limited"));
+        }
+
+        let pairing_id = request.pairing_id.trim();
+        let phone_id = request.phone_id.trim();
+        if pairing_id.is_empty() || phone_id.is_empty() {
+            return Ok(rejected_session_challenge("invalid_pairing"));
+        }
+        let Some(record) = self.store.get_by_phone_id(phone_id)? else {
+            return Ok(rejected_session_challenge("invalid_pairing"));
+        };
+        if record.pairing_id != pairing_id || !pairing_trust_active(&record, Utc::now()) {
+            return Ok(rejected_session_challenge("invalid_pairing"));
+        }
+
+        let mut pending_sessions = self.pending_refresh_sessions.write().await;
+        pending_sessions.retain(|_, pending| pending.created_at.elapsed() <= SESSION_REFRESH_TTL);
+        if pending_sessions.len() >= MAX_PENDING_REFRESH_SESSIONS {
+            return Ok(rejected_session_challenge("busy"));
+        }
+
+        let mut server_nonce = [0u8; 32];
+        OsRng.fill_bytes(&mut server_nonce);
+        let session_id = Uuid::new_v4();
+        pending_sessions.insert(
+            session_id,
+            PendingRefreshSession {
+                pairing_id: pairing_id.to_string(),
+                phone_id: phone_id.to_string(),
+                server_nonce,
+                created_at: Instant::now(),
+            },
+        );
+
+        Ok(PairSessionChallengeResponse {
+            status: "challenge".to_string(),
+            session_id: Some(session_id.to_string()),
+            server_nonce: Some(base64url_encode(&server_nonce)),
+            expires_at: Some(Utc::now() + SESSION_REFRESH_TTL),
+            reason: None,
+        })
+    }
+
+    /// Rotate an access token after proof of possession of the paired device key.
+    pub async fn pair_session_refresh(
+        &self,
+        request: PairSessionRefreshRequest,
+        source_ip: IpAddr,
+    ) -> Result<PairSessionRefreshResponse> {
+        if !self
+            .admission
+            .lock()
+            .await
+            .allow_refresh(source_ip, Instant::now())
+        {
+            return Ok(rejected_session_refresh("rate_limited"));
+        }
+
+        let Ok(session_id) = Uuid::parse_str(request.session_id.trim()) else {
+            return Ok(rejected_session_refresh("invalid_session"));
+        };
+        let pending = self
+            .pending_refresh_sessions
+            .write()
+            .await
+            .remove(&session_id);
+        let Some(pending) = pending else {
+            return Ok(rejected_session_refresh("invalid_session"));
+        };
+        if pending.created_at.elapsed() > SESSION_REFRESH_TTL
+            || pending.pairing_id != request.pairing_id.trim()
+            || pending.phone_id != request.phone_id.trim()
+        {
+            return Ok(rejected_session_refresh("invalid_session"));
+        }
+
+        let _rotation = self.credential_rotation.lock().await;
+        let Some(mut record) = self.store.get_by_phone_id(&pending.phone_id)? else {
+            return Ok(rejected_session_refresh("invalid_pairing"));
+        };
+        let now = Utc::now();
+        if record.pairing_id != pending.pairing_id || !pairing_trust_active(&record, now) {
+            return Ok(rejected_session_refresh("invalid_pairing"));
+        }
+
+        let Ok(phone_nonce) = base64url_decode(request.phone_nonce.trim()) else {
+            return Ok(rejected_session_refresh("invalid_proof"));
+        };
+        if phone_nonce.len() != 32 {
+            return Ok(rejected_session_refresh("invalid_proof"));
+        }
+        let phone_nonce_b64 = base64url_encode(&phone_nonce);
+
+        let phone_public_key = parse_verifying_key(&record.phone_public_key)?;
+        let challenge_message = session_refresh_challenge_message(
+            &session_id.to_string(),
+            &record.pairing_id,
+            &record.phone_id,
+            &base64url_encode(&pending.server_nonce),
+            &phone_nonce_b64,
+        );
+        if verify_message(
+            &phone_public_key,
+            &challenge_message,
+            request.signed_nonce.trim(),
+        )
+        .is_err()
+        {
+            return Ok(rejected_session_refresh("invalid_proof"));
+        }
+
+        let session_token = Uuid::new_v4().to_string();
+        let session_expires_at = now + SESSION_TOKEN_TTL;
+        let old_generation = record.credential_generation;
+        record.credential_generation = old_generation
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("pairing credential generation exhausted"))?;
+        record.session_token_hash = hash_session_token(&session_token);
+        record.session_token_expiry = session_expires_at;
+        record.last_seen = now;
+        self.store.save_record(&record)?;
+        let _ = crate::mesh::registry::upsert_from_pairing(&record);
+
+        self.credential_lifecycle.revoke(
+            record.pairing_id.clone(),
+            old_generation,
+            CredentialKind::Pairing,
+            "pairing_session_rotated",
+        );
+        self.credential_lifecycle.record_rotation(
+            record.pairing_id.clone(),
+            record.credential_generation,
+            CredentialKind::Pairing,
+        );
+
+        let issued_message = session_refresh_issued_message(
+            &session_id.to_string(),
+            &record.pairing_id,
+            &phone_nonce_b64,
+            &session_token,
+            session_expires_at.timestamp(),
+        );
+        let server_signed_nonce = sign_message(self.identity.signing_key(), &issued_message);
+
+        Ok(PairSessionRefreshResponse {
+            status: "refreshed".to_string(),
+            server_signed_nonce: Some(server_signed_nonce),
+            session_token: Some(session_token),
+            session_expires_at: Some(session_expires_at),
             reason: None,
         })
     }
@@ -633,7 +890,9 @@ impl PairingService {
                 reason: Some("invalid_token".to_string()),
             });
         };
-        if record.session_token_expiry < Utc::now() {
+        if record.session_token_expiry <= Utc::now()
+            || !pairing_trust_active(&record, Utc::now())
+        {
             return Ok(PairHeartbeatResponse {
                 status: "unauthorized".to_string(),
                 device_time: Utc::now(),
@@ -713,6 +972,9 @@ impl PairingService {
     pub fn list_apns_targets(&self) -> Result<Vec<ApnsPushTarget>> {
         let mut out = Vec::new();
         for record in self.store.list_paired()? {
+            if !pairing_trust_active(&record, Utc::now()) {
+                continue;
+            }
             let Some(token) = record
                 .apns_device_token
                 .as_deref()
@@ -739,6 +1001,9 @@ impl PairingService {
     pub fn list_live_activity_targets(&self) -> Result<Vec<LiveActivityPushTarget>> {
         let mut out = Vec::new();
         for record in self.store.list_paired()? {
+            if !pairing_trust_active(&record, Utc::now()) {
+                continue;
+            }
             let Some(token) = record
                 .live_activity_push_token
                 .as_deref()
@@ -904,18 +1169,77 @@ impl PairingService {
     }
 
     pub fn find_by_phone_id(&self, phone_id: &str) -> Result<Option<PairedDeviceRecord>> {
-        self.store.get_by_phone_id(phone_id)
+        Ok(self
+            .store
+            .get_by_phone_id(phone_id)?
+            .filter(|record| pairing_trust_active(record, Utc::now())))
     }
 
     /// Resolve an already-authenticated opaque credential ID to its current
-    /// pairing record. Revoked and expired records are never returned.
+    /// pairing record. Session expiry is checked before this lookup, while the
+    /// durable device trust policy remains authoritative here.
     pub fn find_by_pairing_id(&self, pairing_id: &str) -> Result<Option<PairedDeviceRecord>> {
         Ok(self
             .store
             .list_paired()?
             .into_iter()
             .find(|record| record.pairing_id == pairing_id)
-            .filter(|record| record.session_token_expiry >= Utc::now()))
+            .filter(|record| pairing_trust_active(record, Utc::now())))
+    }
+
+    /// Replace the durable trust policy for one paired device. Any policy change
+    /// expires the current bearer so the device must prove possession of its
+    /// durable key before receiving another session.
+    pub async fn update_trust_policy(
+        &self,
+        pairing_id: &str,
+        request: PairTrustPolicyUpdateRequest,
+    ) -> Result<Option<PairedDeviceSummary>> {
+        if let Some(timeout) = request.idle_timeout_seconds
+            && !(MIN_IDLE_TIMEOUT_SECONDS..=MAX_IDLE_TIMEOUT_SECONDS).contains(&timeout)
+        {
+            bail!(
+                "idleTimeoutSeconds must be between {MIN_IDLE_TIMEOUT_SECONDS} and {MAX_IDLE_TIMEOUT_SECONDS}"
+            );
+        }
+        let now = Utc::now();
+        if request
+            .trust_expires_at
+            .is_some_and(|expires_at| expires_at <= now)
+        {
+            bail!("trustExpiresAt must be in the future");
+        }
+
+        let _rotation = self.credential_rotation.lock().await;
+        let Some(mut record) = self
+            .store
+            .list_paired()?
+            .into_iter()
+            .find(|record| record.pairing_id == pairing_id)
+        else {
+            return Ok(None);
+        };
+        let old_generation = record.credential_generation;
+        record.credential_generation = old_generation
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("pairing credential generation exhausted"))?;
+        record.session_token_expiry = now;
+        record.trust_expires_at = request.trust_expires_at;
+        record.idle_timeout_seconds = request.idle_timeout_seconds;
+        self.store.save_record(&record)?;
+        let _ = crate::mesh::registry::upsert_from_pairing(&record);
+        self.credential_lifecycle.revoke(
+            record.pairing_id.clone(),
+            old_generation,
+            CredentialKind::Pairing,
+            "pairing_trust_policy_changed",
+        );
+        self.credential_lifecycle.record_rotation(
+            record.pairing_id.clone(),
+            record.credential_generation,
+            CredentialKind::Pairing,
+        );
+        Ok(Some(paired_device_summary(record, now)))
     }
 
     /// Persist mesh grants on the pairing record and refresh the mesh registry projection.
@@ -943,7 +1267,10 @@ impl PairingService {
         let Some(record) = self.find_by_session_token(token)? else {
             return Ok(None);
         };
-        if record.session_token_expiry < Utc::now() {
+        if record.session_token_expiry <= Utc::now() {
+            return Ok(None);
+        }
+        if !pairing_trust_active(&record, Utc::now()) {
             return Ok(None);
         }
         if self.store.is_revoked(&record.pairing_id)? {
@@ -960,6 +1287,64 @@ impl PairingService {
             .map(|id| id.trim().to_string())
             .filter(|id| !id.is_empty()))
     }
+}
+
+fn paired_device_summary(record: PairedDeviceRecord, now: DateTime<Utc>) -> PairedDeviceSummary {
+    let trust_active = pairing_trust_active(&record, now);
+    PairedDeviceSummary {
+        pairing_id: record.pairing_id,
+        phone_id: record.phone_id,
+        phone_name: record.phone_name,
+        paired_at: record.paired_at,
+        last_seen: record.last_seen,
+        session_expires_at: record.session_token_expiry,
+        trust_expires_at: record.trust_expires_at,
+        idle_timeout_seconds: record.idle_timeout_seconds,
+        trust_active,
+        role: record.role.as_str().to_string(),
+        profile_id: record.profile_id,
+    }
+}
+
+fn pairing_trust_active(record: &PairedDeviceRecord, now: DateTime<Utc>) -> bool {
+    if record
+        .trust_expires_at
+        .is_some_and(|expires_at| expires_at <= now)
+    {
+        return false;
+    }
+    let Some(idle_timeout_seconds) = record.idle_timeout_seconds else {
+        return true;
+    };
+    let idle_seconds = now
+        .signed_duration_since(record.last_seen)
+        .num_seconds()
+        .max(0) as u64;
+    idle_seconds < idle_timeout_seconds
+}
+
+fn session_refresh_challenge_message(
+    session_id: &str,
+    pairing_id: &str,
+    phone_id: &str,
+    server_nonce: &str,
+    phone_nonce: &str,
+) -> String {
+    format!(
+        "medousa-session-refresh-v1|{session_id}|{pairing_id}|{phone_id}|{server_nonce}|{phone_nonce}"
+    )
+}
+
+fn session_refresh_issued_message(
+    session_id: &str,
+    pairing_id: &str,
+    phone_nonce: &str,
+    session_token: &str,
+    session_expires_at_unix: i64,
+) -> String {
+    format!(
+        "medousa-session-issued-v1|{session_id}|{pairing_id}|{phone_nonce}|{session_token}|{session_expires_at_unix}"
+    )
 }
 
 #[cfg(test)]
@@ -1012,6 +1397,27 @@ fn rejected_verify(reason: &str) -> PairVerifyResponse {
         server_signed_nonce: None,
         session_token: None,
         pairing_id: None,
+        session_expires_at: None,
+        reason: Some(reason.to_string()),
+    }
+}
+
+fn rejected_session_challenge(reason: &str) -> PairSessionChallengeResponse {
+    PairSessionChallengeResponse {
+        status: "rejected".to_string(),
+        session_id: None,
+        server_nonce: None,
+        expires_at: None,
+        reason: Some(reason.to_string()),
+    }
+}
+
+fn rejected_session_refresh(reason: &str) -> PairSessionRefreshResponse {
+    PairSessionRefreshResponse {
+        status: "rejected".to_string(),
+        server_signed_nonce: None,
+        session_token: None,
+        session_expires_at: None,
         reason: Some(reason.to_string()),
     }
 }
@@ -1113,7 +1519,7 @@ mod tests {
     async fn pair_test_phone(
         service: &PairingService,
         role: Option<&str>,
-    ) -> (String, String, String) {
+    ) -> (String, String, String, SigningKey) {
         let qr = service.current_qr().await.expect("qr");
         let token = extract_query_param(&qr.url, "t").expect("token");
         let phone = SigningKey::generate(&mut OsRng);
@@ -1153,6 +1559,7 @@ mod tests {
             verify.pairing_id.expect("pairing"),
             verify.session_token.expect("session token"),
             phone_id,
+            phone,
         )
     }
 
@@ -1321,7 +1728,7 @@ mod tests {
     #[tokio::test]
     async fn full_pairing_handshake() {
         let service = test_service();
-        let (pairing_id, session_token, phone_id) = pair_test_phone(&service, None).await;
+        let (pairing_id, session_token, phone_id, _) = pair_test_phone(&service, None).await;
         assert!(
             service
                 .resolve_bearer_record(&session_token)
@@ -1351,7 +1758,7 @@ mod tests {
     #[tokio::test]
     async fn expired_session_token_is_rejected() {
         let service = test_service();
-        let (pairing_id, session_token, phone_id) = pair_test_phone(&service, None).await;
+        let (pairing_id, session_token, phone_id, _) = pair_test_phone(&service, None).await;
         let mut record = service
             .find_by_phone_id(&phone_id)
             .expect("read pairing")
@@ -1365,14 +1772,126 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-        assert!(service.find_by_pairing_id(&pairing_id).unwrap().is_none());
+        assert!(service.find_by_pairing_id(&pairing_id).unwrap().is_some());
+        service.store.delete_record(&phone_id).expect("cleanup");
+    }
+
+    #[tokio::test]
+    async fn expired_session_rotates_with_the_durable_device_key() {
+        let service = test_service();
+        let (pairing_id, old_token, phone_id, phone_key) =
+            pair_test_phone(&service, None).await;
+        let mut record = service
+            .store
+            .get_by_phone_id(&phone_id)
+            .expect("read pairing")
+            .expect("pairing record");
+        record.session_token_expiry = Utc::now() - chrono::Duration::seconds(1);
+        service.store.save_record(&record).expect("expire session");
+        assert!(service.resolve_bearer_record(&old_token).unwrap().is_none());
+
+        let challenge = service
+            .pair_session_challenge(
+                PairSessionChallengeRequest {
+                    pairing_id: pairing_id.clone(),
+                    phone_id: phone_id.clone(),
+                },
+                "127.0.0.1".parse().unwrap(),
+            )
+            .await
+            .expect("challenge");
+        assert_eq!(challenge.status, "challenge");
+        let session_id = challenge.session_id.expect("session id");
+        let server_nonce = challenge.server_nonce.expect("server nonce");
+        let signed_nonce = sign_message(
+            &phone_key,
+            &session_refresh_challenge_message(
+                &session_id,
+                &pairing_id,
+                &phone_id,
+                &server_nonce,
+                &phone_nonce,
+            ),
+        );
+        let mut phone_nonce = [0_u8; 32];
+        OsRng.fill_bytes(&mut phone_nonce);
+        let phone_nonce = base64url_encode(&phone_nonce);
+        let refreshed = service
+            .pair_session_refresh(
+                PairSessionRefreshRequest {
+                    session_id: session_id.clone(),
+                    pairing_id: pairing_id.clone(),
+                    phone_id: phone_id.clone(),
+                    signed_nonce,
+                    phone_nonce: phone_nonce.clone(),
+                },
+                "127.0.0.1".parse().unwrap(),
+            )
+            .await
+            .expect("refresh");
+        assert_eq!(refreshed.status, "refreshed");
+        let new_token = refreshed.session_token.expect("new token");
+        let expires_at = refreshed.session_expires_at.expect("new expiry");
+        verify_message(
+            service.identity.verifying_key(),
+            &session_refresh_issued_message(
+                &session_id,
+                &pairing_id,
+                &phone_nonce,
+                &new_token,
+                expires_at.timestamp(),
+            ),
+            refreshed
+                .server_signed_nonce
+                .as_deref()
+                .expect("server signature"),
+        )
+        .expect("server signs issued session");
+        assert!(service.resolve_bearer_record(&old_token).unwrap().is_none());
+        assert!(service.resolve_bearer_record(&new_token).unwrap().is_some());
+        assert_eq!(
+            service
+                .find_by_phone_id(&phone_id)
+                .unwrap()
+                .expect("trusted pairing")
+                .credential_generation,
+            2
+        );
+        service.store.delete_record(&phone_id).expect("cleanup");
+    }
+
+    #[tokio::test]
+    async fn expired_device_trust_cannot_refresh() {
+        let service = test_service();
+        let (pairing_id, _, phone_id, _) = pair_test_phone(&service, None).await;
+        let mut record = service
+            .store
+            .get_by_phone_id(&phone_id)
+            .unwrap()
+            .expect("pairing");
+        record.trust_expires_at = Some(Utc::now() - chrono::Duration::seconds(1));
+        service.store.save_record(&record).expect("expire trust");
+
+        let challenge = service
+            .pair_session_challenge(
+                PairSessionChallengeRequest {
+                    pairing_id,
+                    phone_id: phone_id.clone(),
+                },
+                "127.0.0.1".parse().unwrap(),
+            )
+            .await
+            .expect("challenge response");
+        assert_eq!(challenge.status, "rejected");
+        assert_eq!(challenge.reason.as_deref(), Some("invalid_pairing"));
+        assert!(service.find_by_phone_id(&phone_id).unwrap().is_none());
         service.store.delete_record(&phone_id).expect("cleanup");
     }
 
     #[tokio::test]
     async fn revoke_requires_matching_credential_authority() {
         let service = test_service();
-        let (pairing_id, session_token, _) = pair_test_phone(&service, Some("portal")).await;
+        let (pairing_id, session_token, _, _) = pair_test_phone(&service, Some("portal")).await;
 
         assert_eq!(
             service
