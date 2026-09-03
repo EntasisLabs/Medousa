@@ -11,7 +11,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::{Notify, mpsc};
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::tungstenite::Message;
 use tokio_util::sync::CancellationToken;
 
 use crate::daemon::DaemonState;
@@ -62,10 +62,7 @@ pub async fn code_lsp_attach(
     path: String,
 ) -> Result<CodeLspAttachResponse, String> {
     validate_lsp_path(&path)?;
-    let request = crate::terminal::authenticated_ws_request(&path)?;
-    let (websocket, _) = connect_async(request)
-        .await
-        .map_err(|error| error.to_string())?;
+    let websocket = crate::terminal::connect_authenticated_ws(&path).await?;
 
     let attach_id = NEXT_ATTACH_ID.fetch_add(1, Ordering::SeqCst);
     let (outbound, outbound_rx) = mpsc::unbounded_channel();

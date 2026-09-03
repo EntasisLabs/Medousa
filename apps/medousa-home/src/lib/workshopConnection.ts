@@ -83,6 +83,7 @@ const interactiveReconnect = new ReconnectScheduler({
 let resumeWorkshopInFlight = false;
 let lastResumeWorkshopAt = 0;
 const RESUME_DEBOUNCE_MS = 3_000;
+const TRUST_HEARTBEAT_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 
 function cancelScheduledStreamRecovery() {
   workspaceReconnect.cancel();
@@ -351,6 +352,7 @@ export async function resumeWorkshopObserver(
   lastResumeWorkshopAt = now;
 
   try {
+    await sendPairingHeartbeat().catch(() => {});
     await invalidateRouteCaches().catch(() => {});
     // Observer does not own spawn — main window / connectWorkshop does.
     const health = await checkDaemonHealth();
@@ -394,9 +396,9 @@ export async function resumeWorkshop(
   lastResumeWorkshopAt = now;
 
   try {
-    if (isTauriMobilePlatform()) {
-      void sendPairingHeartbeat().catch(() => {});
-    }
+    // Every paired Home surface renews the same durable device trust. Waiting
+    // here prevents the health probe from racing an expired bearer on resume.
+    await sendPairingHeartbeat().catch(() => {});
 
     // A network handoff (WiFi↔LTE, Mac sleep/DHCP) may have happened while we were
     // backgrounded. Flush both route caches so the health probe below re-picks
@@ -542,6 +544,12 @@ export function connectWorkshop(options: {
     mode === "full"
       ? attachWorkshopForegroundResume(options.onHealthChange)
       : attachWorkshopObserverForegroundResume(options.onHealthChange);
+  const trustHeartbeatTimer =
+    mode === "full"
+      ? setInterval(() => {
+          void sendPairingHeartbeat().catch(() => {});
+        }, TRUST_HEARTBEAT_INTERVAL_MS)
+      : null;
 
   void (async () => {
     let health: DaemonHealth;
@@ -550,6 +558,7 @@ export function connectWorkshop(options: {
       connection.setHealth(null);
       options.onHealthChange(null);
       await ensureMobileDaemonUrl();
+      await sendPairingHeartbeat().catch(() => {});
       // P0.1 — day-2+ launch: spawn local engine when health is down (wizard warm
       // only runs while the first-run sheet is visible).
       health = await ensureWorkshopEngineHealthy({
@@ -596,6 +605,9 @@ export function connectWorkshop(options: {
   return () => {
     workshopTeardown = true;
     detachForeground();
+    if (trustHeartbeatTimer !== null) {
+      clearInterval(trustHeartbeatTimer);
+    }
     Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
     if (mode === "full") {
       cancelScheduledStreamRecovery();

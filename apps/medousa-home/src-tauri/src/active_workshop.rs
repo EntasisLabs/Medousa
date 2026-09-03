@@ -96,6 +96,8 @@ pub fn transport_config() -> Result<WorkshopTransportConfig, String> {
                     lan_base: base_url,
                     iroh_ticket: None,
                     session_token,
+                    pairing_id: String::new(),
+                    session_expires_at: None,
                     phone_id: String::new(),
                     workshop_device_id: String::new(),
                     daemon_public_key: None,

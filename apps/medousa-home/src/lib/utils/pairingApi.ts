@@ -13,6 +13,10 @@ export interface PairedDeviceSummary {
   phoneName: string;
   pairedAt: string;
   lastSeen: string;
+  sessionExpiresAt?: string | null;
+  trustExpiresAt?: string | null;
+  idleTimeoutSeconds?: number | null;
+  trustActive: boolean;
   role?: string | null;
   profileId?: string | null;
 }
@@ -99,6 +103,23 @@ export async function fetchPairingStatus(): Promise<PairingStatusResponse> {
 export async function revokePairingDevice(pairingId: string): Promise<void> {
   if (!isTauri()) return;
   await invoke("pairing_revoke", { pairingId });
+}
+
+export async function updatePairingPolicy(
+  pairingId: string,
+  policy: {
+    trustExpiresAt: string | null;
+    idleTimeoutSeconds: number | null;
+  },
+): Promise<PairedDeviceSummary> {
+  if (!isTauri()) {
+    throw new Error("Pairing trust settings require the Medousa app");
+  }
+  return invoke<PairedDeviceSummary>("pairing_update_policy", {
+    pairingId,
+    trustExpiresAt: policy.trustExpiresAt,
+    idleTimeoutSeconds: policy.idleTimeoutSeconds,
+  });
 }
 
 export async function fetchBonjourStatus(): Promise<BonjourStatus> {

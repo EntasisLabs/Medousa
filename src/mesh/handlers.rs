@@ -810,6 +810,8 @@ mod tests {
                 last_seen: now,
                 session_token_hash: "hash".into(),
                 session_token_expiry: now,
+                trust_expires_at: None,
+                idle_timeout_seconds: None,
                 credential_generation: 1,
                 role,
                 profile_id: None,

@@ -32,11 +32,32 @@ portal you may switch to; it does not replace Personal or merge their data.
 After pairing, you can leave the LAN pairing window off. Already-paired clients
 keep working over the private tunnel (Iroh) when you’re off the LAN.
 
+Pairing trusts the device, not one forever-lived bearer token. Medousa keeps
+short-lived sessions in its secret store and renews them by proving possession
+of the device key created during pairing. Closing the app, changing networks,
+or letting a session expire does not require another QR scan.
+
+Under **Settings → Phone**, expand a paired device to choose its trust policy:
+
+- **Until removed** (default) keeps the device trusted until you choose
+  **Forget device**.
+- A fixed expiration works like a personal access token expiration.
+- **Expire if unused** can remove trust after 7, 30, or 90 days without a
+  successful connection.
+
+Revocation and either expiration policy stop session renewal immediately. The
+device must be paired again unless an administrator extends its policy.
+Saving a policy also expires that device's current access session; its next
+connection must prove the paired device key before receiving a new one.
+
 Opening the LAN pairing window binds the daemon to the LAN, but application and
 invite-management routes still require credentials. Only the bounded
-`/pair/init` and `/pair/verify` ceremony is anonymous. Use a trusted network for
-compact LAN invites, close the window when finished, and never expose port 7419
-directly to the internet. Prefer the full Iroh invite below when off-LAN.
+`/pair/init` and `/pair/verify` ceremony is anonymous. Session challenge and
+refresh routes also accept no bearer because they recover expired sessions, but
+they issue nothing without a valid one-time challenge signed by the paired
+device key. Use a trusted network for compact LAN invites, close the window when
+finished, and never expose port 7419 directly to the internet. Prefer the full
+Iroh invite below when off-LAN.
 
 ## Pair with a VPS or other off-LAN host
 

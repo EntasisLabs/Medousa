@@ -199,6 +199,24 @@ pub async fn workshop_get_bytes_stream_with_accept(
     path: &str,
     accept: Option<&str>,
 ) -> Result<WorkshopByteStream, String> {
+    let effective = crate::pairing_client::ensure_fresh_session(config)
+        .await
+        .unwrap_or_else(|_| config.clone());
+    let result = workshop_get_bytes_stream_once(&effective, path, accept).await;
+    if result.as_ref().is_err_and(|error| is_unauthorized_error(error))
+        && !effective.pairing_id.trim().is_empty()
+    {
+        let refreshed = crate::pairing_client::refresh_session_after_unauthorized(&effective).await?;
+        return workshop_get_bytes_stream_once(&refreshed, path, accept).await;
+    }
+    result
+}
+
+async fn workshop_get_bytes_stream_once(
+    config: &WorkshopTransportConfig,
+    path: &str,
+    accept: Option<&str>,
+) -> Result<WorkshopByteStream, String> {
     let route = pick_route(config).await;
     let mut headers = auth_headers(config);
     if let Some(accept) = accept {
@@ -248,6 +266,8 @@ pub fn config_from_lan_base(lan_base: &str) -> WorkshopTransportConfig {
             lan_base: lan_base.trim().trim_end_matches('/').to_string(),
             iroh_ticket: None,
             session_token: None,
+            pairing_id: String::new(),
+            session_expires_at: None,
             phone_id: String::new(),
             workshop_device_id: String::new(),
             daemon_public_key: None,
@@ -275,6 +295,7 @@ fn local_credential_for_lan_base(lan_base: &str) -> Option<String> {
         .map(|secret| secret.token().to_string())
 }
 
+#[derive(Clone)]
 enum RequestPayload {
     Empty,
     Json(Vec<u8>),
@@ -292,13 +313,33 @@ async fn workshop_request(
     payload: RequestPayload,
     is_stream: bool,
 ) -> Result<String, String> {
+    let effective = crate::pairing_client::ensure_fresh_session(config)
+        .await
+        .unwrap_or_else(|_| config.clone());
+    let result = workshop_request_once(&effective, method, path, &payload, is_stream).await;
+    if result.as_ref().is_err_and(|error| is_unauthorized_error(error))
+        && !effective.pairing_id.trim().is_empty()
+    {
+        let refreshed = crate::pairing_client::refresh_session_after_unauthorized(&effective).await?;
+        return workshop_request_once(&refreshed, method, path, &payload, is_stream).await;
+    }
+    result
+}
+
+async fn workshop_request_once(
+    config: &WorkshopTransportConfig,
+    method: &str,
+    path: &str,
+    payload: &RequestPayload,
+    is_stream: bool,
+) -> Result<String, String> {
     let route = pick_route(config).await;
     let headers = auth_headers(config);
     let result = match route {
         WorkshopRoute::Lan => {
-            lan_request(config, method, path, &headers, &payload, is_stream).await
+            lan_request(config, method, path, &headers, payload, is_stream).await
         }
-        WorkshopRoute::Iroh => iroh_request(config, method, path, &headers, &payload).await,
+        WorkshopRoute::Iroh => iroh_request(config, method, path, &headers, payload).await,
     };
 
     match result {
@@ -311,10 +352,14 @@ async fn workshop_request(
             // LAN failed with a connectivity error: flush the shared route cache
             // so the next request re-probes, then retry this one over Iroh.
             invalidate_workshop_route_cache();
-            iroh_request(config, method, path, &headers, &payload).await
+            iroh_request(config, method, path, &headers, payload).await
         }
         Err(err) => Err(err),
     }
+}
+
+fn is_unauthorized_error(error: &str) -> bool {
+    error.contains("HTTP 401") || error.contains("401 Unauthorized")
 }
 
 /// Select LAN vs Iroh via the shared `medousa-sdk-iroh` route cache so this
@@ -712,6 +757,8 @@ mod tests {
             lan_base: "http://127.0.0.1:7419".to_string(),
             iroh_ticket: None,
             session_token: Some("home-secret".to_string()),
+            pairing_id: String::new(),
+            session_expires_at: None,
             phone_id: String::new(),
             workshop_device_id: String::new(),
             daemon_public_key: None,
@@ -756,6 +803,8 @@ mod tests {
             lan_base: format!("http://{address}"),
             iroh_ticket: None,
             session_token: None,
+            pairing_id: String::new(),
+            session_expires_at: None,
             phone_id: String::new(),
             workshop_device_id: String::new(),
             daemon_public_key: None,

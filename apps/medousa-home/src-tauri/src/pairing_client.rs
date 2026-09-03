@@ -21,6 +21,9 @@ use medousa_types::secrets::ClientSecretPath;
 
 const SESSION_TOKEN_SERVICE: &str = "medousa.pairing";
 const LEGACY_SESSION_TOKEN_ACCOUNT: &str = "session_token";
+const SESSION_REFRESH_SKEW_SECONDS: i64 = 5 * 60;
+
+static SESSION_REFRESH_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +33,7 @@ pub struct PairingCredentialsSummary {
     pub workshop_device_id: String,
     pub daemon_url: String,
     pub paired_at: String,
+    pub session_expires_at: Option<String>,
     pub has_session_token: bool,
     pub iroh_available: bool,
 }
@@ -39,6 +43,10 @@ pub struct WorkshopTransportConfig {
     pub lan_base: String,
     pub iroh_ticket: Option<String>,
     pub session_token: Option<String>,
+    /// Stable server-side pairing identifier used for proof-based session rotation.
+    pub pairing_id: String,
+    /// Access-token expiry returned by the daemon. Missing on legacy credentials.
+    pub session_expires_at: Option<String>,
     /// Local pairing identity (sender for mesh envelopes).
     pub phone_id: String,
     /// Remote workshop device id (recipient for mesh envelopes).
@@ -55,6 +63,8 @@ struct PairingCredentialsFile {
     workshop_device_id: String,
     daemon_url: String,
     paired_at: String,
+    #[serde(default)]
+    session_expires_at: Option<String>,
     #[serde(default)]
     iroh_ticket: Option<String>,
     #[serde(default)]
@@ -110,6 +120,26 @@ struct PairVerifyPayload {
     server_signed_nonce: Option<String>,
     session_token: Option<String>,
     pairing_id: Option<String>,
+    session_expires_at: Option<String>,
+    reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PairSessionChallengePayload {
+    status: String,
+    session_id: Option<String>,
+    server_nonce: Option<String>,
+    reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PairSessionRefreshPayload {
+    status: String,
+    server_signed_nonce: Option<String>,
+    session_token: Option<String>,
+    session_expires_at: Option<String>,
     reason: Option<String>,
 }
 
@@ -210,6 +240,7 @@ pub async fn pair_complete_from_qr(
     verify_message(&daemon_public_key, &phone_nonce_b64, server_signed_nonce)
         .map_err(|err| format!("Workshop signature check failed: {err}"))?;
 
+    let session_expires_at = verify.session_expires_at.clone();
     let pairing_id = verify
         .pairing_id
         .ok_or_else(|| "Pairing verify succeeded but pairing id was missing".to_string())?;
@@ -246,6 +277,7 @@ pub async fn pair_complete_from_qr(
         &status.daemon_public_key,
         &daemon_url,
         &session_token,
+        session_expires_at.as_deref(),
         iroh_ticket.as_deref(),
     )?;
 
@@ -272,6 +304,7 @@ pub fn load_pairing_credentials_summary() -> Option<PairingCredentialsSummary> {
         workshop_device_id,
         daemon_url: file.daemon_url,
         paired_at: file.paired_at,
+        session_expires_at: file.session_expires_at,
         has_session_token,
         iroh_available: file
             .iroh_ticket
@@ -319,6 +352,8 @@ fn build_transport_config(
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty()),
         session_token: read_session_token(&file.workshop_device_id, &file.pairing_id),
+        pairing_id: file.pairing_id.clone(),
+        session_expires_at: file.session_expires_at.clone(),
         phone_id: file.phone_id.clone(),
         workshop_device_id: file.workshop_device_id.clone(),
         daemon_public_key: file
@@ -327,6 +362,282 @@ fn build_transport_config(
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty()),
     })
+}
+
+/// Refresh shortly before expiry so foreground requests do not observe a 401.
+/// Legacy credentials without expiry metadata continue reactively on the first 401.
+pub async fn ensure_fresh_session(
+    config: &WorkshopTransportConfig,
+) -> Result<WorkshopTransportConfig, String> {
+    if !session_refresh_supported(config) || !session_refresh_due(config.session_expires_at.as_deref())
+    {
+        return Ok(config.clone());
+    }
+    refresh_paired_session(config, None).await
+}
+
+/// Recover one rejected bearer through proof of possession of the paired device key.
+pub async fn refresh_session_after_unauthorized(
+    config: &WorkshopTransportConfig,
+) -> Result<WorkshopTransportConfig, String> {
+    if !session_refresh_supported(config) {
+        return Err("This workshop session cannot be refreshed; pair it again.".to_string());
+    }
+    refresh_paired_session(config, config.session_token.as_deref()).await
+}
+
+fn session_refresh_supported(config: &WorkshopTransportConfig) -> bool {
+    !config.pairing_id.trim().is_empty()
+        && !config.phone_id.trim().is_empty()
+        && !config.workshop_device_id.trim().is_empty()
+        && config
+            .daemon_public_key
+            .as_deref()
+            .is_some_and(|key| !key.trim().is_empty())
+}
+
+fn session_refresh_due(expires_at: Option<&str>) -> bool {
+    let Some(expires_at) = expires_at
+        .and_then(|value| chrono::DateTime::parse_from_rfc3339(value.trim()).ok())
+    else {
+        return false;
+    };
+    expires_at.with_timezone(&chrono::Utc)
+        <= chrono::Utc::now() + chrono::Duration::seconds(SESSION_REFRESH_SKEW_SECONDS)
+}
+
+async fn refresh_paired_session(
+    config: &WorkshopTransportConfig,
+    rejected_token: Option<&str>,
+) -> Result<WorkshopTransportConfig, String> {
+    let _guard = SESSION_REFRESH_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await;
+
+    // Another request may have rotated while this one waited for the lock.
+    let stored_token = read_session_token(&config.workshop_device_id, &config.pairing_id);
+    if let (Some(rejected), Some(stored)) = (rejected_token, stored_token.as_deref()) {
+        if stored != rejected {
+            let mut refreshed = config.clone();
+            refreshed.session_token = Some(stored.to_string());
+            refreshed.session_expires_at = read_session_expiry(config);
+            return Ok(refreshed);
+        }
+    }
+    if rejected_token.is_none() {
+        let stored_expiry = read_session_expiry(config);
+        if !session_refresh_due(stored_expiry.as_deref()) {
+            let mut current = config.clone();
+            current.session_token = stored_token.or_else(|| config.session_token.clone());
+            current.session_expires_at = stored_expiry.or_else(|| config.session_expires_at.clone());
+            return Ok(current);
+        }
+    }
+
+    let identity = PhoneIdentity::load_or_create()?;
+    if identity.phone_id != config.phone_id {
+        return Err("The paired device identity changed; pair this workshop again.".to_string());
+    }
+
+    let challenge: PairSessionChallengePayload = post_public_pairing_json(
+        config,
+        "/pair/session/challenge",
+        &serde_json::json!({
+            "pairingId": config.pairing_id.as_str(),
+            "phoneId": config.phone_id.as_str(),
+        }),
+    )
+    .await?;
+    if challenge.status != "challenge" {
+        return Err(session_refresh_failure(challenge.reason.as_deref()));
+    }
+    let session_id = challenge
+        .session_id
+        .as_deref()
+        .ok_or_else(|| "Workshop refresh challenge omitted its session id.".to_string())?;
+    let server_nonce = challenge
+        .server_nonce
+        .as_deref()
+        .ok_or_else(|| "Workshop refresh challenge omitted its nonce.".to_string())?;
+    let mut phone_nonce = [0_u8; 32];
+    OsRng.fill_bytes(&mut phone_nonce);
+    let phone_nonce_b64 = base64url_encode(&phone_nonce);
+    let challenge_message = session_refresh_challenge_message(
+        session_id,
+        &config.pairing_id,
+        &config.phone_id,
+        server_nonce,
+        &phone_nonce_b64,
+    );
+    let signed_nonce = sign_message(&identity.signing_key, &challenge_message);
+
+    let refresh: PairSessionRefreshPayload = post_public_pairing_json(
+        config,
+        "/pair/session/refresh",
+        &serde_json::json!({
+            "sessionId": session_id,
+            "pairingId": config.pairing_id.as_str(),
+            "phoneId": config.phone_id.as_str(),
+            "signedNonce": signed_nonce,
+            "phoneNonce": phone_nonce_b64.as_str(),
+        }),
+    )
+    .await?;
+    if refresh.status != "refreshed" {
+        return Err(session_refresh_failure(refresh.reason.as_deref()));
+    }
+    let session_token = refresh
+        .session_token
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "Workshop refreshed the session without returning a token.".to_string())?;
+    let session_expires_at = refresh
+        .session_expires_at
+        .as_deref()
+        .ok_or_else(|| "Workshop refreshed the session without returning an expiry.".to_string())?;
+    let expiry = chrono::DateTime::parse_from_rfc3339(session_expires_at)
+        .map_err(|_| "Workshop returned an invalid session expiry.".to_string())?;
+    let issued_message = session_refresh_issued_message(
+        session_id,
+        &config.pairing_id,
+        &phone_nonce_b64,
+        session_token,
+        expiry.timestamp(),
+    );
+    let server_signature = refresh.server_signed_nonce.as_deref().ok_or_else(|| {
+        "Workshop refreshed the session without signing the result.".to_string()
+    })?;
+    let daemon_public_key = parse_verifying_key(
+        config
+            .daemon_public_key
+            .as_deref()
+            .expect("refresh support requires a daemon key"),
+    )?;
+    verify_message(&daemon_public_key, &issued_message, server_signature)
+        .map_err(|err| format!("Workshop session signature check failed: {err}"))?;
+
+    store_session_token(
+        session_token,
+        &config.workshop_device_id,
+        &config.pairing_id,
+    )?;
+    persist_session_expiry(config, session_expires_at)?;
+    crate::workshop_transport::invalidate_all_route_caches();
+
+    let mut refreshed = config.clone();
+    refreshed.session_token = Some(session_token.to_string());
+    refreshed.session_expires_at = Some(session_expires_at.to_string());
+    Ok(refreshed)
+}
+
+async fn post_public_pairing_json<T: DeserializeOwned>(
+    config: &WorkshopTransportConfig,
+    path: &str,
+    body: &serde_json::Value,
+) -> Result<T, String> {
+    let route = medousa_sdk_iroh::pick_route_with_bearer(
+        &config.lan_base,
+        config.iroh_ticket.is_some(),
+        None,
+    )
+    .await;
+    if route == medousa_sdk_iroh::WorkshopRoute::Iroh {
+        let ticket = config
+            .iroh_ticket
+            .as_deref()
+            .ok_or_else(|| "Workshop relay ticket is missing.".to_string())?;
+        return iroh_pairing_json(ticket, "POST", path, Some(body)).await;
+    }
+
+    let response = http_client()?
+        .post(format!("{}{}", config.lan_base.trim_end_matches('/'), path))
+        .json(body)
+        .send()
+        .await;
+    match response {
+        Ok(response) => {
+            let status = response.status();
+            let bytes = response.bytes().await.map_err(|err| err.to_string())?;
+            serde_json::from_slice(&bytes).map_err(|err| {
+                format!(
+                    "Invalid workshop refresh response (HTTP {status}): {err}"
+                )
+            })
+        }
+        Err(lan_error) => {
+            let Some(ticket) = config.iroh_ticket.as_deref() else {
+                return Err(format!("Cannot refresh workshop session: {lan_error}"));
+            };
+            iroh_pairing_json(ticket, "POST", path, Some(body)).await
+        }
+    }
+}
+
+fn read_session_expiry(config: &WorkshopTransportConfig) -> Option<String> {
+    let workshop_id = crate::workshop_registry::paired_workshop_id(&config.workshop_device_id);
+    read_credentials_for_workshop(&workshop_id)
+        .filter(|file| file.pairing_id == config.pairing_id)
+        .and_then(|file| file.session_expires_at)
+        .or_else(|| config.session_expires_at.clone())
+}
+
+fn persist_session_expiry(
+    config: &WorkshopTransportConfig,
+    session_expires_at: &str,
+) -> Result<(), String> {
+    let workshop_id = crate::workshop_registry::paired_workshop_id(&config.workshop_device_id);
+    let mut file = read_credentials_for_workshop(&workshop_id)
+        .ok_or_else(|| "Pairing credentials are missing; pair this workshop again.".to_string())?;
+    if file.pairing_id != config.pairing_id || file.phone_id != config.phone_id {
+        return Err("Pairing credentials do not match this trusted device.".to_string());
+    }
+    file.session_expires_at = Some(session_expires_at.to_string());
+    let path = crate::workshop_registry::pairing_credentials_abs_path(&workshop_id)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    let body = serde_json::to_string_pretty(&file).map_err(|err| err.to_string())?;
+    fs::write(path, body).map_err(|err| err.to_string())
+}
+
+fn session_refresh_challenge_message(
+    session_id: &str,
+    pairing_id: &str,
+    phone_id: &str,
+    server_nonce: &str,
+    phone_nonce: &str,
+) -> String {
+    format!(
+        "medousa-session-refresh-v1|{session_id}|{pairing_id}|{phone_id}|{server_nonce}|{phone_nonce}"
+    )
+}
+
+fn session_refresh_issued_message(
+    session_id: &str,
+    pairing_id: &str,
+    phone_nonce: &str,
+    session_token: &str,
+    session_expires_at_unix: i64,
+) -> String {
+    format!(
+        "medousa-session-issued-v1|{session_id}|{pairing_id}|{phone_nonce}|{session_token}|{session_expires_at_unix}"
+    )
+}
+
+fn session_refresh_failure(reason: Option<&str>) -> String {
+    match reason.unwrap_or("unknown") {
+        "rate_limited" => "Too many session refresh attempts — wait a minute and try again.",
+        "busy" => "The workshop is busy — try again shortly.",
+        "invalid_pairing" => {
+            "This device is no longer trusted by the workshop. Pair it again or update its trust policy."
+        }
+        "invalid_session" | "invalid_proof" => {
+            "The workshop could not verify this device session. Try again or pair it again."
+        }
+        _ => "The workshop session could not be refreshed.",
+    }
+    .to_string()
 }
 
 fn read_credentials_for_workshop(workshop_id: &str) -> Option<PairingCredentialsFile> {
@@ -793,6 +1104,7 @@ fn save_pairing_credentials(
     daemon_public_key: &str,
     daemon_url: &str,
     session_token: &str,
+    session_expires_at: Option<&str>,
     iroh_ticket: Option<&str>,
 ) -> Result<(), String> {
     store_session_token(session_token, workshop_device_id, pairing_id)?;
@@ -806,6 +1118,10 @@ fn save_pairing_credentials(
         workshop_device_id: workshop_device_id.to_string(),
         daemon_url: daemon_url.to_string(),
         paired_at: chrono::Utc::now().to_rfc3339(),
+        session_expires_at: session_expires_at
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
         iroh_ticket: iroh_ticket
             .map(str::trim)
             .filter(|value| !value.is_empty())
@@ -1172,6 +1488,7 @@ mod tests {
             workshop_device_id: "abcd1234".to_string(),
             daemon_url: "http://192.168.1.2:7419".to_string(),
             paired_at: chrono::Utc::now().to_rfc3339(),
+            session_expires_at: None,
             iroh_ticket: Some("ticket-abc".to_string()),
             workshop_endpoint_id: None,
             daemon_public_key: Some("daemon-key".to_string()),

@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::{
     Json, Router,
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
 };
 use serde::Deserialize;
 
@@ -13,7 +13,8 @@ use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
 use crate::pairing::{
-    PairHeartbeatRequest, PairInitRequest, PairVerifyRequest, PairingService,
+    PairHeartbeatRequest, PairInitRequest, PairSessionChallengeRequest,
+    PairSessionRefreshRequest, PairTrustPolicyUpdateRequest, PairVerifyRequest, PairingService,
     RevokePairingAuthority, RevokePairingResult,
 };
 use crate::request_principal::{Capability, PrincipalKind, RequestPrincipal};
@@ -56,6 +57,32 @@ pub fn bootstrap_surface() -> DeclaredRouter<PairingApiState> {
                 rate_limit_class: RateLimitClass::PairingCeremony,
             },
             post(pair_verify),
+        )
+        .route(
+            RoutePolicy {
+                method: axum::http::Method::POST,
+                path: "/pair/session/challenge",
+                group: RouteGroup::PairingCeremony,
+                required_capability: None,
+                bootstrap_public: true,
+                browser_policy: BrowserPolicy::Public,
+                body_limit: 8 * 1024,
+                rate_limit_class: RateLimitClass::PairingCeremony,
+            },
+            post(pair_session_challenge),
+        )
+        .route(
+            RoutePolicy {
+                method: axum::http::Method::POST,
+                path: "/pair/session/refresh",
+                group: RouteGroup::PairingCeremony,
+                required_capability: None,
+                bootstrap_public: true,
+                browser_policy: BrowserPolicy::Public,
+                body_limit: 16 * 1024,
+                rate_limit_class: RateLimitClass::PairingCeremony,
+            },
+            post(pair_session_refresh),
         )
 }
 
@@ -107,6 +134,14 @@ pub fn protected_surface() -> DeclaredRouter<PairingApiState> {
         .route(
             peer_policy(axum::http::Method::DELETE, "/pair/{pairing_id}", 1024),
             delete(revoke_pairing),
+        )
+        .route(
+            admin_policy(
+                axum::http::Method::PUT,
+                "/pair/{pairing_id}/policy",
+                8 * 1024,
+            ),
+            put(update_pairing_policy),
         )
 }
 
@@ -318,6 +353,57 @@ async fn pair_verify(
     }
 }
 
+async fn pair_session_challenge(
+    State(state): State<PairingApiState>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    Json(body): Json<PairSessionChallengeRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
+    let _permit = state
+        .service
+        .try_acquire_ceremony()
+        .ok_or(StatusCode::TOO_MANY_REQUESTS)?;
+    let response = state
+        .service
+        .pair_session_challenge(body, addr.ip())
+        .await
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let status = match (response.status.as_str(), response.reason.as_deref()) {
+        ("challenge", _) => StatusCode::OK,
+        (_, Some("rate_limited")) => StatusCode::TOO_MANY_REQUESTS,
+        (_, Some("busy")) => StatusCode::SERVICE_UNAVAILABLE,
+        _ => StatusCode::UNAUTHORIZED,
+    };
+    Ok((
+        status,
+        Json(serde_json::to_value(response).unwrap_or_default()),
+    ))
+}
+
+async fn pair_session_refresh(
+    State(state): State<PairingApiState>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    Json(body): Json<PairSessionRefreshRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
+    let _permit = state
+        .service
+        .try_acquire_ceremony()
+        .ok_or(StatusCode::TOO_MANY_REQUESTS)?;
+    let response = state
+        .service
+        .pair_session_refresh(body, addr.ip())
+        .await
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let status = match (response.status.as_str(), response.reason.as_deref()) {
+        ("refreshed", _) => StatusCode::OK,
+        (_, Some("rate_limited")) => StatusCode::TOO_MANY_REQUESTS,
+        _ => StatusCode::UNAUTHORIZED,
+    };
+    Ok((
+        status,
+        Json(serde_json::to_value(response).unwrap_or_default()),
+    ))
+}
+
 async fn pair_heartbeat(
     State(state): State<PairingApiState>,
     Extension(principal): Extension<RequestPrincipal>,
@@ -374,6 +460,22 @@ async fn revoke_pairing(
     }
 }
 
+async fn update_pairing_policy(
+    State(state): State<PairingApiState>,
+    Path(pairing_id): Path<String>,
+    Json(body): Json<PairTrustPolicyUpdateRequest>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let pairing_id = pairing_id.trim();
+    if pairing_id.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    match state.service.update_trust_policy(pairing_id, body).await {
+        Ok(Some(summary)) => Ok(Json(serde_json::to_value(summary).unwrap_or_default())),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::BAD_REQUEST),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -384,13 +486,17 @@ mod tests {
             .inventory()
             .entries()
             .collect::<Vec<_>>();
-        assert_eq!(entries.len(), 2);
+        assert_eq!(entries.len(), 4);
         assert_eq!(entries[0].method, "POST");
         assert_eq!(entries[0].path, "/pair/init");
         assert_eq!(entries[0].body_limit, 16 * 1024);
         assert_eq!(entries[1].method, "POST");
         assert_eq!(entries[1].path, "/pair/verify");
         assert_eq!(entries[1].body_limit, 8 * 1024);
+        assert_eq!(entries[2].method, "POST");
+        assert_eq!(entries[2].path, "/pair/session/challenge");
+        assert_eq!(entries[3].method, "POST");
+        assert_eq!(entries[3].path, "/pair/session/refresh");
         assert!(entries.iter().all(|entry| entry.bootstrap_public));
     }
 
@@ -400,7 +506,7 @@ mod tests {
             .inventory()
             .entries()
             .collect::<Vec<_>>();
-        assert_eq!(entries.len(), 10);
+        assert_eq!(entries.len(), 11);
         assert_eq!(
             entries
                 .iter()
@@ -413,7 +519,7 @@ mod tests {
                 .iter()
                 .filter(|entry| entry.required_capability == Some("admin.identity"))
                 .count(),
-            5
+            6
         );
         assert!(entries.iter().all(|entry| !entry.bootstrap_public));
     }

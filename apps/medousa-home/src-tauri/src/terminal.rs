@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::{Notify, mpsc};
 use tokio_tungstenite::{
+    MaybeTlsStream, WebSocketStream,
     connect_async,
     tungstenite::{
         Message,
@@ -106,15 +107,39 @@ fn ws_url_for(daemon_url: &str, path: &str) -> String {
     format!("{base}{path}")
 }
 
-pub(crate) fn authenticated_ws_request(
+pub(crate) async fn connect_authenticated_ws(
     path: &str,
-) -> Result<tokio_tungstenite::tungstenite::http::Request<()>, String> {
-    let config = crate::active_workshop::transport_config()?;
-    ws_request_with_bearer(
+) -> Result<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>, String> {
+    let base_config = crate::active_workshop::transport_config()?;
+    let config = crate::pairing_client::ensure_fresh_session(&base_config)
+        .await
+        .unwrap_or(base_config);
+    let request = ws_request_with_bearer(
         &config.lan_base,
         path,
         config.session_token.as_deref(),
-    )
+    )?;
+    match connect_async(request).await {
+        Ok((websocket, _)) => Ok(websocket),
+        Err(error) if websocket_unauthorized(&error) && !config.pairing_id.trim().is_empty() => {
+            let refreshed =
+                crate::pairing_client::refresh_session_after_unauthorized(&config).await?;
+            let request = ws_request_with_bearer(
+                &refreshed.lan_base,
+                path,
+                refreshed.session_token.as_deref(),
+            )?;
+            connect_async(request)
+                .await
+                .map(|(websocket, _)| websocket)
+                .map_err(|error| error.to_string())
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+fn websocket_unauthorized(error: &tokio_tungstenite::tungstenite::Error) -> bool {
+    error.to_string().contains("401")
 }
 
 fn ws_request_with_bearer(
@@ -216,12 +241,8 @@ pub async fn terminal_attach(
     cols: u16,
     rows: u16,
 ) -> Result<TerminalAttachResponse, String> {
-    let request = authenticated_ws_request(
-        &format!("/v1/sessions/shell/{}", urlencoding::encode(&session_id)),
-    )?;
-    let (websocket, _) = connect_async(request)
-        .await
-        .map_err(|error| error.to_string())?;
+    let path = format!("/v1/sessions/shell/{}", urlencoding::encode(&session_id));
+    let websocket = connect_authenticated_ws(&path).await?;
 
     let attach_id = NEXT_ATTACH_ID.fetch_add(1, Ordering::SeqCst);
     let (outbound, outbound_rx) = mpsc::unbounded_channel();

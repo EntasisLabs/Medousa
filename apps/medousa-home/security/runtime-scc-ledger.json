@@ -297,6 +297,10 @@
       "specifier": "$lib/liquid/styles/liquidFigureGrid.css"
     },
     {
+      "from": "src/lib/liquid/archetypes/registerUi.ts",
+      "specifier": "$lib/liquid/styles/liquidOverflow.css"
+    },
+    {
       "from": "src/lib/liquid/render/MarkdownViewHost.svelte",
       "specifier": "$lib/styles/markdown-content.postcss"
     },

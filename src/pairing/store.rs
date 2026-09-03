@@ -64,6 +64,12 @@ pub struct PairedDeviceRecord {
     pub last_seen: DateTime<Utc>,
     pub session_token_hash: String,
     pub session_token_expiry: DateTime<Utc>,
+    /// Optional hard end to this device's trust. `None` means trusted until removed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trust_expires_at: Option<DateTime<Utc>>,
+    /// Optional inactivity window. `None` means inactivity never expires trust.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_timeout_seconds: Option<u64>,
     /// Monotonic generation captured by live connections and revocation events.
     #[serde(default = "initial_credential_generation")]
     pub credential_generation: u64,
@@ -347,6 +353,8 @@ mod tests {
             last_seen: Utc::now(),
             session_token_hash: "deadbeef".to_string(),
             session_token_expiry: Utc::now(),
+            trust_expires_at: None,
+            idle_timeout_seconds: None,
             credential_generation: 1,
             role: PairingRole::Portal,
             profile_id: None,
@@ -378,6 +386,8 @@ mod tests {
             "role": "portal"
         });
         let record: PairedDeviceRecord = serde_json::from_value(value).unwrap();
+        assert_eq!(record.trust_expires_at, None);
+        assert_eq!(record.idle_timeout_seconds, None);
         assert_eq!(record.credential_generation, 1);
     }
 

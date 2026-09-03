@@ -121,6 +121,11 @@ authenticated owner operation. A joining client receives the complete signed
 `POST /pair/init` and `POST /pair/verify` ceremony. Prefer authenticated Iroh
 transport for off-host clients.
 
+Treat the returned bearer as a short-lived access session. Retain the paired
+Ed25519 device key and use `POST /pair/session/challenge` followed by
+`POST /pair/session/refresh` to rotate it. Renewal stops when the pairing is
+revoked or its hard/inactivity trust policy expires.
+
 Do not expose port 7419 directly to the internet. A non-loopback bind enforces
 credentials, exact request hosts, and exact browser origins, but compact invites
 should still use a trusted, firewalled LAN. Use full Iroh invites for clients

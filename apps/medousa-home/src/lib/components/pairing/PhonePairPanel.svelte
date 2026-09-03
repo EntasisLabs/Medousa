@@ -24,6 +24,7 @@
     type PairedDeviceSummary,
     type PairingQrImage,
   } from "$lib/utils/pairingApi";
+  import PairedDeviceTrustControls from "./PairedDeviceTrustControls.svelte";
   import { waitForEngine } from "$lib/utils/providersApi";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { sharedMode } from "$lib/stores/sharedMode.svelte";
@@ -326,6 +327,12 @@
     }
   }
 
+  function formatLastSeen(value: string): string {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Last used recently";
+    return `Last used ${date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`;
+  }
+
   function onSheetKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -491,26 +498,31 @@
 
       {#if devices.length > 0}
         {#each devices as device (device.pairingId)}
-          <div class="pair-tile">
-            <span class="pair-tile-copy">
-              <span class="pair-tile-title">{device.phoneName}</span>
-              <span class="pair-tile-meta">
-                {#if device.profileId}
-                  Seat {device.profileId}
-                {:else}
-                  Paired phone
-                {/if}
+          <details class="pair-more pair-device">
+            <summary class="pair-more-summary">
+              <span class="pair-tile-copy">
+                <span class="pair-tile-title">{device.phoneName}</span>
+                <span class="pair-tile-meta">
+                  {device.role === "peer" ? "Share only" : "Full access"}
+                  · {formatLastSeen(device.lastSeen)}
+                </span>
               </span>
-            </span>
-            <button
-              type="button"
-              class="pair-tile-cta pair-tile-cta-danger"
-              aria-label="Forget {device.phoneName}"
-              onclick={() => void forgetDevice(device.pairingId)}
-            >
-              Forget
-            </button>
-          </div>
+              <span class:pair-device-expired={!device.trustActive} class="pair-device-state">
+                {device.trustActive ? "Manage" : "Expired"}
+                <ChevronDown size={14} strokeWidth={2} class="pair-more-chevron" aria-hidden="true" />
+              </span>
+            </summary>
+            <PairedDeviceTrustControls
+              {device}
+              onupdated={(updated) => {
+                devices = devices.map((entry) =>
+                  entry.pairingId === updated.pairingId ? updated : entry,
+                );
+              }}
+              onforget={forgetDevice}
+              onerror={(message) => (error = message)}
+            />
+          </details>
         {/each}
       {:else}
         <p class="pair-empty">No phones paired yet.</p>
@@ -705,10 +717,6 @@
     cursor: pointer;
   }
 
-  .pair-tile-cta-danger {
-    color: rgb(var(--theme-error) / 0.9);
-  }
-
   .pair-empty {
     margin: 0;
     padding: 0.15rem 0.15rem 0;
@@ -751,6 +759,20 @@
   .pair-more-body {
     padding: 0 0.75rem 0.75rem;
     border-top: 1px solid rgb(var(--color-surface-500) / 0.22);
+  }
+
+  .pair-device-state {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: rgb(var(--theme-text-tertiary));
+  }
+
+  .pair-device-expired {
+    color: rgb(var(--theme-error) / 0.9);
   }
 
   .pair-footnote {

@@ -36,8 +36,9 @@ transport with it.
 
 Anonymous access is limited to constant `/health` liveness, the bounded
 `/pair/init` + `/pair/verify` ceremony while an operator pairing window is
-active, and scoped preview URLs carrying their own short-lived grant. A supplied
-but invalid bearer never falls back to anonymous access.
+active, proof-authenticated `/pair/session/challenge` +
+`/pair/session/refresh`, and scoped preview URLs carrying their own short-lived
+grant. A supplied but invalid bearer never falls back to anonymous access.
 
 ---
 
@@ -695,8 +696,11 @@ See [extensions.md](extensions.md).
 ## Pairing (LAN / phone)
 
 Invite generation and inspection routes require a local-app or paired bearer.
-Only `POST /pair/init` and `POST /pair/verify` are anonymous, and only an
-operator-issued, unexpired, single-use invite can enter the ceremony.
+`POST /pair/init` and `POST /pair/verify` are the invite ceremony. The two
+session-renewal routes are also bearer-free so an expired bearer can recover,
+but require a bounded one-time challenge signed with the already-paired device
+key. Pairing trust remains valid until revoked or its administrator-configured
+hard/inactivity policy expires; access sessions are short-lived and rotate.
 
 | Method | Path |
 |--------|------|
@@ -709,8 +713,11 @@ operator-issued, unexpired, single-use invite can enter the ceremony.
 | GET | `/pair/code` |
 | POST | `/pair/init` |
 | POST | `/pair/verify` |
+| POST | `/pair/session/challenge` — begin proof-based session renewal |
+| POST | `/pair/session/refresh` — rotate a short-lived bearer after device-key proof |
 | GET | `/pair/heartbeat` |
 | POST | `/pair/heartbeat` |
+| PUT | `/pair/{pairing_id}/policy` — `admin.identity`; replace hard/inactivity expiration and expire the current access session |
 | DELETE | `/pair/{pairing_id}` — `admin.identity`, or the paired bearer revoking itself |
 
 Cookbook: [mobile-and-lan.md](../cookbook/mobile-and-lan.md)
