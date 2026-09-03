@@ -1131,7 +1131,7 @@
         {:else if showDrawSurface}
           <DrawNoteEditor
             content={displayContent}
-            disabled={!interactive || vault.saving || mobile}
+            disabled={!interactive || vault.saving}
             onchange={(next) => vault.markDirty(next, { path: notePath })}
           />
         {:else if showMarkdownEditor}
