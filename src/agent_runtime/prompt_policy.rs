@@ -22,6 +22,7 @@ fn chars_to_tokens(chars: usize) -> u32 {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SttpPolicyMode {
     General,
+    Teacher,
     CoderSetup,
     CoderWork,
 }
@@ -30,6 +31,7 @@ impl SttpPolicyMode {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::General => "general",
+            Self::Teacher => "teacher",
             Self::CoderSetup => "coder_setup",
             Self::CoderWork => "coder_work",
         }
@@ -289,6 +291,30 @@ fn mode_slice(mode: SttpPolicyMode) -> Result<SttpContentSlice, SttpDocumentBuil
                 "m3_routing(.96)": "specialize only when the outcome benefits"
             }),
         ),
+        SttpPolicyMode::Teacher => SttpContentSlice::new().field(
+            mode_field(mode),
+            0.99,
+            json!({
+                "m1_role(.99)": "mentor one conceptual step ahead; grow the principal's model instead of performing certainty",
+                "m2_learning(.99)": {
+                    "l1_anchor(.99)": "infer what is already understood; connect unfamiliar ideas to a stable anchor",
+                    "l2_relations(.99)": "name the relationship: cause, constraint, contrast, analogy, composition, or instance",
+                    "l3_reach(.99)": "offer the smallest next insight the principal can reach; never jump ten steps ahead",
+                    "l4_discovery(.98)": "when useful: anchor -> predict -> test -> transfer; one purposeful question, not quiz theater",
+                    "l5_scaffold(.98)": "examples + counterexamples; remove support as understanding strengthens",
+                    "l6_answer(.98)": "do not withhold when the principal is stuck, asks directly, or safety matters; reveal + reconnect to why"
+                },
+                "m3_epistemics(.99)": {
+                    "e1_pattern(.99)": "pattern recognition proposes relationships; it never proves them",
+                    "e2_claims(.99)": "distinguish known, inferred, assumed, uncertain, and what would change the conclusion",
+                    "e3_grounding(.99)": "logical => derive; empirical => authoritative evidence; practical => demonstrate; analogy => label limits",
+                    "e4_falsify(.99)": "challenge false premises; expose boundary conditions and counterexamples",
+                    "e5_verify(.99)": "current, niche, contested, or high-stakes claims => verify with tools and cite receipts",
+                    "e6_revise(.99)": "when challenged, reassess evidence; never defend a claim because Medousa said it"
+                },
+                "m4_transfer(.98)": "finish with a usable mental model, prediction, or novel application when it advances learning"
+            }),
+        ),
         SttpPolicyMode::CoderSetup => SttpContentSlice::new().field(
             mode_field(mode),
             0.99,
@@ -374,6 +400,7 @@ fn presentation_slice() -> Result<SttpContentSlice, SttpDocumentBuildError> {
 fn mode_field(mode: SttpPolicyMode) -> &'static str {
     match mode {
         SttpPolicyMode::General => "p2_mode_general",
+        SttpPolicyMode::Teacher => "p2_mode_teacher",
         SttpPolicyMode::CoderSetup => "p2_mode_coder_setup",
         SttpPolicyMode::CoderWork => "p2_mode_coder_work",
     }
@@ -429,10 +456,12 @@ fn validate_strict_policy(rendered: &str) -> Result<(), SttpPolicyCompileError> 
 mod tests {
     use super::*;
 
-    fn selections() -> [SttpPolicySelection; 6] {
+    fn selections() -> [SttpPolicySelection; 8] {
         [
             SttpPolicySelection::new(SttpPolicyMode::General, SttpPolicyActor::Host),
             SttpPolicySelection::new(SttpPolicyMode::General, SttpPolicyActor::Worker),
+            SttpPolicySelection::new(SttpPolicyMode::Teacher, SttpPolicyActor::Host),
+            SttpPolicySelection::new(SttpPolicyMode::Teacher, SttpPolicyActor::Worker),
             SttpPolicySelection::new(SttpPolicyMode::CoderSetup, SttpPolicyActor::Host),
             SttpPolicySelection::new(SttpPolicyMode::CoderSetup, SttpPolicyActor::Worker),
             SttpPolicySelection::new(SttpPolicyMode::CoderWork, SttpPolicyActor::Host),

@@ -51,7 +51,7 @@ Default normal-mode mappings are:
 - `<leader>mf` asks about current diagnostics, or pre-fills a buffer review.
 - `<leader>mo{motion}` captures a motion as context before opening the composer.
 - `<leader>ms` opens conversation history.
-- `<leader>mm` switches the conversation between Instant, General, and Coder.
+- `<leader>mm` switches the conversation between General, Teacher, Instant, and Coder.
 - `<leader>mp` chooses, creates, or detaches the conversation's governed project.
 
 The composer is an ordinary editable Neovim buffer: Enter creates a new line,
@@ -88,13 +88,13 @@ Use `R`/`:MedousaRename` to name the active conversation and
 `D`/`:MedousaDelete` to delete it after confirmation. Composer drafts are kept
 separately while switching between conversations.
 
-## Instant, General, and Coder modes
+## General, Teacher, Instant, and Coder modes
 
 Run `:MedousaMode` or press `<leader>mm` to change the active mode for the
-same daemon conversation used by Medousa and VS Code. Instant keeps the General
-execution path while loading a smaller recent context and tool surface. Coder
-can be selected before a project exists. Its setup phase has no file or shell
-authority.
+same daemon conversation used by Medousa and VS Code. Teacher uses the
+evidence-first mentoring policy; Instant keeps the General execution path while
+loading a smaller recent context and tool surface. Coder can be selected before
+a project exists. Its setup phase has no file or shell authority.
 
 On the first Coder send, Neovim keeps the draft intact and asks you to choose
 a ready Forge project, create a blank project, or let Medousa choose or create

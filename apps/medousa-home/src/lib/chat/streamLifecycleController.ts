@@ -26,6 +26,7 @@ import { randomUuid } from "$lib/utils/randomUuid";
 import { beginTurnMessages, turnStateFromTicket } from "$lib/chat/turnController";
 import { mapTurns, TRANSCRIPT_PAGE_SIZE } from "$lib/chat/sessionController";
 import { workerLinkForTurn } from "$lib/chat/workerLaneController";
+import { narration } from "$lib/stores/narration.svelte";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
 
 const TERMINAL_RECONCILE_DELAY_MS = 2_000;
@@ -53,6 +54,7 @@ export function beginTurn(
   mediaRefs: MediaRef[] = [],
   speakerProfileId?: string | null,
 ) {
+  narration.stop();
   host.sessionPristine = false;
   host.transcriptEpoch += 1;
   host.historyNotice = null;

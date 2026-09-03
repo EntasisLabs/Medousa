@@ -1,7 +1,8 @@
 # ADR-005: Host scheduler and bound workshop turns
 
-**Status:** Accepted  
+**Status:** Accepted
 **Date:** 2026-07-02
+**Amended:** 2026-09-03
 
 ## Context
 
@@ -9,8 +10,8 @@ The host console tool loop tried to be both a conversational partner and an exec
 
 ## Decision
 
-1. **Host = scheduler** — hot lane for memory, identity, runtime, vault read, `cognition_turn_begin_work`, and parallel `cognition_spawn_turn_worker`. No environment/canvas/web/grapheme execution on host.
-2. **Bound workshop** — `cognition_turn_begin_work(message, goal, intent?)` enqueues one async execution turn per session (reuses `run_worker_turn` + synthesis). Host ends with ack; principal sees ack → synthesis on same thread.
+1. **Host = principal-facing operator** — hot lane for memory, identity, runtime, vault, web, and short local diagnostics. The host may call `cognition_shell_status` and `cognition_shell_run` directly when the operator-enabled shell charter admits them.
+2. **Bound workshop** — `cognition_turn_begin_work(message, goal, intent?)` enqueues independently scoped, durable, or longer execution work per session (reuses `run_worker_turn` + synthesis). Host ends with ack; principal sees ack → synthesis on the same thread.
 3. **Parallel worker** — unchanged (`cognition_spawn_turn_worker`) for heavy multi-topic research.
 4. **Steering** — principal can inject messages into one exact bound-workshop generation via `POST /v1/sessions/{id}/workshop/steer` with `work_id`; workshop loop reads `[MEDOUSA_WORKSHOP_STEER]` each round. Stale generations are rejected.
 5. **Deprecate** `cognition_turn_update_user` — workshop internal monologue replaces mid-turn host status tools.
@@ -26,12 +27,14 @@ the recovery truth across restart.
 **Positive**
 
 - Canvas and multi-tool local work no longer fight host turn control.
+- Simple system inspection does not pay a worker handoff and synthesis round-trip.
 - One Medousa voice; role split is scheduling, not personality.
 - Composer stays open during bound workshop (handoff phase).
 
 **Tradeoffs**
 
-- Extra latency vs inline host execution (async job).
+- Delegated work still has extra latency versus inline host execution.
+- Direct host shell calls broaden the hot lane, but remain opt-in and bounded by the same network, writable-root, binary, timeout, and output ceilings.
 - One bound workshop per session at a time, enforced atomically at insertion.
 - Host must call `begin_work` with a concrete `goal` for execution work.
 

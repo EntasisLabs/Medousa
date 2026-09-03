@@ -15,6 +15,13 @@
   let proposals = $state<AgentModeProposalResponse[]>([]);
   let busy = $state(false);
   let feedback = $state<string | null>(null);
+
+  function modeLabel(mode: import("$lib/types/session").AgentModeId): string {
+    if (mode === "coder") return "Coder";
+    if (mode === "teacher") return "Teacher";
+    if (mode === "instant") return "Instant";
+    return "General";
+  }
   let now = $state(Date.now());
   let initialized = false;
   const seenResolved = new Set<string>();
@@ -106,7 +113,7 @@
     <div class="flex flex-wrap items-start justify-between gap-2">
       <div class="min-w-0 flex-1">
         <p class="text-xs font-medium text-primary-200">
-          Switch to {pending.to_mode === "coder" ? "Coder" : "General"} mode?
+          Switch to {modeLabel(pending.to_mode)} mode?
         </p>
         <p class="mt-0.5 text-sm text-surface-100">{pending.reason}</p>
         <p class="workshop-faint mt-1 text-xs">

@@ -4,7 +4,8 @@
    * Chat message list — runtime-governed Liquid is the sole paint path.
    * User→assistant pairs render as timeline beats (whisper + full-width voice).
    */
-  import { Copy, Library, Share2 } from "@lucide/svelte";
+  import { onMount } from "svelte";
+  import { Copy, Library, Share2, Square, Volume2 } from "@lucide/svelte";
   import ChatSubagentRow from "$lib/components/chat/ChatSubagentRow.svelte";
   import ChatForkMenu from "$lib/components/chat/ChatForkMenu.svelte";
   import ChatUserWhisper from "$lib/components/chat/ChatUserWhisper.svelte";
@@ -25,6 +26,7 @@
   } from "$lib/utils/presentChatTurns";
   import { copyTextToClipboard } from "$lib/utils/vaultClipboard";
   import { formatModelDisplayName } from "$lib/utils/formatModelDisplay";
+  import { narration } from "$lib/stores/narration.svelte";
 
   interface Props {
     messages: ChatMessage[];
@@ -35,8 +37,6 @@
     workerThread?: boolean;
     /** Stamp main-thread turn wrappers for the conversation navigator. */
     navigation?: boolean;
-    /** Scroll container for user-whisper IntersectionObserver. */
-    scrollRoot?: HTMLElement | null;
     onPromoteToFlow?: (
       ref: import("$lib/types/toolHistory").ToolHistorySliceRef,
     ) => void | Promise<void>;
@@ -59,7 +59,6 @@
     compact = false,
     workerThread = false,
     navigation = false,
-    scrollRoot = null,
     onPromoteToFlow,
     onSubmitIntent,
     onSaveToVault,
@@ -82,6 +81,8 @@
   );
   const beats = $derived(groupChatTurnBeats(painted));
   let forkingEntryId = $state<string | null>(null);
+
+  onMount(() => narration.initialize());
 
   function retryWorkerSynthesis(workId: string | null | undefined) {
     const trimmed = workId?.trim();
@@ -154,7 +155,8 @@
   {@const showShare = canCopyAssistantTurn(assistant)}
   {@const showSave = onSaveToVault && canSaveAssistantTurn(assistant)}
   {@const showFork = Boolean(assistant.transcript?.entryId)}
-  {#if assistant.responseModel || showCopy || showShare || showSave || showFork}
+  {@const showNarrate = narration.available && canCopyAssistantTurn(assistant)}
+  {#if assistant.responseModel || showNarrate || showCopy || showShare || showSave || showFork}
     <div class="chat-turn-actions" class:chat-turn-actions--mobile={mobile}>
       {#if assistant.responseModel}
         <span
@@ -166,6 +168,22 @@
             <span aria-hidden="true">·</span> ChatGPT
           {/if}
         </span>
+      {/if}
+      {#if showNarrate}
+        <button
+          type="button"
+          class="chat-turn-action"
+          title={narration.activeMessageId === assistant.id ? "Stop reading" : "Read aloud"}
+          aria-label={narration.activeMessageId === assistant.id ? "Stop reading" : "Read aloud"}
+          aria-pressed={narration.activeMessageId === assistant.id}
+          onclick={() => narration.toggleMessage(assistant.id, assistant.content ?? "")}
+        >
+          {#if narration.activeMessageId === assistant.id}
+            <Square size={11} strokeWidth={2} fill="currentColor" />
+          {:else}
+            <Volume2 size={14} strokeWidth={1.75} />
+          {/if}
+        </button>
       {/if}
       {#if showCopy}
         <button
@@ -231,6 +249,7 @@
   {#if beat.kind === "pair"}
     <section
       class="chat-turn-beat {turnBreak ? 'chat-turn-break' : ''}"
+      data-chat-history-anchor
       data-chat-turn-user-id={navigation ? beat.user.id : undefined}
     >
       <ChatUserWhisper
@@ -238,7 +257,6 @@
         {sessionId}
         {mobile}
         {compact}
-        {scrollRoot}
         forceExpand={shouldForceExpandUserWhisper(painted, beat.user.id)}
         {onSubmitIntent}
         onFork={beat.user.transcript?.entryId
@@ -267,6 +285,7 @@
   {:else if beat.message.role === "user"}
     <div
       class="{turnBreak ? 'chat-turn-break' : ''} chat-turn-beat"
+      data-chat-history-anchor
       data-chat-turn-user-id={navigation ? beat.message.id : undefined}
     >
       <ChatUserWhisper
@@ -274,7 +293,6 @@
         {sessionId}
         {mobile}
         {compact}
-        {scrollRoot}
         forceExpand={shouldForceExpandUserWhisper(painted, beat.message.id)}
         {onSubmitIntent}
         onFork={beat.message.transcript?.entryId
@@ -288,7 +306,10 @@
     {#if subagentFor(beat.message)}
       {@render subagentBeat(subagentFor(beat.message)!)}
     {/if}
-    <article class="group relative {turnBreak ? 'chat-turn-break' : ''} {assistantClass(beat.message)}">
+    <article
+      class="group relative {turnBreak ? 'chat-turn-break' : ''} {assistantClass(beat.message)}"
+      data-chat-history-anchor
+    >
       <LiquidChatMessage
         message={beat.message}
         {sessionId}

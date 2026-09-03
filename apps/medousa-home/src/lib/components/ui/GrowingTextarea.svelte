@@ -14,6 +14,7 @@
     onclick?: (event: MouseEvent) => void;
     onkeyup?: (event: KeyboardEvent) => void;
     onselect?: (event: Event) => void;
+    enterkeyhint?: "enter" | "done" | "go" | "next" | "previous" | "search" | "send";
     "aria-label"?: string;
   }
 
@@ -32,6 +33,7 @@
     onclick,
     onkeyup,
     onselect,
+    enterkeyhint,
     "aria-label": ariaLabel,
   }: Props = $props();
 
@@ -74,6 +76,7 @@
   {onclick}
   {onkeyup}
   {onselect}
+  {enterkeyhint}
   aria-label={ariaLabel}
   rows="1"
   class="composer-bar-input {className}"

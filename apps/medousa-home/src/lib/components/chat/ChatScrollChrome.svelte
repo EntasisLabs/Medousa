@@ -2,6 +2,7 @@
   import { ArrowDown, LoaderCircle } from "@lucide/svelte";
   import MarkdownHeadingOutline from "$lib/components/ui/MarkdownHeadingOutline.svelte";
   import { haptic } from "$lib/haptics";
+  import { scrollTopAfterHistoryPrepend } from "$lib/utils/chatScrollPosition";
   import { resolveChatTurnNavigation } from "$lib/utils/chatTurnNavigation";
   import { tick, type Snippet } from "svelte";
 
@@ -74,6 +75,15 @@
     return Boolean(historyNavigationReady && scrollEl && scrollEl.scrollTop <= 160);
   }
 
+  function contentOffsetTop(root: HTMLElement, element: HTMLElement): number {
+    return element.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop;
+  }
+
+  function stableHistoryAnchor(root: HTMLElement): HTMLElement | null {
+    const anchors = root.querySelectorAll<HTMLElement>("[data-chat-history-anchor]");
+    return anchors.item(anchors.length - 1);
+  }
+
   async function requestOlder(force = false) {
     if (
       !scrollEl ||
@@ -87,17 +97,30 @@
       return;
     }
 
-    const previousHeight = scrollEl.scrollHeight;
-    const previousTop = scrollEl.scrollTop;
     historyLoadInFlight = true;
     historyLoadFailed = false;
     try {
-      await onLoadOlder();
-      historyLoadInFlight = false;
+      // Disable browser anchoring before the prepend so WebKit and our explicit
+      // restoration cannot both apply the inserted height.
       await tick();
       if (!scrollEl) return;
-      const addedHeight = scrollEl.scrollHeight - previousHeight;
-      scrollEl.scrollTop = Math.max(0, previousTop + addedHeight);
+      const previousHeight = scrollEl.scrollHeight;
+      const anchor = stableHistoryAnchor(scrollEl);
+      const previousAnchorOffset = anchor ? contentOffsetTop(scrollEl, anchor) : null;
+      await onLoadOlder();
+      await tick();
+      if (!scrollEl) return;
+      let previousExtent = previousHeight;
+      let nextExtent = scrollEl.scrollHeight;
+      if (anchor?.isConnected && previousAnchorOffset != null) {
+        previousExtent = previousAnchorOffset;
+        nextExtent = contentOffsetTop(scrollEl, anchor);
+      }
+      scrollEl.scrollTop = scrollTopAfterHistoryPrepend(
+        scrollEl.scrollTop,
+        previousExtent,
+        nextExtent,
+      );
       scheduleChatNavigationMeasureFn();
     } catch {
       historyLoadFailed = true;
@@ -252,7 +275,12 @@
     </button>
   {/if}
   <div class={bodyClass}>
-    <div bind:this={scrollEl} onscroll={onScroll} class={scrollClass}>
+    <div
+      bind:this={scrollEl}
+      onscroll={onScroll}
+      class:chat-scroll-prepending-history={historyLoadInFlight}
+      class={scrollClass}
+    >
       <div
         bind:this={historySentinel}
         class:chat-history-sentinel-active={canLoadOlder || loadingOlder || historyLoadInFlight}
@@ -308,6 +336,10 @@
     align-items: center;
     justify-content: center;
     color: rgb(var(--theme-text-tertiary));
+  }
+
+  .chat-scroll-prepending-history {
+    overflow-anchor: none;
   }
 
   .chat-history-sentinel-active {

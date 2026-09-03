@@ -6,6 +6,7 @@
   import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import ChatAgentModePicker from "$lib/components/chat/ChatAgentModePicker.svelte";
+  import ChatNarrationToggle from "$lib/components/chat/ChatNarrationToggle.svelte";
   import UndertakingContextChip from "$lib/components/work/UndertakingContextChip.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
   import { applyActiveAgentPrompt } from "$lib/utils/activeAgentPrompt";
@@ -163,13 +164,6 @@
     }
   }
 
-  function handleKeydown(event: KeyboardEvent) {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      void submit(event);
-    }
-  }
-
   function handleComposerFocus() {
     if (composerBlurTimer) {
       clearTimeout(composerBlurTimer);
@@ -220,13 +214,15 @@
       sessionId={chat.focusedSessionId}
       disabled={connection.offline || chat.composerBlocked || runtime.savingControls}
     />
+    <div class="ml-1 shrink-0">
+      <ChatNarrationToggle />
+    </div>
     <div class="ml-1 min-w-0"><UndertakingContextChip chatOnly /></div>
   </div>
   <ChatComposerBar
     mobile
     disabled={connection.offline}
     composerBlocked={chat.composerBlocked || runtime.savingControls}
-    onkeydown={handleKeydown}
     onfocus={handleComposerFocus}
     onblur={handleComposerBlur}
   />

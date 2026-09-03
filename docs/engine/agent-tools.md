@@ -12,7 +12,7 @@ Deep dive: [turn-runtime-and-lanes.md](../../architecture/turn-runtime-and-lanes
 
 | Lane | Typical tools | When |
 |------|---------------|------|
-| **Host** | Bootstrap, vault read, artifact read, MCP | Interactive chat, TUI |
+| **Host** | Bootstrap, vault read, artifact read, web, bounded shell diagnostics | Interactive chat, TUI |
 | **Worker** | Long jobs, sandboxed skills | Background ask jobs |
 
 Worker allowlists can strip UI-only tools when `supports_ui_artifacts=false`, and browser tools when `supports_browser_host=false`.
@@ -27,6 +27,7 @@ See [agent-browser-host.md](../../architecture/agent-browser-host.md) for search
 
 - **documents** — vault + artifact list/read/grep/write
 - **calendar** — personal `.ics` list/create/update/delete/import/export
+- **execute** — short local diagnostics through the operator-configured OS shell sandbox
 - **presentation** — artifact presentation tools
 - **environment** — environment spec + component canvas ([environment-canvas.md](./environment-canvas.md))
 - **browser** — `cognition_browser_fetch` (auto-unlocked on browser-capable clients)
@@ -53,6 +54,7 @@ Source: `src/tool_bootstrap.rs`
 | UI present | `cognition_ui_present` — emits `ui_artifact` on stream |
 | Web | `cognition_web_search` — all surfaces; BrowserHost → lite → Grapheme chain |
 | Browser fetch | `cognition_browser_fetch` — gated on `supports_browser_host` |
+| Shell | `cognition_shell_status` / `cognition_shell_run` — direct on the host for short diagnostics; opt-in and bounded by Runtime Controls → Shell |
 | OpenShell secrets | `cognition_openshell_request_secret` — trusted UI prompt; returns an opaque one-use grant, never the credential value |
 | Grapheme secrets | `cognition_grapheme_request_secret` — trusted UI prompt; authorizes an ephemeral credential capability for one native run |
 | Finish | `cognition_turn action=turn.finish` — ends tool loop |

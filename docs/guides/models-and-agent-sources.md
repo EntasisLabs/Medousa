@@ -24,8 +24,20 @@ terminal with `hermes acp --setup`.
 ## Choose a provider and model
 
 When Medousa owns the loop, open the model picker and choose a provider first,
-then a model from that provider. Configure API-key and local providers under
-**Settings → Medousa Agent**.
+then a model from that provider. Under **Settings → Medousa Agent**, connect
+provider access first and then assign model roles:
+
+- **Conversation model** handles ordinary turns and is also tried first for
+  image input when that model supports vision.
+- **Image backup** is optional. Set it only when you want a different model to
+  handle images that the conversation model cannot accept.
+- **Dictation model** transcribes microphone input; it is a separate speech
+  route rather than a property of the conversation model.
+
+Accounts, API keys, and custom endpoints live together under **Providers**.
+Each access method opens the same quiet detail sheet; model assignment stays
+under **Model roles**. Stage routing remains an advanced control for specialized
+steps inside a turn.
 
 ChatGPT subscriptions and OpenAI API usage are separate. The OpenAI provider
 offers two explicit routes under **Medousa**: **OpenAI · API key** uses public
@@ -34,9 +46,9 @@ model access and keeps Medousa's agent loop. The ChatGPT-account route appears
 as ready only when the workshop daemon has a connected native account. Medousa
 never silently moves credentials between these routes.
 
-To connect the native route, open **Settings → Medousa Agent**, find **OpenAI · ChatGPT
-account**, and choose **Sign in with ChatGPT**. Medousa opens the
-verification page and displays the device code to enter. The card updates when
+To connect the native route, open **Settings → Medousa Agent → Providers**, select
+**ChatGPT account**, and choose **Sign in with ChatGPT**. Medousa opens the
+verification page and displays the device code to enter. The provider row updates when
 authorization completes. This connection is stored and refreshed by the
 workshop daemon—including Embedded Personal on phone—and remains available
 through that workshop's secure credential store. It is separate from the
@@ -45,6 +57,11 @@ desktop-only **Codex runtime** card and can be disconnected independently.
 While connected, the picker refreshes from the ChatGPT account's Codex model
 catalog. The list therefore follows that account's current entitlements; if the
 catalog cannot be reached, Medousa keeps its curated fallback choice available.
+Compatible account models can accept both text and image input through
+Medousa's native loop, while continuing to use Medousa modes and tools. The
+Codex account transport currently produces text responses; dedicated image
+generation, speech generation, and transcription routes remain separate rather
+than being falsely advertised as account-model capabilities.
 The adapter carries a separately versioned Codex-backend compatibility identity;
 Medousa's own app version is never sent as the Codex protocol version.
 
@@ -79,22 +96,44 @@ Desktop keeps using the existing optional local-engine package. Selecting
 Medousa Local never silently changes a remote workshop: the model runs wherever
 the selected workshop has inference authority.
 
-## Choose Instant, General, or Coder
+## Choose General, Teacher, Instant, or Coder
 
 Source and mode are independent:
 
+- **General** is for everyday conversation, planning, and research. It does not
+  require a project.
+- **Teacher** is an evidence-first mentor. It connects an unfamiliar idea to
+  concepts you already understand, names the relationship between them, and
+  helps you predict or apply the idea instead of only supplying an answer.
+  Pattern matches are treated as hypotheses, not proof: Teacher distinguishes
+  facts, inferences, assumptions, and uncertainty; challenges false premises;
+  and verifies current, contested, niche, or high-stakes claims with sources.
+  It will give a direct answer when you are stuck, ask for one, or safety
+  matters, then reconnect that answer to the underlying model.
 - **Instant** keeps General's behavior and agent loop but loads only recent
   conversation context and a compact everyday tool set. MCP capabilities stay
   available through lazy search and invocation instead of preloading every MCP
   tool schema. It is a good fit for quick replies and private models running on
   a phone.
-- **General** is for everyday conversation, planning, and research. It does not
-  require a project.
 - **Coder** is repository-aware and requires a governed Forge project. Choose or
   create that project from the project control above chat.
 
-Modes remain available with Medousa, Codex, Cursor, and Hermes. Instant changes
-only the context loaded for the turn; it does not change generation settings or
-the runtime that owns the loop. When an external source runs in Coder mode,
-Medousa launches it inside the governed project worktree rather than an
-arbitrary folder.
+General, Teacher, and Instant are policies for Medousa's native loop. Teacher
+changes its teaching and evidence policy, while Instant changes only the context
+loaded for the turn; neither changes generation settings. Codex, Cursor, and
+Hermes own their own agent policies when selected. Coder's governed project
+boundary still applies to those external runtimes, so Medousa launches them
+inside the project worktree rather than an arbitrary folder.
+
+## Narrate replies
+
+**Narrate** is independent from the selected mode. Turn it on under the composer
+to read each completed assistant reply with the device's system voice, whether
+you are using General, Teacher, Instant, or Coder. Turn it off without changing
+the conversation mode, or use **Read aloud** on a completed reply to replay only
+that message.
+
+Narration is a local presentation preference: the written reply remains the
+canonical transcript, code blocks are summarized rather than spoken character
+by character, and speech is not sent back into the agent loop. Availability and
+voice quality follow the system speech engine on the current device.

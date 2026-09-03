@@ -15,6 +15,7 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import { settings } from "$lib/stores/settings.svelte";
+  import { narration } from "$lib/stores/narration.svelte";
   import { isTauri, isTauriMobilePlatform } from "$lib/platform";
   import { haptic } from "$lib/haptics";
   import type { AgentSessionConfigOption } from "$lib/daemon";
@@ -292,6 +293,7 @@
 
   async function startVoice() {
     if (blocked || voiceBusy || voiceActive) return;
+    narration.stop();
     await refreshSttStatus();
     if (!voiceSupported) return;
 
@@ -411,6 +413,7 @@
         maxHeight={360}
         minHeight={34}
         class="mobile-composer-dock-input"
+        enterkeyhint="enter"
         {onkeydown}
         {onfocus}
         {onblur}
@@ -548,6 +551,7 @@
       maxHeight={400}
       minHeight={36}
       class="composer-bar-stacked-input"
+      enterkeyhint="send"
       {onkeydown}
       {onfocus}
       {onblur}

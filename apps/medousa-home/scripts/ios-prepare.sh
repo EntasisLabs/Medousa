@@ -22,14 +22,16 @@ apply_push_entitlements() {
   fi
 }
 
-PROJECT_YML="$PROJECT_YML" TAURI_CONF="$ROOT/src-tauri/tauri.conf.json" python3 - <<'PY'
+PROJECT_YML="$PROJECT_YML" TAURI_CONF="$ROOT/src-tauri/tauri.conf.json" MOBILE_INFO_PLIST="$ROOT/src-tauri/Info.mobile.plist" python3 - <<'PY'
 from pathlib import Path
 import json
 import os
+import plistlib
 import re
 
 project = Path(os.environ["PROJECT_YML"])
 tauri_conf = Path(os.environ["TAURI_CONF"])
+mobile_info_plist = Path(os.environ["MOBILE_INFO_PLIST"])
 text = project.read_text()
 original = text
 
@@ -63,6 +65,40 @@ text = re.sub(
     f'CFBundleVersion: "{app_version}"',
     text,
 )
+
+# Tauri's generated XcodeGen project does not reliably carry bundle.iOS.infoPlist
+# into the target's info.properties. Keep the generated/signed app plist aligned
+# with the canonical mobile plist or iOS will terminate on camera/mic access.
+if mobile_info_plist.is_file() and "  medousa-home_iOS:" in text:
+    with mobile_info_plist.open("rb") as handle:
+        mobile_info = plistlib.load(handle)
+
+    target_start = text.index("  medousa-home_iOS:")
+    target_body_start = target_start + len("  medousa-home_iOS:")
+    next_target = re.search(r"^  \S", text[target_body_start:], re.M)
+    target_end = (
+        target_body_start + next_target.start()
+        if next_target is not None
+        else len(text)
+    )
+    target = text[target_start:target_end]
+
+    additions = []
+    for key, value in mobile_info.items():
+        serialized = json.dumps(value, separators=(",", ":"))
+        inline = re.compile(rf"^        {re.escape(key)}: [^\n]*$", re.M)
+        if inline.search(target):
+            target = inline.sub(f"        {key}: {serialized}", target, count=1)
+        elif re.search(rf"^        {re.escape(key)}:", target, re.M) is None:
+            additions.append(f"        {key}: {serialized}\n")
+
+    if additions:
+        version_line = re.search(r'^        CFBundleVersion: [^\n]+\n', target, re.M)
+        if version_line:
+            insert_at = version_line.end()
+            target = target[:insert_at] + "".join(additions) + target[insert_at:]
+
+    text = text[:target_start] + target + text[target_end:]
 
 # Live Activity Swift is compiled into libMedousaLiveActivity.a via build.rs — do NOT add
 # ios-live-activity sources to the Xcode target (duplicate @_cdecl symbols crash at launch).
@@ -316,6 +352,7 @@ sync_ios_versions() {
   APP_VERSION="$(node -p "require('$ROOT/src-tauri/tauri.conf.json').version")"
   python3 - <<PY
 from pathlib import Path
+import plistlib
 import re
 app_version = "${APP_VERSION}"
 paths = [
@@ -341,6 +378,25 @@ for path in paths:
     if next_text != text:
         path.write_text(next_text)
         print(f"[ios-prepare] synced {path.name} to {app_version}")
+
+# xcodegen is optional on some hosts, so also merge the canonical mobile plist
+# directly into the generated app plist after project synchronization.
+mobile_info_path = Path("${ROOT}/src-tauri/Info.mobile.plist")
+generated_info_path = Path("${GEN}/medousa-home_iOS/Info.plist")
+if mobile_info_path.is_file() and generated_info_path.is_file():
+    with mobile_info_path.open("rb") as handle:
+        mobile_info = plistlib.load(handle)
+    with generated_info_path.open("rb") as handle:
+        generated_info = plistlib.load(handle)
+    changed = False
+    for key, value in mobile_info.items():
+        if generated_info.get(key) != value:
+            generated_info[key] = value
+            changed = True
+    if changed:
+        with generated_info_path.open("wb") as handle:
+            plistlib.dump(generated_info, handle, sort_keys=False)
+        print("[ios-prepare] merged mobile privacy metadata into app Info.plist")
 PY
 }
 

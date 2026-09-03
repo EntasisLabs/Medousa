@@ -161,7 +161,7 @@ History: [archive/turn-loop-single-writer-plan.md](archive/turn-loop-single-writ
 
 ## Host bus (orchestrator lane)
 
-When **host bus** is active, the host turn uses a **slim tool registry** — orchestrator tools only (spawn, status, cancel, turn control, identity recall, …). Heavy execution moves to workers.
+When **host bus** is active, the host turn uses a **slim tool registry** — orchestration plus fast bounded utilities, including operator-enabled OS shell diagnostics. Heavy, durable, or parallel execution moves to workers.
 
 **Env:** `MEDOUSA_TURN_HOST_BUS`
 

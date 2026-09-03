@@ -61,7 +61,7 @@ export interface CancelActiveSessionTurnResponse {
 
 export type TurnTicketMode = "interactive" | "background";
 
-export type AgentModeId = "general" | "instant" | "coder";
+export type AgentModeId = "general" | "teacher" | "instant" | "coder";
 
 export type TurnTicketPhase =
   | "accepted"

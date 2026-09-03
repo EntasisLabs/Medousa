@@ -75,13 +75,26 @@
   }
 
   function beginStroke(event: PointerEvent) {
-    if (!editable || event.button !== 0) return;
+    if (
+      !editable ||
+      event.button !== 0 ||
+      event.isPrimary === false ||
+      activePointer != null
+    ) return;
     const point = pointFromEvent(event);
     if (!point) return;
     event.preventDefault();
     event.stopPropagation();
-    stageEl?.focus();
-    stageEl?.setPointerCapture(event.pointerId);
+    try {
+      stageEl?.focus({ preventScroll: true });
+    } catch {
+      stageEl?.focus();
+    }
+    try {
+      stageEl?.setPointerCapture(event.pointerId);
+    } catch {
+      // Older mobile webviews can reject capture while still delivering the gesture.
+    }
     activePointer = event.pointerId;
 
     if (tool === "eraser") {
@@ -126,8 +139,14 @@
     if (activePointer !== event.pointerId) return;
     event.preventDefault();
     event.stopPropagation();
-    stageEl?.releasePointerCapture(event.pointerId);
     activePointer = null;
+    try {
+      if (stageEl?.hasPointerCapture?.(event.pointerId)) {
+        stageEl.releasePointerCapture(event.pointerId);
+      }
+    } catch {
+      // The system can release capture first when a touch leaves the webview.
+    }
 
     if (tool === "eraser") {
       const snapshot = eraseSnapshot;
@@ -242,6 +261,7 @@
     onpointermove={continueStroke}
     onpointerup={finishStroke}
     onpointercancel={cancelStroke}
+    onlostpointercapture={cancelStroke}
     onkeydown={handleKeydown}
   >
     <svg
@@ -284,9 +304,15 @@
   .medousa-draw-stage { display: block; width: 100%; min-height: 0; flex: 1; padding: .65rem; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: initial; }
   svg { display: block; width: 100%; height: auto; max-height: 100%; aspect-ratio: 5 / 3; border-radius: .45rem; background: rgb(var(--color-surface-950)); box-shadow: inset 0 0 0 1px rgb(var(--color-surface-500) / .28); }
   .medousa-draw-surface--full svg { height: 100%; min-height: 16rem; }
-  .medousa-draw-surface--editable .medousa-draw-stage { cursor: crosshair; touch-action: none; }
+  .medousa-draw-surface--editable .medousa-draw-stage { cursor: crosshair; touch-action: none; overscroll-behavior: contain; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
   .medousa-draw-paper { pointer-events: all; }
   .medousa-draw-grid { stroke: rgb(var(--color-surface-500) / .12); stroke-width: 1; pointer-events: none; }
   .medousa-draw-stroke { fill: none; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
-  @media (max-width: 640px) { .medousa-draw-toolbar { gap: .35rem; } .medousa-draw-history { margin-left: 0; } .medousa-draw-stage { padding: .35rem; } }
+  @media (max-width: 640px) {
+    .medousa-draw-toolbar { flex-wrap: nowrap; gap: .35rem; overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .medousa-draw-toolbar::-webkit-scrollbar { display: none; }
+    .medousa-draw-tool-group { flex: 0 0 auto; }
+    .medousa-draw-history { margin-left: 0; }
+    .medousa-draw-stage { padding: .35rem; }
+  }
 </style>

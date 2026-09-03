@@ -20,6 +20,7 @@
   import {
     excludedProvidersForTarget,
     pickerAllowsClear,
+    pickerClearHint,
     pickerRequiresVision,
     pickerTitle,
     providerIdsForTarget,
@@ -265,7 +266,7 @@
           </h3>
           <p class="model-catalog-sheet-subtitle">
             {step === "provider"
-              ? "Choose a provider — configure keys and URLs under Providers."
+              ? "Choose a provider. Credentials and endpoints live under Provider access."
               : "Pick from the catalog or enter a model ID."}
           </p>
         </div>
@@ -297,7 +298,7 @@
             >
               <span class="model-catalog-provider-row-copy">
                 <span class="model-catalog-provider-row-label">None</span>
-                <span class="model-catalog-provider-row-hint">Clear this backup slot</span>
+                <span class="model-catalog-provider-row-hint">{pickerClearHint(target)}</span>
               </span>
             </button>
           {/if}
@@ -330,8 +331,8 @@
         {#if needsProviderSetup}
           <div class="model-catalog-custom-form">
             <p class="model-catalog-empty">
-              Configure {selectedProvider.label} under the <strong>Providers</strong> tab first
-              (provider id, API URL, and key if needed).
+              Configure {selectedProvider.label} under <strong>Provider access → API keys &
+                endpoints</strong> first (provider id, API URL, and key if needed).
             </p>
           </div>
         {:else}

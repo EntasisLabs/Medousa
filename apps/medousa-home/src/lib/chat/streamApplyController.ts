@@ -38,6 +38,7 @@ import { budgetRequestIdFromStreamEvent } from "$lib/notifications";
 import { randomUuid } from "$lib/utils/randomUuid";
 import { handleWorkerSynthesisStreamEvent, workerLinkForTurn } from "$lib/chat/workerLaneController";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
+import { narration } from "$lib/stores/narration.svelte";
 import {
   detachStreamOwner,
   finishMessage,
@@ -141,7 +142,14 @@ export function applyPumpedStreamEvent(host: ChatStoreHost, target: StreamEventT
         if (event.outcome === "failed" || event.outcome === "fuse_exhausted") {
           handleTurnError(host, presentation);
         } else if (messageId) {
-          runMessageFollowUp(host, presentation, "terminal", messageId);
+          runMessageFollowUp(
+            host,
+            presentation,
+            "terminal",
+            messageId,
+            undefined,
+            event.outcome !== "cancelled",
+          );
         } else {
           noteTurnTerminal(host, presentation);
           finishAskLaneTurn(host, envelope.turn_id);
@@ -337,6 +345,7 @@ function runMessageFollowUp(
   followUp: StreamMessageFollowUp,
   messageId?: string,
   revealContent?: string,
+  shouldNarrate = true,
 ) {
   const id = messageId ?? host.messageIdForTurn(event.turn_id);
   if (followUp === "missing") {
@@ -358,6 +367,7 @@ function runMessageFollowUp(
     return;
   }
   if (followUp === "checkpoint_terminal" && id) {
+    if (shouldNarrate) maybeNarrateTerminal(host, event, id);
     finishMessage(host, id);
     finishAskLaneTurn(host, event.turn_id);
     if (shouldSettleTurnFromStream(host, event.turn_id)) {
@@ -367,6 +377,7 @@ function runMessageFollowUp(
     return;
   }
   if (followUp === "terminal" && id) {
+    if (shouldNarrate) maybeNarrateTerminal(host, event, id, revealContent);
     if (revealContent) {
       finishAskLaneTurn(host, event.turn_id);
       if (shouldSettleTurnFromStream(host, event.turn_id)) {
@@ -383,6 +394,24 @@ function runMessageFollowUp(
       host.scheduleSessionsRefresh();
     }
   }
+}
+
+function maybeNarrateTerminal(
+  host: ChatStoreHost,
+  event: InteractiveTurnStreamEvent,
+  messageId: string,
+  canonicalContent?: string,
+) {
+  const turn = host.turns.get(event.turn_id);
+  if (turn?.mode !== "interactive") return;
+  const message = host.messages[host.messageIndexForId(messageId)];
+  const text =
+    canonicalContent?.trim() ||
+    message?.content?.trim() ||
+    event.final_text?.trim() ||
+    "";
+  if (!text) return;
+  narration.maybeAutoNarrate(event.turn_id, messageId, text);
 }
 
 function handleTurnError(host: ChatStoreHost, event: InteractiveTurnStreamEvent) {

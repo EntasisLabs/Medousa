@@ -1,9 +1,9 @@
 <script lang="ts">
   /**
-   * Quiet user prompt beat — collapses to `You · …` like Thinking,
-   * expands near the scroll viewport (or on click / forceExpand).
+   * Quiet user prompt beat. Prompts stay expanded unless the user explicitly
+   * collapses one; changing their height as they cross the viewport makes long
+   * conversations jump during inertial scrolling.
    */
-  import { onDestroy, onMount } from "svelte";
   import { userWhisperHook } from "$lib/utils/chatTurnBeats";
   import LiquidChatMessage from "$lib/components/chat/LiquidChatMessage.svelte";
   import ChatForkMenu from "$lib/components/chat/ChatForkMenu.svelte";
@@ -16,8 +16,6 @@
     sessionId: string;
     mobile?: boolean;
     compact?: boolean;
-    /** Scroll container for IntersectionObserver (chat-scroll / mobile-chat-scroll). */
-    scrollRoot?: HTMLElement | null;
     /** Keep open for the latest turn while the assistant is streaming. */
     forceExpand?: boolean;
     onSubmitIntent?: (text: string) => void;
@@ -31,7 +29,6 @@
     sessionId,
     mobile = false,
     compact = false,
-    scrollRoot = null,
     forceExpand = false,
     onSubmitIntent,
     onFork,
@@ -39,14 +36,12 @@
     forkHasDraft = false,
   }: Props = $props();
 
-  let rootEl: HTMLElement | undefined = $state();
-  let nearViewport = $state(true);
-  let stickyOpen = $state(false);
+  let collapsed = $state(false);
 
   const trimmed = $derived(message.content?.trim() ?? "");
   const hook = $derived(userWhisperHook(trimmed));
   const contextLabel = $derived(hostContextLabel(message.hostContext));
-  const expanded = $derived(forceExpand || stickyOpen || nearViewport);
+  const expanded = $derived(forceExpand || !collapsed);
   const speakerLabel = $derived.by(() => {
     const speaker = message.speakerProfileId?.trim();
     if (!speaker) return "You";
@@ -62,61 +57,21 @@
     return profile?.display_name?.trim() || speaker.replace(/^user:/, "");
   });
 
-  let observer: IntersectionObserver | null = null;
-
-  function disconnectObserver() {
-    observer?.disconnect();
-    observer = null;
-  }
-
-  function connectObserver() {
-    disconnectObserver();
-    if (typeof IntersectionObserver === "undefined") return;
-    if (!rootEl) return;
-    observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (!entry) return;
-        nearViewport = entry.isIntersecting;
-      },
-      {
-        root: scrollRoot ?? null,
-        rootMargin: "18% 0px 18% 0px",
-        threshold: [0, 0.15, 0.4],
-      },
-    );
-    observer.observe(rootEl);
-  }
-
-  onMount(() => {
-    connectObserver();
-  });
-
-  $effect(() => {
-    scrollRoot;
-    rootEl;
-    connectObserver();
-  });
-
-  onDestroy(() => {
-    disconnectObserver();
-  });
-
-  function toggleSticky() {
-    stickyOpen = !stickyOpen;
+  function toggleCollapsed() {
+    if (forceExpand) return;
+    collapsed = !collapsed;
   }
 
   function onKeydown(event: KeyboardEvent) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      toggleSticky();
+      toggleCollapsed();
     }
   }
 </script>
 
 {#if trimmed}
   <div
-    bind:this={rootEl}
     class="chat-user-whisper"
     class:chat-user-whisper-expanded={expanded}
     class:chat-user-whisper-compact={compact}
@@ -128,7 +83,7 @@
       type="button"
       class="chat-user-whisper-summary"
       aria-expanded={expanded}
-      onclick={toggleSticky}
+      onclick={toggleCollapsed}
       onkeydown={onKeydown}
     >
       <span class="chat-user-whisper-label">{speakerLabel}</span>

@@ -30,6 +30,7 @@ const SESSION_KEY = "medousa.sessionId";
 
 function agentModeLabel(mode: AgentModeId): string {
   if (mode === "coder") return "Coder";
+  if (mode === "teacher") return "Teacher";
   if (mode === "instant") return "Instant";
   return "General";
 }
@@ -45,6 +46,12 @@ function agentModeQuickPick(mode: AgentModeId): { label: string; detail: string 
     return {
       label: "$(zap) Instant",
       detail: "Faster chat with focused recent context",
+    };
+  }
+  if (mode === "teacher") {
+    return {
+      label: "$(mortar-board) Teacher",
+      detail: "Evidence-first mentoring through connected concepts",
     };
   }
   return {

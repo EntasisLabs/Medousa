@@ -33,7 +33,7 @@ fn validate_agent_mode(mode: AgentModeId) -> Result<(), String> {
     #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
     {
         match mode {
-            AgentModeId::General | AgentModeId::Instant => Ok(()),
+            AgentModeId::General | AgentModeId::Teacher | AgentModeId::Instant => Ok(()),
             AgentModeId::Coder => Err(
                 "Coder mode requires a workshop host with project, Forge, and shell authority"
                     .to_string(),

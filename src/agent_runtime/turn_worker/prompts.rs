@@ -38,10 +38,10 @@ pub fn worker_system_prompt_for_parent_mode(
     supports_liquid_markdown: bool,
     parent_agent_mode: Option<&str>,
 ) -> String {
-    let policy_mode = if parent_agent_mode == Some("coder") {
-        crate::agent_runtime::prompt_policy::SttpPolicyMode::CoderWork
-    } else {
-        crate::agent_runtime::prompt_policy::SttpPolicyMode::General
+    let policy_mode = match parent_agent_mode {
+        Some("coder") => crate::agent_runtime::prompt_policy::SttpPolicyMode::CoderWork,
+        Some("teacher") => crate::agent_runtime::prompt_policy::SttpPolicyMode::Teacher,
+        _ => crate::agent_runtime::prompt_policy::SttpPolicyMode::General,
     };
     let policy = crate::agent_runtime::prompt_policy::compile_sttp_policy(
         crate::agent_runtime::prompt_policy::SttpPolicySelection::new(
@@ -70,10 +70,10 @@ pub fn worker_system_prompt_for_parent_mode(
 }
 
 pub fn host_system_prompt_for_parent_mode(parent_agent_mode: Option<&str>) -> String {
-    let policy_mode = if parent_agent_mode == Some("coder") {
-        crate::agent_runtime::prompt_policy::SttpPolicyMode::CoderWork
-    } else {
-        crate::agent_runtime::prompt_policy::SttpPolicyMode::General
+    let policy_mode = match parent_agent_mode {
+        Some("coder") => crate::agent_runtime::prompt_policy::SttpPolicyMode::CoderWork,
+        Some("teacher") => crate::agent_runtime::prompt_policy::SttpPolicyMode::Teacher,
+        _ => crate::agent_runtime::prompt_policy::SttpPolicyMode::General,
     };
     crate::agent_runtime::prompt_policy::compile_sttp_policy(
         crate::agent_runtime::prompt_policy::SttpPolicySelection::new(
@@ -195,6 +195,26 @@ mod tests {
         assert!(!prompt.contains("p3_actor_host(.99)"));
         assert!(prompt.contains("[MEDOUSA_HUD]"));
         assert!(prompt.contains("worker_intent=research"));
+    }
+
+    #[test]
+    fn teacher_policy_survives_worker_and_host_handoffs() {
+        let worker = worker_system_prompt_for_parent_mode(
+            "sess-teacher",
+            TurnWorkerIntent::Research,
+            None,
+            false,
+            false,
+            Some("teacher"),
+        );
+        assert!(worker.contains("p2_mode_teacher(.99)"));
+        assert!(worker.contains("p3_actor_worker(.99)"));
+        assert!(!worker.contains("p2_mode_general(.99)"));
+
+        let host = host_system_prompt_for_parent_mode(Some("teacher"));
+        assert!(host.contains("p2_mode_teacher(.99)"));
+        assert!(host.contains("p3_actor_host(.99)"));
+        assert!(!host.contains("p2_mode_general(.99)"));
     }
 
     #[test]

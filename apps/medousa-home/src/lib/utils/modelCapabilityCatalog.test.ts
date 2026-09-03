@@ -3,8 +3,10 @@ import type { ModelCapabilityRecord } from "$lib/types/modelCapability";
 import {
   formatOutputPricingBadge,
   formatPricingBadge,
+  inferModelSupportsVision,
   modelHasVision,
   modelMetaLine,
+  recordsFromModelIds,
 } from "./modelCapabilityCatalog";
 
 function record(overrides: Partial<ModelCapabilityRecord> = {}): ModelCapabilityRecord {
@@ -76,5 +78,26 @@ describe("modelHasVision", () => {
     ]);
     expect(modelHasVision(map, "anthropic", "claude-opus-4-8")).toBe(true);
     expect(modelHasVision(map, "anthropic", "claude-haiku-4-5")).toBe(false);
+  });
+});
+
+describe("live model capability fallback", () => {
+  it("keeps ChatGPT account GPT models multimodal when the account catalog returns ids", () => {
+    const [record] = recordsFromModelIds(
+      "openai-codex",
+      ["gpt-5.6-sol"],
+      "chatgpt-account",
+    );
+    expect(record).toMatchObject({
+      inputModalities: ["text", "image"],
+      outputModalities: ["text"],
+      supportsToolCalling: true,
+      supportsVision: true,
+    });
+  });
+
+  it("matches native model vision boundaries instead of marking every model multimodal", () => {
+    expect(inferModelSupportsVision("medousa-local", "lfm2.5-vl-1.6b-4bit")).toBe(true);
+    expect(inferModelSupportsVision("medousa-local", "lfm2.5-2.6b-4bit")).toBe(false);
   });
 });

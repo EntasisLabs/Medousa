@@ -158,16 +158,95 @@ export function recordsFromModelIds(
   return modelIds
     .map((modelId) => modelId.trim())
     .filter(Boolean)
-    .map((modelId) => ({
-      provider: providerId,
-      modelId,
-      displayName: resolveModelDisplayLabel(providerId, modelId, 40),
-      inputModalities: ["text"] as Modality[],
-      outputModalities: ["text"] as Modality[],
-      supportsVision: false,
-      source,
-      fetchedAt: new Date().toISOString(),
-    }));
+    .map((modelId) => {
+      const supportsVision = inferModelSupportsVision(providerId, modelId);
+      return {
+        provider: providerId,
+        modelId,
+        displayName: resolveModelDisplayLabel(providerId, modelId, 40),
+        inputModalities: supportsVision
+          ? (["text", "image"] as Modality[])
+          : (["text"] as Modality[]),
+        outputModalities: ["text"] as Modality[],
+        supportsToolCalling: providerId.toLowerCase() === "openai-codex" ? true : null,
+        supportsVision,
+        source,
+        fetchedAt: new Date().toISOString(),
+      };
+    });
+}
+
+/**
+ * Offline/live-list fallback matching the daemon registry. Provider catalog
+ * responses often contain only model ids; do not erase known input modalities
+ * while the richer capability snapshot is still warming up.
+ */
+export function inferModelSupportsVision(provider: string, model: string): boolean {
+  const providerId = provider.trim().toLowerCase();
+  const modelId = model.trim().toLowerCase();
+  if (!modelId) return false;
+
+  if (
+    modelId.includes("vision") ||
+    modelId.includes("llava") ||
+    modelId.includes("bakllava") ||
+    modelId.includes("-vl") ||
+    modelId.includes("_vl")
+  ) {
+    return true;
+  }
+
+  if (
+    providerId === "openai" ||
+    providerId === "openai-codex" ||
+    providerId === "azure-openai" ||
+    providerId === "azure_openai" ||
+    providerId === "openrouter"
+  ) {
+    return (
+      modelId.startsWith("gpt-4o") ||
+      modelId.startsWith("gpt-4.1") ||
+      modelId.startsWith("gpt-4-turbo") ||
+      modelId.startsWith("gpt-5") ||
+      modelId.includes("openai/gpt-4o") ||
+      modelId.includes("openai/gpt-4.1") ||
+      modelId.includes("openai/gpt-5")
+    );
+  }
+  if (providerId === "anthropic") {
+    return (
+      modelId.includes("claude-3") ||
+      modelId.includes("claude-4") ||
+      modelId.includes("claude-opus") ||
+      modelId.includes("claude-sonnet") ||
+      modelId.includes("claude-haiku")
+    );
+  }
+  if (providerId === "google" || providerId === "gemini" || providerId === "google-gemini") {
+    return modelId.includes("gemini");
+  }
+  if (providerId === "groq") return modelId.includes("vision");
+  if (
+    providerId === "ollama" ||
+    providerId === "local" ||
+    providerId === "lmstudio" ||
+    providerId === "lm-studio"
+  ) {
+    return (
+      modelId.includes("llava") ||
+      modelId.includes("vision") ||
+      modelId.includes("moondream") ||
+      modelId.includes("minicpm-v")
+    );
+  }
+  if (providerId === "medousa-local") {
+    return (
+      modelId === "gemma-4-e2b-it-4bit" ||
+      modelId === "lfm2.5-vl-1.6b-4bit" ||
+      modelId === "ministral-3-3b-instruct-4bit"
+    );
+  }
+  return false;
 }
 
 export function defaultProviderRecords(entry: ProviderCatalogEntry): ModelCapabilityRecord[] {

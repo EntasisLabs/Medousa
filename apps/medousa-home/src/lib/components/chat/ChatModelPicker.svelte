@@ -33,6 +33,7 @@
     listModelCatalog,
     modelHasVision,
     modelMetaLine,
+    recordsFromModelIds,
   } from "$lib/utils/modelCapabilityCatalog";
   import type { ModelCapabilityRecord } from "$lib/types/modelCapability";
   import {
@@ -309,10 +310,24 @@
     if (pickerReadonly || !catalogSnapshot) return;
     loadingLiveModels = true;
     try {
-      const result = provider.trim().toLowerCase() === "openai-codex"
+      const chatGptAccount = provider.trim().toLowerCase() === "openai-codex";
+      const result = chatGptAccount
         ? await listChatGptOAuthModels()
         : await listProviderModels({ provider });
       if (result.models.length > 0) {
+        const discovered = recordsFromModelIds(
+          provider,
+          result.models,
+          chatGptAccount
+            ? "chatgpt-account"
+            : "source" in result && typeof result.source === "string"
+              ? result.source
+              : "provider.models",
+        );
+        capabilityMap = new Map([
+          ...capabilityMap,
+          ...capabilityMapFromCatalog(discovered),
+        ]);
         rebuildOptions(catalogSnapshot, probeSnapshot, favorites, result.models, provider);
       }
     } catch {

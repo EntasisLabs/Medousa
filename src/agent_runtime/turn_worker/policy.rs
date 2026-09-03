@@ -159,7 +159,10 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
     names
 }
 
-/// Tools exposed to the host (main) agent — scheduler, not execution engine.
+/// Tools exposed to the host (main) agent.
+///
+/// The host handles short, sandboxed diagnostics directly. Durable, parallel,
+/// or independently scoped execution still belongs on a worker.
 pub fn host_bus_tool_names() -> HashSet<String> {
     let mut names = HashSet::new();
     let push = |names: &mut HashSet<String>, list: &[&str]| {
@@ -213,6 +216,11 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition_browser_act",
         ],
     );
+
+    // A quick local diagnostic should not require a worker round-trip. These
+    // remain gated by the operator's Shell settings and sandbox charter at
+    // invocation time.
+    push(&mut names, crate::tool_names::SHELL_COGNITION_TOOLS);
 
     push(
         &mut names,
@@ -324,7 +332,7 @@ mod tests {
     }
 
     #[test]
-    fn host_scheduler_has_memory_runtime_and_catalog_not_execution() {
+    fn host_handles_bounded_shell_without_expanding_to_heavy_execution() {
         let names = host_bus_tool_names();
         assert!(names.contains("cognition_memory_mutate"));
         assert!(names.contains("cognition_identity_query"));
@@ -356,6 +364,8 @@ mod tests {
         assert!(names.contains("cognition_tools_discover"));
         assert!(names.contains("cognition_web_search"));
         assert!(names.contains("cognition_browser_fetch"));
+        assert!(names.contains("cognition_shell_status"));
+        assert!(names.contains("cognition_shell_run"));
         assert!(names.contains("cognition_openshell_request_secret"));
         assert!(names.contains("cognition_grapheme_request_secret"));
         assert!(!names.contains("cognition_environment_get"));

@@ -140,6 +140,7 @@ fn parent_agent_mode(records: &[TurnWorkRecord]) -> Option<AgentModeId> {
         .find_map(|record| record.parent_agent_mode.as_deref())
     {
         Some("coder") => Some(AgentModeId::Coder),
+        Some("teacher") => Some(AgentModeId::Teacher),
         Some("instant") => Some(AgentModeId::Instant),
         Some("general") => Some(AgentModeId::General),
         _ => None,

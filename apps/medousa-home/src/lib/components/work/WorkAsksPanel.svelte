@@ -24,7 +24,6 @@
 
   let { onOpenChat }: Props = $props();
 
-  let scrollEl: HTMLDivElement | undefined = $state();
   let cardDetailOpen = $state(false);
   let cardDetail = $state<CardDetailPayload | null>(null);
 
@@ -96,7 +95,7 @@
     </button>
   </header>
 
-  <div bind:this={scrollEl} class="work-asks-scroll min-h-0 flex-1 overflow-y-auto">
+  <div class="work-asks-scroll min-h-0 flex-1 overflow-y-auto">
     {#if askThreads.length === 0}
       <div class="work-asks-empty">
         <p class="text-sm text-content-tertiary">No asks yet</p>
@@ -144,7 +143,6 @@
                 {sessionId}
                 mobile={layout.isMobile}
                 compact={true}
-                scrollRoot={scrollEl}
                 onPromoteToFlow={handlePromoteToFlow}
                 onSaveToVault={handleSaveToVault}
                 onOpenCardDetail={openCardDetail}
